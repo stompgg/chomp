@@ -23,8 +23,8 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return "Self Switch And Damage Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, bytes memory extraData, uint256) external {
-        (uint256 monToSwitchIndex) = abi.decode(extraData, (uint256));
+    function move(bytes32, uint256 attackerPlayerIndex, uint240 extraData, uint256) external {
+        uint256 monToSwitchIndex = uint256(extraData);
 
         // Deal damage first to opponent
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
@@ -48,7 +48,7 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

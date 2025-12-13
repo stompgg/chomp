@@ -26,7 +26,7 @@ contract Deadlift is IMoveSet {
         return "Deadlift";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Apply the buffs
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
@@ -59,7 +59,7 @@ contract Deadlift is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

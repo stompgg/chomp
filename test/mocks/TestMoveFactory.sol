@@ -26,7 +26,7 @@ contract TestMove is IMoveSet {
         return "Test Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, bytes memory, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
         uint256 opponentIndex = (attackerPlayerIndex + 1) % 2;
         uint256 opponentMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[opponentIndex];
         ENGINE.dealDamage(opponentIndex, opponentMonIndex, _damage);
@@ -44,7 +44,7 @@ contract TestMove is IMoveSet {
         return _moveType;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

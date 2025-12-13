@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../../Constants.sol";
+import {SWITCH_MOVE_INDEX, SWITCH_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_PRIORITY, DEFAULT_CRIT_RATE, MOVE_INDEX_MASK} from "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -31,10 +31,12 @@ contract RockPull is IMoveSet {
         // Check MoveDecision for other player
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         MoveDecision memory otherPlayerMove = ENGINE.getMoveDecisionForBattleState(battleKey, otherPlayerIndex);
-        return otherPlayerMove.moveIndex == SWITCH_MOVE_INDEX;
+        // Unpack the move index from packedMoveIndex
+        uint8 moveIndex = otherPlayerMove.packedMoveIndex & MOVE_INDEX_MASK;
+        return moveIndex == SWITCH_MOVE_INDEX;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         if (_didOtherPlayerChooseSwitch(battleKey, attackerPlayerIndex)) {
             // Deal damage to the opposing mon
             AttackCalculator._calculateDamage(
@@ -91,7 +93,7 @@ contract RockPull is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-uint128 constant NO_OP_MOVE_INDEX = type(uint128).max - 1;
-uint128 constant SWITCH_MOVE_INDEX = type(uint128).max - 2;
+// Move index uses 7 bits (0-127), with upper bit of uint8 reserved for isRealTurn flag
+// Special move indices (not shifted):
+// 126 = 2^7 - 2, 125 = 2^7 - 3
+uint8 constant NO_OP_MOVE_INDEX = 126;
+uint8 constant SWITCH_MOVE_INDEX = 125;
+
+// Regular move indices (0-3) are stored +1 to avoid zero-value ambiguity:
+// Stored 0 = "no move set", Stored 1 = move 0, Stored 2 = move 1, etc.
+// When storing: if moveIndex < SWITCH_MOVE_INDEX, store moveIndex + 1
+// When reading: if storedIndex < SWITCH_MOVE_INDEX, return storedIndex - 1
+uint8 constant MOVE_INDEX_OFFSET = 1;
+
+// Bit mask and shift for packed move index (lower 7 bits = moveIndex, bit 7 = isRealTurn)
+uint8 constant MOVE_INDEX_MASK = 0x7F;
+uint8 constant IS_REAL_TURN_BIT = 0x80;
 
 uint256 constant SWITCH_PRIORITY = 6;
 uint32 constant DEFAULT_PRIORITY = 3;

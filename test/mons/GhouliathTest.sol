@@ -146,11 +146,11 @@ contract GhouliathTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob uses the attack (which KOs) on Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify Alice's mon is KO'd
         int32 isKnockedOut = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
@@ -166,12 +166,12 @@ contract GhouliathTest is Test, BattleHelper {
 
         // Alice swaps in mon index 1
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // We wait for the REVIVAL_DELAY - 1 turns to pass
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", ""
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
             );
         }
 
@@ -184,15 +184,15 @@ contract GhouliathTest is Test, BattleHelper {
         assertEq(damageTaken, -99, "Alice's mon should have 1 HP");
 
         // Alice swaps in mon index 0, Bob does attack again, which KOs Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(0), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(0), 0);
 
         // Verify the mon is not revived after REVIVAL_DELAY turns
         // (First we swap in mon index 1)
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", ""
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
             );
         }
 
@@ -251,27 +251,27 @@ contract GhouliathTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob uses the attack (which KOs) on Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Alice swaps in mon index 1
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // Alice KOs Bob's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob swaps in mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // We wait for the REVIVAL_DELAY turns to pass
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", ""
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
             );
         }
 
@@ -341,11 +341,11 @@ contract GhouliathTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses WitherAway on Bob's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that both mons have the PanicStatus effect applied
         (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
@@ -443,11 +443,11 @@ contract GhouliathTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Osteoporosis on Bob's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Calculate the damage dealt
         uint32 damageTaken = uint32(-1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp));
@@ -495,16 +495,16 @@ contract GhouliathTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice does nothing, Bob switches to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
         );
 
         // Alice uses Eternal Grudge on Bob's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Assert Alice's mon is KO'd
         int32 isKnockedOut = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);

@@ -55,7 +55,7 @@ contract PistolSquat is StandardAttack {
         return -1;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata extraData, uint256 rng)
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
         public
         override
     {

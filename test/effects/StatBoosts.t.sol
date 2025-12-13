@@ -40,6 +40,11 @@ contract StatBoostsTest is Test, BattleHelper {
     StatBoostsMove statBoostMove;
     DefaultMatchmaker matchmaker;
 
+    // Helper to pack StatBoostsMove extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
+        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
+    }
+
     function setUp() public {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
@@ -109,7 +114,7 @@ contract StatBoostsTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // We'll test Attack stat in detail
@@ -141,8 +146,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(0, 0, statIndex, int32(10)), // Alice boosts her own mon by 10%
-            "" // Bob does nothing
+            _packStatBoost(0, 0, statIndex, int32(10)), // Alice boosts her own mon by 10%
+            0 // Bob does nothing
         );
 
         // Verify the stat was boosted
@@ -170,8 +175,7 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(0, 0, statIndex, int32(10)),
-            "" // Bob does nothing
+            _packStatBoost(0, 0, statIndex, int32(10)), 0 // Bob does nothing
         );
 
         // Verify the stat was boosted further
@@ -191,8 +195,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             SWITCH_MOVE_INDEX, // Alice switches
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(1), // Alice switches to mon 1
-            "" // Bob does nothing
+            uint240(1), // Alice switches to mon 1
+            0 // Bob does nothing
         );
 
         // Verify the effect was removed
@@ -213,8 +217,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             SWITCH_MOVE_INDEX, // Alice switches
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(0), // Alice switches back to mon 0
-            "" // Bob does nothing
+            uint240(0), // Alice switches back to mon 0
+            0 // Bob does nothing
         );
 
         // Verify the stat was reset
@@ -284,7 +288,7 @@ contract StatBoostsTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Test all stats
@@ -303,8 +307,8 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0, // Alice uses stat boost move
                 NO_OP_MOVE_INDEX, // Bob does nothing
-                abi.encode(0, 0, statIndices[i], int32(2)), // Alice boosts her own mon by +2
-                "" // Bob does nothing
+                _packStatBoost(0, 0, statIndices[i], int32(2)), // Alice boosts her own mon by +2
+                0 // Bob does nothing
             );
 
             // Verify the stat was boosted
@@ -333,8 +337,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             SWITCH_MOVE_INDEX, // Alice switches
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(1), // Alice switches to mon 1
-            "" // Bob does nothing
+            uint240(1), // Alice switches to mon 1
+            0 // Bob does nothing
         );
 
         // Verify all effects were removed
@@ -387,7 +391,7 @@ contract StatBoostsTest is Test, BattleHelper {
         // Both players select their first mon (index 0)
         bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses stat boost move to boost her mon's special atk 50%, Bob does nothing
@@ -397,8 +401,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(50)), // Alice boosts her own mon by 50%
-            "" // Bob does nothing
+            _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(50)), // Alice boosts her own mon by 50%
+            0 // Bob does nothing
         );
 
         // Verify the stat was boosted
@@ -412,8 +416,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             NO_OP_MOVE_INDEX, // Alice does nothing
             1, // Bob uses SpAtkDebuffHit
-            "", // Alice does nothing
-            "" // Bob does nothing
+            0, // Alice does nothing
+            0 // Bob does nothing
         );
 
         // Verify the stat was reduced
@@ -427,8 +431,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             SWITCH_MOVE_INDEX, // Alice switches
             NO_OP_MOVE_INDEX, // Bob does nothing
-            abi.encode(1), // Alice switches to mon 1
-            "" // Bob does nothing
+            uint240(1), // Alice switches to mon 1
+            0 // Bob does nothing
         );
 
         // Verify the stat was reduced

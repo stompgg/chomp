@@ -121,7 +121,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Verify that Storm effect is applied
@@ -149,7 +149,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // Alice swaps in mon index 1, Bob does nothing (duration is now 1)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );
 
         // Verify that Alice's new mon's speed/spdef are affected the same way
@@ -159,7 +159,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(spDefDelta, expectedSpDefDebuff, "Special Defense should be decreased");
 
         // Both players do nothing, storm subsides (duration is now 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that Alice's mon's speed/spdef are reset
         speedDelta = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Speed);
@@ -227,12 +227,12 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice does nothing, Bob switches in his Overclock mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
         );
 
         // Verify that the stat changes are applied to Bob's mon
@@ -244,7 +244,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(bobSpDefDelta, expectedSpDefDebuff, "Bob's mon's special defense should be decreased");
 
         // Wait a turn
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Alice's mon should have its stats reset
         int32 aliceSpeedDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Speed);
@@ -259,7 +259,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(bobSpDefDelta, expectedSpDefDebuff, "Bob's mon's special defense should not be reset");
 
         // Wait another turn
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob's mon should have its stats reset
         bobSpeedDelta = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Speed);
@@ -328,7 +328,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Verify that Storm is applied
@@ -340,7 +340,7 @@ contract VolthareTest is Test, BattleHelper {
         mockOracle.setRNG(2);
 
         // Alice uses Mega Star Blast, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), 0);
 
         // Verify that Bob's mon is zapped
         (effects, ) = engine.getEffects(battleKey, 1, 0);
@@ -355,7 +355,7 @@ contract VolthareTest is Test, BattleHelper {
         mockOracle.setRNG(51);
 
         // Alice uses Mega Star Blast, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), 0);
 
         // Verify that Bob's mon is not zapped
         (effects, ) = engine.getEffects(battleKey, 1, 0);
@@ -429,11 +429,11 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both players use Dual Shock, Alice should move first and skip their next move
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Alice's mon should have the skip turn flag set
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.ShouldSkipTurn), 1);

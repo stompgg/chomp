@@ -26,7 +26,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return "Iron Wall";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Get the active mon index
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
 
@@ -51,7 +51,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

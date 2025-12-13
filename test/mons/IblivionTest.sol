@@ -47,6 +47,11 @@ contract IblivionTest is Test, BattleHelper {
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
+    // Helper to pack StatBoostsMove extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
+        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
+    }
+
     function setUp() public {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
@@ -132,7 +137,7 @@ contract IblivionTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Check that Alice's mon has the IntrinsicValue effect
@@ -154,8 +159,8 @@ contract IblivionTest is Test, BattleHelper {
 
         // Bob uses debuff attack on Alice's mon
         // The debuff applies -1% to the specified stat, which then gets reset at end of round
-        bytes memory debuffData = abi.encode(0, 0, uint256(statType), int32(-1));
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", debuffData);
+        uint240 debuffData = _packStatBoost(0, 0, uint256(statType), int32(-1));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, debuffData);
 
         // Check that Alice's mon's stat debuff has been reset
         int32 statAfterReset = engine.getMonStateForBattle(battleKey, 0, 0, statType);
@@ -244,7 +249,7 @@ contract IblivionTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Use Baselight sequentially and verify damage and stamina cost
@@ -264,7 +269,7 @@ contract IblivionTest is Test, BattleHelper {
             int32 bobHpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
             // Alice uses Baselight, Bob uses NO_OP
-            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
             // Get new Baselight level after the move
             uint256 newBaselightLevel = baselight.getBaselightLevel(battleKey, 0, 0);
@@ -313,7 +318,7 @@ contract IblivionTest is Test, BattleHelper {
         }
 
         // Do it one more time and verify that Baselight does not go up more
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         uint256 finalBaselightLevel = baselight.getBaselightLevel(battleKey, 0, 0);
         assertEq(finalBaselightLevel, baselight.MAX_BASELIGHT_LEVEL(), "Baselight level should not exceed max level");
@@ -399,18 +404,18 @@ contract IblivionTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses high stamina cost attack, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Get the stamina delta (staminaDelta is stored in the Stamina field)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -5, "Stamina should be 0 after using high stamina cost attack");
 
         // Alice uses Loop, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check that Alice's mon's stamina delta is reset
         int32 staminaDeltaAfterLoop = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
@@ -477,13 +482,13 @@ contract IblivionTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice chooses move index 1 (First Resort), Bob chooses move index 0 (Baselight)
         // Bob should move first and KO Alice's mon index 0 without taking damage
         // (even though both choose to attack)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, uint240(0), uint240(0));
 
         // Assert Bob's mon index 0's HP delta is also 0 (Bob took no damage)
         int32 hpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -491,12 +496,12 @@ contract IblivionTest is Test, BattleHelper {
 
         // Alice swaps in mon index 1
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // Alice levels up Baselight to level 2, Bob does nothing
         for (uint256 i; i < firstResort.BASELIGHT_THRESHOLD(); i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+                engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
             );
         }
 
@@ -545,18 +550,18 @@ contract IblivionTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob deals damage to Alice, Alice does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, uint240(0), uint240(0)
         );
 
         // Alice does Brightback, no hp should be regained
         int32 aliceDamageBefore = -1 * engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
         int32 aliceDamageAfter = -1 * engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceDamageBefore, aliceDamageAfter, "No healing yet, Baselight is lv 0");
@@ -564,7 +569,7 @@ contract IblivionTest is Test, BattleHelper {
         // Alice levels up Baselight, Bob does nothing
         for (uint256 i; i < brightback.BASELIGHT_THRESHOLD(); i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+                engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
             );
         }
 
@@ -573,7 +578,7 @@ contract IblivionTest is Test, BattleHelper {
 
         // Alice uses Brightback, should heal some HP, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
         aliceDamageAfter = -1 * engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertGt(aliceDamageBefore, aliceDamageAfter, "Alice should have healed");

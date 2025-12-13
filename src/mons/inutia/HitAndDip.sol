@@ -34,7 +34,7 @@ contract HitAndDip is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata extraData, uint256 rng)
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
         public
         override
     {
@@ -42,8 +42,8 @@ contract HitAndDip is StandardAttack {
         (int32 damage,) = _move(battleKey, attackerPlayerIndex, rng);
 
         if (damage > 0) {
-            // Decode the swap index from extraData and swap the active mon
-            (uint256 swapIndex) = abi.decode(extraData, (uint256));
+            // extraData contains the swap index as raw uint240
+            uint256 swapIndex = uint256(extraData);
             ENGINE.switchActiveMon(attackerPlayerIndex, swapIndex);
         }
     }

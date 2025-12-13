@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY} from "../../Constants.sol";
+import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep, ExtraDataType, MoveClass, Type} from "../../Enums.sol";
 import {MoveDecision, MonStateIndexName, EffectInstance} from "../../Structs.sol";
 
@@ -24,7 +24,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return "Somniphobia";
     }
 
-    function move(bytes32 battleKey, uint256, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256, uint240, uint256) external {
         // Add effect globally for 6 turns (only if it's not already in global effects)
         (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
@@ -51,7 +51,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -72,8 +72,11 @@ contract Somniphobia is IMoveSet, BasicEffect {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
 
+        // Unpack the move index from packedMoveIndex
+        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+
         // If this player rested (NO_OP), deal damage
-        if (moveDecision.moveIndex == NO_OP_MOVE_INDEX) {
+        if (moveIndex == NO_OP_MOVE_INDEX) {
             uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
             int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM;
 

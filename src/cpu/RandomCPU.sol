@@ -18,7 +18,7 @@ contract RandomCPU is CPU {
     function calculateMove(bytes32 battleKey, uint256 playerIndex)
         external
         override
-        returns (uint128 moveIndex, bytes memory extraData)
+        returns (uint128 moveIndex, uint240 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) = calculateValidMoves(battleKey, playerIndex);
 

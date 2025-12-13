@@ -45,7 +45,7 @@ contract MegaStarBlast is IMoveSet {
         return -1;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         // Check if Storm is active
         uint32 acc = BASE_ACCURACY;
         int32 stormIndex = _checkForOverclock(battleKey);
@@ -97,7 +97,7 @@ contract MegaStarBlast is IMoveSet {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

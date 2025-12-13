@@ -36,7 +36,7 @@ contract Gachachacha is IMoveSet {
         return "Gachachacha";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         uint256 chance = rng % OPP_KO_THRESHOLD_R;
         uint32 basePower;
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
@@ -85,7 +85,7 @@ contract Gachachacha is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

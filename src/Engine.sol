@@ -55,7 +55,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 playerIndex,
         uint256 monIndex,
         uint256 moveIndex,
-        bytes extraData,
+        uint240 extraData,
         int32 staminaCost
     );
     event DamageDeal(
@@ -270,8 +270,8 @@ contract Engine is IEngine, MappingAllocator {
             revert GameAlreadyOver();
         }
 
-        // Check that at least one move has been set
-        if (config.p0Move.isRealTurn != 1 && config.p1Move.isRealTurn != 1) {
+        // Check that at least one move has been set (isRealTurn is stored in bit 7 of packedMoveIndex)
+        if ((config.p0Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0 && (config.p1Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0) {
             revert MovesNotSet();
         }
 
@@ -488,11 +488,11 @@ contract Engine is IEngine, MappingAllocator {
         // End of turn cleanup:
         // - Progress turn index
         // - Set the player switch for turn flag on battle data
-        // - Clear move flags for next turn (set to 2 = fake/not set)
+        // - Clear move flags for next turn (clear isRealTurn bit by setting packedMoveIndex to 0)
         battle.turnId += 1;
         battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
-        config.p0Move.isRealTurn = 2;
-        config.p1Move.isRealTurn = 2;
+        config.p0Move.packedMoveIndex = 0;
+        config.p1Move.packedMoveIndex = 0;
 
         // Emits switch for turn flag for the next turn, but the priority index for this current turn
         emit EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex);
@@ -815,7 +815,7 @@ contract Engine is IEngine, MappingAllocator {
         // If the switch is invalid, we simply do nothing and continue execution
     }
 
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint128 moveIndex, bytes32 salt, bytes memory extraData)
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
         external
     {
         // Use cached key if called during execute(), otherwise lookup
@@ -830,8 +830,12 @@ contract Engine is IEngine, MappingAllocator {
             revert NoWriteAllowed();
         }
 
-        // Simply overwrite the move for this player (isRealTurn = 1 means real turn)
-        MoveDecision memory newMove = MoveDecision({moveIndex: moveIndex, isRealTurn: 1, extraData: extraData});
+        // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
+        // Regular moves (< SWITCH_MOVE_INDEX) are stored as moveIndex + 1 to avoid zero ambiguity
+        uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
+        uint8 packedMoveIndex = storedMoveIndex | IS_REAL_TURN_BIT;
+
+        MoveDecision memory newMove = MoveDecision({packedMoveIndex: packedMoveIndex, extraData: extraData});
 
         if (playerIndex == 0) {
             config.p0Move = newMove;
@@ -973,6 +977,10 @@ contract Engine is IEngine, MappingAllocator {
         int32 staminaCost;
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
 
+        // Unpack moveIndex from packedMoveIndex (lower 7 bits, with +1 offset for regular moves)
+        uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
+        uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
+
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
         MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
@@ -989,24 +997,24 @@ contract Engine is IEngine, MappingAllocator {
 
         // Handle a switch or a no-op
         // otherwise, execute the moveset
-        if (move.moveIndex == SWITCH_MOVE_INDEX) {
-            // Handle the switch
-            _handleSwitch(battleKey, playerIndex, abi.decode(move.extraData, (uint256)), address(0));
-        } else if (move.moveIndex == NO_OP_MOVE_INDEX) {
+        if (moveIndex == SWITCH_MOVE_INDEX) {
+            // Handle the switch (extraData contains the mon index to switch to as raw uint240)
+            _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
+        } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // Emit event and do nothing (e.g. just recover stamina)
-            emit MonMove(battleKey, playerIndex, activeMonIndex, move.moveIndex, move.extraData, staminaCost);
+            emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
         }
         // Execute the move and then set updated state, active mons, and effects/data
         else {
             // Call validateSpecificMoveSelection again from the validator to ensure that it is still valid to execute
             // If not, then we just return early
             // Handles cases where e.g. some condition outside of the player's control leads to an invalid move
-            if (!config.validator.validateSpecificMoveSelection(battleKey, move.moveIndex, playerIndex, move.extraData))
+            if (!config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData))
             {
                 return playerSwitchForTurnFlag;
             }
 
-            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[move.moveIndex];
+            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
             // Update the mon state directly to account for the stamina cost of the move
             staminaCost = int32(moveSet.stamina(battleKey, playerIndex, activeMonIndex));
@@ -1015,7 +1023,7 @@ contract Engine is IEngine, MappingAllocator {
                 (monState.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? -staminaCost : monState.staminaDelta - staminaCost;
 
             // Emit event and then run the move
-            emit MonMove(battleKey, playerIndex, activeMonIndex, move.moveIndex, move.extraData, staminaCost);
+            emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
 
             // Run the move (no longer checking for a return value)
             moveSet.move(battleKey, playerIndex, move.extraData, tempRNG);
@@ -1228,8 +1236,13 @@ contract Engine is IEngine, MappingAllocator {
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
         BattleConfig storage config = battleConfig[_getStorageKey(battleKey)];
         BattleData storage battle = battleData[battleKey];
-        uint128 p0MoveIndex = config.p0Move.moveIndex;
-        uint128 p1MoveIndex = config.p1Move.moveIndex;
+
+        // Unpack move indices from packed format
+        uint8 p0StoredIndex = config.p0Move.packedMoveIndex & MOVE_INDEX_MASK;
+        uint8 p1StoredIndex = config.p1Move.packedMoveIndex & MOVE_INDEX_MASK;
+        uint8 p0MoveIndex = p0StoredIndex >= SWITCH_MOVE_INDEX ? p0StoredIndex : p0StoredIndex - MOVE_INDEX_OFFSET;
+        uint8 p1MoveIndex = p1StoredIndex >= SWITCH_MOVE_INDEX ? p1StoredIndex : p1StoredIndex - MOVE_INDEX_OFFSET;
+
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
         uint256 p0Priority;

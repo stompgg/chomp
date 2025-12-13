@@ -11,7 +11,7 @@ interface IValidator {
     ) external returns (bool);
 
     // Validates that you can't switch to the same mon, you have enough stamina, the move isn't disabled, etc.
-    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, bytes calldata extraData)
+    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
         external
         returns (bool);
 
@@ -20,7 +20,7 @@ interface IValidator {
         bytes32 battleKey,
         uint256 moveIndex,
         uint256 playerIndex,
-        bytes calldata extraData
+        uint240 extraData
     ) external returns (bool);
 
     // Validates that a switch is valid

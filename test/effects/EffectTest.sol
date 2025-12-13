@@ -147,11 +147,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks, both of them are move index 0 (do frostbite damage)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons have an effect length of 2 (including stat boost)
         (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -168,7 +168,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.SpecialAttack), -10);
 
         // Alice and Bob both select attacks, both of them are move index 0 (do frostbite damage)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2 (including stat boost)
         (effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -180,7 +180,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2);
 
         // Alice and Bob both select to do a no op
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check that health was reduced
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -3);
@@ -238,11 +238,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice switches to mon index 1, Bob induces frostbite
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Check that Alice's new mon at index 0 has taken damage
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -1);
@@ -302,22 +302,22 @@ contract EffectTest is Test, BattleHelper {
         */
 
         bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), 0);
         mockOracle.setRNG(1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), 0);
         mockOracle.setRNG(0);
         // Bob wakes up, inflicts on Alice
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
         // Alice is asleep, Bob does nothing, Alice switches to mon index 1, should be successful
         mockOracle.setRNG(1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0);
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
     }
 
@@ -393,11 +393,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks, both of them are move index 0 (inflict panic)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Both mons have inflicted panic
         (EffectInstance[] memory panicEffects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -419,10 +419,10 @@ contract EffectTest is Test, BattleHelper {
         mockOracle.setRNG(1);
 
         // Alice and Bob both select attacks, both of them are no ops (we wait a turn)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Alice and Bob both select attacks, both of them are no ops (we wait another turn)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // The panic effect should be over now
         (EffectInstance[] memory panicEffectsAfter, ) = engine.getEffects(battleKey, 1, 0);
@@ -478,11 +478,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks, both of them are move index 0 (apply burn status)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons have an effect length of 2 (including stat boost)
         (EffectInstance[] memory burnEffects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -499,7 +499,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -16);
 
         // Alice and Bob both select attacks again to increase burn degree
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2 (including stat boost)
         (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -513,7 +513,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -48);
 
         // Alice and Bob both select attacks again to increase burn degree to maximum
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2
         (effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -527,7 +527,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -112);
 
         // Alice and Bob both select attacks again to increase burn degree to maximum
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2
         (effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -629,11 +629,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks, both of them are move index 0 (apply zap status)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // But Alice should outspeed Bob, so Bob should have zero stamina delta
         // Whereas Alice should have -1 stamina delta
@@ -641,14 +641,14 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
 
         // Alice uses Zap, Bob switches to mon index 1
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, "", abi.encode(1));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, 0, uint240(1));
 
         // The move should outspeed the swap, so the swap doesn't happen
         // So Bob's active mon index should still be 0
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
 
         // Alice uses slower Zap, Bob switches to mon index 1
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, SWITCH_MOVE_INDEX, "", abi.encode(1));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, SWITCH_MOVE_INDEX, 0, uint240(1));
 
         // Bob's active mon index should be 1 (swap goes before getting Zapped)
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
@@ -658,7 +658,7 @@ contract EffectTest is Test, BattleHelper {
         assertEq(zapEffects.length, 1);
 
         // Alice does nothing, Bob attempts to switch to mon index 1
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(0));
 
         // Nothing happens because the Zap occurred
         // Check that Bob's active mon index is still 1 and the effect is removed
@@ -720,11 +720,11 @@ contract EffectTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses NoDamage, Bob does as well
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Both should have -4 stamina delta because of end of turn regen
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -4);
@@ -732,7 +732,7 @@ contract EffectTest is Test, BattleHelper {
 
         // Both players No Op, and this should heal them by an extra 1 stamina
         // So at end of turn, both players should have -2 stamina delta
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -2);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -2);
     }
@@ -795,7 +795,7 @@ contract EffectTest is Test, BattleHelper {
 
         // First move: both switch in their mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Verify Bob's mon has the heal effect applied (from ability on switch in)
@@ -812,7 +812,7 @@ contract EffectTest is Test, BattleHelper {
 
         // Alice uses ReduceSpAtkMove to reduce Bob's SpecialAttack
         // Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Get Bob's state after the move
         int32 bobHpAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);

@@ -35,7 +35,7 @@ contract EffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes memory, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[targetIndex];
         ENGINE.addEffect(targetIndex, activeMonIndex, EFFECT, bytes32(0));
@@ -53,7 +53,7 @@ contract EffectAttack is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

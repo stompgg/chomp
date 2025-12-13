@@ -41,7 +41,7 @@ contract VolatilePunch is StandardAttack {
         FROSTBITE_STATUS = _FROSTBITE_STATUS;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng)
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng)
         public
         override
     {

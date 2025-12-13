@@ -116,7 +116,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // First move: Alice switches to the mon with Interweaving ability, Bob switches to the other mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(1), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(0)
         );
 
         // Check that Bob's mon Attack stat has been decreased
@@ -128,7 +128,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Alice switches back to the regular mon, Bob does a No-Op
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
         );
 
         // Check that Bob's mon SpecialAttack stat has been decreased
@@ -226,17 +226,17 @@ contract InutiaTest is Test, BattleHelper {
 
         // First move: Both players select their mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Second move: Bob attacks Alice, Alice does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Record Alice's HP after taking damage
         int32 aliceHpAfterDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         // Third move: Alice uses ShrineStrike, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check that Alice's mon was healed by the correct amount (1/HEAL_DENOM of max HP)
         int32 aliceHpAfterHealing = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -285,11 +285,11 @@ contract InutiaTest is Test, BattleHelper {
 
         // Send in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both players select move index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert both mons have a sp atk / atk buff of 64 (half of 128) and 32 (half of 64)
         int32 aliceSpAtk = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
@@ -313,7 +313,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Now both players swap to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(1), abi.encode(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(1)
         );
 
         // The stat boost should carry over
@@ -328,11 +328,11 @@ contract InutiaTest is Test, BattleHelper {
 
         // Now both players swap back to mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both players select move index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // It should do something again, as the global effect is cleared
         aliceSpAtk = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
@@ -432,20 +432,20 @@ contract InutiaTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(v, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses CE, Bob does nothing (turn 1)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Using Chain Expansion twice will not lead to two global effects (turn 2)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 0);
         assertEq(effects.length, 1, "Chain Expansion should only be applied once");
 
         // Bob swaps to mon index 1 (turn 3)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
         );
 
         // Verify damage dealt to Bob's mon index 1 is 1/16 of max HP (charge 1)
@@ -454,7 +454,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps to mon index 2 (turn 4)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(2)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(2)
         );
 
         // Verify damage dealt to Bob's mon index 2 is 1/4 of max HP (charge 2)
@@ -463,7 +463,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps back to mon index 0 (turn 5)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(0)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(0)
         );
 
         // Verify damage dealt to Bob's mon index 0 is 1/8 of max HP (charge 3)
@@ -472,7 +472,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
         );
 
         // Verify damage dealt to Bob's mon index 1 is 1/16 of max HP (charge 4)
@@ -485,7 +485,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Test the heal
         // Alice uses CE, Bob deals damage
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
 
         // Verify that CE is back in global effects
         (effects, ) = engine.getEffects(battleKey, 2, 0);
@@ -497,12 +497,12 @@ contract InutiaTest is Test, BattleHelper {
 
         // Alice swaps to mon index 1, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );
 
         // Alice swaps back to mon index 0, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
         );
 
         // Verify Alice's mon index 0 is healed by 1/16 of max HP

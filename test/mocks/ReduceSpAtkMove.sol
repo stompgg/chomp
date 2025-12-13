@@ -25,7 +25,7 @@ contract ReduceSpAtkMove is IMoveSet {
         return "Reduce SpAtk";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, bytes memory, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Get the opposing player's index
         uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
@@ -48,7 +48,7 @@ contract ReduceSpAtkMove is IMoveSet {
         return Type.Mind;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

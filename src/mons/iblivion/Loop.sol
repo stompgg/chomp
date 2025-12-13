@@ -19,7 +19,7 @@ contract Loop is IMoveSet {
         return "Loop";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         int32 currentStaminaDelta =
             ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Stamina);
@@ -43,7 +43,7 @@ contract Loop is IMoveSet {
         return Type.Cosmic;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

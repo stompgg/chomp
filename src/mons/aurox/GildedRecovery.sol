@@ -24,9 +24,9 @@ contract GildedRecovery is IMoveSet {
         return "Gilded Recovery";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata extraData, uint256) external {
-        // Decode the mon index from extraData
-        (uint256 targetMonIndex) = abi.decode(extraData, (uint256));
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256) external {
+        // extraData contains the mon index as raw uint240
+        uint256 targetMonIndex = uint256(extraData);
 
         // Check if the target mon has a status effect
         bytes32 statusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, targetMonIndex);
@@ -83,7 +83,7 @@ contract GildedRecovery is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

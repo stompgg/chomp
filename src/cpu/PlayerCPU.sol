@@ -13,7 +13,7 @@ contract PlayerCPU is CPU {
 
     constructor(uint256 numMoves, IEngine engine, ICPURNG rng) CPU(numMoves, engine, rng) {}
 
-    function setMove(bytes32 battleKey, uint128 moveIndex, bytes calldata extraData) external {
+    function setMove(bytes32 battleKey, uint8 moveIndex, uint240 extraData) external {
         if (msg.sender != ENGINE.getPlayersForBattle(battleKey)[0]) {
             revert NotP0();
         }
@@ -28,7 +28,7 @@ contract PlayerCPU is CPU {
         external
         view
         override
-        returns (uint128 moveIndex, bytes memory extraData)
+        returns (uint128 moveIndex, uint240 extraData)
     {
         return (declaredMoveForBattle[battleKey].moveIndex, declaredMoveForBattle[battleKey].extraData);
     }

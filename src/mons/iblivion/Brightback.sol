@@ -31,7 +31,7 @@ contract Brightback is IMoveSet {
         return "Brightback";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         (int32 damageDealt,) = AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
@@ -77,7 +77,7 @@ contract Brightback is IMoveSet {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

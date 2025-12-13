@@ -182,7 +182,7 @@ contract PengymTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Check that Alice's mon has the PostWorkout effect
@@ -197,7 +197,7 @@ contract PengymTest is Test, BattleHelper {
         assertTrue(hasPostWorkoutEffect, "Alice's mon should have PostWorkout effect");
 
         // Bob uses PanicStatus attack on Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Set the rng to be 1 (so no early panic exit)
         mockOracle.setRNG(1);
@@ -218,12 +218,12 @@ contract PengymTest is Test, BattleHelper {
 
         // Alice switches to her second mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );
 
         // Alice switches back to her first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
         );
 
         // Check that Alice's mon no longer has the PanicStatus effect
@@ -357,7 +357,7 @@ contract PengymTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Check that Alice's mon has the PostWorkout effect
@@ -375,7 +375,7 @@ contract PengymTest is Test, BattleHelper {
         int32 specialAttackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
 
         // Bob uses FrostbiteStatus attack on Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Check that Alice's mon has the FrostbiteStatus effect
         (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
@@ -398,12 +398,12 @@ contract PengymTest is Test, BattleHelper {
 
         // Alice switches to her second mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );
 
         // Alice switches back to her first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
         );
 
         // Check that Alice's mon no longer has the FrostbiteStatus effect
@@ -469,25 +469,25 @@ contract PengymTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice deals damage to Bob, record the damage dealt
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
         int32 deepFreezeDamage = -1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Alice inflicts frostbite on Bob, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         int32 bobDamageBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Alice uses deep freeze, record the damage dealt
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         int32 bobDamageAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -573,11 +573,11 @@ contract PengymTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice selects pistol squat, Bob selects move index 1 and outspeeds
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, uint240(0), uint240(0));
 
         // Alice should be KO'ed
         int32 koFlag = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
@@ -585,11 +585,11 @@ contract PengymTest is Test, BattleHelper {
 
         // Alice swaps to mon index 1
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Active mon for Bob should be 1
@@ -598,7 +598,7 @@ contract PengymTest is Test, BattleHelper {
 
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Active mon for Bob should be 0
@@ -607,7 +607,7 @@ contract PengymTest is Test, BattleHelper {
 
         // Alice selects pistol squat, Bob does nothing (and dies)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
@@ -615,21 +615,21 @@ contract PengymTest is Test, BattleHelper {
 
         // Bob sends in mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Now Bob's mon index 1 is KOed
         // Bob sends in mon index 2
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(2), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
 
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Now Bob has mon index 2 (already took damage) and mon index 3
@@ -638,21 +638,21 @@ contract PengymTest is Test, BattleHelper {
 
         // Bob switches back to mon index 2, Alice does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(2)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(2)
         );
 
         // Alice KOs Bob's mon index 2
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob sends in mon index 3
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(3), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(3), true);
 
         // Alice tries to force a switch, but active mon should not change
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(bobActiveMonIndex, 3, "No mons left");

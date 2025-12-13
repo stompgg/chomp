@@ -35,7 +35,7 @@ contract GlobalEffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(bytes32, uint256, bytes memory, uint256) external {
+    function move(bytes32, uint256, uint240, uint256) external {
         ENGINE.addEffect(2, 0, EFFECT, bytes32(0));
     }
 
@@ -51,7 +51,7 @@ contract GlobalEffectAttack is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

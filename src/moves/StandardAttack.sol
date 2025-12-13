@@ -47,7 +47,7 @@ contract StandardAttack is IMoveSet, Ownable {
         _initializeOwner(owner);
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) public virtual {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) public virtual {
         _move(battleKey, attackerPlayerIndex, rng);
     }
 
@@ -88,7 +88,7 @@ contract StandardAttack is IMoveSet, Ownable {
         return (damage, eventType);
     }
 
-    function isValidTarget(bytes32, bytes calldata) public pure returns (bool) {
+    function isValidTarget(bytes32, uint240) public pure returns (bool) {
         return true;
     }
 

@@ -26,7 +26,7 @@ contract EternalGrudge is IMoveSet {
         return "Eternal Grudge";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Apply the debuff (50% debuff to both attack and special attack)
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
@@ -65,7 +65,7 @@ contract EternalGrudge is IMoveSet {
         return Type.Yang;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

@@ -8,7 +8,7 @@ import {MoveDecision, RevealedMove} from "../Structs.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";
 import {MonStateIndexName, Type, MoveClass} from "../Enums.sol";
 import {IMoveSet} from "../moves/IMoveSet.sol";
-import {SWITCH_MOVE_INDEX} from "../Constants.sol";
+import {SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
 
 contract OkayCPU is CPU {
 
@@ -30,7 +30,7 @@ contract OkayCPU is CPU {
     function calculateMove(bytes32 battleKey, uint256 playerIndex)
         external
         override
-        returns (uint128 moveIndex, bytes memory extraData)
+        returns (uint128 moveIndex, uint240 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) = calculateValidMoves(battleKey, playerIndex);
 
@@ -57,10 +57,10 @@ contract OkayCPU is CPU {
 
         // If it's the first turn, try and find a mon who has a type advantage to the opponent's type1
         if (turnId == 0) {
-            Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, abi.decode(opponentMove.extraData, (uint256)), MonStateIndexName.Type1));
+            Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, uint256(opponentMove.extraData), MonStateIndexName.Type1));
             Type[] memory selfTypes = new Type[](switches.length);
             for (uint256 i = 0; i < switches.length; i++) {
-                selfTypes[i] = Type(ENGINE.getMonValueForBattle(battleKey, playerIndex, abi.decode(switches[i].extraData, (uint256)), MonStateIndexName.Type1));
+                selfTypes[i] = Type(ENGINE.getMonValueForBattle(battleKey, playerIndex, uint256(switches[i].extraData), MonStateIndexName.Type1));
             }
             int256 bestIndex = _getTypeAdvantageOrNullToDefend(opponentType1, selfTypes);
             if (bestIndex != -1) {
@@ -106,8 +106,10 @@ contract OkayCPU is CPU {
                 if (hpDelta != 0) {
                     // Look up move if the opponent is switching and set the correct active mon index
                     uint256 opponentMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[opponentIndex];
-                    if (opponentMove.moveIndex == SWITCH_MOVE_INDEX) {
-                        opponentMonIndex = abi.decode(opponentMove.extraData, (uint256));
+                    // Unpack the move index from packedMoveIndex
+                    uint8 opponentMoveIndex = opponentMove.packedMoveIndex & MOVE_INDEX_MASK;
+                    if (opponentMoveIndex == SWITCH_MOVE_INDEX) {
+                        opponentMonIndex = uint256(opponentMove.extraData);
                     }
                     Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type1));
                     Type opponentType2 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type2));
@@ -145,7 +147,7 @@ contract OkayCPU is CPU {
     }
 
     // Biased towards moves versus swapping or resting
-    function _smartRandomSelect(bytes32 battleKey, RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) internal returns (uint128, bytes memory) {
+    function _smartRandomSelect(bytes32 battleKey, RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) internal returns (uint128, uint240) {
         uint256 rngIndex = _getRNG(battleKey);
         uint256 adjustedTotalMovesDenom = moves.length + 1;
         if (rngIndex % adjustedTotalMovesDenom == 0) {

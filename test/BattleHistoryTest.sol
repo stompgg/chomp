@@ -165,10 +165,10 @@ contract BattleHistoryTest is Test, BattleHelper {
         bytes32 battleKey,
         address p0,
         address p1,
-        uint128 p0MoveIndex,
-        uint128 p1MoveIndex,
-        bytes memory p0ExtraData,
-        bytes memory p1ExtraData
+        uint8 p0MoveIndex,
+        uint8 p1MoveIndex,
+        uint240 p0ExtraData,
+        uint240 p1ExtraData
     ) internal {
         bytes32 salt = "";
         bytes32 p0MoveHash = keccak256(abi.encodePacked(p0MoveIndex, salt, p0ExtraData));
@@ -198,11 +198,11 @@ contract BattleHistoryTest is Test, BattleHelper {
 
         // First move - both players switch to their mon
         _commitRevealExecute(
-            battleKey, battleData.p0, battleData.p1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            battleKey, battleData.p0, battleData.p1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Second move - both attack (faster mon wins)
-        _commitRevealExecute(battleKey, battleData.p0, battleData.p1, 0, 0, "", "");
+        _commitRevealExecute(battleKey, battleData.p0, battleData.p1, 0, 0, 0, 0);
     }
 
     function test_BattleHistoryOnlyUpdatesWhenCompleted() public {
@@ -215,14 +215,14 @@ contract BattleHistoryTest is Test, BattleHelper {
         assertEq(battleHistory.getNumBattles(BOB), 0, "Bob should have 0 battles before completion");
 
         // First turn - both switch to their mons
-        _commitRevealExecute(battleKey, ALICE, BOB, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecute(battleKey, ALICE, BOB, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
 
         // Stats should still be 0 after first turn
         assertEq(battleHistory.getNumBattles(ALICE), 0, "Alice should have 0 battles after switch");
         assertEq(battleHistory.getNumBattles(BOB), 0, "Bob should have 0 battles after switch");
 
         // Second turn - both attack (Alice wins)
-        _commitRevealExecute(battleKey, ALICE, BOB, 0, 0, "", "");
+        _commitRevealExecute(battleKey, ALICE, BOB, 0, 0, 0, 0);
 
         // Now stats should be updated
         assertEq(battleHistory.getNumBattles(ALICE), 1, "Alice should have 1 battle after completion");

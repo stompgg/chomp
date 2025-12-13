@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
@@ -52,13 +52,15 @@ contract Tinderclaws is IAbility, BasicEffect {
     {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
+        // Unpack the move index from packedMoveIndex
+        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
 
         // If resting, remove burn
-        if (moveDecision.moveIndex == NO_OP_MOVE_INDEX) {
+        if (moveIndex == NO_OP_MOVE_INDEX) {
             _removeBurnIfPresent(battleKey, targetIndex, monIndex);
         }
         // If used a move (not switch), 1/3 chance to self-burn
-        else if (moveDecision.moveIndex != SWITCH_MOVE_INDEX) {
+        else if (moveIndex != SWITCH_MOVE_INDEX) {
             // Make rng unique to this mon
             rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
             if (rng % BURN_CHANCE == BURN_CHANCE - 1) {

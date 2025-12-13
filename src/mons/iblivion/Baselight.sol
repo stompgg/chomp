@@ -45,7 +45,7 @@ contract Baselight is IMoveSet {
         ENGINE.setGlobalKV(_baselightKey(playerIndex, monIndex), uint192(newLevel));
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         uint32 baselightLevel = uint32(
             getBaselightLevel(
                 battleKey, attackerPlayerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex]
@@ -85,7 +85,7 @@ contract Baselight is IMoveSet {
         return Type.Cosmic;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

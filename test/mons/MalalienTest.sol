@@ -131,12 +131,12 @@ contract MalalienTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice's mon has ActusReus ability
         // Alice attacks and KOs Bob's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Bob's mon is KO'd
         int32 isKnockedOut = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut);
@@ -155,10 +155,10 @@ contract MalalienTest is Test, BattleHelper {
 
         // Bob switches to mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
 
         // Alice does nothing, Bob attacks and KOs Alice's mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify Alice's mon is KO'd
         isKnockedOut = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
@@ -210,11 +210,11 @@ contract MalalienTest is Test, BattleHelper {
 
         // Alice and Bob both send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both players use triple think
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, uint240(0), uint240(0));
 
         // SpecialAttack delta for both is 100
         int32 aliceSpAtkBoost = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
@@ -225,7 +225,7 @@ contract MalalienTest is Test, BattleHelper {
 
         // Alice uses it again, Bob swaps out
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(1)
+            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint240(0), uint240(1)
         );
 
         // Alice should be at 1.75 * 1.75 = 1.225 + 1.75 + 0.0875 = 2.0625, Bob should be at 0

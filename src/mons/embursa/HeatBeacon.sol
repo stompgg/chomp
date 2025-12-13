@@ -23,7 +23,7 @@ contract HeatBeacon is IMoveSet {
         return "Heat Beacon";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Apply burn to opposing mon
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 defenderMonIndex =
@@ -51,7 +51,7 @@ contract HeatBeacon is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

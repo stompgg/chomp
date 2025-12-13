@@ -88,11 +88,11 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Contagious Slumber, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that both Alice and Bob have Sleep status
         (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
@@ -161,14 +161,14 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Set RNG to guarantee stamina steal (>= 50)
         mockOracle.setRNG(50);
 
         // Alice uses Vital Siphon, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that Bob's stamina was drained by 1 and Alice gained 1
         int32 bobStaminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
@@ -176,24 +176,24 @@ contract XmonTest is Test, BattleHelper {
 
         // Alice spent 2 stamina for the move, gained 1 back = -1
         // Bob gained 1 from rest, lost 1 from drain = 0
-        assertEq(aliceStaminaDelta, 1 - int32(vitalSiphon.stamina("", 0, 0)), "Alice should have -1 stamina delta (spent 2, gained 1)");
+        assertEq(aliceStaminaDelta, 1 - int32(vitalSiphon.stamina(0, 0, 0)), "Alice should have -1 stamina delta (spent 2, gained 1)");
         assertEq(bobStaminaDelta, -1, "Bob should have -1 stamina delta from the drain");
 
         // Alice does nothing, Bob uses null move, no more stamina
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
 
         // Check that Bob has stamina delta of -5
         bobStaminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(bobStaminaDelta, -5, "Bob should have -5 stamina delta");
 
         // Alice does stamina drain, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob has 0 stamina, so no change so Alice doesn't get the drain
         bobStaminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         aliceStaminaDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         assertEq(bobStaminaDelta, -5, "Bob should still have -5 stamina delta");
-        assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina("", 0, 0)), "Alice should have -3 stamina delta (after using the move)");
+        assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina(0, 0, 0)), "Alice should have -3 stamina delta (after using the move)");
     }
 
     function test_somniphobiaDamagesMonsWhoRest() public {
@@ -220,11 +220,11 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Somniphobia, Bob uses Somniphobia too
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Verify that the global effect is applied
         (EffectInstance[] memory globalEffects, ) = engine.getEffects(battleKey, 2, 2);
@@ -238,7 +238,7 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(hasSomniphobia, "Somniphobia effect should be applied globally");
 
         // Both players rest (NO_OP)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that both mons took 1/16 of max HP as damage (160 / 16 = 10)
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -249,7 +249,7 @@ contract XmonTest is Test, BattleHelper {
         assertEq(bobHpDelta, expectedDamage, "Bob should take 1/16 max HP damage for resting");
 
         // Alice rests, Bob does nothing (but doesn't rest)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify that only Alice took additional damage
         aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -338,7 +338,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Alice sends in fast mon, Bob sends in slow mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(1)
         );
 
         // Verify that Alice has the Dreamcatcher effect
@@ -354,14 +354,14 @@ contract XmonTest is Test, BattleHelper {
 
         // Turn 1: Alice uses stamina burn (loses 3 stamina), Bob attacks Alice
         // At end of turn: Alice regains 1 stamina (from StaminaRegen), heals by 10 (from Dreamcatcher)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, 0, 0);
 
         int32 aliceHpAfterTurn1 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpAfterTurn1, -20);
 
         // Turn 2: Both players rest (NO_OP)
         // Alice heals from resting, then heals again at end of turn from stamina regen
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice is back to full HP
         int32 aliceHpAfterTurn2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -401,11 +401,11 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice has 1 stack and lost 1 stamina (5 -> 4), Bob took damage
         int32 aliceStaminaAfterTurn1 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
@@ -414,7 +414,7 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(bobHpAfterTurn1 < 0, "Bob should have taken damage");
 
         // Turn 2: Alice uses Night Terrors again, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice has 2 stacks and lost 2 more stamina (4 -> 2), Bob took more damage
         int32 aliceStaminaAfterTurn2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
@@ -424,7 +424,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Turn 3: Alice uses Night Terrors again, Bob does nothing
         // Alice has 2 stamina but 3 stacks, so no trigger
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice's stamina didn't change (still at 2) and Bob's HP didn't change
         int32 aliceStaminaAfterTurn3 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
@@ -468,11 +468,11 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice's mon 0 has Night Terrors effect
         (EffectInstance[] memory aliceEffectsBeforeSwap, ) = engine.getEffects(battleKey, 0, 0);
@@ -486,7 +486,7 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(hasNightTerrorsBeforeSwap, "Alice's mon 0 should have Night Terrors effect before swap");
 
         // Turn 2: Alice swaps to mon 1, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0);
 
         // Verify Alice's mon 0 no longer has Night Terrors effect
         (EffectInstance[] memory aliceEffectsAfterSwap, ) = engine.getEffects(battleKey, 0, 0);
@@ -556,27 +556,27 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Set RNG to 1 to prevent early waking from sleep (rng % 3 == 0 wakes early)
         mockOracle.setRNG(1);
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check damage dealt to Bob (should be BASE_DAMAGE_PER_STACK = 20)
         int32 bobHpAfterAwakeDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         int32 awakeDamage = -bobHpAfterAwakeDamage;
 
         // Turn 2: Alice swaps out to mon 1 to clear Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0);
 
         // Turn 3: Alice swaps back to mon 0, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0);
 
         // Turn 4: Alice uses Sleep move on Bob, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Bob is asleep
         (EffectInstance[] memory bobEffects, ) = engine.getEffects(battleKey, 1, 0);
@@ -593,7 +593,7 @@ contract XmonTest is Test, BattleHelper {
         int32 bobHpBeforeAsleepDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Turn 5: Alice uses Night Terrors on sleeping Bob, Bob does nothing (forced by sleep)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check damage dealt to Bob (should be ASLEEP_DAMAGE_PER_STACK = 30)
         int32 bobHpAfterAsleepDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);

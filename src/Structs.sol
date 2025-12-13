@@ -43,10 +43,11 @@ struct Battle {
     IEngineHook[] engineHooks;
 }
 
+// Packed into 1 storage slot (8 + 240 = 248 bits)
+// packedMoveIndex: lower 7 bits = moveIndex (0-127), bit 7 = isRealTurn (1 = real, 0 = not set)
 struct MoveDecision {
-    uint128 moveIndex;
-    uint8 isRealTurn; // 1 = real turn, 2 = fake/not set
-    bytes extraData;
+    uint8 packedMoveIndex;
+    uint240 extraData;
 }
 
 // Stored by the Engine, tracks immutable battle data and battle state
@@ -159,9 +160,9 @@ struct PlayerDecisionData {
 }
 
 struct RevealedMove {
-    uint128 moveIndex;
+    uint8 moveIndex;
+    uint240 extraData;
     bytes32 salt;
-    bytes extraData;
 }
 
 // Used for StatBoosts

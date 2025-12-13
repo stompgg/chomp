@@ -62,6 +62,11 @@ contract EngineTest is Test, BattleHelper {
     Mon dummyMon;
     IMoveSet dummyAttack;
 
+    // Helper to pack ForceSwitchMove extraData: lower 120 bits = playerIndex, upper 120 bits = monToSwitchIndex
+    function _packForceSwitch(uint256 playerIndex, uint256 monToSwitchIndex) internal pure returns (uint240) {
+        return uint240(playerIndex | (monToSwitchIndex << 120));
+    }
+
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
         engine = new Engine();
@@ -119,11 +124,11 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Alice and Bob both commit to switching
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob do a no-op
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Turn ID should now be 2
         (, BattleData memory state) = engine.getBattle(battleKey);
@@ -187,12 +192,12 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
         // (Alice should win because her mon is faster)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert Alice wins
         assertEq(engine.getWinner(battleKey), ALICE);
@@ -265,11 +270,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert Bob wins as he has faster priority on a slower mon
         assertEq(engine.getWinner(battleKey), BOB);
@@ -349,11 +354,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // End result is Bob KO's Alice's mon (wins on priority even though lower speed), so Alice now needs to switch
 
@@ -375,11 +380,11 @@ contract EngineTest is Test, BattleHelper {
 
         // Reveal Alice's move, and advance game state
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), uint240(1), false);
         engine.execute(battleKey);
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert Bob wins as he has faster priority on a slower mon
         assertEq(engine.getWinner(battleKey), BOB);
@@ -400,7 +405,7 @@ contract EngineTest is Test, BattleHelper {
         // Attempt to reveal Alice's move, and assert that we cannot advance the game state
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), abi.encode(0), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), uint240(0), false);
 
         // Attempt to forcibly advance the game state
         vm.expectRevert();
@@ -477,15 +482,15 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
         // (No mons are knocked out yet)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Let Alice and Bob commit and reveal to both choosing attack again
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Both Alice and Bob's mons have the same speed, so the final priority player is rng % 2
         (, BattleData memory state) = engine.getBattle(battleKey);
@@ -536,11 +541,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Second move, have Alice swap out to mon at index 1, have Bob use attack
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the switched in mon
@@ -590,11 +595,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Second move, have Alice swap out to mon at index 1, have Bob use fast attack
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the previous mon
@@ -644,11 +649,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Second move, have Alice swap out to mon at index 1, have Bob use fast attack which supersedes Switch
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Given that it's a KO (even though Alice chose switch),
         // check that now they have the priority flag again
@@ -704,12 +709,12 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
         // (No mons are knocked out yet)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert that the staminaDelta was set correctly (now back to 0)
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0);
@@ -784,11 +789,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert that Bob's move missed (did no damage)
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0);
@@ -857,19 +862,19 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Commit move index 0 for Bob
-        uint128 moveIndex = 0;
+        uint8 moveIndex = 0;
         vm.startPrank(BOB);
-        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), ""));
+        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), uint240(0)));
         commitManager.commitMove(battleKey, bobMoveHash);
 
         // Assert that Alice cannot reveal anything because of the stamina cost (she has the high stamina cost mon)
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, moveIndex, bytes32(""), "", false);
+        commitManager.revealMove(battleKey, moveIndex, bytes32(""), uint240(0), false);
     }
 
     // Ensure that we cannot write to mon state when there is no active execute() call in the call stack
@@ -884,7 +889,7 @@ contract EngineTest is Test, BattleHelper {
         // Adding effect directly should revert
         vm.startPrank(ALICE);
         vm.expectRevert(Engine.NoWriteAllowed.selector);
-        engine.addEffect(0, 0, IEffect(address(0)), "");
+        engine.addEffect(0, 0, IEffect(address(0)), 0);
 
         // Deleting effect directly should revert
         vm.startPrank(ALICE);
@@ -955,13 +960,13 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, which for Bob afflicts the instant death condition on the
         // opposing mon (Alice's) and knocks it out
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Assert Bob wins
@@ -1035,20 +1040,20 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, which for Bob afflicts the instant death condition on the
         // opposing mon (Alice's) and knocks it out
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Now only Alice should be able to switch
         vm.startPrank(ALICE);
 
         // Alice should be able to reveal because she is the only player (player flag should be set)
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), uint240(1), false);
 
         // Execute the switch
         engine.execute(battleKey);
@@ -1094,13 +1099,13 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice swaps to mon index 1, and Bob applies the effect
         // The effect should be applied to mon index 1 for Alice but only during the duration of the turn
         // (We have a check for 2 instead of 1 to avoid confusing it with the base case state)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Assert that the temporary stat boost effect is updated to 2 because the roundEnd hook also runs
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Attack), 2);
@@ -1169,14 +1174,14 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, which for Bob afflicts the instant death condition on the
         // opposing mon (Alice's)
         // But Alice's mon should KO Bob's before the end of round takes place
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Assert Alice wins
@@ -1250,26 +1255,26 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, which for Bob afflicts the instant death condition on the
         // opposing mon (Alice's) and knocks it out
         // But Bob moves first (higher priority), so he gets the instant death affliction
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Now if Alice tries to pick a non-switch move, the engine should revert
         vm.startPrank(ALICE);
         bytes32 salt = "";
-        uint128 aliceMoveIndex = 0;
+        uint8 aliceMoveIndex = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, extraData));
         commitManager.commitMove(battleKey, aliceMoveHash);
 
         // Bob reveals a swap
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Alice's reveal will revert (must choose switch)
         vm.startPrank(ALICE);
@@ -1344,19 +1349,19 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, which for Bob afflicts the instant death condition on the
         // opposing mon (Alice's) and knocks it out
         // But Bob moves first (higher priority), so he gets the instant death affliction
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Now both moves have to swap to index 1 for their mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(1), abi.encode(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(1)
         );
     }
 
@@ -1419,15 +1424,15 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0
         // Bob goes for a fast skip turn effect
         // Alice tries to go fast for a lethal effect
         // Bob should win priority and inflict skip turn effect
-        uint128 moveIndex = 0;
-        bytes memory extraData = "";
+        uint8 moveIndex = 0;
+        uint240 extraData = 0;
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, moveIndex, moveIndex, extraData, extraData);
 
         // Assert no winner, and no damage dealt
@@ -1502,11 +1507,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, but Alice encodes a swap to mon index 1 for player index 1 (Bob)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, abi.encode(1, 1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(1, 1), 0);
 
         // Verify that Bob's mon is now index 1
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
@@ -1582,11 +1587,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Both player pick move index 0, but Alice encodes a swap to mon index 1 for player index 0 (Alice)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, abi.encode(0, 1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(0, 1), 0);
 
         // Assert that Alice's mon is now index 1
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
@@ -1662,20 +1667,20 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Bob commit and reveal to attack (move index 0)
-        bytes memory extraData = "";
+        uint240 extraData = 0;
         bytes32 salt = "";
-        uint128 moveIndex = 0;
+        uint8 moveIndex = 0;
         vm.startPrank(BOB);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(moveIndex, salt, extraData)));
 
         // Let Alice commit to switching to mon index 0 (invalid target) with player index 0 (herself)
         // Alice can now reveal, but the switchActiveMon call inside ForceSwitchMove will revert
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, moveIndex, salt, abi.encode(0, 0), false);
+        commitManager.revealMove(battleKey, moveIndex, salt, _packForceSwitch(0, 0), false);
 
         // Ensure Bob can reveal
         vm.startPrank(BOB);
@@ -1755,19 +1760,19 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Bob commit and reveal to attack (move index 0)
-        bytes memory extraData = "";
+        uint240 extraData = 0;
         bytes32 salt = "";
-        uint128 moveIndex = 0;
+        uint8 moveIndex = 0;
         vm.startPrank(BOB);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(moveIndex, salt, extraData)));
 
         // Alice can now reveal, but the switchActiveMon call inside ForceSwitchMove will revert
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, 0, salt, abi.encode(1, 0), false);
+        commitManager.revealMove(battleKey, 0, salt, _packForceSwitch(1, 0), false);
 
         // Ensure Bob can reveal
         vm.startPrank(BOB);
@@ -1852,13 +1857,13 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let both players select move index 0
         // (Have Alice force themselves to switch to mon index 1)
         // (But swapping to mon index 1 will trigger on switch in and kill the mon)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, abi.encode(0, 1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(0, 1), 0);
 
         // Assert that the player switch for turn flag is now 0, indicating Alice has to switch
         (, BattleData memory state) = engine.getBattle(battleKey);
@@ -1922,13 +1927,13 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // (Have Alice force Bob to switch to mon index 1, have Bob select the instant death switch in effect
         // (But swapping to mon index 1 will trigger on switch in and kill the mon)
         // Instant death on switch in (by Bob's mon) will trigger and kill his own mon
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, abi.encode(1, 1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, _packForceSwitch(1, 1), 0);
 
         // Assert that the player switch for turn flag is now 0, indicating Bob has to switch
         (, BattleData memory state) = engine.getBattle(battleKey);
@@ -1991,12 +1996,12 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Have Alice switch to their second mon, have Bob select the instant death switch in effect
         // (But swapping to mon index 1 for Alice will trigger on switch in and kill the mon)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Assert that the player switch for turn flag is now 0, indicating Alice has to switch
         (, BattleData memory state) = engine.getBattle(battleKey);
@@ -2066,7 +2071,7 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // After this, Alice's mon should be dead and Bob should be the winner
@@ -2161,11 +2166,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice switches themselves to mon index 1, while Bob chooses move index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, abi.encode(0, 1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(0, 1), 0);
 
         // Assert that Alice's new mon is now KOed
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.IsKnockedOut), 1);
@@ -2262,11 +2267,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice switches themselves to mon index 1, while Bob chooses move index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), 0);
 
         // Assert that Alice's new mon is now KOed
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.IsKnockedOut), 1);
@@ -2318,14 +2323,14 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks (they should apply the single instance effect on hit)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Alice and Bob again both select attacks again
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert that the effect was only applied once
         (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
@@ -2364,19 +2369,19 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob commits to NO_OP
         vm.startPrank(BOB);
-        uint128 moveIndex = NO_OP_MOVE_INDEX;
-        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), ""));
+        uint8 moveIndex = NO_OP_MOVE_INDEX;
+        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), uint240(0)));
         commitManager.commitMove(battleKey, bobMoveHash);
 
         // Alice should revert when revealing
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, 0, bytes32(""), "", false);
+        commitManager.revealMove(battleKey, 0, bytes32(""), uint240(0), false);
     }
 
     function test_onMonSwitchOutHookWorksWithTempStatBoost() public {
@@ -2420,11 +2425,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks (they should apply the temporary stat boost effect)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert that the temporary stat boost effect was applied to both mons
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack), 1);
@@ -2432,7 +2437,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Alice and Bob both switch to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(1), abi.encode(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(1)
         );
 
         // Assert that the temporary stat boost effect was removed from both mons
@@ -2487,14 +2492,14 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice and Bob both select attacks, both of them are move index 0 (do damage rebound)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Alice and Bob both select attacks, both of them are move index 1 (normal attack)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 1, 0, 0);
 
         // Assert that the rebound effect was applied to both mons
         // (both have done no damage now)
@@ -2539,7 +2544,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Alice commits to swapping in mon index 1
         bytes32 salt = "";
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, abi.encode(1)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(1)));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, aliceMoveHash);
 
@@ -2549,19 +2554,19 @@ contract EngineTest is Test, BattleHelper {
 
         // Bob reveals
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Bob cannot reveal twice
         vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Alice reveals but does not execute
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Second reveal should also fail
         vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
     }
 
     function test_cannotCommitToEndedBattle() public {
@@ -2592,7 +2597,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Bob does nothing (it's his turn to move, so he'll lose by timeout)
@@ -2641,7 +2646,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Alice commits to switch to mon index 0
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, "", abi.encode(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
 
         // Attempt to end the battle immediately (same block as start)
         // Bob hasn't committed and timeout is 0, so Bob loses, but game should revert
@@ -2690,10 +2695,10 @@ contract EngineTest is Test, BattleHelper {
 
     function _commitRevealExecuteForAliceAndBob(
         bytes32 battleKey,
-        uint128 aliceMoveIndex,
-        uint128 bobMoveIndex,
-        bytes memory aliceExtraData,
-        bytes memory bobExtraData
+        uint8 aliceMoveIndex,
+        uint8 bobMoveIndex,
+        uint240 aliceExtraData,
+        uint240 bobExtraData
     ) internal {
         bytes32 salt = "";
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
@@ -2795,7 +2800,7 @@ contract EngineTest is Test, BattleHelper {
     function test_turn0DefaultCommitManagerValidPreimage() public {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
         bytes32 salt = "";
-        bytes memory extraData = abi.encode(0);
+        uint240 extraData = uint240(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
 
         // Ensure Alice cannot reveal yet because Alice has not yet committed
@@ -2854,7 +2859,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Alice commit to choosing switch
         bytes32 salt = "";
-        bytes memory extraData = abi.encode(0);
+        uint240 extraData = uint240(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
 
         // Let Alice commit the first move (switching in mon index 0)
@@ -2874,7 +2879,7 @@ contract EngineTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // New turn, both players swap to mon index 1
-        extraData = abi.encode(1);
+        extraData = uint240(1);
         moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
 
         // Ensure Bob cannot reveal yet because Bob has not yet committed
@@ -2900,7 +2905,7 @@ contract EngineTest is Test, BattleHelper {
         // Let Alice reveal their invalid move index of 0
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        bytes memory invalidExtraData = abi.encode(0);
+        uint240 invalidExtraData = uint240(0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, invalidExtraData, true);
 
         // Now let Alice reveal a valid move
@@ -2936,7 +2941,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Alice commit to choosing switch
         bytes32 salt = "";
-        bytes memory extraData = abi.encode(0);
+        uint240 extraData = uint240(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, moveHash);
@@ -2956,7 +2961,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Alice commit to choosing switch
         bytes32 salt = "";
-        bytes memory extraData = abi.encode(0);
+        uint240 extraData = uint240(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, moveHash);
@@ -3032,11 +3037,11 @@ contract EngineTest is Test, BattleHelper {
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
-            battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, 0, 0);
 
         // Alice should knock out Bob, but let Bob do nothing
         // Skip ahead TIMEOUT_DURATION * multiplier (as it's a new turn)
@@ -3076,9 +3081,9 @@ contract EngineTest is Test, BattleHelper {
         );
         bytes32 battleKey = _startBattle(validatorToUse, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         // Alice sends in mon index 0, Bob sends in the fast mon
-        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(1));
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(1));
         // Both players pick move index 0
-        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, abi.encode(1), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, uint240(1), uint240(0));
         // Switch for turn flag should be 0, Bob's active mon index should now be 0
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.playerSwitchForTurnFlag, 0);
@@ -3104,14 +3109,16 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validatorToUse, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice and Bob send in their first mon
-        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
 
         // Verify the dummy effect is applied to Alice's mon
         (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 1);
 
         // Alice uses the edit effect attack to change the extra data to 69 on Bob
-        _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(1, 0, indices[0]), "");
+        // Pack extraData: lower 80 bits = targetIndex (1), next 80 bits = monIndex (0), upper 80 bits = effectIndex
+        uint240 editExtraData = uint240(1 | (0 << 80) | (indices[0] << 160));
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
         (effects, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));
     }

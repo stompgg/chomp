@@ -20,7 +20,7 @@ contract InvalidMove is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(bytes32, uint256, bytes memory, uint256) external pure {
+    function move(bytes32, uint256, uint240, uint256) external pure {
         // No-op
     }
 
@@ -36,7 +36,7 @@ contract InvalidMove is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return false;
     }
 

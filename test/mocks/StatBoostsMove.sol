@@ -24,9 +24,12 @@ contract StatBoostsMove is IMoveSet {
         return "";
     }
 
-    function move(bytes32, uint256, bytes memory extraData, uint256) external {
-        (uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) =
-            abi.decode(extraData, (uint256, uint256, uint256, int32));
+    function move(bytes32, uint256, uint240 extraData, uint256) external {
+        // Unpack extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
+        uint256 playerIndex = uint256(extraData) & ((1 << 60) - 1);
+        uint256 monIndex = (uint256(extraData) >> 60) & ((1 << 60) - 1);
+        uint256 statIndex = (uint256(extraData) >> 120) & ((1 << 60) - 1);
+        int32 boostAmount = int32(int256((uint256(extraData) >> 180) & ((1 << 60) - 1)));
 
         // For all tests, we'll use Temp stat boosts with Multiply type for positive boosts
         // and Divide type for negative boosts
@@ -58,7 +61,7 @@ contract StatBoostsMove is IMoveSet {
         return Type.Air;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

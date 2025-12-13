@@ -18,8 +18,11 @@ contract EditEffectAttack is IMoveSet {
         return "Edit Effect Attack";
     }
 
-    function move(bytes32, uint256, bytes memory extraData, uint256) external {
-        (uint256 targetIndex, uint256 monIndex, uint256 effectIndex) = abi.decode(extraData, (uint256, uint256, uint256));
+    function move(bytes32, uint256, uint240 extraData, uint256) external {
+        // Unpack extraData: lower 80 bits = targetIndex, next 80 bits = monIndex, upper 80 bits = effectIndex
+        uint256 targetIndex = uint256(extraData) & ((1 << 80) - 1);
+        uint256 monIndex = (uint256(extraData) >> 80) & ((1 << 80) - 1);
+        uint256 effectIndex = (uint256(extraData) >> 160) & ((1 << 80) - 1);
         ENGINE.editEffect(targetIndex, monIndex, effectIndex, bytes32(uint256(69)));
     }
 
@@ -35,7 +38,7 @@ contract EditEffectAttack is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

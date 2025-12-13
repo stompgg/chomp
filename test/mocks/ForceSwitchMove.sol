@@ -32,9 +32,10 @@ contract ForceSwitchMove is IMoveSet {
         return "Force Switch";
     }
 
-    function move(bytes32, uint256, bytes memory extraData, uint256) external {
-        // Decode data as (uint256 playerIndex, uint256 monToSwitchIndex)
-        (uint256 playerIndex, uint256 monToSwitchIndex) = abi.decode(extraData, (uint256, uint256));
+    function move(bytes32, uint256, uint240 extraData, uint256) external {
+        // Decode data as packed (playerIndex in lower 120 bits, monToSwitchIndex in upper 120 bits)
+        uint256 playerIndex = uint256(extraData) & ((1 << 120) - 1);
+        uint256 monToSwitchIndex = uint256(extraData) >> 120;
 
         // Use the new switchActiveMon function
         ENGINE.switchActiveMon(playerIndex, monToSwitchIndex);
@@ -52,7 +53,7 @@ contract ForceSwitchMove is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

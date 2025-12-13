@@ -32,7 +32,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return "Night Terrors";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
@@ -91,7 +91,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

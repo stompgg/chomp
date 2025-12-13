@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
@@ -37,10 +37,11 @@ contract SleepStatus is StatusEffect {
 
     function _applySleep(uint256 targetIndex, uint256) internal {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
-        // Get exiting move index
+        // Get exiting move index (unpack from packedMoveIndex)
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
-        if (moveDecision.moveIndex != SWITCH_MOVE_INDEX) {
-            ENGINE.setMove(battleKey, targetIndex, NO_OP_MOVE_INDEX, "", "");
+        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+        if (moveIndex != SWITCH_MOVE_INDEX) {
+            ENGINE.setMove(battleKey, targetIndex, NO_OP_MOVE_INDEX, "", 0);
         }
     }
 

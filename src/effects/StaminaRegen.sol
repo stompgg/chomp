@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import "../Constants.sol";
+import {NO_OP_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
 import "../Enums.sol";
 import {MoveDecision} from "../Structs.sol";
 
@@ -55,7 +55,9 @@ contract StaminaRegen is BasicEffect {
     {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
-        if (moveDecision.moveIndex == NO_OP_MOVE_INDEX) {
+        // Unpack the move index from packedMoveIndex
+        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+        if (moveIndex == NO_OP_MOVE_INDEX) {
             _regenStamina(targetIndex, monIndex);
         }
         return (bytes32(0), false);

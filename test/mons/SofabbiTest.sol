@@ -110,7 +110,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Verify that the CarrotHarvest effect was applied to Alice's mon
@@ -119,12 +119,12 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Now have Alice switch to her second mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(1), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );
 
         // Now have Alice switch back to her first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, abi.encode(0), ""
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
         );
 
         // Verify that the CarrotHarvest effect is still only applied once
@@ -190,7 +190,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Verify that staminaDelta is 1 for both mons
@@ -201,7 +201,7 @@ contract SofabbiTest is Test, BattleHelper {
         mockOracle.setRNG(0);
 
         // Alice and Bob both do nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that staminaDelta is still 1 for both mons
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 1);
@@ -299,28 +299,28 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0, the Air mon)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Damage is returned in negative, so that's why there are some weird sign cancellations below
 
         // Alice uses Guest Feature targeting mon index 1, it should deal 2x damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(1), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), uint240(0)
         );
         int32 bobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertApproxEqRel(-1 * bobDmg, int32(2 * gf.BASE_POWER()), 2e17);
 
         // Alice uses Guest Feature targeting mon index 2, it should deal 0 damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(2), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(2), uint240(0)
         );
         int32 newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertEq(newBobDmg, bobDmg, "No damage");
 
         // Alice uses Guest Feature targeting mon index 3, it should deal 1/2 damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(3), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(3), uint240(0)
         );
         newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         bobDmg = bobDmg - newBobDmg;
@@ -377,44 +377,44 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses nothing, Bob uses move index 1, puts Alice at 1 HP
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
 
         int32 hpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         // Alice uses Snack Break, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 hpAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         assertEq(hpAfter - hpBefore, 64, "Healing worked");
 
         // Alice uses Snack Break, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 hpAfter2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         assertEq(hpAfter2 - hpAfter, 32, "Healing worked, went down");
 
         // Alice uses Snack Break, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 hpAfter3 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         assertEq(hpAfter3 - hpAfter2, 16, "Healing worked, went down");
 
         // Alice uses Snack Break, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 hpAfter4 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         assertEq(hpAfter4 - hpAfter3, 8, "Healing worked, went down");
 
         // Alice uses Snack Break, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 hpAfter5 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
@@ -454,14 +454,14 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Set rng to be 10
         mockOracle.setRNG(10);
 
         // Alice uses an attack, it should do minimal damage
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check damage dealt to Bob
         int32 bobDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -472,7 +472,7 @@ contract SofabbiTest is Test, BattleHelper {
         mockOracle.setRNG(gacha.MAX_BASE_POWER() + 1);
 
         // Alice uses an attack, it should hurt themselves for a lot
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         int32 aliceDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertApproxEqRel(aliceDamage, -1024, 2e17, "high self damage from rng");
 
@@ -480,7 +480,7 @@ contract SofabbiTest is Test, BattleHelper {
         mockOracle.setRNG(gacha.SELF_KO_THRESHOLD_R() + 1);
 
         // Opponent should be close to death (maybe not due to variance)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         bobDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertApproxEqRel(bobDamage, -1024, 2e17, "low damage from rng");
     }

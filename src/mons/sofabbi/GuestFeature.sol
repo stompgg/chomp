@@ -25,8 +25,8 @@ contract GuestFeature is IMoveSet {
         return "Guest Feature";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata extraData, uint256 rng) external {
-        uint256 monIndex = abi.decode(extraData, (uint256));
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
+        uint256 monIndex = uint256(extraData);
         Type guestType =
             Type(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Type1));
         AttackCalculator._calculateDamage(
@@ -60,7 +60,7 @@ contract GuestFeature is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

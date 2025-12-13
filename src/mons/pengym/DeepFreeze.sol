@@ -43,7 +43,7 @@ contract DeepFreeze is IMoveSet {
         return -1;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256 rng) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
             ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
@@ -86,7 +86,7 @@ contract DeepFreeze is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

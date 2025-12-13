@@ -22,7 +22,7 @@ abstract contract CPUMoveManager {
         engine.updateMatchmakers(self, empty);
     }
 
-    function selectMove(bytes32 battleKey, uint128 moveIndex, bytes32 salt, bytes calldata extraData) external {
+    function selectMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external {
         if (msg.sender != ENGINE.getPlayersForBattle(battleKey)[0]) {
             revert NotP0();
         }
@@ -38,7 +38,7 @@ abstract contract CPUMoveManager {
         if (playerSwitchForTurnFlag == 0) {
             // P0's turn: player moves, CPU no-ops
             _addPlayerMove(battleKey, moveIndex, salt, extraData);
-            _addCPUMove(battleKey, NO_OP_MOVE_INDEX, "", "");
+            _addCPUMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
         } else if (playerSwitchForTurnFlag == 1) {
             // P1's turn: player no-ops, CPU moves
             _addPlayerMove(battleKey, NO_OP_MOVE_INDEX, salt, extraData);
@@ -52,17 +52,17 @@ abstract contract CPUMoveManager {
         ENGINE.execute(battleKey);
     }
 
-    function _addPlayerMove(bytes32 battleKey, uint128 moveIndex, bytes32 salt, bytes calldata extraData) private {
+    function _addPlayerMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) private {
         ENGINE.setMove(battleKey, 0, moveIndex, salt, extraData);
     }
 
-    function _addCPUMove(bytes32 battleKey, uint128 moveIndex, bytes32 salt, bytes memory extraData) private {
+    function _addCPUMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) private {
         ENGINE.setMove(battleKey, 1, moveIndex, salt, extraData);
     }
 
     function _addCPUMoveFromAI(bytes32 battleKey) private {
-        (uint128 cpuMoveIndex, bytes memory cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1);
+        (uint128 cpuMoveIndex, uint240 cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1);
         bytes32 cpuSalt = keccak256(abi.encode(battleKey, msg.sender, block.timestamp));
-        _addCPUMove(battleKey, cpuMoveIndex, cpuSalt, cpuExtraData);
+        _addCPUMove(battleKey, uint8(cpuMoveIndex), cpuSalt, cpuExtraData);
     }
 }

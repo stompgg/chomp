@@ -37,7 +37,7 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Add effect to global effects
         ENGINE.addEffect(2, 2, this, _packExtraData(1, attackerPlayerIndex));
 
@@ -59,7 +59,7 @@ contract Q5 is IMoveSet, BasicEffect {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

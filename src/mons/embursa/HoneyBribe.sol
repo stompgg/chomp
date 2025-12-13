@@ -39,7 +39,7 @@ contract HoneyBribe is IMoveSet {
         }
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Heal active mon by max HP / 2**bribeLevel
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         uint256 bribeLevel = _getBribeLevel(battleKey, attackerPlayerIndex, activeMonIndex);
@@ -97,7 +97,7 @@ contract HoneyBribe is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

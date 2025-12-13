@@ -86,10 +86,10 @@ contract AuroxTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
         // Alice uses Bull Rush, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         int32 expectedSelfDamage = -1 * int32(maxHp) * int32(bullRush.SELF_DAMAGE_PERCENT()) / 100;
         assertEq(aliceHpDelta, expectedSelfDamage, "Alice should take self damage");
@@ -176,11 +176,11 @@ contract AuroxTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice spends 1 stamina, Bob inflicts frostbite
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, 0, 0, 0);
 
         // Verify that Alice's mon index 0 has spent 1 stamina
         assertEq(
@@ -197,7 +197,7 @@ contract AuroxTest is Test, BattleHelper {
         );
 
         // Alice swaps to mon index 1, Bob does the 50% attack
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 1, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 1, uint240(1), 0);
 
         // Verify that Alice's mon index 1 has taken 50% damage
         int32 aliceDamage = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp);
@@ -208,7 +208,7 @@ contract AuroxTest is Test, BattleHelper {
         );
 
         // Alice uses Gilded Recovery targeting self, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, uint240(1), 0);
 
         // Nothing should happen, mon index 0 for Alice should still have -1 staminaDelta, hpDelta for mon index 1 should still be the same
         assertEq(
@@ -223,7 +223,7 @@ contract AuroxTest is Test, BattleHelper {
         );
 
         // Alice uses Gilded Recovery targeting mon index , Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, abi.encode(0), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, uint240(0), 0);
 
         // Verify that Alice's mon index 1 is healed by 50% and mon index 0 has staminaDelta of 0, and no longer has frostbite
         assertEq(
@@ -284,14 +284,14 @@ contract AuroxTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Iron Wall, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         
         // Alice does nothing, Bob attacks
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
 
         // Verify that Alice's mon index 0 has taken damage (should be the basePower of the move multiplied by 100 - the heal percent)
         int32 aliceDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -349,14 +349,14 @@ contract AuroxTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Iron Wall, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Alice does nothing, Bob attacks
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
 
         // Verify that Alice's mon index 0 is KO'ed
         int32 isKnockedOut = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
@@ -412,18 +412,18 @@ contract AuroxTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses attack, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that Bob's mon index 0 has a positive attack delta of upOnly.ATTACK_BOOST_PERCENT()
         int32 bobAttackDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
         assertEq(bobAttackDelta, int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100, "Bob's mon should be boosted");
 
         // Alice does nothing, Bob switches to mon index 1
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, "", abi.encode(1));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1));
 
         // Verify that Bob's mon index 0 has a positive attack delta of upOnly.ATTACK_BOOST_PERCENT()
         bobAttackDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
@@ -458,14 +458,14 @@ contract AuroxTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Set rng to be 2 to trigger frostbite
         mockOracle.setRNG(2);
 
         // Alice uses volatile punch, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that Bob's mon index 0 has frostbite (first effect is stat boost)
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
@@ -476,7 +476,7 @@ contract AuroxTest is Test, BattleHelper {
         mockOracle.setRNG(6);
 
         // Alice does nothing, Bob uses volatile punch
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify that Alice's mon index 0 has burn (first effect is stat boost)
         (effects, ) = engine.getEffects(battleKey, 0, 0);

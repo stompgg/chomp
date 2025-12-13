@@ -25,7 +25,7 @@ contract TripleThink is IMoveSet {
         return "Triple Think";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Apply the buff
         uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -53,7 +53,7 @@ contract TripleThink is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

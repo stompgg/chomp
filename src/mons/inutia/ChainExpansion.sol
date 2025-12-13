@@ -34,7 +34,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, bytes calldata, uint256) external {
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Check if the ability is already applied globally
         (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
@@ -62,7 +62,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, bytes calldata) external pure returns (bool) {
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

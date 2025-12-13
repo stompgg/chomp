@@ -108,7 +108,7 @@ contract DefaultValidator is IValidator {
         bytes32 battleKey,
         uint256 moveIndex,
         uint256 playerIndex,
-        bytes calldata extraData
+        uint240 extraData
     ) public view returns (bool) {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         uint256 activeMonIndex = (playerIndex == 0) ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
@@ -132,7 +132,7 @@ contract DefaultValidator is IValidator {
     }
 
     // Validates that you can't switch to the same mon, you have enough stamina, the move isn't disabled, etc.
-    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, bytes calldata extraData)
+    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
         external
         view
         returns (bool)
@@ -169,7 +169,8 @@ contract DefaultValidator is IValidator {
         // If it is a switch move, then it's valid as long as the new mon isn't knocked out
         // AND if the new mon isn't the same index as the existing mon
         else if (moveIndex == SWITCH_MOVE_INDEX) {
-            uint256 monToSwitchIndex = abi.decode(extraData, (uint256));
+            // extraData contains the mon index to switch to as raw uint240
+            uint256 monToSwitchIndex = uint256(extraData);
             return _validateSwitchInternal(battleKey, playerIndex, monToSwitchIndex, ctx);
         }
 
@@ -213,7 +214,7 @@ contract DefaultValidator is IValidator {
         bytes32 battleKey,
         uint256 moveIndex,
         uint256 playerIndex,
-        bytes calldata extraData,
+        uint240 extraData,
         uint256 activeMonIndex
     ) internal view returns (bool) {
         // A move cannot be selected if its stamina costs more than the mon's current stamina

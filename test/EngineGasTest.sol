@@ -60,6 +60,11 @@ contract EngineGasTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     DefaultMatchmaker matchmaker;
 
+    // Helper to pack StatBoostsMove extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
+        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
+    }
+
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
         engine = new Engine();
@@ -148,37 +153,37 @@ contract EngineGasTest is Test, BattleHelper {
         // - Alice swaps in mon index 3
         // - Alice rests, Bob KOs
         vm.startSnapshotGas("FirstBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
         // Alice uses burn, Bob uses frostbite
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
         // Bob is mon index 0, we boost attack by 90%
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 2, abi.encode(1), abi.encode(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice is now mon index 1, Bob is mon index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, abi.encode(0, 1, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice swaps in mon index 0
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0), true);
         // Alice is now mon index 0, Bob rests
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, abi.encode(0, 0, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice KOs Bob
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
         // Bob sends in mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
         // Alice rests, Bob uses self-stat boost
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 2, "", abi.encode(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 2
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(2), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 3
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", abi.encode(3), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(3), true);
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 firstBattleGas = vm.stopSnapshotGas("FirstBattle");
 
         vm.startSnapshotGas("Intermediary stuff");
@@ -225,39 +230,39 @@ contract EngineGasTest is Test, BattleHelper {
 
         // - Both players send in mon 0
         vm.startSnapshotGas("SecondBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
         // - Alice sets up self-stat boost (move 3), Bob sets up Burn (move 1)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 1, abi.encode(0, 0, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 1, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // - Alice KOs Bob (move 0 = damage)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         // - Bob swaps in mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(1), true);
         // - Alice swaps in mon index 1, Bob sets up Frostbite (move 2)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, abi.encode(1), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
         // - Alice sets up self-stat boost (move 3, playerIndex=0, monIndex=1), Bob rests
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, NO_OP_MOVE_INDEX, abi.encode(0, 1, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, NO_OP_MOVE_INDEX, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // - Alice KOs Bob (move 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         // - Bob sends in mon index 2
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, "", abi.encode(2), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
         // - Alice rests, Bob uses self-stat boost (move 3, playerIndex=1, monIndex=2)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 3, "", abi.encode(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         // - Alice rests, Bob KOs (move 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
         // - Alice swaps in mon index 2
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, "", abi.encode(2), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
         // - Alice uses self-stat boost (move 3, p0 mon2), Bob uses self-stat boost (move 3, p1 mon2)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 3, abi.encode(0, 2, uint256(MonStateIndexName.Attack), int32(90)), abi.encode(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         // - Alice KOs Bob (move 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         // - Bob sends in mon index 3
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, "", abi.encode(3), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(3), true);
         // - Alice KOs Bob (move 0)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         uint256 secondBattleGas = vm.stopSnapshotGas("SecondBattle");
 
         // Battle 3: Repeat exact sequence of Battle 1 to test warm storage slots
@@ -281,37 +286,37 @@ contract EngineGasTest is Test, BattleHelper {
 
         // Battle 3: Exact same sequence as Battle 1
         vm.startSnapshotGas("ThirdBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
         // Alice uses burn, Bob uses frostbite
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 0, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 0, 1, 0, 0);
         // Bob is mon index 0, we boost attack by 90%
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, 2, abi.encode(1), abi.encode(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice is now mon index 1, Bob is mon index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, 3, abi.encode(0, 1, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice swaps in mon index 0
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, "", abi.encode(0), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(0), true);
         // Alice is now mon index 0, Bob rests
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, NO_OP_MOVE_INDEX, abi.encode(0, 0, uint256(MonStateIndexName.Attack), int32(90)), "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice KOs Bob
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 3, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 3, NO_OP_MOVE_INDEX, 0, 0);
         // Bob sends in mon index 1
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, "", abi.encode(1), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(1), true);
         // Alice rests, Bob uses self-stat boost
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 2, "", abi.encode(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 2
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, "", abi.encode(2), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(2), true);
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 3
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, "", abi.encode(3), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(3), true);
         // Alice rests, Bob KOs
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 thirdBattleGas = vm.stopSnapshotGas("ThirdBattle");
 
         // Log the values
@@ -384,8 +389,8 @@ contract EngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Battle1_Execute");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));  // Both switch in mon 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 0, 0, "", "");  // Both attack - one dies
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));  // Both switch in mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 0, 0, 0, 0);  // Both attack - one dies
         // After this, battle should end
         uint256 execute1 = vm.stopSnapshotGas("Battle1_Execute");
 
@@ -398,8 +403,8 @@ contract EngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Battle2_Execute");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));  // Both switch in mon 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, 0, "", "");  // Both attack - one dies
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));  // Both switch in mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, 0, 0, 0);  // Both attack - one dies
         uint256 execute2 = vm.stopSnapshotGas("Battle2_Execute");
 
         console.log("=== Identical Battles Test ===");
@@ -463,7 +468,7 @@ contract EngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("B1_Execute");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
 
         // Check after switch
         (BattleConfigView memory cfgAfterSwitch,) = engine.getBattle(battleKey1);
@@ -472,7 +477,7 @@ contract EngineGasTest is Test, BattleHelper {
         console.log("After B1 switch - packedP1EffectsCount:", cfgAfterSwitch.packedP1EffectsCount);
 
         // Both apply effect to each other (adds 2 effects)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 0, 0, 0, 0);
 
         // Check after effects applied
         (BattleConfigView memory cfgAfterEffects,) = engine.getBattle(battleKey1);
@@ -481,7 +486,7 @@ contract EngineGasTest is Test, BattleHelper {
         console.log("After B1 effects - packedP1EffectsCount:", cfgAfterEffects.packedP1EffectsCount);
 
         // Both attack - should KO
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 1, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 1, 1, 0, 0);
         uint256 execute1 = vm.stopSnapshotGas("B1_Execute");
 
         // Verify battle 1 ended
@@ -504,11 +509,11 @@ contract EngineGasTest is Test, BattleHelper {
         console.log("After B2 setup - packedP1EffectsCount:", cfg2.packedP1EffectsCount);
 
         vm.startSnapshotGas("B2_Execute");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
         // Both apply effect to each other (adds 2 effects - should REUSE slots)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, 0, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, 0, 0, 0);
         // Both attack - KO
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 1, 1, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 1, 1, 0, 0);
         uint256 execute2 = vm.stopSnapshotGas("B2_Execute");
 
         console.log("=== Battles With Effects ===");

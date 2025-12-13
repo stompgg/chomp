@@ -126,7 +126,7 @@ contract GachaTest is Test, BattleHelper {
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, "", abi.encode(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
 
         // Alice wins the battle (inactivity for Bob), we skip ahead
         mockRNG.setRNG(1); // No extra bonus for points
@@ -200,7 +200,7 @@ contract GachaTest is Test, BattleHelper {
 
             // Alice commits switching to mon index 0
             vm.startPrank(ALICE);
-            commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, "", abi.encode(0))));
+            commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
 
             // Alice wins the battle
             engine.end(battleKey);
@@ -285,13 +285,13 @@ contract GachaTest is Test, BattleHelper {
         // Magic number to trigger the bonus points after all the hashing we do
         bytes32 salt = keccak256(abi.encode(11));
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, abi.encode(0)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(0)));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, aliceMoveHash);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
 
         // Alice wins the battle because timeout duration is 0, so we auto force a lose
         // It's turn id 1 which means Bob had to commit, so any inaction is a lose from him
@@ -337,13 +337,13 @@ contract GachaTest is Test, BattleHelper {
         // Magic number to trigger the bonus points after all the hashing we do
         bytes32 salt = keccak256(abi.encode(11));
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, abi.encode(0)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(0)));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, aliceMoveHash);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
 
         // Alice wins the battle
         engine.end(battleKey);
@@ -362,13 +362,13 @@ contract GachaTest is Test, BattleHelper {
         // Advance time to avoid GameStartsAndEndsSameBlock error (but stay within cooldown)
         vm.warp(vm.getBlockTimestamp() + 1);
 
-        aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, abi.encode(0)));
+        aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(0)));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, aliceMoveHash);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, abi.encode(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(0), true);
 
         // Alice wins the battle
         engine.end(battleKey);

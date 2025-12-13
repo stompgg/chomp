@@ -23,10 +23,10 @@ abstract contract BattleHelper is Test {
         Engine engine,
         DefaultCommitManager commitManager,
         bytes32 battleKey,
-        uint128 aliceMoveIndex,
-        uint128 bobMoveIndex,
-        bytes memory aliceExtraData,
-        bytes memory bobExtraData
+        uint8 aliceMoveIndex,
+        uint8 bobMoveIndex,
+        uint240 aliceExtraData,
+        uint240 bobExtraData
     ) internal {
         bytes32 salt = "";
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));

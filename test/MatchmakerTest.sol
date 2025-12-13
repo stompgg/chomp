@@ -394,7 +394,7 @@ contract MatchmakerTest is Test, BattleHelper {
         assertEq(battleData.p1, BOB);
 
         // Check that Alice and Bob can commit/reveal/reveal to switch to mon index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
     }
 
     function test_fastBattleSucceedsAndNoSubsequentAccept() public {

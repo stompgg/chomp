@@ -99,12 +99,12 @@ contract GorillaxTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice chooses to attack, Bob chooses to do nothing for CHARGE_COUNT rounds
         for (uint256 i; i < angery.CHARGE_COUNT(); i++) {
-            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, "", "");
+            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         }
 
         // Bobs's mon started with  HP = MAX_HP_DENOM * hpScale, it took 3 * hpScale damage
@@ -170,12 +170,12 @@ contract GorillaxTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Alice uses Rock Pull, Bob switches to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(1)
+            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint240(0), uint240(1)
         );
 
         // Assert that Bob's mon index 0 took damage
@@ -186,7 +186,7 @@ contract GorillaxTest is Test, BattleHelper {
 
         // Alice uses Rock Pull, Bob does not switch
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
         );
 
         // Assert that Alice's mon index 0 took damage

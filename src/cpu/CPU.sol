@@ -36,7 +36,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     function calculateMove(bytes32 battleKey, uint256 playerIndex)
         external
         virtual
-        returns (uint128 moveIndex, bytes memory extraData);
+        returns (uint128 moveIndex, uint240 extraData);
 
     /**
      *  - If it's a switch needed turn, returns only valid switches
@@ -52,7 +52,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
             RevealedMove[] memory switchChoices = new RevealedMove[](teamSize);
             for (uint256 i = 0; i < teamSize; i++) {
-                switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: abi.encode(i)});
+                switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(i)});
             }
             nonceToUse = nonce;
             return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
@@ -68,7 +68,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 for (uint256 i = 0; i < teamSize; i++) {
                     if (i != activeMonIndex[playerIndex]) {
                         if (validator
-                            .validatePlayerMove(battleKey, SWITCH_MOVE_INDEX, playerIndex, abi.encode(i))) {
+                            .validatePlayerMove(battleKey, SWITCH_MOVE_INDEX, playerIndex, uint240(i))) {
                             validSwitchIndices[validSwitchCount++] = i;
                         }
                     }
@@ -81,25 +81,25 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     RevealedMove[] memory switchChoices = new RevealedMove[](validSwitchCount);
                     for (uint256 i = 0; i < validSwitchCount; i++) {
                         switchChoices[i] = RevealedMove({
-                            moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: abi.encode(validSwitchIndices[i])
+                            moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
                         });
                     }
                     nonceToUse = nonce;
                     return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
                 }
             }
-            uint128[] memory validMoveIndices;
-            bytes[] memory validMoveExtraData;
+            uint8[] memory validMoveIndices;
+            uint240[] memory validMoveExtraData;
             uint256 validMoveCount;
             // Check for valid moves
             {
                 uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-                validMoveIndices = new uint128[](NUM_MOVES);
-                validMoveExtraData = new bytes[](NUM_MOVES);
+                validMoveIndices = new uint8[](NUM_MOVES);
+                validMoveExtraData = new uint240[](NUM_MOVES);
                 for (uint256 i = 0; i < NUM_MOVES; i++) {
                     IMoveSet move =
                         ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
-                    bytes memory extraDataToUse = "";
+                    uint240 extraDataToUse = 0;
                     if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
                         // Skip if there are no valid switches
                         if (validSwitchCount == 0) {
@@ -107,11 +107,11 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                         }
                         uint256 randomIndex =
                             RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
-                        extraDataToUse = abi.encode(validSwitchIndices[randomIndex]);
+                        extraDataToUse = uint240(validSwitchIndices[randomIndex]);
                         validMoveExtraData[validMoveCount] = extraDataToUse;
                     }
                     if (validator.validatePlayerMove(battleKey, i, playerIndex, extraDataToUse)) {
-                        validMoveIndices[validMoveCount++] = uint128(i);
+                        validMoveIndices[validMoveCount++] = uint8(i);
                     }
                 }
             }
@@ -124,11 +124,11 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             RevealedMove[] memory validSwitchesArray = new RevealedMove[](validSwitchCount);
             for (uint256 i = 0; i < validSwitchCount; i++) {
                 validSwitchesArray[i] = RevealedMove({
-                    moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: abi.encode(validSwitchIndices[i])
+                    moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
                 });
             }
             RevealedMove[] memory noOpArray = new RevealedMove[](1);
-            noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: ""});
+            noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: 0});
 
             nonceToUse = nonce;
             return (noOpArray, validMovesArray, validSwitchesArray);

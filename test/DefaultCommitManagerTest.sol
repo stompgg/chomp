@@ -85,37 +85,37 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
 
         // Alice commits
         vm.startPrank(ALICE);
-        uint128 moveIndex = SWITCH_MOVE_INDEX;
-        bytes32 moveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), abi.encode(0)));
+        uint8 moveIndex = SWITCH_MOVE_INDEX;
+        bytes32 moveHash = keccak256(abi.encodePacked(moveIndex, bytes32(""), uint240(0)));
         commitManager.commitMove(battleKey, moveHash);
 
         // Alice tries to reveal
         vm.expectRevert(DefaultCommitManager.NotYetRevealed.selector);
-        commitManager.revealMove(battleKey, moveIndex, bytes32(""), abi.encode(0), false);
+        commitManager.revealMove(battleKey, moveIndex, bytes32(""), uint240(0), false);
     }
 
     function test_RevealBeforeSelfCommit() public {
         bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         // Alice sets commitment
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, abi.encode(0), abi.encode(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
         // Bob sets commitment
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         // Alice sets commitment
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         // Bob sets commitment
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, "", "");
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         // Alice's turn again to move
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.RevealBeforeSelfCommit.selector);
-        commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), "", false);
+        commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), 0, false);
     }
 
     function test_BattleNotYetStarted() public {
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
-        commitManager.revealMove(bytes32(0), NO_OP_MOVE_INDEX, bytes32(""), "", false);
+        commitManager.revealMove(bytes32(0), NO_OP_MOVE_INDEX, bytes32(""), 0, false);
         vm.startPrank(BOB);
         vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
         commitManager.commitMove(bytes32(0), bytes32(0));
@@ -128,7 +128,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         engine.end(battleKey);
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
-        commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), "", false);
+        commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), 0, false);
         vm.startPrank(BOB);
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
         commitManager.commitMove(battleKey, bytes32(0));
@@ -158,7 +158,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, bytes32("1"));
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), abi.encode(0), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), uint240(0), false);
         vm.warp(TIMEOUT * validator.PREV_TURN_MULTIPLIER() + 1);
         engine.end(battleKey);
         assertEq(engine.getWinner(battleKey), BOB);
