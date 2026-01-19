@@ -2266,19 +2266,76 @@ class TypeScriptCodeGenerator:
         return '\n'.join(lines)
 
     def transpile_yul(self, yul_code: str) -> str:
-        """Transpile Yul assembly to TypeScript."""
-        # This is a simplified Yul transpiler
-        # It handles the common patterns found in Engine.sol
+        """Transpile Yul assembly to TypeScript.
 
+        Handles the specific patterns used in Engine.sol:
+        - Storage slot access: varName.slot
+        - sload/sstore for storage read/write
+        - mstore for array length manipulation
+        """
         lines = []
-        statements = self.parse_yul_statements(yul_code)
 
+        # Normalize whitespace and remove extra spaces around operators/punctuation
+        code = ' '.join(yul_code.split())
+        # The tokenizer adds spaces around punctuation, normalize these patterns:
+        code = re.sub(r':\s*=', ':=', code)           # ": =" -> ":="
+        code = re.sub(r'\s*\.\s*', '.', code)         # " . " -> "." (member access)
+        code = re.sub(r'(\w)\s+\(', r'\1(', code)     # "sload (" -> "sload(" (function calls)
+        code = re.sub(r'\(\s+', '(', code)            # "( " -> "("
+        code = re.sub(r'\s+\)', ')', code)            # " )" -> ")"
+        code = re.sub(r'\s+,', ',', code)             # " ," -> ","
+        code = re.sub(r',\s+', ', ', code)            # ", " normalize to single space
+        code = re.sub(r'\{\s+', '{ ', code)           # "{ " normalize to single space
+        code = re.sub(r'\s+\}', ' }', code)           # " }" normalize to single space
+
+        # Pattern 1: MonState clearing pattern
+        # let slot := monState.slot if sload(slot) { sstore(slot, PACKED_CLEARED_MON_STATE) }
+        clear_pattern = re.search(
+            r'let\s+(\w+)\s*:=\s*(\w+)\.slot\s+if\s+sload\((\w+)\)\s*\{\s*sstore\((\w+),\s*(\w+)\)\s*\}',
+            code
+        )
+        if clear_pattern:
+            slot_var = clear_pattern.group(1)
+            state_var = clear_pattern.group(2)
+            constant = clear_pattern.group(5)
+            lines.append(f'// Clear {state_var} storage if it has data')
+            lines.append(f'if (this._hasStorageData({state_var})) {{')
+            lines.append(f'  this._clearMonState({state_var}, {constant});')
+            lines.append(f'}}')
+            return '\n'.join(lines)
+
+        # Pattern 2: mstore for array length - mstore(array, length)
+        mstore_pattern = re.search(r'mstore\((\w+),\s*(\w+)\)', code)
+        if mstore_pattern:
+            array_name = mstore_pattern.group(1)
+            length_var = mstore_pattern.group(2)
+            lines.append(f'// Set array length')
+            lines.append(f'{array_name}.length = Number({length_var});')
+            return '\n'.join(lines)
+
+        # Pattern 3: Simple sload
+        sload_pattern = re.search(r'sload\((\w+)\)', code)
+        if sload_pattern and 'sstore' not in code:
+            slot = sload_pattern.group(1)
+            lines.append(f'this._storage.get({slot})')
+            return '\n'.join(lines)
+
+        # Pattern 4: Simple sstore
+        sstore_pattern = re.search(r'sstore\((\w+),\s*(.+?)\)', code)
+        if sstore_pattern and 'if' not in code:
+            slot = sstore_pattern.group(1)
+            value = sstore_pattern.group(2)
+            lines.append(f'this._storage.set({slot}, {value});')
+            return '\n'.join(lines)
+
+        # Fallback: parse line by line for simpler cases
+        statements = self.parse_yul_statements(yul_code)
         for stmt in statements:
             ts_stmt = self.transpile_yul_statement(stmt)
             if ts_stmt:
                 lines.append(ts_stmt)
 
-        return '\n'.join(lines) if lines else '// No-op assembly block'
+        return '\n'.join(lines) if lines else '// Assembly: no-op'
 
     def parse_yul_statements(self, code: str) -> List[str]:
         """Parse Yul code into individual statements."""
@@ -2497,17 +2554,32 @@ class TypeScriptCodeGenerator:
             return 'this'
         return ident.name
 
+    def _needs_parens(self, expr: Expression) -> bool:
+        """Check if expression needs parentheses when used as operand."""
+        # Simple expressions don't need parens
+        if isinstance(expr, (Literal, Identifier)):
+            return False
+        if isinstance(expr, MemberAccess):
+            return False
+        if isinstance(expr, IndexAccess):
+            return False
+        if isinstance(expr, FunctionCall):
+            return False
+        return True
+
     def generate_binary_operation(self, op: BinaryOperation) -> str:
-        """Generate binary operation."""
+        """Generate binary operation with minimal parentheses."""
         left = self.generate_expression(op.left)
         right = self.generate_expression(op.right)
         operator = op.operator
 
-        # Handle special operators
-        if operator == '**':
-            return f'(({left}) ** ({right}))'
+        # Only add parens around complex sub-expressions
+        if self._needs_parens(op.left):
+            left = f'({left})'
+        if self._needs_parens(op.right):
+            right = f'({right})'
 
-        return f'(({left}) {operator} ({right}))'
+        return f'{left} {operator} {right}'
 
     def generate_unary_operation(self, op: UnaryOperation) -> str:
         """Generate unary operation."""
@@ -2515,7 +2587,9 @@ class TypeScriptCodeGenerator:
         operator = op.operator
 
         if op.is_prefix:
-            return f'{operator}({operand})'
+            if self._needs_parens(op.operand):
+                return f'{operator}({operand})'
+            return f'{operator}{operand}'
         else:
             return f'({operand}){operator}'
 
@@ -2554,17 +2628,23 @@ class TypeScriptCodeGenerator:
             elif name == 'type':
                 return f'/* type({args}) */'
 
-        # Handle type casts (uint256(x), etc.)
+        # Handle type casts (uint256(x), etc.) - simplified for simulation
         if isinstance(call.function, Identifier):
             name = call.function.name
             if name.startswith('uint') or name.startswith('int'):
+                # Skip redundant BigInt wrapping
+                if args.startswith('BigInt(') or args.endswith('n'):
+                    return args
+                # For simple identifiers that are likely already bigint, pass through
+                if call.arguments and isinstance(call.arguments[0], Identifier):
+                    return args
                 return f'BigInt({args})'
             elif name == 'address':
-                return f'String({args})'
+                return args  # Pass through - addresses are strings
             elif name == 'bool':
-                return f'Boolean({args})'
+                return args  # Pass through - JS truthy works
             elif name.startswith('bytes'):
-                return f'({args})'
+                return args  # Pass through
 
         return f'{func}({args})'
 
@@ -2612,25 +2692,28 @@ class TypeScriptCodeGenerator:
         return f'[{", ".join(components)}]'
 
     def generate_type_cast(self, cast: TypeCast) -> str:
-        """Generate type cast."""
+        """Generate type cast - simplified for simulation (no strict bit masking)."""
         type_name = cast.type_name.name
         expr = self.generate_expression(cast.expression)
 
+        # For integers, just ensure it's a BigInt - skip bit masking for simplicity
         if type_name.startswith('uint') or type_name.startswith('int'):
-            # Handle potential negative to unsigned conversion
-            if type_name.startswith('uint'):
-                bits = int(type_name[4:]) if len(type_name) > 4 else 256
-                mask = (1 << bits) - 1
-                return f'(BigInt({expr}) & BigInt({mask}))'
+            # If already looks like a BigInt or number, just use it
+            if expr.startswith('BigInt(') or expr.isdigit() or expr.endswith('n'):
+                return expr
             return f'BigInt({expr})'
         elif type_name == 'address':
-            return f'String({expr})'
+            # Addresses are strings
+            if expr.startswith('"') or expr.startswith("'"):
+                return expr
+            return expr  # Already a string in most cases
         elif type_name == 'bool':
-            return f'Boolean({expr})'
+            return expr  # JS truthy/falsy works fine
         elif type_name.startswith('bytes'):
-            return f'({expr})'
+            return expr  # Pass through
 
-        return f'({expr} as {type_name})'
+        # For custom types (structs, enums), just pass through
+        return expr
 
     def solidity_type_to_ts(self, type_name: TypeName) -> str:
         """Convert Solidity type to TypeScript type."""
