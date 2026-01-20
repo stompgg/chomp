@@ -555,6 +555,13 @@ class StateVariableDeclaration(VariableDeclaration):
 
 
 @dataclass
+class BaseConstructorCall(ASTNode):
+    """Represents a base constructor call in a constructor definition."""
+    base_name: str
+    arguments: List['Expression'] = field(default_factory=list)
+
+
+@dataclass
 class FunctionDefinition(ASTNode):
     name: str
     parameters: List[VariableDeclaration] = field(default_factory=list)
@@ -568,6 +575,7 @@ class FunctionDefinition(ASTNode):
     is_constructor: bool = False
     is_receive: bool = False
     is_fallback: bool = False
+    base_constructor_calls: List[BaseConstructorCall] = field(default_factory=list)
 
 
 # =============================================================================
@@ -1112,19 +1120,23 @@ class Parser:
                 self.advance()
         self.expect(TokenType.RPAREN)
 
-        # Skip modifiers, visibility, and base constructor calls
-        # Need to track brace/paren depth to handle constructs like ATTACK_PARAMS({...})
-        paren_depth = 0
-        while not self.match(TokenType.EOF):
-            if self.match(TokenType.LPAREN):
-                paren_depth += 1
+        # Parse modifiers, visibility, and base constructor calls
+        base_constructor_calls = []
+        while not self.match(TokenType.LBRACE, TokenType.EOF):
+            # Skip visibility and state mutability keywords
+            if self.match(TokenType.PUBLIC, TokenType.PRIVATE, TokenType.INTERNAL,
+                          TokenType.EXTERNAL, TokenType.PAYABLE):
                 self.advance()
-            elif self.match(TokenType.RPAREN):
-                paren_depth -= 1
-                self.advance()
-            elif self.match(TokenType.LBRACE) and paren_depth == 0:
-                # This is the actual constructor body
-                break
+            # Check for base constructor call: Identifier(args)
+            elif self.match(TokenType.IDENTIFIER):
+                base_name = self.advance().value
+                if self.match(TokenType.LPAREN):
+                    # This is a base constructor call
+                    args = self.parse_base_constructor_args()
+                    base_constructor_calls.append(
+                        BaseConstructorCall(base_name=base_name, arguments=args)
+                    )
+                # else it's just a modifier name, skip it
             else:
                 self.advance()
 
@@ -1135,7 +1147,22 @@ class Parser:
             parameters=parameters,
             body=body,
             is_constructor=True,
+            base_constructor_calls=base_constructor_calls,
         )
+
+    def parse_base_constructor_args(self) -> List[Expression]:
+        """Parse base constructor arguments, handling nested braces for struct literals."""
+        self.expect(TokenType.LPAREN)
+        args = []
+
+        while not self.match(TokenType.RPAREN, TokenType.EOF):
+            arg = self.parse_expression()
+            args.append(arg)
+            if self.match(TokenType.COMMA):
+                self.advance()
+
+        self.expect(TokenType.RPAREN)
+        return args
 
     def skip_function(self):
         # Skip until we find the function body or semicolon
@@ -1872,13 +1899,137 @@ class Parser:
 
 
 # =============================================================================
+# TYPE REGISTRY
+# =============================================================================
+
+class TypeRegistry:
+    """Registry of discovered types from Solidity source files.
+
+    Performs a first pass over Solidity files to discover:
+    - Structs
+    - Enums
+    - Constants
+    - Interfaces
+    - Contracts (with their methods and state variables)
+    - Libraries
+    """
+
+    def __init__(self):
+        self.structs: Set[str] = set()
+        self.enums: Set[str] = set()
+        self.constants: Set[str] = set()
+        self.interfaces: Set[str] = set()
+        self.contracts: Set[str] = set()
+        self.libraries: Set[str] = set()
+        self.contract_methods: Dict[str, Set[str]] = {}
+        self.contract_vars: Dict[str, Set[str]] = {}
+
+    def discover_from_source(self, source: str) -> None:
+        """Discover types from a single Solidity source string."""
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+        self.discover_from_ast(ast)
+
+    def discover_from_file(self, filepath: str) -> None:
+        """Discover types from a Solidity file."""
+        with open(filepath, 'r') as f:
+            source = f.read()
+        self.discover_from_source(source)
+
+    def discover_from_directory(self, directory: str, pattern: str = '**/*.sol') -> None:
+        """Discover types from all Solidity files in a directory."""
+        from pathlib import Path
+        for sol_file in Path(directory).glob(pattern):
+            try:
+                self.discover_from_file(str(sol_file))
+            except Exception as e:
+                print(f"Warning: Could not parse {sol_file} for type discovery: {e}")
+
+    def discover_from_ast(self, ast: SourceUnit) -> None:
+        """Extract type information from a parsed AST."""
+        # Top-level structs
+        for struct in ast.structs:
+            self.structs.add(struct.name)
+
+        # Top-level enums
+        for enum in ast.enums:
+            self.enums.add(enum.name)
+
+        # Top-level constants
+        for const in ast.constants:
+            if const.mutability == 'constant':
+                self.constants.add(const.name)
+
+        # Contracts, interfaces, libraries
+        for contract in ast.contracts:
+            name = contract.name
+            kind = contract.kind
+
+            if kind == 'interface':
+                self.interfaces.add(name)
+            elif kind == 'library':
+                self.libraries.add(name)
+                self.contracts.add(name)
+            else:
+                self.contracts.add(name)
+
+            # Collect structs defined inside contracts
+            for struct in contract.structs:
+                self.structs.add(struct.name)
+
+            # Collect enums defined inside contracts
+            for enum in contract.enums:
+                self.enums.add(enum.name)
+
+            # Collect methods
+            methods = set()
+            for func in contract.functions:
+                if func.name:
+                    methods.add(func.name)
+            if contract.constructor:
+                methods.add('constructor')
+            if methods:
+                self.contract_methods[name] = methods
+
+            # Collect state variables
+            state_vars = set()
+            for var in contract.state_variables:
+                state_vars.add(var.name)
+                if var.mutability == 'constant':
+                    self.constants.add(var.name)
+            if state_vars:
+                self.contract_vars[name] = state_vars
+
+    def merge(self, other: 'TypeRegistry') -> None:
+        """Merge another registry into this one."""
+        self.structs.update(other.structs)
+        self.enums.update(other.enums)
+        self.constants.update(other.constants)
+        self.interfaces.update(other.interfaces)
+        self.contracts.update(other.contracts)
+        self.libraries.update(other.libraries)
+        for name, methods in other.contract_methods.items():
+            if name in self.contract_methods:
+                self.contract_methods[name].update(methods)
+            else:
+                self.contract_methods[name] = methods.copy()
+        for name, vars in other.contract_vars.items():
+            if name in self.contract_vars:
+                self.contract_vars[name].update(vars)
+            else:
+                self.contract_vars[name] = vars.copy()
+
+
+# =============================================================================
 # CODE GENERATOR
 # =============================================================================
 
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self):
+    def __init__(self, registry: Optional[TypeRegistry] = None):
         self.indent_level = 0
         self.indent_str = '  '
         # Track current contract context for this. prefix handling
@@ -1892,71 +2043,31 @@ class TypeScriptCodeGenerator:
         # Type registry: maps variable names to their TypeName for array/mapping detection
         self.var_types: Dict[str, 'TypeName'] = {}
 
-        # Known types for import prefixing
-        self.known_structs = {
-            'Battle', 'BattleConfig', 'BattleData', 'BattleState', 'BattleContext',
-            'BattleConfigView', 'CommitContext', 'DamageCalcContext', 'EffectInstance',
-            'Mon', 'MonState', 'MonStats', 'MoveDecision', 'PlayerDecisionData',
-            'ProposedBattle', 'RevealedMove', 'StatBoostToApply', 'StatBoostUpdate',
-            'ATTACK_PARAMS',  # From StandardAttackStructs.sol
-        }
-        self.known_enums = {
-            'Type', 'GameStatus', 'EffectStep', 'MoveClass', 'MonStateIndexName',
-            'EffectRunCondition', 'StatBoostType', 'StatBoostFlag', 'ExtraDataType',
-        }
-        self.known_constants = {
-            'NO_OP_MOVE_INDEX', 'SWITCH_MOVE_INDEX', 'MOVE_INDEX_OFFSET', 'MOVE_INDEX_MASK',
-            'IS_REAL_TURN_BIT', 'SWITCH_PRIORITY', 'DEFAULT_PRIORITY', 'DEFAULT_STAMINA',
-            'CRIT_NUM', 'CRIT_DENOM', 'DEFAULT_CRIT_RATE', 'DEFAULT_VOL', 'DEFAULT_ACCURACY',
-            'CLEARED_MON_STATE_SENTINEL', 'PACKED_CLEARED_MON_STATE', 'PLAYER_EFFECT_BITS',
-            'MAX_EFFECTS_PER_MON', 'EFFECT_SLOTS_PER_MON', 'EFFECT_COUNT_MASK',
-            'TOMBSTONE_ADDRESS', 'MAX_BATTLE_DURATION',
-            'MOVE_MISS_EVENT_TYPE', 'MOVE_CRIT_EVENT_TYPE', 'MOVE_TYPE_IMMUNITY_EVENT_TYPE',
-            'NONE_EVENT_TYPE',
-        }
-        # Interface types (treated as 'any' in TypeScript since we don't have definitions)
-        self.known_interfaces = {
-            'IMatchmaker', 'IEffect', 'IAbility', 'IValidator', 'ITeamRegistry',
-            'IRandomnessOracle', 'IRuleset', 'IEngineHook', 'IMoveSet', 'ITypeCalculator',
-            'IEngine', 'ICPU', 'ICommitManager', 'IMonRegistry',
-        }
-        # Known contracts that can be used as base classes
-        self.known_contracts: Set[str] = set()
-        # Methods defined by known contracts (for this. prefix handling)
-        self.known_contract_methods: Dict[str, Set[str]] = {
-            # MappingAllocator methods
-            'MappingAllocator': {
-                '_initializeStorageKey', '_getStorageKey', '_freeStorageKey', 'getFreeStorageKeys'
-            },
-            # StandardAttack methods
-            'StandardAttack': {
-                'move', '_move', 'isValidTarget', 'priority', 'stamina', 'moveType',
-                'moveClass', 'critRate', 'volatility', 'basePower', 'accuracy',
-                'effect', 'effectAccuracy', 'changeVar', 'extraDataType', 'name'
-            },
-            # Ownable methods
-            'Ownable': {
-                '_initializeOwner', 'owner', 'transferOwnership', 'renounceOwnership'
-            },
-            # AttackCalculator methods (static/library)
-            'AttackCalculator': {
-                '_calculateDamage', '_calculateDamageView', '_calculateDamageFromContext'
-            }
-        }
-        # State variables defined by known contracts (for this. prefix handling)
-        self.known_contract_vars: Dict[str, Set[str]] = {
-            'StandardAttack': {
-                'ENGINE', 'TYPE_CALCULATOR', '_basePower', '_stamina', '_accuracy',
-                '_priority', '_moveType', '_effectAccuracy', '_moveClass', '_critRate',
-                '_volatility', '_effect', '_name'
-            }
-        }
+        # Use provided registry or create empty one
+        if registry:
+            self.known_structs = registry.structs
+            self.known_enums = registry.enums
+            self.known_constants = registry.constants
+            self.known_interfaces = registry.interfaces
+            self.known_contracts = registry.contracts
+            self.known_libraries = registry.libraries
+            self.known_contract_methods = registry.contract_methods
+            self.known_contract_vars = registry.contract_vars
+        else:
+            # Empty sets - types will be discovered as files are parsed
+            self.known_structs: Set[str] = set()
+            self.known_enums: Set[str] = set()
+            self.known_constants: Set[str] = set()
+            self.known_interfaces: Set[str] = set()
+            self.known_contracts: Set[str] = set()
+            self.known_libraries: Set[str] = set()
+            self.known_contract_methods: Dict[str, Set[str]] = {}
+            self.known_contract_vars: Dict[str, Set[str]] = {}
+
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
         # Library contracts referenced (for import generation)
         self.libraries_referenced: Set[str] = set()
-        # Known library contracts
-        self.known_libraries = {'AttackCalculator'}
         # Current file type (to avoid self-referencing prefixes)
         self.current_file_type = ''
 
@@ -2247,7 +2358,25 @@ class TypeScriptCodeGenerator:
 
         # Add super() call for derived classes - must be first statement
         if self.current_base_classes:
-            lines.append(f'{self.indent()}super();')
+            # Check if there are base constructor calls with arguments
+            if func.base_constructor_calls:
+                # Find the base constructor call that matches one of our base classes
+                for base_call in func.base_constructor_calls:
+                    if base_call.base_name in self.current_base_classes:
+                        if base_call.arguments:
+                            args = ', '.join([
+                                self.generate_expression(arg)
+                                for arg in base_call.arguments
+                            ])
+                            lines.append(f'{self.indent()}super({args});')
+                        else:
+                            lines.append(f'{self.indent()}super();')
+                        break
+                else:
+                    # No matching base constructor call found
+                    lines.append(f'{self.indent()}super();')
+            else:
+                lines.append(f'{self.indent()}super();')
 
         if func.body:
             # For base classes with optional params, wrap body in conditional
@@ -2906,14 +3035,14 @@ class TypeScriptCodeGenerator:
         elif name == 'this':
             return 'this'
 
+        # Add ClassName. prefix for static constants (check before global constants)
+        if name in self.current_static_vars:
+            return f'{self.current_class_name}.{name}'
+
         # Add module prefixes for known types (but not for self-references)
         qualified = self.get_qualified_name(name)
         if qualified != name:
             return qualified
-
-        # Add ClassName. prefix for static constants
-        if name in self.current_static_vars:
-            return f'{self.current_class_name}.{name}'
 
         # Add this. prefix for state variables and methods (but not local vars)
         if name not in self.current_local_vars:
@@ -3106,7 +3235,16 @@ class TypeScriptCodeGenerator:
                 if args:
                     return args
                 return '{}'  # Empty interface cast
-            # Handle custom type casts and struct "constructors"
+            # Handle struct "constructors" with named arguments
+            elif name[0].isupper() and call.named_arguments:
+                # Struct constructor with named args: ATTACK_PARAMS({NAME: "x", ...})
+                qualified = self.get_qualified_name(name)
+                fields = ', '.join([
+                    f'{k}: {self.generate_expression(v)}'
+                    for k, v in call.named_arguments.items()
+                ])
+                return f'{{ {fields} }} as {qualified}'
+            # Handle custom type casts and struct "constructors" with no args
             elif name[0].isupper() and not args:
                 # Struct with no args - return default object with proper prefix
                 qualified = self.get_qualified_name(name)
@@ -3115,6 +3253,14 @@ class TypeScriptCodeGenerator:
             elif name in self.known_enums:
                 qualified = self.get_qualified_name(name)
                 return f'Number({args}) as {qualified}'
+
+        # For bare function calls that start with _ (internal/protected methods),
+        # add this. prefix if not already there. This handles inherited methods
+        # that may not have been discovered during type discovery.
+        if isinstance(call.function, Identifier):
+            name = call.function.name
+            if name.startswith('_') and not func.startswith('this.'):
+                return f'this.{func}({args})'
 
         return f'{func}({args})'
 
@@ -3515,13 +3661,23 @@ class TypeScriptCodeGenerator:
 class SolidityToTypeScriptTranspiler:
     """Main transpiler class that orchestrates the conversion process."""
 
-    def __init__(self, source_dir: str = '.', output_dir: str = './ts-output'):
+    def __init__(self, source_dir: str = '.', output_dir: str = './ts-output',
+                 discovery_dirs: Optional[List[str]] = None):
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)
         self.parsed_files: Dict[str, SourceUnit] = {}
-        self.type_registry: Dict[str, Any] = {}  # Global type registry
+        self.registry = TypeRegistry()
 
-    def transpile_file(self, filepath: str) -> str:
+        # Run type discovery on specified directories
+        if discovery_dirs:
+            for dir_path in discovery_dirs:
+                self.registry.discover_from_directory(dir_path)
+
+    def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
+        """Run type discovery on a directory of Solidity files."""
+        self.registry.discover_from_directory(directory, pattern)
+
+    def transpile_file(self, filepath: str, use_registry: bool = True) -> str:
         """Transpile a single Solidity file to TypeScript."""
         with open(filepath, 'r') as f:
             source = f.read()
@@ -3537,8 +3693,11 @@ class SolidityToTypeScriptTranspiler:
         # Store parsed AST
         self.parsed_files[filepath] = ast
 
+        # Also discover types from this file if not already done
+        self.registry.discover_from_ast(ast)
+
         # Generate TypeScript
-        generator = TypeScriptCodeGenerator()
+        generator = TypeScriptCodeGenerator(self.registry if use_registry else None)
         ts_code = generator.generate(ast)
 
         return ts_code
@@ -3580,13 +3739,33 @@ def main():
     parser.add_argument('input', help='Input Solidity file or directory')
     parser.add_argument('-o', '--output', default='./ts-output', help='Output directory')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
+    parser.add_argument('-d', '--discover', action='append', metavar='DIR',
+                        help='Directory to scan for type discovery (can be specified multiple times)')
 
     args = parser.parse_args()
 
     input_path = Path(args.input)
 
+    # Collect discovery directories
+    discovery_dirs = args.discover or []
+
     if input_path.is_file():
-        transpiler = SolidityToTypeScriptTranspiler()
+        transpiler = SolidityToTypeScriptTranspiler(discovery_dirs=discovery_dirs)
+
+        # If no discovery dirs specified, try to find the project root
+        # by looking for common Solidity project directories
+        if not discovery_dirs:
+            # Try parent directories for src/ or contracts/
+            for parent in input_path.resolve().parents:
+                src_dir = parent / 'src'
+                contracts_dir = parent / 'contracts'
+                if src_dir.exists():
+                    transpiler.discover_types(str(src_dir))
+                    break
+                elif contracts_dir.exists():
+                    transpiler.discover_types(str(contracts_dir))
+                    break
+
         ts_code = transpiler.transpile_file(str(input_path))
 
         if args.stdout:
@@ -3599,7 +3778,9 @@ def main():
             print(f"Written: {output_path}")
 
     elif input_path.is_dir():
-        transpiler = SolidityToTypeScriptTranspiler(str(input_path), args.output)
+        transpiler = SolidityToTypeScriptTranspiler(str(input_path), args.output, discovery_dirs)
+        # Also discover from the input directory itself
+        transpiler.discover_types(str(input_path))
         results = transpiler.transpile_directory()
         transpiler.write_output(results)
 
