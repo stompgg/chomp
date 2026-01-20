@@ -1914,11 +1914,6 @@ class TypeScriptCodeGenerator:
             'MOVE_MISS_EVENT_TYPE', 'MOVE_CRIT_EVENT_TYPE', 'MOVE_TYPE_IMMUNITY_EVENT_TYPE',
             'NONE_EVENT_TYPE',
         }
-        # Event names (should be strings, not function calls)
-        self.known_events = {
-            'BattleStart', 'BattleEnd', 'MonKO', 'MonSwitchIn', 'MonSwitchOut',
-            'MoveExecuted', 'EffectApplied', 'EffectRemoved',
-        }
         # Interface types (treated as 'any' in TypeScript since we don't have definitions)
         self.known_interfaces = {
             'IMatchmaker', 'IEffect', 'IAbility', 'IValidator', 'ITeamRegistry',
@@ -1967,6 +1962,19 @@ class TypeScriptCodeGenerator:
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
+
+    def get_qualified_name(self, name: str) -> str:
+        """Get the qualified name for a type, adding appropriate prefix if needed.
+
+        Handles Structs., Enums., Constants. prefixes based on the current file context.
+        """
+        if name in self.known_structs and self.current_file_type != 'Structs':
+            return f'Structs.{name}'
+        if name in self.known_enums and self.current_file_type != 'Enums':
+            return f'Enums.{name}'
+        if name in self.known_constants and self.current_file_type != 'Constants':
+            return f'Constants.{name}'
+        return name
 
     def generate(self, ast: SourceUnit) -> str:
         """Generate TypeScript code from the AST."""
@@ -2225,8 +2233,13 @@ class TypeScriptCodeGenerator:
                 if p.type_name:
                     self.var_types[p.name] = p.type_name
 
+        # Make constructor parameters optional for known base classes
+        # This allows derived classes to call super() without arguments
+        is_base_class = self.current_class_name in self.known_contract_methods
+        optional_suffix = '?' if is_base_class else ''
+
         params = ', '.join([
-            f'{p.name}: {self.solidity_type_to_ts(p.type_name)}'
+            f'{p.name}{optional_suffix}: {self.solidity_type_to_ts(p.type_name)}'
             for p in func.parameters
         ])
         lines.append(f'{self.indent()}constructor({params}) {{')
@@ -2237,8 +2250,19 @@ class TypeScriptCodeGenerator:
             lines.append(f'{self.indent()}super();')
 
         if func.body:
-            for stmt in func.body.statements:
-                lines.append(self.generate_statement(stmt))
+            # For base classes with optional params, wrap body in conditional
+            if is_base_class and func.parameters:
+                # Get first param name for the condition
+                first_param = func.parameters[0].name
+                lines.append(f'{self.indent()}if ({first_param} !== undefined) {{')
+                self.indent_level += 1
+                for stmt in func.body.statements:
+                    lines.append(self.generate_statement(stmt))
+                self.indent_level -= 1
+                lines.append(f'{self.indent()}}}')
+            else:
+                for stmt in func.body.statements:
+                    lines.append(self.generate_statement(stmt))
 
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
@@ -2801,11 +2825,8 @@ class TypeScriptCodeGenerator:
         if expr.isdigit():
             return f'{expr}n'
 
-        # Identifiers - apply prefix logic for known constants
-        if expr in self.known_constants and self.current_file_type != 'Constants':
-            return f'Constants.{expr}'
-
-        return expr
+        # Identifiers - apply prefix logic for known types
+        return self.get_qualified_name(expr)
 
     def _transpile_yul_call(self, func: str, args_str: str, slot_vars: Dict[str, str]) -> str:
         """Transpile a Yul function call statement."""
@@ -2886,12 +2907,9 @@ class TypeScriptCodeGenerator:
             return 'this'
 
         # Add module prefixes for known types (but not for self-references)
-        if name in self.known_structs and self.current_file_type != 'Structs':
-            return f'Structs.{name}'
-        if name in self.known_enums and self.current_file_type != 'Enums':
-            return f'Enums.{name}'
-        if name in self.known_constants and self.current_file_type != 'Constants':
-            return f'Constants.{name}'
+        qualified = self.get_qualified_name(name)
+        if qualified != name:
+            return qualified
 
         # Add ClassName. prefix for static constants
         if name in self.current_static_vars:
@@ -3091,14 +3109,12 @@ class TypeScriptCodeGenerator:
             # Handle custom type casts and struct "constructors"
             elif name[0].isupper() and not args:
                 # Struct with no args - return default object with proper prefix
-                if name in self.known_structs and self.current_file_type != 'Structs':
-                    return f'{{}} as Structs.{name}'
-                return f'{{}} as {name}'
+                qualified = self.get_qualified_name(name)
+                return f'{{}} as {qualified}'
             # Handle enum type casts: Type(newValue) -> Number(newValue) as Enums.Type
             elif name in self.known_enums:
-                if self.current_file_type == 'Enums':
-                    return f'Number({args}) as {name}'
-                return f'Number({args}) as Enums.{name}'
+                qualified = self.get_qualified_name(name)
+                return f'Number({args}) as {qualified}'
 
         return f'{func}({args})'
 
@@ -3461,12 +3477,10 @@ class TypeScriptCodeGenerator:
             ts_type = 'string'
         elif name.startswith('bytes'):
             ts_type = 'string'  # hex string
-        elif name in self.known_structs:
-            ts_type = f'Structs.{name}' if self.current_file_type != 'Structs' else name
-        elif name in self.known_enums:
-            ts_type = f'Enums.{name}' if self.current_file_type != 'Enums' else name
         elif name in self.known_interfaces:
             ts_type = 'any'  # Interfaces become 'any' in TypeScript
+        elif name in self.known_structs or name in self.known_enums:
+            ts_type = self.get_qualified_name(name)
         else:
             ts_type = name  # Other custom types
 
