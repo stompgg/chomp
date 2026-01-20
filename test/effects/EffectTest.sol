@@ -657,14 +657,23 @@ contract EffectTest is Test, BattleHelper {
         (EffectInstance[] memory zapEffects, ) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffects.length, 1);
 
-        // Alice does nothing, Bob attempts to switch to mon index 1
+        // Alice does nothing, Bob attempts to switch to mon index 1, which should succeed because Zap allows switches
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(0));
-
-        // Nothing happens because the Zap occurred
-        // Check that Bob's active mon index is still 1 and the effect is removed
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
+        
+        // Check that Bob's active mon index is now 0, and the effect is still there
+        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
         (EffectInstance[] memory zapEffectsAfter, ) = engine.getEffects(battleKey, 1, 1);
-        assertEq(zapEffectsAfter.length, 0);
+        assertEq(zapEffectsAfter.length, 1);
+
+        // Bob switches back to mon index 1, Alice does nothing
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1));
+
+        // Bob tries to make a move, Alice does nothing, Zap should skip his turn
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        // Check that zap is now gone
+        (EffectInstance[] memory zapEffectsAfterRoundEnd, ) = engine.getEffects(battleKey, 1, 1);
+        assertEq(zapEffectsAfterRoundEnd.length, 0);
     }
 
     function test_staminaRegen() public {
