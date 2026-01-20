@@ -1944,7 +1944,7 @@ class TypeScriptCodeGenerator:
     def generate_imports(self, contract_name: str = '') -> str:
         """Generate import statements."""
         lines = []
-        lines.append("import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters } from 'viem';")
+        lines.append("import { keccak256, encodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';")
         lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String } from './runtime';")
 
         # Import types based on current file type:
@@ -2690,9 +2690,13 @@ class TypeScriptCodeGenerator:
         right = self.generate_expression(op.right)
         operator = op.operator
 
+        # For assignment operators, don't wrap tuple on left side (destructuring)
+        is_assignment = operator in ('=', '+=', '-=', '*=', '/=', '%=', '|=', '&=', '^=')
+
         # Only add parens around complex sub-expressions
-        if self._needs_parens(op.left):
-            left = f'({left})'
+        if not (is_assignment and isinstance(op.left, TupleExpression)):
+            if self._needs_parens(op.left):
+                left = f'({left})'
         if self._needs_parens(op.right):
             right = f'({right})'
 
@@ -2731,7 +2735,8 @@ class TypeScriptCodeGenerator:
                         size = inner
                     else:
                         size = f'Number({size})'
-                elif size.endswith('n'):
+                elif size.endswith('n') and size[:-1].isdigit():
+                    # Only strip 'n' from BigInt literals like "5n", not variable names like "globalLen"
                     size = size[:-1]
                 elif isinstance(size_arg, Identifier):
                     # Variable size needs Number() conversion
@@ -2741,6 +2746,19 @@ class TypeScriptCodeGenerator:
             return f'[]'
 
         func = self.generate_expression(call.function)
+
+        # Handle abi.decode specially - need to swap args and format types
+        if isinstance(call.function, MemberAccess):
+            if (isinstance(call.function.expression, Identifier) and
+                call.function.expression.name == 'abi' and
+                call.function.member == 'decode'):
+                if len(call.arguments) >= 2:
+                    data_arg = self.generate_expression(call.arguments[0])
+                    types_arg = call.arguments[1]
+                    # Convert types tuple to viem format
+                    type_params = self._convert_abi_types(types_arg)
+                    return f'decodeAbiParameters({type_params}, {data_arg})'
+
         args = ', '.join([self.generate_expression(a) for a in call.arguments])
 
         # Handle special function calls
@@ -2896,6 +2914,33 @@ class TypeScriptCodeGenerator:
             return f'BigInt("{min_val}")'
         return '0n'
 
+    def _convert_abi_types(self, types_expr: Expression) -> str:
+        """Convert Solidity type tuple to viem ABI parameter format."""
+        # Handle tuple expression like (int32) or (uint256, uint256, EnumType, int32)
+        if isinstance(types_expr, TupleExpression):
+            type_strs = []
+            for comp in types_expr.components:
+                if comp:
+                    type_strs.append(self._solidity_type_to_abi_param(comp))
+            return f'[{", ".join(type_strs)}]'
+        # Single type without tuple
+        return f'[{self._solidity_type_to_abi_param(types_expr)}]'
+
+    def _solidity_type_to_abi_param(self, type_expr: Expression) -> str:
+        """Convert a Solidity type expression to viem ABI parameter object."""
+        if isinstance(type_expr, Identifier):
+            name = type_expr.name
+            # Handle primitive types
+            if name.startswith('uint') or name.startswith('int') or name == 'address' or name == 'bool' or name.startswith('bytes'):
+                return f"{{type: '{name}'}}"
+            # Handle enum types - treat as uint8
+            if name in self.known_enums:
+                return "{type: 'uint8'}"
+            # Handle struct types - simplified as bytes
+            return "{type: 'bytes'}"
+        # Fallback
+        return "{type: 'bytes'}"
+
     def generate_index_access(self, access: IndexAccess) -> str:
         """Generate index access using [] syntax for both arrays and objects."""
         base = self.generate_expression(access.base)
@@ -3000,7 +3045,9 @@ class TypeScriptCodeGenerator:
 
     def generate_tuple_expression(self, expr: TupleExpression) -> str:
         """Generate tuple expression."""
-        components = [self.generate_expression(c) if c else '_' for c in expr.components]
+        # For empty components (discarded values in destructuring), use empty string
+        # In TypeScript: [a, ] = ... discards second value, or [, b] = ... discards first
+        components = [self.generate_expression(c) if c else '' for c in expr.components]
         return f'[{", ".join(components)}]'
 
     def generate_type_cast(self, cast: TypeCast) -> str:
