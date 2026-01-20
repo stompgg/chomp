@@ -9,8 +9,9 @@
     "transpile": "python3 sol2ts.py"
   },
   "devDependencies": {
+    "@types/node": "^25.0.9",
     "typescript": "^5.3.0",
-    "vitest": "^1.0.0",
-    "viem": "^2.0.0"
+    "viem": "^2.0.0",
+    "vitest": "^1.0.0"
   }
 }

@@ -1945,10 +1945,21 @@ class TypeScriptCodeGenerator:
         """Generate import statements."""
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters } from 'viem';")
-        lines.append("import { Contract, Storage, ADDRESS_ZERO } from './runtime';")
+        lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String } from './runtime';")
 
-        # Import types from Structs if this is not the Structs file
-        if contract_name and contract_name not in ('Structs', 'Enums', 'Constants'):
+        # Import types based on current file type:
+        # - Enums.ts: no imports needed from other modules
+        # - Structs.ts: needs Enums (for Type, etc.) but not itself
+        # - Constants.ts: may need Enums and Structs
+        # - Other files: import all three
+        if contract_name == 'Enums':
+            pass  # Enums doesn't need to import anything
+        elif contract_name == 'Structs':
+            lines.append("import * as Enums from './Enums';")
+        elif contract_name == 'Constants':
+            lines.append("import * as Structs from './Structs';")
+            lines.append("import * as Enums from './Enums';")
+        elif contract_name:
             lines.append("import * as Structs from './Structs';")
             lines.append("import * as Enums from './Enums';")
             lines.append("import * as Constants from './Constants';")
@@ -2186,9 +2197,31 @@ class TypeScriptCodeGenerator:
         lines.append(f'{self.indent()}{visibility}{func.name}({params}): {return_type} {{')
         self.indent_level += 1
 
+        # Declare named return parameters at start of function
+        named_return_vars = []
+        for r in func.return_parameters:
+            if r.name:
+                ts_type = self.solidity_type_to_ts(r.type_name)
+                default_val = self.default_value(ts_type)
+                lines.append(f'{self.indent()}let {r.name}: {ts_type} = {default_val};')
+                named_return_vars.append(r.name)
+
         if func.body:
             for stmt in func.body.statements:
                 lines.append(self.generate_statement(stmt))
+
+        # Add implicit return for named return parameters
+        if named_return_vars and func.body:
+            # Check if last statement is already a return
+            has_explicit_return = False
+            if func.body.statements:
+                last_stmt = func.body.statements[-1]
+                has_explicit_return = isinstance(last_stmt, ReturnStatement)
+            if not has_explicit_return:
+                if len(named_return_vars) == 1:
+                    lines.append(f'{self.indent()}return {named_return_vars[0]};')
+                else:
+                    lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
 
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
@@ -2716,6 +2749,19 @@ class TypeScriptCodeGenerator:
             if name == 'keccak256':
                 return f'keccak256({args})'
             elif name == 'sha256':
+                # Special case: sha256(abi.encode("string")) -> sha256String("string")
+                if len(call.arguments) == 1:
+                    arg = call.arguments[0]
+                    if isinstance(arg, FunctionCall):
+                        if isinstance(arg.function, MemberAccess):
+                            if (isinstance(arg.function.expression, Identifier) and
+                                arg.function.expression.name == 'abi' and
+                                arg.function.member == 'encode'):
+                                # It's abi.encode(...) - check if single string argument
+                                if len(arg.arguments) == 1:
+                                    inner_arg = arg.arguments[0]
+                                    if isinstance(inner_arg, Literal) and inner_arg.kind == 'string':
+                                        return f'sha256String({self.generate_expression(inner_arg)})'
                 return f'sha256({args})'
             elif name == 'abi':
                 return f'abi.{args}'
@@ -2745,9 +2791,36 @@ class TypeScriptCodeGenerator:
                     return args
                 return f'BigInt({args})'
             elif name == 'address':
+                # Handle address literals like address(0xdead)
+                if call.arguments:
+                    arg = call.arguments[0]
+                    if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
+                        val = arg.value
+                        # Convert to padded 40-char hex address
+                        if val.startswith('0x') or val.startswith('0X'):
+                            hex_val = val[2:].lower()
+                        else:
+                            hex_val = hex(int(val))[2:]
+                        return f'"0x{hex_val.zfill(40)}"'
                 return args  # Pass through - addresses are strings
             elif name == 'bool':
                 return args  # Pass through - JS truthy works
+            elif name == 'bytes32':
+                # Handle bytes32 literals like bytes32(0)
+                if call.arguments:
+                    arg = call.arguments[0]
+                    if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
+                        val = arg.value
+                        if val == '0':
+                            return '"0x' + '0' * 64 + '"'
+                        elif val.startswith('0x') or val.startswith('0X'):
+                            hex_val = val[2:].lower()
+                            return f'"0x{hex_val.zfill(64)}"'
+                        else:
+                            # Decimal literal
+                            hex_val = hex(int(val))[2:]
+                            return f'"0x{hex_val.zfill(64)}"'
+                return args  # Pass through
             elif name.startswith('bytes'):
                 return args  # Pass through
             # Handle interface type casts like IMatchmaker(x) -> x
@@ -2832,19 +2905,42 @@ class TypeScriptCodeGenerator:
         # mapping/object access (uses string key)
         is_likely_array = self._is_likely_array_access(access)
 
+        # Check if the base is a mapping type (converts to Map in TS)
+        base_var_name = self._get_base_var_name(access.base)
+        is_mapping = False
+        if base_var_name and base_var_name in self.var_types:
+            type_info = self.var_types[base_var_name]
+            is_mapping = type_info.is_mapping
+
+        # For struct field access like config.globalEffects, check if it's a mapping field
+        if isinstance(access.base, MemberAccess):
+            member_name = access.base.member
+            # Known mapping fields in structs
+            mapping_fields = {
+                'p0Team', 'p1Team', 'p0States', 'p1States',
+                'globalEffects', 'p0Effects', 'p1Effects', 'engineHooks'
+            }
+            if member_name in mapping_fields:
+                is_mapping = True
+
         # Convert index to appropriate type for array/object access
+        needs_number_conversion = is_likely_array or is_mapping
+
         if index.startswith('BigInt('):
             # BigInt(n) -> n for simple literals
             inner = index[7:-1]  # Extract content between BigInt( and )
             if inner.isdigit():
                 index = inner
-            elif is_likely_array:
+            elif needs_number_conversion:
                 index = f'Number({index})'
         elif index.endswith('n'):
             # 0n -> 0
             index = index[:-1]
-        elif is_likely_array and isinstance(access.index, Identifier):
-            # For loop variables (i, j, etc.) accessing arrays, convert to Number
+        elif needs_number_conversion and isinstance(access.index, Identifier):
+            # For loop variables (i, j, etc.) accessing arrays/mappings, convert to Number
+            index = f'Number({index})'
+        elif needs_number_conversion and isinstance(access.index, BinaryOperation):
+            # For expressions like baseSlot + i, wrap in Number()
             index = f'Number({index})'
         # For string/address mapping keys - leave as-is
 
@@ -2910,7 +3006,37 @@ class TypeScriptCodeGenerator:
     def generate_type_cast(self, cast: TypeCast) -> str:
         """Generate type cast - simplified for simulation (no strict bit masking)."""
         type_name = cast.type_name.name
-        expr = self.generate_expression(cast.expression)
+        inner_expr = cast.expression
+
+        # Handle address literals like address(0xdead)
+        if type_name == 'address':
+            if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
+                val = inner_expr.value
+                # Convert to padded 40-char hex address
+                if val.startswith('0x') or val.startswith('0X'):
+                    hex_val = val[2:].lower()
+                else:
+                    hex_val = hex(int(val))[2:]
+                return f'"0x{hex_val.zfill(40)}"'
+            expr = self.generate_expression(inner_expr)
+            if expr.startswith('"') or expr.startswith("'"):
+                return expr
+            return expr  # Already a string in most cases
+
+        # Handle bytes32 literals like bytes32(0)
+        if type_name == 'bytes32':
+            if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
+                val = inner_expr.value
+                if val == '0':
+                    return '"0x' + '0' * 64 + '"'
+                elif val.startswith('0x') or val.startswith('0X'):
+                    hex_val = val[2:].lower()
+                    return f'"0x{hex_val.zfill(64)}"'
+                else:
+                    hex_val = hex(int(val))[2:]
+                    return f'"0x{hex_val.zfill(64)}"'
+
+        expr = self.generate_expression(inner_expr)
 
         # For integers, just ensure it's a BigInt - skip bit masking for simplicity
         if type_name.startswith('uint') or type_name.startswith('int'):
@@ -2918,11 +3044,6 @@ class TypeScriptCodeGenerator:
             if expr.startswith('BigInt(') or expr.isdigit() or expr.endswith('n'):
                 return expr
             return f'BigInt({expr})'
-        elif type_name == 'address':
-            # Addresses are strings
-            if expr.startswith('"') or expr.startswith("'"):
-                return expr
-            return expr  # Already a string in most cases
         elif type_name == 'bool':
             return expr  # JS truthy/falsy works fine
         elif type_name.startswith('bytes'):

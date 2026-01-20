@@ -11,7 +11,7 @@
     "outDir": "./dist",
     "rootDir": ".",
     "declaration": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "node"],
     "noImplicitAny": false
   },
   "include": ["runtime/**/*.ts", "test/**/*.ts", "ts-output/**/*.ts"],

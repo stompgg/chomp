@@ -6,6 +6,31 @@
  */
 
 import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, fromHex, hexToBigInt, numberToHex } from 'viem';
+import { createHash } from 'crypto';
+
+// =============================================================================
+// HASH FUNCTIONS
+// =============================================================================
+
+/**
+ * SHA-256 hash function (returns hex string with 0x prefix)
+ */
+export function sha256(data: `0x${string}` | string): `0x${string}` {
+  // Remove 0x prefix if present for input
+  const input = data.startsWith('0x') ? data.slice(2) : data;
+  const buffer = Buffer.from(input, 'hex');
+  const hash = createHash('sha256').update(buffer).digest('hex');
+  return `0x${hash}` as `0x${string}`;
+}
+
+/**
+ * SHA-256 hash of a string value (encodes string first)
+ */
+export function sha256String(str: string): `0x${string}` {
+  // Encode the string as Solidity would with abi.encode
+  const encoded = encodeAbiParameters([{ type: 'string' }], [str]);
+  return sha256(encoded);
+}
 
 // =============================================================================
 // BIGINT HELPERS
@@ -237,11 +262,7 @@ export function uintToBytes32(value: bigint): string {
 
 export { keccak256 } from 'viem';
 
-export function sha256(data: `0x${string}`): string {
-  // Note: In a real implementation, you'd use a proper sha256
-  // For now, we'll use keccak256 as a placeholder
-  return keccak256(data);
-}
+// sha256 is defined at the top of the file with Node.js crypto
 
 // =============================================================================
 // ABI ENCODING
