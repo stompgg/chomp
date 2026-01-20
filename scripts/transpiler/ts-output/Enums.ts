@@ -79,3 +79,4 @@ export enum ExtraDataType {
   None = 0,
   SelfTeamIndex = 1,
 }
+

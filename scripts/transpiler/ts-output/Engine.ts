@@ -10,611 +10,617 @@ export class Engine extends IEngine implements MappingAllocator {
 
   battleKeyForWrite: string = "";
   private storageKeyForWrite: string = "";
-  pairHashNonces: Map<string, bigint> = new Map();
-  isMatchmakerFor: Map<string, Map<string, boolean>> = new Map();
-  private battleData: Map<string, BattleData> = new Map();
-  private battleConfig: Map<string, BattleConfig> = new Map();
-  private globalKV: Map<string, Map<string, string>> = new Map();
+  pairHashNonces: Record<string, bigint> = {};
+  isMatchmakerFor: Record<string, Record<string, boolean>> = {};
+  private battleData: Record<string, BattleData> = {};
+  private battleConfig: Record<string, BattleConfig> = {};
+  private globalKV: Record<string, Record<string, string>> = {};
   tempRNG: bigint = 0n;
   private currentStep: bigint = 0n;
   private upstreamCaller: string = "";
   updateMatchmakers(makersToAdd: string[], makersToRemove: string[]): void {
-    for (let i: bigint = 0n; ((i) < (makersToAdd.length)); ++(i)) {
-      ((isMatchmakerFor.get(this._msg.sender).get(makersToAdd.get(i))) = (true));
+    for (let i: bigint = 0n; i < makersToAdd.length; ++i) {
+      this.isMatchmakerFor[this._msg.sender][makersToAdd[Number(i)]] = true;
     }
-    for (let i: bigint = 0n; ((i) < (makersToRemove.length)); ++(i)) {
-      ((isMatchmakerFor.get(this._msg.sender).get(makersToRemove.get(i))) = (false));
+    for (let i: bigint = 0n; i < makersToRemove.length; ++i) {
+      this.isMatchmakerFor[this._msg.sender][makersToRemove[Number(i)]] = false;
     }
   }
 
   startBattle(battle: Battle): void {
     let matchmaker: IMatchmaker = IMatchmaker(battle.matchmaker);
-    if (((!(isMatchmakerFor.get(battle.p0).get(String(matchmaker)))) || (!(isMatchmakerFor.get(battle.p1).get(String(matchmaker)))))) {
+    if ((!this.isMatchmakerFor[battle.p0][matchmaker]) || (!this.isMatchmakerFor[battle.p1][matchmaker])) {
       throw new Error(MatchmakerNotAuthorized());
     }
-    const [battleKey, pairHash] = computeBattleKey(battle.p0, battle.p1);
-    ((pairHashNonces.get(pairHash)) += (BigInt(1)));
-    if (((!(matchmaker.validateMatch(battleKey, battle.p0))) || (!(matchmaker.validateMatch(battleKey, battle.p1))))) {
+    const [battleKey, pairHash] = this.computeBattleKey(battle.p0, battle.p1);
+    this.pairHashNonces[pairHash] += BigInt(1);
+    if ((!matchmaker.validateMatch(battleKey, battle.p0)) || (!matchmaker.validateMatch(battleKey, battle.p1))) {
       throw new Error(MatchmakerError());
     }
     let battleConfigKey: string = _initializeStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(battleConfigKey);
-    let prevP0Size: bigint = ((config.teamSizes) & (BigInt("0x0F")));
-    let prevP1Size: bigint = ((config.teamSizes) >> (BigInt(4)));
-    for (let j: bigint = BigInt(0); ((j) < (prevP0Size)); (j)++) {
-      let monState: MonState = config.p0States.get(j);
+    let config: BattleConfig = this.battleConfig[battleConfigKey];
+    let prevP0Size: bigint = config.teamSizes & BigInt("0x0F");
+    let prevP1Size: bigint = config.teamSizes >> BigInt(4);
+    for (let j: bigint = BigInt(0); j < prevP0Size; (j)++) {
+      let monState: MonState = config.p0States[Number(j)];
       // Assembly block (transpiled from Yul)
-      // Unhandled Yul: let slot : = monState . slot if sload ( slot ) {  sstore ( slot , PACKED_CLEARED_MON_STATE ) }
+      const slot = this._getStorageKey(monState);
+      if (this._storageRead(monState)) {
+        this._storageWrite(monState, PACKED_CLEARED_MON_STATE);
+      }
     }
-    for (let j: bigint = BigInt(0); ((j) < (prevP1Size)); (j)++) {
-      let monState: MonState = config.p1States.get(j);
+    for (let j: bigint = BigInt(0); j < prevP1Size; (j)++) {
+      let monState: MonState = config.p1States[Number(j)];
       // Assembly block (transpiled from Yul)
-      // Unhandled Yul: let slot : = monState . slot if sload ( slot ) {  sstore ( slot , PACKED_CLEARED_MON_STATE ) }
+      const slot = this._getStorageKey(monState);
+      if (this._storageRead(monState)) {
+        this._storageWrite(monState, PACKED_CLEARED_MON_STATE);
+      }
     }
-    if (((config.validator) != (battle.validator))) {
-      ((config.validator) = (battle.validator));
+    if (config.validator != battle.validator) {
+      config.validator = battle.validator;
     }
-    if (((config.rngOracle) != (battle.rngOracle))) {
-      ((config.rngOracle) = (battle.rngOracle));
+    if (config.rngOracle != battle.rngOracle) {
+      config.rngOracle = battle.rngOracle;
     }
-    if (((config.moveManager) != (battle.moveManager))) {
-      ((config.moveManager) = (battle.moveManager));
+    if (config.moveManager != battle.moveManager) {
+      config.moveManager = battle.moveManager;
     }
-    ((config.packedP0EffectsCount) = (BigInt(0)));
-    ((config.packedP1EffectsCount) = (BigInt(0)));
-    ((config.koBitmaps) = (BigInt(0)));
-    ((battleData.get(battleKey)) = (BattleData()));
+    config.packedP0EffectsCount = BigInt(0);
+    config.packedP1EffectsCount = BigInt(0);
+    config.koBitmaps = BigInt(0);
+    this.battleData[battleKey] = BattleData();
     const [p0Team, p1Team] = battle.teamRegistry.getTeams(battle.p0, battle.p0TeamIndex, battle.p1, battle.p1TeamIndex);
     let p0Len: bigint = p0Team.length;
     let p1Len: bigint = p1Team.length;
-    ((config.teamSizes) = ((((BigInt(p0Len) & BigInt(255))) | ((((BigInt(p1Len) & BigInt(255))) << (BigInt(4)))))));
-    for (let j: bigint = BigInt(0); ((j) < (p0Len)); (j)++) {
-      ((config.p0Team.get(j)) = (p0Team.get(j)));
+    config.teamSizes = ((p0Len) | ((p1Len) << BigInt(4)));
+    for (let j: bigint = BigInt(0); j < p0Len; (j)++) {
+      config.p0Team[Number(j)] = p0Team[Number(j)];
     }
-    for (let j: bigint = BigInt(0); ((j) < (p1Len)); (j)++) {
-      ((config.p1Team.get(j)) = (p1Team.get(j)));
+    for (let j: bigint = BigInt(0); j < p1Len; (j)++) {
+      config.p1Team[Number(j)] = p1Team[Number(j)];
     }
-    if (((String(battle.ruleset)) != (String(BigInt(0))))) {
+    if ((battle.ruleset) != (BigInt(0))) {
       const [effects, data] = battle.ruleset.getInitialGlobalEffects();
       let numEffects: bigint = effects.length;
-      if (((numEffects) > (BigInt(0)))) {
-        for (let i: bigint = BigInt(0); ((i) < (numEffects)); ++(i)) {
-          ((config.globalEffects.get(i).effect) = (effects.get(i)));
-          ((config.globalEffects.get(i).data) = (data.get(i)));
+      if (numEffects > BigInt(0)) {
+        for (let i: bigint = BigInt(0); i < numEffects; ++i) {
+          config.globalEffects[Number(i)].effect = effects[Number(i)];
+          config.globalEffects[Number(i)].data = data[Number(i)];
         }
-        ((config.globalEffectsLength) = ((BigInt(effects.length) & BigInt(255))));
+        config.globalEffectsLength = (BigInt(effects.length));
       }
     }
     else {
-      ((config.globalEffectsLength) = (BigInt(0)));
+      config.globalEffectsLength = BigInt(0);
     }
     let numHooks: bigint = battle.engineHooks.length;
-    if (((numHooks) > (BigInt(0)))) {
-      for (let i: bigint = 0n; ((i) < (numHooks)); ++(i)) {
-        ((config.engineHooks.get(i)) = (battle.engineHooks.get(i)));
+    if (numHooks > BigInt(0)) {
+      for (let i: bigint = 0n; i < numHooks; ++i) {
+        config.engineHooks[Number(i)] = battle.engineHooks[Number(i)];
       }
-      ((config.engineHooksLength) = ((BigInt(numHooks) & BigInt(255))));
+      config.engineHooksLength = (BigInt(numHooks));
     }
     else {
-      ((config.engineHooksLength) = (BigInt(0)));
+      config.engineHooksLength = BigInt(0);
     }
-    ((config.startTimestamp) = ((BigInt(this._block.timestamp) & BigInt(281474976710655))));
-    let teams: Mon[][] = new Array()(BigInt(2));
-    ((teams.get(BigInt(0))) = (p0Team));
-    ((teams.get(BigInt(1))) = (p1Team));
-    if (!(battle.validator.validateGameStart(battle.p0, battle.p1, teams, battle.teamRegistry, battle.p0TeamIndex, battle.p1TeamIndex))) {
+    config.startTimestamp = (BigInt(this._block.timestamp));
+    let teams: Mon[][] = new Array(2);
+    teams[0] = p0Team;
+    teams[1] = p1Team;
+    if (!battle.validator.validateGameStart(battle.p0, battle.p1, teams, battle.teamRegistry, battle.p0TeamIndex, battle.p1TeamIndex)) {
       throw new Error(InvalidBattleConfig());
     }
-    for (let i: bigint = BigInt(0); ((i) < (battle.engineHooks.length)); ++(i)) {
-      battle.engineHooks.get(i).onBattleStart(battleKey);
+    for (let i: bigint = BigInt(0); i < battle.engineHooks.length; ++i) {
+      battle.engineHooks[Number(i)].onBattleStart(battleKey);
     }
     this._emitEvent(BattleStart(battleKey, battle.p0, battle.p1));
   }
 
   execute(battleKey: string): void {
     let storageKey: string = _getStorageKey(battleKey);
-    ((storageKeyForWrite) = (storageKey));
-    let battle: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    if (((battle.winnerIndex) != (BigInt(2)))) {
+    this.storageKeyForWrite = storageKey;
+    let battle: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[storageKey];
+    if (battle.winnerIndex != BigInt(2)) {
       throw new Error(GameAlreadyOver());
     }
-    if (((((((config.p0Move.packedMoveIndex) & (IS_REAL_TURN_BIT))) == (BigInt(0)))) && (((((config.p1Move.packedMoveIndex) & (IS_REAL_TURN_BIT))) == (BigInt(0)))))) {
+    if (((config.p0Move.packedMoveIndex & IS_REAL_TURN_BIT) == BigInt(0)) && ((config.p1Move.packedMoveIndex & IS_REAL_TURN_BIT) == BigInt(0))) {
       throw new Error(MovesNotSet());
     }
     let turnId: bigint = battle.turnId;
     let playerSwitchForTurnFlag: bigint = BigInt(2);
     let priorityPlayerIndex: bigint;
-    ((battle.prevPlayerSwitchForTurnFlag) = (battle.playerSwitchForTurnFlag));
-    ((battleKeyForWrite) = (battleKey));
+    battle.prevPlayerSwitchForTurnFlag = battle.playerSwitchForTurnFlag;
+    this.battleKeyForWrite = battleKey;
     let numHooks: bigint = config.engineHooksLength;
-    for (let i: bigint = BigInt(0); ((i) < (numHooks)); ++(i)) {
-      config.engineHooks.get(i).onRoundStart(battleKey);
+    for (let i: bigint = BigInt(0); i < numHooks; ++i) {
+      config.engineHooks[Number(i)].onRoundStart(battleKey);
     }
-    if (((((battle.playerSwitchForTurnFlag) == (BigInt(0)))) || (((battle.playerSwitchForTurnFlag) == (BigInt(1)))))) {
+    if ((battle.playerSwitchForTurnFlag == BigInt(0)) || (battle.playerSwitchForTurnFlag == BigInt(1))) {
       let playerIndex: bigint = battle.playerSwitchForTurnFlag;
-      ((playerSwitchForTurnFlag) = (_handleMove(battleKey, config, battle, playerIndex, playerSwitchForTurnFlag)));
+      playerSwitchForTurnFlag = this._handleMove(battleKey, config, battle, playerIndex, playerSwitchForTurnFlag);
     }
     else {
       let rng: bigint = config.rngOracle.getRNG(config.p0Salt, config.p1Salt);
-      ((tempRNG) = (rng));
-      ((priorityPlayerIndex) = (computePriorityPlayerIndex(battleKey, rng)));
+      this.tempRNG = rng;
+      priorityPlayerIndex = this.computePriorityPlayerIndex(battleKey, rng);
       let otherPlayerIndex: bigint;
-      if (((priorityPlayerIndex) == (BigInt(0)))) {
-        ((otherPlayerIndex) = (BigInt(1)));
+      if (priorityPlayerIndex == BigInt(0)) {
+        otherPlayerIndex = BigInt(1);
       }
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, BigInt(2), BigInt(2), EffectStep.RoundStart, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.RoundStart, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.RoundStart, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, BigInt(2), priorityPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag)));
-      if (((turnId) == (BigInt(0)))) {
-        let priorityMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
-        let priorityMon: Mon = _getTeamMon(config, priorityPlayerIndex, priorityMonIndex);
-        if (((String(priorityMon.ability)) != (String(BigInt(0))))) {
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, BigInt(2), BigInt(2), EffectStep.RoundStart, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.RoundStart, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.RoundStart, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, BigInt(2), priorityPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
+      if (turnId == BigInt(0)) {
+        let priorityMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
+        let priorityMon: Mon = this._getTeamMon(config, priorityPlayerIndex, priorityMonIndex);
+        if ((priorityMon.ability) != (BigInt(0))) {
           priorityMon.ability.activateOnSwitch(battleKey, priorityPlayerIndex, priorityMonIndex);
         }
-        let otherMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
-        let otherMon: Mon = _getTeamMon(config, otherPlayerIndex, otherMonIndex);
-        if (((String(otherMon.ability)) != (String(BigInt(0))))) {
+        let otherMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
+        let otherMon: Mon = this._getTeamMon(config, otherPlayerIndex, otherMonIndex);
+        if ((otherMon.ability) != (BigInt(0))) {
           otherMon.ability.activateOnSwitch(battleKey, otherPlayerIndex, otherMonIndex);
         }
       }
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, BigInt(2), otherPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, BigInt(2), BigInt(2), EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
-      ((playerSwitchForTurnFlag) = (_handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag)));
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, BigInt(2), otherPlayerIndex, EffectStep.AfterMove, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, BigInt(2), BigInt(2), EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, priorityPlayerIndex, priorityPlayerIndex, EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
+      playerSwitchForTurnFlag = this._handleEffects(battleKey, config, battle, rng, otherPlayerIndex, otherPlayerIndex, EffectStep.RoundEnd, EffectRunCondition.SkipIfGameOverOrMonKO, playerSwitchForTurnFlag);
     }
-    for (let i: bigint = BigInt(0); ((i) < (numHooks)); ++(i)) {
-      config.engineHooks.get(i).onRoundEnd(battleKey);
+    for (let i: bigint = BigInt(0); i < numHooks; ++i) {
+      config.engineHooks[Number(i)].onRoundEnd(battleKey);
     }
-    if (((battle.winnerIndex) != (BigInt(2)))) {
-      let winner: string = (((battle.winnerIndex) == (BigInt(0))) ? battle.p0 : battle.p1);
-      _handleGameOver(battleKey, winner);
+    if (battle.winnerIndex != BigInt(2)) {
+      let winner: string = (battle.winnerIndex == BigInt(0) ? battle.p0 : battle.p1);
+      this._handleGameOver(battleKey, winner);
       this._emitEvent(EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex));
       return;
     }
-    ((battle.turnId) += (BigInt(1)));
-    ((battle.playerSwitchForTurnFlag) = ((BigInt(playerSwitchForTurnFlag) & BigInt(255))));
-    ((config.p0Move.packedMoveIndex) = (BigInt(0)));
-    ((config.p1Move.packedMoveIndex) = (BigInt(0)));
+    battle.turnId += BigInt(1);
+    battle.playerSwitchForTurnFlag = (BigInt(playerSwitchForTurnFlag));
+    config.p0Move.packedMoveIndex = BigInt(0);
+    config.p1Move.packedMoveIndex = BigInt(0);
     this._emitEvent(EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex));
   }
 
   end(battleKey: string): void {
-    let data: BattleData = battleData.get(battleKey);
+    let data: BattleData = this.battleData[battleKey];
     let storageKey: string = _getStorageKey(battleKey);
-    ((storageKeyForWrite) = (storageKey));
-    let config: BattleConfig = battleConfig.get(storageKey);
-    if (((data.winnerIndex) != (BigInt(2)))) {
+    this.storageKeyForWrite = storageKey;
+    let config: BattleConfig = this.battleConfig[storageKey];
+    if (data.winnerIndex != BigInt(2)) {
       throw new Error(GameAlreadyOver());
     }
-    for (let i: bigint = 0n; ((i) < (BigInt(2))); ++(i)) {
+    for (let i: bigint = 0n; i < BigInt(2); ++i) {
       let potentialLoser: string = config.validator.validateTimeout(battleKey, i);
-      if (((potentialLoser) != (String(BigInt(0))))) {
-        let winner: string = (((potentialLoser) == (data.p0)) ? data.p1 : data.p0);
-        ((data.winnerIndex) = ((((winner) == (data.p0)) ? BigInt(0) : BigInt(1))));
-        _handleGameOver(battleKey, winner);
+      if (potentialLoser != (BigInt(0))) {
+        let winner: string = (potentialLoser == data.p0 ? data.p1 : data.p0);
+        data.winnerIndex = ((winner == data.p0 ? BigInt(0) : BigInt(1)));
+        this._handleGameOver(battleKey, winner);
         return;
       }
     }
-    if (((((this._block.timestamp) - (config.startTimestamp))) > (MAX_BATTLE_DURATION))) {
-      _handleGameOver(battleKey, data.p0);
+    if ((this._block.timestamp - config.startTimestamp) > MAX_BATTLE_DURATION) {
+      this._handleGameOver(battleKey, data.p0);
       return;
     }
   }
 
   protected _handleGameOver(battleKey: string, winner: string): void {
-    let storageKey: string = storageKeyForWrite;
-    let config: BattleConfig = battleConfig.get(storageKey);
-    if (((this._block.timestamp) == (config.startTimestamp))) {
+    let storageKey: string = this.storageKeyForWrite;
+    let config: BattleConfig = this.battleConfig[storageKey];
+    if (this._block.timestamp == config.startTimestamp) {
       throw new Error(GameStartsAndEndsSameBlock());
     }
-    for (let i: bigint = BigInt(0); ((i) < (config.engineHooksLength)); ++(i)) {
-      config.engineHooks.get(i).onBattleEnd(battleKey);
+    for (let i: bigint = BigInt(0); i < config.engineHooksLength; ++i) {
+      config.engineHooks[Number(i)].onBattleEnd(battleKey);
     }
     _freeStorageKey(battleKey, storageKey);
     this._emitEvent(BattleComplete(battleKey, winner));
   }
 
   updateMonState(playerIndex: bigint, monIndex: bigint, stateVarIndex: MonStateIndexName, valueToAdd: bigint): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-    let monState: MonState = _getMonState(config, playerIndex, monIndex);
-    if (((stateVarIndex) == (MonStateIndexName.Hp))) {
-      ((monState.hpDelta) = ((((monState.hpDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.hpDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.Stamina))) {
-      ((monState.staminaDelta) = ((((monState.staminaDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.staminaDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.Speed))) {
-      ((monState.speedDelta) = ((((monState.speedDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.speedDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.Attack))) {
-      ((monState.attackDelta) = ((((monState.attackDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.attackDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.Defense))) {
-      ((monState.defenceDelta) = ((((monState.defenceDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.defenceDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialAttack))) {
-      ((monState.specialAttackDelta) = ((((monState.specialAttackDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.specialAttackDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialDefense))) {
-      ((monState.specialDefenceDelta) = ((((monState.specialDefenceDelta) == (CLEARED_MON_STATE_SENTINEL)) ? valueToAdd : ((monState.specialDefenceDelta) + (valueToAdd)))));
-    } else if (((stateVarIndex) == (MonStateIndexName.IsKnockedOut))) {
-      let newKOState: boolean = ((((valueToAdd) % (BigInt(2)))) == (BigInt(1)));
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+    let monState: MonState = this._getMonState(config, playerIndex, monIndex);
+    if (stateVarIndex == MonStateIndexName.Hp) {
+      monState.hpDelta = ((monState.hpDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.hpDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.Stamina) {
+      monState.staminaDelta = ((monState.staminaDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.staminaDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.Speed) {
+      monState.speedDelta = ((monState.speedDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.speedDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.Attack) {
+      monState.attackDelta = ((monState.attackDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.attackDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.Defense) {
+      monState.defenceDelta = ((monState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.defenceDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
+      monState.specialAttackDelta = ((monState.specialAttackDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.specialAttackDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
+      monState.specialDefenceDelta = ((monState.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL ? valueToAdd : monState.specialDefenceDelta + valueToAdd));
+    } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
+      let newKOState: boolean = (valueToAdd % BigInt(2)) == BigInt(1);
       let wasKOed: boolean = monState.isKnockedOut;
-      ((monState.isKnockedOut) = (newKOState));
-      if (((newKOState) && (!(wasKOed)))) {
-        _setMonKO(config, playerIndex, monIndex);
-      } else if (((!(newKOState)) && (wasKOed))) {
-        _clearMonKO(config, playerIndex, monIndex);
+      monState.isKnockedOut = newKOState;
+      if (newKOState && (!wasKOed)) {
+        this._setMonKO(config, playerIndex, monIndex);
+      } else if ((!newKOState) && wasKOed) {
+        this._clearMonKO(config, playerIndex, monIndex);
       }
-    } else if (((stateVarIndex) == (MonStateIndexName.ShouldSkipTurn))) {
-      ((monState.shouldSkipTurn) = (((((valueToAdd) % (BigInt(2)))) == (BigInt(1)))));
+    } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
+      monState.shouldSkipTurn = ((valueToAdd % BigInt(2)) == BigInt(1));
     }
-    this._emitEvent(MonStateUpdate(battleKey, playerIndex, monIndex, (BigInt(stateVarIndex) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935)), valueToAdd, _getUpstreamCallerAndResetValue(), currentStep));
-    _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnUpdateMonState, encodeAbiParameters(playerIndex, monIndex, stateVarIndex, valueToAdd));
+    this._emitEvent(MonStateUpdate(battleKey, playerIndex, monIndex, BigInt(stateVarIndex), valueToAdd, this._getUpstreamCallerAndResetValue(), this.currentStep));
+    this._runEffects(battleKey, this.tempRNG, playerIndex, playerIndex, EffectStep.OnUpdateMonState, encodeAbiParameters(playerIndex, monIndex, stateVarIndex, valueToAdd));
   }
 
   addEffect(targetIndex: bigint, monIndex: bigint, effect: IEffect, extraData: string): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
     if (effect.shouldApply(extraData, targetIndex, monIndex)) {
       let extraDataToUse: string = extraData;
       let removeAfterRun: boolean = false;
-      this._emitEvent(EffectAdd(battleKey, targetIndex, monIndex, String(effect), extraData, _getUpstreamCallerAndResetValue(), (BigInt(EffectStep.OnApply) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))));
+      this._emitEvent(EffectAdd(battleKey, targetIndex, monIndex, effect, extraData, this._getUpstreamCallerAndResetValue(), BigInt(EffectStep.OnApply)));
       if (effect.shouldRunAtStep(EffectStep.OnApply)) {
-        (([extraDataToUse, removeAfterRun]) = (effect.onApply(tempRNG, extraData, targetIndex, monIndex)));
+        ([extraDataToUse, removeAfterRun]) = effect.onApply(this.tempRNG, extraData, targetIndex, monIndex);
       }
-      if (!(removeAfterRun)) {
-        let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-        if (((targetIndex) == (BigInt(2)))) {
+      if (!removeAfterRun) {
+        let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+        if (targetIndex == BigInt(2)) {
           let effectIndex: bigint = config.globalEffectsLength;
-          let effectSlot: EffectInstance = config.globalEffects.get(effectIndex);
-          ((effectSlot.effect) = (effect));
-          ((effectSlot.data) = (extraDataToUse));
-          ((config.globalEffectsLength) = ((BigInt(((effectIndex) + (BigInt(1)))) & BigInt(255))));
-        } else if (((targetIndex) == (BigInt(0)))) {
-          let monEffectCount: bigint = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-          let slotIndex: bigint = _getEffectSlotIndex(monIndex, monEffectCount);
-          let effectSlot: EffectInstance = config.p0Effects.get(slotIndex);
-          ((effectSlot.effect) = (effect));
-          ((effectSlot.data) = (extraDataToUse));
-          ((config.packedP0EffectsCount) = (_setMonEffectCount(config.packedP0EffectsCount, monIndex, ((monEffectCount) + (BigInt(1))))));
+          let effectSlot: EffectInstance = config.globalEffects[Number(effectIndex)];
+          effectSlot.effect = effect;
+          effectSlot.data = extraDataToUse;
+          config.globalEffectsLength = (BigInt(effectIndex + BigInt(1)));
+        } else if (targetIndex == BigInt(0)) {
+          let monEffectCount: bigint = this._getMonEffectCount(config.packedP0EffectsCount, monIndex);
+          let slotIndex: bigint = this._getEffectSlotIndex(monIndex, monEffectCount);
+          let effectSlot: EffectInstance = config.p0Effects[Number(slotIndex)];
+          effectSlot.effect = effect;
+          effectSlot.data = extraDataToUse;
+          config.packedP0EffectsCount = this._setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + BigInt(1));
         }
         else {
-          let monEffectCount: bigint = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-          let slotIndex: bigint = _getEffectSlotIndex(monIndex, monEffectCount);
-          let effectSlot: EffectInstance = config.p1Effects.get(slotIndex);
-          ((effectSlot.effect) = (effect));
-          ((effectSlot.data) = (extraDataToUse));
-          ((config.packedP1EffectsCount) = (_setMonEffectCount(config.packedP1EffectsCount, monIndex, ((monEffectCount) + (BigInt(1))))));
+          let monEffectCount: bigint = this._getMonEffectCount(config.packedP1EffectsCount, monIndex);
+          let slotIndex: bigint = this._getEffectSlotIndex(monIndex, monEffectCount);
+          let effectSlot: EffectInstance = config.p1Effects[Number(slotIndex)];
+          effectSlot.effect = effect;
+          effectSlot.data = extraDataToUse;
+          config.packedP1EffectsCount = this._setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + BigInt(1));
         }
       }
     }
   }
 
   editEffect(targetIndex: bigint, monIndex: bigint, effectIndex: bigint, newExtraData: string): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
     let effectInstance: EffectInstance;
-    if (((targetIndex) == (BigInt(2)))) {
-      ((effectInstance) = (config.globalEffects.get(effectIndex)));
-    } else if (((targetIndex) == (BigInt(0)))) {
-      ((effectInstance) = (config.p0Effects.get(effectIndex)));
+    if (targetIndex == BigInt(2)) {
+      effectInstance = config.globalEffects[Number(effectIndex)];
+    } else if (targetIndex == BigInt(0)) {
+      effectInstance = config.p0Effects[Number(effectIndex)];
     }
     else {
-      ((effectInstance) = (config.p1Effects.get(effectIndex)));
+      effectInstance = config.p1Effects[Number(effectIndex)];
     }
-    ((effectInstance.data) = (newExtraData));
-    this._emitEvent(EffectEdit(battleKey, targetIndex, monIndex, String(effectInstance.effect), newExtraData, _getUpstreamCallerAndResetValue(), currentStep));
+    effectInstance.data = newExtraData;
+    this._emitEvent(EffectEdit(battleKey, targetIndex, monIndex, effectInstance.effect, newExtraData, this._getUpstreamCallerAndResetValue(), this.currentStep));
   }
 
   removeEffect(targetIndex: bigint, monIndex: bigint, indexToRemove: bigint): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-    if (((targetIndex) == (BigInt(2)))) {
-      _removeGlobalEffect(config, battleKey, monIndex, indexToRemove);
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+    if (targetIndex == BigInt(2)) {
+      this._removeGlobalEffect(config, battleKey, monIndex, indexToRemove);
     }
     else {
-      _removePlayerEffect(config, battleKey, targetIndex, monIndex, indexToRemove);
+      this._removePlayerEffect(config, battleKey, targetIndex, monIndex, indexToRemove);
     }
   }
 
   private _removeGlobalEffect(config: BattleConfig, battleKey: string, monIndex: bigint, indexToRemove: bigint): void {
-    let effectToRemove: EffectInstance = config.globalEffects.get(indexToRemove);
+    let effectToRemove: EffectInstance = config.globalEffects[indexToRemove];
     let effect: IEffect = effectToRemove.effect;
     let data: string = effectToRemove.data;
-    if (((String(effect)) == (TOMBSTONE_ADDRESS))) {
+    if ((effect) == TOMBSTONE_ADDRESS) {
       return;
     }
     if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
       effect.onRemove(data, BigInt(2), monIndex);
     }
-    ((effectToRemove.effect) = (IEffect(TOMBSTONE_ADDRESS)));
-    this._emitEvent(EffectRemove(battleKey, BigInt(2), monIndex, String(effect), _getUpstreamCallerAndResetValue(), currentStep));
+    effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
+    this._emitEvent(EffectRemove(battleKey, BigInt(2), monIndex, effect, this._getUpstreamCallerAndResetValue(), this.currentStep));
   }
 
   private _removePlayerEffect(config: BattleConfig, battleKey: string, targetIndex: bigint, monIndex: bigint, indexToRemove: bigint): void {
-    let effects: Map<bigint, EffectInstance> = (((targetIndex) == (BigInt(0))) ? config.p0Effects : config.p1Effects);
-    let effectToRemove: EffectInstance = effects.get(indexToRemove);
+    let effects: Map<bigint, EffectInstance> = (targetIndex == BigInt(0) ? config.p0Effects : config.p1Effects);
+    let effectToRemove: EffectInstance = effects[indexToRemove];
     let effect: IEffect = effectToRemove.effect;
     let data: string = effectToRemove.data;
-    if (((String(effect)) == (TOMBSTONE_ADDRESS))) {
+    if ((effect) == TOMBSTONE_ADDRESS) {
       return;
     }
     if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
       effect.onRemove(data, targetIndex, monIndex);
     }
-    ((effectToRemove.effect) = (IEffect(TOMBSTONE_ADDRESS)));
-    this._emitEvent(EffectRemove(battleKey, targetIndex, monIndex, String(effect), _getUpstreamCallerAndResetValue(), currentStep));
+    effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
+    this._emitEvent(EffectRemove(battleKey, targetIndex, monIndex, effect, this._getUpstreamCallerAndResetValue(), this.currentStep));
   }
 
   setGlobalKV(key: string, value: bigint): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let storageKey: string = storageKeyForWrite;
-    let timestamp: bigint = battleConfig.get(storageKey).startTimestamp;
-    let packed: string = ((((((BigInt(timestamp) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) << (BigInt(192)))) | ((BigInt(value) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935)))));
-    ((globalKV.get(storageKey).get(key)) = (packed));
+    let storageKey: string = this.storageKeyForWrite;
+    let timestamp: bigint = this.battleConfig[storageKey].startTimestamp;
+    let packed: string = ((BigInt(timestamp)) << BigInt(192)) | (BigInt(value));
+    this.globalKV[storageKey][key] = packed;
   }
 
   dealDamage(playerIndex: bigint, monIndex: bigint, damage: bigint): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-    let monState: MonState = _getMonState(config, playerIndex, monIndex);
-    ((monState.hpDelta) = ((((monState.hpDelta) == (CLEARED_MON_STATE_SENTINEL)) ? -(damage) : ((monState.hpDelta) - (damage)))));
-    let baseHp: bigint = _getTeamMon(config, playerIndex, monIndex).stats.hp;
-    if (((((((monState.hpDelta) + (BigInt(baseHp)))) <= (BigInt(0)))) && (!(monState.isKnockedOut)))) {
-      ((monState.isKnockedOut) = (true));
-      _setMonKO(config, playerIndex, monIndex);
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+    let monState: MonState = this._getMonState(config, playerIndex, monIndex);
+    monState.hpDelta = ((monState.hpDelta == CLEARED_MON_STATE_SENTINEL ? -damage : monState.hpDelta - damage));
+    let baseHp: bigint = this._getTeamMon(config, playerIndex, monIndex).stats.hp;
+    if (((monState.hpDelta + (BigInt(baseHp))) <= BigInt(0)) && (!monState.isKnockedOut)) {
+      monState.isKnockedOut = true;
+      this._setMonKO(config, playerIndex, monIndex);
     }
-    this._emitEvent(DamageDeal(battleKey, playerIndex, monIndex, damage, _getUpstreamCallerAndResetValue(), currentStep));
-    _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, encodeAbiParameters(damage));
+    this._emitEvent(DamageDeal(battleKey, playerIndex, monIndex, damage, this._getUpstreamCallerAndResetValue(), this.currentStep));
+    this._runEffects(battleKey, this.tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, encodeAbiParameters(damage));
   }
 
   switchActiveMon(playerIndex: bigint, monToSwitchIndex: bigint): void {
-    let battleKey: string = battleKeyForWrite;
-    if (((battleKey) == ((BigInt(0))))) {
+    let battleKey: string = this.battleKeyForWrite;
+    if (battleKey == (BigInt(0))) {
       throw new Error(NoWriteAllowed());
     }
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-    let battle: BattleData = battleData.get(battleKey);
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+    let battle: BattleData = this.battleData[battleKey];
     if (config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex)) {
-      _handleSwitch(battleKey, playerIndex, monToSwitchIndex, this._msg.sender);
-      const [playerSwitchForTurnFlag, isGameOver] = _checkForGameOverOrKO(config, battle, playerIndex);
+      this._handleSwitch(battleKey, playerIndex, monToSwitchIndex, this._msg.sender);
+      const [playerSwitchForTurnFlag, isGameOver] = this._checkForGameOverOrKO(config, battle, playerIndex);
       if (isGameOver) {
         return;
       }
-      ((battle.playerSwitchForTurnFlag) = ((BigInt(playerSwitchForTurnFlag) & BigInt(255))));
+      battle.playerSwitchForTurnFlag = (BigInt(playerSwitchForTurnFlag));
     }
   }
 
   setMove(battleKey: string, playerIndex: bigint, moveIndex: bigint, salt: string, extraData: bigint): void {
-    let isForCurrentBattle: boolean = ((battleKeyForWrite) == (battleKey));
-    let storageKey: string = (isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey));
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let isMoveManager: boolean = ((this._msg.sender) == (String(config.moveManager)));
-    if (((!(isMoveManager)) && (!(isForCurrentBattle)))) {
+    let isForCurrentBattle: boolean = this.battleKeyForWrite == battleKey;
+    let storageKey: string = (isForCurrentBattle ? this.storageKeyForWrite : _getStorageKey(battleKey));
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let isMoveManager: boolean = this._msg.sender == (config.moveManager);
+    if ((!isMoveManager) && (!isForCurrentBattle)) {
       throw new Error(NoWriteAllowed());
     }
-    let storedMoveIndex: bigint = (((moveIndex) < (SWITCH_MOVE_INDEX)) ? ((moveIndex) + (MOVE_INDEX_OFFSET)) : moveIndex);
-    let packedMoveIndex: bigint = ((storedMoveIndex) | (IS_REAL_TURN_BIT));
+    let storedMoveIndex: bigint = (moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex);
+    let packedMoveIndex: bigint = storedMoveIndex | IS_REAL_TURN_BIT;
     let newMove: MoveDecision = MoveDecision();
-    if (((playerIndex) == (BigInt(0)))) {
-      ((config.p0Move) = (newMove));
-      ((config.p0Salt) = (salt));
+    if (playerIndex == BigInt(0)) {
+      config.p0Move = newMove;
+      config.p0Salt = salt;
     }
     else {
-      ((config.p1Move) = (newMove));
-      ((config.p1Salt) = (salt));
+      config.p1Move = newMove;
+      config.p1Salt = salt;
     }
   }
 
   emitEngineEvent(eventType: string, eventData: string): void {
-    let battleKey: string = battleKeyForWrite;
-    this._emitEvent(EngineEvent(battleKey, eventType, eventData, _getUpstreamCallerAndResetValue(), currentStep));
+    let battleKey: string = this.battleKeyForWrite;
+    this._emitEvent(EngineEvent(battleKey, eventType, eventData, this._getUpstreamCallerAndResetValue(), this.currentStep));
   }
 
   setUpstreamCaller(caller: string): void {
-    ((upstreamCaller) = (caller));
+    this.upstreamCaller = caller;
   }
 
   computeBattleKey(p0: string, p1: string): [string, string] {
-    ((pairHash) = (keccak256(encodeAbiParameters(p0, p1))));
-    if ((((BigInt((BigInt(p0) & BigInt(1461501637330902918203684832716283019655932542975))) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) > ((BigInt((BigInt(p1) & BigInt(1461501637330902918203684832716283019655932542975))) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))))) {
-      ((pairHash) = (keccak256(encodeAbiParameters(p1, p0))));
+    pairHash = keccak256(encodeAbiParameters(p0, p1));
+    if ((BigInt(p0)) > (BigInt(p1))) {
+      pairHash = keccak256(encodeAbiParameters(p1, p0));
     }
-    let pairHashNonce: bigint = pairHashNonces.get(pairHash);
-    ((battleKey) = (keccak256(encodeAbiParameters(pairHash, pairHashNonce))));
+    let pairHashNonce: bigint = this.pairHashNonces[pairHash];
+    battleKey = keccak256(encodeAbiParameters(pairHash, pairHashNonce));
   }
 
   protected _checkForGameOverOrKO(config: BattleConfig, battle: BattleData, priorityPlayerIndex: bigint): [bigint, boolean] {
-    let otherPlayerIndex: bigint = ((((priorityPlayerIndex) + (BigInt(1)))) % (BigInt(2)));
+    let otherPlayerIndex: bigint = (priorityPlayerIndex + BigInt(1)) % BigInt(2);
     let existingWinnerIndex: bigint = battle.winnerIndex;
-    if (((existingWinnerIndex) != (BigInt(2)))) {
+    if (existingWinnerIndex != BigInt(2)) {
       return [playerSwitchForTurnFlag, true];
     }
     let newWinnerIndex: bigint = BigInt(2);
-    let p0TeamSize: bigint = ((config.teamSizes) & (BigInt("0x0F")));
-    let p1TeamSize: bigint = ((config.teamSizes) >> (BigInt(4)));
-    let p0KOBitmap: bigint = _getKOBitmap(config, BigInt(0));
-    let p1KOBitmap: bigint = _getKOBitmap(config, BigInt(1));
-    let p0FullMask: bigint = ((((BigInt(1)) << (p0TeamSize))) - (BigInt(1)));
-    let p1FullMask: bigint = ((((BigInt(1)) << (p1TeamSize))) - (BigInt(1)));
-    if (((p0KOBitmap) == (p0FullMask))) {
-      ((newWinnerIndex) = (BigInt(1)));
-    } else if (((p1KOBitmap) == (p1FullMask))) {
-      ((newWinnerIndex) = (BigInt(0)));
+    let p0TeamSize: bigint = config.teamSizes & BigInt("0x0F");
+    let p1TeamSize: bigint = config.teamSizes >> BigInt(4);
+    let p0KOBitmap: bigint = this._getKOBitmap(config, BigInt(0));
+    let p1KOBitmap: bigint = this._getKOBitmap(config, BigInt(1));
+    let p0FullMask: bigint = (BigInt(1) << p0TeamSize) - BigInt(1);
+    let p1FullMask: bigint = (BigInt(1) << p1TeamSize) - BigInt(1);
+    if (p0KOBitmap == p0FullMask) {
+      newWinnerIndex = BigInt(1);
+    } else if (p1KOBitmap == p1FullMask) {
+      newWinnerIndex = BigInt(0);
     }
-    if (((newWinnerIndex) != (BigInt(2)))) {
-      ((battle.winnerIndex) = ((BigInt(newWinnerIndex) & BigInt(255))));
+    if (newWinnerIndex != BigInt(2)) {
+      battle.winnerIndex = (BigInt(newWinnerIndex));
       return [playerSwitchForTurnFlag, true];
     }
     else {
-      ((playerSwitchForTurnFlag) = (BigInt(2)));
-      let priorityActiveMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
-      let otherActiveMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
-      let priorityKOBitmap: bigint = (((priorityPlayerIndex) == (BigInt(0))) ? p0KOBitmap : p1KOBitmap);
-      let otherKOBitmap: bigint = (((priorityPlayerIndex) == (BigInt(0))) ? p1KOBitmap : p0KOBitmap);
-      let isPriorityPlayerActiveMonKnockedOut: boolean = ((((priorityKOBitmap) & (((BigInt(1)) << (priorityActiveMonIndex))))) != (BigInt(0)));
-      let isNonPriorityPlayerActiveMonKnockedOut: boolean = ((((otherKOBitmap) & (((BigInt(1)) << (otherActiveMonIndex))))) != (BigInt(0)));
-      if (((isPriorityPlayerActiveMonKnockedOut) && (!(isNonPriorityPlayerActiveMonKnockedOut)))) {
-        ((playerSwitchForTurnFlag) = (priorityPlayerIndex));
+      playerSwitchForTurnFlag = BigInt(2);
+      let priorityActiveMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
+      let otherActiveMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
+      let priorityKOBitmap: bigint = (priorityPlayerIndex == BigInt(0) ? p0KOBitmap : p1KOBitmap);
+      let otherKOBitmap: bigint = (priorityPlayerIndex == BigInt(0) ? p1KOBitmap : p0KOBitmap);
+      let isPriorityPlayerActiveMonKnockedOut: boolean = (priorityKOBitmap & (BigInt(1) << priorityActiveMonIndex)) != BigInt(0);
+      let isNonPriorityPlayerActiveMonKnockedOut: boolean = (otherKOBitmap & (BigInt(1) << otherActiveMonIndex)) != BigInt(0);
+      if (isPriorityPlayerActiveMonKnockedOut && (!isNonPriorityPlayerActiveMonKnockedOut)) {
+        playerSwitchForTurnFlag = priorityPlayerIndex;
       }
-      if (((!(isPriorityPlayerActiveMonKnockedOut)) && (isNonPriorityPlayerActiveMonKnockedOut))) {
-        ((playerSwitchForTurnFlag) = (otherPlayerIndex));
+      if ((!isPriorityPlayerActiveMonKnockedOut) && isNonPriorityPlayerActiveMonKnockedOut) {
+        playerSwitchForTurnFlag = otherPlayerIndex;
       }
     }
   }
 
   protected _handleSwitch(battleKey: string, playerIndex: bigint, monToSwitchIndex: bigint, source: string): void {
-    let battle: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
-    let currentActiveMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-    let currentMonState: MonState = _getMonState(config, playerIndex, currentActiveMonIndex);
+    let battle: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
+    let currentActiveMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
+    let currentMonState: MonState = this._getMonState(config, playerIndex, currentActiveMonIndex);
     this._emitEvent(MonSwitch(battleKey, playerIndex, monToSwitchIndex, source));
-    if (!(currentMonState.isKnockedOut)) {
-      _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
-      _runEffects(battleKey, tempRNG, BigInt(2), playerIndex, EffectStep.OnMonSwitchOut, "");
+    if (!currentMonState.isKnockedOut) {
+      this._runEffects(battleKey, this.tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
+      this._runEffects(battleKey, this.tempRNG, BigInt(2), playerIndex, EffectStep.OnMonSwitchOut, "");
     }
-    ((battle.activeMonIndex) = (_setActiveMonIndex(battle.activeMonIndex, playerIndex, monToSwitchIndex)));
-    _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "");
-    _runEffects(battleKey, tempRNG, BigInt(2), playerIndex, EffectStep.OnMonSwitchIn, "");
-    let mon: Mon = _getTeamMon(config, playerIndex, monToSwitchIndex);
-    if (((((((String(mon.ability)) != (String(BigInt(0))))) && (((battle.turnId) != (BigInt(0)))))) && (!(_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut)))) {
+    battle.activeMonIndex = this._setActiveMonIndex(battle.activeMonIndex, playerIndex, monToSwitchIndex);
+    this._runEffects(battleKey, this.tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "");
+    this._runEffects(battleKey, this.tempRNG, BigInt(2), playerIndex, EffectStep.OnMonSwitchIn, "");
+    let mon: Mon = this._getTeamMon(config, playerIndex, monToSwitchIndex);
+    if ((((mon.ability) != (BigInt(0))) && (battle.turnId != BigInt(0))) && (!this._getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut)) {
       mon.ability.activateOnSwitch(battleKey, playerIndex, monToSwitchIndex);
     }
   }
 
   protected _handleMove(battleKey: string, config: BattleConfig, battle: BattleData, playerIndex: bigint, prevPlayerSwitchForTurnFlag: bigint): bigint {
-    let move: MoveDecision = (((playerIndex) == (BigInt(0))) ? config.p0Move : config.p1Move);
+    let move: MoveDecision = (playerIndex == BigInt(0) ? config.p0Move : config.p1Move);
     let staminaCost: bigint;
-    ((playerSwitchForTurnFlag) = (prevPlayerSwitchForTurnFlag));
-    let storedMoveIndex: bigint = ((move.packedMoveIndex) & (MOVE_INDEX_MASK));
-    let moveIndex: bigint = (((storedMoveIndex) >= (SWITCH_MOVE_INDEX)) ? storedMoveIndex : ((storedMoveIndex) - (MOVE_INDEX_OFFSET)));
-    let activeMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-    let currentMonState: MonState = _getMonState(config, playerIndex, activeMonIndex);
+    playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+    let storedMoveIndex: bigint = move.packedMoveIndex & MOVE_INDEX_MASK;
+    let moveIndex: bigint = (storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET);
+    let activeMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
+    let currentMonState: MonState = this._getMonState(config, playerIndex, activeMonIndex);
     if (currentMonState.shouldSkipTurn) {
-      ((currentMonState.shouldSkipTurn) = (false));
+      currentMonState.shouldSkipTurn = false;
       return playerSwitchForTurnFlag;
     }
-    if (((((prevPlayerSwitchForTurnFlag) == (BigInt(0)))) || (((prevPlayerSwitchForTurnFlag) == (BigInt(1)))))) {
+    if ((prevPlayerSwitchForTurnFlag == BigInt(0)) || (prevPlayerSwitchForTurnFlag == BigInt(1))) {
       return playerSwitchForTurnFlag;
     }
-    if (((moveIndex) == (SWITCH_MOVE_INDEX))) {
-      _handleSwitch(battleKey, playerIndex, (BigInt(move.extraData) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935)), String(BigInt(0)));
-    } else if (((moveIndex) == (NO_OP_MOVE_INDEX))) {
+    if (moveIndex == SWITCH_MOVE_INDEX) {
+      this._handleSwitch(battleKey, playerIndex, BigInt(move.extraData), BigInt(0));
+    } else if (moveIndex == NO_OP_MOVE_INDEX) {
       this._emitEvent(MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost));
     }
     else {
-      if (!(config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData))) {
+      if (!config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData)) {
         return playerSwitchForTurnFlag;
       }
-      let moveSet: IMoveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves.get(moveIndex);
-      ((staminaCost) = (BigInt(moveSet.stamina(battleKey, playerIndex, activeMonIndex))));
-      let monState: MonState = _getMonState(config, playerIndex, activeMonIndex);
-      ((monState.staminaDelta) = ((((monState.staminaDelta) == (CLEARED_MON_STATE_SENTINEL)) ? -(staminaCost) : ((monState.staminaDelta) - (staminaCost)))));
+      let moveSet: IMoveSet = this._getTeamMon(config, playerIndex, activeMonIndex).moves[Number(moveIndex)];
+      staminaCost = (BigInt(moveSet.stamina(battleKey, playerIndex, activeMonIndex)));
+      let monState: MonState = this._getMonState(config, playerIndex, activeMonIndex);
+      monState.staminaDelta = ((monState.staminaDelta == CLEARED_MON_STATE_SENTINEL ? -staminaCost : monState.staminaDelta - staminaCost));
       this._emitEvent(MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost));
-      moveSet.move(battleKey, playerIndex, move.extraData, tempRNG);
+      moveSet.move(battleKey, playerIndex, move.extraData, this.tempRNG);
     }
-    (([playerSwitchForTurnFlag, _]) = (_checkForGameOverOrKO(config, battle, playerIndex)));
+    ([playerSwitchForTurnFlag, _]) = this._checkForGameOverOrKO(config, battle, playerIndex);
     return playerSwitchForTurnFlag;
   }
 
   protected _runEffects(battleKey: string, rng: bigint, effectIndex: bigint, playerIndex: bigint, round: EffectStep, extraEffectsData: string): void {
-    let battle: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKeyForWrite);
+    let battle: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[this.storageKeyForWrite];
     let monIndex: bigint;
-    if (((effectIndex) == (BigInt(2)))) {
-      ((monIndex) = (BigInt(0)));
+    if (effectIndex == BigInt(2)) {
+      monIndex = BigInt(0);
     }
     else {
-      ((monIndex) = (_unpackActiveMonIndex(battle.activeMonIndex, effectIndex)));
+      monIndex = this._unpackActiveMonIndex(battle.activeMonIndex, effectIndex);
     }
-    if (((playerIndex) != (BigInt(2)))) {
-      ((monIndex) = (_unpackActiveMonIndex(battle.activeMonIndex, playerIndex)));
+    if (playerIndex != BigInt(2)) {
+      monIndex = this._unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
     }
     let baseSlot: bigint;
-    if (((effectIndex) == (BigInt(0)))) {
-      ((baseSlot) = (_getEffectSlotIndex(monIndex, BigInt(0))));
-    } else if (((effectIndex) == (BigInt(1)))) {
-      ((baseSlot) = (_getEffectSlotIndex(monIndex, BigInt(0))));
+    if (effectIndex == BigInt(0)) {
+      baseSlot = this._getEffectSlotIndex(monIndex, BigInt(0));
+    } else if (effectIndex == BigInt(1)) {
+      baseSlot = this._getEffectSlotIndex(monIndex, BigInt(0));
     }
     let i: bigint = BigInt(0);
     while (true) {
       let effectsCount: bigint;
-      if (((effectIndex) == (BigInt(2)))) {
-        ((effectsCount) = (config.globalEffectsLength));
-      } else if (((effectIndex) == (BigInt(0)))) {
-        ((effectsCount) = (_getMonEffectCount(config.packedP0EffectsCount, monIndex)));
+      if (effectIndex == BigInt(2)) {
+        effectsCount = config.globalEffectsLength;
+      } else if (effectIndex == BigInt(0)) {
+        effectsCount = this._getMonEffectCount(config.packedP0EffectsCount, monIndex);
       }
       else {
-        ((effectsCount) = (_getMonEffectCount(config.packedP1EffectsCount, monIndex)));
+        effectsCount = this._getMonEffectCount(config.packedP1EffectsCount, monIndex);
       }
-      if (((i) >= (effectsCount))) {
+      if (i >= effectsCount) {
         break;
       }
       let eff: EffectInstance;
       let slotIndex: bigint;
-      if (((effectIndex) == (BigInt(2)))) {
-        ((eff) = (config.globalEffects.get(i)));
-        ((slotIndex) = (i));
-      } else if (((effectIndex) == (BigInt(0)))) {
-        ((slotIndex) = (((baseSlot) + (i))));
-        ((eff) = (config.p0Effects.get(slotIndex)));
+      if (effectIndex == BigInt(2)) {
+        eff = config.globalEffects[Number(i)];
+        slotIndex = i;
+      } else if (effectIndex == BigInt(0)) {
+        slotIndex = (baseSlot + i);
+        eff = config.p0Effects[Number(slotIndex)];
       }
       else {
-        ((slotIndex) = (((baseSlot) + (i))));
-        ((eff) = (config.p1Effects.get(slotIndex)));
+        slotIndex = (baseSlot + i);
+        eff = config.p1Effects[Number(slotIndex)];
       }
-      if (((String(eff.effect)) != (TOMBSTONE_ADDRESS))) {
-        _runSingleEffect(config, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData, eff.effect, eff.data, (BigInt(slotIndex) & BigInt(79228162514264337593543950335)));
+      if ((eff.effect) != TOMBSTONE_ADDRESS) {
+        this._runSingleEffect(config, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData, eff.effect, eff.data, BigInt(slotIndex));
       }
-      ++(i);
+      ++i;
     }
   }
 
   private _runSingleEffect(config: BattleConfig, rng: bigint, effectIndex: bigint, playerIndex: bigint, monIndex: bigint, round: EffectStep, extraEffectsData: string, effect: IEffect, data: string, slotIndex: bigint): void {
-    if (!(effect.shouldRunAtStep(round))) {
+    if (!effect.shouldRunAtStep(round)) {
       return;
     }
-    ((currentStep) = ((BigInt(round) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))));
-    this._emitEvent(EffectRun(battleKeyForWrite, effectIndex, monIndex, String(effect), data, _getUpstreamCallerAndResetValue(), currentStep));
-    const [updatedExtraData, removeAfterRun] = _executeEffectHook(effect, rng, data, playerIndex, monIndex, round, extraEffectsData);
-    if (((removeAfterRun) || (((updatedExtraData) != (data))))) {
-      _updateOrRemoveEffect(config, effectIndex, monIndex, effect, data, slotIndex, updatedExtraData, removeAfterRun);
+    this.currentStep = (BigInt(round));
+    this._emitEvent(EffectRun(this.battleKeyForWrite, effectIndex, monIndex, effect, data, this._getUpstreamCallerAndResetValue(), this.currentStep));
+    const [updatedExtraData, removeAfterRun] = this._executeEffectHook(effect, rng, data, playerIndex, monIndex, round, extraEffectsData);
+    if (removeAfterRun || (updatedExtraData != data)) {
+      this._updateOrRemoveEffect(config, effectIndex, monIndex, effect, data, slotIndex, updatedExtraData, removeAfterRun);
     }
   }
 
   private _executeEffectHook(effect: IEffect, rng: bigint, data: string, playerIndex: bigint, monIndex: bigint, round: EffectStep, extraEffectsData: string): [string, boolean] {
-    if (((round) == (EffectStep.RoundStart))) {
+    if (round == EffectStep.RoundStart) {
       return effect.onRoundStart(rng, data, playerIndex, monIndex);
-    } else if (((round) == (EffectStep.RoundEnd))) {
+    } else if (round == EffectStep.RoundEnd) {
       return effect.onRoundEnd(rng, data, playerIndex, monIndex);
-    } else if (((round) == (EffectStep.OnMonSwitchIn))) {
+    } else if (round == EffectStep.OnMonSwitchIn) {
       return effect.onMonSwitchIn(rng, data, playerIndex, monIndex);
-    } else if (((round) == (EffectStep.OnMonSwitchOut))) {
+    } else if (round == EffectStep.OnMonSwitchOut) {
       return effect.onMonSwitchOut(rng, data, playerIndex, monIndex);
-    } else if (((round) == (EffectStep.AfterDamage))) {
+    } else if (round == EffectStep.AfterDamage) {
       return effect.onAfterDamage(rng, data, playerIndex, monIndex, decodeAbiParameters(extraEffectsData, int32));
-    } else if (((round) == (EffectStep.AfterMove))) {
+    } else if (round == EffectStep.AfterMove) {
       return effect.onAfterMove(rng, data, playerIndex, monIndex);
-    } else if (((round) == (EffectStep.OnUpdateMonState))) {
+    } else if (round == EffectStep.OnUpdateMonState) {
       const [statePlayerIndex, stateMonIndex, stateVarIndex, valueToAdd] = decodeAbiParameters(extraEffectsData, [uint256, uint256, MonStateIndexName, int32]);
       return effect.onUpdateMonState(rng, data, statePlayerIndex, stateMonIndex, stateVarIndex, valueToAdd);
     }
@@ -622,286 +628,288 @@ export class Engine extends IEngine implements MappingAllocator {
 
   private _updateOrRemoveEffect(config: BattleConfig, effectIndex: bigint, monIndex: bigint, _arg3: IEffect, _arg4: string, slotIndex: bigint, updatedExtraData: string, removeAfterRun: boolean): void {
     if (removeAfterRun) {
-      removeEffect(effectIndex, monIndex, (BigInt(slotIndex) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935)));
+      this.removeEffect(effectIndex, monIndex, BigInt(slotIndex));
     }
     else {
-      if (((effectIndex) == (BigInt(2)))) {
-        ((config.globalEffects.get(slotIndex).data) = (updatedExtraData));
-      } else if (((effectIndex) == (BigInt(0)))) {
-        ((config.p0Effects.get(slotIndex).data) = (updatedExtraData));
+      if (effectIndex == BigInt(2)) {
+        config.globalEffects[Number(slotIndex)].data = updatedExtraData;
+      } else if (effectIndex == BigInt(0)) {
+        config.p0Effects[Number(slotIndex)].data = updatedExtraData;
       }
       else {
-        ((config.p1Effects.get(slotIndex).data) = (updatedExtraData));
+        config.p1Effects[Number(slotIndex)].data = updatedExtraData;
       }
     }
   }
 
   private _handleEffects(battleKey: string, config: BattleConfig, battle: BattleData, rng: bigint, effectIndex: bigint, playerIndex: bigint, round: EffectStep, condition: EffectRunCondition, prevPlayerSwitchForTurnFlag: bigint): bigint {
-    ((playerSwitchForTurnFlag) = (prevPlayerSwitchForTurnFlag));
-    if (((battle.winnerIndex) != (BigInt(2)))) {
+    playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+    if (battle.winnerIndex != BigInt(2)) {
       return playerSwitchForTurnFlag;
     }
-    if (((effectIndex) != (BigInt(2)))) {
-      let isMonKOed: boolean = _getMonState(config, playerIndex, _unpackActiveMonIndex(battle.activeMonIndex, playerIndex)).isKnockedOut;
-      if (((isMonKOed) && (((condition) == (EffectRunCondition.SkipIfGameOverOrMonKO))))) {
+    if (effectIndex != BigInt(2)) {
+      let isMonKOed: boolean = this._getMonState(config, playerIndex, this._unpackActiveMonIndex(battle.activeMonIndex, playerIndex)).isKnockedOut;
+      if (isMonKOed && (condition == EffectRunCondition.SkipIfGameOverOrMonKO)) {
         return playerSwitchForTurnFlag;
       }
     }
-    _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
-    (([playerSwitchForTurnFlag, _]) = (_checkForGameOverOrKO(config, battle, playerIndex)));
+    this._runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+    ([playerSwitchForTurnFlag, _]) = this._checkForGameOverOrKO(config, battle, playerIndex);
     return playerSwitchForTurnFlag;
   }
 
   computePriorityPlayerIndex(battleKey: string, rng: bigint): bigint {
-    let config: BattleConfig = battleConfig.get(_getStorageKey(battleKey));
-    let battle: BattleData = battleData.get(battleKey);
-    let p0StoredIndex: bigint = ((config.p0Move.packedMoveIndex) & (MOVE_INDEX_MASK));
-    let p1StoredIndex: bigint = ((config.p1Move.packedMoveIndex) & (MOVE_INDEX_MASK));
-    let p0MoveIndex: bigint = (((p0StoredIndex) >= (SWITCH_MOVE_INDEX)) ? p0StoredIndex : ((p0StoredIndex) - (MOVE_INDEX_OFFSET)));
-    let p1MoveIndex: bigint = (((p1StoredIndex) >= (SWITCH_MOVE_INDEX)) ? p1StoredIndex : ((p1StoredIndex) - (MOVE_INDEX_OFFSET)));
-    let p0ActiveMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, BigInt(0));
-    let p1ActiveMonIndex: bigint = _unpackActiveMonIndex(battle.activeMonIndex, BigInt(1));
+    let config: BattleConfig = this.battleConfig[_getStorageKey(battleKey)];
+    let battle: BattleData = this.battleData[battleKey];
+    let p0StoredIndex: bigint = config.p0Move.packedMoveIndex & MOVE_INDEX_MASK;
+    let p1StoredIndex: bigint = config.p1Move.packedMoveIndex & MOVE_INDEX_MASK;
+    let p0MoveIndex: bigint = (p0StoredIndex >= SWITCH_MOVE_INDEX ? p0StoredIndex : p0StoredIndex - MOVE_INDEX_OFFSET);
+    let p1MoveIndex: bigint = (p1StoredIndex >= SWITCH_MOVE_INDEX ? p1StoredIndex : p1StoredIndex - MOVE_INDEX_OFFSET);
+    let p0ActiveMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, BigInt(0));
+    let p1ActiveMonIndex: bigint = this._unpackActiveMonIndex(battle.activeMonIndex, BigInt(1));
     let p0Priority: bigint;
     let p1Priority: bigint;
     {
-      if (((((p0MoveIndex) == (SWITCH_MOVE_INDEX))) || (((p0MoveIndex) == (NO_OP_MOVE_INDEX))))) {
-        ((p0Priority) = (SWITCH_PRIORITY));
+      if ((p0MoveIndex == SWITCH_MOVE_INDEX) || (p0MoveIndex == NO_OP_MOVE_INDEX)) {
+        p0Priority = SWITCH_PRIORITY;
       }
       else {
-        let p0MoveSet: IMoveSet = _getTeamMon(config, BigInt(0), p0ActiveMonIndex).moves.get(p0MoveIndex);
-        ((p0Priority) = (p0MoveSet.priority(battleKey, BigInt(0))));
+        let p0MoveSet: IMoveSet = this._getTeamMon(config, BigInt(0), p0ActiveMonIndex).moves[Number(p0MoveIndex)];
+        p0Priority = p0MoveSet.priority(battleKey, BigInt(0));
       }
-      if (((((p1MoveIndex) == (SWITCH_MOVE_INDEX))) || (((p1MoveIndex) == (NO_OP_MOVE_INDEX))))) {
-        ((p1Priority) = (SWITCH_PRIORITY));
+      if ((p1MoveIndex == SWITCH_MOVE_INDEX) || (p1MoveIndex == NO_OP_MOVE_INDEX)) {
+        p1Priority = SWITCH_PRIORITY;
       }
       else {
-        let p1MoveSet: IMoveSet = _getTeamMon(config, BigInt(1), p1ActiveMonIndex).moves.get(p1MoveIndex);
-        ((p1Priority) = (p1MoveSet.priority(battleKey, BigInt(1))));
+        let p1MoveSet: IMoveSet = this._getTeamMon(config, BigInt(1), p1ActiveMonIndex).moves[Number(p1MoveIndex)];
+        p1Priority = p1MoveSet.priority(battleKey, BigInt(1));
       }
     }
-    if (((p0Priority) > (p1Priority))) {
+    if (p0Priority > p1Priority) {
       return BigInt(0);
-    } else if (((p0Priority) < (p1Priority))) {
+    } else if (p0Priority < p1Priority) {
       return BigInt(1);
     }
     else {
-      let p0SpeedDelta: bigint = _getMonState(config, BigInt(0), p0ActiveMonIndex).speedDelta;
-      let p1SpeedDelta: bigint = _getMonState(config, BigInt(1), p1ActiveMonIndex).speedDelta;
-      let p0MonSpeed: bigint = (BigInt(((BigInt(_getTeamMon(config, BigInt(0), p0ActiveMonIndex).stats.speed)) + ((((p0SpeedDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : p0SpeedDelta)))) & BigInt(4294967295));
-      let p1MonSpeed: bigint = (BigInt(((BigInt(_getTeamMon(config, BigInt(1), p1ActiveMonIndex).stats.speed)) + ((((p1SpeedDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : p1SpeedDelta)))) & BigInt(4294967295));
-      if (((p0MonSpeed) > (p1MonSpeed))) {
+      let p0SpeedDelta: bigint = this._getMonState(config, BigInt(0), p0ActiveMonIndex).speedDelta;
+      let p1SpeedDelta: bigint = this._getMonState(config, BigInt(1), p1ActiveMonIndex).speedDelta;
+      let p0MonSpeed: bigint = BigInt((BigInt(this._getTeamMon(config, BigInt(0), p0ActiveMonIndex).stats.speed)) + ((p0SpeedDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : p0SpeedDelta)));
+      let p1MonSpeed: bigint = BigInt((BigInt(this._getTeamMon(config, BigInt(1), p1ActiveMonIndex).stats.speed)) + ((p1SpeedDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : p1SpeedDelta)));
+      if (p0MonSpeed > p1MonSpeed) {
         return BigInt(0);
-      } else if (((p0MonSpeed) < (p1MonSpeed))) {
+      } else if (p0MonSpeed < p1MonSpeed) {
         return BigInt(1);
       }
       else {
-        return ((rng) % (BigInt(2)));
+        return rng % BigInt(2);
       }
     }
   }
 
   protected _getUpstreamCallerAndResetValue(): string {
-    let source: string = upstreamCaller;
-    if (((source) == (String(BigInt(0))))) {
-      ((source) = (this._msg.sender));
+    let source: string = this.upstreamCaller;
+    if (source == (BigInt(0))) {
+      source = this._msg.sender;
     }
     return source;
   }
 
   protected _packActiveMonIndices(player0Index: bigint, player1Index: bigint): bigint {
-    return (((BigInt(player0Index) & BigInt(65535))) | ((((BigInt(player1Index) & BigInt(65535))) << (BigInt(8)))));
+    return (BigInt(player0Index)) | ((BigInt(player1Index)) << BigInt(8));
   }
 
   protected _unpackActiveMonIndex(packed: bigint, playerIndex: bigint): bigint {
-    if (((playerIndex) == (BigInt(0)))) {
-      return (BigInt((BigInt(packed) & BigInt(255))) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935));
+    if (playerIndex == BigInt(0)) {
+      return BigInt(packed);
     }
     else {
-      return (BigInt((BigInt(((packed) >> (BigInt(8)))) & BigInt(255))) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935));
+      return BigInt(packed >> BigInt(8));
     }
   }
 
   protected _setActiveMonIndex(packed: bigint, playerIndex: bigint, monIndex: bigint): bigint {
-    if (((playerIndex) == (BigInt(0)))) {
-      return ((((packed) & (BigInt("0xFF00")))) | ((BigInt((BigInt(monIndex) & BigInt(255))) & BigInt(65535))));
+    if (playerIndex == BigInt(0)) {
+      return (packed & BigInt("0xFF00")) | (BigInt(monIndex));
     }
     else {
-      return ((((packed) & (BigInt("0x00FF")))) | ((((BigInt((BigInt(monIndex) & BigInt(255))) & BigInt(65535))) << (BigInt(8)))));
+      return (packed & BigInt("0x00FF")) | ((BigInt(monIndex)) << BigInt(8));
     }
   }
 
   private _getMonEffectCount(packedCounts: bigint, monIndex: bigint): bigint {
-    return (((((BigInt(packedCounts) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) >> (((monIndex) * (PLAYER_EFFECT_BITS))))) & (EFFECT_COUNT_MASK));
+    return ((BigInt(packedCounts)) >> (monIndex * PLAYER_EFFECT_BITS)) & EFFECT_COUNT_MASK;
   }
 
   private _setMonEffectCount(packedCounts: bigint, monIndex: bigint, count: bigint): bigint {
-    let shift: bigint = ((monIndex) * (PLAYER_EFFECT_BITS));
-    let cleared: bigint = (((BigInt(packedCounts) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) & (~(((EFFECT_COUNT_MASK) << (shift)))));
-    return (BigInt(((cleared) | (((count) << (shift))))) & BigInt(79228162514264337593543950335));
+    let shift: bigint = monIndex * PLAYER_EFFECT_BITS;
+    let cleared: bigint = (BigInt(packedCounts)) & (~(EFFECT_COUNT_MASK << shift));
+    return BigInt(cleared | (count << shift));
   }
 
   private _getEffectSlotIndex(monIndex: bigint, effectIndex: bigint): bigint {
-    return ((((EFFECT_SLOTS_PER_MON) * (monIndex))) + (effectIndex));
+    return (EFFECT_SLOTS_PER_MON * monIndex) + effectIndex;
   }
 
   private _getTeamMon(config: BattleConfig, playerIndex: bigint, monIndex: bigint): Mon {
-    return (((playerIndex) == (BigInt(0))) ? config.p0Team.get(monIndex) : config.p1Team.get(monIndex));
+    return (playerIndex == BigInt(0) ? config.p0Team[Number(monIndex)] : config.p1Team[Number(monIndex)]);
   }
 
   private _getMonState(config: BattleConfig, playerIndex: bigint, monIndex: bigint): MonState {
-    return (((playerIndex) == (BigInt(0))) ? config.p0States.get(monIndex) : config.p1States.get(monIndex));
+    return (playerIndex == BigInt(0) ? config.p0States[Number(monIndex)] : config.p1States[Number(monIndex)]);
   }
 
   private _getKOBitmap(config: BattleConfig, playerIndex: bigint): bigint {
-    return (((playerIndex) == (BigInt(0))) ? ((config.koBitmaps) & (BigInt("0xFF"))) : ((config.koBitmaps) >> (BigInt(8))));
+    return (playerIndex == BigInt(0) ? config.koBitmaps & BigInt("0xFF") : config.koBitmaps >> BigInt(8));
   }
 
   private _setMonKO(config: BattleConfig, playerIndex: bigint, monIndex: bigint): void {
-    let bit: bigint = ((BigInt(1)) << (monIndex));
-    if (((playerIndex) == (BigInt(0)))) {
-      ((config.koBitmaps) = (((config.koBitmaps) | ((BigInt(bit) & BigInt(65535))))));
+    let bit: bigint = BigInt(1) << monIndex;
+    if (playerIndex == BigInt(0)) {
+      config.koBitmaps = (config.koBitmaps | (BigInt(bit)));
     }
     else {
-      ((config.koBitmaps) = (((config.koBitmaps) | ((BigInt(((bit) << (BigInt(8)))) & BigInt(65535))))));
+      config.koBitmaps = (config.koBitmaps | (BigInt(bit << BigInt(8))));
     }
   }
 
   private _clearMonKO(config: BattleConfig, playerIndex: bigint, monIndex: bigint): void {
-    let bit: bigint = ((BigInt(1)) << (monIndex));
-    if (((playerIndex) == (BigInt(0)))) {
-      ((config.koBitmaps) = (((config.koBitmaps) & ((BigInt(~(bit)) & BigInt(65535))))));
+    let bit: bigint = BigInt(1) << monIndex;
+    if (playerIndex == BigInt(0)) {
+      config.koBitmaps = (config.koBitmaps & (BigInt(~bit)));
     }
     else {
-      ((config.koBitmaps) = (((config.koBitmaps) & ((BigInt(~(((bit) << (BigInt(8))))) & BigInt(65535))))));
+      config.koBitmaps = (config.koBitmaps & (BigInt(~(bit << BigInt(8)))));
     }
   }
 
   protected _getEffectsForTarget(storageKey: string, targetIndex: bigint, monIndex: bigint): [EffectInstance[], bigint[]] {
-    let config: BattleConfig = battleConfig.get(storageKey);
-    if (((targetIndex) == (BigInt(2)))) {
+    let config: BattleConfig = this.battleConfig[storageKey];
+    if (targetIndex == BigInt(2)) {
       let globalEffectsLength: bigint = config.globalEffectsLength;
-      let globalResult: EffectInstance[] = new Array()(globalEffectsLength);
-      let globalIndices: bigint[] = new Array()(globalEffectsLength);
+      let globalResult: EffectInstance[] = new Array(Number(globalEffectsLength));
+      let globalIndices: bigint[] = new Array(Number(globalEffectsLength));
       let globalIdx: bigint = BigInt(0);
-      for (let i: bigint = BigInt(0); ((i) < (globalEffectsLength)); ++(i)) {
-        if (((String(config.globalEffects.get(i).effect)) != (TOMBSTONE_ADDRESS))) {
-          ((globalResult.get(globalIdx)) = (config.globalEffects.get(i)));
-          ((globalIndices.get(globalIdx)) = (i));
+      for (let i: bigint = BigInt(0); i < globalEffectsLength; ++i) {
+        if ((config.globalEffects[Number(i)].effect) != TOMBSTONE_ADDRESS) {
+          globalResult[Number(globalIdx)] = config.globalEffects[Number(i)];
+          globalIndices[Number(globalIdx)] = i;
           (globalIdx)++;
         }
       }
       // Assembly block (transpiled from Yul)
-      // mstore(globalResult, globalIdx ) mstore ( globalIndices)
+      // mstore: globalResult.length = Number(globalIdx);
+      // mstore: globalIndices.length = Number(globalIdx);
       return [globalResult, globalIndices];
     }
-    let packedCounts: bigint = (((targetIndex) == (BigInt(0))) ? config.packedP0EffectsCount : config.packedP1EffectsCount);
-    let monEffectCount: bigint = _getMonEffectCount(packedCounts, monIndex);
-    let baseSlot: bigint = _getEffectSlotIndex(monIndex, BigInt(0));
-    let effects: Map<bigint, EffectInstance> = (((targetIndex) == (BigInt(0))) ? config.p0Effects : config.p1Effects);
-    let result: EffectInstance[] = new Array()(monEffectCount);
-    let indices: bigint[] = new Array()(monEffectCount);
+    let packedCounts: bigint = (targetIndex == BigInt(0) ? config.packedP0EffectsCount : config.packedP1EffectsCount);
+    let monEffectCount: bigint = this._getMonEffectCount(packedCounts, monIndex);
+    let baseSlot: bigint = this._getEffectSlotIndex(monIndex, BigInt(0));
+    let effects: Map<bigint, EffectInstance> = (targetIndex == BigInt(0) ? config.p0Effects : config.p1Effects);
+    let result: EffectInstance[] = new Array(Number(monEffectCount));
+    let indices: bigint[] = new Array(Number(monEffectCount));
     let idx: bigint = BigInt(0);
-    for (let i: bigint = BigInt(0); ((i) < (monEffectCount)); ++(i)) {
-      let slotIndex: bigint = ((baseSlot) + (i));
-      if (((String(effects.get(slotIndex).effect)) != (TOMBSTONE_ADDRESS))) {
-        ((result.get(idx)) = (effects.get(slotIndex)));
-        ((indices.get(idx)) = (slotIndex));
+    for (let i: bigint = BigInt(0); i < monEffectCount; ++i) {
+      let slotIndex: bigint = baseSlot + i;
+      if ((effects[slotIndex].effect) != TOMBSTONE_ADDRESS) {
+        result[Number(idx)] = effects[slotIndex];
+        indices[Number(idx)] = slotIndex;
         (idx)++;
       }
     }
     // Assembly block (transpiled from Yul)
-    // mstore(result, idx ) mstore ( indices)
+    // mstore: result.length = Number(idx);
+    // mstore: indices.length = Number(idx);
     return [result, indices];
   }
 
   getBattle(battleKey: string): [BattleConfigView, BattleData] {
     let storageKey: string = _getStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let data: BattleData = battleData.get(battleKey);
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let data: BattleData = this.battleData[battleKey];
     let globalLen: bigint = config.globalEffectsLength;
-    let globalEffects: EffectInstance[] = new Array()(globalLen);
+    let globalEffects: EffectInstance[] = new Array(globalLe);
     let gIdx: bigint = BigInt(0);
-    for (let i: bigint = BigInt(0); ((i) < (globalLen)); ++(i)) {
-      if (((String(config.globalEffects.get(i).effect)) != (TOMBSTONE_ADDRESS))) {
-        ((globalEffects.get(gIdx)) = (config.globalEffects.get(i)));
+    for (let i: bigint = BigInt(0); i < globalLen; ++i) {
+      if ((config.globalEffects[Number(i)].effect) != TOMBSTONE_ADDRESS) {
+        globalEffects[Number(gIdx)] = config.globalEffects[Number(i)];
         (gIdx)++;
       }
     }
     // Assembly block (transpiled from Yul)
-    // mstore(globalEffects, gIdx)
+    // mstore: globalEffects.length = Number(gIdx);
     let teamSizes: bigint = config.teamSizes;
-    let p0TeamSize: bigint = ((teamSizes) & (BigInt("0xF")));
-    let p1TeamSize: bigint = ((((teamSizes) >> (BigInt(4)))) & (BigInt("0xF")));
-    let p0Effects: EffectInstance[][] = _buildPlayerEffectsArray(config.p0Effects, config.packedP0EffectsCount, p0TeamSize);
-    let p1Effects: EffectInstance[][] = _buildPlayerEffectsArray(config.p1Effects, config.packedP1EffectsCount, p1TeamSize);
-    let teams: Mon[][] = new Array()(BigInt(2));
-    ((teams.get(BigInt(0))) = (new Array()(p0TeamSize)));
-    ((teams.get(BigInt(1))) = (new Array()(p1TeamSize)));
-    for (let i: bigint = BigInt(0); ((i) < (p0TeamSize)); (i)++) {
-      ((teams.get(BigInt(0)).get(i)) = (config.p0Team.get(i)));
+    let p0TeamSize: bigint = teamSizes & BigInt("0xF");
+    let p1TeamSize: bigint = (teamSizes >> BigInt(4)) & BigInt("0xF");
+    let p0Effects: EffectInstance[][] = this._buildPlayerEffectsArray(config.p0Effects, config.packedP0EffectsCount, p0TeamSize);
+    let p1Effects: EffectInstance[][] = this._buildPlayerEffectsArray(config.p1Effects, config.packedP1EffectsCount, p1TeamSize);
+    let teams: Mon[][] = new Array(2);
+    teams[0] = new Array(Number(p0TeamSize));
+    teams[1] = new Array(Number(p1TeamSize));
+    for (let i: bigint = BigInt(0); i < p0TeamSize; (i)++) {
+      teams[0][Number(i)] = config.p0Team[Number(i)];
     }
-    for (let i: bigint = BigInt(0); ((i) < (p1TeamSize)); (i)++) {
-      ((teams.get(BigInt(1)).get(i)) = (config.p1Team.get(i)));
+    for (let i: bigint = BigInt(0); i < p1TeamSize; (i)++) {
+      teams[1][Number(i)] = config.p1Team[Number(i)];
     }
-    let monStates: MonState[][] = new Array()(BigInt(2));
-    ((monStates.get(BigInt(0))) = (new Array()(p0TeamSize)));
-    ((monStates.get(BigInt(1))) = (new Array()(p1TeamSize)));
-    for (let i: bigint = BigInt(0); ((i) < (p0TeamSize)); (i)++) {
-      ((monStates.get(BigInt(0)).get(i)) = (config.p0States.get(i)));
+    let monStates: MonState[][] = new Array(2);
+    monStates[0] = new Array(Number(p0TeamSize));
+    monStates[1] = new Array(Number(p1TeamSize));
+    for (let i: bigint = BigInt(0); i < p0TeamSize; (i)++) {
+      monStates[0][Number(i)] = config.p0States[Number(i)];
     }
-    for (let i: bigint = BigInt(0); ((i) < (p1TeamSize)); (i)++) {
-      ((monStates.get(BigInt(1)).get(i)) = (config.p1States.get(i)));
+    for (let i: bigint = BigInt(0); i < p1TeamSize; (i)++) {
+      monStates[1][Number(i)] = config.p1States[Number(i)];
     }
     let configView: BattleConfigView = BattleConfigView();
     return [configView, data];
   }
 
   private _buildPlayerEffectsArray(effects: Map<bigint, EffectInstance>, packedCounts: bigint, teamSize: bigint): EffectInstance[][] {
-    let result: EffectInstance[][] = new Array()(teamSize);
-    for (let m: bigint = BigInt(0); ((m) < (teamSize)); (m)++) {
-      let monCount: bigint = _getMonEffectCount(packedCounts, m);
-      let baseSlot: bigint = _getEffectSlotIndex(m, BigInt(0));
-      let monEffects: EffectInstance[] = new Array()(monCount);
+    let result: EffectInstance[][] = new Array(Number(teamSize));
+    for (let m: bigint = BigInt(0); m < teamSize; (m)++) {
+      let monCount: bigint = this._getMonEffectCount(packedCounts, m);
+      let baseSlot: bigint = this._getEffectSlotIndex(m, BigInt(0));
+      let monEffects: EffectInstance[] = new Array(Number(monCount));
       let idx: bigint = BigInt(0);
-      for (let i: bigint = BigInt(0); ((i) < (monCount)); ++(i)) {
-        if (((String(effects.get(((baseSlot) + (i))).effect)) != (TOMBSTONE_ADDRESS))) {
-          ((monEffects.get(idx)) = (effects.get(((baseSlot) + (i)))));
+      for (let i: bigint = BigInt(0); i < monCount; ++i) {
+        if ((effects[baseSlot + i].effect) != TOMBSTONE_ADDRESS) {
+          monEffects[Number(idx)] = effects[baseSlot + i];
           (idx)++;
         }
       }
       // Assembly block (transpiled from Yul)
-      // mstore(monEffects, idx)
-      ((result.get(m)) = (monEffects));
+      // mstore: monEffects.length = Number(idx);
+      result[Number(m)] = monEffects;
     }
     return result;
   }
 
   getBattleValidator(battleKey: string): IValidator {
-    return battleConfig.get(_getStorageKey(battleKey)).validator;
+    return this.battleConfig[_getStorageKey(battleKey)].validator;
   }
 
   getMonValueForBattle(battleKey: string, playerIndex: bigint, monIndex: bigint, stateVarIndex: MonStateIndexName): bigint {
     let storageKey: string = _getStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let mon: Mon = _getTeamMon(config, playerIndex, monIndex);
-    if (((stateVarIndex) == (MonStateIndexName.Hp))) {
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let mon: Mon = this._getTeamMon(config, playerIndex, monIndex);
+    if (stateVarIndex == MonStateIndexName.Hp) {
       return mon.stats.hp;
-    } else if (((stateVarIndex) == (MonStateIndexName.Stamina))) {
+    } else if (stateVarIndex == MonStateIndexName.Stamina) {
       return mon.stats.stamina;
-    } else if (((stateVarIndex) == (MonStateIndexName.Speed))) {
+    } else if (stateVarIndex == MonStateIndexName.Speed) {
       return mon.stats.speed;
-    } else if (((stateVarIndex) == (MonStateIndexName.Attack))) {
+    } else if (stateVarIndex == MonStateIndexName.Attack) {
       return mon.stats.attack;
-    } else if (((stateVarIndex) == (MonStateIndexName.Defense))) {
+    } else if (stateVarIndex == MonStateIndexName.Defense) {
       return mon.stats.defense;
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialAttack))) {
+    } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
       return mon.stats.specialAttack;
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialDefense))) {
+    } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
       return mon.stats.specialDefense;
-    } else if (((stateVarIndex) == (MonStateIndexName.Type1))) {
-      return (BigInt(mon.stats.type1) & BigInt(4294967295));
-    } else if (((stateVarIndex) == (MonStateIndexName.Type2))) {
-      return (BigInt(mon.stats.type2) & BigInt(4294967295));
+    } else if (stateVarIndex == MonStateIndexName.Type1) {
+      return BigInt(mon.stats.type1);
+    } else if (stateVarIndex == MonStateIndexName.Type2) {
+      return BigInt(mon.stats.type2);
     }
     else {
       return BigInt(0);
@@ -910,195 +918,196 @@ export class Engine extends IEngine implements MappingAllocator {
 
   getTeamSize(battleKey: string, playerIndex: bigint): bigint {
     let storageKey: string = _getStorageKey(battleKey);
-    let teamSizes: bigint = battleConfig.get(storageKey).teamSizes;
-    return (((playerIndex) == (BigInt(0))) ? ((teamSizes) & (BigInt("0x0F"))) : ((teamSizes) >> (BigInt(4))));
+    let teamSizes: bigint = this.battleConfig[storageKey].teamSizes;
+    return (playerIndex == BigInt(0) ? teamSizes & BigInt("0x0F") : teamSizes >> BigInt(4));
   }
 
   getMoveForMonForBattle(battleKey: string, playerIndex: bigint, monIndex: bigint, moveIndex: bigint): IMoveSet {
     let storageKey: string = _getStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    return _getTeamMon(config, playerIndex, monIndex).moves.get(moveIndex);
+    let config: BattleConfig = this.battleConfig[storageKey];
+    return this._getTeamMon(config, playerIndex, monIndex).moves[Number(moveIndex)];
   }
 
   getMoveDecisionForBattleState(battleKey: string, playerIndex: bigint): MoveDecision {
-    let config: BattleConfig = battleConfig.get(_getStorageKey(battleKey));
-    return (((playerIndex) == (BigInt(0))) ? config.p0Move : config.p1Move);
+    let config: BattleConfig = this.battleConfig[_getStorageKey(battleKey)];
+    return (playerIndex == BigInt(0) ? config.p0Move : config.p1Move);
   }
 
   getPlayersForBattle(battleKey: string): string[] {
-    let players: string[] = new Array()(BigInt(2));
-    ((players.get(BigInt(0))) = (battleData.get(battleKey).p0));
-    ((players.get(BigInt(1))) = (battleData.get(battleKey).p1));
+    let players: string[] = new Array(2);
+    players[0] = this.battleData[battleKey].p0;
+    players[1] = this.battleData[battleKey].p1;
     return players;
   }
 
   getMonStatsForBattle(battleKey: string, playerIndex: bigint, monIndex: bigint): MonStats {
     let storageKey: string = _getStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    return _getTeamMon(config, playerIndex, monIndex).stats;
+    let config: BattleConfig = this.battleConfig[storageKey];
+    return this._getTeamMon(config, playerIndex, monIndex).stats;
   }
 
   getMonStateForBattle(battleKey: string, playerIndex: bigint, monIndex: bigint, stateVarIndex: MonStateIndexName): bigint {
     let storageKey: string = _getStorageKey(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let monState: MonState = _getMonState(config, playerIndex, monIndex);
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let monState: MonState = this._getMonState(config, playerIndex, monIndex);
     let value: bigint;
-    if (((stateVarIndex) == (MonStateIndexName.Hp))) {
-      ((value) = (monState.hpDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.Stamina))) {
-      ((value) = (monState.staminaDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.Speed))) {
-      ((value) = (monState.speedDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.Attack))) {
-      ((value) = (monState.attackDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.Defense))) {
-      ((value) = (monState.defenceDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialAttack))) {
-      ((value) = (monState.specialAttackDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialDefense))) {
-      ((value) = (monState.specialDefenceDelta));
-    } else if (((stateVarIndex) == (MonStateIndexName.IsKnockedOut))) {
-      return (monState.isKnockedOut ? BigInt(BigInt(1)) : BigInt(BigInt(0)));
-    } else if (((stateVarIndex) == (MonStateIndexName.ShouldSkipTurn))) {
-      return (monState.shouldSkipTurn ? BigInt(BigInt(1)) : BigInt(BigInt(0)));
+    if (stateVarIndex == MonStateIndexName.Hp) {
+      value = monState.hpDelta;
+    } else if (stateVarIndex == MonStateIndexName.Stamina) {
+      value = monState.staminaDelta;
+    } else if (stateVarIndex == MonStateIndexName.Speed) {
+      value = monState.speedDelta;
+    } else if (stateVarIndex == MonStateIndexName.Attack) {
+      value = monState.attackDelta;
+    } else if (stateVarIndex == MonStateIndexName.Defense) {
+      value = monState.defenceDelta;
+    } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
+      value = monState.specialAttackDelta;
+    } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
+      value = monState.specialDefenceDelta;
+    } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
+      return (monState.isKnockedOut ? BigInt(1) : BigInt(0));
+    } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
+      return (monState.shouldSkipTurn ? BigInt(1) : BigInt(0));
     }
     else {
-      return BigInt(BigInt(0));
+      return BigInt(0);
     }
-    return (((value) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : value);
+    return (value == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : value);
   }
 
   getMonStateForStorageKey(storageKey: string, playerIndex: bigint, monIndex: bigint, stateVarIndex: MonStateIndexName): bigint {
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let monState: MonState = _getMonState(config, playerIndex, monIndex);
-    if (((stateVarIndex) == (MonStateIndexName.Hp))) {
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let monState: MonState = this._getMonState(config, playerIndex, monIndex);
+    if (stateVarIndex == MonStateIndexName.Hp) {
       return monState.hpDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.Stamina))) {
+    } else if (stateVarIndex == MonStateIndexName.Stamina) {
       return monState.staminaDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.Speed))) {
+    } else if (stateVarIndex == MonStateIndexName.Speed) {
       return monState.speedDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.Attack))) {
+    } else if (stateVarIndex == MonStateIndexName.Attack) {
       return monState.attackDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.Defense))) {
+    } else if (stateVarIndex == MonStateIndexName.Defense) {
       return monState.defenceDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialAttack))) {
+    } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
       return monState.specialAttackDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.SpecialDefense))) {
+    } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
       return monState.specialDefenceDelta;
-    } else if (((stateVarIndex) == (MonStateIndexName.IsKnockedOut))) {
-      return (monState.isKnockedOut ? BigInt(BigInt(1)) : BigInt(BigInt(0)));
-    } else if (((stateVarIndex) == (MonStateIndexName.ShouldSkipTurn))) {
-      return (monState.shouldSkipTurn ? BigInt(BigInt(1)) : BigInt(BigInt(0)));
+    } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
+      return (monState.isKnockedOut ? BigInt(1) : BigInt(0));
+    } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
+      return (monState.shouldSkipTurn ? BigInt(1) : BigInt(0));
     }
     else {
-      return BigInt(BigInt(0));
+      return BigInt(0);
     }
   }
 
   getTurnIdForBattleState(battleKey: string): bigint {
-    return battleData.get(battleKey).turnId;
+    return this.battleData[battleKey].turnId;
   }
 
   getActiveMonIndexForBattleState(battleKey: string): bigint[] {
-    let packed: bigint = battleData.get(battleKey).activeMonIndex;
-    let result: bigint[] = new Array()(BigInt(2));
-    ((result.get(BigInt(0))) = (_unpackActiveMonIndex(packed, BigInt(0))));
-    ((result.get(BigInt(1))) = (_unpackActiveMonIndex(packed, BigInt(1))));
+    let packed: bigint = this.battleData[battleKey].activeMonIndex;
+    let result: bigint[] = new Array(2);
+    result[0] = this._unpackActiveMonIndex(packed, BigInt(0));
+    result[1] = this._unpackActiveMonIndex(packed, BigInt(1));
     return result;
   }
 
   getPlayerSwitchForTurnFlagForBattleState(battleKey: string): bigint {
-    return battleData.get(battleKey).playerSwitchForTurnFlag;
+    return this.battleData[battleKey].playerSwitchForTurnFlag;
   }
 
   getGlobalKV(battleKey: string, key: string): bigint {
     let storageKey: string = _getStorageKey(battleKey);
-    let packed: string = globalKV.get(storageKey).get(key);
-    let storedTimestamp: bigint = (BigInt((((BigInt(packed) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) >> (BigInt(192)))) & BigInt(18446744073709551615));
-    let currentTimestamp: bigint = battleConfig.get(storageKey).startTimestamp;
-    if (((storedTimestamp) != (currentTimestamp))) {
+    let packed: string = this.globalKV[storageKey][key];
+    let storedTimestamp: bigint = BigInt((BigInt(packed)) >> BigInt(192));
+    let currentTimestamp: bigint = this.battleConfig[storageKey].startTimestamp;
+    if (storedTimestamp != currentTimestamp) {
       return BigInt(0);
     }
-    return (BigInt((BigInt(packed) & BigInt(115792089237316195423570985008687907853269984665640564039457584007913129639935))) & BigInt(6277101735386680763835789423207666416102355444464034512895));
+    return BigInt(packed);
   }
 
   getEffects(battleKey: string, targetIndex: bigint, monIndex: bigint): [EffectInstance[], bigint[]] {
     let storageKey: string = _getStorageKey(battleKey);
-    return _getEffectsForTarget(storageKey, targetIndex, monIndex);
+    return this._getEffectsForTarget(storageKey, targetIndex, monIndex);
   }
 
   getWinner(battleKey: string): string {
-    let winnerIndex: bigint = battleData.get(battleKey).winnerIndex;
-    if (((winnerIndex) == (BigInt(2)))) {
-      return String(BigInt(0));
+    let winnerIndex: bigint = this.battleData[battleKey].winnerIndex;
+    if (winnerIndex == BigInt(2)) {
+      return BigInt(0);
     }
-    return (((winnerIndex) == (BigInt(0))) ? battleData.get(battleKey).p0 : battleData.get(battleKey).p1);
+    return (winnerIndex == BigInt(0) ? this.battleData[battleKey].p0 : this.battleData[battleKey].p1);
   }
 
   getStartTimestamp(battleKey: string): bigint {
-    return battleConfig.get(_getStorageKey(battleKey)).startTimestamp;
+    return this.battleConfig[_getStorageKey(battleKey)].startTimestamp;
   }
 
   getPrevPlayerSwitchForTurnFlagForBattleState(battleKey: string): bigint {
-    return battleData.get(battleKey).prevPlayerSwitchForTurnFlag;
+    return this.battleData[battleKey].prevPlayerSwitchForTurnFlag;
   }
 
   getMoveManager(battleKey: string): string {
-    return battleConfig.get(_getStorageKey(battleKey)).moveManager;
+    return this.battleConfig[_getStorageKey(battleKey)].moveManager;
   }
 
   getBattleContext(battleKey: string): BattleContext {
     let storageKey: string = _getStorageKey(battleKey);
-    let data: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    ((ctx.startTimestamp) = (config.startTimestamp));
-    ((ctx.p0) = (data.p0));
-    ((ctx.p1) = (data.p1));
-    ((ctx.winnerIndex) = (data.winnerIndex));
-    ((ctx.turnId) = (data.turnId));
-    ((ctx.playerSwitchForTurnFlag) = (data.playerSwitchForTurnFlag));
-    ((ctx.prevPlayerSwitchForTurnFlag) = (data.prevPlayerSwitchForTurnFlag));
-    ((ctx.p0ActiveMonIndex) = ((BigInt(((data.activeMonIndex) & (BigInt("0xFF")))) & BigInt(255))));
-    ((ctx.p1ActiveMonIndex) = ((BigInt(((data.activeMonIndex) >> (BigInt(8)))) & BigInt(255))));
-    ((ctx.validator) = (String(config.validator)));
-    ((ctx.moveManager) = (config.moveManager));
+    let data: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[storageKey];
+    ctx.startTimestamp = config.startTimestamp;
+    ctx.p0 = data.p0;
+    ctx.p1 = data.p1;
+    ctx.winnerIndex = data.winnerIndex;
+    ctx.turnId = data.turnId;
+    ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
+    ctx.prevPlayerSwitchForTurnFlag = data.prevPlayerSwitchForTurnFlag;
+    ctx.p0ActiveMonIndex = (BigInt(data.activeMonIndex & BigInt("0xFF")));
+    ctx.p1ActiveMonIndex = (BigInt(data.activeMonIndex >> BigInt(8)));
+    ctx.validator = (config.validator);
+    ctx.moveManager = config.moveManager;
   }
 
   getCommitContext(battleKey: string): CommitContext {
     let storageKey: string = _getStorageKey(battleKey);
-    let data: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    ((ctx.startTimestamp) = (config.startTimestamp));
-    ((ctx.p0) = (data.p0));
-    ((ctx.p1) = (data.p1));
-    ((ctx.winnerIndex) = (data.winnerIndex));
-    ((ctx.turnId) = (data.turnId));
-    ((ctx.playerSwitchForTurnFlag) = (data.playerSwitchForTurnFlag));
-    ((ctx.validator) = (String(config.validator)));
+    let data: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[storageKey];
+    ctx.startTimestamp = config.startTimestamp;
+    ctx.p0 = data.p0;
+    ctx.p1 = data.p1;
+    ctx.winnerIndex = data.winnerIndex;
+    ctx.turnId = data.turnId;
+    ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
+    ctx.validator = (config.validator);
   }
 
   getDamageCalcContext(battleKey: string, attackerPlayerIndex: bigint, defenderPlayerIndex: bigint): DamageCalcContext {
     let storageKey: string = _getStorageKey(battleKey);
-    let data: BattleData = battleData.get(battleKey);
-    let config: BattleConfig = battleConfig.get(storageKey);
-    let attackerMonIndex: bigint = _unpackActiveMonIndex(data.activeMonIndex, attackerPlayerIndex);
-    let defenderMonIndex: bigint = _unpackActiveMonIndex(data.activeMonIndex, defenderPlayerIndex);
-    ((ctx.attackerMonIndex) = ((BigInt(attackerMonIndex) & BigInt(255))));
-    ((ctx.defenderMonIndex) = ((BigInt(defenderMonIndex) & BigInt(255))));
-    let attackerMon: Mon = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex);
-    let attackerState: MonState = _getMonState(config, attackerPlayerIndex, attackerMonIndex);
-    ((ctx.attackerAttack) = (attackerMon.stats.attack));
-    ((ctx.attackerAttackDelta) = ((((attackerState.attackDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : attackerState.attackDelta)));
-    ((ctx.attackerSpAtk) = (attackerMon.stats.specialAttack));
-    ((ctx.attackerSpAtkDelta) = ((((attackerState.specialAttackDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : attackerState.specialAttackDelta)));
-    let defenderMon: Mon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-    let defenderState: MonState = _getMonState(config, defenderPlayerIndex, defenderMonIndex);
-    ((ctx.defenderDef) = (defenderMon.stats.defense));
-    ((ctx.defenderDefDelta) = ((((defenderState.defenceDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : defenderState.defenceDelta)));
-    ((ctx.defenderSpDef) = (defenderMon.stats.specialDefense));
-    ((ctx.defenderSpDefDelta) = ((((defenderState.specialDefenceDelta) == (CLEARED_MON_STATE_SENTINEL)) ? BigInt(BigInt(0)) : defenderState.specialDefenceDelta)));
-    ((ctx.defenderType1) = (defenderMon.stats.type1));
-    ((ctx.defenderType2) = (defenderMon.stats.type2));
+    let data: BattleData = this.battleData[battleKey];
+    let config: BattleConfig = this.battleConfig[storageKey];
+    let attackerMonIndex: bigint = this._unpackActiveMonIndex(data.activeMonIndex, attackerPlayerIndex);
+    let defenderMonIndex: bigint = this._unpackActiveMonIndex(data.activeMonIndex, defenderPlayerIndex);
+    ctx.attackerMonIndex = (BigInt(attackerMonIndex));
+    ctx.defenderMonIndex = (BigInt(defenderMonIndex));
+    let attackerMon: Mon = this._getTeamMon(config, attackerPlayerIndex, attackerMonIndex);
+    let attackerState: MonState = this._getMonState(config, attackerPlayerIndex, attackerMonIndex);
+    ctx.attackerAttack = attackerMon.stats.attack;
+    ctx.attackerAttackDelta = ((attackerState.attackDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : attackerState.attackDelta));
+    ctx.attackerSpAtk = attackerMon.stats.specialAttack;
+    ctx.attackerSpAtkDelta = ((attackerState.specialAttackDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : attackerState.specialAttackDelta));
+    let defenderMon: Mon = this._getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
+    let defenderState: MonState = this._getMonState(config, defenderPlayerIndex, defenderMonIndex);
+    ctx.defenderDef = defenderMon.stats.defense;
+    ctx.defenderDefDelta = ((defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : defenderState.defenceDelta));
+    ctx.defenderSpDef = defenderMon.stats.specialDefense;
+    ctx.defenderSpDefDelta = ((defenderState.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL ? BigInt(0) : defenderState.specialDefenceDelta));
+    ctx.defenderType1 = defenderMon.stats.type1;
+    ctx.defenderType2 = defenderMon.stats.type2;
   }
 
 }
+

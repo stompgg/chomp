@@ -29,21 +29,21 @@ export const DEFAULT_VOL: bigint = BigInt(10);
 
 export const DEFAULT_ACCURACY: bigint = BigInt(100);
 
-export const CLEARED_MON_STATE_SENTINEL: bigint = ((/* type(int32) */.max) - (BigInt(1)));
+export const CLEARED_MON_STATE_SENTINEL: bigint = BigInt("2147483647") - BigInt(1);
 
 export const PACKED_CLEARED_MON_STATE: bigint = BigInt("0x00007FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE");
 
 export const PLAYER_EFFECT_BITS: bigint = BigInt(6);
 
-export const MAX_EFFECTS_PER_MON: bigint = (((BigInt(((BigInt(2)) ** (PLAYER_EFFECT_BITS))) & BigInt(255))) - (BigInt(1)));
+export const MAX_EFFECTS_PER_MON: bigint = (BigInt(2) ** PLAYER_EFFECT_BITS) - BigInt(1);
 
 export const EFFECT_SLOTS_PER_MON: bigint = BigInt(64);
 
 export const EFFECT_COUNT_MASK: bigint = BigInt("0x3F");
 
-export const TOMBSTONE_ADDRESS: string = String(BigInt("0xdead"));
+export const TOMBSTONE_ADDRESS: string = BigInt("0xdead");
 
-export const MAX_BATTLE_DURATION: bigint = ((BigInt(1)) * (BigInt(3600)));
+export const MAX_BATTLE_DURATION: bigint = BigInt(1) * BigInt(3600);
 
 export const MOVE_MISS_EVENT_TYPE: string = sha256(encodeAbiParameters("MoveMiss"));
 
@@ -51,4 +51,5 @@ export const MOVE_CRIT_EVENT_TYPE: string = sha256(encodeAbiParameters("MoveCrit
 
 export const MOVE_TYPE_IMMUNITY_EVENT_TYPE: string = sha256(encodeAbiParameters("MoveTypeImmunity"));
 
-export const NONE_EVENT_TYPE: string = (BigInt(0));
+export const NONE_EVENT_TYPE: string = BigInt(0);
+

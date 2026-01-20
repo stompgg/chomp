@@ -197,3 +197,4 @@ export interface DamageCalcContext {
   defenderType1: Type;
   defenderType2: Type;
 }
+

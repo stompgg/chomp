@@ -2819,11 +2819,45 @@ class TypeScriptCodeGenerator:
             elif access.expression.name == 'type':
                 return f'/* type().{member} */'
 
+        # Handle type(TypeName).max/min - compute the actual values
+        if isinstance(access.expression, FunctionCall):
+            if isinstance(access.expression.function, Identifier) and access.expression.function.name == 'type':
+                if access.expression.arguments:
+                    type_arg = access.expression.arguments[0]
+                    if isinstance(type_arg, Identifier):
+                        type_name = type_arg.name
+                        if member == 'max':
+                            return self._type_max(type_name)
+                        elif member == 'min':
+                            return self._type_min(type_name)
+
         # Handle .slot for storage variables
         if member == 'slot':
             return f'/* {expr}.slot */'
 
         return f'{expr}.{member}'
+
+    def _type_max(self, type_name: str) -> str:
+        """Get the maximum value for a Solidity integer type."""
+        if type_name.startswith('uint'):
+            bits = int(type_name[4:]) if len(type_name) > 4 else 256
+            max_val = (2 ** bits) - 1
+            return f'BigInt("{max_val}")'
+        elif type_name.startswith('int'):
+            bits = int(type_name[3:]) if len(type_name) > 3 else 256
+            max_val = (2 ** (bits - 1)) - 1
+            return f'BigInt("{max_val}")'
+        return '0n'
+
+    def _type_min(self, type_name: str) -> str:
+        """Get the minimum value for a Solidity integer type."""
+        if type_name.startswith('uint'):
+            return '0n'
+        elif type_name.startswith('int'):
+            bits = int(type_name[3:]) if len(type_name) > 3 else 256
+            min_val = -(2 ** (bits - 1))
+            return f'BigInt("{min_val}")'
+        return '0n'
 
     def generate_index_access(self, access: IndexAccess) -> str:
         """Generate index access using [] syntax for both arrays and objects."""
