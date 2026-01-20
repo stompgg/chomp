@@ -45,3 +45,7 @@ drool/*
 !drool/combine.py
 !drool/switch-animation.py
 !drool/docs
+
+# Transpiler output
+ts-output/
+scripts/transpiler/ts-output/
