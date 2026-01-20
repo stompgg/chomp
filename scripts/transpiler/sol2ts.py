@@ -2634,7 +2634,8 @@ class TypeScriptCodeGenerator:
             if slot_match:
                 storage_var = slot_match.group(1)
                 slot_vars[var_name] = storage_var
-                lines.append(f'const {var_name} = this._getStorageKey({storage_var});')
+                # Cast to any for storage operations since we may be passing struct references
+                lines.append(f'const {var_name} = this._getStorageKey({storage_var} as any);')
             else:
                 ts_expr = self._transpile_yul_expr(expr, slot_vars)
                 lines.append(f'let {var_name} = {ts_expr};')
@@ -2676,7 +2677,7 @@ class TypeScriptCodeGenerator:
         if sload_match:
             slot = sload_match.group(1)
             if slot in slot_vars:
-                return f'this._storageRead({slot_vars[slot]})'
+                return f'this._storageRead({slot_vars[slot]} as any)'
             return f'this._storageRead({slot})'
 
         # Function calls
@@ -2729,7 +2730,7 @@ class TypeScriptCodeGenerator:
             slot = args[0]
             value = self._transpile_yul_expr(args[1], slot_vars) if len(args) > 1 else '0n'
             if slot in slot_vars:
-                return f'this._storageWrite({slot_vars[slot]}, {value});'
+                return f'this._storageWrite({slot_vars[slot]} as any, {value});'
             return f'this._storageWrite({slot}, {value});'
 
         if func == 'mstore':
