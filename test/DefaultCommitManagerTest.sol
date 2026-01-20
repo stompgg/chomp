@@ -7,6 +7,7 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
+import {BaseCommitManager} from "../src/BaseCommitManager.sol";
 import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
@@ -76,7 +77,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
     function test_cannotCommitForArbitraryBattleKey() public {
         bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         vm.startPrank(CARL);
-        vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
+        vm.expectRevert(BaseCommitManager.NotP0OrP1.selector);
         commitManager.commitMove(battleKey, "");
     }
 
@@ -90,7 +91,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         commitManager.commitMove(battleKey, moveHash);
 
         // Alice tries to reveal
-        vm.expectRevert(DefaultCommitManager.NotYetRevealed.selector);
+        vm.expectRevert(BaseCommitManager.NotYetRevealed.selector);
         commitManager.revealMove(battleKey, moveIndex, bytes32(""), uint240(0), false);
     }
 
@@ -108,16 +109,16 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         // Alice's turn again to move
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.RevealBeforeSelfCommit.selector);
+        vm.expectRevert(BaseCommitManager.RevealBeforeSelfCommit.selector);
         commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), 0, false);
     }
 
     function test_BattleNotYetStarted() public {
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
+        vm.expectRevert(BaseCommitManager.BattleNotYetStarted.selector);
         commitManager.revealMove(bytes32(0), NO_OP_MOVE_INDEX, bytes32(""), 0, false);
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
+        vm.expectRevert(BaseCommitManager.BattleNotYetStarted.selector);
         commitManager.commitMove(bytes32(0), bytes32(0));
     }
 
@@ -127,10 +128,10 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         vm.warp(TIMEOUT * TIMEOUT);
         engine.end(battleKey);
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
+        vm.expectRevert(BaseCommitManager.BattleAlreadyComplete.selector);
         commitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(""), 0, false);
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
+        vm.expectRevert(BaseCommitManager.BattleAlreadyComplete.selector);
         commitManager.commitMove(battleKey, bytes32(0));
     }
 

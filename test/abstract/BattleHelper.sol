@@ -3,6 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
+import {GameMode} from "../../src/Enums.sol";
 
 import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
@@ -112,7 +113,8 @@ abstract contract BattleHelper is Test {
             ruleset: ruleset,
             engineHooks: engineHooks,
             moveManager: moveManager,
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         // Propose battle

@@ -195,7 +195,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(cpu),
-            matchmaker: cpu
+            matchmaker: cpu,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -313,7 +314,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(playerCPU),
-            matchmaker: playerCPU
+            matchmaker: playerCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -352,7 +354,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(playerCPU),
-            matchmaker: playerCPU
+            matchmaker: playerCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -442,7 +445,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -493,7 +497,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -545,7 +550,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -607,7 +613,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -664,7 +671,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -721,7 +729,8 @@ contract CPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            matchmaker: okayCPU,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);

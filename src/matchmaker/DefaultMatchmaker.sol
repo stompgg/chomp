@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
+import {GameMode} from "../Enums.sol";
 import {ProposedBattle, Battle} from "../Structs.sol";
 import {IMatchmaker} from "./IMatchmaker.sol";
 import {MappingAllocator} from "../lib/MappingAllocator.sol";
@@ -95,6 +96,9 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         if (existingBattle.engineHooks.length != proposal.engineHooks.length && proposal.engineHooks.length != 0) {
             existingBattle.engineHooks = proposal.engineHooks;
         }
+        if (existingBattle.gameMode != proposal.gameMode) {
+            existingBattle.gameMode = proposal.gameMode;
+        }
         proposals[storageKey].p1TeamIndex = UNSET_P1_TEAM_INDEX;
         emit BattleProposal(battleKey, proposal.p0, proposal.p1, proposal.p0TeamHash == FAST_BATTLE_SENTINAL_HASH, proposal.p0TeamHash);
         return battleKey;
@@ -134,7 +138,8 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                     ruleset: proposal.ruleset,
                     engineHooks: proposal.engineHooks,
                     moveManager: proposal.moveManager,
-                    matchmaker: proposal.matchmaker
+                    matchmaker: proposal.matchmaker,
+                    gameMode: proposal.gameMode
                 })
             );
             _cleanUpBattleProposal(battleKey);
@@ -174,7 +179,8 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                 ruleset: proposal.ruleset,
                 engineHooks: proposal.engineHooks,
                 moveManager: proposal.moveManager,
-                matchmaker: proposal.matchmaker
+                matchmaker: proposal.matchmaker,
+                gameMode: proposal.gameMode
             })
         );
         _cleanUpBattleProposal(battleKey);

@@ -2,6 +2,9 @@
 cache/
 out/
 
+# Default forge gas snapshot (we use snapshots/ directory instead)
+.gas-snapshot
+
 # Ignores development broadcast logs
 !/broadcast
 /broadcast/*/31337/

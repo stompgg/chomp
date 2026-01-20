@@ -9,6 +9,7 @@ import "../src/Structs.sol";
 
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 
+import {BaseCommitManager} from "../src/BaseCommitManager.sol";
 import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
@@ -375,7 +376,7 @@ contract EngineTest is Test, BattleHelper {
         // Assert that Bob cannot commit anything because of the turn flag
         // (we just reuse Alice's move hash bc it doesn't matter)
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
+        vm.expectRevert(BaseCommitManager.PlayerNotAllowed.selector);
         commitManager.commitMove(battleKey, bytes32(0));
 
         // Reveal Alice's move, and advance game state
@@ -2549,7 +2550,7 @@ contract EngineTest is Test, BattleHelper {
         commitManager.commitMove(battleKey, aliceMoveHash);
 
         // Alice cannot commit again
-        vm.expectRevert(DefaultCommitManager.AlreadyCommited.selector);
+        vm.expectRevert(BaseCommitManager.AlreadyCommited.selector);
         commitManager.commitMove(battleKey, aliceMoveHash);
 
         // Bob reveals
@@ -2557,7 +2558,7 @@ contract EngineTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Bob cannot reveal twice
-        vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
+        vm.expectRevert(BaseCommitManager.AlreadyRevealed.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Alice reveals but does not execute
@@ -2565,7 +2566,7 @@ contract EngineTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
 
         // Second reveal should also fail
-        vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
+        vm.expectRevert(BaseCommitManager.AlreadyRevealed.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, uint240(1), false);
     }
 
@@ -2613,7 +2614,7 @@ contract EngineTest is Test, BattleHelper {
 
         // // Bob should not be able to commit to the ended battle
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
+        vm.expectRevert(BaseCommitManager.BattleAlreadyComplete.selector);
         commitManager.commitMove(battleKey, bytes32(0));
     }
 
@@ -2776,7 +2777,8 @@ contract EngineTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(0),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
         bytes32 battleKey = matchmaker.proposeBattle(proposal);
         vm.startPrank(BOB);
@@ -2807,25 +2809,25 @@ contract EngineTest is Test, BattleHelper {
         // It is turn 0, so Alice must first commit then reveal
         // We will attempt to calculate the preimage, which will fail
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
+        vm.expectRevert(BaseCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // Ensure Bob cannot commit as they only need to reveal
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
+        vm.expectRevert(BaseCommitManager.PlayerNotAllowed.selector);
         commitManager.commitMove(battleKey, moveHash);
 
         // Bob cannot reveal yet as Alice has not committed
-        vm.expectRevert(DefaultCommitManager.RevealBeforeOtherCommit.selector);
+        vm.expectRevert(BaseCommitManager.RevealBeforeOtherCommit.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // Ensure Carl cannot commit as they are not in the battle
         vm.startPrank(CARL);
-        vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
+        vm.expectRevert(BaseCommitManager.NotP0OrP1.selector);
         commitManager.commitMove(battleKey, moveHash);
 
         // Carl should also be unable to reveal
-        vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
+        vm.expectRevert(BaseCommitManager.NotP0OrP1.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // Let Alice commit the first move (switching in mon index 0)
@@ -2872,7 +2874,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Alice reveals her move incorrectly, leading to an error
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
+        vm.expectRevert(BaseCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, 0, salt, extraData, true);
 
         // Alice correctly reveals her move, advancing the game state
@@ -2886,16 +2888,16 @@ contract EngineTest is Test, BattleHelper {
         // It is turn 1, so Bob must first commit then reveal
         // We will attempt to calculate the preimage, which will fail
         vm.startPrank(BOB);
-        vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
+        vm.expectRevert(BaseCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // Ensure Alice cannot commit as they only need to reveal
         vm.startPrank(ALICE);
-        vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
+        vm.expectRevert(BaseCommitManager.PlayerNotAllowed.selector);
         commitManager.commitMove(battleKey, moveHash);
 
         // Alice cannot reveal yet as Bob has not committed
-        vm.expectRevert(DefaultCommitManager.RevealBeforeOtherCommit.selector);
+        vm.expectRevert(BaseCommitManager.RevealBeforeOtherCommit.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
 
         // Let Bob commit the first move (switching in mon index 0)
