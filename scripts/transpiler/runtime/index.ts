@@ -324,6 +324,31 @@ export abstract class Contract {
     // In simulation mode, we can log events or store them
     console.log('Event:', ...args);
   }
+
+  // =========================================================================
+  // YUL/STORAGE HELPERS (for inline assembly simulation)
+  // =========================================================================
+
+  /**
+   * Convert a key to a storage key string
+   */
+  protected _yulStorageKey(key: any): string {
+    return typeof key === 'string' ? key : JSON.stringify(key);
+  }
+
+  /**
+   * Read from raw storage (simulates Yul sload)
+   */
+  protected _storageRead(key: any): bigint {
+    return this._storage.sload(this._yulStorageKey(key));
+  }
+
+  /**
+   * Write to raw storage (simulates Yul sstore)
+   */
+  protected _storageWrite(key: any, value: bigint): void {
+    this._storage.sstore(this._yulStorageKey(key), value);
+  }
 }
 
 // =============================================================================

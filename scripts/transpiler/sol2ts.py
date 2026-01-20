@@ -730,6 +730,11 @@ class ContinueStatement(Statement):
 
 
 @dataclass
+class DeleteStatement(Statement):
+    expression: Expression
+
+
+@dataclass
 class AssemblyStatement(Statement):
     block: AssemblyBlock
 
@@ -1322,6 +1327,8 @@ class Parser:
             return ContinueStatement()
         elif self.match(TokenType.ASSEMBLY):
             return self.parse_assembly_statement()
+        elif self.match(TokenType.DELETE):
+            return self.parse_delete_statement()
         elif self.is_variable_declaration():
             return self.parse_variable_declaration_statement()
         else:
@@ -1529,6 +1536,12 @@ class Parser:
             error_call = self.parse_expression()
         self.expect(TokenType.SEMICOLON)
         return RevertStatement(error_call=error_call)
+
+    def parse_delete_statement(self) -> DeleteStatement:
+        self.expect(TokenType.DELETE)
+        expression = self.parse_expression()
+        self.expect(TokenType.SEMICOLON)
+        return DeleteStatement(expression=expression)
 
     def parse_assembly_statement(self) -> AssemblyStatement:
         self.expect(TokenType.ASSEMBLY)
@@ -1890,6 +1903,17 @@ class TypeScriptCodeGenerator:
             'IRandomnessOracle', 'IRuleset', 'IEngineHook', 'IMoveSet', 'ITypeCalculator',
             'IEngine', 'ICPU', 'ICommitManager', 'IMonRegistry',
         }
+        # Known contracts that can be used as base classes
+        self.known_contracts: Set[str] = set()
+        # Methods defined by known contracts (for this. prefix handling)
+        self.known_contract_methods: Dict[str, Set[str]] = {
+            # MappingAllocator methods
+            'MappingAllocator': {
+                '_initializeStorageKey', '_getStorageKey', '_freeStorageKey', 'getFreeStorageKeys'
+            }
+        }
+        # Base contracts needed for current file (for import generation)
+        self.base_contracts_needed: Set[str] = set()
         # Current file type (to avoid self-referencing prefixes)
         self.current_file_type = ''
 
@@ -1899,6 +1923,9 @@ class TypeScriptCodeGenerator:
     def generate(self, ast: SourceUnit) -> str:
         """Generate TypeScript code from the AST."""
         output = []
+
+        # Reset base contracts needed for this file
+        self.base_contracts_needed = set()
 
         # Determine file type before generating (affects identifier prefixes)
         contract_name = ast.contracts[0].name if ast.contracts else ''
@@ -1946,6 +1973,10 @@ class TypeScriptCodeGenerator:
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';")
         lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String } from './runtime';")
+
+        # Import base contracts needed for inheritance
+        for base_contract in sorted(self.base_contracts_needed):
+            lines.append(f"import {{ {base_contract} }} from './{base_contract}';")
 
         # Import types based on current file type:
         # - Enums.ts: no imports needed from other modules
@@ -2030,67 +2061,42 @@ class TypeScriptCodeGenerator:
         """Generate TypeScript class."""
         lines = []
 
+        # Track this contract as known for future inheritance
+        self.known_contracts.add(contract.name)
+
         # Collect state variable and method names for this. prefix handling
         self.current_state_vars = {var.name for var in contract.state_variables}
         self.current_methods = {func.name for func in contract.functions}
-        # Add inherited/generated methods that need this. prefix
+        # Add runtime base class methods that need this. prefix
         self.current_methods.update({
-            '_initializeStorageKey', '_getStorageKey', '_freeStorageKey',
-            '_yulStorageKey', '_storageRead', '_storageWrite',
-            'computeBattleKey', 'updateMonState', '_handleMove', '_emitEvent',
+            '_yulStorageKey', '_storageRead', '_storageWrite', '_emitEvent',
         })
         self.current_local_vars = set()
         # Populate type registry with state variable types
         self.var_types = {var.name: var.type_name for var in contract.state_variables}
 
-        # Class declaration - always extend Contract base class
-        extends = ' extends Contract'
+        # Determine the extends clause based on base_contracts
+        extends = ''
+        if contract.base_contracts:
+            # Filter to known contracts (skip interfaces which are handled differently)
+            base_classes = [bc for bc in contract.base_contracts
+                           if bc not in self.known_interfaces]
+            if base_classes:
+                # Use the first non-interface base contract
+                base_class = base_classes[0]
+                extends = f' extends {base_class}'
+                self.base_contracts_needed.add(base_class)
+                # Add base class methods to current_methods for this. prefix handling
+                if base_class in self.known_contract_methods:
+                    self.current_methods.update(self.known_contract_methods[base_class])
+            else:
+                extends = ' extends Contract'
+        else:
+            extends = ' extends Contract'
+
         abstract = 'abstract ' if contract.kind == 'abstract' else ''
         lines.append(f'export {abstract}class {contract.name}{extends} {{')
         self.indent_level += 1
-
-        # Storage helper methods
-        lines.append(f'{self.indent()}// Storage helpers')
-        lines.append(f'{self.indent()}protected _yulStorageKey(key: any): string {{')
-        lines.append(f'{self.indent()}  return typeof key === "string" ? key : JSON.stringify(key);')
-        lines.append(f'{self.indent()}}}')
-        lines.append(f'{self.indent()}protected _storageRead(key: any): bigint {{')
-        lines.append(f'{self.indent()}  return this._storage.sload(this._yulStorageKey(key));')
-        lines.append(f'{self.indent()}}}')
-        lines.append(f'{self.indent()}protected _storageWrite(key: any, value: bigint): void {{')
-        lines.append(f'{self.indent()}  this._storage.sstore(this._yulStorageKey(key), value);')
-        lines.append(f'{self.indent()}}}')
-        lines.append('')
-
-        # MappingAllocator methods (from Solidity inheritance)
-        lines.append(f'{self.indent()}// MappingAllocator methods')
-        lines.append(f'{self.indent()}private freeStorageKeys: string[] = [];')
-        lines.append(f'{self.indent()}private battleKeyToStorageKey: Record<string, string> = {{}};')
-        lines.append(f'{self.indent()}protected _initializeStorageKey(key: string): string {{')
-        lines.append(f'{self.indent()}  const numFreeKeys = this.freeStorageKeys.length;')
-        lines.append(f'{self.indent()}  if (numFreeKeys === 0) {{')
-        lines.append(f'{self.indent()}    return key;')
-        lines.append(f'{self.indent()}  }} else {{')
-        lines.append(f'{self.indent()}    const freeKey = this.freeStorageKeys[numFreeKeys - 1];')
-        lines.append(f'{self.indent()}    this.freeStorageKeys.pop();')
-        lines.append(f'{self.indent()}    this.battleKeyToStorageKey[key] = freeKey;')
-        lines.append(f'{self.indent()}    return freeKey;')
-        lines.append(f'{self.indent()}  }}')
-        lines.append(f'{self.indent()}}}')
-        lines.append(f'{self.indent()}protected _getStorageKey(battleKey: any): string {{')
-        lines.append(f'{self.indent()}  const storageKey = this.battleKeyToStorageKey[battleKey];')
-        lines.append(f'{self.indent()}  if (!storageKey) {{')
-        lines.append(f'{self.indent()}    return battleKey;')
-        lines.append(f'{self.indent()}  }} else {{')
-        lines.append(f'{self.indent()}    return storageKey;')
-        lines.append(f'{self.indent()}  }}')
-        lines.append(f'{self.indent()}}}')
-        lines.append(f'{self.indent()}protected _freeStorageKey(battleKey: string, storageKey?: string): void {{')
-        lines.append(f'{self.indent()}  const key = storageKey ?? this._getStorageKey(battleKey);')
-        lines.append(f'{self.indent()}  this.freeStorageKeys.push(key);')
-        lines.append(f'{self.indent()}  delete this.battleKeyToStorageKey[battleKey];')
-        lines.append(f'{self.indent()}}}')
-        lines.append('')
 
         # State variables
         for var in contract.state_variables:
@@ -2100,9 +2106,19 @@ class TypeScriptCodeGenerator:
         if contract.constructor:
             lines.append(self.generate_constructor(contract.constructor))
 
-        # Functions
+        # Group functions by name to handle overloads
+        from collections import defaultdict
+        function_groups: Dict[str, List[FunctionDefinition]] = defaultdict(list)
         for func in contract.functions:
-            lines.append(self.generate_function(func))
+            function_groups[func.name].append(func)
+
+        # Generate functions, merging overloads
+        for func_name, funcs in function_groups.items():
+            if len(funcs) == 1:
+                lines.append(self.generate_function(funcs[0]))
+            else:
+                # Multiple functions with same name - merge into one with optional params
+                lines.append(self.generate_overloaded_function(funcs))
 
         self.indent_level -= 1
         lines.append('}\n')
@@ -2236,6 +2252,119 @@ class TypeScriptCodeGenerator:
         self.current_local_vars = set()
         return '\n'.join(lines)
 
+    def generate_overloaded_function(self, funcs: List[FunctionDefinition]) -> str:
+        """Generate a single function from multiple overloaded functions.
+
+        Combines overloaded Solidity functions into a single TypeScript function
+        with optional parameters.
+        """
+        # Sort by parameter count - use function with most params as base
+        funcs_sorted = sorted(funcs, key=lambda f: len(f.parameters), reverse=True)
+        main_func = funcs_sorted[0]
+        shorter_funcs = funcs_sorted[1:]
+
+        lines = []
+
+        # Track local variables
+        self.current_local_vars = set()
+        for i, p in enumerate(main_func.parameters):
+            param_name = p.name if p.name else f'_arg{i}'
+            self.current_local_vars.add(param_name)
+            if p.type_name:
+                self.var_types[param_name] = p.type_name
+        for r in main_func.return_parameters:
+            if r.name:
+                self.current_local_vars.add(r.name)
+                if r.type_name:
+                    self.var_types[r.name] = r.type_name
+
+        # Find which parameters are optional (not present in shorter overloads)
+        min_param_count = min(len(f.parameters) for f in funcs)
+
+        # Generate parameters - mark extras as optional
+        param_strs = []
+        for i, p in enumerate(main_func.parameters):
+            param_name = self.generate_param_name(p, i)
+            param_type = self.solidity_type_to_ts(p.type_name)
+            if i >= min_param_count:
+                param_strs.append(f'{param_name}?: {param_type}')
+            else:
+                param_strs.append(f'{param_name}: {param_type}')
+
+        return_type = self.generate_return_type(main_func.return_parameters)
+
+        visibility = ''
+        if main_func.visibility == 'private':
+            visibility = 'private '
+        elif main_func.visibility == 'internal':
+            visibility = 'protected '
+
+        lines.append(f'{self.indent()}{visibility}{main_func.name}({", ".join(param_strs)}): {return_type} {{')
+        self.indent_level += 1
+
+        # Declare named return parameters
+        named_return_vars = []
+        for r in main_func.return_parameters:
+            if r.name:
+                ts_type = self.solidity_type_to_ts(r.type_name)
+                default_val = self.default_value(ts_type)
+                lines.append(f'{self.indent()}let {r.name}: {ts_type} = {default_val};')
+                named_return_vars.append(r.name)
+
+        # Generate body - use main function's body but handle optional param case
+        # If there's a shorter overload, we might need to compute default values
+        if shorter_funcs and main_func.body:
+            # Check if shorter func computes missing param from existing ones
+            shorter = shorter_funcs[0]
+            if len(shorter.parameters) < len(main_func.parameters):
+                # The shorter function likely computes the missing param
+                # Generate conditional: if param is undefined, compute it
+                for i in range(len(shorter.parameters), len(main_func.parameters)):
+                    extra_param = main_func.parameters[i]
+                    extra_name = extra_param.name if extra_param.name else f'_arg{i}'
+
+                    # Try to find how shorter func gets this value from its body
+                    # For now, just use a simple pattern: call a getter method
+                    # This is a heuristic - the shorter overload often calls a method
+                    if shorter.body and shorter.body.statements:
+                        for stmt in shorter.body.statements:
+                            if isinstance(stmt, VariableDeclarationStatement):
+                                for decl in stmt.declarations:
+                                    if decl and decl.name == extra_name:
+                                        # Found where shorter func declares this var
+                                        init_expr = self.generate_expression(stmt.initial_value) if stmt.initial_value else 'undefined'
+                                        lines.append(f'{self.indent()}if ({extra_name} === undefined) {{')
+                                        lines.append(f'{self.indent()}  {extra_name} = {init_expr};')
+                                        lines.append(f'{self.indent()}}}')
+                                        break
+
+            # Now generate the main body
+            for stmt in main_func.body.statements:
+                lines.append(self.generate_statement(stmt))
+
+        elif main_func.body:
+            for stmt in main_func.body.statements:
+                lines.append(self.generate_statement(stmt))
+
+        # Add implicit return for named return parameters
+        if named_return_vars and main_func.body:
+            has_explicit_return = False
+            if main_func.body.statements:
+                last_stmt = main_func.body.statements[-1]
+                has_explicit_return = isinstance(last_stmt, ReturnStatement)
+            if not has_explicit_return:
+                if len(named_return_vars) == 1:
+                    lines.append(f'{self.indent()}return {named_return_vars[0]};')
+                else:
+                    lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
+
+        self.indent_level -= 1
+        lines.append(f'{self.indent()}}}')
+        lines.append('')
+
+        self.current_local_vars = set()
+        return '\n'.join(lines)
+
     def generate_return_type(self, params: List[VariableDeclaration]) -> str:
         """Generate return type from return parameters."""
         if not params:
@@ -2269,6 +2398,8 @@ class TypeScriptCodeGenerator:
             return f'{self.indent()}break;'
         elif isinstance(stmt, ContinueStatement):
             return f'{self.indent()}continue;'
+        elif isinstance(stmt, DeleteStatement):
+            return self.generate_delete_statement(stmt)
         elif isinstance(stmt, AssemblyStatement):
             return self.generate_assembly_statement(stmt)
         elif isinstance(stmt, ExpressionStatement):
@@ -2410,6 +2541,13 @@ class TypeScriptCodeGenerator:
         if stmt.expression:
             return f'{self.indent()}return {self.generate_expression(stmt.expression)};'
         return f'{self.indent()}return;'
+
+    def generate_delete_statement(self, stmt: DeleteStatement) -> str:
+        """Generate delete statement (sets value to default/removes from mapping)."""
+        expr = self.generate_expression(stmt.expression)
+        # In TypeScript, 'delete' works on object properties
+        # For mappings and arrays, this is the correct behavior
+        return f'{self.indent()}delete {expr};'
 
     def generate_emit_statement(self, stmt: EmitStatement) -> str:
         """Generate emit statement (as event logging)."""
@@ -3049,19 +3187,30 @@ class TypeScriptCodeGenerator:
             type_info = self.var_types[base_var_name]
             is_mapping = type_info.is_mapping
 
+        # Check if mapping has a numeric key type (needs Number conversion)
+        mapping_has_numeric_key = False
+        if base_var_name and base_var_name in self.var_types:
+            type_info = self.var_types[base_var_name]
+            if type_info.is_mapping and type_info.key_type:
+                key_type_name = type_info.key_type.name if type_info.key_type.name else ''
+                # Numeric key types need Number conversion
+                mapping_has_numeric_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
+
         # For struct field access like config.globalEffects, check if it's a mapping field
         if isinstance(access.base, MemberAccess):
             member_name = access.base.member
-            # Known mapping fields in structs
-            mapping_fields = {
+            # Known mapping fields in structs with numeric keys
+            numeric_key_mapping_fields = {
                 'p0Team', 'p1Team', 'p0States', 'p1States',
                 'globalEffects', 'p0Effects', 'p1Effects', 'engineHooks'
             }
-            if member_name in mapping_fields:
+            if member_name in numeric_key_mapping_fields:
                 is_mapping = True
+                mapping_has_numeric_key = True
 
         # Convert index to appropriate type for array/object access
-        needs_number_conversion = is_likely_array or is_mapping
+        # Arrays need Number, mappings with numeric keys need Number, but string/bytes32/address keys don't
+        needs_number_conversion = is_likely_array or (is_mapping and mapping_has_numeric_key)
 
         if index.startswith('BigInt('):
             # BigInt(n) -> n for simple literals
