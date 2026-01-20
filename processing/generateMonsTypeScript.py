@@ -161,7 +161,10 @@ def read_moves_data(
     all_move_keys: set[str] = set()
 
     def parse_int_or_unknown(val: str) -> int | str:
-        return int(val) if val.isdigit() else '?'
+        try:
+            return int(val)
+        except ValueError:
+            return '?'
 
     for row in read_csv(file_path):
         mon_name = row["Mon"]
