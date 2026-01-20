@@ -1,8 +1,10 @@
 # TODO
 
-1) Add max timeout of 1 hr for battles, allow forcible end
-- Add bulk forcible end call
-2) Simplify gacha flow dramatically
+1) Gas optimization:
+- Use address mining to determine if we should run on a certain step vs calling the function. (Would need some meta tag to signify this in the source stil)
+
+2) Latency optimization:
+- Use signatures to agree to battle params, and then just pass doubly-signed payload into startBattle
 
 ---------------------------------------------------------------------------------------------
 LATER FEATURES

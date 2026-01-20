@@ -28,6 +28,12 @@ struct ProposedBattle {
     IEngineHook[] engineHooks;
 }
 
+// Used by SignedMatchmaker
+struct BattleOffer {
+    Battle battle;
+    uint256 pairHashNonce;
+}
+
 // Used by Engine to initialize a battle's parameters
 struct Battle {
     address p0;

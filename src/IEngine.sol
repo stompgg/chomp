@@ -29,6 +29,7 @@ interface IEngine {
     function setUpstreamCaller(address caller) external;
 
     // Getters
+    function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     function getMoveManager(bytes32 battleKey) external view returns (address);

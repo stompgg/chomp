@@ -121,6 +121,7 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
             revert AlreadyAccepted();
         }
         proposal.p1TeamIndex = p1TeamIndex;
+        emit BattleAcceptance(battleKey, msg.sender, updatedBattleKey);
         if (proposal.p0TeamHash == FAST_BATTLE_SENTINAL_HASH) {
             ENGINE.startBattle(
                 Battle({
@@ -138,9 +139,6 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                 })
             );
             _cleanUpBattleProposal(battleKey);
-        }
-        else {
-            emit BattleAcceptance(battleKey, msg.sender, updatedBattleKey);
         }
     }
 
