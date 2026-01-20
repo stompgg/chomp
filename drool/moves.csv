@@ -3,7 +3,7 @@ Eternal Grudge,Ghouliath,0,2,100,1,Yin,Self,"KO’s self, inflicts Grudge on the
 Infernal Flame,Ghouliath,120,2,85,0,Fire,Special,"Deals damage, 30% chance of inflicting Burn. Burn can stack up to 3 times (1st, 2nd, 3rd degree). Each stack of burn increases damage over time, from 1/16 to 1/8 to 1/4.",,No
 Wither Away,Ghouliath,60,3,100,0,Yin,Special,Deals damage and then inflicts Panic on both parties. Panic drains 1 stamina at end of turn for a max of 3 turns.,,No
 Osteoporosis,Ghouliath,90,2,100,0,Yin,Physical,Deals damage.,,No
-Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opposing Mon is attempting to switch out, deals damage heavy damage. Otherwise, deals damage to Gorillax.",,No
+Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opposing Mon is attempting to switch out, deals heavy damage. Otherwise, deals damage to Gorillax.",,No
 Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,No
 Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,No
 Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,No
