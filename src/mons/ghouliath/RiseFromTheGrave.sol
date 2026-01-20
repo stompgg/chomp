@@ -66,7 +66,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
             uint64 v2 = uint64(targetIndex) & 0x3F; // player index (masked to 6 bits)
             uint64 v3 = uint64(monIndex) & 0x3F; // mon index (masked to 6 bits)
             uint256 packedValue = (v1 << 12) | (v2 << 6) | v3;
-            ENGINE.addEffect(2, 0, IEffect(address(this)), bytes32(packedValue));
+            ENGINE.addEffect(2, targetIndex, IEffect(address(this)), bytes32(packedValue));
             return (extraData, true);
         }
         return (extraData, false);

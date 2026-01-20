@@ -40,7 +40,7 @@ contract Initialize is IMoveSet, BasicEffect {
             _applyBuff(attackerPlayerIndex, activeMonIndex);
 
             // Apply effect globally
-            ENGINE.addEffect(2, 2, this, _encodeState(attackerPlayerIndex, activeMonIndex));
+            ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(attackerPlayerIndex, activeMonIndex));
             // Set global KV to prevent this move doing anything until Inutia swaps out
             ENGINE.setGlobalKV(_initializeKey(attackerPlayerIndex, activeMonIndex), 1);
         }

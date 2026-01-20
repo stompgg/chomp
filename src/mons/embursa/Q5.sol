@@ -39,7 +39,7 @@ contract Q5 is IMoveSet, BasicEffect {
 
     function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Add effect to global effects
-        ENGINE.addEffect(2, 2, this, _packExtraData(1, attackerPlayerIndex));
+        ENGINE.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
         // Clear the priority boost
         if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {

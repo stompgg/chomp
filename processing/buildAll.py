@@ -106,7 +106,7 @@ def main():
     current_step += 1
     print_step(current_step, total_steps, "Generating TypeScript data file")
     
-    from generateTypeScript import run as run_typescript
+    from processing.generateMonsTypeScript import run as run_typescript
     if not run_typescript():
         print("\n❌ Failed to generate TypeScript data file")
         sys.exit(1)

@@ -43,7 +43,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
             }
         }
         // Otherwise, add this effect globally
-        ENGINE.addEffect(2, 2, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
+        ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

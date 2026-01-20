@@ -7,6 +7,10 @@ Also extracts ABIs from the out folder and creates TypeScript ABI files.
 Modes:
   --stdin: Read KEY=VALUE lines from stdin instead of output.txt
   (default): Read from processing/output.txt
+
+Network flags (one required):
+  --m, --mainnet: Update MAINNET addresses
+  --t, --testnet: Update TESTNET addresses
 """
 
 import argparse
@@ -64,30 +68,62 @@ def read_addresses(input_file: str) -> Dict[str, str]:
     return addresses
 
 
-def update_address_file(addresses: Dict[str, str], output_file: str, is_belch: bool = False):
-    """Update the address.ts file with new addresses, preserving existing ones."""
+def parse_existing_addresses(content: str) -> Dict[str, Dict[str, str]]:
+    """Parse existing addresses from file content, handling both flat and nested formats.
 
-    # Read existing file if it exists
-    existing_addresses = {}
-    output_path = Path(output_file)
+    Returns a dict with 'MAINNET' and 'TESTNET' keys, each containing address dicts.
+    For flat format (legacy), all addresses are placed under 'TESTNET'.
+    """
+    result = {'MAINNET': {}, 'TESTNET': {}}
 
-    if output_path.exists():
-        with open(output_file, 'r') as f:
-            content = f.read()
+    # Check if this is a nested format (has MAINNET: { or TESTNET: {)
+    is_nested = bool(re.search(r'(MAINNET|TESTNET)\s*:\s*\{', content))
 
-        # Extract existing addresses using regex
-        # Match pattern: KEY: 'value' as LowercaseHex,
-        pattern = r"(\w+):\s*'(0x[a-f0-9]+)'\s*as\s+LowercaseHex"
-        matches = re.findall(pattern, content, re.IGNORECASE)
-
+    if is_nested:
+        # Parse nested format
+        for network in ['MAINNET', 'TESTNET']:
+            # Find the network block
+            pattern = rf'{network}\s*:\s*\{{([^}}]*)\}}'
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                block = match.group(1)
+                # Extract addresses from the block
+                addr_pattern = r"(\w+):\s*'(0x[a-f0-9]+)'\s*as\s+LowercaseHex"
+                matches = re.findall(addr_pattern, block, re.IGNORECASE)
+                for key, value in matches:
+                    result[network][key] = value.lower()
+    else:
+        # Flat format (legacy) - all addresses go to TESTNET
+        addr_pattern = r"(\w+):\s*'(0x[a-f0-9]+)'\s*as\s+LowercaseHex"
+        matches = re.findall(addr_pattern, content, re.IGNORECASE)
         for key, value in matches:
-            existing_addresses[key] = value.lower()
+            result['TESTNET'][key] = value.lower()
 
-    # Merge addresses (new addresses override existing ones)
-    merged_addresses = {**existing_addresses, **addresses}
+    return result
+
+
+def update_address_file(
+    addresses: Dict[str, str],
+    output_file: str,
+    network: str,
+    existing_addresses: Dict[str, Dict[str, str]],
+    is_belch: bool = False
+):
+    """Update the address.ts file with new addresses for a specific network."""
+
+    # Merge addresses for the target network (new addresses override existing ones)
+    merged = {**existing_addresses.get(network, {}), **addresses}
+
+    # Update the existing_addresses dict
+    updated_addresses = {
+        'MAINNET': existing_addresses.get('MAINNET', {}),
+        'TESTNET': existing_addresses.get('TESTNET', {}),
+    }
+    updated_addresses[network] = merged
 
     # Sort addresses by key for consistent output
-    sorted_addresses = dict(sorted(merged_addresses.items()))
+    sorted_mainnet = dict(sorted(updated_addresses['MAINNET'].items()))
+    sorted_testnet = dict(sorted(updated_addresses['TESTNET'].items()))
 
     # Generate TypeScript content with different imports based on repository
     if is_belch:
@@ -98,8 +134,17 @@ def update_address_file(addresses: Dict[str, str], output_file: str, is_belch: b
 
     typescript_content += "export const Address = {\n"
 
-    for key, value in sorted_addresses.items():
-        typescript_content += f"  {key}: '{value}' as LowercaseHex,\n"
+    # Write MAINNET block
+    typescript_content += "  MAINNET: {\n"
+    for key, value in sorted_mainnet.items():
+        typescript_content += f"    {key}: '{value}' as LowercaseHex,\n"
+    typescript_content += "  },\n"
+
+    # Write TESTNET block
+    typescript_content += "  TESTNET: {\n"
+    for key, value in sorted_testnet.items():
+        typescript_content += f"    {key}: '{value}' as LowercaseHex,\n"
+    typescript_content += "  },\n"
 
     typescript_content += "};\n"
 
@@ -180,7 +225,7 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
     return updated_files
 
 
-def run_main_logic(addresses: Dict[str, str]):
+def run_main_logic(addresses: Dict[str, str], network: str):
     """Run main logic with provided addresses."""
     base_path = Path(__file__).parent
 
@@ -198,25 +243,35 @@ def run_main_logic(addresses: Dict[str, str]):
     fallback_output_file = base_path / "address.ts"
 
     print("=" * 60)
-    print("PROCESSING ADDRESSES")
+    print(f"PROCESSING ADDRESSES ({network})")
     print("=" * 60)
 
-    print(f"Loaded {len(addresses)} addresses")
+    print(f"Loaded {len(addresses)} addresses for {network}")
+
+    # Read existing addresses from munch as source of truth
+    existing_addresses = {'MAINNET': {}, 'TESTNET': {}}
+    if munch_output_file.exists():
+        with open(munch_output_file, 'r') as f:
+            content = f.read()
+        existing_addresses = parse_existing_addresses(content)
+        print(f"📖 Read existing addresses from munch (MAINNET: {len(existing_addresses['MAINNET'])}, TESTNET: {len(existing_addresses['TESTNET'])})")
+    else:
+        print(f"⚠️  No existing munch address file found, starting fresh")
 
     # Track which files were updated
     updated_files = []
 
     # Update munch repository
     if munch_output_file.parent.exists():
-        update_address_file(addresses, str(munch_output_file), is_belch=False)
+        update_address_file(addresses, str(munch_output_file), network, existing_addresses, is_belch=False)
         updated_files.append(f"munch: {munch_output_file}")
         print(f"✅ Updated address.ts in munch repository")
     else:
         print(f"⚠️  Munch repository not found at {munch_output_file.parent}")
 
-    # Update belch repository
+    # Update belch repository (using the same existing_addresses from munch)
     if belch_output_file.parent.exists():
-        update_address_file(addresses, str(belch_output_file), is_belch=True)
+        update_address_file(addresses, str(belch_output_file), network, existing_addresses, is_belch=True)
         updated_files.append(f"belch: {belch_output_file}")
         print(f"✅ Updated address.ts in belch repository")
     else:
@@ -224,7 +279,7 @@ def run_main_logic(addresses: Dict[str, str]):
 
     # Fallback if neither repository was found
     if not updated_files:
-        update_address_file(addresses, str(fallback_output_file), is_belch=False)
+        update_address_file(addresses, str(fallback_output_file), network, existing_addresses, is_belch=False)
         print(f"✅ Updated address.ts (fallback): {fallback_output_file}")
 
     print(f"\n✅ Address files updated: {len(updated_files)}")
@@ -256,7 +311,24 @@ def main():
         action='store_true',
         help='Read KEY=VALUE lines from stdin instead of output.txt'
     )
+
+    # Network flags (mutually exclusive, one required)
+    network_group = parser.add_mutually_exclusive_group(required=True)
+    network_group.add_argument(
+        '-m', '--mainnet',
+        action='store_true',
+        help='Update MAINNET addresses'
+    )
+    network_group.add_argument(
+        '-t', '--testnet',
+        action='store_true',
+        help='Update TESTNET addresses'
+    )
+
     args = parser.parse_args()
+
+    # Determine which network to update
+    network = 'MAINNET' if args.mainnet else 'TESTNET'
 
     if args.stdin:
         # Read from stdin
@@ -275,7 +347,7 @@ def main():
         print("Reading addresses from output.txt...")
         addresses = read_addresses(str(input_file))
 
-    run_main_logic(addresses)
+    run_main_logic(addresses, network)
 
 
 if __name__ == "__main__":
