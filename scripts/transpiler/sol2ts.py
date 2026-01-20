@@ -14,7 +14,6 @@ Key features:
 """
 
 import re
-import os
 import sys
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple, Set
@@ -1852,8 +1851,6 @@ class TypeScriptCodeGenerator:
     def __init__(self):
         self.indent_level = 0
         self.indent_str = '  '
-        self.imports: Set[str] = set()
-        self.type_info: Dict[str, str] = {}  # Maps Solidity types to TypeScript types
         # Track current contract context for this. prefix handling
         self.current_state_vars: Set[str] = set()
         self.current_methods: Set[str] = set()
@@ -2461,168 +2458,6 @@ class TypeScriptCodeGenerator:
             return 'throw new Error("Revert");'
 
         return f'// Yul: {func}({args_str})'
-
-    def parse_yul_statements(self, code: str) -> List[str]:
-        """Parse Yul code into individual statements."""
-        # Simple parsing: split by newlines and braces
-        statements = []
-        current = ''
-        depth = 0
-
-        for char in code:
-            if char == '{':
-                depth += 1
-                current += char
-            elif char == '}':
-                depth -= 1
-                current += char
-                if depth == 0:
-                    statements.append(current.strip())
-                    current = ''
-            elif char == '\n' and depth == 0:
-                if current.strip():
-                    statements.append(current.strip())
-                current = ''
-            else:
-                current += char
-
-        if current.strip():
-            statements.append(current.strip())
-
-        return statements
-
-    def transpile_yul_statement(self, stmt: str) -> str:
-        """Transpile a single Yul statement to TypeScript."""
-        stmt = stmt.strip()
-        if not stmt:
-            return ''
-
-        # Variable assignment: let x := expr
-        let_match = re.match(r'let\s+(\w+)\s*:=\s*(.+)', stmt)
-        if let_match:
-            var_name = let_match.group(1)
-            expr = self.transpile_yul_expression(let_match.group(2))
-            return f'let {var_name} = {expr};'
-
-        # Assignment: x := expr
-        assign_match = re.match(r'(\w+)\s*:=\s*(.+)', stmt)
-        if assign_match:
-            var_name = assign_match.group(1)
-            expr = self.transpile_yul_expression(assign_match.group(2))
-            return f'{var_name} = {expr};'
-
-        # If statement
-        if_match = re.match(r'if\s+(.+?)\s*\{(.+)\}', stmt, re.DOTALL)
-        if if_match:
-            cond = self.transpile_yul_expression(if_match.group(1))
-            body = self.transpile_yul(if_match.group(2))
-            return f'if ({cond}) {{\n{body}\n}}'
-
-        # Function call (like sstore, sload, etc.)
-        call_match = re.match(r'(\w+)\s*\((.+)\)', stmt)
-        if call_match:
-            func_name = call_match.group(1)
-            args = [self.transpile_yul_expression(a.strip()) for a in call_match.group(2).split(',')]
-            return self.transpile_yul_function(func_name, args)
-
-        return f'// Unhandled Yul: {stmt}'
-
-    def transpile_yul_expression(self, expr: str) -> str:
-        """Transpile a Yul expression to TypeScript."""
-        expr = expr.strip()
-
-        # Handle function calls
-        call_match = re.match(r'(\w+)\s*\((.+)\)', expr)
-        if call_match:
-            func_name = call_match.group(1)
-            args_str = call_match.group(2)
-            # Parse arguments carefully (handling nested calls)
-            args = self.parse_yul_args(args_str)
-            ts_args = [self.transpile_yul_expression(a) for a in args]
-            return self.transpile_yul_function_expr(func_name, ts_args)
-
-        # Handle identifiers and literals
-        if expr.startswith('0x'):
-            return f'BigInt("{expr}")'
-        if expr.isdigit():
-            return f'BigInt({expr})'
-        return expr
-
-    def parse_yul_args(self, args_str: str) -> List[str]:
-        """Parse Yul function arguments, handling nested calls."""
-        args = []
-        current = ''
-        depth = 0
-
-        for char in args_str:
-            if char == '(':
-                depth += 1
-                current += char
-            elif char == ')':
-                depth -= 1
-                current += char
-            elif char == ',' and depth == 0:
-                args.append(current.strip())
-                current = ''
-            else:
-                current += char
-
-        if current.strip():
-            args.append(current.strip())
-
-        return args
-
-    def transpile_yul_function(self, func_name: str, args: List[str]) -> str:
-        """Transpile a Yul function call to TypeScript."""
-        if func_name == 'sstore':
-            return f'this._storage.set(String({args[0]}), {args[1]});'
-        elif func_name == 'sload':
-            return f'this._storage.get(String({args[0]})) ?? 0n'
-        elif func_name == 'mstore':
-            return f'// mstore({args[0]}, {args[1]})'
-        elif func_name == 'mload':
-            return f'// mload({args[0]})'
-        elif func_name == 'revert':
-            return f'throw new Error("Revert");'
-        else:
-            return f'// Yul function: {func_name}({", ".join(args)})'
-
-    def transpile_yul_function_expr(self, func_name: str, args: List[str]) -> str:
-        """Transpile a Yul function call expression to TypeScript."""
-        if func_name == 'sload':
-            return f'(this._storage.get(String({args[0]})) ?? 0n)'
-        elif func_name == 'add':
-            return f'(({args[0]}) + ({args[1]}))'
-        elif func_name == 'sub':
-            return f'(({args[0]}) - ({args[1]}))'
-        elif func_name == 'mul':
-            return f'(({args[0]}) * ({args[1]}))'
-        elif func_name == 'div':
-            return f'(({args[0]}) / ({args[1]}))'
-        elif func_name == 'mod':
-            return f'(({args[0]}) % ({args[1]}))'
-        elif func_name == 'and':
-            return f'(({args[0]}) & ({args[1]}))'
-        elif func_name == 'or':
-            return f'(({args[0]}) | ({args[1]}))'
-        elif func_name == 'xor':
-            return f'(({args[0]}) ^ ({args[1]}))'
-        elif func_name == 'not':
-            return f'(~({args[0]}))'
-        elif func_name == 'shl':
-            return f'(({args[1]}) << ({args[0]}))'
-        elif func_name == 'shr':
-            return f'(({args[1]}) >> ({args[0]}))'
-        elif func_name == 'lt':
-            return f'(({args[0]}) < ({args[1]}) ? 1n : 0n)'
-        elif func_name == 'gt':
-            return f'(({args[0]}) > ({args[1]}) ? 1n : 0n)'
-        elif func_name == 'eq':
-            return f'(({args[0]}) === ({args[1]}) ? 1n : 0n)'
-        elif func_name == 'iszero':
-            return f'(({args[0]}) === 0n ? 1n : 0n)'
-        else:
-            return f'/* {func_name}({", ".join(args)}) */'
 
     def generate_expression(self, expr: Expression) -> str:
         """Generate TypeScript expression."""
