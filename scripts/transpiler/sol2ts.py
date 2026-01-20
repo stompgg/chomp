@@ -1878,6 +1878,8 @@ class TypeScriptCodeGenerator:
         self.indent_str = '  '
         # Track current contract context for this. prefix handling
         self.current_state_vars: Set[str] = set()
+        self.current_static_vars: Set[str] = set()  # Static/constant state variables
+        self.current_class_name: str = ''  # Current class name for static access
         self.current_methods: Set[str] = set()
         self.current_local_vars: Set[str] = set()  # Local variables in current scope
         # Type registry: maps variable names to their TypeName for array/mapping detection
@@ -1922,6 +1924,28 @@ class TypeScriptCodeGenerator:
             # MappingAllocator methods
             'MappingAllocator': {
                 '_initializeStorageKey', '_getStorageKey', '_freeStorageKey', 'getFreeStorageKeys'
+            },
+            # StandardAttack methods
+            'StandardAttack': {
+                'move', '_move', 'isValidTarget', 'priority', 'stamina', 'moveType',
+                'moveClass', 'critRate', 'volatility', 'basePower', 'accuracy',
+                'effect', 'effectAccuracy', 'changeVar', 'extraDataType', 'name'
+            },
+            # Ownable methods
+            'Ownable': {
+                '_initializeOwner', 'owner', 'transferOwnership', 'renounceOwnership'
+            },
+            # AttackCalculator methods (static/library)
+            'AttackCalculator': {
+                '_calculateDamage', '_calculateDamageView', '_calculateDamageFromContext'
+            }
+        }
+        # State variables defined by known contracts (for this. prefix handling)
+        self.known_contract_vars: Dict[str, Set[str]] = {
+            'StandardAttack': {
+                'ENGINE', 'TYPE_CALCULATOR', '_basePower', '_stamina', '_accuracy',
+                '_priority', '_moveType', '_effectAccuracy', '_moveClass', '_critRate',
+                '_volatility', '_effect', '_name'
             }
         }
         # Base contracts needed for current file (for import generation)
@@ -2075,9 +2099,13 @@ class TypeScriptCodeGenerator:
 
         # Track this contract as known for future inheritance
         self.known_contracts.add(contract.name)
+        self.current_class_name = contract.name
 
         # Collect state variable and method names for this. prefix handling
-        self.current_state_vars = {var.name for var in contract.state_variables}
+        self.current_state_vars = {var.name for var in contract.state_variables
+                                   if var.mutability != 'constant'}
+        self.current_static_vars = {var.name for var in contract.state_variables
+                                    if var.mutability == 'constant'}
         self.current_methods = {func.name for func in contract.functions}
         # Add runtime base class methods that need this. prefix
         self.current_methods.update({
@@ -2101,6 +2129,9 @@ class TypeScriptCodeGenerator:
                 # Add base class methods to current_methods for this. prefix handling
                 if base_class in self.known_contract_methods:
                     self.current_methods.update(self.known_contract_methods[base_class])
+                # Add base class state variables to current_state_vars for this. prefix handling
+                if base_class in self.known_contract_vars:
+                    self.current_state_vars.update(self.known_contract_vars[base_class])
             else:
                 extends = ' extends Contract'
         else:
@@ -2819,6 +2850,10 @@ class TypeScriptCodeGenerator:
             return f'Enums.{name}'
         if name in self.known_constants and self.current_file_type != 'Constants':
             return f'Constants.{name}'
+
+        # Add ClassName. prefix for static constants
+        if name in self.current_static_vars:
+            return f'{self.current_class_name}.{name}'
 
         # Add this. prefix for state variables and methods (but not local vars)
         if name not in self.current_local_vars:
