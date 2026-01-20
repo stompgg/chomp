@@ -223,7 +223,7 @@ class TestEngine extends Contract {
 
     return keccak256(encodePacked(
       ['bytes32', 'uint256'],
-      [pairHash, nonce]
+      [pairHash as `0x${string}`, nonce]
     ));
   }
 }

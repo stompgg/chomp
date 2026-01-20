@@ -2077,7 +2077,7 @@ class TypeScriptCodeGenerator:
         lines.append(f'{self.indent()}    return freeKey;')
         lines.append(f'{self.indent()}  }}')
         lines.append(f'{self.indent()}}}')
-        lines.append(f'{self.indent()}protected _getStorageKey(battleKey: string): string {{')
+        lines.append(f'{self.indent()}protected _getStorageKey(battleKey: any): string {{')
         lines.append(f'{self.indent()}  const storageKey = this.battleKeyToStorageKey[battleKey];')
         lines.append(f'{self.indent()}  if (!storageKey) {{')
         lines.append(f'{self.indent()}    return battleKey;')
@@ -2177,10 +2177,15 @@ class TypeScriptCodeGenerator:
         for i, p in enumerate(func.parameters):
             param_name = p.name if p.name else f'_arg{i}'
             self.current_local_vars.add(param_name)
+            # Also track parameter types
+            if p.type_name:
+                self.var_types[param_name] = p.type_name
         # Also add return parameter names as local vars
         for r in func.return_parameters:
             if r.name:
                 self.current_local_vars.add(r.name)
+                if r.type_name:
+                    self.var_types[r.name] = r.type_name
 
         params = ', '.join([
             f'{self.generate_param_name(p, i)}: {self.solidity_type_to_ts(p.type_name)}'
@@ -2750,14 +2755,21 @@ class TypeScriptCodeGenerator:
         # Handle abi.decode specially - need to swap args and format types
         if isinstance(call.function, MemberAccess):
             if (isinstance(call.function.expression, Identifier) and
-                call.function.expression.name == 'abi' and
-                call.function.member == 'decode'):
-                if len(call.arguments) >= 2:
-                    data_arg = self.generate_expression(call.arguments[0])
-                    types_arg = call.arguments[1]
-                    # Convert types tuple to viem format
-                    type_params = self._convert_abi_types(types_arg)
-                    return f'decodeAbiParameters({type_params}, {data_arg})'
+                call.function.expression.name == 'abi'):
+                if call.function.member == 'decode':
+                    if len(call.arguments) >= 2:
+                        data_arg = self.generate_expression(call.arguments[0])
+                        types_arg = call.arguments[1]
+                        # Convert types tuple to viem format
+                        type_params = self._convert_abi_types(types_arg)
+                        # Cast data to hex string type for viem
+                        return f'decodeAbiParameters({type_params}, {data_arg} as `0x${{string}}`)'
+                elif call.function.member == 'encode':
+                    # abi.encode(val1, val2, ...) -> encodeAbiParameters([{type}...], [val1, val2, ...])
+                    if call.arguments:
+                        type_params = self._infer_abi_types_from_values(call.arguments)
+                        values = ', '.join([self._convert_abi_value(a) for a in call.arguments])
+                        return f'encodeAbiParameters({type_params}, [{values}])'
 
         args = ', '.join([self.generate_expression(a) for a in call.arguments])
 
@@ -2890,6 +2902,10 @@ class TypeScriptCodeGenerator:
         if member == 'slot':
             return f'/* {expr}.slot */'
 
+        # Handle .length - in JS returns number, but Solidity expects uint256 (bigint)
+        if member == 'length':
+            return f'BigInt({expr}.{member})'
+
         return f'{expr}.{member}'
 
     def _type_max(self, type_name: str) -> str:
@@ -2940,6 +2956,82 @@ class TypeScriptCodeGenerator:
             return "{type: 'bytes'}"
         # Fallback
         return "{type: 'bytes'}"
+
+    def _infer_abi_types_from_values(self, args: List[Expression]) -> str:
+        """Infer ABI types from value expressions (for abi.encode)."""
+        type_strs = []
+        for arg in args:
+            type_str = self._infer_single_abi_type(arg)
+            type_strs.append(type_str)
+        return f'[{", ".join(type_strs)}]'
+
+    def _infer_single_abi_type(self, arg: Expression) -> str:
+        """Infer ABI type from a single value expression."""
+        # If it's an identifier, look up its type
+        if isinstance(arg, Identifier):
+            name = arg.name
+            # Check known variable types
+            if name in self.var_types:
+                type_info = self.var_types[name]
+                if type_info.name:
+                    type_name = type_info.name
+                    if type_name == 'address':
+                        return "{type: 'address'}"
+                    if type_name.startswith('uint') or type_name.startswith('int') or type_name == 'bool' or type_name.startswith('bytes'):
+                        return f"{{type: '{type_name}'}}"
+                    if type_name in self.known_enums:
+                        return "{type: 'uint8'}"
+            # Check known enum members
+            if name in self.known_enums:
+                return "{type: 'uint8'}"
+            # Default to uint256 for identifiers (common case)
+            return "{type: 'uint256'}"
+        # For literals
+        if isinstance(arg, Literal):
+            if arg.kind == 'string':
+                return "{type: 'string'}"
+            elif arg.kind in ('number', 'hex'):
+                return "{type: 'uint256'}"
+            elif arg.kind == 'bool':
+                return "{type: 'bool'}"
+        # For member access like Enums.Something
+        if isinstance(arg, MemberAccess):
+            if isinstance(arg.expression, Identifier):
+                if arg.expression.name == 'Enums':
+                    return "{type: 'uint8'}"
+        # Default fallback
+        return "{type: 'uint256'}"
+
+    def _convert_abi_value(self, arg: Expression) -> str:
+        """Convert value for ABI encoding, ensuring proper types."""
+        expr = self.generate_expression(arg)
+        var_type_name = None
+
+        # Get the type name for this expression
+        if isinstance(arg, Identifier):
+            name = arg.name
+            if name in self.var_types:
+                type_info = self.var_types[name]
+                if type_info.name:
+                    var_type_name = type_info.name
+                    if var_type_name in self.known_enums:
+                        # Enums should be converted to number for viem (uint8)
+                        return f'Number({expr})'
+                    # bytes32 and address types need hex string cast
+                    if var_type_name == 'bytes32' or var_type_name == 'address':
+                        return f'{expr} as `0x${{string}}`'
+                    # Small integer types need Number() conversion for viem
+                    if var_type_name in ('int8', 'int16', 'int32', 'int64', 'int128',
+                                          'uint8', 'uint16', 'uint32', 'uint64', 'uint128'):
+                        return f'Number({expr})'
+
+        # Member access like Enums.Something also needs Number conversion
+        if isinstance(arg, MemberAccess):
+            if isinstance(arg.expression, Identifier):
+                if arg.expression.name == 'Enums':
+                    return f'Number({expr})'
+
+        return expr
 
     def generate_index_access(self, access: IndexAccess) -> str:
         """Generate index access using [] syntax for both arrays and objects."""
@@ -3070,7 +3162,7 @@ class TypeScriptCodeGenerator:
                 return expr
             return expr  # Already a string in most cases
 
-        # Handle bytes32 literals like bytes32(0)
+        # Handle bytes32 casts
         if type_name == 'bytes32':
             if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
                 val = inner_expr.value
@@ -3082,6 +3174,9 @@ class TypeScriptCodeGenerator:
                 else:
                     hex_val = hex(int(val))[2:]
                     return f'"0x{hex_val.zfill(64)}"'
+            # For computed expressions, convert bigint to 64-char hex string
+            expr = self.generate_expression(inner_expr)
+            return f'`0x${{({expr}).toString(16).padStart(64, "0")}}`'
 
         expr = self.generate_expression(inner_expr)
 
