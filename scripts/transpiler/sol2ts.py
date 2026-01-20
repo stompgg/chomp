@@ -1854,6 +1854,12 @@ class TypeScriptCodeGenerator:
         self.indent_str = '  '
         self.imports: Set[str] = set()
         self.type_info: Dict[str, str] = {}  # Maps Solidity types to TypeScript types
+        # Track current contract context for this. prefix handling
+        self.current_state_vars: Set[str] = set()
+        self.current_methods: Set[str] = set()
+        self.current_local_vars: Set[str] = set()  # Local variables in current scope
+        # Type registry: maps variable names to their TypeName for array/mapping detection
+        self.var_types: Dict[str, 'TypeName'] = {}
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
@@ -1962,6 +1968,13 @@ class TypeScriptCodeGenerator:
         """Generate TypeScript class."""
         lines = []
 
+        # Collect state variable and method names for this. prefix handling
+        self.current_state_vars = {var.name for var in contract.state_variables}
+        self.current_methods = {func.name for func in contract.functions}
+        self.current_local_vars = set()
+        # Populate type registry with state variable types
+        self.var_types = {var.name: var.type_name for var in contract.state_variables}
+
         # Class declaration
         extends = ''
         if contract.base_contracts:
@@ -2011,10 +2024,13 @@ class TypeScriptCodeGenerator:
             modifier = 'protected '
 
         if var.type_name.is_mapping:
-            # Use Map for mappings
-            key_type = self.solidity_type_to_ts(var.type_name.key_type)
+            # Use Record (plain object) for mappings - allows [] access
             value_type = self.solidity_type_to_ts(var.type_name.value_type)
-            return f'{self.indent()}{modifier}{var.name}: Map<{key_type}, {value_type}> = new Map();'
+            # Nested mappings become nested Records
+            if var.type_name.value_type.is_mapping:
+                inner_value = self.solidity_type_to_ts(var.type_name.value_type.value_type)
+                return f'{self.indent()}{modifier}{var.name}: Record<string, Record<string, {inner_value}>> = {{}};'
+            return f'{self.indent()}{modifier}{var.name}: Record<string, {value_type}> = {{}};'
 
         default_val = self.generate_expression(var.initial_value) if var.initial_value else self.default_value(ts_type)
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
@@ -2057,6 +2073,16 @@ class TypeScriptCodeGenerator:
         """Generate function implementation."""
         lines = []
 
+        # Track local variables for this function (start with parameters)
+        self.current_local_vars = set()
+        for i, p in enumerate(func.parameters):
+            param_name = p.name if p.name else f'_arg{i}'
+            self.current_local_vars.add(param_name)
+        # Also add return parameter names as local vars
+        for r in func.return_parameters:
+            if r.name:
+                self.current_local_vars.add(r.name)
+
         params = ', '.join([
             f'{self.generate_param_name(p, i)}: {self.solidity_type_to_ts(p.type_name)}'
             for i, p in enumerate(func.parameters)
@@ -2079,6 +2105,9 @@ class TypeScriptCodeGenerator:
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
         lines.append('')
+
+        # Clear local vars after function
+        self.current_local_vars = set()
         return '\n'.join(lines)
 
     def generate_return_type(self, params: List[VariableDeclaration]) -> str:
@@ -2133,6 +2162,13 @@ class TypeScriptCodeGenerator:
 
     def generate_variable_declaration_statement(self, stmt: VariableDeclarationStatement) -> str:
         """Generate variable declaration statement."""
+        # Track declared variable names and types
+        for decl in stmt.declarations:
+            if decl and decl.name:
+                self.current_local_vars.add(decl.name)
+                if decl.type_name:
+                    self.var_types[decl.name] = decl.type_name
+
         if len(stmt.declarations) == 1:
             decl = stmt.declarations[0]
             ts_type = self.solidity_type_to_ts(decl.type_name)
@@ -2184,6 +2220,11 @@ class TypeScriptCodeGenerator:
         if stmt.init:
             if isinstance(stmt.init, VariableDeclarationStatement):
                 decl = stmt.init.declarations[0]
+                # Track loop variable as local and its type
+                if decl.name:
+                    self.current_local_vars.add(decl.name)
+                    if decl.type_name:
+                        self.var_types[decl.name] = decl.type_name
                 ts_type = self.solidity_type_to_ts(decl.type_name)
                 if stmt.init.initial_value:
                     init_val = self.generate_expression(stmt.init.initial_value)
@@ -2268,74 +2309,158 @@ class TypeScriptCodeGenerator:
     def transpile_yul(self, yul_code: str) -> str:
         """Transpile Yul assembly to TypeScript.
 
-        Handles the specific patterns used in Engine.sol:
-        - Storage slot access: varName.slot
-        - sload/sstore for storage read/write
-        - mstore for array length manipulation
-        """
-        lines = []
+        General approach:
+        1. Normalize the tokenized Yul code
+        2. Parse into AST-like structure
+        3. Generate TypeScript for each construct
 
-        # Normalize whitespace and remove extra spaces around operators/punctuation
-        code = ' '.join(yul_code.split())
-        # The tokenizer adds spaces around punctuation, normalize these patterns:
+        Key Yul operations and their TypeScript equivalents:
+        - sload(slot) → this._storageRead(slotKey)
+        - sstore(slot, value) → this._storageWrite(slotKey, value)
+        - var.slot → get storage key for variable
+        - mstore/mload → memory operations (usually no-op for simulation)
+        """
+        # Normalize whitespace and punctuation from tokenizer
+        code = self._normalize_yul(yul_code)
+
+        # Track slot variable mappings (e.g., slot -> monState.slot)
+        slot_vars: Dict[str, str] = {}
+
+        # Parse and generate
+        return self._transpile_yul_block(code, slot_vars)
+
+    def _normalize_yul(self, code: str) -> str:
+        """Normalize Yul code by fixing tokenizer spacing."""
+        code = ' '.join(code.split())
         code = re.sub(r':\s*=', ':=', code)           # ": =" -> ":="
-        code = re.sub(r'\s*\.\s*', '.', code)         # " . " -> "." (member access)
-        code = re.sub(r'(\w)\s+\(', r'\1(', code)     # "sload (" -> "sload(" (function calls)
+        code = re.sub(r'\s*\.\s*', '.', code)         # " . " -> "."
+        code = re.sub(r'(\w)\s+\(', r'\1(', code)     # "func (" -> "func("
         code = re.sub(r'\(\s+', '(', code)            # "( " -> "("
         code = re.sub(r'\s+\)', ')', code)            # " )" -> ")"
         code = re.sub(r'\s+,', ',', code)             # " ," -> ","
-        code = re.sub(r',\s+', ', ', code)            # ", " normalize to single space
-        code = re.sub(r'\{\s+', '{ ', code)           # "{ " normalize to single space
-        code = re.sub(r'\s+\}', ' }', code)           # " }" normalize to single space
+        code = re.sub(r',\s+', ', ', code)            # normalize comma spacing
+        return code
 
-        # Pattern 1: MonState clearing pattern
-        # let slot := monState.slot if sload(slot) { sstore(slot, PACKED_CLEARED_MON_STATE) }
-        clear_pattern = re.search(
-            r'let\s+(\w+)\s*:=\s*(\w+)\.slot\s+if\s+sload\((\w+)\)\s*\{\s*sstore\((\w+),\s*(\w+)\)\s*\}',
-            code
-        )
-        if clear_pattern:
-            slot_var = clear_pattern.group(1)
-            state_var = clear_pattern.group(2)
-            constant = clear_pattern.group(5)
-            lines.append(f'// Clear {state_var} storage if it has data')
-            lines.append(f'if (this._hasStorageData({state_var})) {{')
-            lines.append(f'  this._clearMonState({state_var}, {constant});')
-            lines.append(f'}}')
-            return '\n'.join(lines)
+    def _transpile_yul_block(self, code: str, slot_vars: Dict[str, str]) -> str:
+        """Transpile a block of Yul code to TypeScript."""
+        lines = []
 
-        # Pattern 2: mstore for array length - mstore(array, length)
-        mstore_pattern = re.search(r'mstore\((\w+),\s*(\w+)\)', code)
-        if mstore_pattern:
-            array_name = mstore_pattern.group(1)
-            length_var = mstore_pattern.group(2)
-            lines.append(f'// Set array length')
-            lines.append(f'{array_name}.length = Number({length_var});')
-            return '\n'.join(lines)
+        # Parse let bindings: let var := expr
+        let_pattern = re.compile(r'let\s+(\w+)\s*:=\s*([^{}\n]+?)(?=\s+(?:let|if|for|switch|$)|\s*$)')
+        for match in let_pattern.finditer(code):
+            var_name = match.group(1)
+            expr = match.group(2).strip()
 
-        # Pattern 3: Simple sload
-        sload_pattern = re.search(r'sload\((\w+)\)', code)
-        if sload_pattern and 'sstore' not in code:
-            slot = sload_pattern.group(1)
-            lines.append(f'this._storage.get({slot})')
-            return '\n'.join(lines)
+            # Check if this is a .slot access (storage key)
+            slot_match = re.match(r'(\w+)\.slot', expr)
+            if slot_match:
+                storage_var = slot_match.group(1)
+                slot_vars[var_name] = storage_var
+                lines.append(f'const {var_name} = this._getStorageKey({storage_var});')
+            else:
+                ts_expr = self._transpile_yul_expr(expr, slot_vars)
+                lines.append(f'let {var_name} = {ts_expr};')
 
-        # Pattern 4: Simple sstore
-        sstore_pattern = re.search(r'sstore\((\w+),\s*(.+?)\)', code)
-        if sstore_pattern and 'if' not in code:
-            slot = sstore_pattern.group(1)
-            value = sstore_pattern.group(2)
-            lines.append(f'this._storage.set({slot}, {value});')
-            return '\n'.join(lines)
+        # Parse if statements: if cond { body }
+        if_pattern = re.compile(r'if\s+([^{]+)\s*\{([^}]*)\}')
+        for match in if_pattern.finditer(code):
+            cond = match.group(1).strip()
+            body = match.group(2).strip()
 
-        # Fallback: parse line by line for simpler cases
-        statements = self.parse_yul_statements(yul_code)
-        for stmt in statements:
-            ts_stmt = self.transpile_yul_statement(stmt)
+            ts_cond = self._transpile_yul_expr(cond, slot_vars)
+            ts_body = self._transpile_yul_block(body, slot_vars)
+
+            lines.append(f'if ({ts_cond}) {{')
+            for line in ts_body.split('\n'):
+                if line.strip():
+                    lines.append(f'  {line}')
+            lines.append('}')
+
+        # Parse standalone function calls (sstore, mstore, etc.) that aren't inside if blocks
+        # Remove if block contents to avoid matching calls inside them
+        code_without_ifs = re.sub(r'if\s+[^{]+\{[^}]*\}', '', code)
+        call_pattern = re.compile(r'\b(sstore|mstore|revert)\s*\(([^)]+)\)')
+        for match in call_pattern.finditer(code_without_ifs):
+            func = match.group(1)
+            args = match.group(2)
+            ts_stmt = self._transpile_yul_call(func, args, slot_vars)
             if ts_stmt:
                 lines.append(ts_stmt)
 
         return '\n'.join(lines) if lines else '// Assembly: no-op'
+
+    def _transpile_yul_expr(self, expr: str, slot_vars: Dict[str, str]) -> str:
+        """Transpile a Yul expression to TypeScript."""
+        expr = expr.strip()
+
+        # sload(slot) - storage read
+        sload_match = re.match(r'sload\((\w+)\)', expr)
+        if sload_match:
+            slot = sload_match.group(1)
+            if slot in slot_vars:
+                return f'this._storageRead({slot_vars[slot]})'
+            return f'this._storageRead({slot})'
+
+        # Function calls
+        call_match = re.match(r'(\w+)\((.+)\)', expr)
+        if call_match:
+            func = call_match.group(1)
+            args_str = call_match.group(2)
+            args = [a.strip() for a in args_str.split(',')]
+            ts_args = [self._transpile_yul_expr(a, slot_vars) for a in args]
+
+            # Yul built-in functions
+            if func in ('add', 'sub', 'mul', 'div', 'mod'):
+                op = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '%': 'mod'}.get(func, '+')
+                ops = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': '%'}
+                return f'({ts_args[0]} {ops[func]} {ts_args[1]})'
+            if func in ('and', 'or', 'xor'):
+                ops = {'and': '&', 'or': '|', 'xor': '^'}
+                return f'({ts_args[0]} {ops[func]} {ts_args[1]})'
+            if func == 'not':
+                return f'(~{ts_args[0]})'
+            if func in ('shl', 'shr'):
+                # shl(shift, value) -> value << shift
+                return f'({ts_args[1]} {"<<" if func == "shl" else ">>"} {ts_args[0]})'
+            if func in ('lt', 'gt', 'eq'):
+                ops = {'lt': '<', 'gt': '>', 'eq': '==='}
+                return f'({ts_args[0]} {ops[func]} {ts_args[1]} ? 1n : 0n)'
+            if func == 'iszero':
+                return f'({ts_args[0]} === 0n ? 1n : 0n)'
+            return f'{func}({", ".join(ts_args)})'
+
+        # Hex literals
+        if expr.startswith('0x'):
+            return f'BigInt("{expr}")'
+
+        # Numeric literals
+        if expr.isdigit():
+            return f'{expr}n'
+
+        # Identifiers
+        return expr
+
+    def _transpile_yul_call(self, func: str, args_str: str, slot_vars: Dict[str, str]) -> str:
+        """Transpile a Yul function call statement."""
+        args = [a.strip() for a in args_str.split(',')]
+
+        if func == 'sstore':
+            slot = args[0]
+            value = self._transpile_yul_expr(args[1], slot_vars) if len(args) > 1 else '0n'
+            if slot in slot_vars:
+                return f'this._storageWrite({slot_vars[slot]}, {value});'
+            return f'this._storageWrite({slot}, {value});'
+
+        if func == 'mstore':
+            # Memory store - in simulation, often used for array length
+            ptr = args[0]
+            value = self._transpile_yul_expr(args[1], slot_vars) if len(args) > 1 else '0n'
+            return f'// mstore: {ptr}.length = Number({value});'
+
+        if func == 'revert':
+            return 'throw new Error("Revert");'
+
+        return f'// Yul: {func}({args_str})'
 
     def parse_yul_statements(self, code: str) -> List[str]:
         """Parse Yul code into individual statements."""
@@ -2543,16 +2668,24 @@ class TypeScriptCodeGenerator:
 
     def generate_identifier(self, ident: Identifier) -> str:
         """Generate identifier."""
+        name = ident.name
+
         # Handle special identifiers
-        if ident.name == 'msg':
+        if name == 'msg':
             return 'this._msg'
-        elif ident.name == 'block':
+        elif name == 'block':
             return 'this._block'
-        elif ident.name == 'tx':
+        elif name == 'tx':
             return 'this._tx'
-        elif ident.name == 'this':
+        elif name == 'this':
             return 'this'
-        return ident.name
+
+        # Add this. prefix for state variables and methods (but not local vars)
+        if name not in self.current_local_vars:
+            if name in self.current_state_vars or name in self.current_methods:
+                return f'this.{name}'
+
+        return name
 
     def _needs_parens(self, expr: Expression) -> bool:
         """Check if expression needs parentheses when used as operand."""
@@ -2602,6 +2735,27 @@ class TypeScriptCodeGenerator:
 
     def generate_function_call(self, call: FunctionCall) -> str:
         """Generate function call."""
+        # Handle array allocation: new Type[](size) -> new Array(size)
+        if isinstance(call.function, NewExpression):
+            if call.function.type_name.is_array and call.arguments:
+                size_arg = call.arguments[0]
+                size = self.generate_expression(size_arg)
+                # Convert BigInt to Number for array size
+                if size.startswith('BigInt('):
+                    inner = size[7:-1]  # Extract content between BigInt( and )
+                    if inner.isdigit():
+                        size = inner
+                    else:
+                        size = f'Number({size})'
+                elif size.endswith('n'):
+                    size = size[:-1]
+                elif isinstance(size_arg, Identifier):
+                    # Variable size needs Number() conversion
+                    size = f'Number({size})'
+                return f'new Array({size})'
+            # No-argument array creation
+            return f'[]'
+
         func = self.generate_expression(call.function)
         args = ', '.join([self.generate_expression(a) for a in call.arguments])
 
@@ -2672,12 +2826,76 @@ class TypeScriptCodeGenerator:
         return f'{expr}.{member}'
 
     def generate_index_access(self, access: IndexAccess) -> str:
-        """Generate index access."""
+        """Generate index access using [] syntax for both arrays and objects."""
         base = self.generate_expression(access.base)
         index = self.generate_expression(access.index)
 
-        # Check if this is a mapping access
-        return f'{base}.get({index})'
+        # Determine if this is likely an array access (needs numeric index) or
+        # mapping/object access (uses string key)
+        is_likely_array = self._is_likely_array_access(access)
+
+        # Convert index to appropriate type for array/object access
+        if index.startswith('BigInt('):
+            # BigInt(n) -> n for simple literals
+            inner = index[7:-1]  # Extract content between BigInt( and )
+            if inner.isdigit():
+                index = inner
+            elif is_likely_array:
+                index = f'Number({index})'
+        elif index.endswith('n'):
+            # 0n -> 0
+            index = index[:-1]
+        elif is_likely_array and isinstance(access.index, Identifier):
+            # For loop variables (i, j, etc.) accessing arrays, convert to Number
+            index = f'Number({index})'
+        # For string/address mapping keys - leave as-is
+
+        return f'{base}[{index}]'
+
+    def _is_likely_array_access(self, access: IndexAccess) -> bool:
+        """Determine if this is an array access (needs Number index) vs mapping access.
+
+        Uses type registry for accurate detection instead of name heuristics.
+        """
+        # Get the base variable name to look up its type
+        base_var_name = self._get_base_var_name(access.base)
+
+        if base_var_name and base_var_name in self.var_types:
+            type_info = self.var_types[base_var_name]
+            # Check the type - arrays need Number(), mappings don't
+            if type_info.is_array:
+                return True
+            if type_info.is_mapping:
+                return False
+
+        # For member access (e.g., config.p0States[j]), check if the member type is array
+        if isinstance(access.base, MemberAccess):
+            # The member access itself may be accessing an array field in a struct
+            # Without full struct type info, use the index type as a hint
+            pass
+
+        # Fallback: check if index is a known integer type variable
+        if isinstance(access.index, Identifier):
+            index_name = access.index.name
+            if index_name in self.var_types:
+                index_type = self.var_types[index_name]
+                # If index is declared as uint/int, it's likely an array access
+                if index_type.name and (index_type.name.startswith('uint') or index_type.name.startswith('int')):
+                    return True
+
+        return False
+
+    def _get_base_var_name(self, expr: Expression) -> Optional[str]:
+        """Extract the root variable name from an expression."""
+        if isinstance(expr, Identifier):
+            return expr.name
+        if isinstance(expr, MemberAccess):
+            # For nested access like a.b.c, get the root 'a'
+            return self._get_base_var_name(expr.expression)
+        if isinstance(expr, IndexAccess):
+            # For nested index like a[x][y], get the root 'a'
+            return self._get_base_var_name(expr.base)
+        return None
 
     def generate_new_expression(self, expr: NewExpression) -> str:
         """Generate new expression."""
@@ -2757,8 +2975,8 @@ class TypeScriptCodeGenerator:
             return '0'
         elif ts_type.endswith('[]'):
             return '[]'
-        elif ts_type.startswith('Map<'):
-            return 'new Map()'
+        elif ts_type.startswith('Map<') or ts_type.startswith('Record<'):
+            return '{}'
         return 'undefined as any'
 
 
