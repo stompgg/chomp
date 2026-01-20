@@ -291,7 +291,7 @@ def generate_typescript_const(data: Dict[int, Dict[str, Any]], output_file: str)
             json_str = json_str.replace(f'"{val}"', f"{enum_name}.{val}")
 
     typescript_content = f"""// Auto-generated type file
-import {{ Address }} from './address';
+import {{ Address }} from './address-config';
 import {{ LowercaseHex, Type }} from '../types/structs';
 import {{ SpriteAnimationConfig }} from '../types/animation';
 
