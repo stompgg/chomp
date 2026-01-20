@@ -1112,9 +1112,21 @@ class Parser:
                 self.advance()
         self.expect(TokenType.RPAREN)
 
-        # Skip modifiers and visibility
-        while not self.match(TokenType.LBRACE, TokenType.EOF):
-            self.advance()
+        # Skip modifiers, visibility, and base constructor calls
+        # Need to track brace/paren depth to handle constructs like ATTACK_PARAMS({...})
+        paren_depth = 0
+        while not self.match(TokenType.EOF):
+            if self.match(TokenType.LPAREN):
+                paren_depth += 1
+                self.advance()
+            elif self.match(TokenType.RPAREN):
+                paren_depth -= 1
+                self.advance()
+            elif self.match(TokenType.LBRACE) and paren_depth == 0:
+                # This is the actual constructor body
+                break
+            else:
+                self.advance()
 
         body = self.parse_block()
 
