@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "declaration": true,
+    "types": ["vitest/globals"],
+    "noImplicitAny": false
+  },
+  "include": ["runtime/**/*.ts", "test/**/*.ts", "ts-output/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

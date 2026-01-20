@@ -1899,6 +1899,7 @@ class TypeScriptCodeGenerator:
         """Generate import statements."""
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters } from 'viem';")
+        lines.append("import { Contract, Storage, ADDRESS_ZERO } from './runtime';")
         lines.append('')
         return '\n'.join(lines)
 
@@ -1972,22 +1973,23 @@ class TypeScriptCodeGenerator:
         # Populate type registry with state variable types
         self.var_types = {var.name: var.type_name for var in contract.state_variables}
 
-        # Class declaration
-        extends = ''
-        if contract.base_contracts:
-            extends = f' extends {contract.base_contracts[0]}'
-        implements = ''
-        if len(contract.base_contracts) > 1:
-            implements = f' implements {", ".join(contract.base_contracts[1:])}'
-
+        # Class declaration - always extend Contract base class
+        extends = ' extends Contract'
         abstract = 'abstract ' if contract.kind == 'abstract' else ''
-        lines.append(f'export {abstract}class {contract.name}{extends}{implements} {{')
+        lines.append(f'export {abstract}class {contract.name}{extends} {{')
         self.indent_level += 1
 
-        # Storage simulation
-        lines.append(f'{self.indent()}// Storage')
-        lines.append(f'{self.indent()}protected _storage: Map<string, any> = new Map();')
-        lines.append(f'{self.indent()}protected _transient: Map<string, any> = new Map();')
+        # Storage helper methods
+        lines.append(f'{self.indent()}// Storage helpers')
+        lines.append(f'{self.indent()}protected _getStorageKey(key: any): string {{')
+        lines.append(f'{self.indent()}  return typeof key === "string" ? key : JSON.stringify(key);')
+        lines.append(f'{self.indent()}}}')
+        lines.append(f'{self.indent()}protected _storageRead(key: any): bigint {{')
+        lines.append(f'{self.indent()}  return this._storage.sload(this._getStorageKey(key));')
+        lines.append(f'{self.indent()}}}')
+        lines.append(f'{self.indent()}protected _storageWrite(key: any, value: bigint): void {{')
+        lines.append(f'{self.indent()}  this._storage.sstore(this._getStorageKey(key), value);')
+        lines.append(f'{self.indent()}}}')
         lines.append('')
 
         # State variables
@@ -2290,6 +2292,14 @@ class TypeScriptCodeGenerator:
     def generate_revert_statement(self, stmt: RevertStatement) -> str:
         """Generate revert statement (as throw)."""
         if stmt.error_call:
+            # If error_call is a simple identifier (error name), use it as a string
+            if isinstance(stmt.error_call, Identifier):
+                return f'{self.indent()}throw new Error("{stmt.error_call.name}");'
+            # If error_call is a function call (error with args), use error name as string
+            elif isinstance(stmt.error_call, FunctionCall):
+                if isinstance(stmt.error_call.function, Identifier):
+                    error_name = stmt.error_call.function.name
+                    return f'{self.indent()}throw new Error("{error_name}");'
             return f'{self.indent()}throw new Error({self.generate_expression(stmt.error_call)});'
         return f'{self.indent()}throw new Error("Revert");'
 
@@ -2634,6 +2644,17 @@ class TypeScriptCodeGenerator:
                 return args  # Pass through - JS truthy works
             elif name.startswith('bytes'):
                 return args  # Pass through
+            # Handle interface type casts like IMatchmaker(x) -> x
+            # Also handles struct constructors without args -> default object
+            elif name.startswith('I') and name[1].isupper():
+                # Interface cast - just pass through the value
+                if args:
+                    return args
+                return '{}'  # Empty interface cast
+            # Handle custom type casts and struct "constructors"
+            elif name[0].isupper() and not args:
+                # Struct with no args - return default object
+                return f'{{}} as {name}'
 
         return f'{func}({args})'
 
