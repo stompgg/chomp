@@ -1456,14 +1456,19 @@ class Parser:
 
             if self.match(TokenType.COMMA):
                 self.advance()
+                # If next token is ), this is a trailing comma - add None for skipped element
+                if self.match(TokenType.RPAREN):
+                    declarations.append(None)
 
         self.expect(TokenType.RPAREN)
         self.expect(TokenType.EQ)
         initial_value = self.parse_expression()
         self.expect(TokenType.SEMICOLON)
 
+        # Keep the declarations list as-is (including None for skipped elements)
+        # to preserve tuple structure for destructuring
         return VariableDeclarationStatement(
-            declarations=[d for d in declarations if d is not None],
+            declarations=declarations,
             initial_value=initial_value,
         )
 
@@ -1880,6 +1885,8 @@ class TypeScriptCodeGenerator:
         self.current_state_vars: Set[str] = set()
         self.current_static_vars: Set[str] = set()  # Static/constant state variables
         self.current_class_name: str = ''  # Current class name for static access
+        self.current_base_classes: List[str] = []  # Current base classes for super() calls
+        self.current_contract_kind: str = ''  # 'contract', 'library', 'abstract', 'interface'
         self.current_methods: Set[str] = set()
         self.current_local_vars: Set[str] = set()  # Local variables in current scope
         # Type registry: maps variable names to their TypeName for array/mapping detection
@@ -1891,6 +1898,7 @@ class TypeScriptCodeGenerator:
             'BattleConfigView', 'CommitContext', 'DamageCalcContext', 'EffectInstance',
             'Mon', 'MonState', 'MonStats', 'MoveDecision', 'PlayerDecisionData',
             'ProposedBattle', 'RevealedMove', 'StatBoostToApply', 'StatBoostUpdate',
+            'ATTACK_PARAMS',  # From StandardAttackStructs.sol
         }
         self.known_enums = {
             'Type', 'GameStatus', 'EffectStep', 'MoveClass', 'MonStateIndexName',
@@ -1950,6 +1958,10 @@ class TypeScriptCodeGenerator:
         }
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
+        # Library contracts referenced (for import generation)
+        self.libraries_referenced: Set[str] = set()
+        # Known library contracts
+        self.known_libraries = {'AttackCalculator'}
         # Current file type (to avoid self-referencing prefixes)
         self.current_file_type = ''
 
@@ -1962,6 +1974,7 @@ class TypeScriptCodeGenerator:
 
         # Reset base contracts needed for this file
         self.base_contracts_needed = set()
+        self.libraries_referenced = set()
 
         # Determine file type before generating (affects identifier prefixes)
         contract_name = ast.contracts[0].name if ast.contracts else ''
@@ -2013,6 +2026,10 @@ class TypeScriptCodeGenerator:
         # Import base contracts needed for inheritance
         for base_contract in sorted(self.base_contracts_needed):
             lines.append(f"import {{ {base_contract} }} from './{base_contract}';")
+
+        # Import library contracts that are referenced
+        for library in sorted(self.libraries_referenced):
+            lines.append(f"import {{ {library} }} from './{library}';")
 
         # Import types based on current file type:
         # - Enums.ts: no imports needed from other modules
@@ -2100,6 +2117,7 @@ class TypeScriptCodeGenerator:
         # Track this contract as known for future inheritance
         self.known_contracts.add(contract.name)
         self.current_class_name = contract.name
+        self.current_contract_kind = contract.kind
 
         # Collect state variable and method names for this. prefix handling
         self.current_state_vars = {var.name for var in contract.state_variables
@@ -2117,6 +2135,7 @@ class TypeScriptCodeGenerator:
 
         # Determine the extends clause based on base_contracts
         extends = ''
+        self.current_base_classes = []  # Reset for this contract
         if contract.base_contracts:
             # Filter to known contracts (skip interfaces which are handled differently)
             base_classes = [bc for bc in contract.base_contracts
@@ -2126,6 +2145,7 @@ class TypeScriptCodeGenerator:
                 base_class = base_classes[0]
                 extends = f' extends {base_class}'
                 self.base_contracts_needed.add(base_class)
+                self.current_base_classes = base_classes
                 # Add base class methods to current_methods for this. prefix handling
                 if base_class in self.known_contract_methods:
                     self.current_methods.update(self.known_contract_methods[base_class])
@@ -2196,12 +2216,25 @@ class TypeScriptCodeGenerator:
     def generate_constructor(self, func: FunctionDefinition) -> str:
         """Generate constructor."""
         lines = []
+
+        # Track constructor parameters as local variables (to avoid this. prefix)
+        self.current_local_vars = set()
+        for p in func.parameters:
+            if p.name:
+                self.current_local_vars.add(p.name)
+                if p.type_name:
+                    self.var_types[p.name] = p.type_name
+
         params = ', '.join([
             f'{p.name}: {self.solidity_type_to_ts(p.type_name)}'
             for p in func.parameters
         ])
         lines.append(f'{self.indent()}constructor({params}) {{')
         self.indent_level += 1
+
+        # Add super() call for derived classes - must be first statement
+        if self.current_base_classes:
+            lines.append(f'{self.indent()}super();')
 
         if func.body:
             for stmt in func.body.statements:
@@ -2253,12 +2286,17 @@ class TypeScriptCodeGenerator:
         return_type = self.generate_return_type(func.return_parameters)
 
         visibility = ''
+        static_prefix = ''
+        # Library functions should be static
+        if self.current_contract_kind == 'library':
+            static_prefix = 'static '
+
         if func.visibility == 'private':
             visibility = 'private '
         elif func.visibility == 'internal':
-            visibility = 'protected '
+            visibility = 'protected ' if self.current_contract_kind != 'library' else ''
 
-        lines.append(f'{self.indent()}{visibility}{func.name}({params}): {return_type} {{')
+        lines.append(f'{self.indent()}{visibility}{static_prefix}{func.name}({params}): {return_type} {{')
         self.indent_level += 1
 
         # Declare named return parameters at start of function
@@ -2469,7 +2507,11 @@ class TypeScriptCodeGenerator:
                 if decl.type_name:
                     self.var_types[decl.name] = decl.type_name
 
-        if len(stmt.declarations) == 1:
+        # Filter out None declarations for counting, but use original list for tuple structure
+        non_none_decls = [d for d in stmt.declarations if d is not None]
+
+        # If there's only one actual declaration and no None entries, use simple let
+        if len(stmt.declarations) == 1 and stmt.declarations[0] is not None:
             decl = stmt.declarations[0]
             ts_type = self.solidity_type_to_ts(decl.type_name)
             init = ''
@@ -2477,8 +2519,8 @@ class TypeScriptCodeGenerator:
                 init = f' = {self.generate_expression(stmt.initial_value)}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
-            # Tuple declaration
-            names = ', '.join([d.name if d else '_' for d in stmt.declarations])
+            # Tuple declaration (including single value with trailing comma like (x,) = ...)
+            names = ', '.join([d.name if d else '' for d in stmt.declarations])
             init = self.generate_expression(stmt.initial_value) if stmt.initial_value else ''
             return f'{self.indent()}const [{names}] = {init};'
 
@@ -3052,6 +3094,11 @@ class TypeScriptCodeGenerator:
                 if name in self.known_structs and self.current_file_type != 'Structs':
                     return f'{{}} as Structs.{name}'
                 return f'{{}} as {name}'
+            # Handle enum type casts: Type(newValue) -> Number(newValue) as Enums.Type
+            elif name in self.known_enums:
+                if self.current_file_type == 'Enums':
+                    return f'Number({args}) as {name}'
+                return f'Number({args}) as Enums.{name}'
 
         return f'{func}({args})'
 
@@ -3071,6 +3118,9 @@ class TypeScriptCodeGenerator:
                     return 'decodeAbiParameters'
             elif access.expression.name == 'type':
                 return f'/* type().{member} */'
+            # Track library references for imports
+            elif access.expression.name in self.known_libraries:
+                self.libraries_referenced.add(access.expression.name)
 
         # Handle type(TypeName).max/min - compute the actual values
         if isinstance(access.expression, FunctionCall):
