@@ -2740,8 +2740,58 @@ class TypeScriptCodeGenerator:
         elif isinstance(stmt, AssemblyStatement):
             return self.generate_assembly_statement(stmt)
         elif isinstance(stmt, ExpressionStatement):
-            return f'{self.indent()}{self.generate_expression(stmt.expression)};'
+            return self._generate_expression_statement(stmt)
         return f'{self.indent()}// Unknown statement'
+
+    def _generate_expression_statement(self, stmt: ExpressionStatement) -> str:
+        """Generate expression statement with special handling for nested mapping assignments."""
+        expr = stmt.expression
+
+        # Check if this is an assignment to a mapping
+        if isinstance(expr, BinaryOperation) and expr.operator in ('=', '+=', '-=', '*=', '/='):
+            left = expr.left
+
+            # Check for nested IndexAccess on left side (mapping[key1][key2] = value)
+            if isinstance(left, IndexAccess) and isinstance(left.base, IndexAccess):
+                # This is a nested mapping access like mapping[a][b] = value
+                # Generate initialization for intermediate mapping
+                init_lines = self._generate_nested_mapping_init(left.base)
+                main_expr = f'{self.indent()}{self.generate_expression(expr)};'
+                if init_lines:
+                    return init_lines + '\n' + main_expr
+                return main_expr
+
+            # Check for compound assignment on simple mapping (mapping[key] += value)
+            if isinstance(left, IndexAccess) and expr.operator in ('+=', '-=', '*=', '/='):
+                # Need to initialize the value to default before compound operation
+                left_expr = self.generate_expression(left)
+                # Determine default value based on likely type (bigint for most cases)
+                init_line = f'{self.indent()}{left_expr} ??= 0n;'
+                main_expr = f'{self.indent()}{self.generate_expression(expr)};'
+                return init_line + '\n' + main_expr
+
+        return f'{self.indent()}{self.generate_expression(expr)};'
+
+    def _generate_nested_mapping_init(self, access: IndexAccess) -> str:
+        """Generate initialization for nested mapping intermediate keys.
+
+        For mapping[a][b] access, this generates: mapping[a] ??= {};
+        """
+        lines = []
+
+        # Generate the base access (mapping[a])
+        base_expr = self.generate_expression(access)
+
+        # Recursively handle deeper nesting
+        if isinstance(access.base, IndexAccess):
+            deeper_init = self._generate_nested_mapping_init(access.base)
+            if deeper_init:
+                lines.append(deeper_init)
+
+        # Generate initialization: mapping[key] ??= {};
+        lines.append(f'{self.indent()}{base_expr} ??= {{}};')
+
+        return '\n'.join(lines)
 
     def generate_block(self, block: Block) -> str:
         """Generate block of statements."""
@@ -2772,13 +2822,62 @@ class TypeScriptCodeGenerator:
             ts_type = self.solidity_type_to_ts(decl.type_name)
             init = ''
             if stmt.initial_value:
-                init = f' = {self.generate_expression(stmt.initial_value)}'
+                init_expr = self.generate_expression(stmt.initial_value)
+                # Add default value for mapping reads (Solidity returns 0/false/etc for non-existent keys)
+                init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr)
+                init = f' = {init_expr}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
             # Tuple declaration (including single value with trailing comma like (x,) = ...)
             names = ', '.join([d.name if d else '' for d in stmt.declarations])
             init = self.generate_expression(stmt.initial_value) if stmt.initial_value else ''
             return f'{self.indent()}const [{names}] = {init};'
+
+    def _add_mapping_default(self, expr: Expression, ts_type: str, generated_expr: str) -> str:
+        """Add default value for mapping reads to simulate Solidity mapping semantics.
+
+        In Solidity, reading from a mapping returns the default value for non-existent keys.
+        In TypeScript, accessing a non-existent key returns undefined.
+        """
+        # Check if this is a mapping read (IndexAccess that's not an array)
+        if not isinstance(expr, IndexAccess):
+            return generated_expr
+
+        # Determine if this is likely a mapping (not an array) read
+        is_mapping_read = False
+        base_var_name = self._get_base_var_name(expr.base)
+        if base_var_name and base_var_name in self.var_types:
+            type_info = self.var_types[base_var_name]
+            is_mapping_read = type_info.is_mapping
+
+        # Also check for known mapping patterns in identifier names
+        if isinstance(expr.base, Identifier):
+            name = expr.base.name.lower()
+            mapping_keywords = ['nonce', 'balance', 'allowance', 'mapping', 'map', 'kv', 'storage']
+            if any(kw in name for kw in mapping_keywords):
+                is_mapping_read = True
+
+        if not is_mapping_read:
+            return generated_expr
+
+        # Add default value based on TypeScript type
+        default_value = self._get_ts_default_value(ts_type)
+        if default_value:
+            return f'({generated_expr} ?? {default_value})'
+        return generated_expr
+
+    def _get_ts_default_value(self, ts_type: str) -> Optional[str]:
+        """Get the default value for a TypeScript type (matching Solidity semantics)."""
+        if ts_type == 'bigint':
+            return '0n'
+        elif ts_type == 'boolean':
+            return 'false'
+        elif ts_type == 'string':
+            return '""'
+        elif ts_type == 'number':
+            return '0'
+        # For complex types (objects, arrays), return None - they need different handling
+        return None
 
     def generate_if_statement(self, stmt: IfStatement) -> str:
         """Generate if statement."""
