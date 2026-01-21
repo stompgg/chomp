@@ -66,6 +66,13 @@
 - **Abilities**: UpOnly (attack boost on damage), ability activation on switch-in
 - **Complex Scenarios**: Effect interactions, multi-turn battles with switches
 
+#### Engine E2E Tests (`test/engine-e2e.ts`)
+- **Core Engine**: Instantiation, method availability, battle key computation
+- **Matchmaker Authorization**: Adding/removing matchmakers
+- **Battle State**: Initialization, team setup, mon state management
+- **Damage System**: dealDamage, HP reduction, KO detection
+- **Storage**: setGlobalKV/getGlobalKV roundtrip, updateMonState
+
 ---
 
 ## Future Work
@@ -79,8 +86,9 @@
 2. **Missing Base Classes**
    - Create proper `IAbility` interface implementation
 
-3. **Engine Integration**
-   - Create full `Engine.ts` mock that matches Solidity `IEngine` interface
+3. **Engine Integration** ✅ (Partially Complete)
+   - ✅ Engine.ts transpiled and working with test suite
+   - ✅ MappingAllocator.ts transpiled with proper defaults
    - Implement `StatBoosts` contract for stat modification
    - Add `TypeCalculator` for type effectiveness
 
@@ -187,6 +195,11 @@ Remaining parser limitations:
 - Tests cover: battle key computation, matchmaker authorization, battle initialization
 - Tests cover: mon state management, damage dealing, KO detection, global KV storage
 - Created `TestableEngine` class for proper test initialization
+
+**Runtime Library Additions:**
+- Added `mappingGet()` helper for mapping reads with default values
+- Added `mappingGetBigInt()` for common bigint mapping pattern
+- Added `mappingEnsure()` for nested mapping initialization
 
 **Parser Fixes:**
 - Added `UNCHECKED`, `TRY`, `CATCH` tokens and keyword handling
