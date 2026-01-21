@@ -8,7 +8,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
-import {MonStateIndexName, Type} from "../../src/Enums.sol";
+import {MonStateIndexName, Type, MoveClass, ExtraDataType} from "../../src/Enums.sol";
 
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
@@ -37,6 +37,8 @@ import {GlobalEffectAttack} from "../mocks/GlobalEffectAttack.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
+import {DoublesCommitManager} from "../../src/DoublesCommitManager.sol";
+import {CustomAttack} from "../mocks/CustomAttack.sol";
 
 contract VolthareTest is Test, BattleHelper {
     Engine engine;
@@ -322,5 +324,169 @@ contract VolthareTest is Test, BattleHelper {
 
         // Alice's mon should have the skip turn flag set
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.ShouldSkipTurn), 1);
+    }
+
+    /**
+     * @notice Test that Overclock applies stat changes to BOTH slots in doubles
+     * @dev Previously, Overclock.onApply() only applied to slot 0's mon.
+     *      This test verifies the fix works correctly.
+     */
+    function test_overclockAffectsBothSlotsInDoubles() public {
+        DoublesCommitManager doublesCommitManager = new DoublesCommitManager(engine);
+
+        // Create a move that triggers Overclock when used
+        OverclockTriggerAttack overclockAttack = new OverclockTriggerAttack(engine, typeCalc, overclock);
+
+        IMoveSet[] memory moves = new IMoveSet[](1);
+        moves[0] = overclockAttack;
+
+        // Create mons with known base speed for easy verification
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 50,
+                speed: 100,  // Base speed 100 for slot 0
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 100,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        aliceTeam[1] = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 50,
+                speed: 100,  // Base speed 100 for slot 1
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 100,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 50,
+                speed: 10,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        bobTeam[1] = bobTeam[0];
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        DefaultValidator doublesValidator = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey = _startDoublesBattle(
+            doublesValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            address(doublesCommitManager)
+        );
+        vm.warp(block.timestamp + 1);
+
+        // Initial switch
+        _doublesCommitRevealExecute(
+            engine, doublesCommitManager, battleKey,
+            SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1,
+            SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1
+        );
+
+        // Turn 1: Alice slot 0 uses Overclock attack (triggers overclock for Alice's team)
+        _doublesCommitRevealExecute(
+            engine, doublesCommitManager, battleKey,
+            0, 0,                      // Alice slot 0: overclock attack
+            NO_OP_MOVE_INDEX, 0,       // Alice slot 1: no-op
+            NO_OP_MOVE_INDEX, 0,       // Bob slot 0: no-op
+            NO_OP_MOVE_INDEX, 0        // Bob slot 1: no-op
+        );
+
+        // After Overclock is applied, both of Alice's active mons should have:
+        // - Speed boosted by 25% (100 -> 125, so delta = +25)
+        int32 aliceSlot0SpeedDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Speed);
+        int32 aliceSlot1SpeedDelta = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Speed);
+
+        // Both slots should have speed boost
+        assertEq(aliceSlot0SpeedDelta, 25, "Slot 0 should have +25 speed from Overclock");
+        assertEq(aliceSlot1SpeedDelta, 25, "Slot 1 should have +25 speed from Overclock");
+    }
+}
+
+/**
+ * @title OverclockTriggerAttack
+ * @notice A mock attack that triggers Overclock when used
+ */
+contract OverclockTriggerAttack is IMoveSet {
+    IEngine public immutable ENGINE;
+    ITypeCalculator public immutable TYPE_CALCULATOR;
+    Overclock public immutable OVERCLOCK;
+
+    constructor(IEngine _engine, ITypeCalculator _typeCalc, Overclock _overclock) {
+        ENGINE = _engine;
+        TYPE_CALCULATOR = _typeCalc;
+        OVERCLOCK = _overclock;
+    }
+
+    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
+        OVERCLOCK.applyOverclock(attackerPlayerIndex);
+    }
+
+    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+        return true;
+    }
+
+    function priority(bytes32, uint256) external pure returns (uint32) {
+        return 0;
+    }
+
+    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+        return 1;
+    }
+
+    function moveType(bytes32) external pure returns (Type) {
+        return Type.Fire;
+    }
+
+    function moveClass(bytes32) external pure returns (MoveClass) {
+        return MoveClass.Other;
+    }
+
+    function name() external pure returns (string memory) {
+        return "OverclockTrigger";
+    }
+
+    function basePower(bytes32) external pure returns (uint32) {
+        return 0;
+    }
+
+    function accuracy(bytes32) external pure returns (uint32) {
+        return 100;
+    }
+
+    function extraDataType() external pure returns (ExtraDataType) {
+        return ExtraDataType.None;
     }
 }

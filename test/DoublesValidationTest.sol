@@ -29,6 +29,8 @@ import {MonIndexTrackingEffect} from "./mocks/MonIndexTrackingEffect.sol";
 import {AfterDamageReboundEffect} from "./mocks/AfterDamageReboundEffect.sol";
 import {EffectApplyingAttack} from "./mocks/EffectApplyingAttack.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
+import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
+import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {DoublesSlotAttack} from "./mocks/DoublesSlotAttack.sol";
 
 /**
@@ -53,6 +55,7 @@ contract DoublesValidationTest is Test {
     TestTeamRegistry defaultRegistry;
     CustomAttack customAttack;
     CustomAttack strongAttack;
+    CustomAttack highStaminaCostAttack;
     DoublesTargetedAttack targetedStrongAttack;
 
     uint256 constant TIMEOUT_DURATION = 100;
@@ -77,6 +80,9 @@ contract DoublesValidationTest is Test {
         );
         targetedStrongAttack = new DoublesTargetedAttack(
             engine, typeCalc, DoublesTargetedAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+        );
+        highStaminaCostAttack = new CustomAttack(
+            engine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 5, PRIORITY: 0})
         );
 
         // Register teams for Alice and Bob (3 mons for doubles with switch options)
@@ -207,6 +213,95 @@ contract DoublesValidationTest is Test {
             SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1,
             SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1
         );
+    }
+
+    function _startDoublesBattleWithRuleset(IRuleset ruleset) internal returns (bytes32 battleKey) {
+        bytes32 salt = "";
+        uint96 p0TeamIndex = 0;
+        uint256[] memory p0TeamIndices = defaultRegistry.getMonRegistryIndicesForTeam(ALICE, p0TeamIndex);
+        bytes32 p0TeamHash = keccak256(abi.encodePacked(salt, p0TeamIndex, p0TeamIndices));
+
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: p0TeamHash,
+            p1: BOB,
+            p1TeamIndex: 0,
+            teamRegistry: defaultRegistry,
+            validator: validator,
+            rngOracle: defaultOracle,
+            ruleset: ruleset,
+            engineHooks: new IEngineHook[](0),
+            moveManager: address(commitManager),
+            matchmaker: matchmaker,
+            gameMode: GameMode.Doubles
+        });
+
+        vm.startPrank(ALICE);
+        battleKey = matchmaker.proposeBattle(proposal);
+
+        bytes32 battleIntegrityHash = matchmaker.getBattleProposalIntegrityHash(proposal);
+        vm.startPrank(BOB);
+        matchmaker.acceptBattle(battleKey, 0, battleIntegrityHash);
+
+        vm.startPrank(ALICE);
+        matchmaker.confirmBattle(battleKey, salt, p0TeamIndex);
+        vm.stopPrank();
+    }
+
+    // =========================================
+    // StaminaRegen Doubles Test
+    // =========================================
+
+    /**
+     * @notice Test that StaminaRegen regenerates stamina for BOTH slots in doubles
+     * @dev Validates the fix for the bug where StaminaRegen.onRoundEnd() only handled slot 0
+     */
+    function test_staminaRegenAffectsBothSlotsInDoubles() public {
+        // Create StaminaRegen effect and ruleset
+        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
+
+        // Create teams with high stamina cost moves
+        IMoveSet[] memory moves = new IMoveSet[](4);
+        moves[0] = highStaminaCostAttack;  // 5 stamina cost
+        moves[1] = highStaminaCostAttack;
+        moves[2] = highStaminaCostAttack;
+        moves[3] = highStaminaCostAttack;
+
+        Mon[] memory team = new Mon[](3);
+        team[0] = _createMon(100, 10, moves);  // Mon 0: slot 0
+        team[1] = _createMon(100, 8, moves);   // Mon 1: slot 1
+        team[2] = _createMon(100, 6, moves);   // Mon 2: reserve
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        bytes32 battleKey = _startDoublesBattleWithRuleset(ruleset);
+        vm.warp(block.timestamp + 1);
+        _doInitialSwitch(battleKey);
+
+        // Turn 1: Both Alice's slots attack (each costs 5 stamina)
+        _doublesCommitRevealExecute(
+            battleKey,
+            0, 0,                      // Alice slot 0: attack (costs 5 stamina)
+            0, 0,                      // Alice slot 1: attack (costs 5 stamina)
+            NO_OP_MOVE_INDEX, 0,       // Bob slot 0: no-op
+            NO_OP_MOVE_INDEX, 0        // Bob slot 1: no-op
+        );
+
+        // After attack: both mons should have -5 stamina delta
+        // After StaminaRegen: both mons should have -4 stamina delta (regen +1)
+
+        int32 aliceSlot0Stamina = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
+        int32 aliceSlot1Stamina = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Stamina);
+
+        // Both slots should have received stamina regen
+        // Expected: -5 (attack cost) + 1 (regen) = -4
+        assertEq(aliceSlot0Stamina, -4, "Slot 0 should have -4 stamina (attack -5, regen +1)");
+        assertEq(aliceSlot1Stamina, -4, "Slot 1 should have -4 stamina (attack -5, regen +1)");
     }
 
     // =========================================
