@@ -282,6 +282,107 @@ export function abiEncode(types: string[], values: any[]): string {
 }
 
 // =============================================================================
+// EVENT STREAM
+// =============================================================================
+
+/**
+ * Represents a single event emitted by a contract
+ */
+export interface EventLog {
+  /** Event name/type */
+  name: string;
+  /** Event arguments as key-value pairs */
+  args: Record<string, any>;
+  /** Timestamp when the event was emitted */
+  timestamp: number;
+  /** Contract address that emitted the event (if available) */
+  emitter?: string;
+  /** Additional raw data */
+  data?: any[];
+}
+
+/**
+ * Virtual event stream that stores all emitted events for inspection/testing
+ */
+export class EventStream {
+  private events: EventLog[] = [];
+
+  /**
+   * Append an event to the stream
+   */
+  emit(name: string, args: Record<string, any> = {}, emitter?: string, data?: any[]): void {
+    this.events.push({
+      name,
+      args,
+      timestamp: Date.now(),
+      emitter,
+      data,
+    });
+  }
+
+  /**
+   * Get all events
+   */
+  getAll(): EventLog[] {
+    return [...this.events];
+  }
+
+  /**
+   * Get events by name
+   */
+  getByName(name: string): EventLog[] {
+    return this.events.filter(e => e.name === name);
+  }
+
+  /**
+   * Get the last N events
+   */
+  getLast(n: number = 1): EventLog[] {
+    return this.events.slice(-n);
+  }
+
+  /**
+   * Get events matching a filter function
+   */
+  filter(predicate: (event: EventLog) => boolean): EventLog[] {
+    return this.events.filter(predicate);
+  }
+
+  /**
+   * Clear all events
+   */
+  clear(): void {
+    this.events = [];
+  }
+
+  /**
+   * Get event count
+   */
+  get length(): number {
+    return this.events.length;
+  }
+
+  /**
+   * Check if any event matches
+   */
+  has(name: string): boolean {
+    return this.events.some(e => e.name === name);
+  }
+
+  /**
+   * Get the most recent event (or undefined if empty)
+   */
+  get latest(): EventLog | undefined {
+    return this.events[this.events.length - 1];
+  }
+}
+
+/**
+ * Global event stream instance - all contracts emit to this by default
+ */
+export const globalEventStream = new EventStream();
+
+// =============================================================================
 // CONTRACT BASE CLASS
 // =============================================================================
 
@@ -290,6 +391,7 @@ export function abiEncode(types: string[], values: any[]): string {
  */
 export abstract class Contract {
   protected _storage: Storage = new Storage();
+  protected _eventStream: EventStream = globalEventStream;
   protected _msg = {
     sender: ADDRESS_ZERO,
     value: 0n,
@@ -318,11 +420,34 @@ export abstract class Contract {
   }
 
   /**
-   * Emit an event (in simulation, just logs it)
+   * Set a custom event stream for this contract
    */
-  protected _emitEvent(...args: any[]): void {
-    // In simulation mode, we can log events or store them
-    console.log('Event:', ...args);
+  setEventStream(stream: EventStream): void {
+    this._eventStream = stream;
+  }
+
+  /**
+   * Get the event stream for this contract
+   */
+  getEventStream(): EventStream {
+    return this._eventStream;
+  }
+
+  /**
+   * Emit an event to the event stream
+   */
+  protected _emitEvent(name: string, ...args: any[]): void {
+    // Convert args array to a more structured format
+    const argsObj: Record<string, any> = {};
+    args.forEach((arg, i) => {
+      if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+        // Merge object arguments
+        Object.assign(argsObj, arg);
+      } else {
+        argsObj[`arg${i}`] = arg;
+      }
+    });
+    this._eventStream.emit(name, argsObj, undefined, args);
   }
 
   // =========================================================================

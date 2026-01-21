@@ -72,6 +72,7 @@
 - **Battle State**: Initialization, team setup, mon state management
 - **Damage System**: dealDamage, HP reduction, KO detection
 - **Storage**: setGlobalKV/getGlobalKV roundtrip, updateMonState
+- **Event Stream**: emit/retrieve, filtering, contract integration
 
 ---
 
@@ -96,7 +97,7 @@
 
 4. **Advanced Features**
    - Modifier support (currently stripped, logic not inlined)
-   - Event emission (currently logs to console)
+   - ✅ Event emission (now uses EventStream instead of console.log)
    - Error types with custom error classes
    - Receive/fallback functions
 
@@ -191,15 +192,24 @@ Remaining parser limitations:
 - Prevents overflow issues when casting larger values to smaller uint types
 
 **Engine Integration Tests:**
-- Added comprehensive `engine-e2e.ts` test suite (17 tests)
+- Added comprehensive `engine-e2e.ts` test suite (22 tests)
 - Tests cover: battle key computation, matchmaker authorization, battle initialization
 - Tests cover: mon state management, damage dealing, KO detection, global KV storage
+- Tests cover: EventStream emit/retrieve, filtering, contract integration
 - Created `TestableEngine` class for proper test initialization
 
 **Runtime Library Additions:**
 - Added `mappingGet()` helper for mapping reads with default values
 - Added `mappingGetBigInt()` for common bigint mapping pattern
 - Added `mappingEnsure()` for nested mapping initialization
+
+**Event Stream System:**
+- Added `EventStream` class for capturing emitted events (replaces console.log)
+- Events stored as `EventLog` objects with name, args, timestamp, emitter
+- Supports filtering: `getByName()`, `filter()`, `getLast()`, `has()`
+- Global `globalEventStream` instance shared by all contracts by default
+- Contracts can use custom streams via `setEventStream()` / `getEventStream()`
+- Enables testing event emissions without console output
 
 **Parser Fixes:**
 - Added `UNCHECKED`, `TRY`, `CATCH` tokens and keyword handling

@@ -15,6 +15,7 @@ import { Engine } from '../ts-output/Engine';
 import * as Structs from '../ts-output/Structs';
 import * as Enums from '../ts-output/Enums';
 import * as Constants from '../ts-output/Constants';
+import { EventStream, globalEventStream } from '../ts-output/runtime';
 
 // =============================================================================
 // TEST FRAMEWORK
@@ -677,6 +678,105 @@ test('TestableEngine: updateMonState changes state', () => {
   // Verify change
   const newSkip = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.ShouldSkipTurn);
   expect(newSkip).toBe(1n);
+});
+
+// =============================================================================
+// EVENT STREAM TESTS
+// =============================================================================
+
+test('EventStream: basic emit and retrieve', () => {
+  const stream = new EventStream();
+
+  stream.emit('TestEvent', { value: 42n, message: 'hello' });
+
+  expect(stream.length).toBe(1);
+  expect(stream.has('TestEvent')).toBe(true);
+  expect(stream.has('OtherEvent')).toBe(false);
+
+  const events = stream.getByName('TestEvent');
+  expect(events.length).toBe(1);
+  expect(events[0].args.value).toBe(42n);
+  expect(events[0].args.message).toBe('hello');
+});
+
+test('EventStream: multiple events and filtering', () => {
+  const stream = new EventStream();
+
+  stream.emit('Damage', { amount: 10n, target: 'mon1' });
+  stream.emit('Heal', { amount: 5n, target: 'mon1' });
+  stream.emit('Damage', { amount: 20n, target: 'mon2' });
+
+  expect(stream.length).toBe(3);
+
+  const damageEvents = stream.getByName('Damage');
+  expect(damageEvents.length).toBe(2);
+
+  const mon1Events = stream.filter(e => e.args.target === 'mon1');
+  expect(mon1Events.length).toBe(2);
+
+  const last = stream.getLast(2);
+  expect(last.length).toBe(2);
+  expect(last[0].name).toBe('Heal');
+  expect(last[1].name).toBe('Damage');
+});
+
+test('EventStream: clear events', () => {
+  const stream = new EventStream();
+
+  stream.emit('Event1', {});
+  stream.emit('Event2', {});
+  expect(stream.length).toBe(2);
+
+  stream.clear();
+  expect(stream.length).toBe(0);
+  expect(stream.latest).toBe(undefined);
+});
+
+test('EventStream: contract integration', () => {
+  const engine = new TestableEngine();
+  const stream = new EventStream();
+
+  // Set custom event stream
+  engine.setEventStream(stream);
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  const p0Mon = createMon({ hp: 100n });
+  const p1Mon = createMon({ hp: 100n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+  engine.battleKeyForWrite = battleKey;
+
+  // Clear any initial events
+  stream.clear();
+
+  // Engine methods that emit events should use the custom stream
+  // The emitEngineEvent method should emit to our stream
+  engine.emitEngineEvent(
+    '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    '0x1234'
+  );
+
+  // Check that the event was captured
+  expect(stream.length).toBeGreaterThan(0);
+});
+
+test('EventStream: getEventStream returns correct stream', () => {
+  const engine = new TestableEngine();
+  const customStream = new EventStream();
+
+  // Initially uses global stream
+  const initialStream = engine.getEventStream();
+  expect(initialStream).toBe(globalEventStream);
+
+  // After setting custom stream
+  engine.setEventStream(customStream);
+  expect(engine.getEventStream()).toBe(customStream);
 });
 
 // =============================================================================
