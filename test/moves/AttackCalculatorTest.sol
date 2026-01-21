@@ -110,7 +110,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0, // Alice's index
+            0, // attackerSlotIndex (singles = slot 0)
             1, // Bob's index
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -143,7 +145,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             1, // Bob's index
-            0, // ALice's index
+            0, // attackerSlotIndex (singles = slot 0)
+            0, // Alice's index
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -174,8 +178,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -190,8 +196,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -226,8 +234,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -242,8 +252,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -272,8 +284,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -288,8 +302,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             volatility,
@@ -304,8 +320,10 @@ contract AttackCalculatorTest is Test, BattleHelper {
             engine,
             typeCalc,
             battleKey,
-            0,
-            1,
+            0, // attackerPlayerIndex
+            0, // attackerSlotIndex (singles = slot 0)
+            1, // defenderPlayerIndex
+            0, // defenderSlotIndex (singles = slot 0)
             basePower,
             accuracy,
             0, // No volatility

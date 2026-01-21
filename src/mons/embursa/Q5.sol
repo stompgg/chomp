@@ -85,12 +85,14 @@ contract Q5 is IMoveSet, BasicEffect {
     {
         (uint256 turnCount, uint256 attackerPlayerIndex) = _unpackExtraData(extraData);
         if (turnCount == DELAY) {
-            // Deal damage
+            // Deal damage (singles = slot 0)
             AttackCalculator._calculateDamage(
                 ENGINE,
                 TYPE_CALCULATOR,
                 ENGINE.battleKeyForWrite(),
                 attackerPlayerIndex,
+                0, // attackerSlotIndex
+                0, // defenderSlotIndex
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,

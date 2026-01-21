@@ -147,11 +147,14 @@ contract NightTerrors is IMoveSet, BasicEffect {
         uint32 totalBasePower = damagePerStack * uint32(terrorCount);
 
         // Deal damage using AttackCalculator (attacker damages defender)
+        // Singles uses slot 0
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             targetIndex, // attacker player index
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             totalBasePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

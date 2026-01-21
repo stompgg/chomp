@@ -1953,18 +1953,20 @@ contract Engine is IEngine, MappingAllocator {
         ctx.validator = address(config.validator);
     }
 
-    function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
-        external
-        view
-        returns (DamageCalcContext memory ctx)
-    {
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderSlotIndex
+    ) external view returns (DamageCalcContext memory ctx) {
         bytes32 storageKey = _getStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
-        // Get active mon indices (unified packing, use slot 0)
-        uint256 attackerMonIndex = _unpackActiveMonIndexForSlot(data.activeMonIndex, attackerPlayerIndex, 0);
-        uint256 defenderMonIndex = _unpackActiveMonIndexForSlot(data.activeMonIndex, defenderPlayerIndex, 0);
+        // Get active mon indices using slot parameters for doubles support
+        uint256 attackerMonIndex = _unpackActiveMonIndexForSlot(data.activeMonIndex, attackerPlayerIndex, attackerSlotIndex);
+        uint256 defenderMonIndex = _unpackActiveMonIndexForSlot(data.activeMonIndex, defenderPlayerIndex, defenderSlotIndex);
 
         ctx.attackerMonIndex = uint8(attackerMonIndex);
         ctx.defenderMonIndex = uint8(defenderMonIndex);

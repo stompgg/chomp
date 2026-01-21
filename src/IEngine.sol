@@ -81,10 +81,13 @@ interface IEngine {
     function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
-    function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
-        external
-        view
-        returns (DamageCalcContext memory);
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderSlotIndex
+    ) external view returns (DamageCalcContext memory);
 
     // Doubles-specific getters
     function getGameMode(bytes32 battleKey) external view returns (GameMode);

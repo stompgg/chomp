@@ -55,12 +55,14 @@ contract MegaStarBlast is IMoveSet {
             // Upgrade accuracy
             acc = 100;
         }
-        // Deal damage
+        // Deal damage (singles = slot 0)
         (int32 damage,) = AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             BASE_POWER,
             acc,
             DEFAULT_VOL,

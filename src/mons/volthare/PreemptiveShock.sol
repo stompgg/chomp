@@ -26,11 +26,14 @@ contract PreemptiveShock is IAbility {
     }
 
     function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256) external override {
+        // Singles uses slot 0
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             playerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             BASE_POWER,
             100,
             DEFAULT_VOL,

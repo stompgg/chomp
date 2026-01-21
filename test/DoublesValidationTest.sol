@@ -29,6 +29,7 @@ import {MonIndexTrackingEffect} from "./mocks/MonIndexTrackingEffect.sol";
 import {AfterDamageReboundEffect} from "./mocks/AfterDamageReboundEffect.sol";
 import {EffectApplyingAttack} from "./mocks/EffectApplyingAttack.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
+import {DoublesSlotAttack} from "./mocks/DoublesSlotAttack.sol";
 
 /**
  * @title DoublesValidationTest
@@ -2761,6 +2762,207 @@ contract DoublesValidationTest is Test {
         int256 aliceMon1Stamina = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Stamina);
         // Mon 1 used high stamina attack (8 cost), so delta should be -8 (plus any regen)
         assertLt(aliceMon1Stamina, 0, "Alice mon 1 should have negative stamina delta from using attack");
+    }
+
+    // =========================================
+    // Slot 1 Damage Calculation Tests
+    // =========================================
+
+    /**
+     * @notice Test that attacking slot 1 uses correct defender stats
+     * @dev Creates mons with different defense values for slot 0 and slot 1,
+     *      then verifies damage is calculated using slot 1's defense when targeting slot 1
+     */
+    function test_slot1DamageUsesCorrectDefenderStats() public {
+        // Create a DoublesSlotAttack that uses AttackCalculator with slot parameters
+        DoublesSlotAttack slotAttack = new DoublesSlotAttack(engine, typeCalc);
+
+        IMoveSet[] memory moves = new IMoveSet[](4);
+        moves[0] = slotAttack;
+        moves[1] = slotAttack;
+        moves[2] = slotAttack;
+        moves[3] = slotAttack;
+
+        // Alice: standard mons with same stats
+        Mon[] memory aliceTeam = new Mon[](3);
+        aliceTeam[0] = _createMon(100, 20, moves);   // Fast, will attack first
+        aliceTeam[1] = _createMon(100, 18, moves);
+        aliceTeam[2] = _createMon(100, 16, moves);
+
+        // Bob: slot 0 has HIGH defense, slot 1 has LOW defense
+        // This lets us verify the correct defender is being used for damage calc
+        Mon[] memory bobTeam = new Mon[](3);
+        bobTeam[0] = Mon({
+            stats: MonStats({
+                hp: 200,
+                stamina: 50,
+                speed: 5,
+                attack: 10,
+                defense: 100,        // Very high defense
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        bobTeam[1] = Mon({
+            stats: MonStats({
+                hp: 200,
+                stamina: 50,
+                speed: 5,
+                attack: 10,
+                defense: 10,         // Low defense - should take 10x more damage
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        bobTeam[2] = _createMon(100, 3, moves);
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startDoublesBattle();
+        vm.warp(block.timestamp + 1);
+        _doInitialSwitch(battleKey);
+
+        // Get initial HP of Bob's mons
+        int32 bob0HpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 bob1HpBefore = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
+        assertEq(bob0HpBefore, 0, "Bob mon 0 should have no HP delta initially");
+        assertEq(bob1HpBefore, 0, "Bob mon 1 should have no HP delta initially");
+
+        // Turn 1: Alice slot 0 attacks Bob slot 1 using DoublesSlotAttack
+        // extraData format: lower 4 bits = attackerSlot (0), next 4 bits = defenderSlot (1)
+        // So extraData = 0x10 = (1 << 4) | 0 = 16
+        uint240 attackSlot1ExtraData = (1 << 4) | 0;  // attacker slot 0, defender slot 1
+
+        _doublesCommitRevealExecute(
+            battleKey,
+            0, attackSlot1ExtraData,        // Alice slot 0: attack targeting Bob slot 1
+            NO_OP_MOVE_INDEX, 0,            // Alice slot 1: no-op
+            NO_OP_MOVE_INDEX, 0,            // Bob slot 0: no-op
+            NO_OP_MOVE_INDEX, 0             // Bob slot 1: no-op
+        );
+
+        // Verify damage was dealt to slot 1, not slot 0
+        int32 bob0HpAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 bob1HpAfter = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
+
+        assertEq(bob0HpAfter, bob0HpBefore, "Bob mon 0 should not have taken damage");
+        assertLt(bob1HpAfter, bob1HpBefore, "Bob mon 1 should have taken damage");
+
+        // Now attack slot 0 to compare damage
+        // extraData = 0x00 = (0 << 4) | 0 = 0 (attacker slot 0, defender slot 0)
+        uint240 attackSlot0ExtraData = (0 << 4) | 0;
+
+        _doublesCommitRevealExecute(
+            battleKey,
+            0, attackSlot0ExtraData,        // Alice slot 0: attack targeting Bob slot 0
+            NO_OP_MOVE_INDEX, 0,            // Alice slot 1: no-op
+            NO_OP_MOVE_INDEX, 0,            // Bob slot 0: no-op
+            NO_OP_MOVE_INDEX, 0             // Bob slot 1: no-op
+        );
+
+        int32 bob0HpAfter2 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 bob1HpAfter2 = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
+
+        // Bob slot 0 should have taken less damage than slot 1 took (due to higher defense)
+        int32 slot1DamageTaken = bob1HpBefore - bob1HpAfter;   // This is negative HP change = positive damage
+        int32 slot0DamageTaken = bob0HpBefore - bob0HpAfter2;
+
+        // Slot 1 has 10x lower defense, so should have taken ~10x more damage
+        // Account for some variance, but slot 1 should definitely have taken more damage
+        assertGt(-bob1HpAfter, -bob0HpAfter2, "Slot 1 (low defense) should have taken more damage than slot 0 (high defense)");
+    }
+
+    /**
+     * @notice Test that slot 1 attacker uses correct attacker stats
+     * @dev Both slots attack in same turn, targeting same defense values,
+     *      verifying that high attack slot deals more damage
+     */
+    function test_slot1AttackerUsesCorrectStats() public {
+        DoublesSlotAttack slotAttack = new DoublesSlotAttack(engine, typeCalc);
+
+        IMoveSet[] memory moves = new IMoveSet[](4);
+        moves[0] = slotAttack;
+        moves[1] = slotAttack;
+        moves[2] = slotAttack;
+        moves[3] = slotAttack;
+
+        // Alice: slot 0 has LOW attack, slot 1 has HIGH attack
+        Mon[] memory aliceTeam = new Mon[](3);
+        aliceTeam[0] = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 50,
+                speed: 20,           // Fast
+                attack: 10,          // Low attack
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        aliceTeam[1] = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 50,
+                speed: 19,           // Slightly slower
+                attack: 50,          // High attack - 5x more damage (use 50 instead of 100 to avoid KO)
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            ability: IAbility(address(0)),
+            moves: moves
+        });
+        aliceTeam[2] = _createMon(100, 16, moves);
+
+        // Bob: both mons have same defense and high HP to avoid KO
+        Mon[] memory bobTeam = new Mon[](3);
+        bobTeam[0] = _createMon(2000, 5, moves);  // Very high HP
+        bobTeam[1] = _createMon(2000, 5, moves);  // Very high HP
+        bobTeam[2] = _createMon(100, 3, moves);
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startDoublesBattle();
+        vm.warp(block.timestamp + 1);
+        _doInitialSwitch(battleKey);
+
+        // Turn 1: Both slots attack in the same turn to compare damage
+        // Alice slot 0 attacks Bob slot 0 (low attack)
+        // Alice slot 1 attacks Bob slot 1 (high attack)
+        uint240 slot0AttacksSlot0 = (0 << 4) | 0;  // attacker slot 0, defender slot 0
+        uint240 slot1AttacksSlot1 = (1 << 4) | 1;  // attacker slot 1, defender slot 1
+
+        _doublesCommitRevealExecute(
+            battleKey,
+            0, slot0AttacksSlot0,           // Alice slot 0: attack targeting Bob slot 0
+            0, slot1AttacksSlot1,           // Alice slot 1: attack targeting Bob slot 1
+            NO_OP_MOVE_INDEX, 0,            // Bob slot 0: no-op
+            NO_OP_MOVE_INDEX, 0             // Bob slot 1: no-op
+        );
+
+        int32 bob0HpAfterSlot0Attack = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 bob1HpAfterSlot1Attack = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
+
+        // Both defenders have same defense (10)
+        // Slot 0 has attack 10, slot 1 has attack 50
+        // Slot 1 should deal 5x more damage
+        assertGt(-bob1HpAfterSlot1Attack, -bob0HpAfterSlot0Attack, "Slot 1 (high attack) should have dealt more damage than slot 0 (low attack)");
     }
 }
 

@@ -54,11 +54,14 @@ contract Gachachacha is IMoveSet {
                 battleKey, defenderPlayerIndex, activeMon[defenderPlayerIndex], MonStateIndexName.Hp
             );
         }
+        // Singles uses slot 0
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             playerForCalculator,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             basePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

@@ -16,6 +16,8 @@ library AttackCalculator {
         ITypeCalculator TYPE_CALCULATOR,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderSlotIndex,
         uint32 basePower,
         uint32 accuracy, // out of 100
         uint256 volatility,
@@ -25,8 +27,10 @@ library AttackCalculator {
         uint256 critRate // out of 100
     ) internal returns (int32, bytes32) {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        // Use batch getter to reduce external calls (7 -> 1)
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerPlayerIndex, defenderPlayerIndex);
+        // Use batch getter with slot indices for doubles support
+        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(
+            battleKey, attackerPlayerIndex, attackerSlotIndex, defenderPlayerIndex, defenderSlotIndex
+        );
         (int32 damage, bytes32 eventType) = _calculateDamageFromContext(
             TYPE_CALCULATOR,
             ctx,
@@ -52,7 +56,9 @@ library AttackCalculator {
         ITypeCalculator TYPE_CALCULATOR,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
         uint256 defenderPlayerIndex,
+        uint256 defenderSlotIndex,
         uint32 basePower,
         uint32 accuracy, // out of 100
         uint256 volatility,
@@ -61,8 +67,10 @@ library AttackCalculator {
         uint256 rng,
         uint256 critRate // out of 100
     ) internal view returns (int32, bytes32) {
-        // Use batch getter to reduce external calls (7 -> 1)
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerPlayerIndex, defenderPlayerIndex);
+        // Use batch getter with slot indices for doubles support
+        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(
+            battleKey, attackerPlayerIndex, attackerSlotIndex, defenderPlayerIndex, defenderSlotIndex
+        );
         return _calculateDamageFromContext(
             TYPE_CALCULATOR,
             ctx,

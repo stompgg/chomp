@@ -54,12 +54,14 @@ contract DeepFreeze is IMoveSet {
             ENGINE.removeEffect(otherPlayerIndex, otherPlayerActiveMonIndex, uint256(uint32(frostbiteIndex)));
             damageToDeal = damageToDeal * 2;
         }
-        // Deal damage
+        // Deal damage (singles = slot 0)
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             damageToDeal,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

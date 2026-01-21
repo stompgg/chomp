@@ -59,11 +59,14 @@ contract StandardAttack is IMoveSet, Ownable {
         int32 damage = 0;
         bytes32 eventType = bytes32(0);
         if (basePower(battleKey) > 0) {
+            // Singles uses slot 0 for both attacker and defender
             (damage, eventType) = AttackCalculator._calculateDamage(
                 ENGINE,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
+                0, // attackerSlotIndex (singles = slot 0)
+                0, // defenderSlotIndex (singles = slot 0)
                 basePower(battleKey),
                 accuracy(battleKey),
                 volatility(battleKey),

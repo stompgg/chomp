@@ -37,11 +37,14 @@ contract Brightback is IMoveSet {
     }
 
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
+        // Singles uses slot 0
         (int32 damageDealt,) = AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

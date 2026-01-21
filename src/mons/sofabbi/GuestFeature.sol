@@ -29,11 +29,14 @@ contract GuestFeature is IMoveSet {
         uint256 monIndex = uint256(extraData);
         Type guestType =
             Type(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Type1));
+        // Singles uses slot 0
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

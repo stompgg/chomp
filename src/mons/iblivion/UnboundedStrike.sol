@@ -54,11 +54,14 @@ contract UnboundedStrike is IMoveSet {
             power = BASE_POWER;
         }
 
+        // Singles uses slot 0
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            0, // attackerSlotIndex
+            0, // defenderSlotIndex
             power,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
