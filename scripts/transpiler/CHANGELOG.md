@@ -87,11 +87,11 @@
 2. **Missing Base Classes**
    - Create proper `IAbility` interface implementation
 
-3. **Engine Integration** ✅ (Partially Complete)
+3. **Engine Integration** ✅ (Complete)
    - ✅ Engine.ts transpiled and working with test suite
    - ✅ MappingAllocator.ts transpiled with proper defaults
-   - Implement `StatBoosts` contract for stat modification
-   - Add `TypeCalculator` for type effectiveness
+   - ✅ StatBoosts.ts transpiled for stat modification
+   - ✅ TypeCalculator.ts transpiled for type effectiveness
 
 ### Medium Priority
 
