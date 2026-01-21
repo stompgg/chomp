@@ -68,6 +68,12 @@ function validateSpecificMoveSelection(bytes32 battleKey, uint256 moveIndex, uin
 - `dealDamage` passes target mon index to `AfterDamage` effects
 - `updateMonState` passes affected mon index to `OnUpdateMonState` effects
 
+#### Slot-Aware Damage Calculations
+- `getDamageCalcContext` now accepts `attackerSlotIndex` and `defenderSlotIndex` parameters
+- `AttackCalculator._calculateDamage` and `_calculateDamageView` updated with slot parameters
+- Ensures doubles damage calculations use correct attacker/defender stats based on slot
+- All mon-specific attacks updated to pass explicit slot indices (singles use 0, 0)
+
 #### Doubles Execution Flow
 - `_executeDoubles` handles 4 moves per turn with priority/speed ordering
 - `_checkForGameOverOrKO_Doubles` checks both slots for each player
@@ -87,7 +93,7 @@ function validateSpecificMoveSelection(bytes32 battleKey, uint256 moveIndex, uin
 
 ### Test Coverage
 
-#### `test/DoublesValidationTest.sol` (35 tests)
+#### `test/DoublesValidationTest.sol` (36 tests)
 - Turn 0 switch requirements
 - KO'd slot handling (with/without valid switch targets)
 - Both slots KO'd scenarios (0, 1, or 2 reserves)
@@ -97,6 +103,7 @@ function validateSpecificMoveSelection(bytes32 battleKey, uint256 moveIndex, uin
 - Effects running on correct mon for both slots
 - Move validation using correct slot's mon stamina
 - AfterDamage effects healing correct mon
+- Slot 1 damage calculations (defender stats, attacker stats)
 
 #### `test/DoublesCommitManagerTest.sol` (11 tests)
 - Commit/reveal flow for doubles
@@ -110,6 +117,7 @@ function validateSpecificMoveSelection(bytes32 battleKey, uint256 moveIndex, uin
 - `DoublesEffectAttack` - Apply effect to specific slot
 - `EffectApplyingAttack` - Generic effect applicator for testing
 - `MonIndexTrackingEffect` - Tracks which mon effects run on
+- `DoublesSlotAttack` - Attack using AttackCalculator with explicit slot parameters
 
 ---
 
