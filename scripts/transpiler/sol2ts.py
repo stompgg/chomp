@@ -78,6 +78,9 @@ class TokenType(Enum):
     CONSTRUCTOR = auto()
     RECEIVE = auto()
     FALLBACK = auto()
+    UNCHECKED = auto()
+    TRY = auto()
+    CATCH = auto()
     TRUE = auto()
     FALSE = auto()
 
@@ -212,6 +215,9 @@ KEYWORDS = {
     'constructor': TokenType.CONSTRUCTOR,
     'receive': TokenType.RECEIVE,
     'fallback': TokenType.FALLBACK,
+    'unchecked': TokenType.UNCHECKED,
+    'try': TokenType.TRY,
+    'catch': TokenType.CATCH,
     'true': TokenType.TRUE,
     'false': TokenType.FALSE,
     'bool': TokenType.BOOL,
@@ -649,6 +655,12 @@ class TupleExpression(Expression):
 
 
 @dataclass
+class ArrayLiteral(Expression):
+    """Array literal like [1, 2, 3]"""
+    elements: List[Expression] = field(default_factory=list)
+
+
+@dataclass
 class TypeCast(Expression):
     type_name: TypeName
     expression: Expression
@@ -918,12 +930,24 @@ class Parser:
     def parse_using(self) -> UsingDirective:
         self.expect(TokenType.USING)
         library = self.advance().value
+        # Library can also be qualified
+        while self.match(TokenType.DOT):
+            self.advance()  # skip dot
+            library += '.' + self.advance().value
         type_name = None
         if self.current().value == 'for':
             self.advance()
             type_name = self.advance().value
             if type_name == '*':
                 type_name = '*'
+            else:
+                # Handle qualified names like EnumerableSetLib.Uint256Set
+                while self.match(TokenType.DOT):
+                    self.advance()  # skip dot
+                    type_name += '.' + self.advance().value
+        # Skip optional 'global' keyword
+        if self.current().value == 'global':
+            self.advance()
         self.expect(TokenType.SEMICOLON)
         return UsingDirective(library, type_name)
 
@@ -1276,6 +1300,12 @@ class Parser:
         type_token = self.advance()
         base_type = type_token.value
 
+        # Check for qualified names (Library.StructName, Contract.EnumName, etc.)
+        while self.match(TokenType.DOT):
+            self.advance()  # skip dot
+            member = self.expect(TokenType.IDENTIFIER).value
+            base_type = f'{base_type}.{member}'
+
         # Check for function type
         if base_type == 'function':
             # Skip function type definition for now
@@ -1364,6 +1394,12 @@ class Parser:
             self.advance()
             self.expect(TokenType.SEMICOLON)
             return ContinueStatement()
+        elif self.match(TokenType.UNCHECKED):
+            # unchecked { ... } - parse as a regular block (no overflow checks in TypeScript BigInt anyway)
+            self.advance()  # skip 'unchecked'
+            return self.parse_block()
+        elif self.match(TokenType.TRY):
+            return self.parse_try_statement()
         elif self.match(TokenType.ASSEMBLY):
             return self.parse_assembly_statement()
         elif self.match(TokenType.DELETE):
@@ -1379,14 +1415,25 @@ class Parser:
         saved_pos = self.pos
 
         try:
-            # Check for tuple declaration: (type name, type name) = ...
+            # Check for tuple declaration: (type name, type name) = ... or (, , type name, ...) = ...
             if self.match(TokenType.LPAREN):
                 self.advance()  # skip (
-                # Check if first item is a type followed by an identifier
+                # Skip leading commas (skipped elements)
+                while self.match(TokenType.COMMA):
+                    self.advance()
+                # If we hit RPAREN, it's empty tuple - not a declaration
+                if self.match(TokenType.RPAREN):
+                    return False
+                # Check if first non-skipped item is a type followed by storage location and identifier
                 if self.match(TokenType.IDENTIFIER, TokenType.UINT, TokenType.INT,
                              TokenType.BOOL, TokenType.ADDRESS, TokenType.BYTES,
                              TokenType.STRING, TokenType.BYTES32):
                     self.advance()  # type name
+                    # Skip qualified names (Library.StructName)
+                    while self.match(TokenType.DOT):
+                        self.advance()
+                        if self.match(TokenType.IDENTIFIER):
+                            self.advance()
                     # Skip array brackets
                     while self.match(TokenType.LBRACKET):
                         while not self.match(TokenType.RBRACKET, TokenType.EOF):
@@ -1410,6 +1457,12 @@ class Parser:
                 return False
 
             self.advance()  # type name
+
+            # Skip qualified names (Library.StructName, Contract.EnumName, etc.)
+            while self.match(TokenType.DOT):
+                self.advance()  # skip dot
+                if self.match(TokenType.IDENTIFIER):
+                    self.advance()  # skip member name
 
             # Skip array brackets
             while self.match(TokenType.LBRACKET):
@@ -1580,6 +1633,45 @@ class Parser:
             error_call = self.parse_expression()
         self.expect(TokenType.SEMICOLON)
         return RevertStatement(error_call=error_call)
+
+    def parse_try_statement(self) -> Block:
+        """Parse try/catch statement - skip the entire construct and return empty block."""
+        self.expect(TokenType.TRY)
+
+        # Skip until we find the opening brace of the try block
+        while not self.match(TokenType.LBRACE, TokenType.EOF):
+            self.advance()
+
+        # Skip the try block
+        if self.match(TokenType.LBRACE):
+            depth = 1
+            self.advance()
+            while depth > 0 and not self.match(TokenType.EOF):
+                if self.match(TokenType.LBRACE):
+                    depth += 1
+                elif self.match(TokenType.RBRACE):
+                    depth -= 1
+                self.advance()
+
+        # Skip catch clauses
+        while self.match(TokenType.CATCH):
+            self.advance()  # skip 'catch'
+            # Skip catch parameters like Error(string memory reason)
+            while not self.match(TokenType.LBRACE, TokenType.EOF):
+                self.advance()
+            # Skip catch block
+            if self.match(TokenType.LBRACE):
+                depth = 1
+                self.advance()
+                while depth > 0 and not self.match(TokenType.EOF):
+                    if self.match(TokenType.LBRACE):
+                        depth += 1
+                    elif self.match(TokenType.RBRACE):
+                        depth -= 1
+                    self.advance()
+
+        # Return empty block
+        return Block(statements=[])
 
     def parse_delete_statement(self) -> DeleteStatement:
         self.expect(TokenType.DELETE)
@@ -1883,6 +1975,17 @@ class Parser:
                 function=Identifier(name='type'),
                 arguments=[Identifier(name=type_name.name)],
             )
+
+        # Array literal: [expr, expr, ...]
+        if self.match(TokenType.LBRACKET):
+            self.advance()  # skip [
+            elements = []
+            while not self.match(TokenType.RBRACKET, TokenType.EOF):
+                elements.append(self.parse_expression())
+                if self.match(TokenType.COMMA):
+                    self.advance()
+            self.expect(TokenType.RBRACKET)
+            return ArrayLiteral(elements=elements)
 
         # Identifier (including possible type cast)
         if self.match(TokenType.IDENTIFIER):
@@ -2906,6 +3009,28 @@ class TypeScriptCodeGenerator:
 
         return '\n'.join(lines) if lines else '// Assembly: no-op'
 
+    def _split_yul_args(self, args_str: str) -> List[str]:
+        """Split Yul function arguments respecting nested parentheses."""
+        args = []
+        current = ''
+        depth = 0
+        for char in args_str:
+            if char == '(':
+                depth += 1
+                current += char
+            elif char == ')':
+                depth -= 1
+                current += char
+            elif char == ',' and depth == 0:
+                if current.strip():
+                    args.append(current.strip())
+                current = ''
+            else:
+                current += char
+        if current.strip():
+            args.append(current.strip())
+        return args
+
     def _transpile_yul_expr(self, expr: str, slot_vars: Dict[str, str]) -> str:
         """Transpile a Yul expression to TypeScript."""
         expr = expr.strip()
@@ -2918,32 +3043,38 @@ class TypeScriptCodeGenerator:
                 return f'this._storageRead({slot_vars[slot]} as any)'
             return f'this._storageRead({slot})'
 
-        # Function calls
-        call_match = re.match(r'(\w+)\((.+)\)', expr)
+        # Function calls (including no-argument calls)
+        call_match = re.match(r'(\w+)\((.*)\)', expr)
         if call_match:
             func = call_match.group(1)
-            args_str = call_match.group(2)
-            args = [a.strip() for a in args_str.split(',')]
+            args_str = call_match.group(2).strip()
+            # Parse arguments respecting nested parentheses
+            args = self._split_yul_args(args_str) if args_str else []
             ts_args = [self._transpile_yul_expr(a, slot_vars) for a in args]
 
             # Yul built-in functions
-            if func in ('add', 'sub', 'mul', 'div', 'mod'):
-                op = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '%': 'mod'}.get(func, '+')
+            if func in ('add', 'sub', 'mul', 'div', 'mod') and len(ts_args) >= 2:
                 ops = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': '%'}
                 return f'({ts_args[0]} {ops[func]} {ts_args[1]})'
-            if func in ('and', 'or', 'xor'):
+            if func in ('and', 'or', 'xor') and len(ts_args) >= 2:
                 ops = {'and': '&', 'or': '|', 'xor': '^'}
                 return f'({ts_args[0]} {ops[func]} {ts_args[1]})'
-            if func == 'not':
+            if func == 'not' and len(ts_args) >= 1:
                 return f'(~{ts_args[0]})'
-            if func in ('shl', 'shr'):
+            if func in ('shl', 'shr') and len(ts_args) >= 2:
                 # shl(shift, value) -> value << shift
                 return f'({ts_args[1]} {"<<" if func == "shl" else ">>"} {ts_args[0]})'
-            if func in ('lt', 'gt', 'eq'):
+            if func in ('lt', 'gt', 'eq') and len(ts_args) >= 2:
                 ops = {'lt': '<', 'gt': '>', 'eq': '==='}
                 return f'({ts_args[0]} {ops[func]} {ts_args[1]} ? 1n : 0n)'
-            if func == 'iszero':
+            if func == 'iszero' and len(ts_args) >= 1:
                 return f'({ts_args[0]} === 0n ? 1n : 0n)'
+            if func == 'caller' and len(ts_args) == 0:
+                return 'this._msg.sender'
+            if func == 'timestamp' and len(ts_args) == 0:
+                return 'this._block.timestamp'
+            if func == 'origin' and len(ts_args) == 0:
+                return 'this._tx.origin'
             return f'{func}({", ".join(ts_args)})'
 
         # Hex literals
@@ -3004,10 +3135,17 @@ class TypeScriptCodeGenerator:
             return self.generate_new_expression(expr)
         elif isinstance(expr, TupleExpression):
             return self.generate_tuple_expression(expr)
+        elif isinstance(expr, ArrayLiteral):
+            return self.generate_array_literal(expr)
         elif isinstance(expr, TypeCast):
             return self.generate_type_cast(expr)
 
         return '/* unknown expression */'
+
+    def generate_array_literal(self, arr: ArrayLiteral) -> str:
+        """Generate array literal."""
+        elements = ', '.join([self.generate_expression(e) for e in arr.elements])
+        return f'[{elements}]'
 
     def generate_literal(self, lit: Literal) -> str:
         """Generate literal."""
