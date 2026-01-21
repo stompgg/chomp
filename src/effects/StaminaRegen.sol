@@ -33,15 +33,21 @@ contract StaminaRegen is BasicEffect {
         }
     }
 
-    // Regen stamina on round end for both active mons
+    // Regen stamina on round end for all active mons (both slots in doubles)
     function onRoundEnd(uint256, bytes32, uint256, uint256) external override returns (bytes32, bool) {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
-        uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-        // Update stamina for both active mons only if it's a 2 player turn
+
+        // Only regen stamina if it's a 2 player turn (not a switch-only turn)
         if (playerSwitchForTurnFlag == 2) {
+            bool isDoubles = ENGINE.getGameMode(battleKey) == GameMode.Doubles;
+            uint256 slotsPerPlayer = isDoubles ? 2 : 1;
+
             for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
-                _regenStamina(playerIndex, activeMonIndex[playerIndex]);
+                for (uint256 slotIndex; slotIndex < slotsPerPlayer; ++slotIndex) {
+                    uint256 monIndex = ENGINE.getActiveMonIndexForSlot(battleKey, playerIndex, slotIndex);
+                    _regenStamina(playerIndex, monIndex);
+                }
             }
         }
         return (bytes32(0), false);

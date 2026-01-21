@@ -85,13 +85,19 @@ contract Overclock is BasicEffect {
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         uint256 playerIndex = uint256(extraData);
+        bytes32 battleKey = ENGINE.battleKeyForWrite();
 
         // Set default duration
         setDuration(DEFAULT_DURATION, playerIndex);
 
-        // Apply stat change to the team of the player who summoned Overclock
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[playerIndex];
-        _applyStatChange(playerIndex, activeMonIndex);
+        // Apply stat change to all active mons of the player who summoned Overclock
+        bool isDoubles = ENGINE.getGameMode(battleKey) == GameMode.Doubles;
+        uint256 slotsPerPlayer = isDoubles ? 2 : 1;
+
+        for (uint256 slotIndex; slotIndex < slotsPerPlayer; ++slotIndex) {
+            uint256 monIndex = ENGINE.getActiveMonIndexForSlot(battleKey, playerIndex, slotIndex);
+            _applyStatChange(playerIndex, monIndex);
+        }
 
         return (extraData, false);
     }
@@ -126,9 +132,17 @@ contract Overclock is BasicEffect {
 
     function onRemove(bytes32 extraData, uint256, uint256) external override {
         uint256 playerIndex = uint256(extraData);
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[playerIndex];
-        // Reset stat changes from the mon on the team of the player who summoned Overclock
-        _removeStatChange(playerIndex, activeMonIndex);
+        bytes32 battleKey = ENGINE.battleKeyForWrite();
+
+        // Remove stat changes from all active mons of the player who summoned Overclock
+        bool isDoubles = ENGINE.getGameMode(battleKey) == GameMode.Doubles;
+        uint256 slotsPerPlayer = isDoubles ? 2 : 1;
+
+        for (uint256 slotIndex; slotIndex < slotsPerPlayer; ++slotIndex) {
+            uint256 monIndex = ENGINE.getActiveMonIndexForSlot(battleKey, playerIndex, slotIndex);
+            _removeStatChange(playerIndex, monIndex);
+        }
+
         // Clear the duration when we clear the effect
         setDuration(0, playerIndex);
     }
