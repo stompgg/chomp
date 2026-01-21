@@ -2824,7 +2824,7 @@ class TypeScriptCodeGenerator:
             if stmt.initial_value:
                 init_expr = self.generate_expression(stmt.initial_value)
                 # Add default value for mapping reads (Solidity returns 0/false/etc for non-existent keys)
-                init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr)
+                init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr, decl.type_name)
                 init = f' = {init_expr}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
@@ -2833,7 +2833,7 @@ class TypeScriptCodeGenerator:
             init = self.generate_expression(stmt.initial_value) if stmt.initial_value else ''
             return f'{self.indent()}const [{names}] = {init};'
 
-    def _add_mapping_default(self, expr: Expression, ts_type: str, generated_expr: str) -> str:
+    def _add_mapping_default(self, expr: Expression, ts_type: str, generated_expr: str, solidity_type: Optional[TypeName] = None) -> str:
         """Add default value for mapping reads to simulate Solidity mapping semantics.
 
         In Solidity, reading from a mapping returns the default value for non-existent keys.
@@ -2860,19 +2860,26 @@ class TypeScriptCodeGenerator:
         if not is_mapping_read:
             return generated_expr
 
-        # Add default value based on TypeScript type
-        default_value = self._get_ts_default_value(ts_type)
+        # Add default value based on TypeScript type and Solidity type
+        default_value = self._get_ts_default_value(ts_type, solidity_type)
         if default_value:
             return f'({generated_expr} ?? {default_value})'
         return generated_expr
 
-    def _get_ts_default_value(self, ts_type: str) -> Optional[str]:
+    def _get_ts_default_value(self, ts_type: str, solidity_type: Optional[TypeName] = None) -> Optional[str]:
         """Get the default value for a TypeScript type (matching Solidity semantics)."""
         if ts_type == 'bigint':
             return '0n'
         elif ts_type == 'boolean':
             return 'false'
         elif ts_type == 'string':
+            # Check if this is a bytes32 or address type (should default to zero hex, not empty string)
+            if solidity_type and solidity_type.name:
+                sol_type_name = solidity_type.name.lower()
+                if 'bytes32' in sol_type_name or sol_type_name == 'bytes32':
+                    return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
+                elif 'address' in sol_type_name or sol_type_name == 'address':
+                    return '"0x0000000000000000000000000000000000000000"'
             return '""'
         elif ts_type == 'number':
             return '0'
@@ -3826,9 +3833,21 @@ class TypeScriptCodeGenerator:
 
         expr = self.generate_expression(inner_expr)
 
-        # For integers, just ensure it's a BigInt - skip bit masking for simplicity
-        if type_name.startswith('uint') or type_name.startswith('int'):
-            # If already looks like a BigInt or number, just use it
+        # For integers, apply proper bit masking (Solidity truncates to the target size)
+        if type_name.startswith('uint'):
+            # Extract bit width from type name (e.g., uint192 -> 192)
+            bits = int(type_name[4:]) if len(type_name) > 4 else 256
+            if bits < 256:
+                # Apply mask for truncation: value & ((1 << bits) - 1)
+                mask = (1 << bits) - 1
+                return f'(BigInt({expr}) & {mask}n)'
+            else:
+                # uint256 - no masking needed
+                if expr.startswith('BigInt(') or expr.isdigit() or expr.endswith('n'):
+                    return expr
+                return f'BigInt({expr})'
+        elif type_name.startswith('int'):
+            # For signed ints, masking is more complex - just use BigInt for now
             if expr.startswith('BigInt(') or expr.isdigit() or expr.endswith('n'):
                 return expr
             return f'BigInt({expr})'

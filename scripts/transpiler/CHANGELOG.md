@@ -171,6 +171,23 @@ Remaining parser limitations:
 ## Version History
 
 ### 2026-01-21 (Current)
+**Mapping Semantics (General-purpose transpiler fixes):**
+- Nested mapping writes now auto-initialize parent objects (`mapping[a] ??= {};` before nested writes)
+- Compound assignment on mappings now auto-initializes (`mapping[a] ??= 0n;` before `+=`)
+- Mapping reads add default values for variable declarations (`?? defaultValue`)
+- Fixed `bytes32` default to proper zero hex string (`0x0000...0000` not `""`)
+- Fixed `address` default to proper zero address (`0x0000...0000` not `""`)
+
+**Type Casting Fixes:**
+- uint type casts now properly mask bits (e.g., `uint192(x)` masks to 192 bits)
+- Prevents overflow issues when casting larger values to smaller uint types
+
+**Engine Integration Tests:**
+- Added comprehensive `engine-e2e.ts` test suite (17 tests)
+- Tests cover: battle key computation, matchmaker authorization, battle initialization
+- Tests cover: mon state management, damage dealing, KO detection, global KV storage
+- Created `TestableEngine` class for proper test initialization
+
 **Parser Fixes:**
 - Added `UNCHECKED`, `TRY`, `CATCH` tokens and keyword handling
 - Handle qualified library names in `using` directives (e.g., `EnumerableSetLib.Uint256Set`)

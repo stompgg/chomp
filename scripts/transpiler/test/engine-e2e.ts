@@ -14,6 +14,7 @@ import { keccak256, encodePacked } from 'viem';
 import { Engine } from '../ts-output/Engine';
 import * as Structs from '../ts-output/Structs';
 import * as Enums from '../ts-output/Enums';
+import * as Constants from '../ts-output/Constants';
 
 // =============================================================================
 // TEST FRAMEWORK
@@ -385,6 +386,297 @@ test('Engine: setGlobalKV and getGlobalKV work', () => {
   // Test methods exist
   expect(typeof engine.setGlobalKV).toBe('function');
   expect(typeof engine.getGlobalKV).toBe('function');
+});
+
+// =============================================================================
+// EXTENDED ENGINE FOR TESTING (with proper initialization)
+// =============================================================================
+
+/**
+ * TestableEngine extends Engine with helper methods to properly initialize
+ * internal state for testing. This simulates what the Solidity storage system
+ * does automatically (zero-initializing storage slots).
+ */
+class TestableEngine extends Engine {
+  /**
+   * Initialize a battle config for a given battle key
+   * This simulates Solidity's automatic storage initialization
+   */
+  initializeBattleConfig(battleKey: string): void {
+    // Access private battleConfig through type assertion
+    const self = this as any;
+
+    // Create empty BattleConfig with proper defaults
+    const emptyConfig: Structs.BattleConfig = {
+      validator: null as any,
+      packedP0EffectsCount: 0n,
+      rngOracle: null as any,
+      packedP1EffectsCount: 0n,
+      moveManager: '0x0000000000000000000000000000000000000000',
+      globalEffectsLength: 0n,
+      teamSizes: 0n,
+      engineHooksLength: 0n,
+      koBitmaps: 0n,
+      startTimestamp: BigInt(Date.now()),
+      p0Salt: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      p1Salt: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      p0Move: { packedMoveIndex: 0n, extraData: 0n },
+      p1Move: { packedMoveIndex: 0n, extraData: 0n },
+      p0Team: {} as any,
+      p1Team: {} as any,
+      p0States: {} as any,
+      p1States: {} as any,
+      globalEffects: {} as any,
+      p0Effects: {} as any,
+      p1Effects: {} as any,
+      engineHooks: {} as any,
+    };
+
+    self.battleConfig[battleKey] = emptyConfig;
+    // Also set storageKeyForWrite since Engine methods use it
+    self.storageKeyForWrite = battleKey;
+  }
+
+  /**
+   * Initialize battle data for a given battle key
+   */
+  initializeBattleData(battleKey: string, p0: string, p1: string): void {
+    const self = this as any;
+    self.battleData[battleKey] = {
+      p0,
+      p1,
+      winnerIndex: 2n, // 2 = no winner yet
+      prevPlayerSwitchForTurnFlag: 0n,
+      playerSwitchForTurnFlag: 2n, // 2 = both players move
+      activeMonIndex: 0n,
+      turnId: 0n,
+    };
+  }
+
+  /**
+   * Set up teams for a battle
+   */
+  setupTeams(battleKey: string, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): void {
+    const self = this as any;
+    const config = self.battleConfig[battleKey];
+
+    // Set team sizes (p0 in lower 4 bits, p1 in upper 4 bits)
+    config.teamSizes = BigInt(p0Team.length) | (BigInt(p1Team.length) << 4n);
+
+    // Add mons to teams
+    for (let i = 0; i < p0Team.length; i++) {
+      config.p0Team[i] = p0Team[i];
+      config.p0States[i] = createEmptyMonState();
+    }
+    for (let i = 0; i < p1Team.length; i++) {
+      config.p1Team[i] = p1Team[i];
+      config.p1States[i] = createEmptyMonState();
+    }
+  }
+
+  /**
+   * Get internal state for testing
+   */
+  getBattleData(battleKey: string): Structs.BattleData | undefined {
+    return (this as any).battleData[battleKey];
+  }
+
+  getBattleConfig(battleKey: string): Structs.BattleConfig | undefined {
+    return (this as any).battleConfig[battleKey];
+  }
+}
+
+function createEmptyMonState(): Structs.MonState {
+  return {
+    hpDelta: 0n,
+    staminaDelta: 0n,
+    speedDelta: 0n,
+    attackDelta: 0n,
+    defenceDelta: 0n,
+    specialAttackDelta: 0n,
+    specialDefenceDelta: 0n,
+    isKnockedOut: false,
+    shouldSkipTurn: false,
+  };
+}
+
+// =============================================================================
+// INTEGRATION TESTS WITH TESTABLE ENGINE
+// =============================================================================
+
+test('TestableEngine: full battle initialization', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  // Compute battle key
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+
+  // Initialize battle config (simulates Solidity storage initialization)
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  // Create teams
+  const p0Mon = createMon({ hp: 100n, speed: 60n, attack: 50n });
+  const p1Mon = createMon({ hp: 100n, speed: 40n, attack: 50n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+
+  // Verify setup
+  const config = engine.getBattleConfig(battleKey);
+  expect(config).toBeTruthy();
+  expect(config!.teamSizes).toBe(0x11n); // 1 mon each team
+
+  const battleData = engine.getBattleData(battleKey);
+  expect(battleData).toBeTruthy();
+  expect(battleData!.p0).toBe(p0);
+  expect(battleData!.p1).toBe(p1);
+  expect(battleData!.winnerIndex).toBe(2n); // No winner yet
+});
+
+test('TestableEngine: getMonValueForBattle returns mon stats', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  // Create mons with specific stats
+  const p0Mon = createMon({ hp: 150n, speed: 80n, attack: 60n, defense: 40n });
+  const p1Mon = createMon({ hp: 120n, speed: 50n, attack: 70n, defense: 35n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+
+  // Set the battle key for write (needed by some Engine methods)
+  engine.battleKeyForWrite = battleKey;
+
+  // Test getMonValueForBattle
+  const p0Hp = engine.getMonValueForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.Hp);
+  const p0Speed = engine.getMonValueForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.Speed);
+  const p1Attack = engine.getMonValueForBattle(battleKey, 1n, 0n, Enums.MonStateIndexName.Attack);
+
+  expect(p0Hp).toBe(150n);
+  expect(p0Speed).toBe(80n);
+  expect(p1Attack).toBe(70n);
+});
+
+test('TestableEngine: dealDamage reduces mon HP', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  const p0Mon = createMon({ hp: 100n });
+  const p1Mon = createMon({ hp: 100n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+  engine.battleKeyForWrite = battleKey;
+
+  // Get initial base HP (stats, not state)
+  const baseHp = engine.getMonValueForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.Hp);
+  expect(baseHp).toBe(100n);
+
+  // Get initial HP delta (state change, should be 0)
+  const initialHpDelta = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.Hp);
+  expect(initialHpDelta).toBe(0n);
+
+  // Deal 30 damage to player 0's mon
+  engine.dealDamage(0n, 0n, 30n);
+
+  // Check HP delta changed (damage is stored as negative delta)
+  const newHpDelta = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.Hp);
+  expect(newHpDelta).toBe(-30n);
+
+  // Effective HP = baseHp + hpDelta = 100 + (-30) = 70
+  const effectiveHp = baseHp + newHpDelta;
+  expect(effectiveHp).toBe(70n);
+});
+
+test('TestableEngine: dealDamage causes KO when HP reaches 0', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  const p0Mon = createMon({ hp: 50n });
+  const p1Mon = createMon({ hp: 100n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+  engine.battleKeyForWrite = battleKey;
+
+  // Deal lethal damage
+  engine.dealDamage(0n, 0n, 60n);
+
+  // Check KO status
+  const isKO = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.IsKnockedOut);
+  expect(isKO).toBe(1n);
+});
+
+test('TestableEngine: computePriorityPlayerIndex requires move setup', () => {
+  // computePriorityPlayerIndex requires moves to be set up on mons
+  // and move decisions to be made. This is tested in integration tests.
+  const engine = new TestableEngine();
+  expect(typeof engine.computePriorityPlayerIndex).toBe('function');
+});
+
+test('TestableEngine: setGlobalKV and getGlobalKV roundtrip', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+  engine.battleKeyForWrite = battleKey;
+
+  // Set a value
+  const testKey = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+  engine.setGlobalKV(testKey, 42n);
+
+  // Get the value back
+  const value = engine.getGlobalKV(battleKey, testKey);
+  expect(value).toBe(42n);
+});
+
+test('TestableEngine: updateMonState changes state', () => {
+  const engine = new TestableEngine();
+
+  const p0 = '0x1111111111111111111111111111111111111111';
+  const p1 = '0x2222222222222222222222222222222222222222';
+
+  const [battleKey] = engine.computeBattleKey(p0, p1);
+  engine.initializeBattleConfig(battleKey);
+  engine.initializeBattleData(battleKey, p0, p1);
+
+  const p0Mon = createMon({ hp: 100n });
+  const p1Mon = createMon({ hp: 100n });
+
+  engine.setupTeams(battleKey, [p0Mon], [p1Mon]);
+  engine.battleKeyForWrite = battleKey;
+
+  // Check initial shouldSkipTurn
+  const initialSkip = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.ShouldSkipTurn);
+  expect(initialSkip).toBe(0n);
+
+  // Set shouldSkipTurn to true
+  engine.updateMonState(0n, 0n, Enums.MonStateIndexName.ShouldSkipTurn, 1n);
+
+  // Verify change
+  const newSkip = engine.getMonStateForBattle(battleKey, 0n, 0n, Enums.MonStateIndexName.ShouldSkipTurn);
+  expect(newSkip).toBe(1n);
 });
 
 // =============================================================================
