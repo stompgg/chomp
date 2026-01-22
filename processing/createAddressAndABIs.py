@@ -6,11 +6,12 @@ Also extracts ABIs from the out folder and creates TypeScript ABI files.
 
 Modes:
   --stdin: Read KEY=VALUE lines from stdin instead of output.txt
+  --abi-only: Only update ABIs, skip address processing
   (default): Read from processing/output.txt
 
-Network flags (one required):
-  --m, --mainnet: Update MAINNET addresses
-  --t, --testnet: Update TESTNET addresses
+Network flags (required unless --abi-only):
+  -m, --mainnet: Update MAINNET addresses
+  -t, --testnet: Update TESTNET addresses
 """
 
 import argparse
@@ -301,6 +302,30 @@ def run_main_logic(addresses: Dict[str, str], network: str):
     print("=" * 60)
 
 
+def run_abi_only():
+    """Run ABI extraction only, without address updates."""
+    base_path = Path(__file__).parent
+    chomp_dir = base_path.parent
+    game_dir = chomp_dir.parent
+    out_dir = chomp_dir / "out"
+
+    print("=" * 60)
+    print("PROCESSING ABIs ONLY")
+    print("=" * 60)
+
+    if not out_dir.exists():
+        print(f"⚠️  Out directory not found: {out_dir}")
+        print("Skipping ABI extraction")
+        return
+
+    abi_files = process_abis(out_dir, game_dir)
+    print(f"\n✅ ABI files created: {len(abi_files)}")
+
+    print("\n" + "=" * 60)
+    print("DONE!")
+    print("=" * 60)
+
+
 def main():
     """Main function to orchestrate the address conversion and ABI extraction."""
     parser = argparse.ArgumentParser(
@@ -311,9 +336,14 @@ def main():
         action='store_true',
         help='Read KEY=VALUE lines from stdin instead of output.txt'
     )
+    parser.add_argument(
+        '--abi-only',
+        action='store_true',
+        help='Only update ABIs, skip address processing'
+    )
 
-    # Network flags (mutually exclusive, one required)
-    network_group = parser.add_mutually_exclusive_group(required=True)
+    # Network flags (mutually exclusive, required unless --abi-only)
+    network_group = parser.add_mutually_exclusive_group(required=False)
     network_group.add_argument(
         '-m', '--mainnet',
         action='store_true',
@@ -326,6 +356,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Handle --abi-only mode
+    if args.abi_only:
+        run_abi_only()
+        return
+
+    # For non-abi-only mode, network flag is required
+    if not args.mainnet and not args.testnet:
+        parser.error("one of the arguments -m/--mainnet -t/--testnet is required (unless using --abi-only)")
 
     # Determine which network to update
     network = 'MAINNET' if args.mainnet else 'TESTNET'
