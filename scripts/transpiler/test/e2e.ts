@@ -9,70 +9,8 @@
  * Run with: npx tsx test/e2e.ts
  */
 
-import { strict as assert } from 'node:assert';
 import { keccak256, encodePacked } from 'viem';
-
-// =============================================================================
-// TEST FRAMEWORK
-// =============================================================================
-
-const tests: Array<{ name: string; fn: () => void | Promise<void> }> = [];
-let passed = 0;
-let failed = 0;
-
-function test(name: string, fn: () => void | Promise<void>) {
-  tests.push({ name, fn });
-}
-
-function expect<T>(actual: T) {
-  return {
-    toBe(expected: T) {
-      assert.strictEqual(actual, expected);
-    },
-    toEqual(expected: T) {
-      assert.deepStrictEqual(actual, expected);
-    },
-    not: {
-      toBe(expected: T) {
-        assert.notStrictEqual(actual, expected);
-      },
-    },
-    toBeGreaterThan(expected: number) {
-      assert.ok((actual as number) > expected, `Expected ${actual} > ${expected}`);
-    },
-    toBeLessThan(expected: number) {
-      assert.ok((actual as number) < expected, `Expected ${actual} < ${expected}`);
-    },
-    toBeTruthy() {
-      assert.ok(actual);
-    },
-    toBeFalsy() {
-      assert.ok(!actual);
-    },
-  };
-}
-
-async function runTests() {
-  console.log(`\nRunning ${tests.length} tests...\n`);
-
-  for (const { name, fn } of tests) {
-    try {
-      await fn();
-      passed++;
-      console.log(`  ✓ ${name}`);
-    } catch (err) {
-      failed++;
-      console.log(`  ✗ ${name}`);
-      console.log(`    ${(err as Error).message}`);
-      if ((err as Error).stack) {
-        console.log(`    ${(err as Error).stack?.split('\n').slice(1, 3).join('\n    ')}`);
-      }
-    }
-  }
-
-  console.log(`\n${passed} passed, ${failed} failed\n`);
-  process.exit(failed > 0 ? 1 : 0);
-}
+import { test, expect, runTests } from './test-utils';
 
 // =============================================================================
 // ENUMS (mirroring Solidity)

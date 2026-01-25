@@ -10,8 +10,8 @@
  * Run with: npx tsx test/battle-simulation.ts
  */
 
-import { strict as assert } from 'node:assert';
 import { keccak256, encodePacked, encodeAbiParameters } from 'viem';
+import { test, expect, runTests } from './test-utils';
 
 // Import transpiled contracts
 import { Engine } from '../ts-output/Engine';
@@ -32,71 +32,6 @@ import * as Structs from '../ts-output/Structs';
 import * as Enums from '../ts-output/Enums';
 import * as Constants from '../ts-output/Constants';
 import { EventStream, globalEventStream } from '../ts-output/runtime';
-
-// =============================================================================
-// TEST FRAMEWORK
-// =============================================================================
-
-const tests: Array<{ name: string; fn: () => void | Promise<void> }> = [];
-let passed = 0;
-let failed = 0;
-
-function test(name: string, fn: () => void | Promise<void>) {
-  tests.push({ name, fn });
-}
-
-function expect<T>(actual: T) {
-  return {
-    toBe(expected: T) {
-      assert.strictEqual(actual, expected);
-    },
-    toEqual(expected: T) {
-      assert.deepStrictEqual(actual, expected);
-    },
-    not: {
-      toBe(expected: T) {
-        assert.notStrictEqual(actual, expected);
-      },
-    },
-    toBeGreaterThan(expected: number | bigint) {
-      assert.ok(actual > expected, `Expected ${actual} > ${expected}`);
-    },
-    toBeLessThan(expected: number | bigint) {
-      assert.ok(actual < expected, `Expected ${actual} < ${expected}`);
-    },
-    toBeGreaterThanOrEqual(expected: number | bigint) {
-      assert.ok(actual >= expected, `Expected ${actual} >= ${expected}`);
-    },
-    toBeTruthy() {
-      assert.ok(actual);
-    },
-    toBeFalsy() {
-      assert.ok(!actual);
-    },
-  };
-}
-
-async function runTests() {
-  console.log(`\nRunning ${tests.length} battle simulation tests...\n`);
-
-  for (const { name, fn } of tests) {
-    try {
-      await fn();
-      passed++;
-      console.log(`  ✓ ${name}`);
-    } catch (err) {
-      failed++;
-      console.log(`  ✗ ${name}`);
-      console.log(`    ${(err as Error).message}`);
-      if ((err as Error).stack) {
-        console.log(`    ${(err as Error).stack?.split('\n').slice(1, 4).join('\n    ')}`);
-      }
-    }
-  }
-
-  console.log(`\n${passed} passed, ${failed} failed\n`);
-  process.exit(failed > 0 ? 1 : 0);
-}
 
 // =============================================================================
 // MOCK IMPLEMENTATIONS
@@ -1377,4 +1312,4 @@ test('Gachachacha: power varies based on RNG (0-200 range)', () => {
 // RUN TESTS
 // =============================================================================
 
-runTests();
+runTests('battle simulation tests');

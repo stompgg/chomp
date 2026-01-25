@@ -2197,6 +2197,25 @@ class TypeScriptCodeGenerator:
             return f'Constants.{name}'
         return name
 
+    def _to_padded_address(self, val: str) -> str:
+        """Convert a numeric or hex value to a 40-char padded hex address string."""
+        if val.startswith('0x') or val.startswith('0X'):
+            hex_val = val[2:].lower()
+        else:
+            hex_val = hex(int(val))[2:]
+        return f'"0x{hex_val.zfill(40)}"'
+
+    def _to_padded_bytes32(self, val: str) -> str:
+        """Convert a numeric or hex value to a 64-char padded hex bytes32 string."""
+        if val == '0':
+            return '"0x' + '0' * 64 + '"'
+        elif val.startswith('0x') or val.startswith('0X'):
+            hex_val = val[2:].lower()
+            return f'"0x{hex_val.zfill(64)}"'
+        else:
+            hex_val = hex(int(val))[2:]
+            return f'"0x{hex_val.zfill(64)}"'
+
     def generate(self, ast: SourceUnit) -> str:
         """Generate TypeScript code from the AST."""
         output = []
@@ -3465,13 +3484,7 @@ class TypeScriptCodeGenerator:
                 if call.arguments:
                     arg = call.arguments[0]
                     if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
-                        val = arg.value
-                        # Convert to padded 40-char hex address
-                        if val.startswith('0x') or val.startswith('0X'):
-                            hex_val = val[2:].lower()
-                        else:
-                            hex_val = hex(int(val))[2:]
-                        return f'"0x{hex_val.zfill(40)}"'
+                        return self._to_padded_address(arg.value)
                 return args  # Pass through - addresses are strings
             elif name == 'bool':
                 return args  # Pass through - JS truthy works
@@ -3480,16 +3493,7 @@ class TypeScriptCodeGenerator:
                 if call.arguments:
                     arg = call.arguments[0]
                     if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
-                        val = arg.value
-                        if val == '0':
-                            return '"0x' + '0' * 64 + '"'
-                        elif val.startswith('0x') or val.startswith('0X'):
-                            hex_val = val[2:].lower()
-                            return f'"0x{hex_val.zfill(64)}"'
-                        else:
-                            # Decimal literal
-                            hex_val = hex(int(val))[2:]
-                            return f'"0x{hex_val.zfill(64)}"'
+                        return self._to_padded_bytes32(arg.value)
                 return args  # Pass through
             elif name.startswith('bytes'):
                 return args  # Pass through
@@ -3835,13 +3839,7 @@ class TypeScriptCodeGenerator:
         # Handle address literals like address(0xdead)
         if type_name == 'address':
             if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
-                val = inner_expr.value
-                # Convert to padded 40-char hex address
-                if val.startswith('0x') or val.startswith('0X'):
-                    hex_val = val[2:].lower()
-                else:
-                    hex_val = hex(int(val))[2:]
-                return f'"0x{hex_val.zfill(40)}"'
+                return self._to_padded_address(inner_expr.value)
             expr = self.generate_expression(inner_expr)
             if expr.startswith('"') or expr.startswith("'"):
                 return expr
@@ -3850,15 +3848,7 @@ class TypeScriptCodeGenerator:
         # Handle bytes32 casts
         if type_name == 'bytes32':
             if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
-                val = inner_expr.value
-                if val == '0':
-                    return '"0x' + '0' * 64 + '"'
-                elif val.startswith('0x') or val.startswith('0X'):
-                    hex_val = val[2:].lower()
-                    return f'"0x{hex_val.zfill(64)}"'
-                else:
-                    hex_val = hex(int(val))[2:]
-                    return f'"0x{hex_val.zfill(64)}"'
+                return self._to_padded_bytes32(inner_expr.value)
             # For computed expressions, convert bigint to 64-char hex string
             expr = self.generate_expression(inner_expr)
             return f'`0x${{({expr}).toString(16).padStart(64, "0")}}`'
