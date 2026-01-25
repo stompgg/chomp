@@ -145,17 +145,26 @@ function extractExtraDataType(content: string): string {
 }
 
 /**
- * Check if contract has custom move() override
+ * Check if contract has custom move() behavior
  */
 function hasCustomMoveBehavior(content: string): boolean {
-  // Look for move function override with actual implementation
-  const moveMatch = content.match(/function\s+move\s*\([^)]*\)[^{]*override[^{]*\{([\s\S]*?)\n\s*\}/);
-  if (!moveMatch) return false;
+  // Get the move function body
+  const moveBody = extractFunctionBody(content, 'move');
+  if (!moveBody) return false;
 
-  const body = moveMatch[1];
   // If it just calls _move() and nothing else, it's not custom
-  const hasOnlyMoveCall = /^\s*_move\s*\([^)]*\)\s*;?\s*$/.test(body.trim());
-  return !hasOnlyMoveCall;
+  const hasOnlyMoveCall = /^\s*_move\s*\([^)]*\)\s*;?\s*$/.test(moveBody.trim());
+  if (hasOnlyMoveCall) return false;
+
+  // If the body has conditional logic, calculations, or multiple statements, it's custom
+  const hasComplexLogic = hasDynamicLogic(moveBody) ||
+    moveBody.includes('_calculateDamage') ||
+    moveBody.includes('setBaselightLevel') ||
+    moveBody.includes('addEffect') ||
+    moveBody.includes('updateMonState') ||
+    /\w+\s*=\s*[^;]+;/.test(moveBody); // Has variable assignments
+
+  return hasComplexLogic;
 }
 
 /**
@@ -194,7 +203,76 @@ function describeCustomBehavior(content: string, contractName: string): string |
     behaviors.push('random-power');
   }
 
+  // Check for dynamic/conditional power (based on stacks, level, etc.)
+  const moveBody = extractFunctionBody(content, 'move');
+  if (moveBody && hasDynamicLogic(moveBody) && /power\s*=/.test(moveBody)) {
+    behaviors.push('conditional-power');
+  }
+
+  // Check for dynamic stamina cost
+  const staminaBody = extractFunctionBody(content, 'stamina');
+  if (staminaBody && hasDynamicLogic(staminaBody)) {
+    behaviors.push('dynamic-stamina');
+  }
+
+  // Check for stack consumption (like Baselight)
+  if (content.includes('setBaselightLevel') || content.includes('consumeStacks') ||
+      /set\w+Level\s*\([^)]*,\s*0\s*\)/.test(content)) {
+    behaviors.push('consumes-stacks');
+  }
+
   return behaviors.length > 0 ? behaviors.join(', ') : undefined;
+}
+
+/**
+ * Extract the body of a function from Solidity source
+ */
+function extractFunctionBody(content: string, functionName: string): string | null {
+  // Match function definition and its body (handles multi-line with balanced braces)
+  const funcStart = content.search(new RegExp(`function\\s+${functionName}\\s*\\(`));
+  if (funcStart === -1) return null;
+
+  // Find the opening brace
+  const braceStart = content.indexOf('{', funcStart);
+  if (braceStart === -1) return null;
+
+  // Find matching closing brace (handle nested braces)
+  let depth = 1;
+  let pos = braceStart + 1;
+  while (depth > 0 && pos < content.length) {
+    if (content[pos] === '{') depth++;
+    else if (content[pos] === '}') depth--;
+    pos++;
+  }
+
+  return content.slice(braceStart + 1, pos - 1);
+}
+
+/**
+ * Check if a function has conditional/dynamic logic (if statements, ternary, etc.)
+ */
+function hasDynamicLogic(functionBody: string | null): boolean {
+  if (!functionBody) return false;
+  // Check for if statements or ternary operators indicating conditional returns
+  return /\bif\s*\(/.test(functionBody) || /\?.*:/.test(functionBody);
+}
+
+/**
+ * Extract a simple return value from function body (handles single return case)
+ */
+function extractSimpleReturn(
+  functionBody: string | null,
+  pattern: RegExp
+): string | number | null {
+  if (!functionBody) return null;
+  const match = functionBody.match(pattern);
+  if (!match) return null;
+
+  const value = match[1].trim();
+  if (/^\d+$/.test(value)) {
+    return parseInt(value, 10);
+  }
+  return value;
 }
 
 /**
@@ -209,20 +287,32 @@ function parseIMoveSetImplementation(content: string): Partial<RawMoveMetadata> 
     result.name = nameMatch[1];
   }
 
-  // Extract stamina
-  const staminaMatch = content.match(/function\s+stamina\s*\([^)]*\)[^{]*\{[^}]*return\s+(\d+|DEFAULT_STAMINA)/);
-  if (staminaMatch) {
-    result.staminaCost = /^\d+$/.test(staminaMatch[1])
-      ? parseInt(staminaMatch[1], 10)
-      : staminaMatch[1];
+  // Extract stamina - check for dynamic logic first
+  const staminaBody = extractFunctionBody(content, 'stamina');
+  if (staminaBody) {
+    if (hasDynamicLogic(staminaBody)) {
+      // Dynamic stamina - mark as such
+      result.staminaCost = 'dynamic';
+    } else {
+      // Try to extract simple return value
+      const staminaValue = extractSimpleReturn(staminaBody, /return\s+(\d+|DEFAULT_STAMINA|\w+_STAMINA)/);
+      if (staminaValue !== null) {
+        result.staminaCost = staminaValue;
+      }
+    }
   }
 
-  // Extract priority
-  const priorityMatch = content.match(/function\s+priority\s*\([^)]*\)[^{]*\{[^}]*return\s+(\d+|DEFAULT_PRIORITY)/);
-  if (priorityMatch) {
-    result.priority = /^\d+$/.test(priorityMatch[1])
-      ? parseInt(priorityMatch[1], 10)
-      : priorityMatch[1];
+  // Extract priority - check for dynamic logic
+  const priorityBody = extractFunctionBody(content, 'priority');
+  if (priorityBody) {
+    if (hasDynamicLogic(priorityBody)) {
+      result.priority = 'dynamic';
+    } else {
+      const priorityValue = extractSimpleReturn(priorityBody, /return\s+(\d+|DEFAULT_PRIORITY|\w+_PRIORITY)/);
+      if (priorityValue !== null) {
+        result.priority = priorityValue;
+      }
+    }
   }
 
   // Extract moveType
@@ -242,6 +332,7 @@ function parseIMoveSetImplementation(content: string): Partial<RawMoveMetadata> 
 
   // Set defaults for missing values (indicates special move logic)
   result.basePower = result.basePower ?? 'dynamic';
+  result.staminaCost = result.staminaCost ?? 'DEFAULT_STAMINA';
   result.accuracy = result.accuracy ?? 'DEFAULT_ACCURACY';
   result.critRate = result.critRate ?? 'DEFAULT_CRIT_RATE';
   result.volatility = result.volatility ?? 'DEFAULT_VOL';

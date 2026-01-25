@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-01-25T17:25:27.783Z",
+  "generatedAt": "2026-01-25T19:41:26.403Z",
   "totalMoves": 44,
   "movesByMon": {
     "inutia": [
@@ -42,7 +42,8 @@
           "DAMAGE_1_DENOM": 16,
           "DAMAGE_2_DENOM": 8,
           "DAMAGE_3_DENOM": 4
-        }
+        },
+        "customBehavior": "stat-modification, applies-effect, healing"
       },
       {
         "contractName": "HitAndDip",
@@ -81,7 +82,8 @@
         "customConstants": {
           "ATTACK_BUFF_PERCENT": 50,
           "SP_ATTACK_BUFF_PERCENT": 50
-        }
+        },
+        "customBehavior": "applies-effect"
       }
     ],
     "gorillax": [
@@ -127,7 +129,7 @@
         "basePower": "dynamic",
         "staminaCost": 3,
         "accuracy": "DEFAULT_ACCURACY",
-        "priority": "DEFAULT_PRIORITY",
+        "priority": "dynamic",
         "moveType": "Earth",
         "moveClass": "Physical",
         "critRate": "DEFAULT_CRIT_RATE",
@@ -138,7 +140,8 @@
         "customConstants": {
           "OPPONENT_BASE_POWER": 80,
           "SELF_DAMAGE_BASE_POWER": 30
-        }
+        },
+        "customBehavior": "self-damage"
       },
       {
         "contractName": "ThrowPebble",
@@ -177,7 +180,8 @@
         "extraDataType": "None",
         "customConstants": {
           "BASE_POWER": 70
-        }
+        },
+        "customBehavior": "stat-modification"
       },
       {
         "contractName": "Loop",
@@ -216,7 +220,8 @@
         "volatility": "DEFAULT_VOL",
         "effectAccuracy": 0,
         "effect": null,
-        "extraDataType": "None"
+        "extraDataType": "None",
+        "customBehavior": "consumes-stacks"
       },
       {
         "contractName": "UnboundedStrike",
@@ -224,7 +229,7 @@
         "inheritsFrom": "IMoveSet",
         "name": "Unbounded Strike",
         "basePower": "dynamic",
-        "staminaCost": "DEFAULT_STAMINA",
+        "staminaCost": "dynamic",
         "accuracy": "DEFAULT_ACCURACY",
         "priority": "DEFAULT_PRIORITY",
         "moveType": "Air",
@@ -240,7 +245,8 @@
           "BASE_STAMINA": 2,
           "EMPOWERED_STAMINA": 1,
           "REQUIRED_STACKS": 3
-        }
+        },
+        "customBehavior": "conditional-power, dynamic-stamina, consumes-stacks"
       }
     ],
     "aurox": [
@@ -284,7 +290,8 @@
         "customConstants": {
           "HEAL_PERCENT": 50,
           "STAMINA_BONUS": 1
-        }
+        },
+        "customBehavior": "stat-modification, healing"
       },
       {
         "contractName": "IronWall",
@@ -305,7 +312,8 @@
         "customConstants": {
           "HEAL_PERCENT": 50,
           "INITIAL_HEAL_PERCENT": 20
-        }
+        },
+        "customBehavior": "stat-modification, applies-effect, healing"
       },
       {
         "contractName": "VolatilePunch",
@@ -423,7 +431,8 @@
         "volatility": "DEFAULT_VOL",
         "effectAccuracy": 0,
         "effect": null,
-        "extraDataType": "None"
+        "extraDataType": "None",
+        "customBehavior": "applies-effect"
       },
       {
         "contractName": "NightTerrors",
@@ -444,7 +453,8 @@
         "customConstants": {
           "BASE_DAMAGE_PER_STACK": 20,
           "ASLEEP_DAMAGE_PER_STACK": 30
-        }
+        },
+        "customBehavior": "stat-modification, applies-effect"
       },
       {
         "contractName": "Somniphobia",
@@ -465,7 +475,8 @@
         "customConstants": {
           "DURATION": 6,
           "DAMAGE_DENOM": 16
-        }
+        },
+        "customBehavior": "applies-effect"
       },
       {
         "contractName": "VitalSiphon",
@@ -545,7 +556,8 @@
           "BASE_ACCURACY": 50,
           "ZAP_ACCURACY": 30,
           "BASE_POWER": 150
-        }
+        },
+        "customBehavior": "applies-effect"
       },
       {
         "contractName": "RoundTrip",
@@ -736,7 +748,8 @@
           "MAX_BASE_POWER": 200,
           "SELF_KO_CHANCE": 5,
           "OPP_KO_CHANCE": 5
-        }
+        },
+        "customBehavior": "random-power"
       },
       {
         "contractName": "GuestFeature",
@@ -777,7 +790,8 @@
         "customConstants": {
           "DEFAULT_HEAL_DENOM": 2,
           "MAX_DIVISOR": 3
-        }
+        },
+        "customBehavior": "stat-modification, healing"
       },
       {
         "contractName": "UnexpectedCarrot",
@@ -813,7 +827,8 @@
         "volatility": "DEFAULT_VOL",
         "effectAccuracy": 0,
         "effect": null,
-        "extraDataType": "None"
+        "extraDataType": "None",
+        "customBehavior": "applies-effect"
       },
       {
         "contractName": "HoneyBribe",
@@ -835,7 +850,8 @@
           "DEFAULT_HEAL_DENOM": 2,
           "MAX_DIVISOR": 3,
           "SP_DEF_PERCENT": 50
-        }
+        },
+        "customBehavior": "stat-modification, healing"
       },
       {
         "contractName": "Q5",
@@ -856,7 +872,8 @@
         "customConstants": {
           "DELAY": 5,
           "BASE_POWER": 150
-        }
+        },
+        "customBehavior": "applies-effect"
       },
       {
         "contractName": "SetAblaze",
@@ -930,7 +947,8 @@
       "extraDataType": "None",
       "customConstants": {
         "BASE_POWER": 70
-      }
+      },
+      "customBehavior": "stat-modification"
     },
     {
       "contractName": "BullRush",
@@ -975,7 +993,8 @@
         "DAMAGE_1_DENOM": 16,
         "DAMAGE_2_DENOM": 8,
         "DAMAGE_3_DENOM": 4
-      }
+      },
+      "customBehavior": "stat-modification, applies-effect, healing"
     },
     {
       "contractName": "ChillOut",
@@ -1009,7 +1028,8 @@
       "volatility": "DEFAULT_VOL",
       "effectAccuracy": 0,
       "effect": null,
-      "extraDataType": "None"
+      "extraDataType": "None",
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "Deadlift",
@@ -1146,7 +1166,8 @@
         "MAX_BASE_POWER": 200,
         "SELF_KO_CHANCE": 5,
         "OPP_KO_CHANCE": 5
-      }
+      },
+      "customBehavior": "random-power"
     },
     {
       "contractName": "GildedRecovery",
@@ -1167,7 +1188,8 @@
       "customConstants": {
         "HEAL_PERCENT": 50,
         "STAMINA_BONUS": 1
-      }
+      },
+      "customBehavior": "stat-modification, healing"
     },
     {
       "contractName": "GuestFeature",
@@ -1204,7 +1226,8 @@
       "volatility": "DEFAULT_VOL",
       "effectAccuracy": 0,
       "effect": null,
-      "extraDataType": "None"
+      "extraDataType": "None",
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "HitAndDip",
@@ -1244,7 +1267,8 @@
         "DEFAULT_HEAL_DENOM": 2,
         "MAX_DIVISOR": 3,
         "SP_DEF_PERCENT": 50
-      }
+      },
+      "customBehavior": "stat-modification, healing"
     },
     {
       "contractName": "InfernalFlame",
@@ -1299,7 +1323,8 @@
       "customConstants": {
         "ATTACK_BUFF_PERCENT": 50,
         "SP_ATTACK_BUFF_PERCENT": 50
-      }
+      },
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "IronWall",
@@ -1320,7 +1345,8 @@
       "customConstants": {
         "HEAL_PERCENT": 50,
         "INITIAL_HEAL_PERCENT": 20
-      }
+      },
+      "customBehavior": "stat-modification, applies-effect, healing"
     },
     {
       "contractName": "Loop",
@@ -1364,7 +1390,8 @@
         "BASE_ACCURACY": 50,
         "ZAP_ACCURACY": 30,
         "BASE_POWER": 150
-      }
+      },
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "NegativeThoughts",
@@ -1402,7 +1429,8 @@
       "customConstants": {
         "BASE_DAMAGE_PER_STACK": 20,
         "ASLEEP_DAMAGE_PER_STACK": 30
-      }
+      },
+      "customBehavior": "stat-modification, applies-effect"
     },
     {
       "contractName": "Osteoporosis",
@@ -1475,7 +1503,8 @@
       "customConstants": {
         "DELAY": 5,
         "BASE_POWER": 150
-      }
+      },
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "Renormalize",
@@ -1492,7 +1521,8 @@
       "volatility": "DEFAULT_VOL",
       "effectAccuracy": 0,
       "effect": null,
-      "extraDataType": "None"
+      "extraDataType": "None",
+      "customBehavior": "consumes-stacks"
     },
     {
       "contractName": "RockPull",
@@ -1502,7 +1532,7 @@
       "basePower": "dynamic",
       "staminaCost": 3,
       "accuracy": "DEFAULT_ACCURACY",
-      "priority": "DEFAULT_PRIORITY",
+      "priority": "dynamic",
       "moveType": "Earth",
       "moveClass": "Physical",
       "critRate": "DEFAULT_CRIT_RATE",
@@ -1513,7 +1543,8 @@
       "customConstants": {
         "OPPONENT_BASE_POWER": 80,
         "SELF_DAMAGE_BASE_POWER": 30
-      }
+      },
+      "customBehavior": "self-damage"
     },
     {
       "contractName": "RoundTrip",
@@ -1569,7 +1600,8 @@
       "customConstants": {
         "DEFAULT_HEAL_DENOM": 2,
         "MAX_DIVISOR": 3
-      }
+      },
+      "customBehavior": "stat-modification, healing"
     },
     {
       "contractName": "Somniphobia",
@@ -1590,7 +1622,8 @@
       "customConstants": {
         "DURATION": 6,
         "DAMAGE_DENOM": 16
-      }
+      },
+      "customBehavior": "applies-effect"
     },
     {
       "contractName": "ThrowPebble",
@@ -1635,7 +1668,7 @@
       "inheritsFrom": "IMoveSet",
       "name": "Unbounded Strike",
       "basePower": "dynamic",
-      "staminaCost": "DEFAULT_STAMINA",
+      "staminaCost": "dynamic",
       "accuracy": "DEFAULT_ACCURACY",
       "priority": "DEFAULT_PRIORITY",
       "moveType": "Air",
@@ -1651,7 +1684,8 @@
         "BASE_STAMINA": 2,
         "EMPOWERED_STAMINA": 1,
         "REQUIRED_STACKS": 3
-      }
+      },
+      "customBehavior": "conditional-power, dynamic-stamina, consumes-stacks"
     },
     {
       "contractName": "UnexpectedCarrot",

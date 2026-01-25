@@ -2383,8 +2383,10 @@ class TypeScriptCodeGenerator:
                     self.current_state_vars.update(self.known_contract_vars[base_class])
             else:
                 extends = ' extends Contract'
+                self.current_base_classes = ['Contract']  # Ensure super() is called
         else:
             extends = ' extends Contract'
+            self.current_base_classes = ['Contract']  # Ensure super() is called
 
         abstract = 'abstract ' if contract.kind == 'abstract' else ''
         lines.append(f'export {abstract}class {contract.name}{extends} {{')

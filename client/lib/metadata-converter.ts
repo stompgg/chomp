@@ -214,8 +214,24 @@ export function getTypeEffectiveness(
 
 /**
  * Checks if a move is dynamic (has runtime-calculated values)
+ * A move is dynamic if it has basePower=0 (dynamic) OR staminaCost=0 (dynamic)
+ * and directly implements IMoveSet (not StandardAttack)
  */
 export function isDynamicMove(move: MoveMetadata): boolean {
+  return (move.basePower === 0 || move.staminaCost === 0) && move.inheritsFrom === 'IMoveSet';
+}
+
+/**
+ * Checks if a move has dynamic stamina cost
+ */
+export function hasDynamicStamina(move: MoveMetadata): boolean {
+  return move.staminaCost === 0 && move.inheritsFrom === 'IMoveSet';
+}
+
+/**
+ * Checks if a move has dynamic base power
+ */
+export function hasDynamicPower(move: MoveMetadata): boolean {
   return move.basePower === 0 && move.inheritsFrom === 'IMoveSet';
 }
 
@@ -250,13 +266,14 @@ export function formatMoveForDisplay(move: MoveMetadata): {
   class: string;
   power: string;
   accuracy: string;
-  stamina: number;
+  stamina: string;
   description: string;
 } {
   const typeKey = Object.entries(MOVE_TYPE_MAP).find(([, v]) => v === move.moveType)?.[0] ?? 'None';
   const classKey = Object.entries(MOVE_CLASS_MAP).find(([, v]) => v === move.moveClass)?.[0] ?? 'Other';
 
-  const powerDisplay = isDynamicMove(move) ? 'Varies' : move.basePower.toString();
+  const powerDisplay = hasDynamicPower(move) ? 'Varies' : move.basePower.toString();
+  const staminaDisplay = hasDynamicStamina(move) ? 'Varies' : move.staminaCost.toString();
   const accuracyDisplay = move.accuracy === 100 ? '100%' : `${move.accuracy}%`;
 
   let description = `${classKey} ${typeKey}-type move.`;
@@ -271,7 +288,7 @@ export function formatMoveForDisplay(move: MoveMetadata): {
     class: classKey,
     power: powerDisplay,
     accuracy: accuracyDisplay,
-    stamina: move.staminaCost,
+    stamina: staminaDisplay,
     description,
   };
 }
