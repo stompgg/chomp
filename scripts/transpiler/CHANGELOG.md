@@ -164,6 +164,17 @@ Remaining parser limitations:
    - Solidity `memory` copy semantics not enforced
    - Could cause unexpected aliasing bugs
 
+6. **`abi.encode` with String Parameters**
+   - `abi.encode(uint256, uint256, name())` where `name()` returns string
+   - Transpiler incorrectly uses `{type: 'uint256'}` for all params
+   - Should detect string return type and use `{type: 'string'}`
+   - Affects: SnackBreak, other moves with KV storage using name()
+
+7. **Missing Dependency Injection**
+   - Moves requiring external dependencies (e.g., StatBoosts) need manual injection
+   - TripleThink, Deadlift need `STAT_BOOSTS` parameter
+   - Transpiler doesn't auto-detect these cross-contract dependencies
+
 ### Tests to Add
 
 - [ ] Negative number handling (signed integers)
@@ -206,6 +217,14 @@ Remaining parser limitations:
   - Damage comparison: empowered deals ~62% more damage than normal
   - Baselight level increments each round up to max 3
 - Test patterns are reusable for any move with dynamic properties
+- **Non-standard move tests added:**
+  - DeepFreeze: Conditional power based on opponent's Frostbite status
+  - RockPull: Self-damage when opponent doesn't switch, dynamic priority
+  - Gachachacha: RNG-based power (0-200) with special outcomes
+
+**Transpiled Non-Standard Moves (44 total):**
+- 23 IMoveSet implementations with custom logic (state tracking, effect detection, RNG-based)
+- 21 StandardAttack extensions (7 with custom move() logic, 14 standard parameters only)
 
 ### 2026-01-21
 **Mapping Semantics (General-purpose transpiler fixes):**
