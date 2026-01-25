@@ -170,6 +170,77 @@ class TestAbiEncodeBasicTypes(unittest.TestCase):
             "abi.encode should use uint256 type for number literals")
 
 
+class TestContractTypeImports(unittest.TestCase):
+    """Test that contracts used as types generate proper imports."""
+
+    def test_contract_type_in_state_variable_generates_import(self):
+        """Test that contract types used in state variables generate imports."""
+        source = '''
+        contract OtherContract {
+            function doSomething() public {}
+        }
+
+        contract TestContract {
+            OtherContract immutable OTHER;
+
+            constructor(OtherContract _other) {
+                OTHER = _other;
+            }
+        }
+        '''
+
+        # First, build a type registry that knows about OtherContract
+        registry = TypeRegistry()
+        registry.discover_from_source(source)
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        # Filter to just the TestContract for generation
+        ast.contracts = [c for c in ast.contracts if c.name == 'TestContract']
+
+        generator = TypeScriptCodeGenerator(registry)
+        output = generator.generate(ast)
+
+        # The output should import OtherContract
+        self.assertIn("import { OtherContract }", output,
+            "Contract types used in state variables should generate imports")
+
+    def test_contract_type_in_constructor_param_generates_import(self):
+        """Test that contract types in constructor params generate imports."""
+        source = '''
+        contract Dependency {
+            function getValue() public returns (uint256) { return 42; }
+        }
+
+        contract TestContract {
+            Dependency dep;
+
+            constructor(Dependency _dep) {
+                dep = _dep;
+            }
+        }
+        '''
+
+        registry = TypeRegistry()
+        registry.discover_from_source(source)
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        ast.contracts = [c for c in ast.contracts if c.name == 'TestContract']
+
+        generator = TypeScriptCodeGenerator(registry)
+        output = generator.generate(ast)
+
+        self.assertIn("import { Dependency }", output,
+            "Contract types in constructor params should generate imports")
+
+
 if __name__ == '__main__':
     # Run tests with verbosity
     unittest.main(verbosity=2)

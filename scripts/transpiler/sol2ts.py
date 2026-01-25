@@ -2195,6 +2195,8 @@ class TypeScriptCodeGenerator:
         self.base_contracts_needed: Set[str] = set()
         # Library contracts referenced (for import generation)
         self.libraries_referenced: Set[str] = set()
+        # Contracts referenced as types (for import generation)
+        self.contracts_referenced: Set[str] = set()
         # Current file type (to avoid self-referencing prefixes)
         self.current_file_type = ''
 
@@ -2240,6 +2242,7 @@ class TypeScriptCodeGenerator:
         # Reset base contracts needed for this file
         self.base_contracts_needed = set()
         self.libraries_referenced = set()
+        self.contracts_referenced = set()
 
         # Determine file type before generating (affects identifier prefixes)
         contract_name = ast.contracts[0].name if ast.contracts else ''
@@ -2295,6 +2298,12 @@ class TypeScriptCodeGenerator:
         # Import library contracts that are referenced
         for library in sorted(self.libraries_referenced):
             lines.append(f"import {{ {library} }} from './{library}';")
+
+        # Import contracts that are used as types (e.g., in constructor params or state vars)
+        for contract in sorted(self.contracts_referenced):
+            # Skip if already imported as base contract or if it's the current contract
+            if contract not in self.base_contracts_needed and contract != contract_name:
+                lines.append(f"import {{ {contract} }} from './{contract}';")
 
         # Import types based on current file type:
         # - Enums.ts: no imports needed from other modules
@@ -3966,6 +3975,10 @@ class TypeScriptCodeGenerator:
             ts_type = 'any'  # Interfaces become 'any' in TypeScript
         elif name in self.known_structs or name in self.known_enums:
             ts_type = self.get_qualified_name(name)
+        elif name in self.known_contracts:
+            # Contract type - track for import generation
+            self.contracts_referenced.add(name)
+            ts_type = name
         else:
             ts_type = name  # Other custom types
 
