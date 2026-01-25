@@ -2027,6 +2027,8 @@ class TypeRegistry:
         self.contract_methods: Dict[str, Set[str]] = {}
         self.contract_vars: Dict[str, Set[str]] = {}
         self.known_public_state_vars: Set[str] = set()  # Public state vars that generate getters
+        # Method return types: contract_name -> {method_name -> return_type}
+        self.method_return_types: Dict[str, Dict[str, str]] = {}
 
     def discover_from_source(self, source: str) -> None:
         """Discover types from a single Solidity source string."""
@@ -2087,15 +2089,23 @@ class TypeRegistry:
             for enum in contract.enums:
                 self.enums.add(enum.name)
 
-            # Collect methods
+            # Collect methods and their return types
             methods = set()
+            return_types: Dict[str, str] = {}
             for func in contract.functions:
                 if func.name:
                     methods.add(func.name)
+                    # Store the return type for single-return functions
+                    if func.return_parameters and len(func.return_parameters) == 1:
+                        ret_type = func.return_parameters[0].type_name
+                        if ret_type and ret_type.name:
+                            return_types[func.name] = ret_type.name
             if contract.constructor:
                 methods.add('constructor')
             if methods:
                 self.contract_methods[name] = methods
+            if return_types:
+                self.method_return_types[name] = return_types
 
             # Collect state variables
             state_vars = set()
@@ -2128,6 +2138,11 @@ class TypeRegistry:
             else:
                 self.contract_vars[name] = vars.copy()
         self.known_public_state_vars.update(other.known_public_state_vars)
+        for name, ret_types in other.method_return_types.items():
+            if name in self.method_return_types:
+                self.method_return_types[name].update(ret_types)
+            else:
+                self.method_return_types[name] = ret_types.copy()
 
 
 # =============================================================================
@@ -2162,6 +2177,7 @@ class TypeScriptCodeGenerator:
             self.known_contract_methods = registry.contract_methods
             self.known_contract_vars = registry.contract_vars
             self.known_public_state_vars = registry.known_public_state_vars
+            self.known_method_return_types = registry.method_return_types
         else:
             # Empty sets - types will be discovered as files are parsed
             self.known_structs: Set[str] = set()
@@ -2173,6 +2189,7 @@ class TypeScriptCodeGenerator:
             self.known_contract_methods: Dict[str, Set[str]] = {}
             self.known_contract_vars: Dict[str, Set[str]] = {}
             self.known_public_state_vars: Set[str] = set()
+            self.known_method_return_types: Dict[str, Dict[str, str]] = {}
 
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
@@ -2380,6 +2397,13 @@ class TypeScriptCodeGenerator:
         self.current_local_vars = set()
         # Populate type registry with state variable types
         self.var_types = {var.name: var.type_name for var in contract.state_variables}
+        # Build current method return types from functions in this contract
+        self.current_method_return_types: Dict[str, str] = {}
+        for func in contract.functions:
+            if func.name and func.return_parameters and len(func.return_parameters) == 1:
+                ret_type = func.return_parameters[0].type_name
+                if ret_type and ret_type.name:
+                    self.current_method_return_types[func.name] = ret_type.name
 
         # Determine the extends clause based on base_contracts
         extends = ''
@@ -2400,6 +2424,11 @@ class TypeScriptCodeGenerator:
                 # Add base class state variables to current_state_vars for this. prefix handling
                 if base_class in self.known_contract_vars:
                     self.current_state_vars.update(self.known_contract_vars[base_class])
+                # Add base class method return types for ABI encoding inference
+                if base_class in self.known_method_return_types:
+                    for method, ret_type in self.known_method_return_types[base_class].items():
+                        if method not in self.current_method_return_types:
+                            self.current_method_return_types[method] = ret_type
             else:
                 extends = ' extends Contract'
                 self.current_base_classes = ['Contract']  # Ensure super() is called
@@ -3677,7 +3706,39 @@ class TypeScriptCodeGenerator:
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
                     return "{type: 'uint8'}"
+        # For function calls, look up the return type
+        if isinstance(arg, FunctionCall):
+            method_name = None
+            # Handle this.method() or just method()
+            if isinstance(arg.function, Identifier):
+                method_name = arg.function.name
+            elif isinstance(arg.function, MemberAccess):
+                if isinstance(arg.function.expression, Identifier):
+                    if arg.function.expression.name == 'this':
+                        method_name = arg.function.member
+            # Look up the method return type
+            if method_name and hasattr(self, 'current_method_return_types'):
+                if method_name in self.current_method_return_types:
+                    return_type = self.current_method_return_types[method_name]
+                    return self._solidity_type_to_abi_type(return_type)
         # Default fallback
+        return "{type: 'uint256'}"
+
+    def _solidity_type_to_abi_type(self, type_name: str) -> str:
+        """Convert a Solidity type name to ABI type format."""
+        if type_name == 'string':
+            return "{type: 'string'}"
+        if type_name == 'address':
+            return "{type: 'address'}"
+        if type_name == 'bool':
+            return "{type: 'bool'}"
+        if type_name.startswith('uint') or type_name.startswith('int'):
+            return f"{{type: '{type_name}'}}"
+        if type_name.startswith('bytes'):
+            return f"{{type: '{type_name}'}}"
+        if type_name in self.known_enums:
+            return "{type: 'uint8'}"
+        # Default to uint256 for unknown types
         return "{type: 'uint256'}"
 
     def _convert_abi_value(self, arg: Expression) -> str:
