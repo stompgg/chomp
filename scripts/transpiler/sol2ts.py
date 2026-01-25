@@ -2026,6 +2026,7 @@ class TypeRegistry:
         self.libraries: Set[str] = set()
         self.contract_methods: Dict[str, Set[str]] = {}
         self.contract_vars: Dict[str, Set[str]] = {}
+        self.known_public_state_vars: Set[str] = set()  # Public state vars that generate getters
 
     def discover_from_source(self, source: str) -> None:
         """Discover types from a single Solidity source string."""
@@ -2102,6 +2103,9 @@ class TypeRegistry:
                 state_vars.add(var.name)
                 if var.mutability == 'constant':
                     self.constants.add(var.name)
+                # Track public state variables that generate getter functions
+                if var.visibility == 'public' and var.mutability not in ('constant', 'immutable'):
+                    self.known_public_state_vars.add(var.name)
             if state_vars:
                 self.contract_vars[name] = state_vars
 
@@ -2123,6 +2127,7 @@ class TypeRegistry:
                 self.contract_vars[name].update(vars)
             else:
                 self.contract_vars[name] = vars.copy()
+        self.known_public_state_vars.update(other.known_public_state_vars)
 
 
 # =============================================================================
@@ -2156,6 +2161,7 @@ class TypeScriptCodeGenerator:
             self.known_libraries = registry.libraries
             self.known_contract_methods = registry.contract_methods
             self.known_contract_vars = registry.contract_vars
+            self.known_public_state_vars = registry.known_public_state_vars
         else:
             # Empty sets - types will be discovered as files are parsed
             self.known_structs: Set[str] = set()
@@ -2166,6 +2172,7 @@ class TypeScriptCodeGenerator:
             self.known_libraries: Set[str] = set()
             self.known_contract_methods: Dict[str, Set[str]] = {}
             self.known_contract_vars: Dict[str, Set[str]] = {}
+            self.known_public_state_vars: Set[str] = set()
 
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
@@ -2413,6 +2420,7 @@ class TypeScriptCodeGenerator:
         """Generate state variable declaration."""
         ts_type = self.solidity_type_to_ts(var.type_name)
         modifier = ''
+        property_modifier = ''
 
         if var.mutability == 'constant':
             modifier = 'static readonly '
@@ -2420,8 +2428,11 @@ class TypeScriptCodeGenerator:
             modifier = 'readonly '
         elif var.visibility == 'private':
             modifier = 'private '
+            property_modifier = 'private '
         elif var.visibility == 'internal':
             modifier = 'protected '
+            property_modifier = 'protected '
+        # public variables stay with no modifier (public is default in TypeScript)
 
         if var.type_name.is_mapping:
             # Use Record (plain object) for mappings - allows [] access
@@ -2820,12 +2831,16 @@ class TypeScriptCodeGenerator:
         if len(stmt.declarations) == 1 and stmt.declarations[0] is not None:
             decl = stmt.declarations[0]
             ts_type = self.solidity_type_to_ts(decl.type_name)
-            init = ''
             if stmt.initial_value:
                 init_expr = self.generate_expression(stmt.initial_value)
                 # Add default value for mapping reads (Solidity returns 0/false/etc for non-existent keys)
                 init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr, decl.type_name)
                 init = f' = {init_expr}'
+            else:
+                # In Solidity, uninitialized variables default to zero values
+                # Initialize with default value to match Solidity semantics
+                default_val = self._get_ts_default_value(ts_type, decl.type_name) or self.default_value(ts_type)
+                init = f' = {default_val}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
             # Tuple declaration (including single value with trailing comma like (x,) = ...)
@@ -3256,6 +3271,10 @@ class TypeScriptCodeGenerator:
     def generate_literal(self, lit: Literal) -> str:
         """Generate literal."""
         if lit.kind == 'number':
+            # For large numbers (> 2^53), use string to avoid precision loss
+            # JavaScript numbers lose precision beyond 2^53 (about 16 digits)
+            if len(lit.value.replace('_', '')) > 15:
+                return f'BigInt("{lit.value}")'
             return f'BigInt({lit.value})'
         elif lit.kind == 'hex':
             return f'BigInt("{lit.value}")'
@@ -3505,6 +3524,17 @@ class TypeScriptCodeGenerator:
             name = call.function.name
             if name.startswith('_') and not func.startswith('this.'):
                 return f'this.{func}({args})'
+
+        # Handle public state variable getter calls
+        # In Solidity, public state variables generate getter functions that can be called with ()
+        # In TypeScript, we generate these as properties, so we need to remove the ()
+        if not args and isinstance(call.function, MemberAccess):
+            member_name = call.function.member
+            # Check if this is a known public state variable getter
+            # These are typically called on contract instances with no arguments
+            if member_name in self.known_public_state_vars:
+                # It's a public state variable getter - return property access without ()
+                return func
 
         return f'{func}({args})'
 
@@ -3907,6 +3937,11 @@ class TypeScriptCodeGenerator:
             return '[]'
         elif ts_type.startswith('Map<') or ts_type.startswith('Record<'):
             return '{}'
+        elif ts_type.startswith('Structs.') or ts_type.startswith('Enums.'):
+            # Struct types should be initialized as empty objects
+            return f'{{}} as {ts_type}'
+        elif ts_type in self.known_structs:
+            return f'{{}} as {ts_type}'
         return 'undefined as any'
 
 
@@ -3918,11 +3953,13 @@ class SolidityToTypeScriptTranspiler:
     """Main transpiler class that orchestrates the conversion process."""
 
     def __init__(self, source_dir: str = '.', output_dir: str = './ts-output',
-                 discovery_dirs: Optional[List[str]] = None):
+                 discovery_dirs: Optional[List[str]] = None,
+                 stubbed_contracts: Optional[List[str]] = None):
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)
         self.parsed_files: Dict[str, SourceUnit] = {}
         self.registry = TypeRegistry()
+        self.stubbed_contracts = set(stubbed_contracts or [])
 
         # Run type discovery on specified directories
         if discovery_dirs:
@@ -3952,11 +3989,54 @@ class SolidityToTypeScriptTranspiler:
         # Also discover types from this file if not already done
         self.registry.discover_from_ast(ast)
 
+        # Check if any contract in this file is stubbed
+        contract_name = Path(filepath).stem
+        if contract_name in self.stubbed_contracts:
+            return self._generate_stub(ast, contract_name)
+
         # Generate TypeScript
         generator = TypeScriptCodeGenerator(self.registry if use_registry else None)
         ts_code = generator.generate(ast)
 
         return ts_code
+
+    def _generate_stub(self, ast: SourceUnit, contract_name: str) -> str:
+        """Generate a minimal stub for a contract that doesn't need full transpilation."""
+        lines = [
+            "// Auto-generated stub by sol2ts transpiler",
+            "// This contract is stubbed - only minimal implementation provided",
+            "",
+            "import { Contract, ADDRESS_ZERO } from './runtime';",
+            "",
+        ]
+
+        for definition in ast.definitions:
+            if isinstance(definition, ContractDefinition) and definition.name == contract_name:
+                # Generate minimal class
+                base_class = "Contract"
+                if definition.base_contracts:
+                    # Use the first base contract if available
+                    base_class = definition.base_contracts[0]
+
+                abstract_modifier = "abstract " if definition.is_abstract else ""
+                lines.append(f"export {abstract_modifier}class {definition.name} extends {base_class} {{")
+
+                # Generate empty implementations for public/external functions
+                for member in definition.members:
+                    if isinstance(member, FunctionDefinition):
+                        if member.visibility in ('public', 'external') and member.name:
+                            # Generate empty stub method
+                            params = ', '.join([f'_{p.name}: any' for p in member.parameters])
+                            if member.return_parameters:
+                                return_type = 'any' if len(member.return_parameters) == 1 else f'[{", ".join(["any"] * len(member.return_parameters))}]'
+                                lines.append(f"  {member.name}({params}): {return_type} {{ return undefined as any; }}")
+                            else:
+                                lines.append(f"  {member.name}({params}): void {{}}")
+
+                lines.append("}")
+                break
+
+        return '\n'.join(lines) + '\n'
 
     def transpile_directory(self, pattern: str = '**/*.sol') -> Dict[str, str]:
         """Transpile all Solidity files matching the pattern."""
@@ -3997,16 +4077,19 @@ def main():
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
     parser.add_argument('-d', '--discover', action='append', metavar='DIR',
                         help='Directory to scan for type discovery (can be specified multiple times)')
+    parser.add_argument('--stub', action='append', metavar='CONTRACT',
+                        help='Contract name to generate as minimal stub (can be specified multiple times)')
 
     args = parser.parse_args()
 
     input_path = Path(args.input)
 
-    # Collect discovery directories
+    # Collect discovery directories and stubbed contracts
     discovery_dirs = args.discover or []
+    stubbed_contracts = args.stub or []
 
     if input_path.is_file():
-        transpiler = SolidityToTypeScriptTranspiler(discovery_dirs=discovery_dirs)
+        transpiler = SolidityToTypeScriptTranspiler(discovery_dirs=discovery_dirs, stubbed_contracts=stubbed_contracts)
 
         # If no discovery dirs specified, try to find the project root
         # by looking for common Solidity project directories
@@ -4034,7 +4117,7 @@ def main():
             print(f"Written: {output_path}")
 
     elif input_path.is_dir():
-        transpiler = SolidityToTypeScriptTranspiler(str(input_path), args.output, discovery_dirs)
+        transpiler = SolidityToTypeScriptTranspiler(str(input_path), args.output, discovery_dirs, stubbed_contracts)
         # Also discover from the input directory itself
         transpiler.discover_types(str(input_path))
         results = transpiler.transpile_directory()
