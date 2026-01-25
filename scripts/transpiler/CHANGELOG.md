@@ -183,24 +183,11 @@ Remaining parser limitations:
 ## Version History
 
 ### 2026-01-25 (Current)
-**Dynamic Move Properties Support:**
-- Transpiler and metadata system now generically handle moves with runtime-calculated values
-- No hardcoded logic for specific moves - all patterns detected through code analysis
-
-**Metadata Extractor Improvements (`client/scripts/extract-move-metadata.ts`):**
-- Added `extractFunctionBody()` helper to properly extract function bodies with balanced braces
-- Added `hasDynamicLogic()` to detect conditional returns (if statements, ternary operators)
-- `parseIMoveSetImplementation()` now marks `staminaCost` and `priority` as `"dynamic"` when functions have conditional logic
-- `describeCustomBehavior()` now detects additional patterns:
-  - `conditional-power` - move power varies based on runtime conditions
-  - `dynamic-stamina` - stamina cost calculated at runtime
-  - `consumes-stacks` - moves that consume ability stacks (e.g., Baselight)
-- `hasCustomMoveBehavior()` rewritten to analyze function body content instead of requiring `override` keyword
-
-**Metadata Converter Updates (`client/lib/metadata-converter.ts`):**
-- Added `hasDynamicStamina()` and `hasDynamicPower()` helper functions
-- `isDynamicMove()` now checks for either dynamic power OR stamina
-- `formatMoveForDisplay()` shows "Varies" for both dynamic power and dynamic stamina
+**Dynamic Move Properties - Correct Transpilation Approach:**
+- Moves with dynamic properties (conditional power, stamina, priority) work correctly through proper transpilation
+- No metadata generation or heuristics needed - the transpiled TypeScript naturally behaves like Solidity
+- Functions with conditional returns (if/else, ternary) transpile to equivalent TypeScript conditionals
+- Example: UnboundedStrike's `stamina()` function returns 1 or 2 based on Baselight stacks, and the transpiled code does the same
 
 **Transpiler Fixes (`sol2ts.py`):**
 - Fixed missing `super()` call when contracts extend only interfaces (e.g., `IMoveSet`)
@@ -211,12 +198,13 @@ Remaining parser limitations:
 - Effect slots now auto-initialize when accessed, matching Solidity's storage auto-initialization behavior
 
 **New Tests (`test/battle-simulation.ts`):**
-- 6 comprehensive tests for moves with dynamic properties (using UnboundedStrike as reference implementation):
-  - Stamina cost varies based on ability stacks (2 normal, 1 empowered at 3 stacks)
-  - Power scales with stacks (80 base, 130 empowered)
-  - Empowered attack consumes all stacks
-  - Damage comparison verifies empowered deals ~62% more damage
-  - Baselight level progression test
+- 6 comprehensive tests for moves with dynamic properties (using UnboundedStrike as reference):
+  - `stamina()` returns BASE_STAMINA (2) when Baselight < 3
+  - `stamina()` returns EMPOWERED_STAMINA (1) when Baselight >= 3
+  - `move()` uses BASE_POWER (80) when Baselight < 3
+  - `move()` uses EMPOWERED_POWER (130) and consumes stacks when Baselight >= 3
+  - Damage comparison: empowered deals ~62% more damage than normal
+  - Baselight level increments each round up to max 3
 - Test patterns are reusable for any move with dynamic properties
 
 ### 2026-01-21
