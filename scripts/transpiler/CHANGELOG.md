@@ -174,12 +174,52 @@ Remaining parser limitations:
 - [ ] Concurrent effect modifications
 - [ ] Burn degree stacking mechanics
 - [ ] Multiple status effects on same mon
+- [x] Dynamic move properties (power/stamina that vary at runtime)
+- [x] Ability-based stack mechanics (Baselight pattern)
+- [ ] Other conditional move behaviors (priority changes, accuracy modifiers)
 
 ---
 
 ## Version History
 
-### 2026-01-21 (Current)
+### 2026-01-25 (Current)
+**Dynamic Move Properties Support:**
+- Transpiler and metadata system now generically handle moves with runtime-calculated values
+- No hardcoded logic for specific moves - all patterns detected through code analysis
+
+**Metadata Extractor Improvements (`client/scripts/extract-move-metadata.ts`):**
+- Added `extractFunctionBody()` helper to properly extract function bodies with balanced braces
+- Added `hasDynamicLogic()` to detect conditional returns (if statements, ternary operators)
+- `parseIMoveSetImplementation()` now marks `staminaCost` and `priority` as `"dynamic"` when functions have conditional logic
+- `describeCustomBehavior()` now detects additional patterns:
+  - `conditional-power` - move power varies based on runtime conditions
+  - `dynamic-stamina` - stamina cost calculated at runtime
+  - `consumes-stacks` - moves that consume ability stacks (e.g., Baselight)
+- `hasCustomMoveBehavior()` rewritten to analyze function body content instead of requiring `override` keyword
+
+**Metadata Converter Updates (`client/lib/metadata-converter.ts`):**
+- Added `hasDynamicStamina()` and `hasDynamicPower()` helper functions
+- `isDynamicMove()` now checks for either dynamic power OR stamina
+- `formatMoveForDisplay()` shows "Varies" for both dynamic power and dynamic stamina
+
+**Transpiler Fixes (`sol2ts.py`):**
+- Fixed missing `super()` call when contracts extend only interfaces (e.g., `IMoveSet`)
+- Classes that fall back to `extends Contract` now properly set `current_base_classes` to ensure `super()` is generated
+
+**Battle Simulation Test Infrastructure:**
+- Added auto-vivifying Proxy for effect storage slots - enables abilities that add effects (like Baselight)
+- Effect slots now auto-initialize when accessed, matching Solidity's storage auto-initialization behavior
+
+**New Tests (`test/battle-simulation.ts`):**
+- 6 comprehensive tests for moves with dynamic properties (using UnboundedStrike as reference implementation):
+  - Stamina cost varies based on ability stacks (2 normal, 1 empowered at 3 stacks)
+  - Power scales with stacks (80 base, 130 empowered)
+  - Empowered attack consumes all stacks
+  - Damage comparison verifies empowered deals ~62% more damage
+  - Baselight level progression test
+- Test patterns are reusable for any move with dynamic properties
+
+### 2026-01-21
 **Mapping Semantics (General-purpose transpiler fixes):**
 - Nested mapping writes now auto-initialize parent objects (`mapping[a] ??= {};` before nested writes)
 - Compound assignment on mappings now auto-initializes (`mapping[a] ??= 0n;` before `+=`)
