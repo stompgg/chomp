@@ -795,3 +795,23 @@ export class ContractContainer {
  * Global container instance for convenience
  */
 export const globalContainer = new ContractContainer();
+
+// =============================================================================
+// BATTLE HARNESS RE-EXPORT
+// =============================================================================
+
+export {
+  BattleHarness,
+  createBattleHarness,
+  type MonConfig,
+  type TeamConfig,
+  type AddressConfig,
+  type BattleConfig,
+  type MoveDecision,
+  type TurnInput,
+  type MonState,
+  type BattleState,
+  type ModuleLoader,
+  SWITCH_MOVE_INDEX,
+  NO_OP_MOVE_INDEX,
+} from './battle-harness';

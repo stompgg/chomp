@@ -55,6 +55,42 @@ export function expect<T>(actual: T) {
     toBeFalsy() {
       assert.ok(!actual);
     },
+    toBeDefined() {
+      assert.ok(actual !== undefined, `Expected value to be defined, got undefined`);
+    },
+    toBeUndefined() {
+      assert.ok(actual === undefined, `Expected undefined, got ${actual}`);
+    },
+    toContain(expected: string) {
+      assert.ok(
+        String(actual).includes(expected),
+        `Expected "${actual}" to contain "${expected}"`
+      );
+    },
+    toThrow(expectedMessage?: string) {
+      if (typeof actual !== 'function') {
+        throw new Error('toThrow() requires a function');
+      }
+      let threw = false;
+      let error: Error | undefined;
+      try {
+        (actual as () => void)();
+      } catch (e) {
+        threw = true;
+        error = e as Error;
+      }
+      assert.ok(threw, 'Expected function to throw');
+      if (expectedMessage && error) {
+        assert.ok(
+          error.message.includes(expectedMessage),
+          `Expected error message to contain "${expectedMessage}", got "${error.message}"`
+        );
+      }
+    },
+    toHaveLength(expected: number) {
+      const length = (actual as any).length;
+      assert.strictEqual(length, expected, `Expected length ${expected}, got ${length}`);
+    },
   };
 }
 
