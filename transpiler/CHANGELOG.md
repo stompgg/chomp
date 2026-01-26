@@ -1,78 +1,425 @@
-# Solidity to TypeScript Transpiler - Changelog
+# Solidity to TypeScript Transpiler
 
-## Current Version
+A transpiler that converts Solidity contracts to TypeScript for local battle simulation in the Chomp game engine.
 
-### What the Transpiler Supports
+## Table of Contents
 
-#### Core Language Features
-- **Contracts, Libraries, Interfaces**: Full class generation with proper inheritance (`extends`)
-- **State Variables**: Instance and static (`readonly`) properties with correct visibility
-- **Functions**: Methods with parameters, return types, visibility modifiers (`public`, `private`, `protected`)
-- **Constructors**: Including base constructor argument passing via `super(...)`
-- **Enums**: Converted to TypeScript enums with numeric values
-- **Structs**: Converted to TypeScript interfaces
-- **Constants**: File-level and contract-level constants with proper prefixes
+1. [Architecture Overview](#architecture-overview)
+2. [How the Transpiler Works](#how-the-transpiler-works)
+3. [Adding New Solidity Files](#adding-new-solidity-files)
+4. [Angular Integration](#angular-integration)
+5. [Contract Address System](#contract-address-system)
+6. [Supported Features](#supported-features)
+7. [Known Limitations](#known-limitations)
+8. [Future Work](#future-work)
+9. [Test Coverage](#test-coverage)
 
-#### Type System
-- **Integer Types**: `uint256`, `int32`, etc. → `bigint` with proper wrapping
-- **Address Types**: → `string` (hex addresses)
-- **Bytes/Bytes32**: → `string` (hex strings)
-- **Booleans**: Direct mapping
-- **Strings**: Direct mapping
-- **Arrays**: Fixed and dynamic arrays with proper indexing (`Number()` conversion)
-- **Mappings**: → `Record<string, T>` with proper key handling
+---
 
-#### Expressions & Statements
-- **Binary/Unary Operations**: Arithmetic, bitwise, logical operators
-- **Ternary Operator**: Conditional expressions
-- **Function Calls**: Regular calls, type casts, struct constructors with named arguments
-- **Member Access**: Property and method access with proper `this.` prefixes
-- **Index Access**: Array and mapping indexing
-- **Tuple Destructuring**: `const [a, b] = func()` pattern
-- **Control Flow**: `if/else`, `for`, `while`, `do-while`, `break`, `continue`
-- **Return Statements**: Single and tuple returns
+## Architecture Overview
 
-#### Solidity-Specific Features
-- **Enum Type Casts**: `Type(value)` → `Number(value) as Enums.Type`
-- **Struct Literals**: `ATTACK_PARAMS({NAME: "x", ...})` → `{ NAME: "x", ... } as Structs.ATTACK_PARAMS`
-- **Address Literals**: `address(0)` → `"0x0000...0000"`
-- **Bytes32 Literals**: `bytes32(0)` → 64-char hex string
-- **Type Max/Min**: `type(uint256).max` → computed BigInt value
-- **ABI Encoding**: `abi.encode`, `abi.encodePacked`, `abi.decode` via viem
-- **Hash Functions**: `keccak256`, `sha256` support
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Transpilation Pipeline                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  src/*.sol ──► sol2ts.py ──► ts-output/*.ts ──► Angular Battle Service │
+│                                                                         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────────────┐  │
+│  │ Solidity │───►│  Lexer   │───►│  Parser  │───►│ Code Generator   │  │
+│  │  Source  │    │ (Tokens) │    │  (AST)   │    │ (TypeScript)     │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────────────┘  │
+│                                                                         │
+│  Type Discovery: Scans src/ to build enum, struct, constant registries │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 
-#### Import & Module System
-- **Auto-Discovery**: Scans `src/` directory to discover types before transpilation
-- **Smart Imports**: Generates imports for `Structs`, `Enums`, `Constants`, base classes, libraries
-- **Library Detection**: Libraries generate static methods and proper imports
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Runtime Architecture                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐   │
+│  │   Engine.ts     │────►│   Effects       │────►│   Moves         │   │
+│  │  (Battle Core)  │     │ (StatBoosts,    │     │ (StandardAttack │   │
+│  │                 │     │  StatusEffects) │     │  + custom)      │   │
+│  └────────┬────────┘     └─────────────────┘     └─────────────────┘   │
+│           │                                                             │
+│           ▼                                                             │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐   │
+│  │  runtime.ts     │     │   Structs.ts    │     │    Enums.ts     │   │
+│  │ (Contract base, │     │ (Mon, Battle,   │     │ (Type, MoveClass│   │
+│  │  Storage, Utils)│     │  MonStats, etc) │     │  EffectStep)    │   │
+│  └─────────────────┘     └─────────────────┘     └─────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-#### Code Quality
-- **Qualified Names**: Automatic `Structs.`, `Enums.`, `Constants.` prefixes where needed
-- **Class-Local Priority**: Class constants use `ClassName.CONST` over `Constants.CONST`
-- **Internal Method Calls**: Functions starting with `_` get `this.` prefix automatically
-- **Optional Base Parameters**: Base class constructors have optional params for inheritance
+### Key Design Principles
 
-### Test Coverage
+1. **Correct Transpilation Over Metadata**: The transpiled TypeScript behaves exactly like the Solidity source. Functions with conditional returns transpile to equivalent TypeScript conditionals - no metadata or heuristics needed.
 
-#### Unit Tests (`test/run.ts`)
-- Battle key computation
-- Turn order by speed
-- Multi-turn battles
-- Storage operations
+2. **BigInt for All Integers**: Solidity's 256-bit integers map to JavaScript BigInt to maintain precision.
 
-#### E2E Tests (`test/e2e.ts`)
-- **Status Effects**: ZapStatus (skip turn), BurnStatus (damage over time)
-- **Forced Switches**: User switch (HitAndDip), opponent switch (PistolSquat)
-- **Abilities**: UpOnly (attack boost on damage), ability activation on switch-in
-- **Complex Scenarios**: Effect interactions, multi-turn battles with switches
+3. **Object References for Contracts**: In Solidity, contracts are identified by addresses. In TypeScript, we use object references directly for most operations, with `_contractAddress` available when actual addresses are needed.
 
-#### Engine E2E Tests (`test/engine-e2e.ts`)
-- **Core Engine**: Instantiation, method availability, battle key computation
-- **Matchmaker Authorization**: Adding/removing matchmakers
-- **Battle State**: Initialization, team setup, mon state management
-- **Damage System**: dealDamage, HP reduction, KO detection
-- **Storage**: setGlobalKV/getGlobalKV roundtrip, updateMonState
-- **Event Stream**: emit/retrieve, filtering, contract integration
+4. **Storage Simulation**: The `Storage` class simulates Solidity's storage model with slot-based access.
+
+---
+
+## How the Transpiler Works
+
+### Phase 1: Type Discovery
+
+Before transpiling any file, the transpiler scans the source directory to discover:
+
+- **Enums**: Collected into `Enums.ts` with numeric values
+- **Structs**: Collected into `Structs.ts` as TypeScript interfaces
+- **Constants**: Collected into `Constants.ts`
+- **Contract/Library Names**: Used for import resolution
+
+```bash
+python3 transpiler/sol2ts.py src/moves/MyMove.sol -o transpiler/ts-output -d src
+#                                                                         ^^^^^^
+#                                                   Discovery directory for types
+```
+
+### Phase 2: Lexing
+
+The lexer tokenizes Solidity source into tokens:
+
+```
+contract Foo { ... }  →  [CONTRACT, IDENTIFIER("Foo"), LBRACE, ..., RBRACE]
+```
+
+### Phase 3: Parsing
+
+The parser builds an AST (Abstract Syntax Tree):
+
+```
+ContractDefinition
+├── name: "Foo"
+├── base_contracts: ["Bar", "IBaz"]
+├── state_variables: [...]
+├── functions: [...]
+└── ...
+```
+
+### Phase 4: Code Generation
+
+The generator traverses the AST and emits TypeScript:
+
+```typescript
+export class Foo extends Bar {
+  // state variables become properties
+  readonly ENGINE: any;
+
+  // functions become methods
+  move(battleKey: string, ...): bigint {
+    // Solidity logic preserved exactly
+  }
+}
+```
+
+### Phase 5: Import Resolution
+
+Based on discovered types, generates appropriate imports:
+
+```typescript
+import { Contract, Storage, ADDRESS_ZERO, addressToUint } from './runtime';
+import { BasicEffect } from './BasicEffect';
+import * as Structs from './Structs';
+import * as Enums from './Enums';
+import * as Constants from './Constants';
+```
+
+---
+
+## Adding New Solidity Files
+
+### Step 1: Write the Solidity Contract
+
+```solidity
+// src/moves/mymove/CoolMove.sol
+pragma solidity ^0.8.0;
+
+import {IMoveSet} from "../../interfaces/IMoveSet.sol";
+import {IEngine} from "../../interfaces/IEngine.sol";
+
+contract CoolMove is IMoveSet {
+    IEngine public immutable ENGINE;
+
+    constructor(IEngine _ENGINE) {
+        ENGINE = _ENGINE;
+    }
+
+    function move(bytes32 battleKey, ...) external returns (uint256 damage) {
+        // Your move logic
+    }
+}
+```
+
+### Step 2: Transpile
+
+```bash
+cd /path/to/chomp
+
+# Transpile a single file
+python3 transpiler/sol2ts.py src/moves/mymove/CoolMove.sol \
+    -o transpiler/ts-output \
+    -d src
+
+# Or transpile an entire directory
+python3 transpiler/sol2ts.py src/moves/mymove/ \
+    -o transpiler/ts-output \
+    -d src
+```
+
+### Step 3: Review the Output
+
+Check `transpiler/ts-output/CoolMove.ts` for:
+
+1. **Correct imports**: All dependencies should be imported
+2. **Proper inheritance**: `extends` the right base class
+3. **BigInt usage**: All numbers should be `bigint`
+4. **Logic preservation**: Conditionals, loops, returns match the Solidity
+
+### Step 4: Handle Dependencies
+
+If your move uses other contracts (e.g., StatBoosts), you'll need to inject them:
+
+```typescript
+// In your test or Angular service
+const statBoosts = new StatBoosts(engine);
+const coolMove = new CoolMove(engine);
+(coolMove as any).STAT_BOOSTS = statBoosts; // Inject dependency
+```
+
+### Common Transpilation Patterns
+
+| Solidity | TypeScript |
+|----------|------------|
+| `uint256 x = 5;` | `let x: bigint = BigInt(5);` |
+| `mapping(address => uint)` | `Record<string, bigint>` |
+| `IEffect(address(this))` | `this` (object reference) |
+| `address(this)` | `this._contractAddress` |
+| `keccak256(abi.encode(...))` | `keccak256(encodeAbiParameters(...))` |
+| `Type.EnumValue` | `Enums.Type.EnumValue` |
+| `StructName({...})` | `{ ... } as Structs.StructName` |
+
+---
+
+## Angular Integration
+
+### Setting Up the Battle Service
+
+The `BattleService` in Angular dynamically imports transpiled modules and sets up the simulation:
+
+```typescript
+// client/lib/battle.service.ts
+
+@Injectable({ providedIn: 'root' })
+export class BattleService {
+  private localEngine: any;
+  private localTypeCalculator: any;
+
+  async initializeLocalSimulation(): Promise<void> {
+    // Dynamic imports from transpiler output
+    const [
+      { Engine },
+      { TypeCalculator },
+      { StandardAttack },
+      Structs,
+      Enums,
+      Constants,
+    ] = await Promise.all([
+      import('../../transpiler/ts-output/Engine'),
+      import('../../transpiler/ts-output/TypeCalculator'),
+      import('../../transpiler/ts-output/StandardAttack'),
+      import('../../transpiler/ts-output/Structs'),
+      import('../../transpiler/ts-output/Enums'),
+      import('../../transpiler/ts-output/Constants'),
+    ]);
+
+    // Create engine instance
+    this.localEngine = new Engine();
+    this.localTypeCalculator = new TypeCalculator();
+
+    // Initialize battle state storage
+    (this.localEngine as any).battleConfig = {};
+    (this.localEngine as any).battleData = {};
+  }
+}
+```
+
+### Configuring Contract Addresses
+
+If you need specific addresses for contracts (e.g., for on-chain verification):
+
+```typescript
+import { contractAddresses } from '../../transpiler/ts-output/runtime';
+
+// Before creating contract instances
+contractAddresses.setAddresses({
+  'StatBoosts': '0x1234567890abcdef...',
+  'BurnStatus': '0xfedcba0987654321...',
+  'Engine': '0xabcdef1234567890...',
+});
+
+// Now created instances will use these addresses
+const engine = new Engine(); // engine._contractAddress === '0xabcdef...'
+```
+
+### Running a Local Battle Simulation
+
+```typescript
+async simulateBattle(team1: Mon[], team2: Mon[]): Promise<BattleResult> {
+  await this.initializeLocalSimulation();
+
+  // Set up battle configuration
+  const battleKey = this.localEngine.computeBattleKey(
+    player1Address,
+    player2Address
+  );
+
+  // Initialize teams
+  this.localEngine.initializeBattle(battleKey, {
+    p0Team: team1,
+    p1Team: team2,
+    // ... other config
+  });
+
+  // Execute moves
+  const damage = move.move(
+    battleKey,
+    attackerIndex,
+    defenderIndex,
+    // ... other params
+  );
+
+  return { damage, /* ... */ };
+}
+```
+
+### Handling Effects and Abilities
+
+Effects need to be registered and can be looked up by address:
+
+```typescript
+import { registry } from '../../transpiler/ts-output/runtime';
+
+// Register effects
+const burnStatus = new BurnStatus(engine);
+const statBoosts = new StatBoosts(engine);
+
+registry.registerEffect(burnStatus._contractAddress, burnStatus);
+registry.registerEffect(statBoosts._contractAddress, statBoosts);
+
+// Later, look up by address
+const effect = registry.getEffect(someAddress);
+```
+
+---
+
+## Contract Address System
+
+The transpiler includes a contract address system for cases where actual addresses are needed:
+
+### How It Works
+
+1. **Every contract has `_contractAddress`**: Auto-generated based on class name or configured via registry
+
+2. **`address(this)` transpiles to `this._contractAddress`**: Used for encoding, hashing, storage keys
+
+3. **`IEffect(address(this))` transpiles to `this`**: Used when passing object references
+
+4. **`addressToUint(addr)` converts addresses to BigInt**: For `uint160(address(x))` patterns
+
+### Configuration Options
+
+```typescript
+import { contractAddresses } from './runtime';
+
+// Option 1: Set address for a class name (all instances share this address)
+contractAddresses.setAddress('MyContract', '0x1234...');
+
+// Option 2: Set multiple at once
+contractAddresses.setAddresses({
+  'Engine': '0xaaaa...',
+  'StatBoosts': '0xbbbb...',
+});
+
+// Option 3: Pass address to constructor
+const myContract = new MyContract('0xcccc...');
+
+// Option 4: Use auto-generated deterministic address (default)
+const myContract = new MyContract(); // Address derived from class name
+```
+
+---
+
+## Supported Features
+
+### Core Language
+- ✅ Contracts, Libraries, Interfaces (with inheritance)
+- ✅ State variables (instance and static)
+- ✅ Functions with visibility modifiers
+- ✅ Constructors with base class argument passing
+- ✅ Enums and Structs
+- ✅ Events (via EventStream)
+
+### Types
+- ✅ Integer types (`uint8` - `uint256`, `int8` - `int256`) → `bigint`
+- ✅ `address` → `string`
+- ✅ `bytes`, `bytes32` → `string` (hex)
+- ✅ `bool`, `string` → direct mapping
+- ✅ Arrays (fixed and dynamic)
+- ✅ Mappings → `Record<string, T>`
+
+### Expressions
+- ✅ All arithmetic, bitwise, logical operators
+- ✅ Ternary operator
+- ✅ Type casts with proper bit masking
+- ✅ Struct literals with named arguments
+- ✅ Array/mapping indexing
+- ✅ Tuple destructuring
+
+### Solidity-Specific
+- ✅ `abi.encode`, `abi.encodePacked`, `abi.decode` (via viem)
+- ✅ `keccak256`, `sha256`
+- ✅ `type(uint256).max`, `type(int256).min`
+- ✅ `msg.sender`, `block.timestamp`, `tx.origin`
+
+---
+
+## Known Limitations
+
+### Parser Limitations
+
+| Issue | Workaround |
+|-------|------------|
+| Function pointers | Not supported - restructure code |
+| Complex Yul/assembly | Skipped with warnings - implement in runtime |
+| Modifiers | Stripped - inline logic manually if needed |
+| try/catch | Skipped - error handling not simulated |
+
+### Runtime Differences
+
+| Issue | Description |
+|-------|-------------|
+| Integer division | BigInt truncates toward zero (same as Solidity) |
+| Storage vs memory | All TS objects are references - aliasing may differ |
+| Array.push() return | Solidity returns new length, TS doesn't |
+| delete array[i] | Solidity zeros element, TS removes it |
+
+### Dependency Injection
+
+Contracts that reference other contracts need manual injection:
+
+```typescript
+// Solidity: STAT_BOOSTS is set via constructor or immutable
+// TypeScript: May need manual assignment
+(myMove as any).STAT_BOOSTS = statBoostsInstance;
+```
 
 ---
 
@@ -80,214 +427,135 @@
 
 ### High Priority
 
-1. **Parser Improvements**
-   - Support function pointers and callbacks
-   - Parse complex Yul/assembly blocks (currently skipped with warnings)
+1. **Cross-Contract Dependency Detection**
+   - Auto-detect when a contract uses another contract (e.g., StatBoosts)
+   - Generate constructor parameters or injection helpers
 
-2. **Missing Base Classes**
-   - Create proper `IAbility` interface implementation
+2. **Modifier Support**
+   - Parse and inline modifier logic into functions
+   - Currently modifiers are stripped
 
-3. **Engine Integration** ✅ (Complete)
-   - ✅ Engine.ts transpiled and working with test suite
-   - ✅ MappingAllocator.ts transpiled with proper defaults
-   - ✅ StatBoosts.ts transpiled for stat modification
-   - ✅ TypeCalculator.ts transpiled for type effectiveness
+3. **Better Type Inference for abi.encode**
+   - Detect return types of function calls used as arguments
+   - Currently assumes uint256 for non-literal arguments
 
 ### Medium Priority
 
-4. **Advanced Features**
-   - Modifier support (currently stripped, logic not inlined)
-   - ✅ Event emission (now uses EventStream instead of console.log)
-   - Error types with custom error classes
-   - Receive/fallback functions
+4. **Watch Mode**
+   - Auto-re-transpile when Solidity files change
+   - Integration with build pipelines
 
-5. **Type Improvements**
-   - Better mapping key type inference
-   - Fixed-point math support (`ufixed`, `fixed`)
-   - User-defined value types
-   - Function type variables
+5. **Source Maps**
+   - Map TypeScript lines back to Solidity for debugging
 
-6. **Code Generation**
-   - Inline modifier logic into functions
-   - Generate proper TypeScript interfaces from Solidity interfaces
-   - Support function overloading disambiguation
+6. **Function Overloading**
+   - Handle multiple functions with same name but different signatures
 
 ### Low Priority
 
-7. **Tooling**
-   - Watch mode for automatic re-transpilation
-   - Source maps for debugging
-   - Integration with existing TypeScript build pipelines
-   - VSCode extension for inline preview
+7. **VSCode Extension**
+   - Inline preview of transpiled output
+   - Error highlighting for unsupported patterns
+
+8. **Fixed-Point Math**
+   - Support `ufixed` and `fixed` types
 
 ---
 
-## Known Issues & Bugs to Investigate
+## Test Coverage
 
-### Parser Limitations
+### Unit Tests (`test/run.ts`)
 
-All previously known parser failures have been resolved. Files now transpiling correctly:
-- ✅ `Ownable.sol` - Fixed Yul `if` statement handling
-- ✅ `Strings.sol` - Fixed `unchecked` block parsing
-- ✅ `DefaultMonRegistry.sol` - Fixed qualified type names and storage pointers
-- ✅ `DefaultValidator.sol` - Fixed array literal parsing
-- ✅ `StatBoosts.sol` - Fixed tuple patterns with leading commas
-- ✅ `GachaRegistry.sol` - Fixed `using` directives with qualified names
-- ✅ `BattleHistory.sol` - Fixed `using` directives with qualified names
+```bash
+cd transpiler && npm test
+```
 
-Remaining parser limitations:
-| Issue | Description |
-|-------|-------------|
-| Function pointers | Callback/function pointer syntax not yet supported |
-| Complex Yul blocks | Some assembly patterns still skipped with warnings |
+- Battle key computation
+- Turn order by speed
+- Multi-turn battles until KO
+- Storage read/write operations
 
-### Potential Runtime Issues
+### E2E Tests (`test/e2e.ts`)
 
-1. **`this` in Super Arguments**
-   - `super(this._msg.sender, ...)` may fail if `_msg` isn't initialized before `super()`
-   - Workaround: Ensure base `Contract` class initializes `_msg` synchronously
+- **Status Effects**: ZapStatus (skip turn), BurnStatus (DoT)
+- **Forced Switches**: HitAndDip (user), PistolSquat (opponent)
+- **Abilities**: UpOnly (attack boost on damage)
+- **Complex Interactions**: Multi-turn battles with effect stacking
 
-2. **Integer Division Semantics**
-   - BigInt division truncates toward zero (same as Solidity)
-   - Burn damage `hp / 16` becomes 0 when `hp < 16`, preventing KO from burn alone
+### Engine Tests (`test/engine-e2e.ts`)
 
-3. **Mapping Key Types**
-   - Non-string mapping keys need proper serialization
-   - `bytes32` keys work but complex struct keys may not
+- Core engine instantiation and methods
+- Matchmaker authorization
+- Battle state management
+- Damage dealing and KO detection
+- Global KV storage operations
+- Event emission and retrieval
 
-4. **Array Length Mutation**
-   - Solidity `array.push()` returns new length, TypeScript doesn't
-   - `delete array[i]` semantics differ (Solidity zeros, TS removes)
+### Battle Simulation Tests (`test/battle-simulation.ts`)
 
-5. **Storage vs Memory**
-   - All TypeScript objects are reference types
-   - Solidity `memory` copy semantics not enforced
-   - Could cause unexpected aliasing bugs
-
-6. **`abi.encode` with String Parameters**
-   - `abi.encode(uint256, uint256, name())` where `name()` returns string
-   - Transpiler incorrectly uses `{type: 'uint256'}` for all params
-   - Should detect string return type and use `{type: 'string'}`
-   - Affects: SnackBreak, other moves with KV storage using name()
-
-7. **Missing Dependency Injection**
-   - Moves requiring external dependencies (e.g., StatBoosts) need manual injection
-   - TripleThink, Deadlift need `STAT_BOOSTS` parameter
-   - Transpiler doesn't auto-detect these cross-contract dependencies
+- Dynamic move properties (UnboundedStrike with Baselight stacks)
+- Conditional power calculations (DeepFreeze with Frostbite)
+- Self-damage mechanics (RockPull)
+- RNG-based power (Gachachacha)
 
 ### Tests to Add
 
 - [ ] Negative number handling (signed integers)
 - [ ] Overflow behavior verification
 - [ ] Complex nested struct construction
-- [ ] Multi-level inheritance chains (3+ levels)
+- [ ] Multi-level inheritance (3+ levels)
 - [ ] Effect removal during iteration
 - [ ] Concurrent effect modifications
-- [ ] Burn degree stacking mechanics
 - [ ] Multiple status effects on same mon
-- [x] Dynamic move properties (power/stamina that vary at runtime)
-- [x] Ability-based stack mechanics (Baselight pattern)
-- [ ] Other conditional move behaviors (priority changes, accuracy modifiers)
+- [ ] Priority modification mechanics
+- [ ] Accuracy modifier mechanics
 
 ---
 
-## Version History
+## Quick Reference
 
-### 2026-01-25 (Current)
-**Dynamic Move Properties - Correct Transpilation Approach:**
-- Moves with dynamic properties (conditional power, stamina, priority) work correctly through proper transpilation
-- No metadata generation or heuristics needed - the transpiled TypeScript naturally behaves like Solidity
-- Functions with conditional returns (if/else, ternary) transpile to equivalent TypeScript conditionals
-- Example: UnboundedStrike's `stamina()` function returns 1 or 2 based on Baselight stacks, and the transpiled code does the same
+### CLI Usage
 
-**Transpiler Fixes (`sol2ts.py`):**
-- Fixed missing `super()` call when contracts extend only interfaces (e.g., `IMoveSet`)
-- Classes that fall back to `extends Contract` now properly set `current_base_classes` to ensure `super()` is generated
+```bash
+# Single file
+python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src
 
-**Battle Simulation Test Infrastructure:**
-- Added auto-vivifying Proxy for effect storage slots - enables abilities that add effects (like Baselight)
-- Effect slots now auto-initialize when accessed, matching Solidity's storage auto-initialization behavior
+# Directory
+python3 transpiler/sol2ts.py src/moves/ -o transpiler/ts-output -d src
 
-**New Tests (`test/battle-simulation.ts`):**
-- 6 comprehensive tests for moves with dynamic properties (using UnboundedStrike as reference):
-  - `stamina()` returns BASE_STAMINA (2) when Baselight < 3
-  - `stamina()` returns EMPOWERED_STAMINA (1) when Baselight >= 3
-  - `move()` uses BASE_POWER (80) when Baselight < 3
-  - `move()` uses EMPOWERED_POWER (130) and consumes stacks when Baselight >= 3
-  - Damage comparison: empowered deals ~62% more damage than normal
-  - Baselight level increments each round up to max 3
-- Test patterns are reusable for any move with dynamic properties
-- **Non-standard move tests added:**
-  - DeepFreeze: Conditional power based on opponent's Frostbite status
-  - RockPull: Self-damage when opponent doesn't switch, dynamic priority
-  - Gachachacha: RNG-based power (0-200) with special outcomes
+# Print to stdout (for debugging)
+python3 transpiler/sol2ts.py src/path/to/File.sol --stdout -d src
 
-**Transpiled Non-Standard Moves (44 total):**
-- 23 IMoveSet implementations with custom logic (state tracking, effect detection, RNG-based)
-- 21 StandardAttack extensions (7 with custom move() logic, 14 standard parameters only)
+# Generate stub for a contract
+python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src --stub ContractName
+```
 
-### 2026-01-21
-**Mapping Semantics (General-purpose transpiler fixes):**
-- Nested mapping writes now auto-initialize parent objects (`mapping[a] ??= {};` before nested writes)
-- Compound assignment on mappings now auto-initializes (`mapping[a] ??= 0n;` before `+=`)
-- Mapping reads add default values for variable declarations (`?? defaultValue`)
-- Fixed `bytes32` default to proper zero hex string (`0x0000...0000` not `""`)
-- Fixed `address` default to proper zero address (`0x0000...0000` not `""`)
+### Running Tests
 
-**Type Casting Fixes:**
-- uint type casts now properly mask bits (e.g., `uint192(x)` masks to 192 bits)
-- Prevents overflow issues when casting larger values to smaller uint types
+```bash
+cd transpiler
+npm install
+npm test
+```
 
-**Engine Integration Tests:**
-- Added comprehensive `engine-e2e.ts` test suite (22 tests)
-- Tests cover: battle key computation, matchmaker authorization, battle initialization
-- Tests cover: mon state management, damage dealing, KO detection, global KV storage
-- Tests cover: EventStream emit/retrieve, filtering, contract integration
-- Created `TestableEngine` class for proper test initialization
+### File Structure
 
-**Runtime Library Additions:**
-- Added `mappingGet()` helper for mapping reads with default values
-- Added `mappingGetBigInt()` for common bigint mapping pattern
-- Added `mappingEnsure()` for nested mapping initialization
-
-**Event Stream System:**
-- Added `EventStream` class for capturing emitted events (replaces console.log)
-- Events stored as `EventLog` objects with name, args, timestamp, emitter
-- Supports filtering: `getByName()`, `filter()`, `getLast()`, `has()`
-- Global `globalEventStream` instance shared by all contracts by default
-- Contracts can use custom streams via `setEventStream()` / `getEventStream()`
-- Enables testing event emissions without console output
-
-**Parser Fixes:**
-- Added `UNCHECKED`, `TRY`, `CATCH` tokens and keyword handling
-- Handle qualified library names in `using` directives (e.g., `EnumerableSetLib.Uint256Set`)
-- Parse `unchecked` blocks as regular blocks (overflow checks not simulated)
-- Skip `try/catch` statements (return empty block placeholder)
-- Added `ArrayLiteral` AST node for `[val1, val2, ...]` syntax
-- Fixed tuple declaration detection for leading commas (skipped elements like `(, , uint8 x)`)
-- Handle qualified type names in variable declarations (e.g., `Library.StructName`)
-
-**Yul Transpiler Fixes:**
-- Added `_split_yul_args` helper for nested parentheses in function arguments
-- Handle `caller()`, `timestamp()`, `origin()` built-in functions
-- Added bounds checking for binary operation parsing
-
-**Base Classes:**
-- Successfully transpiling `BasicEffect.sol` - base class for all effects
-- Successfully transpiling `StatusEffect.sol` - base class for status effects
-- Successfully transpiling `BurnStatus.sol`, `ZapStatus.sol` and other status implementations
-
-### 2026-01-20
-- Added comprehensive e2e tests for status effects, forced switches, abilities
-- Fixed base constructor argument passing in inheritance
-- Fixed struct literals with named arguments
-- Fixed class-local static constant references
-- Added `this.` prefix heuristic for internal methods (`_` prefix)
-- Implemented `TypeRegistry` for auto-discovery of types from source files
-- Added `get_qualified_name()` helper for consistent type prefixing
-- Removed unused `known_events` tracking
-
-### Previous
-- Initial transpiler with core Solidity to TypeScript conversion
-- Basic lexer, parser, and code generator
-- Runtime library with Storage, Contract base class, and utilities
+```
+transpiler/
+├── sol2ts.py           # Main transpiler script
+├── runtime/
+│   └── index.ts        # Runtime library source (copy to ts-output as needed)
+├── ts-output/          # Generated TypeScript files
+│   ├── runtime.ts      # Runtime library
+│   ├── Structs.ts      # All struct definitions
+│   ├── Enums.ts        # All enum definitions
+│   ├── Constants.ts    # All constants
+│   ├── Engine.ts       # Battle engine
+│   └── *.ts            # Transpiled contracts
+├── test/
+│   ├── run.ts          # Test runner
+│   ├── e2e.ts          # End-to-end tests
+│   ├── engine-e2e.ts   # Engine-specific tests
+│   └── battle-simulation.ts  # Battle scenario tests
+└── package.json
+```
