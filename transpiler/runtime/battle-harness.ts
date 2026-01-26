@@ -107,6 +107,11 @@ export interface BattleState {
  */
 export type ModuleLoader = (name: string) => Promise<any>;
 
+/**
+ * Container setup function type (from transpiled factories.ts)
+ */
+export type ContainerSetupFn = (container: ContractContainer) => void;
+
 // NOTE: Special move indices (SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX) are defined
 // in the transpiled Constants.ts from src/Constants.sol. Import them from there
 // rather than hardcoding here. The harness just passes through whatever moveIndex
@@ -124,17 +129,19 @@ export type ModuleLoader = (name: string) => Promise<any>;
  *
  * @example
  * ```typescript
+ * // Import from transpiled output
+ * import { setupContainer } from './ts-output/factories';
+ *
  * const harness = new BattleHarness();
+ * harness.setModuleLoader(name => import(`./ts-output/${name}`));
+ * harness.setContainerSetup(setupContainer);  // Uses transpiled dependency info
+ * await harness.loadCoreModules();
  *
- * // Load modules from transpiled output
- * await harness.loadModules(async (name) => import(`./ts-output/${name}`));
- *
- * // Configure a battle
+ * // Configure and start a battle
  * const battleKey = await harness.startBattle({
  *   player0: '0x1234...',
  *   player1: '0x5678...',
  *   teams: [team1Config, team2Config],
- *   addresses: { 'Engine': '0xaaaa...', ... }
  * });
  *
  * // Execute turns (delegates to Engine)
@@ -149,6 +156,7 @@ export type ModuleLoader = (name: string) => Promise<any>;
 export class BattleHarness {
   private container: ContractContainer;
   private moduleLoader?: ModuleLoader;
+  private containerSetup?: ContainerSetupFn;
   private loadedModules: Map<string, any> = new Map();
 
   // Core singleton instances
@@ -169,6 +177,14 @@ export class BattleHarness {
   }
 
   /**
+   * Set the container setup function (from transpiled factories.ts)
+   * This registers all contract factories with proper dependency info
+   */
+  setContainerSetup(setup: ContainerSetupFn): void {
+    this.containerSetup = setup;
+  }
+
+  /**
    * Load and register core modules
    */
   async loadCoreModules(): Promise<void> {
@@ -176,7 +192,12 @@ export class BattleHarness {
       throw new Error('Module loader not set. Call setModuleLoader() first.');
     }
 
-    // Load core modules
+    // If setupContainer was provided, use it to register all factories
+    if (this.containerSetup) {
+      this.containerSetup(this.container);
+    }
+
+    // Load core module files
     const [
       engineModule,
       typeCalculatorModule,
@@ -189,24 +210,28 @@ export class BattleHarness {
       this.loadModule('DefaultRandomnessOracle'),
     ]);
 
-    // Create core singletons
+    // Create core singletons (these typically have no dependencies)
     this.engine = this.createInstance(engineModule);
     this.typeCalculator = this.createInstance(typeCalculatorModule);
     this.rngOracle = this.createInstance(rngOracleModule);
 
-    // Validator needs engine
-    const ValidatorClass = this.getExportedClass(validatorModule);
-    this.validator = new ValidatorClass(this.engine);
-
-    // Register with container
+    // Register core singletons first (dependencies will resolve to these)
     this.container.registerSingleton('Engine', this.engine);
     this.container.registerSingleton('IEngine', this.engine);
     this.container.registerSingleton('TypeCalculator', this.typeCalculator);
     this.container.registerSingleton('ITypeCalculator', this.typeCalculator);
-    this.container.registerSingleton('Validator', this.validator);
-    this.container.registerSingleton('IValidator', this.validator);
     this.container.registerSingleton('RNGOracle', this.rngOracle);
     this.container.registerSingleton('IRandomnessOracle', this.rngOracle);
+
+    // Validator depends on engine - resolve via container if factory registered
+    if (this.container.has('DefaultValidator')) {
+      this.validator = this.container.resolve('DefaultValidator');
+    } else {
+      const ValidatorClass = this.getExportedClass(validatorModule);
+      this.validator = new ValidatorClass(this.engine);
+    }
+    this.container.registerSingleton('Validator', this.validator);
+    this.container.registerSingleton('IValidator', this.validator);
   }
 
   /**
@@ -250,30 +275,45 @@ export class BattleHarness {
   }
 
   /**
+   * Load and resolve a contract by name
+   * Uses the container's registered factories (from setupContainer) to instantiate
+   */
+  async loadContract(name: string): Promise<any> {
+    // If already resolved as singleton, return it
+    if (this.container.has(name)) {
+      return this.container.resolve(name);
+    }
+
+    // Load the module
+    const module = await this.loadModule(name);
+    const ContractClass = this.getExportedClass(module);
+
+    // If container has a factory registered (from setupContainer), use it
+    // Otherwise, instantiate directly (for contracts with no dependencies)
+    let instance: any;
+    if (this.containerSetup) {
+      // Factory should be registered, resolve will use it
+      try {
+        instance = this.container.resolve(name);
+      } catch {
+        // Not in container, instantiate without dependencies
+        instance = new ContractClass();
+        this.container.registerSingleton(name, instance);
+      }
+    } else {
+      // No setup function, instantiate without dependencies
+      instance = new ContractClass();
+      this.container.registerSingleton(name, instance);
+    }
+
+    return instance;
+  }
+
+  /**
    * Load and register a move contract
    */
   async loadMove(moveName: string): Promise<any> {
-    if (this.container.has(moveName)) {
-      return this.container.resolve(moveName);
-    }
-
-    const module = await this.loadModule(moveName);
-    const MoveClass = this.getExportedClass(module);
-
-    // Create move instance with engine and type calculator
-    // Most moves take (engine, typeCalculator) or just (engine)
-    let move: any;
-    try {
-      move = new MoveClass(this.engine, this.typeCalculator);
-    } catch {
-      try {
-        move = new MoveClass(this.engine);
-      } catch {
-        move = new MoveClass();
-      }
-    }
-
-    this.container.registerSingleton(moveName, move);
+    const move = await this.loadContract(moveName);
     return move;
   }
 
@@ -281,21 +321,7 @@ export class BattleHarness {
    * Load and register an ability contract
    */
   async loadAbility(abilityName: string): Promise<any> {
-    if (this.container.has(abilityName)) {
-      return this.container.resolve(abilityName);
-    }
-
-    const module = await this.loadModule(abilityName);
-    const AbilityClass = this.getExportedClass(module);
-
-    let ability: any;
-    try {
-      ability = new AbilityClass(this.engine);
-    } catch {
-      ability = new AbilityClass();
-    }
-
-    this.container.registerSingleton(abilityName, ability);
+    const ability = await this.loadContract(abilityName);
     return ability;
   }
 
@@ -303,21 +329,7 @@ export class BattleHarness {
    * Load and register an effect contract
    */
   async loadEffect(effectName: string): Promise<any> {
-    if (this.container.has(effectName)) {
-      return this.container.resolve(effectName);
-    }
-
-    const module = await this.loadModule(effectName);
-    const EffectClass = this.getExportedClass(module);
-
-    let effect: any;
-    try {
-      effect = new EffectClass(this.engine);
-    } catch {
-      effect = new EffectClass();
-    }
-
-    this.container.registerSingleton(effectName, effect);
+    const effect = await this.loadContract(effectName);
 
     // Register with effect registry
     if (effect._contractAddress) {
@@ -451,20 +463,21 @@ export class BattleHarness {
   getBattleState(battleKey: string): BattleState {
     // Get battle data from Engine
     const battleData = this.engine.getBattleData(battleKey);
-    const battleConfig = this.engine.getBattleConfig(battleKey);
 
-    // Extract active mon indices (packed in 16 bits)
+    // Use Engine's public methods instead of reimplementing unpacking
+    const activeIndices = this.engine.getActiveMonIndexForBattleState(battleKey);
     const activeMonIndex: [number, number] = [
-      battleData.activeMonIndex & 0xFF,
-      (battleData.activeMonIndex >> 8) & 0xFF
+      Number(activeIndices[0]),
+      Number(activeIndices[1])
     ];
+
+    // Get team sizes from Engine
+    const p0TeamSize = Number(this.engine.getTeamSize(battleKey, 0));
+    const p1TeamSize = Number(this.engine.getTeamSize(battleKey, 1));
 
     // Extract mon states
     const p0States: MonState[] = [];
     const p1States: MonState[] = [];
-
-    const p0TeamSize = battleConfig.teamSizes & 0x0F;
-    const p1TeamSize = (battleConfig.teamSizes >> 4) & 0x0F;
 
     for (let i = 0; i < p0TeamSize; i++) {
       p0States.push(this.engine.getMonState(battleKey, 0, i));
@@ -504,20 +517,27 @@ export class BattleHarness {
 // =============================================================================
 
 /**
- * Create a battle harness with a module loader
+ * Create a battle harness with a module loader and optional container setup
  *
  * @example
  * ```typescript
+ * import { setupContainer } from './ts-output/factories';
+ *
  * const harness = await createBattleHarness(
- *   async (name) => import(`./ts-output/${name}`)
+ *   name => import(`./ts-output/${name}`),
+ *   setupContainer
  * );
  * ```
  */
 export async function createBattleHarness(
-  moduleLoader: ModuleLoader
+  moduleLoader: ModuleLoader,
+  containerSetup?: ContainerSetupFn
 ): Promise<BattleHarness> {
   const harness = new BattleHarness();
   harness.setModuleLoader(moduleLoader);
+  if (containerSetup) {
+    harness.setContainerSetup(containerSetup);
+  }
   await harness.loadCoreModules();
   return harness;
 }
