@@ -7,13 +7,14 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 1. [Architecture Overview](#architecture-overview)
 2. [How the Transpiler Works](#how-the-transpiler-works)
 3. [Metadata and Dependency Injection](#metadata-and-dependency-injection)
-4. [Adding New Solidity Files](#adding-new-solidity-files)
-5. [Angular Integration](#angular-integration)
-6. [Contract Address System](#contract-address-system)
-7. [Supported Features](#supported-features)
-8. [Known Limitations](#known-limitations)
-9. [Future Work](#future-work)
-10. [Test Coverage](#test-coverage)
+4. [Battle Simulation Harness](#battle-simulation-harness)
+5. [Adding New Solidity Files](#adding-new-solidity-files)
+6. [Angular Integration](#angular-integration)
+7. [Contract Address System](#contract-address-system)
+8. [Supported Features](#supported-features)
+9. [Known Limitations](#known-limitations)
+10. [Future Work](#future-work)
+11. [Test Coverage](#test-coverage)
 
 ---
 
@@ -279,6 +280,196 @@ container.registerFromManifest(manifest.dependencyGraph, factories);
 
 // Now resolve any contract
 const move = container.resolve('UnboundedStrike');
+```
+
+---
+
+## Battle Simulation Harness
+
+The `BattleHarness` class provides a high-level API for running battle simulations with automatic dependency injection.
+
+### Quick Start
+
+```typescript
+import { BattleHarness, createBattleHarness } from './runtime';
+
+// Create harness with module loader
+const harness = await createBattleHarness(
+  async (name) => import(`./ts-output/${name}`)
+);
+
+// Configure battle
+const battleKey = await harness.startBattle({
+  player0: '0x1111111111111111111111111111111111111111',
+  player1: '0x2222222222222222222222222222222222222222',
+  teams: [
+    {
+      mons: [{
+        stats: { hp: 100n, stamina: 10n, speed: 50n, attack: 60n, defense: 40n, specialAttack: 70n, specialDefense: 45n },
+        type1: 1,  // Fire
+        type2: 0,  // None
+        moves: ['BigBite', 'Recover', 'Tackle', 'Growl'],
+        ability: 'UpOnly'
+      }]
+    },
+    {
+      mons: [{
+        stats: { hp: 90n, stamina: 12n, speed: 55n, attack: 55n, defense: 45n, specialAttack: 65n, specialDefense: 50n },
+        type1: 2,  // Water
+        type2: 0,
+        moves: ['Splash', 'Bubble', 'Tackle', 'Growl'],
+        ability: 'Torrent'
+      }]
+    }
+  ],
+  addresses: {
+    'Engine': '0xaaaa...',
+    'StatBoosts': '0xbbbb...'
+  }
+});
+
+// Execute turns
+const state = harness.executeTurn(battleKey, {
+  player0: { moveIndex: 0, salt: '0x' + 'a'.repeat(64), extraData: 0n },
+  player1: { moveIndex: 1, salt: '0x' + 'b'.repeat(64) }
+});
+
+console.log('Turn:', state.turnId);
+console.log('Winner:', state.winnerIndex);  // 0, 1, or 2 (ongoing)
+console.log('Events:', state.events);
+```
+
+### Configuration Types
+
+```typescript
+// Mon configuration
+interface MonConfig {
+  stats: {
+    hp: bigint;
+    stamina: bigint;
+    speed: bigint;
+    attack: bigint;
+    defense: bigint;
+    specialAttack: bigint;
+    specialDefense: bigint;
+  };
+  type1: number;   // Enum value
+  type2: number;   // Enum value (0 for none)
+  moves: string[]; // Contract names
+  ability: string; // Contract name
+}
+
+// Team configuration
+interface TeamConfig {
+  mons: MonConfig[];
+}
+
+// Battle configuration
+interface BattleConfig {
+  player0: string;               // Address
+  player1: string;               // Address
+  teams: [TeamConfig, TeamConfig];
+  addresses?: Record<string, string>;  // Optional contract addresses
+  rngSeed?: string;              // Optional seed for deterministic RNG
+}
+
+// Turn input
+interface TurnInput {
+  player0: MoveDecision;
+  player1: MoveDecision;
+}
+
+interface MoveDecision {
+  moveIndex: number;  // 0-3 for moves, 125 for switch, 126 for no-op
+  salt: string;       // bytes32 for RNG
+  extraData?: bigint; // Target index, etc.
+}
+```
+
+### Special Move Indices
+
+```typescript
+import { SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX } from './runtime';
+
+// Switch to another mon
+player0: { moveIndex: SWITCH_MOVE_INDEX, salt: '0x...', extraData: 2n }  // Switch to mon at index 2
+
+// Do nothing (recover stamina)
+player0: { moveIndex: NO_OP_MOVE_INDEX, salt: '0x...' }
+```
+
+### Battle State
+
+After each turn, `executeTurn()` returns a `BattleState`:
+
+```typescript
+interface BattleState {
+  turnId: bigint;                      // Current turn number
+  activeMonIndex: [number, number];    // Active mon for each player
+  winnerIndex: number;                 // 0, 1, or 2 (no winner yet)
+  p0States: MonState[];                // State of all p0 mons
+  p1States: MonState[];                // State of all p1 mons
+  events: any[];                       // Events from this turn
+}
+
+interface MonState {
+  hpDelta: bigint;           // HP change from base
+  staminaDelta: bigint;      // Stamina change from base
+  speedDelta: bigint;        // Speed stat modifier
+  attackDelta: bigint;       // Attack stat modifier
+  defenseDelta: bigint;      // Defense stat modifier
+  specialAttackDelta: bigint;
+  specialDefenseDelta: bigint;
+  isKnockedOut: boolean;     // KO status
+  shouldSkipTurn: boolean;   // Forced skip next turn
+}
+```
+
+### Priority Calculation
+
+Turn order is determined by:
+
+1. **Move Priority** - Switches and no-ops have priority 6, moves use their `priority()` function
+2. **Speed** - If priorities equal, faster mon goes first
+3. **RNG** - If speeds equal, randomly determined from salts
+
+### Loading Contracts On-Demand
+
+The harness loads contracts lazily:
+
+```typescript
+// Load a specific move
+const bigBite = await harness.loadMove('BigBite');
+
+// Load an ability
+const upOnly = await harness.loadAbility('UpOnly');
+
+// Load an effect
+const burn = await harness.loadEffect('BurnStatus');
+```
+
+### Using with Angular
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class BattleService {
+  private harness?: BattleHarness;
+
+  async initialize(): Promise<void> {
+    this.harness = await createBattleHarness(
+      async (name) => import(`../../transpiler/ts-output/${name}`)
+    );
+  }
+
+  async startBattle(config: BattleConfig): Promise<string> {
+    if (!this.harness) await this.initialize();
+    return this.harness!.startBattle(config);
+  }
+
+  executeTurn(battleKey: string, input: TurnInput): BattleState {
+    return this.harness!.executeTurn(battleKey, input);
+  }
+}
 ```
 
 ---
