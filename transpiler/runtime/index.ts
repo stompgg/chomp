@@ -486,33 +486,12 @@ export abstract class Contract {
 // the actual enum values which are numeric.
 
 // =============================================================================
-// RNG HELPERS
-// =============================================================================
-
-/**
- * Deterministic RNG based on keccak256
- */
-export function rngFromSeed(seed: bigint): bigint {
-  return hexToBigInt(keccak256(toHex(seed, { size: 32 })));
-}
-
-/**
- * Get next RNG value from current
- */
-export function nextRng(current: bigint): bigint {
-  return rngFromSeed(current);
-}
-
-/**
- * Roll RNG for percentage check (0-99)
- */
-export function rngPercent(rng: bigint): bigint {
-  return rng % 100n;
-}
-
-// =============================================================================
 // REGISTRY FOR MOVES AND EFFECTS
 // =============================================================================
+
+// NOTE: RNG is handled by the transpiled DefaultRandomnessOracle contract,
+// which combines the two player salts from commit/reveal. Do not reimplement
+// RNG logic here - use the transpiled contract.
 
 export interface IMoveSet {
   name(): string;
