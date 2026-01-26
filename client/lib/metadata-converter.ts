@@ -171,9 +171,9 @@ export function createMoveMap(moves: MoveMetadata[]): Map<string, MoveMetadata> 
 }
 
 /**
- * Loads and converts move metadata from JSON file
+ * Loads and converts move metadata from JSON data
  *
- * @param jsonData - Parsed JSON data from move-metadata.json
+ * @param jsonData - Parsed JSON data (from transpiler's dependency-manifest.json or other source)
  * @returns Converted metadata with moves indexed by name
  */
 export function loadMoveMetadata(jsonData: {
