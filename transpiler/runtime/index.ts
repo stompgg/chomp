@@ -597,3 +597,201 @@ export class Registry {
 
 // Global registry instance
 export const registry = new Registry();
+
+// =============================================================================
+// DEPENDENCY INJECTION CONTAINER
+// =============================================================================
+
+/**
+ * Factory function type for creating contract instances
+ */
+export type ContractFactory<T = any> = (...deps: any[]) => T;
+
+/**
+ * Container registration entry
+ */
+interface ContainerEntry {
+  instance?: any;
+  factory?: ContractFactory;
+  dependencies?: string[];
+  singleton: boolean;
+}
+
+/**
+ * Dependency injection container for managing contract instances and their dependencies.
+ *
+ * Supports:
+ * - Singleton instances (register once, resolve same instance)
+ * - Factory functions (create new instance on each resolve)
+ * - Automatic dependency resolution
+ * - Lazy instantiation
+ *
+ * Example usage:
+ * ```typescript
+ * const container = new ContractContainer();
+ *
+ * // Register singletons (shared instances)
+ * container.registerSingleton('Engine', new Engine());
+ * container.registerSingleton('TypeCalculator', new TypeCalculator());
+ *
+ * // Register factory with dependencies
+ * container.registerFactory('UnboundedStrike',
+ *   ['Engine', 'TypeCalculator', 'Baselight'],
+ *   (engine, typeCalc, baselight) => new UnboundedStrike(engine, typeCalc, baselight)
+ * );
+ *
+ * // Resolve with automatic dependency injection
+ * const move = container.resolve<UnboundedStrike>('UnboundedStrike');
+ * ```
+ */
+export class ContractContainer {
+  private entries: Map<string, ContainerEntry> = new Map();
+  private resolving: Set<string> = new Set(); // For circular dependency detection
+
+  /**
+   * Register a singleton instance
+   */
+  registerSingleton<T>(name: string, instance: T): void {
+    this.entries.set(name, {
+      instance,
+      singleton: true,
+    });
+  }
+
+  /**
+   * Register a factory function with dependencies
+   */
+  registerFactory<T>(
+    name: string,
+    dependencies: string[],
+    factory: ContractFactory<T>
+  ): void {
+    this.entries.set(name, {
+      factory,
+      dependencies,
+      singleton: false,
+    });
+  }
+
+  /**
+   * Register a lazy singleton (created on first resolve)
+   */
+  registerLazySingleton<T>(
+    name: string,
+    dependencies: string[],
+    factory: ContractFactory<T>
+  ): void {
+    this.entries.set(name, {
+      factory,
+      dependencies,
+      singleton: true,
+    });
+  }
+
+  /**
+   * Check if a name is registered
+   */
+  has(name: string): boolean {
+    return this.entries.has(name);
+  }
+
+  /**
+   * Resolve an instance by name
+   */
+  resolve<T = any>(name: string): T {
+    const entry = this.entries.get(name);
+    if (!entry) {
+      throw new Error(`ContractContainer: '${name}' is not registered`);
+    }
+
+    // Return existing singleton instance
+    if (entry.singleton && entry.instance !== undefined) {
+      return entry.instance;
+    }
+
+    // Check for circular dependencies
+    if (this.resolving.has(name)) {
+      const cycle = Array.from(this.resolving).join(' -> ') + ' -> ' + name;
+      throw new Error(`ContractContainer: Circular dependency detected: ${cycle}`);
+    }
+
+    // Create new instance using factory
+    if (entry.factory) {
+      this.resolving.add(name);
+      try {
+        // Resolve dependencies
+        const deps = (entry.dependencies || []).map(dep => this.resolve(dep));
+        const instance = entry.factory(...deps);
+
+        // Store singleton instances
+        if (entry.singleton) {
+          entry.instance = instance;
+        }
+
+        return instance;
+      } finally {
+        this.resolving.delete(name);
+      }
+    }
+
+    throw new Error(`ContractContainer: '${name}' has no instance or factory`);
+  }
+
+  /**
+   * Try to resolve an instance, returning undefined if not found
+   */
+  tryResolve<T = any>(name: string): T | undefined {
+    try {
+      return this.resolve<T>(name);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Get all registered names
+   */
+  getRegisteredNames(): string[] {
+    return Array.from(this.entries.keys());
+  }
+
+  /**
+   * Create a child container that inherits from this one
+   */
+  createChild(): ContractContainer {
+    const child = new ContractContainer();
+    // Copy all entries from parent
+    for (const [name, entry] of this.entries) {
+      child.entries.set(name, { ...entry });
+    }
+    return child;
+  }
+
+  /**
+   * Clear all registrations
+   */
+  clear(): void {
+    this.entries.clear();
+    this.resolving.clear();
+  }
+
+  /**
+   * Bulk register from a dependency manifest
+   */
+  registerFromManifest(
+    manifest: Record<string, string[]>,
+    factories: Record<string, ContractFactory>
+  ): void {
+    for (const [name, dependencies] of Object.entries(manifest)) {
+      const factory = factories[name];
+      if (factory) {
+        this.registerFactory(name, dependencies, factory);
+      }
+    }
+  }
+}
+
+/**
+ * Global container instance for convenience
+ */
+export const globalContainer = new ContractContainer();

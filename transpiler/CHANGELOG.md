@@ -6,52 +6,63 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 
 1. [Architecture Overview](#architecture-overview)
 2. [How the Transpiler Works](#how-the-transpiler-works)
-3. [Adding New Solidity Files](#adding-new-solidity-files)
-4. [Angular Integration](#angular-integration)
-5. [Contract Address System](#contract-address-system)
-6. [Supported Features](#supported-features)
-7. [Known Limitations](#known-limitations)
-8. [Future Work](#future-work)
-9. [Test Coverage](#test-coverage)
+3. [Metadata and Dependency Injection](#metadata-and-dependency-injection)
+4. [Adding New Solidity Files](#adding-new-solidity-files)
+5. [Angular Integration](#angular-integration)
+6. [Contract Address System](#contract-address-system)
+7. [Supported Features](#supported-features)
+8. [Known Limitations](#known-limitations)
+9. [Future Work](#future-work)
+10. [Test Coverage](#test-coverage)
 
 ---
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Transpilation Pipeline                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  src/*.sol ──► sol2ts.py ──► ts-output/*.ts ──► Angular Battle Service │
-│                                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────────────┐  │
-│  │ Solidity │───►│  Lexer   │───►│  Parser  │───►│ Code Generator   │  │
-│  │  Source  │    │ (Tokens) │    │  (AST)   │    │ (TypeScript)     │  │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────────────┘  │
-│                                                                         │
-│  Type Discovery: Scans src/ to build enum, struct, constant registries │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Transpilation Pipeline                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  src/*.sol ──► sol2ts.py ──► ts-output/*.ts ──► Angular Battle Service      │
+│                    │                                                         │
+│                    └──► dependency-manifest.json (optional)                  │
+│                    └──► factories.ts (optional)                              │
+│                                                                              │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────────────┐       │
+│  │ Solidity │───►│  Lexer   │───►│  Parser  │───►│ Code Generator   │       │
+│  │  Source  │    │ (Tokens) │    │  (AST)   │    │ (TypeScript)     │       │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────────────┘       │
+│                                        │                                     │
+│                                        ▼                                     │
+│                               ┌──────────────────┐                          │
+│                               │ Metadata Extractor│ (--emit-metadata)       │
+│                               └──────────────────┘                          │
+│                                                                              │
+│  Type Discovery: Scans src/ to build enum, struct, constant registries      │
+│  Optimizations: Qualified name caching for O(1) type lookups                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Runtime Architecture                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐   │
-│  │   Engine.ts     │────►│   Effects       │────►│   Moves         │   │
-│  │  (Battle Core)  │     │ (StatBoosts,    │     │ (StandardAttack │   │
-│  │                 │     │  StatusEffects) │     │  + custom)      │   │
-│  └────────┬────────┘     └─────────────────┘     └─────────────────┘   │
-│           │                                                             │
-│           ▼                                                             │
-│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐   │
-│  │  runtime.ts     │     │   Structs.ts    │     │    Enums.ts     │   │
-│  │ (Contract base, │     │ (Mon, Battle,   │     │ (Type, MoveClass│   │
-│  │  Storage, Utils)│     │  MonStats, etc) │     │  EffectStep)    │   │
-│  └─────────────────┘     └─────────────────┘     └─────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Runtime Architecture                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐        │
+│  │   Engine.ts     │────►│   Effects       │────►│   Moves         │        │
+│  │  (Battle Core)  │     │ (StatBoosts,    │     │ (StandardAttack │        │
+│  │                 │     │  StatusEffects) │     │  + custom)      │        │
+│  └────────┬────────┘     └─────────────────┘     └─────────────────┘        │
+│           │                                                                  │
+│           ▼                                                                  │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐        │
+│  │  runtime.ts     │     │   Structs.ts    │     │    Enums.ts     │        │
+│  │ (Contract base, │     │ (Mon, Battle,   │     │ (Type, MoveClass│        │
+│  │  Storage, Utils,│     │  MonStats, etc) │     │  EffectStep)    │        │
+│  │  ContractCont.) │     └─────────────────┘     └─────────────────┘        │
+│  └─────────────────┘                                                         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Design Principles
@@ -63,6 +74,8 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 3. **Object References for Contracts**: In Solidity, contracts are identified by addresses. In TypeScript, we use object references directly for most operations, with `_contractAddress` available when actual addresses are needed.
 
 4. **Storage Simulation**: The `Storage` class simulates Solidity's storage model with slot-based access.
+
+5. **Dependency Injection**: The `ContractContainer` class provides automatic dependency resolution for contract instantiation.
 
 ---
 
@@ -76,6 +89,8 @@ Before transpiling any file, the transpiler scans the source directory to discov
 - **Structs**: Collected into `Structs.ts` as TypeScript interfaces
 - **Constants**: Collected into `Constants.ts`
 - **Contract/Library Names**: Used for import resolution
+
+The type registry builds a **qualified name cache** for O(1) lookups, avoiding repeated set membership checks during code generation.
 
 ```bash
 python3 transpiler/sol2ts.py src/moves/MyMove.sol -o transpiler/ts-output -d src
@@ -101,7 +116,7 @@ ContractDefinition
 ├── base_contracts: ["Bar", "IBaz"]
 ├── state_variables: [...]
 ├── functions: [...]
-└── ...
+└── constructor: {...}
 ```
 
 ### Phase 4: Code Generation
@@ -130,6 +145,140 @@ import { BasicEffect } from './BasicEffect';
 import * as Structs from './Structs';
 import * as Enums from './Enums';
 import * as Constants from './Constants';
+```
+
+### Phase 6: Metadata Extraction (Optional)
+
+When `--emit-metadata` is specified, the transpiler also extracts:
+
+- **Dependencies**: Constructor parameters that are contract/interface types
+- **Constants**: Constant values declared in the contract
+- **Move Properties**: For contracts implementing `IMoveSet`, extracts name, power, etc.
+- **Dependency Graph**: Maps each contract to its required dependencies
+
+---
+
+## Metadata and Dependency Injection
+
+### Generating Metadata
+
+The transpiler can emit metadata for dependency injection and UI purposes:
+
+```bash
+# Emit metadata alongside TypeScript
+python3 sol2ts.py src/ -o ts-output -d src --emit-metadata
+
+# Only emit metadata (skip TypeScript generation)
+python3 sol2ts.py src/ --metadata-only -d src
+```
+
+This generates:
+
+#### `dependency-manifest.json`
+
+```json
+{
+  "contracts": {
+    "UnboundedStrike": {
+      "name": "UnboundedStrike",
+      "filePath": "mons/iblivion/UnboundedStrike.sol",
+      "inheritsFrom": ["IMoveSet"],
+      "dependencies": [
+        { "name": "_ENGINE", "typeName": "IEngine", "isInterface": true },
+        { "name": "_TYPE_CALCULATOR", "typeName": "ITypeCalculator", "isInterface": true },
+        { "name": "_BASELIGHT", "typeName": "Baselight", "isInterface": false }
+      ],
+      "constants": {
+        "BASE_POWER": 80,
+        "EMPOWERED_POWER": 130
+      },
+      "isMove": true,
+      "isEffect": false,
+      "moveProperties": {
+        "name": "Unbounded Strike",
+        "BASE_POWER": 80
+      }
+    }
+  },
+  "moves": { ... },
+  "effects": { ... },
+  "dependencyGraph": {
+    "UnboundedStrike": ["IEngine", "ITypeCalculator", "Baselight"]
+  }
+}
+```
+
+#### `factories.ts`
+
+Auto-generated factory functions for each contract:
+
+```typescript
+export function createUnboundedStrike(
+  _ENGINE: IEngine,
+  _TYPE_CALCULATOR: ITypeCalculator,
+  _BASELIGHT: Baselight
+): UnboundedStrike {
+  return new UnboundedStrike(_ENGINE, _TYPE_CALCULATOR, _BASELIGHT);
+}
+
+export function setupContainer(container: ContractContainer): void {
+  container.registerFactory('UnboundedStrike',
+    ['IEngine', 'ITypeCalculator', 'Baselight'],
+    (_ENGINE, _TYPE_CALCULATOR, _BASELIGHT) =>
+      new UnboundedStrike(_ENGINE, _TYPE_CALCULATOR, _BASELIGHT)
+  );
+}
+```
+
+### Using the Dependency Injection Container
+
+The runtime includes a `ContractContainer` for managing contract instances:
+
+```typescript
+import { ContractContainer, globalContainer } from './runtime';
+
+// Create a container
+const container = new ContractContainer();
+
+// Register singletons (shared instances)
+container.registerSingleton('Engine', new Engine());
+container.registerSingleton('TypeCalculator', new TypeCalculator());
+
+// Register factories with dependencies
+container.registerFactory(
+  'UnboundedStrike',
+  ['Engine', 'TypeCalculator', 'Baselight'],
+  (engine, typeCalc, baselight) => new UnboundedStrike(engine, typeCalc, baselight)
+);
+
+// Register lazy singletons (created on first resolve)
+container.registerLazySingleton(
+  'Baselight',
+  ['Engine'],
+  (engine) => new Baselight(engine)
+);
+
+// Resolve with automatic dependency injection
+const move = container.resolve<UnboundedStrike>('UnboundedStrike');
+
+// The container automatically:
+// 1. Resolves Engine (singleton)
+// 2. Resolves TypeCalculator (singleton)
+// 3. Resolves Baselight (lazy singleton, creates Engine dependency)
+// 4. Creates UnboundedStrike with all dependencies
+```
+
+### Bulk Registration from Manifest
+
+```typescript
+import manifest from './dependency-manifest.json';
+import { factories } from './factories';
+
+// Register all contracts from the manifest
+container.registerFromManifest(manifest.dependencyGraph, factories);
+
+// Now resolve any contract
+const move = container.resolve('UnboundedStrike');
 ```
 
 ---
@@ -168,10 +317,17 @@ python3 transpiler/sol2ts.py src/moves/mymove/CoolMove.sol \
     -o transpiler/ts-output \
     -d src
 
-# Or transpile an entire directory
+# Transpile with metadata
+python3 transpiler/sol2ts.py src/moves/mymove/CoolMove.sol \
+    -o transpiler/ts-output \
+    -d src \
+    --emit-metadata
+
+# Transpile an entire directory
 python3 transpiler/sol2ts.py src/moves/mymove/ \
     -o transpiler/ts-output \
-    -d src
+    -d src \
+    --emit-metadata
 ```
 
 ### Step 3: Review the Output
@@ -185,13 +341,30 @@ Check `transpiler/ts-output/CoolMove.ts` for:
 
 ### Step 4: Handle Dependencies
 
-If your move uses other contracts (e.g., StatBoosts), you'll need to inject them:
+Use the dependency injection container:
 
 ```typescript
-// In your test or Angular service
-const statBoosts = new StatBoosts(engine);
-const coolMove = new CoolMove(engine);
-(coolMove as any).STAT_BOOSTS = statBoosts; // Inject dependency
+// Register core singletons
+container.registerSingleton('Engine', engine);
+
+// Register the move with its dependencies
+container.registerFactory(
+  'CoolMove',
+  ['Engine'],
+  (engine) => new CoolMove(engine)
+);
+
+// Resolve
+const coolMove = container.resolve<CoolMove>('CoolMove');
+```
+
+Or use the generated factories if `--emit-metadata` was used:
+
+```typescript
+import { setupContainer } from './factories';
+
+setupContainer(container);
+const coolMove = container.resolve('CoolMove');
 ```
 
 ### Common Transpilation Patterns
@@ -210,17 +383,18 @@ const coolMove = new CoolMove(engine);
 
 ## Angular Integration
 
-### Setting Up the Battle Service
-
-The `BattleService` in Angular dynamically imports transpiled modules and sets up the simulation:
+### Setting Up the Battle Service with Dependency Injection
 
 ```typescript
 // client/lib/battle.service.ts
 
+import { Injectable, signal, computed } from '@angular/core';
+import { ContractContainer } from '../../transpiler/ts-output/runtime';
+
 @Injectable({ providedIn: 'root' })
 export class BattleService {
-  private localEngine: any;
-  private localTypeCalculator: any;
+  private container = new ContractContainer();
+  private initialized = signal(false);
 
   async initializeLocalSimulation(): Promise<void> {
     // Dynamic imports from transpiler output
@@ -228,6 +402,7 @@ export class BattleService {
       { Engine },
       { TypeCalculator },
       { StandardAttack },
+      { StatBoosts },
       Structs,
       Enums,
       Constants,
@@ -235,19 +410,104 @@ export class BattleService {
       import('../../transpiler/ts-output/Engine'),
       import('../../transpiler/ts-output/TypeCalculator'),
       import('../../transpiler/ts-output/StandardAttack'),
+      import('../../transpiler/ts-output/StatBoosts'),
       import('../../transpiler/ts-output/Structs'),
       import('../../transpiler/ts-output/Enums'),
       import('../../transpiler/ts-output/Constants'),
     ]);
 
-    // Create engine instance
-    this.localEngine = new Engine();
-    this.localTypeCalculator = new TypeCalculator();
+    // Register core singletons
+    const engine = new Engine();
+    const typeCalculator = new TypeCalculator();
+    const statBoosts = new StatBoosts(engine);
 
-    // Initialize battle state storage
-    (this.localEngine as any).battleConfig = {};
-    (this.localEngine as any).battleData = {};
+    this.container.registerSingleton('Engine', engine);
+    this.container.registerSingleton('IEngine', engine);  // Interface alias
+    this.container.registerSingleton('TypeCalculator', typeCalculator);
+    this.container.registerSingleton('ITypeCalculator', typeCalculator);
+    this.container.registerSingleton('StatBoosts', statBoosts);
+
+    // Load move factories from generated manifest (optional)
+    // Or register moves manually as needed
+
+    this.initialized.set(true);
   }
+
+  // Get a move instance with all dependencies resolved
+  async getMove(moveName: string): Promise<any> {
+    if (!this.initialized()) {
+      await this.initializeLocalSimulation();
+    }
+    return this.container.resolve(moveName);
+  }
+
+  // Register a move dynamically
+  registerMove(
+    name: string,
+    dependencies: string[],
+    factory: (...deps: any[]) => any
+  ): void {
+    this.container.registerFactory(name, dependencies, factory);
+  }
+}
+```
+
+### Loading Moves Dynamically
+
+```typescript
+async loadMovesForMon(monName: string): Promise<void> {
+  // Import moves for this mon
+  const moveModules = await Promise.all([
+    import(`../../transpiler/ts-output/mons/${monName}/Move1`),
+    import(`../../transpiler/ts-output/mons/${monName}/Move2`),
+    // ...
+  ]);
+
+  // Register each move with the container
+  for (const module of moveModules) {
+    const MoveCtor = Object.values(module)[0] as any;
+    const moveName = MoveCtor.name;
+
+    // Parse dependencies from the manifest or constructor
+    const deps = this.getDependencies(moveName);
+
+    this.container.registerFactory(moveName, deps, (...resolvedDeps) =>
+      new MoveCtor(...resolvedDeps)
+    );
+  }
+}
+```
+
+### Running a Local Battle Simulation
+
+```typescript
+async simulateBattle(team1: Mon[], team2: Mon[]): Promise<BattleResult> {
+  await this.initializeLocalSimulation();
+
+  const engine = this.container.resolve<Engine>('Engine');
+
+  // Set up battle configuration
+  const battleKey = engine.computeBattleKey(player1Address, player2Address);
+
+  // Initialize teams
+  engine.initializeBattle(battleKey, {
+    p0Team: team1,
+    p1Team: team2,
+  });
+
+  // Get move instances
+  const move = this.container.resolve('BigBite');
+
+  // Execute move
+  const damage = move.move(
+    battleKey,
+    attackerIndex,
+    defenderIndex,
+    extraData,
+    rng
+  );
+
+  return { damage, /* ... */ };
 }
 ```
 
@@ -269,37 +529,6 @@ contractAddresses.setAddresses({
 const engine = new Engine(); // engine._contractAddress === '0xabcdef...'
 ```
 
-### Running a Local Battle Simulation
-
-```typescript
-async simulateBattle(team1: Mon[], team2: Mon[]): Promise<BattleResult> {
-  await this.initializeLocalSimulation();
-
-  // Set up battle configuration
-  const battleKey = this.localEngine.computeBattleKey(
-    player1Address,
-    player2Address
-  );
-
-  // Initialize teams
-  this.localEngine.initializeBattle(battleKey, {
-    p0Team: team1,
-    p1Team: team2,
-    // ... other config
-  });
-
-  // Execute moves
-  const damage = move.move(
-    battleKey,
-    attackerIndex,
-    defenderIndex,
-    // ... other params
-  );
-
-  return { damage, /* ... */ };
-}
-```
-
 ### Handling Effects and Abilities
 
 Effects need to be registered and can be looked up by address:
@@ -308,8 +537,8 @@ Effects need to be registered and can be looked up by address:
 import { registry } from '../../transpiler/ts-output/runtime';
 
 // Register effects
-const burnStatus = new BurnStatus(engine);
-const statBoosts = new StatBoosts(engine);
+const burnStatus = container.resolve('BurnStatus');
+const statBoosts = container.resolve('StatBoosts');
 
 registry.registerEffect(burnStatus._contractAddress, burnStatus);
 registry.registerEffect(statBoosts._contractAddress, statBoosts);
@@ -389,6 +618,14 @@ const myContract = new MyContract(); // Address derived from class name
 - ✅ `type(uint256).max`, `type(int256).min`
 - ✅ `msg.sender`, `block.timestamp`, `tx.origin`
 
+### Metadata & DI
+- ✅ Dependency extraction from constructors
+- ✅ Constant value extraction
+- ✅ Move property extraction
+- ✅ Dependency graph generation
+- ✅ Factory function generation
+- ✅ ContractContainer with automatic resolution
+
 ---
 
 ## Known Limitations
@@ -413,13 +650,8 @@ const myContract = new MyContract(); // Address derived from class name
 
 ### Dependency Injection
 
-Contracts that reference other contracts need manual injection:
-
-```typescript
-// Solidity: STAT_BOOSTS is set via constructor or immutable
-// TypeScript: May need manual assignment
-(myMove as any).STAT_BOOSTS = statBoostsInstance;
-```
+- Circular dependencies are detected and throw errors
+- Interface types should be registered with the concrete implementation name
 
 ---
 
@@ -427,17 +659,18 @@ Contracts that reference other contracts need manual injection:
 
 ### High Priority
 
-1. **Cross-Contract Dependency Detection**
-   - Auto-detect when a contract uses another contract (e.g., StatBoosts)
-   - Generate constructor parameters or injection helpers
+1. **Enhanced Move Metadata Extraction**
+   - Extract `moveType()`, `moveClass()`, `priority()` return values
+   - Support dynamic values (functions that compute based on state)
+   - Generate UI-compatible metadata format
 
 2. **Modifier Support**
    - Parse and inline modifier logic into functions
    - Currently modifiers are stripped
 
-3. **Better Type Inference for abi.encode**
-   - Detect return types of function calls used as arguments
-   - Currently assumes uint256 for non-literal arguments
+3. **Automatic Container Setup**
+   - Generate a complete `setupContainer()` function that registers all contracts
+   - Topological sort for correct initialization order
 
 ### Medium Priority
 
@@ -448,8 +681,9 @@ Contracts that reference other contracts need manual injection:
 5. **Source Maps**
    - Map TypeScript lines back to Solidity for debugging
 
-6. **Function Overloading**
-   - Handle multiple functions with same name but different signatures
+6. **Inheritance-Aware Dependency Resolution**
+   - Traverse inheritance tree to find all required dependencies
+   - Handle diamond inheritance patterns
 
 ### Low Priority
 
@@ -460,11 +694,24 @@ Contracts that reference other contracts need manual injection:
 8. **Fixed-Point Math**
    - Support `ufixed` and `fixed` types
 
+9. **Custom Metadata Plugins**
+   - Allow users to define custom metadata extractors
+   - Support for game-specific metadata formats
+
 ---
 
 ## Test Coverage
 
-### Unit Tests (`test/run.ts`)
+### Unit Tests (`test_transpiler.py`)
+
+```bash
+cd transpiler && python3 test_transpiler.py
+```
+
+- ABI encode type inference (string, uint, address, mixed)
+- Contract type imports (state variables, constructor params)
+
+### Runtime Tests (`test/run.ts`)
 
 ```bash
 cd transpiler && npm test
@@ -500,6 +747,9 @@ cd transpiler && npm test
 
 ### Tests to Add
 
+- [ ] ContractContainer circular dependency detection
+- [ ] Factory function generation validation
+- [ ] Metadata extraction accuracy
 - [ ] Negative number handling (signed integers)
 - [ ] Overflow behavior verification
 - [ ] Complex nested struct construction
@@ -520,8 +770,14 @@ cd transpiler && npm test
 # Single file
 python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src
 
-# Directory
-python3 transpiler/sol2ts.py src/moves/ -o transpiler/ts-output -d src
+# Single file with metadata
+python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src --emit-metadata
+
+# Directory with metadata
+python3 transpiler/sol2ts.py src/moves/ -o transpiler/ts-output -d src --emit-metadata
+
+# Metadata only (no TypeScript)
+python3 transpiler/sol2ts.py src/moves/ --metadata-only -d src
 
 # Print to stdout (for debugging)
 python3 transpiler/sol2ts.py src/path/to/File.sol --stdout -d src
@@ -534,6 +790,11 @@ python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src
 
 ```bash
 cd transpiler
+
+# Python unit tests
+python3 test_transpiler.py
+
+# TypeScript runtime tests
 npm install
 npm test
 ```
@@ -542,20 +803,47 @@ npm test
 
 ```
 transpiler/
-├── sol2ts.py           # Main transpiler script
+├── sol2ts.py              # Main transpiler script
+├── test_transpiler.py     # Python unit tests
 ├── runtime/
-│   └── index.ts        # Runtime library source (copy to ts-output as needed)
-├── ts-output/          # Generated TypeScript files
-│   ├── runtime.ts      # Runtime library
-│   ├── Structs.ts      # All struct definitions
-│   ├── Enums.ts        # All enum definitions
-│   ├── Constants.ts    # All constants
-│   ├── Engine.ts       # Battle engine
-│   └── *.ts            # Transpiled contracts
+│   └── index.ts           # Runtime library (Contract, Storage, ContractContainer)
+├── ts-output/             # Generated TypeScript files
+│   ├── runtime.ts         # Runtime library (copied from runtime/)
+│   ├── Structs.ts         # All struct definitions
+│   ├── Enums.ts           # All enum definitions
+│   ├── Constants.ts       # All constants
+│   ├── Engine.ts          # Battle engine
+│   ├── dependency-manifest.json  # Contract metadata (--emit-metadata)
+│   ├── factories.ts       # Factory functions (--emit-metadata)
+│   └── *.ts               # Transpiled contracts
 ├── test/
-│   ├── run.ts          # Test runner
-│   ├── e2e.ts          # End-to-end tests
-│   ├── engine-e2e.ts   # Engine-specific tests
+│   ├── run.ts             # Test runner
+│   ├── test-utils.ts      # Test utilities
+│   ├── e2e.ts             # End-to-end tests
+│   ├── engine-e2e.ts      # Engine-specific tests
 │   └── battle-simulation.ts  # Battle scenario tests
 └── package.json
+```
+
+### Key Runtime Exports
+
+```typescript
+// Core classes
+export class Contract { ... }           // Base class for all contracts
+export class Storage { ... }            // EVM storage simulation
+export class ContractContainer { ... }  // Dependency injection container
+export class Registry { ... }           // Move/Effect registry
+export class EventStream { ... }        // Event logging
+
+// Global instances
+export const globalContainer: ContractContainer;
+export const globalEventStream: EventStream;
+export const registry: Registry;
+
+// Utilities
+export const ADDRESS_ZERO: string;
+export function addressToUint(addr: string): bigint;
+export function keccak256(...): string;
+export function encodePacked(...): string;
+export function encodeAbiParameters(...): string;
 ```
