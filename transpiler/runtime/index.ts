@@ -480,43 +480,10 @@ export abstract class Contract {
 // EFFECT AND MOVE INTERFACES
 // =============================================================================
 
-export enum EffectStep {
-  OnApply = 0,
-  RoundStart = 1,
-  RoundEnd = 2,
-  OnRemove = 3,
-  OnMonSwitchIn = 4,
-  OnMonSwitchOut = 5,
-  AfterDamage = 6,
-  AfterMove = 7,
-  OnUpdateMonState = 8,
-}
-
-export enum MoveClass {
-  Physical = 0,
-  Special = 1,
-  Self = 2,
-  Other = 3,
-}
-
-export enum Type {
-  Yin = 0,
-  Yang = 1,
-  Earth = 2,
-  Liquid = 3,
-  Fire = 4,
-  Metal = 5,
-  Ice = 6,
-  Nature = 7,
-  Lightning = 8,
-  Mythic = 9,
-  Air = 10,
-  Math = 11,
-  Cyber = 12,
-  Wild = 13,
-  Cosmic = 14,
-  None = 15,
-}
+// NOTE: Enum types (EffectStep, MoveClass, Type) are defined in the transpiled
+// Solidity output (Enums.ts). Import them from there rather than duplicating here.
+// The interfaces below use `number` for compatibility - transpiled code will use
+// the actual enum values which are numeric.
 
 // =============================================================================
 // RNG HELPERS
@@ -552,14 +519,14 @@ export interface IMoveSet {
   move(battleKey: string, attackerPlayerIndex: bigint, extraData: bigint, rng: bigint): void;
   priority(battleKey: string, attackerPlayerIndex: bigint): bigint;
   stamina(battleKey: string, attackerPlayerIndex: bigint, monIndex: bigint): bigint;
-  moveType(battleKey: string): Type;
+  moveType(battleKey: string): number;  // Type enum value from transpiled Enums.ts
   isValidTarget(battleKey: string, extraData: bigint): boolean;
-  moveClass(battleKey: string): MoveClass;
+  moveClass(battleKey: string): number;  // MoveClass enum value from transpiled Enums.ts
 }
 
 export interface IEffect {
   name(): string;
-  shouldRunAtStep(step: EffectStep): boolean;
+  shouldRunAtStep(step: number): boolean;  // EffectStep enum value from transpiled Enums.ts
   shouldApply(extraData: string, targetIndex: bigint, monIndex: bigint): boolean;
   onRoundStart(rng: bigint, extraData: string, targetIndex: bigint, monIndex: bigint): [string, boolean];
   onRoundEnd(rng: bigint, extraData: string, targetIndex: bigint, monIndex: bigint): [string, boolean];
@@ -812,6 +779,6 @@ export {
   type MonState,
   type BattleState,
   type ModuleLoader,
-  SWITCH_MOVE_INDEX,
-  NO_OP_MOVE_INDEX,
+  // NOTE: SWITCH_MOVE_INDEX and NO_OP_MOVE_INDEX should be imported from
+  // transpiled Constants.ts (from src/Constants.sol), not from the runtime.
 } from './battle-harness';

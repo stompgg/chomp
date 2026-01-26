@@ -62,7 +62,7 @@ export interface BattleConfig {
  * Move decision for a turn
  */
 export interface MoveDecision {
-  moveIndex: number;  // 0-3 for moves, 125 for switch, 126 for no-op
+  moveIndex: number;  // 0-3 for moves, or special indices from Constants.sol
   salt: string;  // bytes32 hex string for RNG
   extraData?: bigint;  // Optional extra data (target index, etc.)
 }
@@ -107,12 +107,10 @@ export interface BattleState {
  */
 export type ModuleLoader = (name: string) => Promise<any>;
 
-// =============================================================================
-// SPECIAL MOVE INDICES (exported for convenience, but handled by Engine)
-// =============================================================================
-
-export const SWITCH_MOVE_INDEX = 125;
-export const NO_OP_MOVE_INDEX = 126;
+// NOTE: Special move indices (SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX) are defined
+// in the transpiled Constants.ts from src/Constants.sol. Import them from there
+// rather than hardcoding here. The harness just passes through whatever moveIndex
+// the user provides - the Engine handles interpreting special indices.
 
 // =============================================================================
 // BATTLE SIMULATOR

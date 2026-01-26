@@ -8,13 +8,17 @@ import { test, expect, runTests } from './test-utils';
 import {
   BattleHarness,
   createBattleHarness,
-  SWITCH_MOVE_INDEX,
-  NO_OP_MOVE_INDEX,
   type MonConfig,
   type TeamConfig,
   type BattleConfig,
   type TurnInput,
 } from '../runtime/index';
+
+// These constants are defined in Solidity (src/Constants.sol) and emitted by the transpiler.
+// For tests, we define them locally to match the Solidity source of truth.
+// In production, import from transpiled Constants.ts instead.
+const SWITCH_MOVE_INDEX = 125;
+const NO_OP_MOVE_INDEX = 126;
 
 // =============================================================================
 // MOCK CONTRACTS
@@ -192,7 +196,8 @@ test('TurnInput interface works correctly', () => {
   expect(input.player1.moveIndex).toBe(SWITCH_MOVE_INDEX);
 });
 
-test('SWITCH_MOVE_INDEX and NO_OP_MOVE_INDEX are defined', () => {
+test('Move indices match Solidity Constants.sol', () => {
+  // These values must match src/Constants.sol - if Solidity changes, update here
   expect(SWITCH_MOVE_INDEX).toBe(125);
   expect(NO_OP_MOVE_INDEX).toBe(126);
 });

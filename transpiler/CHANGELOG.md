@@ -389,7 +389,8 @@ interface MoveDecision {
 ### Special Move Indices
 
 ```typescript
-import { SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX } from './runtime';
+// Import from transpiled Constants.ts (source: src/Constants.sol)
+import { SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX } from './ts-output/Constants';
 
 // Switch to another mon
 player0: { moveIndex: SWITCH_MOVE_INDEX, salt: '0x...', extraData: 2n }  // Switch to mon at index 2
