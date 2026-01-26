@@ -3,6 +3,9 @@
  *
  * Provides automatic dependency injection setup and turn-by-turn battle execution
  * for client-side simulations that match on-chain results.
+ *
+ * This is a thin wrapper around the transpiled Engine - it delegates all battle
+ * logic to the Engine rather than reimplementing it.
  */
 
 import { ContractContainer, Contract, registry, globalEventStream } from './index';
@@ -52,7 +55,7 @@ export interface BattleConfig {
   player1: string;  // Address
   teams: [TeamConfig, TeamConfig];  // [p0 team, p1 team]
   addresses?: AddressConfig;  // Optional contract addresses
-  rngSeed?: string;  // Optional seed for deterministic RNG (default: random)
+  rngSeed?: string;  // Optional seed for deterministic RNG
 }
 
 /**
@@ -73,7 +76,7 @@ export interface TurnInput {
 }
 
 /**
- * Mon state after turn
+ * Mon state snapshot (matches Solidity MonState struct)
  */
 export interface MonState {
   hpDelta: bigint;
@@ -105,7 +108,7 @@ export interface BattleState {
 export type ModuleLoader = (name: string) => Promise<any>;
 
 // =============================================================================
-// SPECIAL MOVE INDICES
+// SPECIAL MOVE INDICES (exported for convenience, but handled by Engine)
 // =============================================================================
 
 export const SWITCH_MOVE_INDEX = 125;
@@ -118,8 +121,8 @@ export const NO_OP_MOVE_INDEX = 126;
 /**
  * Battle Simulation Harness
  *
- * Manages contract instantiation, dependency injection, and turn execution
- * for client-side battle simulation.
+ * Manages contract instantiation, dependency injection, and delegates battle
+ * execution to the transpiled Engine contract.
  *
  * @example
  * ```typescript
@@ -136,7 +139,7 @@ export const NO_OP_MOVE_INDEX = 126;
  *   addresses: { 'Engine': '0xaaaa...', ... }
  * });
  *
- * // Execute turns
+ * // Execute turns (delegates to Engine)
  * const state = harness.executeTurn(battleKey, {
  *   player0: { moveIndex: 0, salt: '0x...', extraData: 0n },
  *   player1: { moveIndex: 1, salt: '0x...' }
@@ -149,7 +152,6 @@ export class BattleHarness {
   private container: ContractContainer;
   private moduleLoader?: ModuleLoader;
   private loadedModules: Map<string, any> = new Map();
-  private battles: Map<string, BattleInstance> = new Map();
 
   // Core singleton instances
   private engine: any;
@@ -331,9 +333,6 @@ export class BattleHarness {
    * Configure contract addresses
    */
   setAddresses(addresses: AddressConfig): void {
-    // Import the contractAddresses from runtime
-    // This would need to be passed in or accessed differently
-    // For now, we'll set addresses on instances directly
     for (const [name, address] of Object.entries(addresses)) {
       const instance = this.container.tryResolve(name);
       if (instance && typeof instance === 'object') {
@@ -344,6 +343,8 @@ export class BattleHarness {
 
   /**
    * Start a new battle
+   *
+   * This sets up the battle configuration in the Engine and returns a battleKey.
    */
   async startBattle(config: BattleConfig): Promise<string> {
     // Ensure core modules are loaded
@@ -376,26 +377,20 @@ export class BattleHarness {
     ]);
 
     // Build teams with resolved contract references
-    const teams = config.teams.map((teamConfig, teamIndex) =>
-      teamConfig.mons.map((monConfig, monIndex) => this.buildMon(monConfig))
+    const teams = config.teams.map((teamConfig) =>
+      teamConfig.mons.map((monConfig) => this.buildMon(monConfig))
     );
 
-    // Compute battle key
-    const battleKey = this.computeBattleKey(config.player0, config.player1);
-
-    // Create battle instance
-    const battle = new BattleInstance(
-      this,
-      battleKey,
-      config,
-      teams,
-      config.rngSeed
-    );
-
-    this.battles.set(battleKey, battle);
-
-    // Initialize battle in engine
-    battle.initialize();
+    // Call Engine.startBattle() with the configuration
+    // The Engine handles all battle initialization
+    const battleKey = this.engine.startBattle({
+      p0: config.player0,
+      p1: config.player1,
+      p0Team: teams[0],
+      p1Team: teams[1],
+      validator: this.validator,
+      rngOracle: this.rngOracle,
+    });
 
     return battleKey;
   }
@@ -417,41 +412,78 @@ export class BattleHarness {
   }
 
   /**
-   * Compute deterministic battle key from player addresses
-   */
-  private computeBattleKey(p0: string, p1: string): string {
-    // Canonical ordering
-    const [addr0, addr1] = p0.toLowerCase() < p1.toLowerCase()
-      ? [p0, p1]
-      : [p1, p0];
-
-    // Use a simple hash for now - in production would use keccak256
-    const combined = `${addr0}:${addr1}:${Date.now()}`;
-    return `0x${Buffer.from(combined).toString('hex').padEnd(64, '0').slice(0, 64)}`;
-  }
-
-  /**
    * Execute a turn for a battle
+   *
+   * This delegates to the Engine:
+   * 1. Calls setMove() for each player
+   * 2. Calls execute()
+   * 3. Reads back the state
    */
   executeTurn(battleKey: string, input: TurnInput): BattleState {
-    const battle = this.battles.get(battleKey);
-    if (!battle) {
-      throw new Error(`Battle not found: ${battleKey}`);
-    }
+    // Clear events for this turn
+    globalEventStream.clear();
 
-    return battle.executeTurn(input);
+    // Set moves for both players via Engine
+    this.engine.setMove(
+      battleKey,
+      0,  // player 0
+      input.player0.moveIndex,
+      input.player0.salt,
+      input.player0.extraData ?? 0n
+    );
+
+    this.engine.setMove(
+      battleKey,
+      1,  // player 1
+      input.player1.moveIndex,
+      input.player1.salt,
+      input.player1.extraData ?? 0n
+    );
+
+    // Execute the turn - Engine handles all logic
+    this.engine.execute(battleKey);
+
+    // Read back the state from Engine
+    return this.getBattleState(battleKey);
   }
 
   /**
-   * Get current battle state
+   * Get current battle state from the Engine
    */
   getBattleState(battleKey: string): BattleState {
-    const battle = this.battles.get(battleKey);
-    if (!battle) {
-      throw new Error(`Battle not found: ${battleKey}`);
+    // Get battle data from Engine
+    const battleData = this.engine.getBattleData(battleKey);
+    const battleConfig = this.engine.getBattleConfig(battleKey);
+
+    // Extract active mon indices (packed in 16 bits)
+    const activeMonIndex: [number, number] = [
+      battleData.activeMonIndex & 0xFF,
+      (battleData.activeMonIndex >> 8) & 0xFF
+    ];
+
+    // Extract mon states
+    const p0States: MonState[] = [];
+    const p1States: MonState[] = [];
+
+    const p0TeamSize = battleConfig.teamSizes & 0x0F;
+    const p1TeamSize = (battleConfig.teamSizes >> 4) & 0x0F;
+
+    for (let i = 0; i < p0TeamSize; i++) {
+      p0States.push(this.engine.getMonState(battleKey, 0, i));
     }
 
-    return battle.getState();
+    for (let i = 0; i < p1TeamSize; i++) {
+      p1States.push(this.engine.getMonState(battleKey, 1, i));
+    }
+
+    return {
+      turnId: battleData.turnId,
+      activeMonIndex,
+      winnerIndex: battleData.winnerIndex,
+      p0States,
+      p1States,
+      events: globalEventStream.getAll(),
+    };
   }
 
   /**
@@ -466,346 +498,6 @@ export class BattleHarness {
    */
   getEngine(): any {
     return this.engine;
-  }
-}
-
-// =============================================================================
-// BATTLE INSTANCE
-// =============================================================================
-
-/**
- * Represents a single battle in progress
- */
-class BattleInstance {
-  private harness: BattleHarness;
-  private battleKey: string;
-  private config: BattleConfig;
-  private teams: any[][];
-  private rngSeed: string;
-
-  // Battle state
-  private turnId: bigint = 0n;
-  private activeMonIndex: [number, number] = [0, 0];
-  private winnerIndex: number = 2;  // 2 = no winner
-  private p0States: MonState[] = [];
-  private p1States: MonState[] = [];
-  private turnEvents: any[] = [];
-
-  constructor(
-    harness: BattleHarness,
-    battleKey: string,
-    config: BattleConfig,
-    teams: any[][],
-    rngSeed?: string
-  ) {
-    this.harness = harness;
-    this.battleKey = battleKey;
-    this.config = config;
-    this.teams = teams;
-    this.rngSeed = rngSeed ?? `0x${Math.random().toString(16).slice(2).padEnd(64, '0')}`;
-  }
-
-  /**
-   * Initialize the battle
-   */
-  initialize(): void {
-    // Initialize mon states
-    this.p0States = this.teams[0].map(() => this.createInitialMonState());
-    this.p1States = this.teams[1].map(() => this.createInitialMonState());
-
-    // Both players start with mon 0 active (implicit switch on turn 0)
-    this.activeMonIndex = [0, 0];
-  }
-
-  /**
-   * Create initial mon state
-   */
-  private createInitialMonState(): MonState {
-    return {
-      hpDelta: 0n,
-      staminaDelta: 0n,
-      speedDelta: 0n,
-      attackDelta: 0n,
-      defenseDelta: 0n,
-      specialAttackDelta: 0n,
-      specialDefenseDelta: 0n,
-      isKnockedOut: false,
-      shouldSkipTurn: false,
-    };
-  }
-
-  /**
-   * Execute a turn
-   */
-  executeTurn(input: TurnInput): BattleState {
-    if (this.winnerIndex !== 2) {
-      throw new Error('Battle already ended');
-    }
-
-    // Clear events for this turn
-    this.turnEvents = [];
-    globalEventStream.clear();
-
-    // Compute RNG from salts
-    const rng = this.computeRNG(input.player0.salt, input.player1.salt);
-
-    // Determine priority
-    const priorityPlayer = this.computePriorityPlayer(input, rng);
-    const otherPlayer = priorityPlayer === 0 ? 1 : 0;
-
-    const moves = [input.player0, input.player1];
-    const playerOrder = [priorityPlayer, otherPlayer];
-
-    // Execute moves in priority order
-    for (const playerIndex of playerOrder) {
-      const move = moves[playerIndex];
-      const monStates = playerIndex === 0 ? this.p0States : this.p1States;
-      const activeIndex = this.activeMonIndex[playerIndex];
-      const activeState = monStates[activeIndex];
-
-      // Skip if mon should skip turn
-      if (activeState.shouldSkipTurn) {
-        activeState.shouldSkipTurn = false;
-        this.turnEvents.push({
-          type: 'SkipTurn',
-          player: playerIndex,
-          mon: activeIndex
-        });
-        continue;
-      }
-
-      // Handle switch
-      if (move.moveIndex === SWITCH_MOVE_INDEX) {
-        const switchTo = Number(move.extraData ?? 0n);
-        this.handleSwitch(playerIndex, switchTo);
-        continue;
-      }
-
-      // Handle no-op
-      if (move.moveIndex === NO_OP_MOVE_INDEX) {
-        // Recover some stamina
-        activeState.staminaDelta += 1n;
-        this.turnEvents.push({
-          type: 'NoOp',
-          player: playerIndex,
-          mon: activeIndex
-        });
-        continue;
-      }
-
-      // Execute move
-      this.executeMove(playerIndex, move, rng);
-
-      // Check for KO
-      this.checkGameOver();
-      if (this.winnerIndex !== 2) {
-        break;
-      }
-    }
-
-    // Increment turn
-    this.turnId += 1n;
-
-    // Collect events
-    this.turnEvents.push(...globalEventStream.getAll());
-
-    return this.getState();
-  }
-
-  /**
-   * Compute RNG from salts
-   */
-  private computeRNG(salt0: string, salt1: string): bigint {
-    // Simple deterministic RNG - in production would use keccak256
-    const combined = salt0 + salt1 + this.rngSeed;
-    let hash = 0n;
-    for (let i = 0; i < combined.length; i++) {
-      hash = (hash * 31n + BigInt(combined.charCodeAt(i))) % (2n ** 256n);
-    }
-    return hash;
-  }
-
-  /**
-   * Compute which player has priority
-   */
-  private computePriorityPlayer(input: TurnInput, rng: bigint): number {
-    const moves = [input.player0, input.player1];
-
-    // Get priorities
-    const priorities = moves.map((move, playerIndex) => {
-      // Switches and no-ops have priority 6
-      if (move.moveIndex === SWITCH_MOVE_INDEX || move.moveIndex === NO_OP_MOVE_INDEX) {
-        return 6n;
-      }
-
-      // Get move priority from contract
-      const mon = this.teams[playerIndex][this.activeMonIndex[playerIndex]];
-      const moveContract = mon.moves[move.moveIndex];
-      if (moveContract && typeof moveContract.priority === 'function') {
-        try {
-          return BigInt(moveContract.priority(this.battleKey, playerIndex));
-        } catch {
-          return 0n;
-        }
-      }
-      return 0n;
-    });
-
-    // Compare priorities
-    if (priorities[0] > priorities[1]) return 0;
-    if (priorities[1] > priorities[0]) return 1;
-
-    // Tied priority - use speed
-    const speeds = [0, 1].map(playerIndex => {
-      const mon = this.teams[playerIndex][this.activeMonIndex[playerIndex]];
-      const state = playerIndex === 0 ? this.p0States : this.p1States;
-      const baseSpeed = mon.stats.speed;
-      const delta = state[this.activeMonIndex[playerIndex]].speedDelta;
-      return baseSpeed + delta;
-    });
-
-    if (speeds[0] > speeds[1]) return 0;
-    if (speeds[1] > speeds[0]) return 1;
-
-    // Tied speed - use RNG
-    return Number(rng % 2n);
-  }
-
-  /**
-   * Handle a switch
-   */
-  private handleSwitch(playerIndex: number, switchTo: number): void {
-    const oldIndex = this.activeMonIndex[playerIndex];
-
-    this.turnEvents.push({
-      type: 'Switch',
-      player: playerIndex,
-      from: oldIndex,
-      to: switchTo
-    });
-
-    this.activeMonIndex[playerIndex] = switchTo;
-
-    // Activate ability on switch in
-    const mon = this.teams[playerIndex][switchTo];
-    if (mon.ability && typeof mon.ability.activateOnSwitch === 'function') {
-      try {
-        mon.ability.activateOnSwitch(this.battleKey, playerIndex, switchTo);
-      } catch (e) {
-        // Ability failed - log but continue
-        this.turnEvents.push({
-          type: 'AbilityError',
-          ability: mon.ability.constructor?.name,
-          error: String(e)
-        });
-      }
-    }
-  }
-
-  /**
-   * Execute a move
-   */
-  private executeMove(playerIndex: number, decision: MoveDecision, rng: bigint): void {
-    const mon = this.teams[playerIndex][this.activeMonIndex[playerIndex]];
-    const moveContract = mon.moves[decision.moveIndex];
-
-    if (!moveContract) {
-      this.turnEvents.push({
-        type: 'InvalidMove',
-        player: playerIndex,
-        moveIndex: decision.moveIndex
-      });
-      return;
-    }
-
-    // Check stamina
-    const state = playerIndex === 0 ? this.p0States : this.p1States;
-    const monState = state[this.activeMonIndex[playerIndex]];
-    const baseStamina = mon.stats.stamina;
-    const currentStamina = baseStamina + monState.staminaDelta;
-
-    let staminaCost = 1n;
-    if (typeof moveContract.stamina === 'function') {
-      try {
-        staminaCost = BigInt(moveContract.stamina(
-          this.battleKey,
-          playerIndex,
-          this.activeMonIndex[playerIndex]
-        ));
-      } catch {
-        // Use default
-      }
-    }
-
-    if (currentStamina < staminaCost) {
-      this.turnEvents.push({
-        type: 'InsufficientStamina',
-        player: playerIndex,
-        required: staminaCost,
-        current: currentStamina
-      });
-      return;
-    }
-
-    // Deduct stamina
-    monState.staminaDelta -= staminaCost;
-
-    // Execute the move
-    try {
-      moveContract.move(
-        this.battleKey,
-        playerIndex,
-        decision.extraData ?? 0n,
-        rng
-      );
-
-      this.turnEvents.push({
-        type: 'MoveExecuted',
-        player: playerIndex,
-        move: moveContract.constructor?.name ?? 'Unknown',
-        moveIndex: decision.moveIndex
-      });
-    } catch (e) {
-      this.turnEvents.push({
-        type: 'MoveError',
-        player: playerIndex,
-        move: moveContract.constructor?.name ?? 'Unknown',
-        error: String(e)
-      });
-    }
-  }
-
-  /**
-   * Check if the game is over
-   */
-  private checkGameOver(): void {
-    // Check if all of p0's mons are KO'd
-    const p0AllKO = this.p0States.every(s => s.isKnockedOut);
-    if (p0AllKO) {
-      this.winnerIndex = 1;
-      return;
-    }
-
-    // Check if all of p1's mons are KO'd
-    const p1AllKO = this.p1States.every(s => s.isKnockedOut);
-    if (p1AllKO) {
-      this.winnerIndex = 0;
-      return;
-    }
-  }
-
-  /**
-   * Get current state
-   */
-  getState(): BattleState {
-    return {
-      turnId: this.turnId,
-      activeMonIndex: [...this.activeMonIndex] as [number, number],
-      winnerIndex: this.winnerIndex,
-      p0States: this.p0States.map(s => ({ ...s })),
-      p1States: this.p1States.map(s => ({ ...s })),
-      events: [...this.turnEvents],
-    };
   }
 }
 
