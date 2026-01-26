@@ -276,12 +276,12 @@ export class BattleService {
         Enums,
         Constants,
       ] = await Promise.all([
-        import('../../scripts/transpiler/ts-output/Engine'),
-        import('../../scripts/transpiler/ts-output/TypeCalculator'),
-        import('../../scripts/transpiler/ts-output/StandardAttack'),
-        import('../../scripts/transpiler/ts-output/Structs'),
-        import('../../scripts/transpiler/ts-output/Enums'),
-        import('../../scripts/transpiler/ts-output/Constants'),
+        import('../../transpiler/ts-output/Engine'),
+        import('../../transpiler/ts-output/TypeCalculator'),
+        import('../../transpiler/ts-output/StandardAttack'),
+        import('../../transpiler/ts-output/Structs'),
+        import('../../transpiler/ts-output/Enums'),
+        import('../../transpiler/ts-output/Constants'),
       ]);
 
       // Create engine instance

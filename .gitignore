@@ -48,4 +48,4 @@ drool/*
 
 # Transpiler output
 ts-output/
-scripts/transpiler/ts-output/
+transpiler/ts-output/

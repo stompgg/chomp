@@ -2289,7 +2289,7 @@ class TypeScriptCodeGenerator:
         """Generate import statements."""
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';")
-        lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String } from './runtime';")
+        lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String, addressToUint } from './runtime';")
 
         # Import base contracts needed for inheritance
         for base_contract in sorted(self.base_contracts_needed):
@@ -3523,6 +3523,14 @@ class TypeScriptCodeGenerator:
                     arg = call.arguments[0]
                     if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
                         return self._to_padded_address(arg.value)
+                    # Handle address(this) -> this._contractAddress
+                    if isinstance(arg, Identifier) and arg.name == 'this':
+                        return 'this._contractAddress'
+                    # Handle address(someContract) -> someContract._contractAddress
+                    # For contract instances, get their address
+                    inner = self.generate_expression(arg)
+                    if inner != 'this' and not inner.startswith('"') and not inner.startswith("'"):
+                        return f'{inner}._contractAddress'
                 return args  # Pass through - addresses are strings
             elif name == 'bool':
                 return args  # Pass through - JS truthy works
@@ -3538,7 +3546,25 @@ class TypeScriptCodeGenerator:
             # Handle interface type casts like IMatchmaker(x) -> x
             # Also handles struct constructors without args -> default object
             elif name.startswith('I') and name[1].isupper():
-                # Interface cast - just pass through the value
+                # Interface cast - special handling for IEffect(address(this)) pattern
+                # In this case, we want to return the object, not its address
+                if call.arguments and len(call.arguments) == 1:
+                    arg = call.arguments[0]
+                    # Check for IEffect(address(x)) pattern
+                    if isinstance(arg, FunctionCall) and isinstance(arg.function, Identifier) and arg.function.name == 'address':
+                        if arg.arguments and len(arg.arguments) == 1:
+                            inner_arg = arg.arguments[0]
+                            if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
+                                return 'this'
+                            # For address(someVar), return the variable itself
+                            return self.generate_expression(inner_arg)
+                    # Check for TypeCast address(x) pattern
+                    if isinstance(arg, TypeCast) and arg.type_name.name == 'address':
+                        inner_arg = arg.expression
+                        if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
+                            return 'this'
+                        return self.generate_expression(inner_arg)
+                # Normal interface cast - pass through the value
                 if args:
                     return args
                 return '{}'  # Empty interface cast
@@ -3906,13 +3932,19 @@ class TypeScriptCodeGenerator:
         type_name = cast.type_name.name
         inner_expr = cast.expression
 
-        # Handle address literals like address(0xdead)
+        # Handle address literals like address(0xdead) and address(this)
         if type_name == 'address':
             if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
                 return self._to_padded_address(inner_expr.value)
+            # Handle address(this) -> this._contractAddress
+            if isinstance(inner_expr, Identifier) and inner_expr.name == 'this':
+                return 'this._contractAddress'
             expr = self.generate_expression(inner_expr)
             if expr.startswith('"') or expr.startswith("'"):
                 return expr
+            # Handle address(someContract) -> someContract._contractAddress
+            if expr != 'this' and not expr.startswith('"') and not expr.startswith("'"):
+                return f'{expr}._contractAddress'
             return expr  # Already a string in most cases
 
         # Handle bytes32 casts
@@ -3929,12 +3961,23 @@ class TypeScriptCodeGenerator:
         if type_name.startswith('uint'):
             # Extract bit width from type name (e.g., uint192 -> 192)
             bits = int(type_name[4:]) if len(type_name) > 4 else 256
+
+            # Check if inner expression is an address cast - need to use addressToUint
+            is_address_expr = (
+                (isinstance(inner_expr, TypeCast) and inner_expr.type_name.name == 'address') or
+                (isinstance(inner_expr, FunctionCall) and isinstance(inner_expr.function, Identifier) and inner_expr.function.name == 'address')
+            )
+
             if bits < 256:
                 # Apply mask for truncation: value & ((1 << bits) - 1)
                 mask = (1 << bits) - 1
+                if is_address_expr:
+                    return f'(addressToUint({expr}) & {mask}n)'
                 return f'(BigInt({expr}) & {mask}n)'
             else:
                 # uint256 - no masking needed
+                if is_address_expr:
+                    return f'addressToUint({expr})'
                 if expr.startswith('BigInt(') or expr.isdigit() or expr.endswith('n'):
                     return expr
                 return f'BigInt({expr})'
