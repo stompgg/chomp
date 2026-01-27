@@ -4,6 +4,10 @@
  * Provides battle simulation and on-chain interaction for the Chomp battle system.
  * Supports both local TypeScript simulation and on-chain viem interactions.
  *
+ * This service composes the BattleHarness internally for local simulation,
+ * providing Angular-specific reactivity via signals while delegating
+ * battle logic to the transpiled Engine.
+ *
  * Requirements: Angular 20+, viem
  *
  * Usage:
@@ -24,14 +28,12 @@ import {
   WritableSignal,
   signal,
   computed,
-  effect,
   inject,
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import {
   createPublicClient,
-  createWalletClient,
   http,
   type PublicClient,
   type WalletClient,
@@ -39,7 +41,6 @@ import {
   type Address,
   type Hash,
   keccak256,
-  encodePacked,
   encodeAbiParameters,
   toHex,
 } from 'viem';
@@ -48,38 +49,31 @@ import { mainnet } from 'viem/chains';
 import {
   MoveMetadata,
   MoveType,
-  MoveClass,
-  ExtraDataType,
   BattleState,
   TeamState,
   MonBattleState,
   BattleEvent,
   BattleServiceConfig,
-  MonDefinition,
-  DEFAULT_CONSTANTS,
 } from './types';
-import { loadMoveMetadata, convertMoveMetadata } from './metadata-converter';
+import { loadMoveMetadata } from './metadata-converter';
+
+// Import harness types and factory
+import {
+  BattleHarness,
+  createBattleHarness,
+  type MonConfig,
+  type TeamConfig,
+  type BattleConfig as HarnessBattleConfig,
+  type TurnInput,
+  type BattleState as HarnessBattleState,
+  type MonState as HarnessMonState,
+} from '../../transpiler/runtime/battle-harness';
 
 // =============================================================================
-// LOCAL SIMULATION TYPES (matches transpiled code)
+// RE-EXPORT HARNESS TYPES FOR CONVENIENCE
 // =============================================================================
 
-/**
- * Mon structure as used by the Engine
- */
-interface EngineMon {
-  stats: bigint;
-  moves: string[];
-  ability: string;
-}
-
-/**
- * Move selection structure
- */
-interface MoveSelection {
-  packedMoveIndex: bigint;
-  extraData: bigint;
-}
+export type { MonConfig, TeamConfig };
 
 // =============================================================================
 // BATTLE SERVICE
@@ -170,12 +164,10 @@ export class BattleService {
   );
 
   // -------------------------------------------------------------------------
-  // Local Simulation State (for TypeScript engine)
+  // Battle Harness (for local simulation)
   // -------------------------------------------------------------------------
 
-  private localEngine: any = null;
-  private localTypeCalculator: any = null;
-  private localMoves: Map<string, any> = new Map();
+  private harness: BattleHarness | null = null;
 
   // -------------------------------------------------------------------------
   // Configuration Methods
@@ -253,12 +245,13 @@ export class BattleService {
   }
 
   // -------------------------------------------------------------------------
-  // Local Simulation Methods
+  // Local Simulation Methods (using BattleHarness)
   // -------------------------------------------------------------------------
 
   /**
-   * Initialize the local TypeScript simulation engine
-   * This dynamically imports the transpiled Engine
+   * Initialize the local TypeScript simulation engine.
+   * Creates a BattleHarness that handles module loading with caching
+   * and dependency injection via ContractContainer.
    */
   async initializeLocalEngine(): Promise<void> {
     if (!this._config().localSimulation) {
@@ -266,32 +259,10 @@ export class BattleService {
     }
 
     try {
-      // Dynamic imports for the transpiled code
-      // These paths should be adjusted based on your build setup
-      const [
-        { Engine },
-        { TypeCalculator },
-        { StandardAttack },
-        Structs,
-        Enums,
-        Constants,
-      ] = await Promise.all([
-        import('../../transpiler/ts-output/Engine'),
-        import('../../transpiler/ts-output/TypeCalculator'),
-        import('../../transpiler/ts-output/StandardAttack'),
-        import('../../transpiler/ts-output/Structs'),
-        import('../../transpiler/ts-output/Enums'),
-        import('../../transpiler/ts-output/Constants'),
-      ]);
-
-      // Create engine instance
-      this.localEngine = new Engine();
-      this.localTypeCalculator = new TypeCalculator();
-
-      // Initialize battle config storage
-      (this.localEngine as any).battleConfig = {};
-      (this.localEngine as any).battleData = {};
-      (this.localEngine as any).storageKeyMap = {};
+      // Create harness with module loader that uses cached dynamic imports
+      this.harness = await createBattleHarness(
+        (name: string) => import(`../../transpiler/ts-output/${name}`)
+      );
     } catch (err) {
       this._error.set(`Failed to initialize local engine: ${(err as Error).message}`);
       throw err;
@@ -299,121 +270,42 @@ export class BattleService {
   }
 
   /**
-   * Initialize a local battle with two teams
+   * Initialize a local battle with two teams.
+   * Uses the harness's MonConfig format with individual stat fields.
    */
   async initializeLocalBattle(
     p0Address: string,
     p1Address: string,
-    p0Team: EngineMon[],
-    p1Team: EngineMon[]
+    p0Team: MonConfig[],
+    p1Team: MonConfig[]
   ): Promise<string> {
-    if (!this.localEngine) {
+    if (!this.harness) {
       await this.initializeLocalEngine();
     }
 
-    const engine = this.localEngine;
+    const battleConfig: HarnessBattleConfig = {
+      player0: p0Address,
+      player1: p1Address,
+      teams: [
+        { mons: p0Team },
+        { mons: p1Team },
+      ],
+    };
 
-    // Compute battle key
-    const [battleKey] = engine.computeBattleKey(p0Address, p1Address);
-
-    // Initialize storage
-    this.initializeLocalBattleConfig(battleKey);
-    this.initializeLocalBattleData(battleKey, p0Address, p1Address);
-
-    // Set up teams
-    this.setupLocalTeams(battleKey, p0Team, p1Team);
+    const battleKey = await this.harness!.startBattle(battleConfig);
 
     this._battleKey.set(battleKey);
     this._battleEvents.set([]);
 
-    // Create initial battle state
-    this.updateBattleStateFromEngine(battleKey);
+    // Create initial battle state from harness
+    this.updateBattleStateFromHarness(battleKey);
 
     return battleKey;
   }
 
-  private initializeLocalBattleConfig(battleKey: string): void {
-    const engine = this.localEngine as any;
-
-    const emptyConfig = {
-      validator: new MockValidator(),
-      packedP0EffectsCount: 0n,
-      rngOracle: new MockRNGOracle(),
-      packedP1EffectsCount: 0n,
-      moveManager: '0x0000000000000000000000000000000000000000',
-      globalEffectsLength: 0n,
-      teamSizes: 0n,
-      engineHooksLength: 0n,
-      koBitmaps: 0n,
-      startTimestamp: BigInt(Math.floor(Date.now() / 1000)),
-      p0Salt: '0x0000000000000000000000000000000000000000000000000000000000000000',
-      p1Salt: '0x0000000000000000000000000000000000000000000000000000000000000000',
-      p0Move: { packedMoveIndex: 0n, extraData: 0n },
-      p1Move: { packedMoveIndex: 0n, extraData: 0n },
-      p0Team: {} as any,
-      p1Team: {} as any,
-      p0States: {} as any,
-      p1States: {} as any,
-      globalEffects: {} as any,
-      p0Effects: {} as any,
-      p1Effects: {} as any,
-      engineHooks: {} as any,
-    };
-
-    engine.battleConfig[battleKey] = emptyConfig;
-    engine.storageKeyForWrite = battleKey;
-    engine.storageKeyMap[battleKey] = battleKey;
-  }
-
-  private initializeLocalBattleData(
-    battleKey: string,
-    p0: string,
-    p1: string
-  ): void {
-    const engine = this.localEngine as any;
-    engine.battleData[battleKey] = {
-      p0,
-      p1,
-      winnerIndex: 2n, // No winner yet
-      prevPlayerSwitchForTurnFlag: 2n,
-      playerSwitchForTurnFlag: 2n, // Both players move
-      activeMonIndex: 0n, // Both start with mon 0
-      turnId: 0n,
-    };
-  }
-
-  private setupLocalTeams(
-    battleKey: string,
-    p0Team: EngineMon[],
-    p1Team: EngineMon[]
-  ): void {
-    const engine = this.localEngine as any;
-    const config = engine.battleConfig[battleKey];
-
-    // Set team sizes (p0 in lower 4 bits, p1 in upper 4 bits)
-    config.teamSizes = BigInt(p0Team.length) | (BigInt(p1Team.length) << 4n);
-
-    // Add mons to teams
-    for (let i = 0; i < p0Team.length; i++) {
-      config.p0Team[i] = p0Team[i];
-      config.p0States[i] = this.createEmptyMonState();
-    }
-    for (let i = 0; i < p1Team.length; i++) {
-      config.p1Team[i] = p1Team[i];
-      config.p1States[i] = this.createEmptyMonState();
-    }
-  }
-
-  private createEmptyMonState(): any {
-    return {
-      packedStatDeltas: 0n,
-      isKnockedOut: false,
-      shouldSkipTurn: false,
-    };
-  }
-
   /**
-   * Execute a turn in the local simulation
+   * Execute a turn in the local simulation.
+   * Delegates to the BattleHarness which uses Engine's public API.
    */
   async executeLocalTurn(
     p0MoveIndex: number,
@@ -424,7 +316,7 @@ export class BattleService {
     p1Salt: string
   ): Promise<void> {
     const battleKey = this._battleKey();
-    if (!battleKey || !this.localEngine) {
+    if (!battleKey || !this.harness) {
       throw new Error('No active battle');
     }
 
@@ -432,21 +324,24 @@ export class BattleService {
     this._error.set(null);
 
     try {
-      const engine = this.localEngine;
+      const turnInput: TurnInput = {
+        player0: {
+          moveIndex: p0MoveIndex,
+          salt: p0Salt,
+          extraData: p0ExtraData,
+        },
+        player1: {
+          moveIndex: p1MoveIndex,
+          salt: p1Salt,
+          extraData: p1ExtraData,
+        },
+      };
 
-      // Advance block timestamp
-      engine._block = engine._block || { timestamp: BigInt(Math.floor(Date.now() / 1000)) };
-      engine._block.timestamp += 1n;
+      // Execute turn via harness (delegates to Engine)
+      this.harness.executeTurn(battleKey, turnInput);
 
-      // Set moves for both players
-      engine.setMove(battleKey, 0n, BigInt(p0MoveIndex), p0Salt, p0ExtraData);
-      engine.setMove(battleKey, 1n, BigInt(p1MoveIndex), p1Salt, p1ExtraData);
-
-      // Execute the turn
-      engine.execute(battleKey);
-
-      // Update battle state
-      this.updateBattleStateFromEngine(battleKey);
+      // Update battle state from harness
+      this.updateBattleStateFromHarness(battleKey);
 
       // Record event
       this._battleEvents.update((events) => [
@@ -467,80 +362,64 @@ export class BattleService {
   }
 
   /**
-   * Update battle state from engine data
+   * Update battle state from harness.
+   * Converts harness state (with deltas) to client state (with absolute values).
    */
-  private updateBattleStateFromEngine(battleKey: string): void {
-    const engine = this.localEngine as any;
-    const config = engine.battleConfig[battleKey];
-    const data = engine.battleData[battleKey];
+  private updateBattleStateFromHarness(battleKey: string): void {
+    if (!this.harness) return;
 
-    if (!config || !data) return;
+    const harnessState = this.harness.getBattleState(battleKey);
 
-    // Extract team sizes
-    const p0Size = Number(config.teamSizes & 0xfn);
-    const p1Size = Number(config.teamSizes >> 4n);
+    // Convert harness state to client state
+    const p0Mons = harnessState.p0States.map((state) =>
+      this.convertHarnessMonState(state)
+    );
+    const p1Mons = harnessState.p1States.map((state) =>
+      this.convertHarnessMonState(state)
+    );
 
-    // Build team states
-    const p0Mons: MonBattleState[] = [];
-    const p1Mons: MonBattleState[] = [];
-
-    for (let i = 0; i < p0Size; i++) {
-      const mon = config.p0Team[i];
-      const state = config.p0States[i];
-      p0Mons.push(this.extractMonState(mon, state));
-    }
-
-    for (let i = 0; i < p1Size; i++) {
-      const mon = config.p1Team[i];
-      const state = config.p1States[i];
-      p1Mons.push(this.extractMonState(mon, state));
-    }
-
-    // Extract active mon indices
-    const p0Active = Number(data.activeMonIndex & 0xfn);
-    const p1Active = Number(data.activeMonIndex >> 4n);
-
-    // Determine game over state
-    const isGameOver = data.winnerIndex !== 2n;
-    const winner = isGameOver ? (Number(data.winnerIndex) as 0 | 1) : undefined;
+    const isGameOver = harnessState.winnerIndex !== 2;
+    const winner = isGameOver ? (harnessState.winnerIndex as 0 | 1) : undefined;
 
     this._battleState.set({
       battleKey,
       players: [
-        { mons: p0Mons, activeMonIndex: p0Active },
-        { mons: p1Mons, activeMonIndex: p1Active },
+        { mons: p0Mons, activeMonIndex: harnessState.activeMonIndex[0] },
+        { mons: p1Mons, activeMonIndex: harnessState.activeMonIndex[1] },
       ],
-      turn: Number(data.turnId),
+      turn: Number(harnessState.turnId),
       isGameOver,
       winner,
     });
   }
 
   /**
-   * Extract mon state from engine data
+   * Convert harness MonState (with deltas) to client MonBattleState.
+   * Note: The harness returns stat deltas. For now we return the deltas directly
+   * since the base stats would need to be tracked separately.
    */
-  private extractMonState(mon: any, state: any): MonBattleState {
-    // Parse packed stats from mon
-    const stats = mon?.stats ?? 0n;
-
+  private convertHarnessMonState(state: HarnessMonState): MonBattleState {
     return {
-      hp: this.extractStat(stats, 0),
-      stamina: this.extractStat(stats, 1),
-      speed: this.extractStat(stats, 2),
-      attack: this.extractStat(stats, 3),
-      defense: this.extractStat(stats, 4),
-      specialAttack: this.extractStat(stats, 5),
-      specialDefense: this.extractStat(stats, 6),
-      isKnockedOut: state?.isKnockedOut ?? false,
-      shouldSkipTurn: state?.shouldSkipTurn ?? false,
-      type1: MoveType.None,
-      type2: MoveType.None,
+      // Deltas represent change from base stats
+      hp: state.hpDelta,
+      stamina: state.staminaDelta,
+      speed: state.speedDelta,
+      attack: state.attackDelta,
+      defense: state.defenseDelta,
+      specialAttack: state.specialAttackDelta,
+      specialDefense: state.specialDefenseDelta,
+      isKnockedOut: state.isKnockedOut,
+      shouldSkipTurn: state.shouldSkipTurn,
+      type1: MoveType.None,  // TODO: Get from mon config
+      type2: MoveType.None,  // TODO: Get from mon config
     };
   }
 
-  private extractStat(packedStats: bigint, index: number): bigint {
-    // Stats are packed as uint32 values
-    return (packedStats >> BigInt(index * 32)) & 0xffffffffn;
+  /**
+   * Get access to the underlying harness for advanced usage.
+   */
+  getHarness(): BattleHarness | null {
+    return this.harness;
   }
 
   // -------------------------------------------------------------------------
@@ -676,43 +555,6 @@ export class BattleService {
     this._battleEvents.set([]);
     this._isExecuting.set(false);
     this._error.set(null);
-  }
-}
-
-// =============================================================================
-// MOCK IMPLEMENTATIONS FOR LOCAL SIMULATION
-// =============================================================================
-
-/**
- * Mock RNG Oracle - computes deterministic RNG from both salts
- */
-class MockRNGOracle {
-  getRNG(p0Salt: string, p1Salt: string): bigint {
-    const encoded = encodeAbiParameters(
-      [{ type: 'bytes32' }, { type: 'bytes32' }],
-      [p0Salt as `0x${string}`, p1Salt as `0x${string}`]
-    );
-    return BigInt(keccak256(encoded));
-  }
-}
-
-/**
- * Mock Validator - allows all moves
- */
-class MockValidator {
-  validateGameStart(): boolean {
-    return true;
-  }
-
-  validateSwitch(): boolean {
-    return true;
-  }
-
-  validateSpecificMoveSelection(): boolean {
-    return true;
-  }
-
-  validateTimeout(): string {
-    return '0x0000000000000000000000000000000000000000';
+    this.harness = null;
   }
 }
