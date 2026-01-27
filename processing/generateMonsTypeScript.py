@@ -54,7 +54,7 @@ def build_sprite_config(
 def build_attack_sprite(
     move_name: str,
     attack_spritesheet_data: Dict[str, Any],
-    non_standard_spritesheet_data: Dict[str, Any]
+    non_standard_spritesheet_data: Dict[str, Any],
 ) -> Dict[str, Any] | None:
     """Build sprite config for an attack move, or None if no sprite data exists."""
     key = to_spritesheet_key(move_name)
@@ -84,10 +84,12 @@ def build_attack_sprite(
     return None
 
 
-def build_sprites(mon_name_lower: str, spritesheet_data: Dict[str, Any]) -> Dict[str, Any]:
+def build_sprites(
+    mon_name_lower: str, spritesheet_data: Dict[str, Any]
+) -> Dict[str, Any]:
     """Build sprite configurations for a mon."""
     sprites = {}
-    
+
     # Define sprite variants: (side, output_key, data_key, spritesheet, loops)
     SPRITE_VARIANTS = [
         ("front", "frontIdle", None, "mon_spritesheet.png", True),
@@ -97,17 +99,17 @@ def build_sprites(mon_name_lower: str, spritesheet_data: Dict[str, Any]) -> Dict
         ("back", "backSwitchIn", "switchIn", "mon_switch.png", False),
         ("back", "backSwitchOut", "switchOut", "mon_switch.png", False),
     ]
-    
+
     for side, output_key, data_key, sheet, loops in SPRITE_VARIANTS:
         side_data = spritesheet_data.get(f"{mon_name_lower}_{side}.gif", {})
         if not side_data:
             continue
-            
+
         # For idle animations, use root-level frames; for switch animations, use nested data
         source = side_data if data_key is None else side_data.get(data_key, {})
         if not source or "frames" not in source:
             continue
-            
+
         sprites[output_key] = build_sprite_config(
             f"/assets/mons/all/{sheet}",
             source,
@@ -115,18 +117,20 @@ def build_sprites(mon_name_lower: str, spritesheet_data: Dict[str, Any]) -> Dict
             frame_height=96,
             loop=loops,
         )
-    
+
     return sprites
 
 
-def read_mons_data(file_path: str, spritesheet_data: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+def read_mons_data(
+    file_path: str, spritesheet_data: Dict[str, Any]
+) -> Dict[int, Dict[str, Any]]:
     """Read mons.csv and return a dictionary keyed by mon ID."""
     mons_data = {}
-    
+
     for row in read_csv(file_path):
         mon_id = int(row["Id"])
         mon_name_lower = row["Name"].lower()
-        
+
         mons_data[mon_id] = {
             "id": mon_id,
             "name": row["Name"],
@@ -147,14 +151,14 @@ def read_mons_data(file_path: str, spritesheet_data: Dict[str, Any]) -> Dict[int
             "moves": [],
             "ability": {"address": "", "name": "", "effect": ""},
         }
-    
+
     return mons_data
 
 
 def read_moves_data(
     file_path: str,
     attack_spritesheet_data: Dict[str, Any],
-    non_standard_spritesheet_data: Dict[str, Any]
+    non_standard_spritesheet_data: Dict[str, Any],
 ) -> tuple[Dict[str, List[Dict[str, Any]]], set[str]]:
     """Read moves.csv and return a dictionary keyed by mon name, plus set of all move keys."""
     moves_by_mon: Dict[str, List[Dict[str, Any]]] = {}
@@ -164,7 +168,7 @@ def read_moves_data(
         try:
             return int(val)
         except ValueError:
-            return '?'
+            return "?"
 
     for row in read_csv(file_path):
         mon_name = row["Mon"]
@@ -184,7 +188,9 @@ def read_moves_data(
             "description": row["DevDescription"],
             "extraDataNeeded": row["ExtraData"] == "Yes",
         }
-        sprite = build_attack_sprite(move_name, attack_spritesheet_data, non_standard_spritesheet_data)
+        sprite = build_attack_sprite(
+            move_name, attack_spritesheet_data, non_standard_spritesheet_data
+        )
         if sprite:
             move_data["sprite"] = sprite
         moves_by_mon.setdefault(mon_name, []).append(move_data)
@@ -195,7 +201,7 @@ def read_moves_data(
 def find_non_standard_sprites(
     attack_spritesheet_data: Dict[str, Any],
     non_standard_spritesheet_data: Dict[str, Any],
-    matched_move_keys: set[str]
+    matched_move_keys: set[str],
 ) -> Dict[str, Dict[str, Any]]:
     """Find spritesheet animations that don't match any move on a mon."""
     non_standard: Dict[str, Dict[str, Any]] = {}
@@ -252,6 +258,7 @@ def combine_data(
 
 def collapse_frame_arrays(json_str: str) -> str:
     """Collapse frame arrays like [[0,0], [96,0]] back to single lines."""
+
     # Match "frames": followed by a multi-line array of coordinate pairs
     def collapse_match(m: re.Match) -> str:
         content = m.group(1)
@@ -261,32 +268,47 @@ def collapse_frame_arrays(json_str: str) -> str:
         collapsed = re.sub(r"\[ +", "[", collapsed)
         collapsed = re.sub(r" +\]", "]", collapsed)
         return f'"frames": {collapsed}'
-    
+
     return re.sub(
         r'"frames": (\[\s*\[[\d\s,\[\]]+\])',
         collapse_match,
         json_str,
-        flags=re.MULTILINE
+        flags=re.MULTILINE,
     )
 
 
 def generate_typescript_const(data: Dict[int, Dict[str, Any]], output_file: str):
     """Generate TypeScript const declaration and write to file."""
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
-    
+
     # Collapse frame arrays to single lines
     json_str = collapse_frame_arrays(json_str)
-    
+
     # Replace string keys with integer keys
     json_str = re.sub(r'"(\d+)":', r"\1:", json_str)
-    
+
     # Replace address string references with Address object references
     json_str = re.sub(r'"Address\.([A-Z0-9_]+)"', r"Address.\1", json_str)
-    
+
     # Replace string values with enum references
     ENUM_REPLACEMENTS = {
-        "Type": ["Yin", "Yang", "Earth", "Liquid", "Fire", "Metal", "Ice", 
-                 "Nature", "Lightning", "Mythic", "Air", "Math", "Cyber", "Wild", "Cosmic"],
+        "Type": [
+            "Yin",
+            "Yang",
+            "Earth",
+            "Liquid",
+            "Fire",
+            "Metal",
+            "Ice",
+            "Nature",
+            "Lightning",
+            "Mythic",
+            "Air",
+            "Math",
+            "Cyber",
+            "Wild",
+            "Cosmic",
+        ],
         "MoveClass": ["Physical", "Special", "Other", "Self"],
     }
     for enum_name, values in ENUM_REPLACEMENTS.items():
@@ -354,13 +376,46 @@ export type Mon = {{
 }};
 
 export type MonDatabase = Record<number, Mon>;
+
+// Pre-computed lookup map for O(1) mon matching by stats
+export const monStatLookup = new Map<string, Mon>();
+for (const mon of Object.values(MonMetadata)) {{
+  const key = `${{mon.stats.hp}}-${{mon.stats.attack}}-${{mon.stats.defense}}-${{mon.stats.specialAttack}}-${{mon.stats.specialDefense}}-${{mon.stats.speed}}`;
+  monStatLookup.set(key, mon);
+}}
+
+// Helper to create a stats key for lookup
+export function getMonStatsKey(stats: {{ hp: number; attack: number; defense: number; specialAttack: number; specialDefense: number; speed: number }}): string {{
+  return `${{stats.hp}}-${{stats.attack}}-${{stats.defense}}-${{stats.specialAttack}}-${{stats.specialDefense}}-${{stats.speed}}`;
+}}
+
+// Pre-computed max stats across all mons
+export const MAX_MON_STATS: Record<keyof Mon['stats'], number> = {{
+  hp: 0,
+  attack: 0,
+  defense: 0,
+  specialAttack: 0,
+  specialDefense: 0,
+  speed: 0,
+  bst: 0,
+}};
+for (const monData of Object.values(MonMetadata)) {{
+  const stats = monData.stats;
+  for (const statName of Object.keys(stats) as (keyof Mon['stats'])[]) {{
+    if (stats[statName] > MAX_MON_STATS[statName]) {{
+      MAX_MON_STATS[statName] = stats[statName];
+    }}
+  }}
+}}
 """
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(typescript_content)
 
 
-def generate_non_standard_sprites_file(sprites: Dict[str, Dict[str, Any]], output_file: str):
+def generate_non_standard_sprites_file(
+    sprites: Dict[str, Dict[str, Any]], output_file: str
+):
     """Generate TypeScript file for non-standard attack sprites not matched to any mon's moves."""
     json_str = json.dumps(sprites, indent=2, ensure_ascii=False)
 
@@ -387,8 +442,14 @@ def run() -> bool:
         "moves": base_path / "moves.csv",
         "abilities": base_path / "abilities.csv",
         "spritesheet": base_path / "imgs" / "spritesheet.json",
-        "attack_spritesheet": base_path / "imgs" / "attacks" / "attack_spritesheet.json",
-        "non_standard_spritesheet": base_path / "imgs" / "attacks" / "non_standard_spritesheet.json",
+        "attack_spritesheet": base_path
+        / "imgs"
+        / "attacks"
+        / "attack_spritesheet.json",
+        "non_standard_spritesheet": base_path
+        / "imgs"
+        / "attacks"
+        / "non_standard_spritesheet.json",
     }
 
     # Determine output location
@@ -413,25 +474,39 @@ def run() -> bool:
     # Load non-standard spritesheet if it exists
     non_standard_spritesheet_data = {}
     if files["non_standard_spritesheet"].exists():
-        non_standard_spritesheet_data = read_json(str(files["non_standard_spritesheet"]))
+        non_standard_spritesheet_data = read_json(
+            str(files["non_standard_spritesheet"])
+        )
         print(f"  ✓ Loaded non-standard attack spritesheet")
 
     mons_data = read_mons_data(str(files["mons"]), spritesheet_data)
-    moves_by_mon, all_move_keys = read_moves_data(str(files["moves"]), attack_spritesheet_data, non_standard_spritesheet_data)
+    moves_by_mon, all_move_keys = read_moves_data(
+        str(files["moves"]), attack_spritesheet_data, non_standard_spritesheet_data
+    )
     abilities_by_mon = read_abilities_data(str(files["abilities"]))
 
-    print(f"Loaded {len(mons_data)} mons, moves for {len(moves_by_mon)} mons, abilities for {len(abilities_by_mon)} mons")
+    print(
+        f"Loaded {len(mons_data)} mons, moves for {len(moves_by_mon)} mons, abilities for {len(abilities_by_mon)} mons"
+    )
 
     combined_data = combine_data(mons_data, moves_by_mon, abilities_by_mon)
     generate_typescript_const(combined_data, str(output_file))
     print(f"✅ Generated TypeScript const in {output_file}")
 
     # Find and generate non-standard sprites not matched to any mon's moves
-    non_standard = find_non_standard_sprites(attack_spritesheet_data, non_standard_spritesheet_data, all_move_keys)
+    non_standard = find_non_standard_sprites(
+        attack_spritesheet_data, non_standard_spritesheet_data, all_move_keys
+    )
     if non_standard:
-        non_standard_output = munch_data_dir / "non-standard-sprites.ts" if munch_data_dir.exists() else base_path / "non_standard_sprites.ts"
+        non_standard_output = (
+            munch_data_dir / "non-standard-sprites.ts"
+            if munch_data_dir.exists()
+            else base_path / "non_standard_sprites.ts"
+        )
         generate_non_standard_sprites_file(non_standard, str(non_standard_output))
-        print(f"✅ Generated non-standard sprites ({len(non_standard)} animations) in {non_standard_output}")
+        print(
+            f"✅ Generated non-standard sprites ({len(non_standard)} animations) in {non_standard_output}"
+        )
     else:
         print("✅ All non-standard spritesheet animations matched to moves")
 
