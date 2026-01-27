@@ -336,10 +336,7 @@ contract Engine is IEngine, MappingAllocator {
 
             // Calculate the priority and non-priority player indices
             priorityPlayerIndex = computePriorityPlayerIndex(battleKey, rng);
-            uint256 otherPlayerIndex;
-            if (priorityPlayerIndex == 0) {
-                otherPlayerIndex = 1;
-            }
+            uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
 
             // Run beginning of round effects
             playerSwitchForTurnFlag = _handleEffects(
