@@ -74,20 +74,20 @@ export function resolveConstant(
     return value;
   }
 
-  // Constant references
+  // Constant references (constants are bigint from transpiled output)
   switch (value) {
     case 'DEFAULT_PRIORITY':
-      return DEFAULT_CONSTANTS.DEFAULT_PRIORITY;
+      return Number(DEFAULT_CONSTANTS.DEFAULT_PRIORITY);
     case 'DEFAULT_STAMINA':
-      return DEFAULT_CONSTANTS.DEFAULT_STAMINA;
+      return Number(DEFAULT_CONSTANTS.DEFAULT_STAMINA);
     case 'DEFAULT_CRIT_RATE':
-      return DEFAULT_CONSTANTS.DEFAULT_CRIT_RATE;
+      return Number(DEFAULT_CONSTANTS.DEFAULT_CRIT_RATE);
     case 'DEFAULT_VOL':
-      return DEFAULT_CONSTANTS.DEFAULT_VOL;
+      return Number(DEFAULT_CONSTANTS.DEFAULT_VOL);
     case 'DEFAULT_ACCURACY':
-      return DEFAULT_CONSTANTS.DEFAULT_ACCURACY;
+      return Number(DEFAULT_CONSTANTS.DEFAULT_ACCURACY);
     case 'SWITCH_PRIORITY':
-      return DEFAULT_CONSTANTS.SWITCH_PRIORITY;
+      return Number(DEFAULT_CONSTANTS.SWITCH_PRIORITY);
     case 'dynamic':
       // Dynamic values are calculated at runtime, return 0 as placeholder
       return 0;
@@ -141,13 +141,13 @@ export function convertMoveMetadata(raw: RawMoveMetadata): MoveMetadata {
     inheritsFrom: raw.inheritsFrom,
     name: raw.name,
     basePower: resolveConstant(raw.basePower),
-    staminaCost: resolveConstant(raw.staminaCost, DEFAULT_CONSTANTS.DEFAULT_STAMINA),
-    accuracy: resolveConstant(raw.accuracy, DEFAULT_CONSTANTS.DEFAULT_ACCURACY),
-    priority: resolveConstant(raw.priority, DEFAULT_CONSTANTS.DEFAULT_PRIORITY),
+    staminaCost: resolveConstant(raw.staminaCost, Number(DEFAULT_CONSTANTS.DEFAULT_STAMINA)),
+    accuracy: resolveConstant(raw.accuracy, Number(DEFAULT_CONSTANTS.DEFAULT_ACCURACY)),
+    priority: resolveConstant(raw.priority, Number(DEFAULT_CONSTANTS.DEFAULT_PRIORITY)),
     moveType: resolveMoveType(raw.moveType),
     moveClass: resolveMoveClass(raw.moveClass),
-    critRate: resolveConstant(raw.critRate, DEFAULT_CONSTANTS.DEFAULT_CRIT_RATE),
-    volatility: resolveConstant(raw.volatility, DEFAULT_CONSTANTS.DEFAULT_VOL),
+    critRate: resolveConstant(raw.critRate, Number(DEFAULT_CONSTANTS.DEFAULT_CRIT_RATE)),
+    volatility: resolveConstant(raw.volatility, Number(DEFAULT_CONSTANTS.DEFAULT_VOL)),
     effectAccuracy: resolveConstant(raw.effectAccuracy),
     effect: raw.effect,
     extraDataType: resolveExtraDataType(raw.extraDataType),

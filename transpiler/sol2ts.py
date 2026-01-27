@@ -227,6 +227,74 @@ KEYWORDS = {
     'string': TokenType.STRING,
 }
 
+# Two-character operators (moved from inside tokenize() for performance)
+TWO_CHAR_OPS = {
+    '++': TokenType.PLUS_PLUS,
+    '--': TokenType.MINUS_MINUS,
+    '**': TokenType.STAR_STAR,
+    '&&': TokenType.AMPERSAND_AMPERSAND,
+    '||': TokenType.PIPE_PIPE,
+    '==': TokenType.EQ_EQ,
+    '!=': TokenType.BANG_EQ,
+    '<=': TokenType.LT_EQ,
+    '>=': TokenType.GT_EQ,
+    '<<': TokenType.LT_LT,
+    '>>': TokenType.GT_GT,
+    '+=': TokenType.PLUS_EQ,
+    '-=': TokenType.MINUS_EQ,
+    '*=': TokenType.STAR_EQ,
+    '/=': TokenType.SLASH_EQ,
+    '%=': TokenType.PERCENT_EQ,
+    '&=': TokenType.AMPERSAND_EQ,
+    '|=': TokenType.PIPE_EQ,
+    '^=': TokenType.CARET_EQ,
+    '=>': TokenType.ARROW,
+}
+
+# Single-character operators and delimiters (moved from inside tokenize() for performance)
+SINGLE_CHAR_OPS = {
+    '+': TokenType.PLUS,
+    '-': TokenType.MINUS,
+    '*': TokenType.STAR,
+    '/': TokenType.SLASH,
+    '%': TokenType.PERCENT,
+    '&': TokenType.AMPERSAND,
+    '|': TokenType.PIPE,
+    '^': TokenType.CARET,
+    '~': TokenType.TILDE,
+    '<': TokenType.LT,
+    '>': TokenType.GT,
+    '!': TokenType.BANG,
+    '=': TokenType.EQ,
+    '?': TokenType.QUESTION,
+    ':': TokenType.COLON,
+    '(': TokenType.LPAREN,
+    ')': TokenType.RPAREN,
+    '{': TokenType.LBRACE,
+    '}': TokenType.RBRACE,
+    '[': TokenType.LBRACKET,
+    ']': TokenType.RBRACKET,
+    ';': TokenType.SEMICOLON,
+    ',': TokenType.COMMA,
+    '.': TokenType.DOT,
+}
+
+# Precompiled regex patterns for Yul transpilation (moved from _transpile_yul_block for performance)
+YUL_NORMALIZE_PATTERNS = [
+    (re.compile(r':\s*='), ':='),           # ": =" -> ":="
+    (re.compile(r'\s*\.\s*'), '.'),         # " . " -> "."
+    (re.compile(r'(\w)\s+\('), r'\1('),     # "func (" -> "func("
+    (re.compile(r'\(\s+'), '('),            # "( " -> "("
+    (re.compile(r'\s+\)'), ')'),            # " )" -> ")"
+    (re.compile(r'\s+,'), ','),             # " ," -> ","
+    (re.compile(r',\s+'), ', '),            # normalize comma spacing
+]
+YUL_LET_PATTERN = re.compile(r'let\s+(\w+)\s*:=\s*([^{}\n]+?)(?=\s+(?:let|if|for|switch|$)|\s*$)')
+YUL_SLOT_PATTERN = re.compile(r'(\w+)\.slot')
+YUL_IF_PATTERN = re.compile(r'if\s+([^{]+)\s*\{([^}]*)\}')
+YUL_IF_STRIP_PATTERN = re.compile(r'if\s+[^{]+\{[^}]*\}')
+YUL_CALL_PATTERN = re.compile(r'\b(sstore|mstore|revert)\s*\(([^)]+)\)')
+
 
 class Lexer:
     def __init__(self, source: str):
@@ -383,65 +451,17 @@ class Lexer:
                 self.tokens.append(Token(token_type, three_char, start_line, start_col))
                 continue
 
-            # Two-character operators
-            two_char_ops = {
-                '++': TokenType.PLUS_PLUS,
-                '--': TokenType.MINUS_MINUS,
-                '**': TokenType.STAR_STAR,
-                '&&': TokenType.AMPERSAND_AMPERSAND,
-                '||': TokenType.PIPE_PIPE,
-                '==': TokenType.EQ_EQ,
-                '!=': TokenType.BANG_EQ,
-                '<=': TokenType.LT_EQ,
-                '>=': TokenType.GT_EQ,
-                '<<': TokenType.LT_LT,
-                '>>': TokenType.GT_GT,
-                '+=': TokenType.PLUS_EQ,
-                '-=': TokenType.MINUS_EQ,
-                '*=': TokenType.STAR_EQ,
-                '/=': TokenType.SLASH_EQ,
-                '%=': TokenType.PERCENT_EQ,
-                '&=': TokenType.AMPERSAND_EQ,
-                '|=': TokenType.PIPE_EQ,
-                '^=': TokenType.CARET_EQ,
-                '=>': TokenType.ARROW,
-            }
-            if two_char in two_char_ops:
+            # Two-character operators (using module-level constant)
+            if two_char in TWO_CHAR_OPS:
                 self.advance()
                 self.advance()
-                self.tokens.append(Token(two_char_ops[two_char], two_char, start_line, start_col))
+                self.tokens.append(Token(TWO_CHAR_OPS[two_char], two_char, start_line, start_col))
                 continue
 
-            # Single-character operators and delimiters
-            single_char_ops = {
-                '+': TokenType.PLUS,
-                '-': TokenType.MINUS,
-                '*': TokenType.STAR,
-                '/': TokenType.SLASH,
-                '%': TokenType.PERCENT,
-                '&': TokenType.AMPERSAND,
-                '|': TokenType.PIPE,
-                '^': TokenType.CARET,
-                '~': TokenType.TILDE,
-                '<': TokenType.LT,
-                '>': TokenType.GT,
-                '!': TokenType.BANG,
-                '=': TokenType.EQ,
-                '?': TokenType.QUESTION,
-                ':': TokenType.COLON,
-                '(': TokenType.LPAREN,
-                ')': TokenType.RPAREN,
-                '{': TokenType.LBRACE,
-                '}': TokenType.RBRACE,
-                '[': TokenType.LBRACKET,
-                ']': TokenType.RBRACKET,
-                ';': TokenType.SEMICOLON,
-                ',': TokenType.COMMA,
-                '.': TokenType.DOT,
-            }
-            if ch in single_char_ops:
+            # Single-character operators and delimiters (using module-level constant)
+            if ch in SINGLE_CHAR_OPS:
                 self.advance()
-                self.tokens.append(Token(single_char_ops[ch], ch, start_line, start_col))
+                self.tokens.append(Token(SINGLE_CHAR_OPS[ch], ch, start_line, start_col))
                 continue
 
             # Unknown character - skip
@@ -3176,27 +3196,22 @@ class TypeScriptCodeGenerator:
     def _normalize_yul(self, code: str) -> str:
         """Normalize Yul code by fixing tokenizer spacing."""
         code = ' '.join(code.split())
-        code = re.sub(r':\s*=', ':=', code)           # ": =" -> ":="
-        code = re.sub(r'\s*\.\s*', '.', code)         # " . " -> "."
-        code = re.sub(r'(\w)\s+\(', r'\1(', code)     # "func (" -> "func("
-        code = re.sub(r'\(\s+', '(', code)            # "( " -> "("
-        code = re.sub(r'\s+\)', ')', code)            # " )" -> ")"
-        code = re.sub(r'\s+,', ',', code)             # " ," -> ","
-        code = re.sub(r',\s+', ', ', code)            # normalize comma spacing
+        # Use precompiled patterns for better performance
+        for pattern, replacement in YUL_NORMALIZE_PATTERNS:
+            code = pattern.sub(replacement, code)
         return code
 
     def _transpile_yul_block(self, code: str, slot_vars: Dict[str, str]) -> str:
         """Transpile a block of Yul code to TypeScript."""
         lines = []
 
-        # Parse let bindings: let var := expr
-        let_pattern = re.compile(r'let\s+(\w+)\s*:=\s*([^{}\n]+?)(?=\s+(?:let|if|for|switch|$)|\s*$)')
-        for match in let_pattern.finditer(code):
+        # Parse let bindings: let var := expr (using precompiled pattern)
+        for match in YUL_LET_PATTERN.finditer(code):
             var_name = match.group(1)
             expr = match.group(2).strip()
 
             # Check if this is a .slot access (storage key)
-            slot_match = re.match(r'(\w+)\.slot', expr)
+            slot_match = YUL_SLOT_PATTERN.match(expr)
             if slot_match:
                 storage_var = slot_match.group(1)
                 slot_vars[var_name] = storage_var
@@ -3206,9 +3221,8 @@ class TypeScriptCodeGenerator:
                 ts_expr = self._transpile_yul_expr(expr, slot_vars)
                 lines.append(f'let {var_name} = {ts_expr};')
 
-        # Parse if statements: if cond { body }
-        if_pattern = re.compile(r'if\s+([^{]+)\s*\{([^}]*)\}')
-        for match in if_pattern.finditer(code):
+        # Parse if statements: if cond { body } (using precompiled pattern)
+        for match in YUL_IF_PATTERN.finditer(code):
             cond = match.group(1).strip()
             body = match.group(2).strip()
 
@@ -3223,9 +3237,8 @@ class TypeScriptCodeGenerator:
 
         # Parse standalone function calls (sstore, mstore, etc.) that aren't inside if blocks
         # Remove if block contents to avoid matching calls inside them
-        code_without_ifs = re.sub(r'if\s+[^{]+\{[^}]*\}', '', code)
-        call_pattern = re.compile(r'\b(sstore|mstore|revert)\s*\(([^)]+)\)')
-        for match in call_pattern.finditer(code_without_ifs):
+        code_without_ifs = YUL_IF_STRIP_PATTERN.sub('', code)
+        for match in YUL_CALL_PATTERN.finditer(code_without_ifs):
             func = match.group(1)
             args = match.group(2)
             ts_stmt = self._transpile_yul_call(func, args, slot_vars)
@@ -3375,12 +3388,14 @@ class TypeScriptCodeGenerator:
     def generate_literal(self, lit: Literal) -> str:
         """Generate literal."""
         if lit.kind == 'number':
-            # For large numbers (> 2^53), use string to avoid precision loss
-            # JavaScript numbers lose precision beyond 2^53 (about 16 digits)
-            if len(lit.value.replace('_', '')) > 15:
+            # Use bigint literal syntax (Xn) which is more efficient than BigInt(X)
+            # For large numbers (> 2^53), use BigInt("X") to avoid precision loss
+            clean_value = lit.value.replace('_', '')
+            if len(clean_value) > 15:
                 return f'BigInt("{lit.value}")'
-            return f'BigInt({lit.value})'
+            return f'{lit.value}n'
         elif lit.kind == 'hex':
+            # Hex literals: 0x... -> BigInt("0x...")
             return f'BigInt("{lit.value}")'
         elif lit.kind == 'string':
             return lit.value  # Already has quotes
@@ -3561,6 +3576,9 @@ class TypeScriptCodeGenerator:
                 # For simple identifiers that are likely already bigint, pass through
                 if call.arguments and isinstance(call.arguments[0], Identifier):
                     return args
+                # Use efficient bigint literal syntax for simple numbers
+                if args.isdigit():
+                    return f'{args}n'
                 return f'BigInt({args})'
             elif name == 'address':
                 # Handle address literals like address(0xdead)

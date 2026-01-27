@@ -1,53 +1,85 @@
 /**
- * Type definitions for Chomp battle system metadata
- * These types mirror the Solidity enums and structs
+ * Type definitions for Chomp battle system
+ *
+ * Enums and constants are imported directly from the transpiled Solidity output.
+ * Client-specific types (BattleState, MoveMetadata, etc.) are defined here.
  */
 
-// Mirrors src/Enums.sol
-export enum MoveType {
-  Yin = 0,
-  Yang = 1,
-  Earth = 2,
-  Liquid = 3,
-  Fire = 4,
-  Metal = 5,
-  Ice = 6,
-  Nature = 7,
-  Lightning = 8,
-  Mythic = 9,
-  Air = 10,
-  Math = 11,
-  Cyber = 12,
-  Wild = 13,
-  Cosmic = 14,
-  None = 15,
-}
+// =============================================================================
+// IMPORTS FROM TRANSPILED SOLIDITY
+// =============================================================================
 
-export enum MoveClass {
-  Physical = 0,
-  Special = 1,
-  Self = 2,
-  Other = 3,
-}
+// Import enums from transpiled Enums.ts (source: src/Enums.sol)
+import {
+  Type,
+  MoveClass,
+  ExtraDataType,
+  MonStateIndexName,
+  GameStatus,
+  EffectStep,
+  EffectRunCondition,
+  StatBoostType,
+  StatBoostFlag,
+} from '../../transpiler/ts-output/Enums';
 
-export enum ExtraDataType {
-  None = 0,
-  SelfTeamIndex = 1,
-}
+// Import constants from transpiled Constants.ts (source: src/Constants.sol)
+import {
+  NO_OP_MOVE_INDEX,
+  SWITCH_MOVE_INDEX,
+  SWITCH_PRIORITY,
+  DEFAULT_PRIORITY,
+  DEFAULT_STAMINA,
+  DEFAULT_CRIT_RATE,
+  DEFAULT_VOL,
+  DEFAULT_ACCURACY,
+  CRIT_NUM,
+  CRIT_DENOM,
+} from '../../transpiler/ts-output/Constants';
 
-export enum MonStateIndexName {
-  Hp = 0,
-  Stamina = 1,
-  Speed = 2,
-  Attack = 3,
-  Defense = 4,
-  SpecialAttack = 5,
-  SpecialDefense = 6,
-  IsKnockedOut = 7,
-  ShouldSkipTurn = 8,
-  Type1 = 9,
-  Type2 = 10,
-}
+// =============================================================================
+// RE-EXPORTS WITH ALIASES
+// =============================================================================
+
+// Re-export Type as MoveType for backwards compatibility
+// (Solidity uses "Type" but "MoveType" is clearer in client context)
+export { Type as MoveType };
+
+// Re-export other enums directly
+export {
+  MoveClass,
+  ExtraDataType,
+  MonStateIndexName,
+  GameStatus,
+  EffectStep,
+  EffectRunCondition,
+  StatBoostType,
+  StatBoostFlag,
+};
+
+// =============================================================================
+// CONSTANTS (re-exported with client-friendly format)
+// =============================================================================
+
+/**
+ * Game constants from src/Constants.sol
+ * Values are bigint to match transpiled output.
+ */
+export const DEFAULT_CONSTANTS = {
+  DEFAULT_PRIORITY,
+  DEFAULT_STAMINA,
+  DEFAULT_CRIT_RATE,
+  DEFAULT_VOL,
+  DEFAULT_ACCURACY,
+  SWITCH_PRIORITY,
+  CRIT_NUM,
+  CRIT_DENOM,
+  NO_OP_MOVE_INDEX,
+  SWITCH_MOVE_INDEX,
+} as const;
+
+// =============================================================================
+// CLIENT-SPECIFIC TYPES
+// =============================================================================
 
 /**
  * Raw move metadata as extracted from Solidity files
@@ -69,7 +101,6 @@ export interface RawMoveMetadata {
   effectAccuracy: string | number;
   effect: string | null;
   extraDataType: string;
-  // Additional custom fields for non-StandardAttack moves
   customConstants?: Record<string, string | number>;
   customBehavior?: string;
 }
@@ -87,11 +118,11 @@ export interface MoveMetadata {
   staminaCost: number;
   accuracy: number;
   priority: number;
-  moveType: MoveType;
+  moveType: Type;
   moveClass: MoveClass;
   critRate: number;
-  volatility: number;
   effectAccuracy: number;
+  volatility: number;
   effect: string | null;
   extraDataType: ExtraDataType;
   customConstants?: Record<string, number>;
@@ -103,7 +134,7 @@ export interface MoveMetadata {
  */
 export interface MonDefinition {
   name: string;
-  types: [MoveType, MoveType];
+  types: [Type, Type];
   baseStats: {
     hp: number;
     attack: number;
@@ -112,7 +143,7 @@ export interface MonDefinition {
     specialDefense: number;
     speed: number;
   };
-  moves: string[]; // Contract names
+  moves: string[];
   ability?: string;
 }
 
@@ -129,8 +160,8 @@ export interface MonBattleState {
   specialDefense: bigint;
   isKnockedOut: boolean;
   shouldSkipTurn: boolean;
-  type1: MoveType;
-  type2: MoveType;
+  type1: Type;
+  type2: Type;
 }
 
 /**
@@ -185,30 +216,9 @@ export interface BattleEvent {
  * Configuration for the battle service
  */
 export interface BattleServiceConfig {
-  /** RPC URL for on-chain interactions (optional for local simulation) */
   rpcUrl?: string;
-  /** Chain ID (default: 1 for mainnet) */
   chainId?: number;
-  /** Engine contract address (required for on-chain mode) */
   engineAddress?: `0x${string}`;
-  /** Type calculator contract address */
   typeCalculatorAddress?: `0x${string}`;
-  /** Enable local simulation mode (default: true) */
   localSimulation?: boolean;
 }
-
-/**
- * Default constant values from src/Constants.sol
- */
-export const DEFAULT_CONSTANTS = {
-  DEFAULT_PRIORITY: 3,
-  DEFAULT_STAMINA: 5,
-  DEFAULT_CRIT_RATE: 5,
-  DEFAULT_VOL: 10,
-  DEFAULT_ACCURACY: 100,
-  SWITCH_PRIORITY: 6,
-  CRIT_NUM: 3,
-  CRIT_DENOM: 2,
-  NO_OP_MOVE_INDEX: 126,
-  SWITCH_MOVE_INDEX: 125,
-} as const;
