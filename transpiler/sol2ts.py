@@ -4524,9 +4524,12 @@ class DependencyManifest:
             ''
         ]
 
-        # Import all contracts
+        # Import all contracts using their actual file paths
         for name in sorted(self.contracts.keys()):
-            lines.append(f"import {{ {name} }} from './{name}';")
+            metadata = self.contracts[name]
+            # Convert file_path from .sol to .ts path (e.g., "types/TypeCalculator.sol" -> "./types/TypeCalculator")
+            import_path = './' + metadata.file_path.replace('.sol', '')
+            lines.append(f"import {{ {name} }} from '{import_path}';")
 
         lines.append('')
         lines.append('// Dependency manifest')

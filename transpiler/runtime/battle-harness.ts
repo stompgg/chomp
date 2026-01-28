@@ -8,7 +8,7 @@
  * logic to the Engine rather than reimplementing it.
  */
 
-import { ContractContainer, Contract, registry, globalEventStream } from './index';
+import { ContractContainer, Contract, globalEventStream } from './index';
 
 // =============================================================================
 // TYPES
@@ -197,7 +197,7 @@ export class BattleHarness {
       this.containerSetup(this.container);
     }
 
-    // Load core module files
+    // Load core module files (paths match transpiled output directory structure)
     const [
       engineModule,
       typeCalculatorModule,
@@ -205,9 +205,9 @@ export class BattleHarness {
       rngOracleModule,
     ] = await Promise.all([
       this.loadModule('Engine'),
-      this.loadModule('TypeCalculator'),
+      this.loadModule('types/TypeCalculator'),
       this.loadModule('DefaultValidator'),
-      this.loadModule('DefaultRandomnessOracle'),
+      this.loadModule('rng/DefaultRandomnessOracle'),
     ]);
 
     // Create core singletons (these typically have no dependencies)
@@ -326,17 +326,10 @@ export class BattleHarness {
   }
 
   /**
-   * Load and register an effect contract
+   * Load an effect contract
    */
   async loadEffect(effectName: string): Promise<any> {
-    const effect = await this.loadContract(effectName);
-
-    // Register with effect registry
-    if (effect._contractAddress) {
-      registry.registerEffect(effect._contractAddress, effect);
-    }
-
-    return effect;
+    return this.loadContract(effectName);
   }
 
   /**
