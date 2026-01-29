@@ -128,10 +128,10 @@ pub fn mine_multiple(
         .collect()
 }
 
-/// Estimate the expected number of attempts to find a matching address
-/// For a 9-bit bitmap, we expect to try ~512 addresses on average
+/// Estimate the expected number of attempts to find a matching address.
+/// For an N-bit bitmap, we expect to try ~2^N addresses on average.
 pub fn expected_attempts() -> u64 {
-    512 // 2^9
+    1 << crate::create3::NUM_EFFECT_STEPS // 2^NUM_EFFECT_STEPS
 }
 
 #[cfg(test)]

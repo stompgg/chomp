@@ -55,18 +55,22 @@ pub fn compute_create3_address(salt: B256, createx_address: Address) -> Address 
     compute_create_address_nonce_1(proxy_address)
 }
 
-/// Extract the 9-bit bitmap from the most significant bits of an address
+/// Number of effect steps in the EffectStep enum.
+/// Update this constant when adding new steps to the enum.
+pub const NUM_EFFECT_STEPS: u32 = 9;
+
+/// Extract the bitmap from the most significant bits of an address.
+/// The bitmap encodes which EffectSteps an effect runs at.
 pub fn extract_bitmap(address: Address) -> u16 {
     let bytes = address.as_slice();
-    // Take first 2 bytes and extract top 9 bits
+    // Take first 2 bytes and extract top NUM_EFFECT_STEPS bits
     // bytes[0] is the MSB, bytes[1] is the next byte
-    // We want bits 159-151 (9 bits from the top)
     let top_16_bits = ((bytes[0] as u16) << 8) | (bytes[1] as u16);
-    // Shift right by 7 to get the top 9 bits
-    top_16_bits >> 7
+    // Shift right to get the top NUM_EFFECT_STEPS bits
+    top_16_bits >> (16 - NUM_EFFECT_STEPS)
 }
 
-/// Check if an address has the desired bitmap in its most significant 9 bits
+/// Check if an address has the desired bitmap in its most significant bits
 pub fn matches_bitmap(address: Address, target_bitmap: u16) -> bool {
     extract_bitmap(address) == target_bitmap
 }

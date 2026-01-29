@@ -10,6 +10,7 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
+import {EffectBitmap} from "./lib/EffectBitmap.sol";
 
 contract Engine is IEngine, MappingAllocator {
 
@@ -622,7 +623,7 @@ contract Engine is IEngine, MappingAllocator {
             );
 
             // Check if we have to run an onApply state update
-            if (effect.shouldRunAtStep(EffectStep.OnApply)) {
+            if (EffectBitmap.shouldRunAtStep(address(effect), EffectStep.OnApply)) {
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(tempRNG, extraData, targetIndex, monIndex);
             }
@@ -720,7 +721,7 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
+        if (EffectBitmap.shouldRunAtStep(address(effect), EffectStep.OnRemove)) {
             effect.onRemove(data, 2, monIndex);
         }
 
@@ -748,7 +749,7 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
+        if (EffectBitmap.shouldRunAtStep(address(effect), EffectStep.OnRemove)) {
             effect.onRemove(data, targetIndex, monIndex);
         }
 
@@ -1130,7 +1131,7 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 data,
         uint96 slotIndex
     ) private {
-        if (!effect.shouldRunAtStep(round)) {
+        if (!EffectBitmap.shouldRunAtStep(address(effect), round)) {
             return;
         }
 
