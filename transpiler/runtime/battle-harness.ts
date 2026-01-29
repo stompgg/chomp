@@ -8,7 +8,7 @@
  * logic to the Engine rather than reimplementing it.
  */
 
-import { ContractContainer, Contract, globalEventStream } from './index';
+import { ContractContainer, globalEventStream } from './index';
 
 // =============================================================================
 // TYPES

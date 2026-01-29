@@ -32,7 +32,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     }
 
     /*
-        A signs proposed battle (with pair hash nonce), sends to B, assuming default team index for B.
+        A signs proposed battle (with pair hash nonce), sends to B, assuming default team index (0) for B.
         B signs proposed battle with actual team index (with same pair hash nonce), submits to SignedMatchmaker along with A's signature.
         Battle starts, SignedMatchmaker validates the signatures, validates pair hash nonce
     */

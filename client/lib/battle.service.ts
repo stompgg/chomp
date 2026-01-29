@@ -32,6 +32,7 @@ import {
   type MonState,
   type AddressConfig,
 } from '../../transpiler/runtime/battle-harness';
+import { setupContainer } from '../../transpiler/ts-output/factories';
 
 // =============================================================================
 // RE-EXPORT HARNESS TYPES
@@ -81,7 +82,8 @@ export class BattleService {
     }
 
     this.harness = await createBattleHarness(
-      (name: string) => import(`../../transpiler/ts-output/${name}`)
+      (name: string) => import(`../../transpiler/ts-output/${name}`),
+      setupContainer
     );
   }
 
