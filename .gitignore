@@ -49,3 +49,6 @@ drool/*
 # Transpiler output
 ts-output/
 transpiler/ts-output/
+
+# Rust build output
+tools/effect-miner/target/
