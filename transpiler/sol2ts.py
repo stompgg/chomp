@@ -2313,7 +2313,7 @@ class TypeRegistry:
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = '', runtime_replacement_classes: Optional[Set[str]] = None):
+    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = '', runtime_replacement_classes: Optional[Set[str]] = None, runtime_replacement_mixins: Optional[Dict[str, str]] = None):
         self.indent_level = 0
         self.indent_str = '  '
         self.file_depth = file_depth  # Depth of output file for relative imports
@@ -2386,6 +2386,8 @@ class TypeScriptCodeGenerator:
 
         # Runtime replacement classes (should import from runtime instead of separate files)
         self.runtime_replacement_classes: Set[str] = runtime_replacement_classes or set()
+        # Runtime replacement mixins (class name -> mixin code for secondary inheritance)
+        self.runtime_replacement_mixins: Dict[str, str] = runtime_replacement_mixins or {}
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
@@ -2825,29 +2827,15 @@ class TypeScriptCodeGenerator:
                 # Multiple functions with same name - merge into one with optional params
                 lines.append(self.generate_overloaded_function(funcs))
 
-        # Handle multiple inheritance with Ownable
-        # If Ownable is in base classes but not the primary extends, add Ownable methods
-        if 'Ownable' in contract.base_contracts and 'Ownable' in self.runtime_replacement_classes:
-            # Get the actual extends (first non-interface base)
-            non_interface_bases = [bc for bc in contract.base_contracts if bc not in self.known_interfaces]
-            actual_extends = non_interface_bases[0] if non_interface_bases else 'Contract'
-            if actual_extends != 'Ownable':
-                # Add Ownable methods as a mixin
-                ownable_methods = '''
-  // Ownable mixin (from secondary base class)
-  private _owner: string = '0x0000000000000000000000000000000000000000';
-  protected _initializeOwner(newOwner: string): void {
-    this._owner = newOwner;
-  }
-  protected _checkOwner(): void {
-    if (this._msg.sender !== this._owner) {
-      throw new Error("Unauthorized");
-    }
-  }
-  owner(): string {
-    return this._owner;
-  }'''
-                lines.append(ownable_methods)
+        # Handle multiple inheritance with runtime replacement classes
+        # If a runtime replacement class is in base classes but not the primary extends, add its mixin
+        non_interface_bases = [bc for bc in contract.base_contracts if bc not in self.known_interfaces]
+        actual_extends = non_interface_bases[0] if non_interface_bases else 'Contract'
+        for base_class in contract.base_contracts:
+            if base_class in self.runtime_replacement_mixins and base_class != actual_extends:
+                # This is a secondary base class with a mixin defined - add the mixin code
+                mixin_code = self.runtime_replacement_mixins[base_class]
+                lines.append(mixin_code)
 
         self.indent_level -= 1
         lines.append('}\n')
@@ -4997,6 +4985,7 @@ class SolidityToTypeScriptTranspiler:
         # Load runtime replacements configuration
         self.runtime_replacements: Dict[str, dict] = {}
         self.runtime_replacement_classes: Set[str] = set()  # Set of class names that are runtime replacements
+        self.runtime_replacement_mixins: Dict[str, str] = {}  # Class name -> mixin code for secondary inheritance
         self._load_runtime_replacements()
 
         # Run type discovery on specified directories
@@ -5021,7 +5010,13 @@ class SolidityToTypeScriptTranspiler:
                         # Track class names that are runtime replacements
                         for export in replacement.get('exports', []):
                             self.runtime_replacement_classes.add(export)
-                print(f"Loaded {len(self.runtime_replacements)} runtime replacements")
+                        # Extract mixin code if defined
+                        interface = replacement.get('interface', {})
+                        class_name = interface.get('class', '')
+                        mixin_code = interface.get('mixin', '')
+                        if class_name and mixin_code:
+                            self.runtime_replacement_mixins[class_name] = mixin_code
+                print(f"Loaded {len(self.runtime_replacements)} runtime replacements, {len(self.runtime_replacement_mixins)} mixins")
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Warning: Failed to load runtime-replacements.json: {e}")
 
@@ -5142,7 +5137,8 @@ class SolidityToTypeScriptTranspiler:
             self.registry if use_registry else None,
             file_depth=file_depth,
             current_file_path=current_file_path,
-            runtime_replacement_classes=self.runtime_replacement_classes
+            runtime_replacement_classes=self.runtime_replacement_classes,
+            runtime_replacement_mixins=self.runtime_replacement_mixins
         )
         ts_code = generator.generate(ast)
 
