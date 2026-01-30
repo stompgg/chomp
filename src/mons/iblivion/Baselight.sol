@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {EffectStep} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -87,7 +87,7 @@ contract Baselight is IAbility, BasicEffect {
         return (step == EffectStep.RoundEnd);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override

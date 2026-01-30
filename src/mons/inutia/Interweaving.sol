@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {EffectContext, EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -53,14 +53,14 @@ contract Interweaving is IAbility, BasicEffect {
         return (step == EffectStep.OnMonSwitchOut || step == EffectStep.OnApply);
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256 targetIndex, uint256)
+    function onMonSwitchOut(EffectContext calldata ctx, uint256, bytes32, uint256 targetIndex, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+            ENGINE.getActiveMonIndexForBattleState(ctx.battleKey)[otherPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.SpecialAttack,

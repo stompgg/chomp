@@ -210,6 +210,15 @@ struct CommitContext {
     address validator;
 }
 
+// Context passed to effect hooks to avoid external callbacks to Engine
+struct EffectContext {
+    bytes32 battleKey;
+    uint8 p0ActiveMonIndex;
+    uint8 p1ActiveMonIndex;
+    uint8 playerSwitchForTurnFlag;
+    uint64 turnId;
+}
+
 // Batch context for damage calculation to reduce external calls (7 -> 1)
 struct DamageCalcContext {
     uint8 attackerMonIndex;

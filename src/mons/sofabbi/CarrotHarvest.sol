@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {EffectStep} from "../../Enums.sol";
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
@@ -43,7 +43,7 @@ contract CarrotHarvest is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

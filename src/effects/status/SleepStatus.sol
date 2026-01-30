@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {MoveDecision} from "../../Structs.sol";
+import {MoveDecision, EffectContext} from "../../Structs.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
@@ -35,8 +35,7 @@ contract SleepStatus is StatusEffect {
         return (shouldApplyStatusInGeneral && playerHasZeroSleepers);
     }
 
-    function _applySleep(uint256 targetIndex, uint256) internal {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+    function _applySleep(bytes32 battleKey, uint256 targetIndex, uint256) internal {
         // Get exiting move index (unpack from packedMoveIndex)
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
@@ -46,35 +45,34 @@ contract SleepStatus is StatusEffect {
     }
 
     // At the start of the turn, check to see if we should apply sleep or end early
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(EffectContext calldata ctx, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
     {
         bool wakeEarly = rng % 3 == 0;
         if (!wakeEarly) {
-            _applySleep(targetIndex, monIndex);
+            _applySleep(ctx.battleKey, targetIndex, monIndex);
         }
         return (extraData, wakeEarly);
     }
 
     // On apply, checks to apply the sleep flag, and then sets the extraData to be the duration
-    function onApply(uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata ctx, uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(rng, data, targetIndex, monIndex);
+        super.onApply(ctx, rng, data, targetIndex, monIndex);
         // Check if opponent has yet to move and if so, also affect their move for this round
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(battleKey, rng);
+        uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(ctx.battleKey, rng);
         if (targetIndex != priorityPlayerIndex) {
-            _applySleep(targetIndex, monIndex);
+            _applySleep(ctx.battleKey, targetIndex, monIndex);
         }
         return (bytes32(DURATION), false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override

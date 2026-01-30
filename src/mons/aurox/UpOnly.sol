@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {EffectStep} from "../../Enums.sol";
 import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {EffectContext, EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -44,7 +44,7 @@ contract UpOnly is IAbility, BasicEffect {
         return (step == EffectStep.AfterDamage);
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(EffectContext calldata, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

@@ -21,14 +21,14 @@ contract AfterDamageReboundEffect is BasicEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
         external
         override
         returns (bytes32, bool)
     {
         // Heals for all damage done
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.Hp);
+            ENGINE.getMonStateForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
         ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, currentDamage * -1);
         return (extraData, false);
     }

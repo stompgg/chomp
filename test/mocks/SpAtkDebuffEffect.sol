@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {StatBoostToApply} from "../../src/Structs.sol";
+import {EffectContext, StatBoostToApply} from "../../src/Structs.sol";
 
 import {StatusEffect} from "../../src/effects/status/StatusEffect.sol";
 import {StatBoosts} from "../../src/effects/StatBoosts.sol";
@@ -25,7 +25,7 @@ contract SpAtkDebuffEffect is StatusEffect {
         return (r == EffectStep.OnApply || r == EffectStep.OnRemove);
     }
 
-    function onApply(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

@@ -5,6 +5,7 @@ pragma solidity ^0.8.0;
 import {EffectStep} from "../../Enums.sol";
 
 import {MonStateIndexName} from "../../Enums.sol";
+import {EffectContext} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -47,7 +48,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         return (step == EffectStep.RoundEnd || step == EffectStep.AfterDamage);
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -59,7 +60,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         // If the mon is KO'd, add this effect to the global effects list and remove the mon effect
         if (
             ENGINE.getMonStateForBattle(
-                    ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.IsKnockedOut
+                    ctx.battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                 ) == 1
         ) {
             uint64 v1 = REVIVAL_DELAY;
@@ -73,7 +74,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -92,9 +93,8 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         else if (turnsLeft == 1) {
             // Revive the mon and set HP to 1
             ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.IsKnockedOut, 0);
-            bytes32 battleKey = ENGINE.battleKeyForWrite();
-            int32 currentDamage = ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
-            uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            int32 currentDamage = ENGINE.getMonStateForBattle(ctx.battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            uint32 maxHp = ENGINE.getMonValueForBattle(ctx.battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             int32 hpShiftAmount = 1 - currentDamage - int32(maxHp);
             ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.Hp, hpShiftAmount);
 

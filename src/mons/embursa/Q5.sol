@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
+import {EffectContext} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -78,7 +79,7 @@ contract Q5 is IMoveSet, BasicEffect {
         return (step == EffectStep.RoundStart);
     }
 
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256, uint256)
+    function onRoundStart(EffectContext calldata ctx, uint256 rng, bytes32 extraData, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -89,13 +90,13 @@ contract Q5 is IMoveSet, BasicEffect {
             AttackCalculator._calculateDamage(
                 ENGINE,
                 TYPE_CALCULATOR,
-                ENGINE.battleKeyForWrite(),
+                ctx.battleKey,
                 attackerPlayerIndex,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
-                moveType(ENGINE.battleKeyForWrite()),
-                moveClass(ENGINE.battleKeyForWrite()),
+                moveType(ctx.battleKey),
+                moveClass(ctx.battleKey),
                 rng,
                 DEFAULT_CRIT_RATE
             );

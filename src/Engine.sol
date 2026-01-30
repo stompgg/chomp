@@ -624,8 +624,17 @@ contract Engine is IEngine, MappingAllocator {
 
             // Check if we have to run an onApply state update
             if (EffectBitmap.shouldRunAtStep(address(effect), EffectStep.OnApply)) {
+                // Create context for onApply
+                BattleData storage battle = battleData[battleKey];
+                EffectContext memory ctx = EffectContext({
+                    battleKey: battleKey,
+                    p0ActiveMonIndex: uint8(battle.activeMonIndex & 0xFF),
+                    p1ActiveMonIndex: uint8(battle.activeMonIndex >> 8),
+                    playerSwitchForTurnFlag: battle.playerSwitchForTurnFlag,
+                    turnId: battle.turnId
+                });
                 // If so, we run the effect first, and get updated extraData if necessary
-                (extraDataToUse, removeAfterRun) = effect.onApply(tempRNG, extraData, targetIndex, monIndex);
+                (extraDataToUse, removeAfterRun) = effect.onApply(ctx, tempRNG, extraData, targetIndex, monIndex);
             }
             if (!removeAfterRun) {
                 // Add to the appropriate effects mapping based on targetIndex
@@ -1110,7 +1119,7 @@ contract Engine is IEngine, MappingAllocator {
             // Skip tombstoned effects
             if (address(eff.effect) != TOMBSTONE_ADDRESS) {
                 _runSingleEffect(
-                    config, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData,
+                    config, battle, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData,
                     eff.effect, eff.data, uint96(slotIndex)
                 );
             }
@@ -1121,6 +1130,7 @@ contract Engine is IEngine, MappingAllocator {
 
     function _runSingleEffect(
         BattleConfig storage config,
+        BattleData storage battle,
         uint256 rng,
         uint256 effectIndex,
         uint256 playerIndex,
@@ -1142,9 +1152,18 @@ contract Engine is IEngine, MappingAllocator {
             battleKeyForWrite, effectIndex, monIndex, address(effect), data, _getUpstreamCallerAndResetValue(), currentStep
         );
 
+        // Create effect context to pass to the hook (avoids external callbacks)
+        EffectContext memory ctx = EffectContext({
+            battleKey: battleKeyForWrite,
+            p0ActiveMonIndex: uint8(battle.activeMonIndex & 0xFF),
+            p1ActiveMonIndex: uint8(battle.activeMonIndex >> 8),
+            playerSwitchForTurnFlag: battle.playerSwitchForTurnFlag,
+            turnId: battle.turnId
+        });
+
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
-            effect, rng, data, playerIndex, monIndex, round, extraEffectsData
+            ctx, effect, rng, data, playerIndex, monIndex, round, extraEffectsData
         );
 
         // If we need to remove or update the effect
@@ -1154,6 +1173,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function _executeEffectHook(
+        EffectContext memory ctx,
         IEffect effect,
         uint256 rng,
         bytes32 data,
@@ -1163,21 +1183,21 @@ contract Engine is IEngine, MappingAllocator {
         bytes memory extraEffectsData
     ) private returns (bytes32 updatedExtraData, bool removeAfterRun) {
         if (round == EffectStep.RoundStart) {
-            return effect.onRoundStart(rng, data, playerIndex, monIndex);
+            return effect.onRoundStart(ctx, rng, data, playerIndex, monIndex);
         } else if (round == EffectStep.RoundEnd) {
-            return effect.onRoundEnd(rng, data, playerIndex, monIndex);
+            return effect.onRoundEnd(ctx, rng, data, playerIndex, monIndex);
         } else if (round == EffectStep.OnMonSwitchIn) {
-            return effect.onMonSwitchIn(rng, data, playerIndex, monIndex);
+            return effect.onMonSwitchIn(ctx, rng, data, playerIndex, monIndex);
         } else if (round == EffectStep.OnMonSwitchOut) {
-            return effect.onMonSwitchOut(rng, data, playerIndex, monIndex);
+            return effect.onMonSwitchOut(ctx, rng, data, playerIndex, monIndex);
         } else if (round == EffectStep.AfterDamage) {
-            return effect.onAfterDamage(rng, data, playerIndex, monIndex, abi.decode(extraEffectsData, (int32)));
+            return effect.onAfterDamage(ctx, rng, data, playerIndex, monIndex, abi.decode(extraEffectsData, (int32)));
         } else if (round == EffectStep.AfterMove) {
-            return effect.onAfterMove(rng, data, playerIndex, monIndex);
+            return effect.onAfterMove(ctx, rng, data, playerIndex, monIndex);
         } else if (round == EffectStep.OnUpdateMonState) {
             (uint256 statePlayerIndex, uint256 stateMonIndex, MonStateIndexName stateVarIndex, int32 valueToAdd) =
                 abi.decode(extraEffectsData, (uint256, uint256, MonStateIndexName, int32));
-            return effect.onUpdateMonState(rng, data, statePlayerIndex, stateMonIndex, stateVarIndex, valueToAdd);
+            return effect.onUpdateMonState(ctx, rng, data, statePlayerIndex, stateMonIndex, stateVarIndex, valueToAdd);
         }
     }
 

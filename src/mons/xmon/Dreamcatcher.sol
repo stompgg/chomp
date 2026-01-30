@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {MonStateIndexName, EffectInstance} from "../../Structs.sol";
+import {MonStateIndexName, EffectInstance, EffectContext} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
@@ -40,6 +40,7 @@ contract Dreamcatcher is IAbility, BasicEffect {
     }
 
     function onUpdateMonState(
+        EffectContext calldata ctx,
         uint256,
         bytes32 extraData,
         uint256 playerIndex,
@@ -49,12 +50,11 @@ contract Dreamcatcher is IAbility, BasicEffect {
     ) external override returns (bytes32, bool) {
         // Only trigger if Stamina is being increased (positive valueToAdd)
         if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
-            bytes32 battleKey = ENGINE.battleKeyForWrite();
-            uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            uint32 maxHp = ENGINE.getMonValueForBattle(ctx.battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             int32 healAmount = int32(uint32(maxHp)) / HEAL_DENOM;
 
             // Prevent overhealing
-            int32 existingHpDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            int32 existingHpDelta = ENGINE.getMonStateForBattle(ctx.battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             if (existingHpDelta + healAmount > 0) {
                 healAmount = 0 - existingHpDelta;
             }
