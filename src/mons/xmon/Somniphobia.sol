@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep, ExtraDataType, MoveClass, Type} from "../../Enums.sol";
-import {MoveDecision, MonStateIndexName, EffectInstance} from "../../Structs.sol";
+import {MoveDecision, MonStateIndexName, EffectInstance, EffectContext} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
@@ -64,12 +64,12 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (step == EffectStep.AfterMove || step == EffectStep.RoundEnd);
     }
 
-    function onAfterMove(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
 
         // Unpack the move index from packedMoveIndex
@@ -88,7 +88,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override

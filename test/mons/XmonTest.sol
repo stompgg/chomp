@@ -25,6 +25,7 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
@@ -46,7 +47,7 @@ import {NightTerrors} from "../../src/mons/xmon/NightTerrors.sol";
     - Night Terrors damage differs when opponent is asleep vs awake [ ]
  */
 
-contract XmonTest is Test, BattleHelper {
+contract XmonTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -66,7 +67,7 @@ contract XmonTest is Test, BattleHelper {
     }
 
     function test_contagiousSlumberAppliesSleepToBothMons() public {
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
+        SleepStatus sleepStatus = SleepStatus(deployWithCorrectBitmap(new SleepStatus(IEngine(address(engine)))));
         ContagiousSlumber contagiousSlumber = new ContagiousSlumber(IEngine(address(engine)), IEffect(address(sleepStatus)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
@@ -197,7 +198,7 @@ contract XmonTest is Test, BattleHelper {
     }
 
     function test_somniphobiaDamagesMonsWhoRest() public {
-        Somniphobia somniphobia = new Somniphobia(IEngine(address(engine)));
+        Somniphobia somniphobia = Somniphobia(deployWithCorrectBitmap(new Somniphobia(IEngine(address(engine)))));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = somniphobia;
@@ -260,8 +261,8 @@ contract XmonTest is Test, BattleHelper {
     }
 
     function test_dreamcatcherHealsOnStaminaGain() public {
-        Dreamcatcher dreamcatcher = new Dreamcatcher(IEngine(address(engine)));
-        StaminaRegen staminaRegen = new StaminaRegen(IEngine(address(engine)));
+        Dreamcatcher dreamcatcher = Dreamcatcher(deployWithCorrectBitmap(new Dreamcatcher(IEngine(address(engine)))));
+        StaminaRegen staminaRegen = StaminaRegen(deployWithCorrectBitmap(new StaminaRegen(IEngine(address(engine)))));
 
         uint32 BASE_HP = 10;
         uint32 maxHp = uint32(dreamcatcher.HEAL_DENOM()) * BASE_HP; // 160 HP
@@ -377,8 +378,8 @@ contract XmonTest is Test, BattleHelper {
          * Turn 2: Alice uses Night Terrors (2 stacks on Alice), Alice loses 2 stamina at end of turn (4 -> 2)
          * Turn 3: Alice uses Night Terrors (3 stacks on Alice), Alice has only 2 stamina, so no trigger
          */
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = SleepStatus(deployWithCorrectBitmap(new SleepStatus(IEngine(address(engine)))));
+        NightTerrors nightTerrors = NightTerrors(deployWithCorrectBitmap(new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)))));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = nightTerrors;
@@ -442,8 +443,8 @@ contract XmonTest is Test, BattleHelper {
          * Turn 2: Alice swaps to mon 1
          * Verify: Alice's mon 0 no longer has Night Terrors effect
          */
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = SleepStatus(deployWithCorrectBitmap(new SleepStatus(IEngine(address(engine)))));
+        NightTerrors nightTerrors = NightTerrors(deployWithCorrectBitmap(new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)))));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = nightTerrors;

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
 import {EffectStep, ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -82,7 +82,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return (step == EffectStep.AfterDamage || step == EffectStep.OnMonSwitchOut);
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damageDealt)
+    function onAfterDamage(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damageDealt)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -93,7 +93,7 @@ contract IronWall is IMoveSet, BasicEffect {
         if (
             healAmount > 0
                 && ENGINE.getMonStateForBattle(
-                        ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.IsKnockedOut
+                        ctx.battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                     ) == 0
         ) {
             ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
@@ -101,7 +101,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256, uint256)
+    function onMonSwitchOut(EffectContext calldata, uint256, bytes32, uint256, uint256)
         external
         pure
         override

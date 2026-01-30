@@ -23,6 +23,7 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
@@ -47,7 +48,7 @@ import {VolatilePunch} from "../../src/mons/aurox/VolatilePunch.sol";
             - rng of 10 should trigger burn
      */
 
-contract AuroxTest is Test, BattleHelper {
+contract AuroxTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -63,7 +64,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine();
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
     }
@@ -98,7 +99,7 @@ contract AuroxTest is Test, BattleHelper {
     }
 
     function test_gildedRecoveryHealsWithStatus() public {
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
+        FrostbiteStatus frostbiteStatus = FrostbiteStatus(deployWithCorrectBitmap(new FrostbiteStatus(IEngine(address(engine)), statBoosts)));
         GildedRecovery gildedRecovery = new GildedRecovery(IEngine(address(engine)));
 
         uint32 maxHp = 100;
@@ -250,7 +251,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallHealsDamage() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = IronWall(deployWithCorrectBitmap(new IronWall(IEngine(address(engine)))));
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -339,7 +340,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallSkipsIfKO() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = IronWall(deployWithCorrectBitmap(new IronWall(IEngine(address(engine)))));
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp,
@@ -406,7 +407,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallProvidesInitialHeal() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = IronWall(deployWithCorrectBitmap(new IronWall(IEngine(address(engine)))));
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -481,7 +482,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallDoesNothingIfAlreadyActive() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = IronWall(deployWithCorrectBitmap(new IronWall(IEngine(address(engine)))));
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -574,7 +575,7 @@ contract AuroxTest is Test, BattleHelper {
         uint32 maxAtk = 100;
         uint32 maxDef = 100;
 
-        UpOnly upOnly = new UpOnly(IEngine(address(engine)), statBoosts);
+        UpOnly upOnly = UpOnly(deployWithCorrectBitmap(new UpOnly(IEngine(address(engine)), statBoosts)));
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -635,8 +636,8 @@ contract AuroxTest is Test, BattleHelper {
     function test_volatilePunchDealsDamageAndTriggersStatusEffects() public {
         uint32 maxHp = 100;
 
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
+        BurnStatus burnStatus = BurnStatus(deployWithCorrectBitmap(new BurnStatus(IEngine(address(engine)), statBoosts)));
+        FrostbiteStatus frostbiteStatus = FrostbiteStatus(deployWithCorrectBitmap(new FrostbiteStatus(IEngine(address(engine)), statBoosts)));
         VolatilePunch volatilePunch = new VolatilePunch(
             IEngine(address(engine)), typeCalc, burnStatus, frostbiteStatus
         );

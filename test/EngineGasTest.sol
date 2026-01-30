@@ -38,8 +38,9 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
+import {EffectTestHelper} from "./abstract/EffectTestHelper.sol";
 
-contract EngineGasTest is Test, BattleHelper {
+contract EngineGasTest is Test, BattleHelper, EffectTestHelper {
 
     DefaultCommitManager commitManager;
     Engine engine;
@@ -94,9 +95,11 @@ contract EngineGasTest is Test, BattleHelper {
         mon.stats.specialAttack = 10;
 
         mon.moves = new IMoveSet[](4);
-        StatBoosts statBoosts = new StatBoosts(engine);
-        IMoveSet burnMove = new EffectAttack(engine, new BurnStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(engine, new FrostbiteStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        StatBoosts statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
+        BurnStatus burnStatus = BurnStatus(deployWithCorrectBitmap(new BurnStatus(engine, statBoosts)));
+        FrostbiteStatus frostbiteStatus = FrostbiteStatus(deployWithCorrectBitmap(new FrostbiteStatus(engine, statBoosts)));
+        IMoveSet burnMove = new EffectAttack(engine, burnStatus, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(engine, frostbiteStatus, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet statBoostMove = new StatBoostsMove(engine, statBoosts);
         IMoveSet damageMove = new CustomAttack(engine, ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
         mon.moves[0] = burnMove;
@@ -113,7 +116,7 @@ contract EngineGasTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: mon.moves.length, TIMEOUT_DURATION: 10})
         );
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = StaminaRegen(deployWithCorrectBitmap(new StaminaRegen(engine)));
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
@@ -420,7 +423,7 @@ contract EngineGasTest is Test, BattleHelper {
         });
 
         // Move that applies a status effect to opponent (no damage)
-        SingleInstanceEffect testEffect = new SingleInstanceEffect(engine);
+        SingleInstanceEffect testEffect = SingleInstanceEffect(deployWithCorrectBitmap(new SingleInstanceEffect(engine)));
         EffectAttack effectMove = new EffectAttack(engine, IEffect(address(testEffect)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 3}));
 
         // Damage move - high power to guarantee KO
@@ -442,9 +445,9 @@ contract EngineGasTest is Test, BattleHelper {
         );
 
         // Use ruleset with StaminaRegen effect
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegenEffect = StaminaRegen(deployWithCorrectBitmap(new StaminaRegen(engine)));
         IEffect[] memory effects = new IEffect[](1);
-        effects[0] = staminaRegen;
+        effects[0] = staminaRegenEffect;
         IRuleset rulesetWithEffect = IRuleset(address(new DefaultRuleset(engine, effects)));
 
         // Battle 1: Fresh storage

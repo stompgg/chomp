@@ -23,7 +23,7 @@ contract SingleInstanceEffect is BasicEffect {
         return r == EffectStep.OnApply;
     }
 
-    function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool removeAfterRun)

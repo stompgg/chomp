@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -83,12 +83,12 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return (step == EffectStep.OnMonSwitchIn);
     }
 
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
         (uint256 chargesLeft, uint256 ownerIndex) = _decodeState(extraData);
         // If it's a friendly mon, then we heal (flat 1/8 of max HP)
         if (targetIndex == ownerIndex) {

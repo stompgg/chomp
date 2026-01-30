@@ -32,9 +32,28 @@ import {SleepStatus} from "../src/effects/status/SleepStatus.sol";
 import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
 
+// CREATE3 deployment
+import {CreateX} from "../src/lib/CreateX.sol";
+import {EffectDeployer} from "../src/lib/EffectDeployer.sol";
+import {EffectBitmap} from "../src/lib/EffectBitmap.sol";
+
 struct DeployData {
     string name;
     address contractAddress;
+}
+
+/// @notice Pre-mined salts for CREATE3 effect deployment
+/// @dev These salts produce addresses with correct EffectStep bitmaps when deployed via CreateX.
+///      Generate with: effect-miner mine-all --config effects.json --output salts.json
+struct EffectSalts {
+    bytes32 staminaRegen;    // Bitmap 0x042: RoundEnd, AfterMove
+    bytes32 statBoosts;      // Bitmap 0x008: OnMonSwitchOut
+    bytes32 overclock;       // Bitmap 0x170: OnApply, RoundEnd, OnMonSwitchIn, OnRemove
+    bytes32 burnStatus;      // Bitmap 0x1E0: OnApply, RoundStart, RoundEnd, OnRemove
+    bytes32 frostbiteStatus; // Bitmap 0x160: OnApply, RoundEnd, OnRemove
+    bytes32 panicStatus;     // Bitmap 0x1E0: OnApply, RoundStart, RoundEnd, OnRemove
+    bytes32 sleepStatus;     // Bitmap 0x1E0: OnApply, RoundStart, RoundEnd, OnRemove
+    bytes32 zapStatus;       // Bitmap 0x1E0: OnApply, RoundStart, RoundEnd, OnRemove
 }
 
 contract EngineAndPeriphery is Script {
@@ -42,7 +61,20 @@ contract EngineAndPeriphery is Script {
     uint256 constant NUM_MONS = 4;
     uint256 constant NUM_MOVES = 4;
     uint256 constant TIMEOUT_DURATION = 60;
-    
+
+    /// @notice Canonical CreateX address (same on all EVM chains)
+    address constant CREATEX_ADDRESS = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
+
+    /// @notice Effect bitmap constants
+    uint16 constant BITMAP_STAMINA_REGEN = 0x042;
+    uint16 constant BITMAP_STAT_BOOSTS = 0x008;
+    uint16 constant BITMAP_OVERCLOCK = 0x170;
+    uint16 constant BITMAP_BURN_STATUS = 0x1E0;
+    uint16 constant BITMAP_FROSTBITE_STATUS = 0x160;
+    uint16 constant BITMAP_PANIC_STATUS = 0x1E0;
+    uint16 constant BITMAP_SLEEP_STATUS = 0x1E0;
+    uint16 constant BITMAP_ZAP_STATUS = 0x1E0;
+
     DeployData[] deployedContracts;
 
     function run() external returns (DeployData[] memory) {
@@ -125,5 +157,112 @@ contract EngineAndPeriphery is Script {
 
         ZapStatus zapStatus = new ZapStatus(engine);
         deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
+    }
+
+    /// @notice Deploy effects via CREATE3 with bitmap-encoded addresses
+    /// @dev Uses pre-mined salts to deploy effects at addresses that have the correct
+    ///      EffectStep bitmap encoded in their most significant bits.
+    /// @param engine The engine contract
+    /// @param salts Pre-mined salts for each effect (from effect-miner)
+    /// @return staminaRegen The deployed StaminaRegen effect
+    function deployGameFundamentalsCreate3(Engine engine, EffectSalts memory salts)
+        public
+        returns (StaminaRegen staminaRegen)
+    {
+        CreateX createX = CreateX(CREATEX_ADDRESS);
+
+        // Deploy StatBoosts first (dependency for other effects)
+        StatBoosts statBoosts = StatBoosts(
+            EffectDeployer.deploy(
+                createX,
+                salts.statBoosts,
+                abi.encodePacked(type(StatBoosts).creationCode, abi.encode(engine)),
+                BITMAP_STAT_BOOSTS
+            )
+        );
+        deployedContracts.push(DeployData({name: "STAT BOOSTS", contractAddress: address(statBoosts)}));
+
+        // Deploy StaminaRegen
+        staminaRegen = StaminaRegen(
+            EffectDeployer.deploy(
+                createX,
+                salts.staminaRegen,
+                abi.encodePacked(type(StaminaRegen).creationCode, abi.encode(engine)),
+                BITMAP_STAMINA_REGEN
+            )
+        );
+        deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
+
+        // Deploy Overclock (depends on StatBoosts)
+        Overclock overclock = Overclock(
+            EffectDeployer.deploy(
+                createX,
+                salts.overclock,
+                abi.encodePacked(type(Overclock).creationCode, abi.encode(engine, statBoosts)),
+                BITMAP_OVERCLOCK
+            )
+        );
+        deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
+
+        // Deploy status effects
+        SleepStatus sleepStatus = SleepStatus(
+            EffectDeployer.deploy(
+                createX,
+                salts.sleepStatus,
+                abi.encodePacked(type(SleepStatus).creationCode, abi.encode(engine)),
+                BITMAP_SLEEP_STATUS
+            )
+        );
+        deployedContracts.push(DeployData({name: "SLEEP STATUS", contractAddress: address(sleepStatus)}));
+
+        PanicStatus panicStatus = PanicStatus(
+            EffectDeployer.deploy(
+                createX,
+                salts.panicStatus,
+                abi.encodePacked(type(PanicStatus).creationCode, abi.encode(engine)),
+                BITMAP_PANIC_STATUS
+            )
+        );
+        deployedContracts.push(DeployData({name: "PANIC STATUS", contractAddress: address(panicStatus)}));
+
+        FrostbiteStatus frostbiteStatus = FrostbiteStatus(
+            EffectDeployer.deploy(
+                createX,
+                salts.frostbiteStatus,
+                abi.encodePacked(type(FrostbiteStatus).creationCode, abi.encode(engine, statBoosts)),
+                BITMAP_FROSTBITE_STATUS
+            )
+        );
+        deployedContracts.push(DeployData({name: "FROSTBITE STATUS", contractAddress: address(frostbiteStatus)}));
+
+        BurnStatus burnStatus = BurnStatus(
+            EffectDeployer.deploy(
+                createX,
+                salts.burnStatus,
+                abi.encodePacked(type(BurnStatus).creationCode, abi.encode(engine, statBoosts)),
+                BITMAP_BURN_STATUS
+            )
+        );
+        deployedContracts.push(DeployData({name: "BURN STATUS", contractAddress: address(burnStatus)}));
+
+        ZapStatus zapStatus = ZapStatus(
+            EffectDeployer.deploy(
+                createX,
+                salts.zapStatus,
+                abi.encodePacked(type(ZapStatus).creationCode, abi.encode(engine)),
+                BITMAP_ZAP_STATUS
+            )
+        );
+        deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
+
+        // Create ruleset with staminaRegen
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
+        deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
+
+        DefaultValidator validator =
+            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: NUM_MONS, MOVES_PER_MON: NUM_MOVES, TIMEOUT_DURATION: TIMEOUT_DURATION}));
+        deployedContracts.push(DeployData({name: "DEFAULT VALIDATOR", contractAddress: address(validator)}));
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {EffectContext} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../BasicEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
@@ -29,16 +30,15 @@ abstract contract StatusEffect is BasicEffect {
         }
     }
 
-    function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata ctx, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         public
         virtual
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
-        uint192 monValue = ENGINE.getGlobalKV(battleKey, keyForMon);
+        uint192 monValue = ENGINE.getGlobalKV(ctx.battleKey, keyForMon);
         if (monValue == 0) {
             // Set the global status flag to be the address of the status
             ENGINE.setGlobalKV(keyForMon, uint192(uint160(address(this))));

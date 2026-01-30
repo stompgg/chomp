@@ -18,6 +18,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -31,7 +32,7 @@ import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {ActusReus} from "../../src/mons/malalien/ActusReus.sol";
 import {TripleThink} from "../../src/mons/malalien/TripleThink.sol";
 
-contract MalalienTest is Test, BattleHelper {
+contract MalalienTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -48,8 +49,8 @@ contract MalalienTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine();
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(engine);
-        actusReus = new ActusReus(IEngine(address(engine)), statBoosts);
+        statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
+        actusReus = ActusReus(deployWithCorrectBitmap(new ActusReus(IEngine(address(engine)), statBoosts)));
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }

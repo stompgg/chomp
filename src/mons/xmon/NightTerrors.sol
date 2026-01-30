@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_CRIT_RATE} from "../../Constants.sol";
 import {EffectStep, ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectInstance, EffectContext} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -104,7 +104,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return (step == EffectStep.RoundEnd || step == EffectStep.OnMonSwitchOut);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
@@ -113,7 +113,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // defenderPlayerIndex is stored in extraData (who should take damage)
         (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
 
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
 
         // Check current stamina of the attacker (who has the effect)
         int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
@@ -164,7 +164,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256, uint256)
+    function onMonSwitchOut(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override

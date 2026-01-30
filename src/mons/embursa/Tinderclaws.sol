@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
+import {EffectContext, EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {StatBoosts} from "../../effects/StatBoosts.sol";
@@ -45,12 +45,12 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
-    function onAfterMove(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(EffectContext calldata ctx, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
@@ -74,12 +74,12 @@ contract Tinderclaws is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
         bool isBurned = _isBurned(battleKey, targetIndex, monIndex);
         bool hasBoost = uint256(extraData) == 1;
 

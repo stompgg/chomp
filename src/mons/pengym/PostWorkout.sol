@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {EffectStep, MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -37,12 +37,12 @@ contract PostWorkout is IAbility, BasicEffect {
         return (step == EffectStep.OnMonSwitchOut);
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(EffectContext calldata ctx, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+        bytes32 battleKey = ctx.battleKey;
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
         uint192 statusAddress = ENGINE.getGlobalKV(battleKey, keyForMon);
 

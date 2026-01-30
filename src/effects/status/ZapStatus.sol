@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MoveDecision} from "../../Structs.sol";
+import {MoveDecision, EffectContext} from "../../Structs.sol";
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK } from "../../Constants.sol";
 import {EffectStep, MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
@@ -23,16 +23,15 @@ contract ZapStatus is StatusEffect {
                 || r == EffectStep.OnRemove);
     }
 
-    function onApply(uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata ctx, uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(rng, data, targetIndex, monIndex);
+        super.onApply(ctx, rng, data, targetIndex, monIndex);
 
-        // Get the battle key and compute priority player index
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(battleKey, rng);
+        // Compute priority player index
+        uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(ctx.battleKey, rng);
 
         uint8 state;
 
@@ -48,14 +47,13 @@ contract ZapStatus is StatusEffect {
         return (bytes32(uint256(state)), false);
     }
 
-    function onRoundStart(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(EffectContext calldata ctx, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         // If we're at RoundStart and effect is still present, always set skip flag and mark as skipped, unless the selected move is a switch move
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
+        MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(ctx.battleKey, targetIndex);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex == SWITCH_MOVE_INDEX) {
             return (bytes32(uint256(0)), false);
@@ -68,7 +66,7 @@ contract ZapStatus is StatusEffect {
         super.onRemove(data, targetIndex, monIndex);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256)
         public
         pure
         override

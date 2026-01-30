@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../Enums.sol";
-import {EffectInstance, MonStats, StatBoostToApply} from "../Structs.sol";
+import {EffectContext, EffectInstance, MonStats, StatBoostToApply} from "../Structs.sol";
 
 import {IEngine} from "../IEngine.sol";
 import {BasicEffect} from "./BasicEffect.sol";
@@ -45,7 +45,7 @@ contract StatBoosts is BasicEffect {
     }
 
     // Removes all temporary boosts on mon switch out
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(EffectContext calldata, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)

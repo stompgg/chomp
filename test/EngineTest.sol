@@ -43,11 +43,12 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
+import {EffectTestHelper} from "./abstract/EffectTestHelper.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
 import {DummyStatus} from "./mocks/DummyStatus.sol";
 
-contract EngineTest is Test, BattleHelper {
+contract EngineTest is Test, BattleHelper, EffectTestHelper {
     DefaultCommitManager commitManager;
     Engine engine;
     DefaultValidator validator;
@@ -695,7 +696,7 @@ contract EngineTest is Test, BattleHelper {
         DefaultValidator twoMonValidator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
         );
-        StaminaRegen regen = new StaminaRegen(engine);
+        StaminaRegen regen = StaminaRegen(deployWithCorrectBitmap(new StaminaRegen(engine)));
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = regen;
         DefaultRuleset rules = new DefaultRuleset(engine, effects);
@@ -922,7 +923,7 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IMoveSet instantDeathAttack =
             new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
@@ -998,7 +999,7 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IMoveSet instantDeathAttack =
             new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
@@ -1061,7 +1062,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_effectAppliedByAttackCorrectlyAppliesToTargetedMonEvenAfterSwitch() public {
         // Mon that has a temporary stat boost effect
-        IEffect statBoost = new OneTurnStatBoost(engine);
+        IEffect statBoost = IEffect(deployWithCorrectBitmap(new OneTurnStatBoost(engine)));
         IMoveSet[] memory moves = new IMoveSet[](1);
 
         // Create new effect attack that applies the temporary stat boost effect
@@ -1136,7 +1137,7 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IMoveSet instantDeathAttack =
             new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
@@ -1213,7 +1214,7 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IMoveSet instantDeathAttack =
             new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
@@ -1307,7 +1308,7 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IMoveSet instantDeathAttack =
             new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
@@ -1810,7 +1811,7 @@ contract EngineTest is Test, BattleHelper {
         });
 
         // Create a new GlobalEffectAttack that applies InstantDeathOnSwitchIn
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+        IEffect instantDeathOnSwitchIn = IEffect(deployWithCorrectBitmap(new InstantDeathOnSwitchInEffect(engine)));
 
         // Move should be higher priority than the switch attack
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
@@ -1878,7 +1879,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         IMoveSet switchAttack =
             new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+        IEffect instantDeathOnSwitchIn = IEffect(deployWithCorrectBitmap(new InstantDeathOnSwitchInEffect(engine)));
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
             engine, instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2})
         );
@@ -1946,7 +1947,7 @@ contract EngineTest is Test, BattleHelper {
     // environmental effect kills mon after switch in move (not as a side effect from move)
     function test_effectOnSwitchInFromDirectSwitchMoveKOsAndForcesSwitch() public {
         // Initialize mons and moves
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+        IEffect instantDeathOnSwitchIn = IEffect(deployWithCorrectBitmap(new InstantDeathOnSwitchInEffect(engine)));
 
         // Set priority to be higher than switch
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
@@ -2015,7 +2016,7 @@ contract EngineTest is Test, BattleHelper {
     function test_abilityOnSwitchInKOsAndLeadsToGameOver() public {
         // Initialize mons and moves
         IMoveSet[] memory moves = new IMoveSet[](0);
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
+        IEffect instantDeathAtEndOfTurn = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
@@ -2100,7 +2101,7 @@ contract EngineTest is Test, BattleHelper {
             moves: switchMoves,
             ability: IAbility(address(0))
         });
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
+        IEffect instantDeathAtEndOfTurn = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
@@ -2201,7 +2202,7 @@ contract EngineTest is Test, BattleHelper {
             moves: switchMoves,
             ability: IAbility(address(0))
         });
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
+        IEffect instantDeathAtEndOfTurn = IEffect(deployWithCorrectBitmap(new InstantDeathEffect(engine)));
         IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
@@ -2284,7 +2285,7 @@ contract EngineTest is Test, BattleHelper {
     // attack that applies effect can only apply once (checks using an effect that writes to global KV)
     function test_attackThatAppliesEffectCanOnlyApplyOnce() public {
         // Single instance effect
-        IEffect singleInstanceEffect = new SingleInstanceEffect(engine);
+        IEffect singleInstanceEffect = IEffect(deployWithCorrectBitmap(new SingleInstanceEffect(engine)));
         IMoveSet effectAttack = new EffectAttack(
             engine, singleInstanceEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -2386,7 +2387,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_onMonSwitchOutHookWorksWithTempStatBoost() public {
         // Mon that has a temporary stat boost effect
-        IEffect temporaryStatBoostEffect = new TempStatBoostEffect(engine);
+        IEffect temporaryStatBoostEffect = IEffect(deployWithCorrectBitmap(new TempStatBoostEffect(engine)));
         IMoveSet[] memory moves = new IMoveSet[](1);
 
         // Create new effect attack that applies the temporary stat boost effect
@@ -2447,7 +2448,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_afterDamageHookRuns() public {
         // Create an attack that adds the rebound effect to the caller
-        IEffect reboundEffect = new AfterDamageReboundEffect(engine);
+        IEffect reboundEffect = IEffect(deployWithCorrectBitmap(new AfterDamageReboundEffect(engine)));
         IMoveSet[] memory moves = new IMoveSet[](2);
         IMoveSet reboundAttack =
             new EffectAttack(engine, reboundEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
@@ -3092,7 +3093,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_editEffect() public {
         EditEffectAttack editEffectAttack = new EditEffectAttack(engine);
-        DummyStatus d = new DummyStatus();
+        DummyStatus d = DummyStatus(deployWithCorrectBitmap(new DummyStatus()));
         EffectAbility effectAbility = new EffectAbility(engine, d);
         Mon memory mon = _createMon();
         mon.ability = effectAbility;

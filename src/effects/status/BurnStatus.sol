@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {StatBoostToApply, EffectInstance} from "../../Structs.sol";
+import {StatBoostToApply, EffectInstance, EffectContext} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {StatBoosts} from "../StatBoosts.sol";
@@ -53,21 +53,20 @@ contract BurnStatus is StatusEffect {
         return keccak256(abi.encode(targetIndex, monIndex, name()));
     }
 
-    function onApply(uint256 rng, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata ctx, uint256 rng, bytes32, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         bool hasBurnAlready;
         {
             bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-            uint192 monStatusFlag = ENGINE.getGlobalKV(battleKey, keyForMon);
+            uint192 monStatusFlag = ENGINE.getGlobalKV(ctx.battleKey, keyForMon);
             hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
         }
 
         // Set burn flag
-        super.onApply(rng, bytes32(0), targetIndex, monIndex);
+        super.onApply(ctx, rng, bytes32(0), targetIndex, monIndex);
 
         // Set stat debuff or increase burn degree
         if (!hasBurnAlready) {
@@ -80,7 +79,7 @@ contract BurnStatus is StatusEffect {
             });
             STAT_BOOSTS.addStatBoosts(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
         } else {
-            (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
+            (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(ctx.battleKey, targetIndex, monIndex);
             uint256 indexOfBurnEffect;
             uint256 burnDegree;
             bytes32 newExtraData;
@@ -112,7 +111,7 @@ contract BurnStatus is StatusEffect {
     }
 
     // Deal damage over time
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
@@ -126,7 +125,7 @@ contract BurnStatus is StatusEffect {
             damageDenom = DEG3_DAMAGE_DENOM;
         }
         int32 damage =
-            int32(ENGINE.getMonValueForBattle(ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.Hp))
+            int32(ENGINE.getMonValueForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Hp))
             / damageDenom;
         ENGINE.dealDamage(targetIndex, monIndex, damage);
         return (extraData, false);

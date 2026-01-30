@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {EffectStep, MonStateIndexName} from "../../Enums.sol";
+import {EffectContext} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
@@ -23,7 +24,7 @@ contract PanicStatus is StatusEffect {
     }
 
     // At the start of the turn, check to see if we should apply stamina debuff or end early
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(EffectContext calldata, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         pure
         override
@@ -39,28 +40,26 @@ contract PanicStatus is StatusEffect {
     }
 
     // On apply, checks to apply the flag, and then sets the extraData to be the duration
-    function onApply(uint256 rng, bytes32 data, uint256 monIndex, uint256 playerIndex)
+    function onApply(EffectContext calldata ctx, uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(rng, data, monIndex, playerIndex);
+        super.onApply(ctx, rng, data, targetIndex, monIndex);
         return (bytes32(DURATION), false);
     }
 
     // Apply effect on end of turn, and then check how many turns are left
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-
         // Get current stamina delta of the target mon
-        int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+        int32 staminaDelta = ENGINE.getMonStateForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
 
         // If the stamina is less than the max stamina, then reduce stamina by 1 (as long as it's not already 0)
-        uint32 maxStamina = ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+        uint32 maxStamina = ENGINE.getMonValueForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
         if (staminaDelta + int32(maxStamina) > 0) {
             ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -1);
         }

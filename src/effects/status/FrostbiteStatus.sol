@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply, EffectContext} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {StatBoosts} from "../StatBoosts.sol";
 
@@ -27,13 +27,13 @@ contract FrostbiteStatus is StatusEffect {
         return (r == EffectStep.OnApply || r == EffectStep.RoundEnd || r == EffectStep.OnRemove);
     }
 
-    function onApply(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(EffectContext calldata ctx, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
 
-        super.onApply(rng, extraData, targetIndex, monIndex);
+        super.onApply(ctx, rng, extraData, targetIndex, monIndex);
 
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -55,14 +55,14 @@ contract FrostbiteStatus is StatusEffect {
         STAT_BOOST.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32, bool)
     {
         // Calculate damage to deal
         uint32 maxHealth =
-            ENGINE.getMonValueForBattle(ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.Hp);
+            ENGINE.getMonValueForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
         int32 damage = int32(maxHealth) / DAMAGE_DENOM;
         ENGINE.dealDamage(targetIndex, monIndex, damage);
 

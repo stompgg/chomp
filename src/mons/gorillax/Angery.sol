@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {EffectStep} from "../../Enums.sol";
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import {EffectContext, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
@@ -43,7 +43,7 @@ contract Angery is IAbility, BasicEffect {
         return (step == EffectStep.RoundEnd || step == EffectStep.AfterDamage);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(EffectContext calldata ctx, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -53,7 +53,7 @@ contract Angery is IAbility, BasicEffect {
             // Heal
             int32 healAmount =
                 int32(
-                    ENGINE.getMonValueForBattle(ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.Hp)
+                    ENGINE.getMonValueForBattle(ctx.battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
                 ) / MAX_HP_DENOM;
             ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
             // Reset the charges
@@ -63,7 +63,7 @@ contract Angery is IAbility, BasicEffect {
         }
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256, uint256, int32)
+    function onAfterDamage(EffectContext calldata, uint256, bytes32 extraData, uint256, uint256, int32)
         external
         pure
         override
