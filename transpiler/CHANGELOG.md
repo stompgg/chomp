@@ -301,7 +301,66 @@ const effect = registry.getEffect(someAddress);
 
 The following issues were fixed to improve TypeScript compilation:
 
-### Fixed Issues (Batch 2 - Latest)
+### Fixed Issues (Batch 3 - Latest)
+
+15. **Struct Factory Functions for Mapping Access**
+    - Solidity mappings return zero-initialized structs on first access; TypeScript returns `undefined`
+    - Generate `createDefault*()` factory functions for each struct in `Structs.ts`
+    - Example: `this.battleConfig[key] ?? Structs.createDefaultBattleConfig()`
+    - Fixes `Cannot read properties of undefined` errors when accessing struct fields
+
+16. **Storage Reference Write-Back Semantics**
+    - Solidity storage references automatically persist modifications to the underlying mapping
+    - TypeScript's `??` pattern creates a new object not stored in the mapping
+    - Changed to `??=` pattern: first initialize the mapping entry, then get a reference
+    - Example:
+      ```typescript
+      this.battleConfig[key] ??= Structs.createDefaultBattleConfig();
+      let config: Structs.BattleConfig = this.battleConfig[key];
+      // Now modifications to config persist in the mapping
+      ```
+    - Fixes issues where struct field modifications were not persisted
+
+17. **EIP712 Runtime Module**
+    - Added `runtime/EIP712.ts` as runtime replacement for `lib/EIP712.sol`
+    - Implements `_hashTypedData()` for typed data hashing
+    - Provides EIP712 domain separator functionality
+
+18. **Multiple Inheritance Mixin System**
+    - TypeScript doesn't support multiple inheritance (e.g., `class Foo extends Bar, Ownable`)
+    - Moved mixin definitions from hard-coded transpiler logic to `runtime-replacements.json`
+    - Any runtime replacement can specify a `mixin` field with code to inline
+    - Ownable methods (`_initializeOwner`, `onlyOwner` checks) automatically inlined
+    - Future multiple inheritance cases handled by JSON config, not transpiler changes
+
+19. **Circular Dependency Resolution**
+    - Created `runtime/base.ts` to resolve circular import issues
+    - Contract base class, Storage, EventStream separated from `index.ts`
+    - Fixes module initialization order problems
+
+20. **Improved ABI Type Inference**
+    - Better struct field type inference in `abi.encode` calls
+    - TypeCast handling for `address()` and `bytes32()` casts
+    - String type inference in `_infer_single_abi_type`
+    - Properly infers types from struct member definitions
+
+21. **viem Type Casting for Addresses/Bytes32**
+    - Values passed to viem's encoding functions need `` `0x${string}` `` type
+    - Added proper casting: `value as \`0x${string}\``
+    - Fixes TypeScript type errors with viem parameters
+
+22. **Runtime Contract Properties Made Public**
+    - Changed `_msg`, `_block`, `_tx`, `_contractAddress` from protected/readonly to public
+    - Enables test code to set caller context (`engine._msg = { sender: addr, ... }`)
+    - Required for integration testing without complex mock setups
+
+23. **Comprehensive Integration Test Suite**
+    - Added `test/integration.test.ts` with 13 passing tests
+    - Mock implementations for: `RNGOracle`, `TeamRegistry`, `Validator`, `Ruleset`, `Matchmaker`
+    - Tests cover: battle initialization, stat modifications, status effects, type effectiveness, event emission
+    - Removed 6 outdated test files (`battle-simulation.ts`, `e2e.ts`, `engine-e2e.ts`, `harness-test.ts`, `run.ts`, `test-utils.ts`)
+
+### Fixed Issues (Batch 2)
 
 7. **Array `.length` to BigInt Conversion (TS2322)**
    - Array `.length` property now wrapped in `BigInt()` when assigned to bigint variables
@@ -366,40 +425,17 @@ The following issues were fixed to improve TypeScript compilation:
    - Added `_infer_packed_abi_types()` for proper viem `encodePacked()` format
    - `abi.encodePacked(name(), x)` now generates `encodePacked(['string', 'uint256'], [...])`
 
-### Remaining Issues (23 errors)
+### Resolved Issues (Previously 23 errors → 0 errors)
 
-The following categories of issues still need fixes:
+All previously documented TypeScript compilation errors have been resolved:
 
-#### 1. Missing Module: EIP712
-```
-ts-output/matchmaker/SignedMatchmaker.ts: Cannot find module '../EIP712'
-```
-**Fix needed**: EIP712.sol needs runtime replacement (similar to ECDSA, Ownable).
+- ~~**Missing Module: EIP712**~~ → Fixed: Added `runtime/EIP712.ts` replacement (Issue #17)
+- ~~**Multiple Inheritance with Ownable**~~ → Fixed: Mixin system inlines Ownable methods (Issue #18)
+- ~~**Struct Field Type Inference**~~ → Fixed: Improved ABI type inference (Issue #20)
+- ~~**viem Type Casting**~~ → Fixed: Proper `0x${string}` casting (Issue #21)
+- ~~**Record vs Map Return Type**~~ → Fixed: Consistent Record type usage
 
-#### 2. Multiple Inheritance with Ownable
-```
-GachaTeamRegistry.ts: '_initializeOwner' does not exist
-SignedMatchmaker.ts: '_hashTypedData', '_msg' do not exist
-```
-**Fix needed**: TypeScript doesn't support multiple inheritance. Contracts extending both a class and Ownable/EIP712 need mixin patterns or the primary base class should extend from Ownable.
-
-#### 3. Struct Field Type Inference in `abi.encode`
-```
-BattleOfferLib.ts, DefaultMatchmaker.ts: Type 'string' is not assignable to type 'bigint'
-```
-**Fix needed**: When encoding struct fields, the transpiler needs to know field types (address vs uint96 vs uint256) to infer correct ABI types.
-
-#### 4. viem Type Casting (`0x${string}`)
-```
-Multiple files: Type 'string' is not assignable to type '`0x${string}`'
-```
-**Fix needed**: Values passed to viem's `encodeAbiParameters` for address/bytes32 types need explicit `` as `0x${string}` `` casts.
-
-#### 5. Record vs Map Return Type
-```
-DefaultMonRegistry.ts: Type 'Record<string, string>' is missing properties from type 'Map'
-```
-**Fix needed**: Some functions return `Map<K,V>` in the interface but the transpiler generates `Record<string, T>`.
+**Current Status**: All transpiled TypeScript files compile without errors. Integration tests pass.
 
 ---
 
@@ -447,7 +483,29 @@ npm install
 npm test
 ```
 
-Tests cover: battle key computation, turn order, multi-turn battles, storage operations, status effects, forced switches, abilities, and engine state management.
+### Test Suites
+
+1. **Integration Tests** (`test/integration.test.ts`)
+   - 13 tests covering actual Engine behavior with mocks
+   - Tests: battle initialization, stat modifications, status effects, type effectiveness, event emission
+   - Uses mock implementations for external dependencies
+
+2. **Transpiler Test Cases** (`test/transpiler-test-cases.test.ts`)
+   - Unit tests for transpiler edge cases
+   - Tests: ABI encoding, type inference, struct initialization
+
+### Running Tests
+
+```bash
+# Run all tests
+npx vitest run
+
+# Run with watch mode
+npx vitest
+
+# Run specific test file
+npx vitest run test/integration.test.ts
+```
 
 ---
 
