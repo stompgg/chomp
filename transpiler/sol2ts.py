@@ -2238,16 +2238,28 @@ class TypeRegistry:
             inherited.update(self.get_all_inherited_vars(base))
         return inherited
 
-    def get_all_inherited_methods(self, contract_name: str) -> Set[str]:
-        """Get all methods inherited from base contracts (transitively)."""
+    def get_all_inherited_methods(self, contract_name: str, exclude_interfaces: bool = True) -> Set[str]:
+        """Get all methods inherited from base contracts (transitively).
+
+        Args:
+            contract_name: The contract to get inherited methods for
+            exclude_interfaces: If True, skip interfaces (starting with 'I' and uppercase)
+                              This is important for TypeScript 'override' modifier which
+                              only applies to class inheritance, not interface implementation.
+        """
         inherited: Set[str] = set()
         bases = self.contract_bases.get(contract_name, [])
         for base in bases:
+            # Skip interfaces if requested (for TypeScript override detection)
+            if exclude_interfaces:
+                is_interface = (base.startswith('I') and len(base) > 1 and base[1].isupper()) or base in self.interfaces
+                if is_interface:
+                    continue
             # Add methods from this base
             if base in self.contract_methods:
                 inherited.update(self.contract_methods[base])
             # Recursively get methods from ancestors
-            inherited.update(self.get_all_inherited_methods(base))
+            inherited.update(self.get_all_inherited_methods(base, exclude_interfaces))
         return inherited
 
     def build_qualified_name_cache(self, current_file_type: str = '') -> Dict[str, str]:
@@ -2804,6 +2816,16 @@ class TypeScriptCodeGenerator:
                 inner_value = self.solidity_type_to_ts(var.type_name.value_type.value_type)
                 return f'{self.indent()}{modifier}{var.name}: Record<string, Record<string, {inner_value}>> = {{}};'
             return f'{self.indent()}{modifier}{var.name}: Record<string, {value_type}> = {{}};'
+
+        # Handle bytes32 constants specially - they should be hex strings, not BigInt
+        if var.type_name.name == 'bytes32' and var.initial_value:
+            if isinstance(var.initial_value, Literal) and var.initial_value.kind == 'hex':
+                hex_val = var.initial_value.value
+                # Ensure 64-character hex string (32 bytes)
+                if hex_val.startswith('0x'):
+                    hex_val = hex_val[2:]
+                hex_val = hex_val.zfill(64)
+                return f'{self.indent()}{modifier}{var.name}: {ts_type} = "0x{hex_val}";'
 
         default_val = self.generate_expression(var.initial_value) if var.initial_value else self.default_value(ts_type)
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
@@ -3885,6 +3907,14 @@ class TypeScriptCodeGenerator:
             else:
                 # Contract/class creation: new Contract(args) -> new Contract(args)
                 type_name = call.function.type_name.name
+                # Handle special types that can't use 'new' in TypeScript
+                if type_name == 'string':
+                    # In Solidity, new string(length) creates an empty string of given length
+                    # In TypeScript, we just return an empty string (content is usually filled via assembly)
+                    return '""'
+                if type_name.startswith('bytes') and type_name != 'bytes32':
+                    # Similar for bytes types
+                    return '""'
                 args = ', '.join([self.generate_expression(arg) for arg in call.arguments])
                 return f'new {type_name}({args})'
 
@@ -3979,6 +4009,11 @@ class TypeScriptCodeGenerator:
                     # Check if arg is already an address type (msg.sender, tx.origin, etc.)
                     if self._is_already_address_type(arg):
                         return self.generate_expression(arg)
+                    # Check if arg is a numeric type cast (uint160, uint256, etc.)
+                    # In this case, convert the bigint to a hex address string
+                    if self._is_numeric_type_cast(arg):
+                        inner = self.generate_expression(arg)
+                        return f'`0x${{({inner}).toString(16).padStart(40, "0")}}`'
                     # Handle address(someContract) -> someContract._contractAddress
                     # For contract instances, get their address
                     inner = self.generate_expression(arg)
@@ -4001,6 +4036,7 @@ class TypeScriptCodeGenerator:
             elif name.startswith('I') and name[1].isupper():
                 # Interface cast - special handling for IEffect(address(this)) pattern
                 # In this case, we want to return the object, not its address
+                # Cast to 'any' to allow calling methods defined on the interface
                 if call.arguments and len(call.arguments) == 1:
                     arg = call.arguments[0]
                     # Check for IEffect(address(x)) pattern
@@ -4008,18 +4044,21 @@ class TypeScriptCodeGenerator:
                         if arg.arguments and len(arg.arguments) == 1:
                             inner_arg = arg.arguments[0]
                             if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
-                                return 'this'
-                            # For address(someVar), return the variable itself
-                            return self.generate_expression(inner_arg)
+                                # Cast to any to allow interface method calls
+                                return '(this as any)'
+                            # For address(someVar), return the variable itself cast to any
+                            inner_expr = self.generate_expression(inner_arg)
+                            return f'({inner_expr} as any)'
                     # Check for TypeCast address(x) pattern
                     if isinstance(arg, TypeCast) and arg.type_name.name == 'address':
                         inner_arg = arg.expression
                         if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
-                            return 'this'
-                        return self.generate_expression(inner_arg)
-                # Normal interface cast - pass through the value
+                            return '(this as any)'
+                        inner_expr = self.generate_expression(inner_arg)
+                        return f'({inner_expr} as any)'
+                # Normal interface cast - pass through the value cast to any
                 if args:
-                    return args
+                    return f'({args} as any)'
                 return '{}'  # Empty interface cast
             # Handle struct "constructors" with named arguments
             elif name[0].isupper() and call.named_arguments:
@@ -4127,7 +4166,9 @@ class TypeScriptCodeGenerator:
                 type_info = self.var_types[base_var_name]
                 type_name = type_info.name if type_info else ''
                 # EnumerableSetLib types - .length returns bigint already
-                if 'Set' in type_name or type_name.endswith('Set'):
+                # Be specific to avoid false matches with interface names like IMoveSet
+                enumerable_set_types = ('AddressSet', 'Uint256Set', 'Bytes32Set', 'Int256Set')
+                if type_name in enumerable_set_types or type_name.startswith('EnumerableSetLib.'):
                     return f'{expr}.{member}'
             # Regular arrays - wrap in BigInt
             return f'BigInt({expr}.{member})'
@@ -4297,13 +4338,34 @@ class TypeScriptCodeGenerator:
                 return "{type: 'uint256'}"
             elif arg.kind == 'bool':
                 return "{type: 'bool'}"
-        # For member access like Enums.Something
+        # For member access like Enums.Something or this._contractAddress
         if isinstance(arg, MemberAccess):
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
                     return "{type: 'uint8'}"
-        # For function calls, look up the return type
+                if arg.expression.name == 'this' and arg.member == '_contractAddress':
+                    return "{type: 'address'}"
+                if arg.expression.name in ('this', 'msg', 'tx'):
+                    member = arg.member
+                    if member in ('sender', 'origin', '_contractAddress'):
+                        return "{type: 'address'}"
+        # For function calls, check for type casts and look up return types
         if isinstance(arg, FunctionCall):
+            # Check for type cast function calls like address(x), uint256(x), etc.
+            if isinstance(arg.function, Identifier):
+                func_name = arg.function.name
+                # address() cast returns address type
+                if func_name == 'address':
+                    return "{type: 'address'}"
+                # uint/int casts
+                if func_name.startswith('uint') or func_name.startswith('int'):
+                    return f"{{type: '{func_name}'}}"
+                # bytes32 cast
+                if func_name == 'bytes32' or func_name.startswith('bytes'):
+                    return f"{{type: '{func_name}'}}"
+                # keccak256 returns bytes32
+                if func_name == 'keccak256':
+                    return "{type: 'bytes32'}"
             method_name = None
             # Handle this.method() or just method()
             if isinstance(arg.function, Identifier):
@@ -4317,6 +4379,15 @@ class TypeScriptCodeGenerator:
                 if method_name in self.current_method_return_types:
                     return_type = self.current_method_return_types[method_name]
                     return self._solidity_type_to_abi_type(return_type)
+        # For TypeCast expressions
+        if isinstance(arg, TypeCast):
+            type_name = arg.type_name.name
+            if type_name == 'address':
+                return "{type: 'address'}"
+            if type_name.startswith('uint') or type_name.startswith('int'):
+                return f"{{type: '{type_name}'}}"
+            if type_name == 'bytes32' or type_name.startswith('bytes'):
+                return f"{{type: '{type_name}'}}"
         # Default fallback
         return "{type: 'uint256'}"
 
@@ -4465,6 +4536,25 @@ class TypeScriptCodeGenerator:
                     return True
         return False
 
+    def _is_numeric_type_cast(self, expr: Expression) -> bool:
+        """Check if expression is a numeric type cast (uint160, uint256, etc.).
+
+        Returns True for expressions that cast to integer types and produce bigint values.
+        This is used to properly handle address(uint160(...)) patterns.
+        """
+        # Check for TypeCast to numeric types
+        if isinstance(expr, TypeCast):
+            type_name = expr.type_name.name
+            if type_name.startswith('uint') or type_name.startswith('int'):
+                return True
+        # Check for function call casts like uint160(x)
+        if isinstance(expr, FunctionCall):
+            if isinstance(expr.function, Identifier):
+                func_name = expr.function.name
+                if func_name.startswith('uint') or func_name.startswith('int'):
+                    return True
+        return False
+
     def _is_likely_array_access(self, access: IndexAccess) -> bool:
         """Determine if this is an array access (needs Number index) vs mapping access.
 
@@ -4548,9 +4638,19 @@ class TypeScriptCodeGenerator:
             # Check if inner expression is already an address type (msg.sender, tx.origin, etc.)
             if self._is_already_address_type(inner_expr):
                 return self.generate_expression(inner_expr)
+
+            # Check if inner expression is a numeric type cast (uint160, uint256, etc.)
+            # In this case, the result is a bigint that needs to be converted to hex address string
+            is_numeric_cast = self._is_numeric_type_cast(inner_expr)
+
             expr = self.generate_expression(inner_expr)
             if expr.startswith('"') or expr.startswith("'"):
                 return expr
+
+            # If the inner expression is a numeric cast (like uint160(...)), convert bigint to address string
+            if is_numeric_cast:
+                return f'`0x${{({expr}).toString(16).padStart(40, "0")}}`'
+
             # Handle address(someContract) -> someContract._contractAddress
             if expr != 'this' and not expr.startswith('"') and not expr.startswith("'"):
                 return f'{expr}._contractAddress'
@@ -4560,6 +4660,14 @@ class TypeScriptCodeGenerator:
         if type_name == 'bytes32':
             if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
                 return self._to_padded_bytes32(inner_expr.value)
+            # Handle string literal to bytes32: bytes32("STRING") -> hex encoding of string
+            if isinstance(inner_expr, Literal) and inner_expr.kind == 'string':
+                # Convert string to hex, padding to 32 bytes
+                string_val = inner_expr.value.strip('"\'')  # Remove quotes
+                hex_val = string_val.encode('utf-8').hex()
+                hex_val = hex_val[:64]  # Truncate if too long
+                hex_val = hex_val.ljust(64, '0')  # Pad with zeros to 32 bytes
+                return f'"0x{hex_val}"'
             # For computed expressions, convert bigint to 64-char hex string
             expr = self.generate_expression(inner_expr)
             return f'`0x${{({expr}).toString(16).padStart(64, "0")}}`'

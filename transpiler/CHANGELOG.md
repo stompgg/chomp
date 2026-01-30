@@ -301,7 +301,46 @@ const effect = registry.getEffect(someAddress);
 
 The following issues were fixed to improve TypeScript compilation:
 
-### Fixed Issues
+### Fixed Issues (Batch 2 - Latest)
+
+7. **Array `.length` to BigInt Conversion (TS2322)**
+   - Array `.length` property now wrapped in `BigInt()` when assigned to bigint variables
+   - Excludes EnumerableSetLib types (AddressSet, Uint256Set, etc.) which already return bigint
+   - Fixed false positives with interface names like `IMoveSet` by being more specific about EnumerableSetLib type checks
+
+8. **`address(uint160(...))` Pattern (TS2339)**
+   - Detects when inner expression is a numeric type cast (uint160, uint256, etc.)
+   - Converts bigint to hex address string: `` `0x${(expr).toString(16).padStart(40, "0")}` ``
+   - Fixes `_contractAddress does not exist on type 'bigint'` errors
+
+9. **Interface Casts with Method Calls (TS2339)**
+   - `ICPU(address(this)).calculateMove()` patterns now cast to `any` to allow interface method calls
+   - Fixes `'calculateMove' does not exist on type 'CPUMoveManager'` errors
+
+10. **`new string(length)` Pattern (TS2693)**
+    - Solidity's `new string(length)` now transpiles to `""` (empty string)
+    - Also handles `new bytes(length)` patterns
+    - Fixes `'string' only refers to a type, but is being used as a value` errors
+
+11. **`bytes32("STRING")` Conversion (TS2554)**
+    - String literals cast to bytes32 are now properly converted to hex encoding
+    - Converts string characters to hex, padded to 64 characters (32 bytes)
+    - Fixes `Expected 0 arguments, but got 1` errors from `.toString(16)` on strings
+
+12. **Override Modifier on Interface Methods (TS4113)**
+    - `get_all_inherited_methods()` now excludes interface methods by default
+    - Only adds `override` for methods actually inherited from class hierarchy
+    - Fixes `override modifier because it is not declared in the base class` errors
+
+13. **`bytes32` Constants as Hex Strings**
+    - `bytes32` state variables with hex literals now generate string values, not BigInt
+    - Example: `bytes32 constant HASH = 0x...` → `static readonly HASH: string = "0x..."`
+
+14. **ABI Type Inference for `address()` Casts**
+    - `address(this)` in `abi.encode` now infers type as `'address'` not `'uint256'`
+    - Handles TypeCast expressions for address, uint, int, bytes32
+
+### Fixed Issues (Batch 1 - Previous)
 
 1. **BigInt/Number Operator Mixing (TS2365)**
    - Array index expressions like `arr[i - 1]` now correctly convert `1` to `1n`
@@ -327,7 +366,7 @@ The following issues were fixed to improve TypeScript compilation:
    - Added `_infer_packed_abi_types()` for proper viem `encodePacked()` format
    - `abi.encodePacked(name(), x)` now generates `encodePacked(['string', 'uint256'], [...])`
 
-### Remaining Issues (39 errors)
+### Remaining Issues (23 errors)
 
 The following categories of issues still need fixes:
 
@@ -335,45 +374,32 @@ The following categories of issues still need fixes:
 ```
 ts-output/matchmaker/SignedMatchmaker.ts: Cannot find module '../EIP712'
 ```
-**Fix needed**: EIP712.sol needs runtime replacement or manual implementation.
+**Fix needed**: EIP712.sol needs runtime replacement (similar to ECDSA, Ownable).
 
-#### 2. Type Mismatches: string vs bigint
+#### 2. Multiple Inheritance with Ownable
 ```
-BattleOfferLib.ts, StatBoosts.ts, DefaultMatchmaker.ts: Type 'string' is not assignable to type 'bigint'
-```
-**Fix needed**: `abi.decode` returns should handle bytes32 → bigint conversions.
-
-#### 3. _contractAddress on Wrong Types
-```
-SleepStatus.ts, Engine.ts, GildedRecovery.ts: Property '_contractAddress' does not exist on type 'bigint/string'
-```
-**Fix needed**: Improve type inference for `address(uint160(...))` patterns.
-
-#### 4. Missing Inherited Methods
-```
-CPUMoveManager.ts: 'calculateMove' does not exist
 GachaTeamRegistry.ts: '_initializeOwner' does not exist
 SignedMatchmaker.ts: '_hashTypedData', '_msg' do not exist
 ```
-**Fix needed**: These contracts inherit from base classes not yet transpiled or missing inheritance.
+**Fix needed**: TypeScript doesn't support multiple inheritance. Contracts extending both a class and Ownable/EIP712 need mixin patterns or the primary base class should extend from Ownable.
 
-#### 5. Number vs BigInt Assignment
+#### 3. Struct Field Type Inference in `abi.encode`
 ```
-DefaultMonRegistry.ts, DefaultTeamRegistry.ts: Type 'number' is not assignable to type 'bigint'
+BattleOfferLib.ts, DefaultMatchmaker.ts: Type 'string' is not assignable to type 'bigint'
 ```
-**Fix needed**: Array `.length` returns `number`, needs `BigInt()` wrapper when assigned to bigint vars.
+**Fix needed**: When encoding struct fields, the transpiler needs to know field types (address vs uint96 vs uint256) to infer correct ABI types.
 
-#### 6. Override Modifier on Non-Inherited Methods
+#### 4. viem Type Casting (`0x${string}`)
 ```
-CarrotHarvest.ts: override modifier on method not in base class
+Multiple files: Type 'string' is not assignable to type '`0x${string}`'
 ```
-**Fix needed**: Track method inheritance more accurately across interface vs class boundaries.
+**Fix needed**: Values passed to viem's `encodeAbiParameters` for address/bytes32 types need explicit `` as `0x${string}` `` casts.
 
-#### 7. Type Used as Value
+#### 5. Record vs Map Return Type
 ```
-Strings.ts: 'string' only refers to a type, but is being used as a value here
+DefaultMonRegistry.ts: Type 'Record<string, string>' is missing properties from type 'Map'
 ```
-**Fix needed**: Handle Solidity `type(string).` patterns.
+**Fix needed**: Some functions return `Map<K,V>` in the interface but the transpiler generates `Record<string, T>`.
 
 ---
 
