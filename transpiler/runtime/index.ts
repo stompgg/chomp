@@ -8,6 +8,10 @@
 import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, fromHex, hexToBigInt, numberToHex } from 'viem';
 import { createHash } from 'crypto';
 
+// Note: Core types (Contract, Storage, EventStream) are defined in this file.
+// Runtime replacement modules (Ownable, ECDSA, etc.) should import Contract from ./base
+// to avoid circular dependencies. The ./base module has a minimal Contract implementation.
+
 // =============================================================================
 // HASH FUNCTIONS
 // =============================================================================
@@ -720,6 +724,7 @@ export const globalContainer = new ContractContainer();
 // See transpiler/runtime-replacements.json for configuration.
 
 export { Ownable } from './Ownable';
+export { EIP712 } from './EIP712';
 export {
   EnumerableSetLib,
   AddressSet,

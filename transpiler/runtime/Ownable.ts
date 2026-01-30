@@ -8,7 +8,7 @@
  * @see transpiler/runtime-replacements.json for configuration
  */
 
-import { Contract, ADDRESS_ZERO } from './index';
+import { Contract, ADDRESS_ZERO } from './base';
 
 /**
  * Simple single owner authorization mixin.

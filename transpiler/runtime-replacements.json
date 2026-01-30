@@ -73,6 +73,28 @@
           { "name": "canonicalHash", "visibility": "internal", "params": ["signature: string"], "returns": "string", "static": true }
         ]
       }
+    },
+    {
+      "source": "lib/EIP712.sol",
+      "reason": "Complex Yul assembly for gas-optimized EIP-712 domain separator and typed data hashing",
+      "runtimeModule": "../runtime",
+      "exports": ["EIP712"],
+      "interface": {
+        "class": "EIP712",
+        "extends": "Contract",
+        "abstract": true,
+        "constants": [
+          { "name": "_DOMAIN_TYPEHASH", "type": "string", "visibility": "internal" }
+        ],
+        "methods": [
+          { "name": "_domainNameAndVersion", "visibility": "protected", "returns": "[string, string]", "abstract": true },
+          { "name": "_domainNameAndVersionMayChange", "visibility": "protected", "returns": "boolean" },
+          { "name": "_domainSeparator", "visibility": "protected", "returns": "string" },
+          { "name": "_hashTypedData", "visibility": "protected", "params": ["structHash: string"], "returns": "string" },
+          { "name": "eip712Domain", "visibility": "public", "returns": "object" },
+          { "name": "hashTypedData", "visibility": "public", "params": ["structHash: string"], "returns": "string" }
+        ]
+      }
     }
   ]
 }

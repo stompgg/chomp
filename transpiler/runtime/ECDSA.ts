@@ -7,7 +7,7 @@
  */
 
 import { keccak256, toHex, fromHex } from 'viem';
-import { Contract } from './index';
+import { Contract } from './base';
 
 // Constants from the original Solidity
 const N = BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
@@ -49,9 +49,10 @@ export class ECDSA extends Contract {
   /**
    * Recovers the signer's address from a message digest hash and signature.
    * Throws InvalidSignature error on recovery failure.
+   * Note: Accepts string for compatibility with transpiled Solidity code.
    */
-  static recover(hash: `0x${string}`, signature: `0x${string}`): string {
-    const result = ECDSA.tryRecover(hash, signature);
+  static recover(hash: `0x${string}` | string, signature: `0x${string}` | string): string {
+    const result = ECDSA.tryRecover(hash as `0x${string}`, signature as `0x${string}`);
     if (result === ZERO_ADDRESS) {
       throw new Error("InvalidSignature");
     }

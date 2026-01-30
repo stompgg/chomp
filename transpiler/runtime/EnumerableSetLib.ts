@@ -7,7 +7,7 @@
  * @see transpiler/runtime-replacements.json for configuration
  */
 
-import { Contract } from './index';
+import { Contract } from './base';
 
 // =============================================================================
 // SET TYPE CLASSES

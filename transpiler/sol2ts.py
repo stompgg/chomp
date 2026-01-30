@@ -2061,6 +2061,8 @@ class TypeRegistry:
         self.contract_bases: Dict[str, List[str]] = {}
         # Struct paths: struct_name -> relative path (without extension) for top-level structs
         self.struct_paths: Dict[str, str] = {}
+        # Struct field types: struct_name -> {field_name -> field_type_name}
+        self.struct_fields: Dict[str, Dict[str, str]] = {}
 
     def discover_from_source(self, source: str, rel_path: Optional[str] = None) -> None:
         """Discover types from a single Solidity source string."""
@@ -2096,6 +2098,12 @@ class TypeRegistry:
             # Track where the struct is defined (for non-Structs files)
             if rel_path and rel_path != 'Structs':
                 self.struct_paths[struct.name] = rel_path
+            # Track struct field types for ABI type inference (type_name, is_array)
+            self.struct_fields[struct.name] = {}
+            for member in struct.members:
+                if member.type_name:
+                    is_array = getattr(member.type_name, 'is_array', False)
+                    self.struct_fields[struct.name][member.name] = (member.type_name.name, is_array)
 
         # Top-level enums
         for enum in ast.enums:
@@ -2205,6 +2213,12 @@ class TypeRegistry:
         for name, bases in other.contract_bases.items():
             if name not in self.contract_bases:
                 self.contract_bases[name] = bases.copy()
+        # Merge struct field types
+        for struct_name, fields in other.struct_fields.items():
+            if struct_name in self.struct_fields:
+                self.struct_fields[struct_name].update(fields)
+            else:
+                self.struct_fields[struct_name] = fields.copy()
 
     def get_inherited_structs(self, contract_name: str) -> Dict[str, str]:
         """Get structs inherited from base contracts.
@@ -2299,7 +2313,7 @@ class TypeRegistry:
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = ''):
+    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = '', runtime_replacement_classes: Optional[Set[str]] = None):
         self.indent_level = 0
         self.indent_str = '  '
         self.file_depth = file_depth  # Depth of output file for relative imports
@@ -2331,6 +2345,7 @@ class TypeScriptCodeGenerator:
             self.known_public_state_vars = registry.known_public_state_vars
             self.known_method_return_types = registry.method_return_types
             self.known_contract_paths = registry.contract_paths
+            self.known_struct_fields = registry.struct_fields
         else:
             # Empty sets - types will be discovered as files are parsed
             self.known_structs: Set[str] = set()
@@ -2344,6 +2359,7 @@ class TypeScriptCodeGenerator:
             self.known_public_state_vars: Set[str] = set()
             self.known_method_return_types: Dict[str, Dict[str, str]] = {}
             self.known_contract_paths: Dict[str, str] = {}
+            self.known_struct_fields: Dict[str, Dict[str, str]] = {}
 
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
@@ -2367,6 +2383,9 @@ class TypeScriptCodeGenerator:
         self.current_inherited_structs: Dict[str, str] = {}
         # Flag to track when generating base constructor arguments (can't use 'this' before super())
         self._in_base_constructor_args: bool = False
+
+        # Runtime replacement classes (should import from runtime instead of separate files)
+        self.runtime_replacement_classes: Set[str] = runtime_replacement_classes or set()
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
@@ -2523,15 +2542,35 @@ class TypeScriptCodeGenerator:
         runtime_imports = ['Contract', 'Storage', 'ADDRESS_ZERO', 'sha256', 'sha256String', 'addressToUint', 'blockhash']
         if self.set_types_used:
             runtime_imports.extend(sorted(self.set_types_used))
+        # Add runtime replacement classes that are needed as base contracts
+        for base_contract in sorted(self.base_contracts_needed):
+            if base_contract in self.runtime_replacement_classes:
+                runtime_imports.append(base_contract)
         lines.append(f"import {{ {', '.join(runtime_imports)} }} from '{prefix}runtime';")
 
-        # Import base contracts needed for inheritance
+        # Import base contracts needed for inheritance (skip runtime replacements)
         for base_contract in sorted(self.base_contracts_needed):
+            if base_contract in self.runtime_replacement_classes:
+                continue  # Already imported from runtime
             import_path = self._get_relative_import_path(base_contract)
             lines.append(f"import {{ {base_contract} }} from '{import_path}';")
 
-        # Import library contracts that are referenced
+        # Import library contracts that are referenced (skip runtime replacements - already imported)
         for library in sorted(self.libraries_referenced):
+            if library in self.runtime_replacement_classes:
+                # Add to runtime imports if not already there
+                if library not in runtime_imports:
+                    # Need to update the runtime import line
+                    for i, line in enumerate(lines):
+                        if "from '" in line and "runtime'" in line:
+                            # Parse existing imports and add the library
+                            import_match = line.split('{')[1].split('}')[0]
+                            existing = [x.strip() for x in import_match.split(',')]
+                            if library not in existing:
+                                existing.append(library)
+                                lines[i] = f"import {{ {', '.join(existing)} }} from '{prefix}runtime';"
+                            break
+                continue
             import_path = self._get_relative_import_path(library)
             lines.append(f"import {{ {library} }} from '{import_path}';")
 
@@ -2785,6 +2824,30 @@ class TypeScriptCodeGenerator:
             else:
                 # Multiple functions with same name - merge into one with optional params
                 lines.append(self.generate_overloaded_function(funcs))
+
+        # Handle multiple inheritance with Ownable
+        # If Ownable is in base classes but not the primary extends, add Ownable methods
+        if 'Ownable' in contract.base_contracts and 'Ownable' in self.runtime_replacement_classes:
+            # Get the actual extends (first non-interface base)
+            non_interface_bases = [bc for bc in contract.base_contracts if bc not in self.known_interfaces]
+            actual_extends = non_interface_bases[0] if non_interface_bases else 'Contract'
+            if actual_extends != 'Ownable':
+                # Add Ownable methods as a mixin
+                ownable_methods = '''
+  // Ownable mixin (from secondary base class)
+  private _owner: string = '0x0000000000000000000000000000000000000000';
+  protected _initializeOwner(newOwner: string): void {
+    this._owner = newOwner;
+  }
+  protected _checkOwner(): void {
+    if (this._msg.sender !== this._owner) {
+      throw new Error("Unauthorized");
+    }
+  }
+  owner(): string {
+    return this._owner;
+  }'''
+                lines.append(ownable_methods)
 
         self.indent_level -= 1
         lines.append('}\n')
@@ -4254,18 +4317,20 @@ class TypeScriptCodeGenerator:
                 type_info = self.var_types[name]
                 if type_info.name:
                     type_name = type_info.name
+                    # Handle array types - append []
+                    array_suffix = '[]' if type_info.is_array else ''
                     if type_name == 'address':
-                        return 'address'
+                        return f'address{array_suffix}'
                     if type_name.startswith('uint') or type_name.startswith('int'):
-                        return type_name
+                        return f'{type_name}{array_suffix}'
                     if type_name == 'bool':
-                        return 'bool'
+                        return f'bool{array_suffix}'
                     if type_name.startswith('bytes'):
-                        return type_name
+                        return f'{type_name}{array_suffix}'
                     if type_name == 'string':
-                        return 'string'
+                        return f'string{array_suffix}'
                     if type_name in self.known_enums:
-                        return 'uint8'
+                        return f'uint8{array_suffix}'
             # Check known enum members
             if name in self.known_enums:
                 return 'uint8'
@@ -4279,17 +4344,48 @@ class TypeScriptCodeGenerator:
                 return 'uint256'
             elif arg.kind == 'bool':
                 return 'bool'
-        # For member access like Enums.Something or msg.sender
+        # For member access like Enums.Something or msg.sender or battle.p0
         if isinstance(arg, MemberAccess):
+            # Check for _contractAddress access (always address)
+            if arg.member == '_contractAddress':
+                return 'address'
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
                     return 'uint8'
-                if arg.expression.name == 'this' and arg.member == '_contractAddress':
-                    return 'address'
                 if arg.expression.name in ('this', 'msg', 'tx'):
                     member = arg.member
-                    if member in ('sender', 'origin', '_contractAddress'):
+                    if member in ('sender', 'origin'):
                         return 'address'
+                # Check if this is a struct field access (e.g., proposal.p0)
+                var_name = arg.expression.name
+                if var_name in self.var_types:
+                    type_info = self.var_types[var_name]
+                    if type_info.name and type_info.name in self.known_struct_fields:
+                        struct_fields = self.known_struct_fields[type_info.name]
+                        if arg.member in struct_fields:
+                            field_info = struct_fields[arg.member]
+                            # Handle tuple format (type_name, is_array) or string format
+                            if isinstance(field_info, tuple):
+                                field_type, is_array = field_info
+                            else:
+                                field_type, is_array = field_info, False
+                            array_suffix = '[]' if is_array else ''
+                            # Handle common types
+                            if field_type == 'address':
+                                return f'address{array_suffix}'
+                            if field_type == 'bytes32':
+                                return f'bytes32{array_suffix}'
+                            if field_type.startswith('uint') or field_type.startswith('int'):
+                                return f'{field_type}{array_suffix}'
+                            if field_type.startswith('bytes'):
+                                return f'{field_type}{array_suffix}'
+                            if field_type == 'bool':
+                                return f'bool{array_suffix}'
+                            if field_type == 'string':
+                                return f'string{array_suffix}'
+                            # Contract/interface types are encoded as addresses
+                            if field_type in self.known_contracts or field_type in self.known_interfaces:
+                                return f'address{array_suffix}'
         # For function calls that return specific types
         if isinstance(arg, FunctionCall):
             if isinstance(arg.function, Identifier):
@@ -4338,17 +4434,32 @@ class TypeScriptCodeGenerator:
                 return "{type: 'uint256'}"
             elif arg.kind == 'bool':
                 return "{type: 'bool'}"
-        # For member access like Enums.Something or this._contractAddress
+        # For member access like Enums.Something or this._contractAddress or battle.p0
         if isinstance(arg, MemberAccess):
+            # Check for _contractAddress access on any expression (returns address)
+            if arg.member == '_contractAddress':
+                return "{type: 'address'}"
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
                     return "{type: 'uint8'}"
-                if arg.expression.name == 'this' and arg.member == '_contractAddress':
-                    return "{type: 'address'}"
                 if arg.expression.name in ('this', 'msg', 'tx'):
                     member = arg.member
                     if member in ('sender', 'origin', '_contractAddress'):
                         return "{type: 'address'}"
+                # Check if this is a struct field access (e.g., battle.p0)
+                var_name = arg.expression.name
+                if var_name in self.var_types:
+                    type_info = self.var_types[var_name]
+                    if type_info.name and type_info.name in self.known_struct_fields:
+                        struct_fields = self.known_struct_fields[type_info.name]
+                        if arg.member in struct_fields:
+                            field_info = struct_fields[arg.member]
+                            # Handle tuple format (type_name, is_array) or string format
+                            if isinstance(field_info, tuple):
+                                field_type, is_array = field_info
+                            else:
+                                field_type, is_array = field_info, False
+                            return self._solidity_type_to_abi_type(field_type, is_array)
         # For function calls, check for type casts and look up return types
         if isinstance(arg, FunctionCall):
             # Check for type cast function calls like address(x), uint256(x), etc.
@@ -4363,8 +4474,8 @@ class TypeScriptCodeGenerator:
                 # bytes32 cast
                 if func_name == 'bytes32' or func_name.startswith('bytes'):
                     return f"{{type: '{func_name}'}}"
-                # keccak256 returns bytes32
-                if func_name == 'keccak256':
+                # keccak256, blockhash, sha256 return bytes32
+                if func_name in ('keccak256', 'blockhash', 'sha256'):
                     return "{type: 'bytes32'}"
             method_name = None
             # Handle this.method() or just method()
@@ -4391,22 +4502,26 @@ class TypeScriptCodeGenerator:
         # Default fallback
         return "{type: 'uint256'}"
 
-    def _solidity_type_to_abi_type(self, type_name: str) -> str:
+    def _solidity_type_to_abi_type(self, type_name: str, is_array: bool = False) -> str:
         """Convert a Solidity type name to ABI type format."""
+        array_suffix = '[]' if is_array else ''
         if type_name == 'string':
-            return "{type: 'string'}"
+            return f"{{type: 'string{array_suffix}'}}"
         if type_name == 'address':
-            return "{type: 'address'}"
+            return f"{{type: 'address{array_suffix}'}}"
         if type_name == 'bool':
-            return "{type: 'bool'}"
+            return f"{{type: 'bool{array_suffix}'}}"
         if type_name.startswith('uint') or type_name.startswith('int'):
-            return f"{{type: '{type_name}'}}"
+            return f"{{type: '{type_name}{array_suffix}'}}"
         if type_name.startswith('bytes'):
-            return f"{{type: '{type_name}'}}"
+            return f"{{type: '{type_name}{array_suffix}'}}"
         if type_name in self.known_enums:
-            return "{type: 'uint8'}"
+            return f"{{type: 'uint8{array_suffix}'}}"
+        # Contract/interface types are encoded as addresses
+        if type_name in self.known_contracts or type_name in self.known_interfaces:
+            return f"{{type: 'address{array_suffix}'}}"
         # Default to uint256 for unknown types
-        return "{type: 'uint256'}"
+        return f"{{type: 'uint256{array_suffix}'}}"
 
     def _convert_abi_value(self, arg: Expression) -> str:
         """Convert value for ABI encoding, ensuring proper types."""
@@ -4424,8 +4539,12 @@ class TypeScriptCodeGenerator:
                         # Enums should be converted to number for viem (uint8)
                         return f'Number({expr})'
                     # bytes32 and address types need hex string cast
+                    # For arrays, cast to array of hex strings
                     if var_type_name == 'bytes32' or var_type_name == 'address':
-                        return f'{expr} as `0x${{string}}`'
+                        if type_info.is_array:
+                            return f'{expr} as `0x${{string}}`[]'
+                        else:
+                            return f'{expr} as `0x${{string}}`'
                     # Small integer types need Number() conversion for viem
                     if var_type_name in ('int8', 'int16', 'int32', 'int64', 'int128',
                                           'uint8', 'uint16', 'uint32', 'uint64', 'uint128'):
@@ -4433,9 +4552,55 @@ class TypeScriptCodeGenerator:
 
         # Member access like Enums.Something also needs Number conversion
         if isinstance(arg, MemberAccess):
+            # Check for address-returning members that need hex string cast
+            if arg.member in ('sender', 'origin', '_contractAddress'):
+                return f'{expr} as `0x${{string}}`'
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
                     return f'Number({expr})'
+                # Check if this is a struct field access
+                var_name = arg.expression.name
+                if var_name in self.var_types:
+                    type_info = self.var_types[var_name]
+                    if type_info.name and type_info.name in self.known_struct_fields:
+                        struct_fields = self.known_struct_fields[type_info.name]
+                        if arg.member in struct_fields:
+                            field_info = struct_fields[arg.member]
+                            # Handle tuple format (type_name, is_array) or string format
+                            if isinstance(field_info, tuple):
+                                field_type, is_array = field_info
+                            else:
+                                field_type, is_array = field_info, False
+                            if field_type == 'address' or field_type == 'bytes32':
+                                if is_array:
+                                    return f'{expr} as `0x${{string}}`[]'
+                                else:
+                                    return f'{expr} as `0x${{string}}`'
+                            # Contract/interface types also need address cast
+                            if field_type in self.known_contracts or field_type in self.known_interfaces:
+                                if is_array:
+                                    # For arrays of contracts, we need to map to addresses
+                                    return f'{expr}.map((c: any) => c._contractAddress as `0x${{string}}`)'
+                                else:
+                                    return f'{expr}._contractAddress as `0x${{string}}`'
+
+        # Function calls that return bytes32/address need to be cast
+        if isinstance(arg, FunctionCall):
+            # Check for functions known to return bytes32
+            func_name = None
+            if isinstance(arg.function, Identifier):
+                func_name = arg.function.name
+            elif isinstance(arg.function, MemberAccess):
+                func_name = arg.function.member
+            if func_name:
+                # keccak256, sha256, blockhash, etc. return bytes32
+                if func_name in ('keccak256', 'sha256', 'blockhash', 'hashBattle', 'hashBattleOffer'):
+                    return f'{expr} as `0x${{string}}`'
+                # Look up method return types for custom methods
+                if hasattr(self, 'current_method_return_types') and func_name in self.current_method_return_types:
+                    return_type = self.current_method_return_types[func_name]
+                    if return_type in ('bytes32', 'address'):
+                        return f'{expr} as `0x${{string}}`'
 
         return expr
 
@@ -4533,6 +4698,22 @@ class TypeScriptCodeGenerator:
                     return True
                 # tx.origin is already an address string
                 if base_name == 'tx' and member == 'origin':
+                    return True
+                # Check if this is a struct field that's already an address type
+                if base_name in self.var_types:
+                    type_info = self.var_types[base_name]
+                    if type_info.name and type_info.name in self.known_struct_fields:
+                        struct_fields = self.known_struct_fields[type_info.name]
+                        if member in struct_fields:
+                            field_info = struct_fields[member]
+                            field_type = field_info[0] if isinstance(field_info, tuple) else field_info
+                            if field_type == 'address':
+                                return True
+        # Check if it's a simple identifier with address type
+        if isinstance(expr, Identifier):
+            if expr.name in self.var_types:
+                type_info = self.var_types[expr.name]
+                if type_info.name == 'address':
                     return True
         return False
 
@@ -4714,9 +4895,10 @@ class TypeScriptCodeGenerator:
     def solidity_type_to_ts(self, type_name: TypeName) -> str:
         """Convert Solidity type to TypeScript type."""
         if type_name.is_mapping:
-            key = self.solidity_type_to_ts(type_name.key_type)
+            # Use Record for consistency with state variable generation
+            # Record<string, V> allows [] access and works with Solidity mapping semantics
             value = self.solidity_type_to_ts(type_name.value_type)
-            return f'Map<{key}, {value}>'
+            return f'Record<string, {value}>'
 
         name = type_name.name
         ts_type = 'any'
@@ -4803,6 +4985,7 @@ class SolidityToTypeScriptTranspiler:
 
         # Load runtime replacements configuration
         self.runtime_replacements: Dict[str, dict] = {}
+        self.runtime_replacement_classes: Set[str] = set()  # Set of class names that are runtime replacements
         self._load_runtime_replacements()
 
         # Run type discovery on specified directories
@@ -4824,6 +5007,9 @@ class SolidityToTypeScriptTranspiler:
                     if source_path:
                         # Normalize the source path for matching
                         self.runtime_replacements[source_path] = replacement
+                        # Track class names that are runtime replacements
+                        for export in replacement.get('exports', []):
+                            self.runtime_replacement_classes.add(export)
                 print(f"Loaded {len(self.runtime_replacements)} runtime replacements")
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Warning: Failed to load runtime-replacements.json: {e}")
@@ -4944,7 +5130,8 @@ class SolidityToTypeScriptTranspiler:
         generator = TypeScriptCodeGenerator(
             self.registry if use_registry else None,
             file_depth=file_depth,
-            current_file_path=current_file_path
+            current_file_path=current_file_path,
+            runtime_replacement_classes=self.runtime_replacement_classes
         )
         ts_code = generator.generate(ast)
 
