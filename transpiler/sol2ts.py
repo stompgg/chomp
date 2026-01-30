@@ -2660,14 +2660,62 @@ class TypeScriptCodeGenerator:
         return f'export const {const.name}: {ts_type} = {value};\n'
 
     def generate_struct(self, struct: StructDefinition) -> str:
-        """Generate TypeScript interface for struct."""
+        """Generate TypeScript interface for struct and a factory function for default initialization."""
         lines = []
         lines.append(f'export interface {struct.name} {{')
         for member in struct.members:
             ts_type = self.solidity_type_to_ts(member.type_name)
             lines.append(f'  {member.name}: {ts_type};')
         lines.append('}\n')
+
+        # Generate factory function for creating default-initialized struct
+        # This is needed because in Solidity, reading from a mapping returns a zero-initialized struct
+        lines.append(f'export function createDefault{struct.name}(): {struct.name} {{')
+        lines.append('  return {')
+        for member in struct.members:
+            ts_type = self.solidity_type_to_ts(member.type_name)
+            default_val = self._get_struct_field_default(ts_type, member.type_name)
+            lines.append(f'    {member.name}: {default_val},')
+        lines.append('  };')
+        lines.append('}\n')
         return '\n'.join(lines)
+
+    def _get_struct_field_default(self, ts_type: str, solidity_type: Optional['TypeName'] = None) -> str:
+        """Get the default value for a struct field based on its TypeScript type."""
+        if ts_type == 'bigint':
+            return '0n'
+        elif ts_type == 'boolean':
+            return 'false'
+        elif ts_type == 'string':
+            # Check if this is a bytes32 or address type
+            if solidity_type and solidity_type.name:
+                sol_type_name = solidity_type.name.lower()
+                if 'bytes32' in sol_type_name or sol_type_name == 'bytes32':
+                    return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
+                elif 'address' in sol_type_name or sol_type_name == 'address':
+                    return '"0x0000000000000000000000000000000000000000"'
+            return '""'
+        elif ts_type == 'number':
+            return '0'
+        elif ts_type.endswith('[]'):
+            return '[]'
+        elif ts_type.startswith('Record<'):
+            return '{}'
+        elif ts_type.startswith('Structs.'):
+            # Nested struct with Structs. prefix - call its factory function
+            struct_name = ts_type[8:]  # Remove 'Structs.' prefix
+            return f'createDefault{struct_name}()'
+        elif ts_type.startswith('Enums.'):
+            # Enum - default to 0
+            return '0'
+        elif ts_type == 'any':
+            return 'undefined as any'
+        elif ts_type in self.known_structs:
+            # Unqualified struct name (used when inside Structs file)
+            return f'createDefault{ts_type}()'
+        else:
+            # Unknown type
+            return 'undefined as any'
 
     def generate_contract(self, contract: ContractDefinition) -> str:
         """Generate TypeScript class for contract."""
@@ -3386,6 +3434,13 @@ class TypeScriptCodeGenerator:
             decl = stmt.declarations[0]
             ts_type = self.solidity_type_to_ts(decl.type_name)
             if stmt.initial_value:
+                # Check if this is a storage reference to a struct in a mapping
+                # For storage structs, we need to initialize the mapping entry first,
+                # then get a reference to it (so modifications persist)
+                storage_init = self._get_storage_init_statement(decl, stmt.initial_value, ts_type)
+                if storage_init:
+                    return storage_init
+
                 init_expr = self.generate_expression(stmt.initial_value)
                 # Add default value for mapping reads (Solidity returns 0/false/etc for non-existent keys)
                 init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr, decl.type_name)
@@ -3402,6 +3457,71 @@ class TypeScriptCodeGenerator:
             init = self.generate_expression(stmt.initial_value) if stmt.initial_value else ''
             return f'{self.indent()}const [{names}] = {init};'
 
+    def _get_storage_init_statement(self, decl: 'VariableDeclaration', init_value: 'Expression', ts_type: str) -> Optional[str]:
+        """Generate storage initialization for struct references from mappings.
+
+        For Solidity 'storage' struct references from mappings, we need to:
+        1. Initialize the mapping entry with ??= if it doesn't exist
+        2. Return a reference to the entry (not a copy)
+
+        This ensures modifications to the variable persist in the mapping.
+        """
+        # Only handle storage location structs
+        if decl.storage_location != 'storage':
+            return None
+
+        # Only handle struct types (they start with Structs. or are known structs)
+        if not (ts_type.startswith('Structs.') or ts_type in self.known_structs):
+            return None
+
+        # Check if init_value is a mapping access (IndexAccess)
+        if not isinstance(init_value, IndexAccess):
+            return None
+
+        # Check if it's a mapping access on a state variable
+        # In Solidity, state variables are accessed directly (e.g., battleConfig[key])
+        # In TypeScript, they become this.battleConfig[key]
+        is_mapping_access = False
+        mapping_var_name = None
+
+        # Case 1: Direct state variable access (battleConfig[key])
+        if isinstance(init_value.base, Identifier):
+            var_name = init_value.base.name
+            if var_name in self.var_types:
+                type_info = self.var_types[var_name]
+                is_mapping_access = type_info.is_mapping
+                mapping_var_name = var_name
+
+        # Case 2: Explicit this.varName[key] access
+        if isinstance(init_value.base, MemberAccess):
+            if isinstance(init_value.base.expression, Identifier) and init_value.base.expression.name == 'this':
+                member_name = init_value.base.member
+                if member_name in self.var_types:
+                    type_info = self.var_types[member_name]
+                    is_mapping_access = type_info.is_mapping
+                    mapping_var_name = member_name
+
+        if not is_mapping_access:
+            return None
+
+        # Generate the mapping expression and key
+        mapping_expr = self.generate_expression(init_value.base)
+        key_expr = self.generate_expression(init_value.index)
+
+        # Get the default value for the struct
+        default_value = self._get_ts_default_value(ts_type, decl.type_name)
+        if not default_value:
+            struct_name = ts_type.replace('Structs.', '') if ts_type.startswith('Structs.') else ts_type
+            default_value = f'Structs.createDefault{struct_name}()'
+
+        # Generate two statements:
+        # 1. Initialize the mapping entry if it doesn't exist
+        # 2. Get a reference to the entry
+        lines = []
+        lines.append(f'{self.indent()}{mapping_expr}[{key_expr}] ??= {default_value};')
+        lines.append(f'{self.indent()}let {decl.name}: {ts_type} = {mapping_expr}[{key_expr}];')
+        return '\n'.join(lines)
+
     def _add_mapping_default(self, expr: Expression, ts_type: str, generated_expr: str, solidity_type: Optional[TypeName] = None) -> str:
         """Add default value for mapping reads to simulate Solidity mapping semantics.
 
@@ -3414,10 +3534,21 @@ class TypeScriptCodeGenerator:
 
         # Determine if this is likely a mapping (not an array) read
         is_mapping_read = False
+
+        # First, try to get the base variable name for local variable mappings
         base_var_name = self._get_base_var_name(expr.base)
         if base_var_name and base_var_name in self.var_types:
             type_info = self.var_types[base_var_name]
             is_mapping_read = type_info.is_mapping
+
+        # Handle this.varName[key] pattern (state variable mappings)
+        # The base would be a MemberAccess like this.battleConfig
+        if isinstance(expr.base, MemberAccess):
+            if isinstance(expr.base.expression, Identifier) and expr.base.expression.name == 'this':
+                member_name = expr.base.member
+                if member_name in self.var_types:
+                    type_info = self.var_types[member_name]
+                    is_mapping_read = type_info.is_mapping
 
         # Also check for known mapping patterns in identifier names
         if isinstance(expr.base, Identifier):
@@ -3452,6 +3583,10 @@ class TypeScriptCodeGenerator:
             return '""'
         elif ts_type == 'number':
             return '0'
+        elif ts_type.startswith('Structs.'):
+            # Struct type - use the factory function to create a default-initialized instance
+            struct_name = ts_type[8:]  # Remove 'Structs.' prefix
+            return f'Structs.createDefault{struct_name}()'
         # For complex types (objects, arrays), return None - they need different handling
         return None
 
