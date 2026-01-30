@@ -2,20 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-
-import {EffectBitmap} from "../../src/lib/EffectBitmap.sol";
-import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
-
-// Effects
-import {StaminaRegen} from "../../src/effects/StaminaRegen.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
-import {Overclock} from "../../src/effects/battlefield/Overclock.sol";
-import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
-import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
-import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
-import {SleepStatus} from "../../src/effects/status/SleepStatus.sol";
-import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
+import {EffectStep} from "../../src/Enums.sol";
+import {EffectBitmap} from "../../src/lib/EffectBitmap.sol";
 
 /// @title EffectTestHelper
 /// @notice Helper for deploying effects at addresses with correct bitmaps in tests
@@ -25,21 +14,48 @@ import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 ///      This is necessary because Engine.sol now uses EffectBitmap.shouldRunAtStep()
 ///      which reads the bitmap from the effect's address rather than calling the
 ///      effect's shouldRunAtStep() function.
+///
+///      Usage:
+///        StatBoosts statBoosts = new StatBoosts(engine);
+///        statBoosts = StatBoosts(deployWithCorrectBitmap(statBoosts));
 abstract contract EffectTestHelper is Test {
-    /// @notice Deploy an effect at an address with the correct bitmap
-    /// @dev Creates the effect with `new`, then copies its bytecode to a target address
+    /// @notice Deploy an effect at an address with the correct bitmap based on its shouldRunAtStep
+    /// @dev Queries the effect's shouldRunAtStep for all steps, builds the bitmap, and
+    ///      copies the bytecode to an address with that bitmap encoded in its MSB.
+    /// @param effect The already-deployed effect contract
+    /// @return The effect at a new address with correct bitmap (cast to your desired type)
+    function deployWithCorrectBitmap(IEffect effect) internal returns (address) {
+        uint16 bitmap = _computeBitmapFromEffect(effect);
+        return deployWithBitmap(address(effect), bitmap);
+    }
+
+    /// @notice Deploy any contract at an address with the specified bitmap
+    /// @dev Creates the contract normally, then copies its bytecode to a target address
     ///      that has the correct bitmap encoded in its MSB.
-    /// @param effect The effect contract to deploy
-    /// @param expectedBitmap The bitmap the effect should have
-    /// @return The address of the deployed effect (with correct bitmap)
-    function _deployEffectWithBitmap(IEffect effect, uint16 expectedBitmap) internal returns (IEffect) {
+    /// @param deployed The already-deployed contract address
+    /// @param bitmap The bitmap the contract should have
+    /// @return The new address with correct bitmap (cast to your desired type)
+    function deployWithBitmap(address deployed, uint16 bitmap) internal returns (address) {
         // Compute a target address that has the correct bitmap
-        address targetAddr = _computeAddressWithBitmap(expectedBitmap, uint256(uint160(address(effect))));
+        address targetAddr = _computeAddressWithBitmap(bitmap, uint256(uint160(deployed)));
 
         // Copy the bytecode to the target address
-        vm.etch(targetAddr, address(effect).code);
+        vm.etch(targetAddr, deployed.code);
 
-        return IEffect(targetAddr);
+        return targetAddr;
+    }
+
+    /// @notice Compute the bitmap from an effect's shouldRunAtStep function
+    /// @param effect The effect to query
+    /// @return bitmap The computed bitmap
+    function _computeBitmapFromEffect(IEffect effect) internal returns (uint16 bitmap) {
+        uint256 numSteps = EffectBitmap.NUM_EFFECT_STEPS;
+        for (uint256 i = 0; i < numSteps; i++) {
+            if (effect.shouldRunAtStep(EffectStep(i))) {
+                // Bit position: MSB is step 0, LSB is step (numSteps-1)
+                bitmap |= uint16(1 << (numSteps - 1 - i));
+            }
+        }
     }
 
     /// @notice Compute an address that has the specified bitmap in its MSB
@@ -51,68 +67,15 @@ abstract contract EffectTestHelper is Test {
         // For NUM_EFFECT_STEPS=9, we need to place the 9-bit bitmap in bits 159-151
         // This means: address = (bitmap << 151) | (lower 151 bits)
 
-        // Use seed to generate the lower bits, but mask out the top 9 bits
-        uint160 lowerBits = uint160(seed) & ((1 << 151) - 1);
+        uint256 numSteps = EffectBitmap.NUM_EFFECT_STEPS;
+        uint256 bitmapShift = 160 - numSteps;
 
-        // Place bitmap in the top 9 bits
-        uint160 topBits = uint160(bitmap) << 151;
+        // Use seed to generate the lower bits, but mask out the top bits
+        uint160 lowerBits = uint160(seed) & uint160((1 << bitmapShift) - 1);
+
+        // Place bitmap in the top bits
+        uint160 topBits = uint160(bitmap) << bitmapShift;
 
         return address(topBits | lowerBits);
-    }
-
-    // ============ Effect-specific deployment helpers ============
-
-    /// @notice Deploy StaminaRegen with correct bitmap (0x042: RoundEnd, AfterMove)
-    function deployStaminaRegen(IEngine engine) internal returns (StaminaRegen) {
-        StaminaRegen effect = new StaminaRegen(engine);
-        return StaminaRegen(address(_deployEffectWithBitmap(effect, 0x042)));
-    }
-
-    /// @notice Deploy StatBoosts with correct bitmap (0x008: OnMonSwitchOut)
-    function deployStatBoosts(IEngine engine) internal returns (StatBoosts) {
-        StatBoosts effect = new StatBoosts(engine);
-        return StatBoosts(address(_deployEffectWithBitmap(effect, 0x008)));
-    }
-
-    /// @notice Deploy Overclock with correct bitmap (0x170: OnApply, RoundEnd, OnMonSwitchIn, OnRemove)
-    function deployOverclock(IEngine engine, StatBoosts statBoosts) internal returns (Overclock) {
-        Overclock effect = new Overclock(engine, statBoosts);
-        return Overclock(address(_deployEffectWithBitmap(effect, 0x170)));
-    }
-
-    /// @notice Deploy BurnStatus with correct bitmap (0x1E0: OnApply, RoundStart, RoundEnd, OnRemove)
-    function deployBurnStatus(IEngine engine, StatBoosts statBoosts) internal returns (BurnStatus) {
-        BurnStatus effect = new BurnStatus(engine, statBoosts);
-        return BurnStatus(address(_deployEffectWithBitmap(effect, 0x1E0)));
-    }
-
-    /// @notice Deploy FrostbiteStatus with correct bitmap (0x160: OnApply, RoundEnd, OnRemove)
-    function deployFrostbiteStatus(IEngine engine, StatBoosts statBoosts) internal returns (FrostbiteStatus) {
-        FrostbiteStatus effect = new FrostbiteStatus(engine, statBoosts);
-        return FrostbiteStatus(address(_deployEffectWithBitmap(effect, 0x160)));
-    }
-
-    /// @notice Deploy PanicStatus with correct bitmap (0x1E0: OnApply, RoundStart, RoundEnd, OnRemove)
-    function deployPanicStatus(IEngine engine) internal returns (PanicStatus) {
-        PanicStatus effect = new PanicStatus(engine);
-        return PanicStatus(address(_deployEffectWithBitmap(effect, 0x1E0)));
-    }
-
-    /// @notice Deploy SleepStatus with correct bitmap (0x1E0: OnApply, RoundStart, RoundEnd, OnRemove)
-    function deploySleepStatus(IEngine engine) internal returns (SleepStatus) {
-        SleepStatus effect = new SleepStatus(engine);
-        return SleepStatus(address(_deployEffectWithBitmap(effect, 0x1E0)));
-    }
-
-    /// @notice Deploy ZapStatus with correct bitmap (0x1E0: OnApply, RoundStart, RoundEnd, OnRemove)
-    function deployZapStatus(IEngine engine) internal returns (ZapStatus) {
-        ZapStatus effect = new ZapStatus(engine);
-        return ZapStatus(address(_deployEffectWithBitmap(effect, 0x1E0)));
-    }
-
-    /// @notice Deploy any effect with a custom bitmap
-    /// @dev Use this for mon abilities and other effects not covered by specific helpers
-    function deployEffectWithCustomBitmap(IEffect effect, uint16 bitmap) internal returns (IEffect) {
-        return _deployEffectWithBitmap(effect, bitmap);
     }
 }

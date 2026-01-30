@@ -19,6 +19,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -37,7 +38,7 @@ import {SetAblaze} from "../../src/mons/embursa/SetAblaze.sol";
 import {Tinderclaws} from "../../src/mons/embursa/Tinderclaws.sol";
 import {DummyStatus} from "../mocks/DummyStatus.sol";
 
-contract EmbursaTest is Test, BattleHelper {
+contract EmbursaTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -62,7 +63,7 @@ contract EmbursaTest is Test, BattleHelper {
 
     function test_q5() public {
         IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = new Q5(engine, typeCalc);
+        moves[0] = Q5(deployWithCorrectBitmap(new Q5(engine, typeCalc)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -134,11 +135,11 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_heatBeacon() public {
-        DummyStatus dummyStatus = new DummyStatus();
+        DummyStatus dummyStatus = DummyStatus(deployWithCorrectBitmap(new DummyStatus()));
         HeatBeacon heatBeacon = new HeatBeacon(IEngine(address(engine)), IEffect(address(dummyStatus)));
-        Q5 q5 = new Q5(engine, typeCalc);
+        Q5 q5 = Q5(deployWithCorrectBitmap(new Q5(engine, typeCalc)));
         SetAblaze setAblaze = new SetAblaze(engine, typeCalc, IEffect(address(dummyStatus)));
-        StatBoosts statBoosts = new StatBoosts(engine);
+        StatBoosts statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
         HoneyBribe honeyBribe = new HoneyBribe(engine, statBoosts);
 
         IMoveSet koMove = attackFactory.createAttack(
@@ -318,9 +319,9 @@ contract EmbursaTest is Test, BattleHelper {
      * - If burn is applied externally, SpATK boost is still granted at end of round
      */
     function test_tinderclaws_selfBurnOnMove() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
+        BurnStatus burnStatus = BurnStatus(deployWithCorrectBitmap(new BurnStatus(IEngine(address(engine)), statBoosts)));
+        Tinderclaws tinderclaws = Tinderclaws(deployWithCorrectBitmap(new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = attackFactory.createAttack(
@@ -408,9 +409,9 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_tinderclaws_restingRemovesBurn() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
+        BurnStatus burnStatus = BurnStatus(deployWithCorrectBitmap(new BurnStatus(IEngine(address(engine)), statBoosts)));
+        Tinderclaws tinderclaws = Tinderclaws(deployWithCorrectBitmap(new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = attackFactory.createAttack(

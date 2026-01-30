@@ -22,6 +22,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -37,7 +38,7 @@ import {ChillOut} from "../../src/mons/pengym/ChillOut.sol";
 import {DeepFreeze} from "../../src/mons/pengym/DeepFreeze.sol";
 import {PistolSquat} from "../../src/mons/pengym/PistolSquat.sol";
 
-contract PengymTest is Test, BattleHelper {
+contract PengymTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -61,10 +62,10 @@ contract PengymTest is Test, BattleHelper {
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        postWorkout = new PostWorkout(IEngine(address(engine)));
-        panicStatus = new PanicStatus(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoost);
+        postWorkout = PostWorkout(deployWithCorrectBitmap(new PostWorkout(IEngine(address(engine)))));
+        panicStatus = PanicStatus(deployWithCorrectBitmap(new PanicStatus(IEngine(address(engine)))));
+        statBoost = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
+        frostbiteStatus = FrostbiteStatus(deployWithCorrectBitmap(new FrostbiteStatus(IEngine(address(engine)), statBoost)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 

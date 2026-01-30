@@ -20,6 +20,7 @@ import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {TypeCalculator} from "../../src/types/TypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
@@ -29,7 +30,7 @@ import {ChainExpansion} from "../../src/mons/inutia/ChainExpansion.sol";
 import {Initialize} from "../../src/mons/inutia/Initialize.sol";
 import {Interweaving} from "../../src/mons/inutia/Interweaving.sol";
 
-contract InutiaTest is Test, BattleHelper {
+contract InutiaTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -46,8 +47,8 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine();
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        interweaving = new Interweaving(IEngine(address(engine)), statBoost);
+        statBoost = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
+        interweaving = Interweaving(deployWithCorrectBitmap(new Interweaving(IEngine(address(engine)), statBoost)));
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
@@ -141,7 +142,7 @@ contract InutiaTest is Test, BattleHelper {
     }
 
     function test_initialize() public {
-        Initialize initialize = new Initialize(engine, statBoost);
+        Initialize initialize = Initialize(deployWithCorrectBitmap(new Initialize(engine, statBoost)));
 
         // Create a validator with 2 mons and 1 move per mon
         DefaultValidator validator = new DefaultValidator(
@@ -241,7 +242,7 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_chainExpansion() public {
         TypeCalculator tc = new TypeCalculator();
-        ChainExpansion ce = new ChainExpansion(engine, tc);
+        ChainExpansion ce = ChainExpansion(deployWithCorrectBitmap(new ChainExpansion(engine, tc)));
         DefaultValidator v = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );

@@ -17,6 +17,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
@@ -34,7 +35,7 @@ import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {MockEffectRemover} from "../mocks/MockEffectRemover.sol";
 
-contract IblivionTest is Test, BattleHelper {
+contract IblivionTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -61,12 +62,13 @@ contract IblivionTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
+        // Deploy effects with correct bitmaps (auto-computed from shouldRunAtStep)
+        statBoost = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
 
-        // Deploy Iblivion contracts
-        baselight = new Baselight(IEngine(address(engine)));
+        // Deploy Iblivion contracts with correct bitmaps
+        baselight = Baselight(deployWithCorrectBitmap(new Baselight(IEngine(address(engine)))));
         brightback = new Brightback(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), baselight);
         unboundedStrike = new UnboundedStrike(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), baselight);
         loop = new Loop(IEngine(address(engine)), baselight, statBoost);

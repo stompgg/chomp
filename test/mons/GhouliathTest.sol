@@ -25,6 +25,7 @@ import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
@@ -33,7 +34,7 @@ import {Osteoporosis} from "../../src/mons/ghouliath/Osteoporosis.sol";
 import {RiseFromTheGrave} from "../../src/mons/ghouliath/RiseFromTheGrave.sol";
 import {WitherAway} from "../../src/mons/ghouliath/WitherAway.sol";
 
-contract GhouliathTest is Test, BattleHelper {
+contract GhouliathTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -58,13 +59,13 @@ contract GhouliathTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        riseFromTheGrave = new RiseFromTheGrave(IEngine(address(engine)));
+        riseFromTheGrave = RiseFromTheGrave(deployWithCorrectBitmap(new RiseFromTheGrave(IEngine(address(engine)))));
         osteoporosis = new Osteoporosis(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        panicStatus = new PanicStatus(IEngine(address(engine)));
+        panicStatus = PanicStatus(deployWithCorrectBitmap(new PanicStatus(IEngine(address(engine)))));
         witherAway =
             new WitherAway(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
         standardAttackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
         eternalGrudge = new EternalGrudge(IEngine(address(engine)), statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }

@@ -18,6 +18,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -38,7 +39,7 @@ import {GlobalEffectAttack} from "../mocks/GlobalEffectAttack.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 
-contract VolthareTest is Test, BattleHelper {
+contract VolthareTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -60,8 +61,8 @@ contract VolthareTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        overclock = new Overclock(IEngine(address(engine)), statBoost);
+        statBoost = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
+        overclock = Overclock(deployWithCorrectBitmap(new Overclock(IEngine(address(engine)), statBoost)));
         preemptiveShock = new PreemptiveShock(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
@@ -145,7 +146,7 @@ contract VolthareTest is Test, BattleHelper {
      */
     function test_megaStarBlast() public {
         // Create moves: one to apply Overclock, one is MegaStarBlast
-        DummyStatus zapStatus = new DummyStatus();
+        DummyStatus zapStatus = DummyStatus(deployWithCorrectBitmap(new DummyStatus()));
         MegaStarBlast msb = new MegaStarBlast(engine, typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
             engine,
@@ -254,7 +255,7 @@ contract VolthareTest is Test, BattleHelper {
     function test_dualShock() public {
         // Create a team with a mon that knows Dual Shock
         IMoveSet[] memory moves = new IMoveSet[](1);
-        ZapStatus zapStatus = new ZapStatus(engine);
+        ZapStatus zapStatus = ZapStatus(deployWithCorrectBitmap(new ZapStatus(engine)));
         DualShock dualShock = new DualShock(engine, typeCalc, zapStatus, overclock);
         moves[0] = IMoveSet(address(dualShock));
 

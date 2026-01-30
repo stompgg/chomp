@@ -19,6 +19,7 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
@@ -27,7 +28,7 @@ import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {Angery} from "../../src/mons/gorillax/Angery.sol";
 import {RockPull} from "../../src/mons/gorillax/RockPull.sol";
 
-contract GorillaxTest is Test, BattleHelper {
+contract GorillaxTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -50,7 +51,7 @@ contract GorillaxTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        Angery angery = new Angery(IEngine(address(engine)));
+        Angery angery = Angery(deployWithCorrectBitmap(new Angery(IEngine(address(engine)))));
 
         // Create a team with a mon that has Angery ability
         IMoveSet[] memory moves = new IMoveSet[](1);

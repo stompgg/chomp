@@ -24,12 +24,13 @@ import {StatBoostsMove} from "../mocks/StatBoostsMove.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 import {SpAtkDebuffEffect} from "../mocks/SpAtkDebuffEffect.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 
-contract StatBoostsTest is Test, BattleHelper {
+contract StatBoostsTest is Test, BattleHelper, EffectTestHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTypeCalculator typeCalc;
@@ -55,8 +56,8 @@ contract StatBoostsTest is Test, BattleHelper {
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
-        // Create the StatBoosts effect and move
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        // Create the StatBoosts effect with correct bitmap (auto-computed from shouldRunAtStep)
+        statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(IEngine(address(engine)))));
         statBoostMove = new StatBoostsMove(IEngine(address(engine)), statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }
@@ -353,7 +354,9 @@ contract StatBoostsTest is Test, BattleHelper {
     
     function test_permanentTempStatBoostInteraction() public {
         StandardAttackFactory attackFactory = new StandardAttackFactory(engine, typeCalc);
-        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(engine, statBoosts);
+        SpAtkDebuffEffect spAtkDebuff = SpAtkDebuffEffect(
+            deployWithCorrectBitmap(new SpAtkDebuffEffect(engine, statBoosts))
+        );
 
         // Create teams with two mons each
         IMoveSet[] memory moves = new IMoveSet[](2);

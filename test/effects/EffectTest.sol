@@ -21,6 +21,7 @@ import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
+import {EffectTestHelper} from "../abstract/EffectTestHelper.sol";
 
 // Import effects
 import {DefaultRuleset} from "../../src/DefaultRuleset.sol";
@@ -42,7 +43,7 @@ import {OnUpdateMonStateHealEffect} from "../mocks/OnUpdateMonStateHealEffect.so
 import {EffectAbility} from "../mocks/EffectAbility.sol";
 import {ReduceSpAtkMove} from "../mocks/ReduceSpAtkMove.sol";
 
-contract EffectTest is Test, BattleHelper {
+contract EffectTest is Test, BattleHelper, EffectTestHelper {
     DefaultCommitManager commitManager;
     Engine engine;
     DefaultValidator oneMonOneMoveValidator;
@@ -88,13 +89,14 @@ contract EffectTest is Test, BattleHelper {
         // Deploy StandardAttackFactory
         standardAttackFactory = new StandardAttackFactory(engine, typeCalc);
 
-        // Deploy all effects
-        statBoosts = new StatBoosts(engine);
-        frostbiteStatus = new FrostbiteStatus(engine, statBoosts);
-        sleepStatus = new SleepStatus(engine);
-        panicStatus = new PanicStatus(engine);
-        burnStatus = new BurnStatus(engine, statBoosts);
-        zapStatus = new ZapStatus(engine);
+        // Deploy all effects with correct bitmaps using EffectTestHelper
+        // The bitmap is automatically computed from each effect's shouldRunAtStep function
+        statBoosts = StatBoosts(deployWithCorrectBitmap(new StatBoosts(engine)));
+        frostbiteStatus = FrostbiteStatus(deployWithCorrectBitmap(new FrostbiteStatus(engine, statBoosts)));
+        sleepStatus = SleepStatus(deployWithCorrectBitmap(new SleepStatus(engine)));
+        panicStatus = PanicStatus(deployWithCorrectBitmap(new PanicStatus(engine)));
+        burnStatus = BurnStatus(deployWithCorrectBitmap(new BurnStatus(engine, statBoosts)));
+        zapStatus = ZapStatus(deployWithCorrectBitmap(new ZapStatus(engine)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -677,7 +679,7 @@ contract EffectTest is Test, BattleHelper {
     }
 
     function test_staminaRegen() public {
-        StaminaRegen regen = new StaminaRegen(engine);
+        StaminaRegen regen = StaminaRegen(deployWithCorrectBitmap(new StaminaRegen(engine)));
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = regen;
         DefaultRuleset rules = new DefaultRuleset(engine, effects);
@@ -748,7 +750,9 @@ contract EffectTest is Test, BattleHelper {
 
     function test_onUpdateMonStateHook() public {
         // Import the mock effect and move
-        OnUpdateMonStateHealEffect healEffect = new OnUpdateMonStateHealEffect(engine);
+        OnUpdateMonStateHealEffect healEffect = OnUpdateMonStateHealEffect(
+            deployWithCorrectBitmap(new OnUpdateMonStateHealEffect(engine))
+        );
         EffectAbility healAbility = new EffectAbility(engine, healEffect);
         ReduceSpAtkMove reduceSpAtkMove = new ReduceSpAtkMove(engine);
 
