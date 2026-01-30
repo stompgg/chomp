@@ -8,6 +8,7 @@ import { test, expect, runTests } from './test-utils';
 import {
   BattleHarness,
   createBattleHarness,
+  ContractContainer,
   type MonConfig,
   type TeamConfig,
   type BattleConfig,
@@ -21,97 +22,55 @@ const SWITCH_MOVE_INDEX = 125;
 const NO_OP_MOVE_INDEX = 126;
 
 // =============================================================================
-// MOCK CONTRACTS
+// MOCK SETUP
 // =============================================================================
 
-class MockEngine {
-  _contractAddress = '0x' + '1'.repeat(40);
+/**
+ * Create a mock container setup function for testing
+ */
+function mockSetupContainer(container: ContractContainer): void {
+  // Register mock singletons
+  container.registerLazySingleton('Engine', [], () => ({
+    _contractAddress: '0x' + '1'.repeat(40),
+    computeBattleKey: () => '0x' + 'a'.repeat(64),
+  }));
 
-  computeBattleKey(p0: string, p1: string): string {
-    return '0x' + 'a'.repeat(64);
-  }
-}
+  container.registerLazySingleton('TypeCalculator', [], () => ({
+    _contractAddress: '0x' + '2'.repeat(40),
+  }));
 
-class MockTypeCalculator {
-  _contractAddress = '0x' + '2'.repeat(40);
-}
+  container.registerLazySingleton('DefaultRandomnessOracle', [], () => ({
+    _contractAddress: '0x' + '4'.repeat(40),
+    getRNG: (salt0: string, salt1: string) => BigInt(salt0) ^ BigInt(salt1),
+  }));
 
-class MockValidator {
-  _contractAddress = '0x' + '3'.repeat(40);
-  constructor(engine: any) {}
-}
+  container.registerLazySingleton('DefaultValidator', [], () => ({
+    _contractAddress: '0x' + '3'.repeat(40),
+  }));
 
-class MockRNGOracle {
-  _contractAddress = '0x' + '4'.repeat(40);
-
-  getRNG(salt0: string, salt1: string): bigint {
-    return BigInt(salt0) ^ BigInt(salt1);
-  }
-}
-
-class MockMove {
-  _contractAddress: string;
-  _name: string;
-
-  constructor(engine?: any, typeCalc?: any) {
-    this._name = 'MockMove';
-    this._contractAddress = '0x' + '5'.repeat(40);
-  }
-
-  name(): string {
-    return this._name;
-  }
-
-  priority(battleKey: string, playerIndex: number): number {
-    return 0;
-  }
-
-  stamina(battleKey: string, playerIndex: number, monIndex: number): number {
-    return 1;
-  }
-
-  moveType(battleKey: string): number {
-    return 0;
-  }
-
-  move(battleKey: string, attackerIndex: number, extraData: bigint, rng: bigint): void {
-    // Mock move execution
-  }
-}
-
-class MockAbility {
-  _contractAddress = '0x' + '6'.repeat(40);
-
-  constructor(engine?: any) {}
-
-  activateOnSwitch(battleKey: string, playerIndex: number, monIndex: number): void {
-    // Mock ability activation
-  }
+  // Register interface aliases
+  container.registerAlias('IEngine', 'Engine');
+  container.registerAlias('ITypeCalculator', 'TypeCalculator');
+  container.registerAlias('IRandomnessOracle', 'DefaultRandomnessOracle');
+  container.registerAlias('IValidator', 'DefaultValidator');
 }
 
 // =============================================================================
 // TESTS
 // =============================================================================
 
-test('BattleHarness can be created', () => {
-  const harness = new BattleHarness();
+test('BattleHarness can be created with container', () => {
+  const container = new ContractContainer();
+  mockSetupContainer(container);
+  const harness = new BattleHarness(container);
   expect(harness).toBeDefined();
   expect(harness.getContainer()).toBeDefined();
 });
 
-test('BattleHarness can set module loader', () => {
-  const harness = new BattleHarness();
-
-  const mockLoader = async (name: string) => {
-    if (name === 'Engine') return { Engine: MockEngine };
-    if (name === 'TypeCalculator') return { TypeCalculator: MockTypeCalculator };
-    if (name === 'DefaultValidator') return { DefaultValidator: MockValidator };
-    if (name === 'DefaultRandomnessOracle') return { DefaultRandomnessOracle: MockRNGOracle };
-    throw new Error(`Unknown module: ${name}`);
-  };
-
-  harness.setModuleLoader(mockLoader);
-  // Should not throw
+test('createBattleHarness creates harness with setup function', () => {
+  const harness = createBattleHarness(mockSetupContainer);
+  expect(harness).toBeDefined();
+  expect(harness.getContainer().has('Engine')).toBe(true);
 });
 
 test('MonConfig interface works correctly', () => {
@@ -202,15 +161,23 @@ test('Move indices match Solidity Constants.sol', () => {
   expect(NO_OP_MOVE_INDEX).toBe(126);
 });
 
-test('Container registration works', () => {
-  const harness = new BattleHarness();
+test('Container registration and resolution works', () => {
+  const harness = createBattleHarness(mockSetupContainer);
   const container = harness.getContainer();
 
-  const mockEngine = new MockEngine();
-  container.registerSingleton('Engine', mockEngine);
-
   expect(container.has('Engine')).toBe(true);
-  expect(container.resolve('Engine')).toBe(mockEngine);
+  expect(container.has('IEngine')).toBe(true);
+
+  const engine = container.resolve('Engine');
+  const engineViaInterface = container.resolve('IEngine');
+  expect(engine).toBe(engineViaInterface);
+});
+
+test('getEngine returns engine from container', () => {
+  const harness = createBattleHarness(mockSetupContainer);
+  const engine = harness.getEngine();
+  expect(engine).toBeDefined();
+  expect(engine._contractAddress).toContain('0x');
 });
 
 // Run all tests

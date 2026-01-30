@@ -103,11 +103,6 @@ export interface BattleState {
 }
 
 /**
- * Module loader function type
- */
-export type ModuleLoader = (name: string) => Promise<any>;
-
-/**
  * Container setup function type (from transpiled factories.ts)
  */
 export type ContainerSetupFn = (container: ContractContainer) => void;
@@ -124,27 +119,21 @@ export type ContainerSetupFn = (container: ContractContainer) => void;
 /**
  * Battle Simulation Harness
  *
- * Manages contract instantiation, dependency injection, and delegates battle
+ * Manages contract instantiation via dependency injection and delegates battle
  * execution to the transpiled Engine contract.
  *
  * @example
  * ```typescript
- * // Import from transpiled output
  * import { setupContainer } from './ts-output/factories';
  *
- * const harness = new BattleHarness();
- * harness.setModuleLoader(name => import(`./ts-output/${name}`));
- * harness.setContainerSetup(setupContainer);  // Uses transpiled dependency info
- * await harness.loadCoreModules();
+ * const harness = createBattleHarness(setupContainer);
  *
- * // Configure and start a battle
  * const battleKey = await harness.startBattle({
  *   player0: '0x1234...',
  *   player1: '0x5678...',
  *   teams: [team1Config, team2Config],
  * });
  *
- * // Execute turns (delegates to Engine)
  * const state = harness.executeTurn(battleKey, {
  *   player0: { moveIndex: 0, salt: '0x...', extraData: 0n },
  *   player1: { moveIndex: 1, salt: '0x...' }
@@ -155,141 +144,9 @@ export type ContainerSetupFn = (container: ContractContainer) => void;
  */
 export class BattleHarness {
   private container: ContractContainer;
-  private moduleLoader?: ModuleLoader;
-  private containerSetup?: ContainerSetupFn;
-  private loadedModules: Map<string, any> = new Map();
 
-  constructor(container?: ContractContainer) {
-    this.container = container ?? new ContractContainer();
-  }
-
-  /**
-   * Set the module loader function for dynamic imports
-   */
-  setModuleLoader(loader: ModuleLoader): void {
-    this.moduleLoader = loader;
-  }
-
-  /**
-   * Set the container setup function (from transpiled factories.ts)
-   * This registers all contract factories with proper dependency info
-   */
-  setContainerSetup(setup: ContainerSetupFn): void {
-    this.containerSetup = setup;
-  }
-
-  /**
-   * Load and register core modules
-   *
-   * Uses the transpiled setupContainer() which registers:
-   * - Zero-dependency contracts as lazy singletons
-   * - Interface aliases (derived from Solidity inheritance)
-   * - Contracts with dependencies as factories
-   */
-  async loadCoreModules(): Promise<void> {
-    if (!this.moduleLoader) {
-      throw new Error('Module loader not set. Call setModuleLoader() first.');
-    }
-
-    if (!this.containerSetup) {
-      throw new Error('Container setup not set. Call setContainerSetup() first.');
-    }
-
-    // setupContainer registers everything:
-    // - Zero-dep contracts as lazy singletons (Engine, TypeCalculator, etc.)
-    // - Interface aliases (IEngine -> Engine, ITypeCalculator -> TypeCalculator, etc.)
-    // - Contracts with deps as factories that resolve dependencies on demand
-    this.containerSetup(this.container);
-  }
-
-  /**
-   * Load a module by name
-   */
-  async loadModule(name: string): Promise<any> {
-    if (this.loadedModules.has(name)) {
-      return this.loadedModules.get(name);
-    }
-
-    if (!this.moduleLoader) {
-      throw new Error('Module loader not set');
-    }
-
-    const module = await this.moduleLoader(name);
-    this.loadedModules.set(name, module);
-    return module;
-  }
-
-  /**
-   * Get the exported class from a module
-   */
-  private getExportedClass(module: any): any {
-    // Try named export matching filename
-    const keys = Object.keys(module);
-    for (const key of keys) {
-      if (typeof module[key] === 'function' && key !== 'default') {
-        return module[key];
-      }
-    }
-    // Fall back to default export
-    return module.default;
-  }
-
-  /**
-   * Load and resolve a contract by name
-   * Uses the container's registered factories (from setupContainer) to instantiate
-   */
-  async loadContract(name: string): Promise<any> {
-    // If already resolved as singleton, return it
-    if (this.container.has(name)) {
-      return this.container.resolve(name);
-    }
-
-    // Load the module
-    const module = await this.loadModule(name);
-    const ContractClass = this.getExportedClass(module);
-
-    // If container has a factory registered (from setupContainer), use it
-    // Otherwise, instantiate directly (for contracts with no dependencies)
-    let instance: any;
-    if (this.containerSetup) {
-      // Factory should be registered, resolve will use it
-      try {
-        instance = this.container.resolve(name);
-      } catch {
-        // Not in container, instantiate without dependencies
-        instance = new ContractClass();
-        this.container.registerSingleton(name, instance);
-      }
-    } else {
-      // No setup function, instantiate without dependencies
-      instance = new ContractClass();
-      this.container.registerSingleton(name, instance);
-    }
-
-    return instance;
-  }
-
-  /**
-   * Load and register a move contract
-   */
-  async loadMove(moveName: string): Promise<any> {
-    const move = await this.loadContract(moveName);
-    return move;
-  }
-
-  /**
-   * Load and register an ability contract
-   */
-  async loadAbility(abilityName: string): Promise<any> {
-    const ability = await this.loadContract(abilityName);
-    return ability;
-  }
-
-  /**
-   * Load an effect contract
-   */
-  async loadEffect(effectName: string): Promise<any> {
-    return this.loadContract(effectName);
+  constructor(container: ContractContainer) {
+    this.container = container;
   }
 
   /**
@@ -309,35 +166,11 @@ export class BattleHarness {
    *
    * This sets up the battle configuration in the Engine and returns a battleKey.
    */
-  async startBattle(config: BattleConfig): Promise<string> {
-    // Ensure core modules are loaded
-    if (!this.container.has('Engine')) {
-      await this.loadCoreModules();
-    }
-
+  startBattle(config: BattleConfig): string {
     // Set addresses if provided
     if (config.addresses) {
       this.setAddresses(config.addresses);
     }
-
-    // Load all moves and abilities used by both teams
-    const allMoves = new Set<string>();
-    const allAbilities = new Set<string>();
-
-    for (const team of config.teams) {
-      for (const mon of team.mons) {
-        mon.moves.forEach(m => allMoves.add(m));
-        if (mon.ability) {
-          allAbilities.add(mon.ability);
-        }
-      }
-    }
-
-    // Load in parallel
-    await Promise.all([
-      ...Array.from(allMoves).map(m => this.loadMove(m)),
-      ...Array.from(allAbilities).map(a => this.loadAbility(a)),
-    ]);
 
     // Build teams with resolved contract references
     const teams = config.teams.map((teamConfig) =>
@@ -345,15 +178,14 @@ export class BattleHarness {
     );
 
     // Call Engine.startBattle() with the configuration
-    // The Engine handles all battle initialization
     const engine = this.container.resolve('Engine');
     const battleKey = engine.startBattle({
       p0: config.player0,
       p1: config.player1,
       p0Team: teams[0],
       p1Team: teams[1],
-      validator: this.container.resolve('DefaultValidator'),
-      rngOracle: this.container.resolve('DefaultRandomnessOracle'),
+      validator: this.container.resolve('IValidator'),
+      rngOracle: this.container.resolve('IRandomnessOracle'),
     });
 
     return battleKey;
@@ -475,27 +307,17 @@ export class BattleHarness {
 // =============================================================================
 
 /**
- * Create a battle harness with a module loader and optional container setup
+ * Create a battle harness with the container setup from factories.ts
  *
  * @example
  * ```typescript
  * import { setupContainer } from './ts-output/factories';
  *
- * const harness = await createBattleHarness(
- *   name => import(`./ts-output/${name}`),
- *   setupContainer
- * );
+ * const harness = createBattleHarness(setupContainer);
  * ```
  */
-export async function createBattleHarness(
-  moduleLoader: ModuleLoader,
-  containerSetup?: ContainerSetupFn
-): Promise<BattleHarness> {
-  const harness = new BattleHarness();
-  harness.setModuleLoader(moduleLoader);
-  if (containerSetup) {
-    harness.setContainerSetup(containerSetup);
-  }
-  await harness.loadCoreModules();
-  return harness;
+export function createBattleHarness(containerSetup: ContainerSetupFn): BattleHarness {
+  const container = new ContractContainer();
+  containerSetup(container);
+  return new BattleHarness(container);
 }
