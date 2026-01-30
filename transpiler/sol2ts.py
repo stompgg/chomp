@@ -11,11 +11,14 @@ Key features:
 - Bit manipulation helpers
 - Yul/inline assembly support
 - Interface and contract inheritance
+
+python transpiler/sol2ts.py src/ -o transpiler/ts-output -d src
 """
 
 import re
 import sys
 import json
+import shutil
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple, Set
 from enum import Enum, auto
@@ -288,11 +291,11 @@ YUL_NORMALIZE_PATTERNS = [
     (re.compile(r'\s+,'), ','),             # " ," -> ","
     (re.compile(r',\s+'), ', '),            # normalize comma spacing
 ]
-YUL_LET_PATTERN = re.compile(r'let\s+(\w+)\s*:=\s*([^{}\n]+?)(?=\s+(?:let|if|for|switch|$)|\s*$)')
+YUL_LET_PATTERN = re.compile(r'let\s+(\w+)\s*:=\s*([^{}\n]+?)(?=\s+(?:let|if|for|switch|sstore|mstore|revert|log\d)\b|\s*}|\s*$)')
 YUL_SLOT_PATTERN = re.compile(r'(\w+)\.slot')
 YUL_IF_PATTERN = re.compile(r'if\s+([^{]+)\s*\{([^}]*)\}')
 YUL_IF_STRIP_PATTERN = re.compile(r'if\s+[^{]+\{[^}]*\}')
-YUL_CALL_PATTERN = re.compile(r'\b(sstore|mstore|revert)\s*\(([^)]+)\)')
+YUL_CALL_PATTERN = re.compile(r'\b(sstore|mstore|revert|log[0-4])\s*\(([^)]+)\)')
 
 
 class Lexer:
@@ -2050,35 +2053,49 @@ class TypeRegistry:
         self.known_public_state_vars: Set[str] = set()  # Public state vars that generate getters
         # Method return types: contract_name -> {method_name -> return_type}
         self.method_return_types: Dict[str, Dict[str, str]] = {}
+        # Contract paths: contract_name -> relative path (without extension)
+        self.contract_paths: Dict[str, str] = {}
+        # Contract-local structs: contract_name -> set of struct names defined in that contract
+        self.contract_structs: Dict[str, Set[str]] = {}
+        # Contract base classes: contract_name -> list of base contract names
+        self.contract_bases: Dict[str, List[str]] = {}
+        # Struct paths: struct_name -> relative path (without extension) for top-level structs
+        self.struct_paths: Dict[str, str] = {}
 
-    def discover_from_source(self, source: str) -> None:
+    def discover_from_source(self, source: str, rel_path: Optional[str] = None) -> None:
         """Discover types from a single Solidity source string."""
         lexer = Lexer(source)
         tokens = lexer.tokenize()
         parser = Parser(tokens)
         ast = parser.parse()
-        self.discover_from_ast(ast)
+        self.discover_from_ast(ast, rel_path)
 
-    def discover_from_file(self, filepath: str) -> None:
+    def discover_from_file(self, filepath: str, rel_path: Optional[str] = None) -> None:
         """Discover types from a Solidity file."""
         with open(filepath, 'r') as f:
             source = f.read()
-        self.discover_from_source(source)
+        self.discover_from_source(source, rel_path)
 
     def discover_from_directory(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Discover types from all Solidity files in a directory."""
         from pathlib import Path
-        for sol_file in Path(directory).glob(pattern):
+        base_dir = Path(directory)
+        for sol_file in base_dir.glob(pattern):
             try:
-                self.discover_from_file(str(sol_file))
+                # Calculate relative path from the directory root (without extension)
+                rel_path = sol_file.relative_to(base_dir).with_suffix('')
+                self.discover_from_file(str(sol_file), str(rel_path))
             except Exception as e:
                 print(f"Warning: Could not parse {sol_file} for type discovery: {e}")
 
-    def discover_from_ast(self, ast: SourceUnit) -> None:
+    def discover_from_ast(self, ast: SourceUnit, rel_path: Optional[str] = None) -> None:
         """Extract type information from a parsed AST."""
         # Top-level structs
         for struct in ast.structs:
             self.structs.add(struct.name)
+            # Track where the struct is defined (for non-Structs files)
+            if rel_path and rel_path != 'Structs':
+                self.struct_paths[struct.name] = rel_path
 
         # Top-level enums
         for enum in ast.enums:
@@ -2102,9 +2119,19 @@ class TypeRegistry:
             else:
                 self.contracts.add(name)
 
+            # Track contract path if provided
+            if rel_path:
+                self.contract_paths[name] = rel_path
+
+            # Track base contracts for inheritance resolution
+            self.contract_bases[name] = contract.base_contracts or []
+
             # Collect structs defined inside contracts
+            contract_local_structs: Set[str] = set()
             for struct in contract.structs:
                 self.structs.add(struct.name)
+                contract_local_structs.add(struct.name)
+            self.contract_structs[name] = contract_local_structs
 
             # Collect enums defined inside contracts
             for enum in contract.enums:
@@ -2164,6 +2191,64 @@ class TypeRegistry:
                 self.method_return_types[name].update(ret_types)
             else:
                 self.method_return_types[name] = ret_types.copy()
+        # Merge contract paths (don't overwrite existing entries)
+        for name, path in other.contract_paths.items():
+            if name not in self.contract_paths:
+                self.contract_paths[name] = path
+        # Merge contract-local structs
+        for name, structs in other.contract_structs.items():
+            if name in self.contract_structs:
+                self.contract_structs[name].update(structs)
+            else:
+                self.contract_structs[name] = structs.copy()
+        # Merge contract bases
+        for name, bases in other.contract_bases.items():
+            if name not in self.contract_bases:
+                self.contract_bases[name] = bases.copy()
+
+    def get_inherited_structs(self, contract_name: str) -> Dict[str, str]:
+        """Get structs inherited from base contracts.
+
+        Returns a dict mapping struct_name -> defining_contract_name.
+        """
+        inherited: Dict[str, str] = {}
+        bases = self.contract_bases.get(contract_name, [])
+        for base in bases:
+            # Add structs from this base
+            if base in self.contract_structs:
+                for struct_name in self.contract_structs[base]:
+                    if struct_name not in inherited:
+                        inherited[struct_name] = base
+            # Recursively get structs from ancestors
+            ancestor_structs = self.get_inherited_structs(base)
+            for struct_name, defining_contract in ancestor_structs.items():
+                if struct_name not in inherited:
+                    inherited[struct_name] = defining_contract
+        return inherited
+
+    def get_all_inherited_vars(self, contract_name: str) -> Set[str]:
+        """Get all state variables inherited from base contracts (transitively)."""
+        inherited: Set[str] = set()
+        bases = self.contract_bases.get(contract_name, [])
+        for base in bases:
+            # Add vars from this base
+            if base in self.contract_vars:
+                inherited.update(self.contract_vars[base])
+            # Recursively get vars from ancestors
+            inherited.update(self.get_all_inherited_vars(base))
+        return inherited
+
+    def get_all_inherited_methods(self, contract_name: str) -> Set[str]:
+        """Get all methods inherited from base contracts (transitively)."""
+        inherited: Set[str] = set()
+        bases = self.contract_bases.get(contract_name, [])
+        for base in bases:
+            # Add methods from this base
+            if base in self.contract_methods:
+                inherited.update(self.contract_methods[base])
+            # Recursively get methods from ancestors
+            inherited.update(self.get_all_inherited_methods(base))
+        return inherited
 
     def build_qualified_name_cache(self, current_file_type: str = '') -> Dict[str, str]:
         """Build a cached lookup dictionary for qualified names.
@@ -2174,9 +2259,13 @@ class TypeRegistry:
         cache: Dict[str, str] = {}
 
         # Add structs with Structs. prefix (unless current file is Structs)
+        # Skip structs defined in other files (they'll be imported directly)
         if current_file_type != 'Structs':
             for name in self.structs:
-                cache[name] = f'Structs.{name}'
+                # Only add Structs. prefix for structs in the main Structs file
+                if name not in self.struct_paths:
+                    cache[name] = f'Structs.{name}'
+                # Structs in other files are accessed without prefix (imported directly)
 
         # Add enums with Enums. prefix (unless current file is Enums)
         if current_file_type != 'Enums':
@@ -2198,10 +2287,11 @@ class TypeRegistry:
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0):
+    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = ''):
         self.indent_level = 0
         self.indent_str = '  '
         self.file_depth = file_depth  # Depth of output file for relative imports
+        self.current_file_path = current_file_path  # Relative path of current file (without extension)
         # Track current contract context for this. prefix handling
         self.current_state_vars: Set[str] = set()
         self.current_static_vars: Set[str] = set()  # Static/constant state variables
@@ -2228,6 +2318,7 @@ class TypeScriptCodeGenerator:
             self.known_contract_vars = registry.contract_vars
             self.known_public_state_vars = registry.known_public_state_vars
             self.known_method_return_types = registry.method_return_types
+            self.known_contract_paths = registry.contract_paths
         else:
             # Empty sets - types will be discovered as files are parsed
             self.known_structs: Set[str] = set()
@@ -2240,6 +2331,7 @@ class TypeScriptCodeGenerator:
             self.known_contract_vars: Dict[str, Set[str]] = {}
             self.known_public_state_vars: Set[str] = set()
             self.known_method_return_types: Dict[str, Dict[str, str]] = {}
+            self.known_contract_paths: Dict[str, str] = {}
 
         # Base contracts needed for current file (for import generation)
         self.base_contracts_needed: Set[str] = set()
@@ -2247,11 +2339,22 @@ class TypeScriptCodeGenerator:
         self.libraries_referenced: Set[str] = set()
         # Contracts referenced as types (for import generation)
         self.contracts_referenced: Set[str] = set()
+        # EnumerableSetLib set types used (for runtime import)
+        self.set_types_used: Set[str] = set()
+        # External structs used (from files other than Structs.ts)
+        self.external_structs_used: Dict[str, str] = {}  # struct_name -> relative_path
         # Current file type (to avoid self-referencing prefixes)
         self.current_file_type = ''
 
         # OPTIMIZATION: Cached qualified name lookup (built lazily per file)
         self._qualified_name_cache: Dict[str, str] = {}
+
+        # Local structs defined in the current contract (should not get Structs. prefix)
+        self.current_local_structs: Set[str] = set()
+        # Inherited structs from base contracts: struct_name -> defining_contract_name
+        self.current_inherited_structs: Dict[str, str] = {}
+        # Flag to track when generating base constructor arguments (can't use 'this' before super())
+        self._in_base_constructor_args: bool = False
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
@@ -2292,6 +2395,8 @@ class TypeScriptCodeGenerator:
         self.base_contracts_needed = set()
         self.libraries_referenced = set()
         self.contracts_referenced = set()
+        self.set_types_used = set()
+        self.external_structs_used = {}
 
         # Determine file type before generating (affects identifier prefixes)
         contract_name = ast.contracts[0].name if ast.contracts else ''
@@ -2350,28 +2455,121 @@ class TypeScriptCodeGenerator:
 
         return '\n'.join(output)
 
+    def _get_relative_import_path(self, target_contract: str) -> str:
+        """Compute the relative import path from current file to target contract."""
+        # Get the target contract's path from the registry
+        target_path = self.known_contract_paths.get(target_contract)
+
+        if not target_path or not self.current_file_path:
+            # Fallback to simple prefix + name if paths not available
+            prefix = '../' * self.file_depth if self.file_depth > 0 else './'
+            return f'{prefix}{target_contract}'
+
+        # Compute relative path from current file's directory to target
+        from pathlib import PurePosixPath
+        current_dir = PurePosixPath(self.current_file_path).parent
+        target = PurePosixPath(target_path)
+
+        # Calculate relative path
+        try:
+            # Find common prefix and compute relative path
+            current_parts = current_dir.parts if str(current_dir) != '.' else ()
+            target_parts = target.parts
+
+            # Find common prefix length
+            common_len = 0
+            for i, (c, t) in enumerate(zip(current_parts, target_parts)):
+                if c == t:
+                    common_len = i + 1
+                else:
+                    break
+
+            # Go up from current dir, then down to target
+            ups = len(current_parts) - common_len
+            downs = target_parts[common_len:]
+
+            if ups == 0 and not downs:
+                # Same directory
+                return f'./{target.name}'
+            elif ups == 0:
+                return './' + '/'.join(downs)
+            else:
+                return '../' * ups + '/'.join(downs)
+        except Exception:
+            # Fallback
+            prefix = '../' * self.file_depth if self.file_depth > 0 else './'
+            return f'{prefix}{target_contract}'
+
     def generate_imports(self, contract_name: str = '') -> str:
         """Generate import statements."""
-        # Compute relative import prefix based on file depth
+        # Compute relative import prefix based on file depth (for root-level files)
         prefix = '../' * self.file_depth if self.file_depth > 0 else './'
 
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';")
-        lines.append(f"import {{ Contract, Storage, ADDRESS_ZERO, sha256, sha256String, addressToUint }} from '{prefix}runtime';")
+        # Build runtime import with optional set types
+        runtime_imports = ['Contract', 'Storage', 'ADDRESS_ZERO', 'sha256', 'sha256String', 'addressToUint', 'blockhash']
+        if self.set_types_used:
+            runtime_imports.extend(sorted(self.set_types_used))
+        lines.append(f"import {{ {', '.join(runtime_imports)} }} from '{prefix}runtime';")
 
         # Import base contracts needed for inheritance
         for base_contract in sorted(self.base_contracts_needed):
-            lines.append(f"import {{ {base_contract} }} from '{prefix}{base_contract}';")
+            import_path = self._get_relative_import_path(base_contract)
+            lines.append(f"import {{ {base_contract} }} from '{import_path}';")
 
         # Import library contracts that are referenced
         for library in sorted(self.libraries_referenced):
-            lines.append(f"import {{ {library} }} from '{prefix}{library}';")
+            import_path = self._get_relative_import_path(library)
+            lines.append(f"import {{ {library} }} from '{import_path}';")
 
         # Import contracts that are used as types (e.g., in constructor params or state vars)
         for contract in sorted(self.contracts_referenced):
             # Skip if already imported as base contract or if it's the current contract
             if contract not in self.base_contracts_needed and contract != contract_name:
-                lines.append(f"import {{ {contract} }} from '{prefix}{contract}';")
+                import_path = self._get_relative_import_path(contract)
+                lines.append(f"import {{ {contract} }} from '{import_path}';")
+
+        # Import inherited structs from their defining contracts
+        # Group by defining contract to generate compact imports
+        if self.current_inherited_structs:
+            structs_by_contract: Dict[str, List[str]] = {}
+            for struct_name, defining_contract in self.current_inherited_structs.items():
+                if defining_contract not in structs_by_contract:
+                    structs_by_contract[defining_contract] = []
+                structs_by_contract[defining_contract].append(struct_name)
+            for defining_contract, struct_names in sorted(structs_by_contract.items()):
+                # Skip if this is the current contract or already imported as base
+                if defining_contract != contract_name:
+                    import_path = self._get_relative_import_path(defining_contract)
+                    # Check if the base contract is already imported (we can extend the import)
+                    if defining_contract in self.base_contracts_needed:
+                        # Find and extend the existing import line
+                        for i, line in enumerate(lines):
+                            if f"from '{import_path}'" in line and f"import {{ {defining_contract} }}" in line:
+                                # Extend with struct imports
+                                structs_str = ', '.join(sorted(struct_names))
+                                lines[i] = f"import {{ {defining_contract}, {structs_str} }} from '{import_path}';"
+                                break
+                    else:
+                        # Create new import for structs only
+                        structs_str = ', '.join(sorted(struct_names))
+                        lines.append(f"import {{ {structs_str} }} from '{import_path}';")
+
+        # Import external structs (from files other than Structs.ts)
+        if self.external_structs_used:
+            # Group by source file
+            structs_by_file: Dict[str, List[str]] = {}
+            for struct_name, rel_path in self.external_structs_used.items():
+                if rel_path not in structs_by_file:
+                    structs_by_file[rel_path] = []
+                structs_by_file[rel_path].append(struct_name)
+            for rel_path, struct_names in sorted(structs_by_file.items()):
+                # Skip if this is the current file
+                if rel_path != self.current_file_path:
+                    import_path = f"{prefix}{rel_path}"
+                    structs_str = ', '.join(sorted(struct_names))
+                    lines.append(f"import {{ {structs_str} }} from '{import_path}';")
 
         # Import types based on current file type:
         # - Enums.ts: no imports needed from other modules
@@ -2461,12 +2659,32 @@ class TypeScriptCodeGenerator:
         self.current_class_name = contract.name
         self.current_contract_kind = contract.kind
 
+        # Track local structs defined in this contract (shouldn't get Structs. prefix)
+        self.current_local_structs = {struct.name for struct in contract.structs}
+        # Remove local structs from qualified name cache so they don't get Structs. prefix
+        for struct_name in self.current_local_structs:
+            if struct_name in self._qualified_name_cache:
+                del self._qualified_name_cache[struct_name]
+
+        # Track inherited structs from base contracts
+        self.current_inherited_structs = {}
+        if self._registry:
+            self.current_inherited_structs = self._registry.get_inherited_structs(contract.name)
+            # Remove inherited structs from qualified name cache so they don't get Structs. prefix
+            # These will be imported from their defining contract
+            for struct_name in self.current_inherited_structs:
+                if struct_name in self._qualified_name_cache:
+                    del self._qualified_name_cache[struct_name]
+
         # Collect state variable and method names for this. prefix handling
         self.current_state_vars = {var.name for var in contract.state_variables
                                    if var.mutability != 'constant'}
         self.current_static_vars = {var.name for var in contract.state_variables
                                     if var.mutability == 'constant'}
         self.current_methods = {func.name for func in contract.functions}
+        # Track inherited methods separately for override detection
+        # (TypeScript override only applies to methods from base classes, not interfaces)
+        self.inherited_methods: Set[str] = set()
         # Add runtime base class methods that need this. prefix
         self.current_methods.update({
             '_yulStorageKey', '_storageRead', '_storageWrite', '_emitEvent',
@@ -2483,6 +2701,8 @@ class TypeScriptCodeGenerator:
                     self.current_method_return_types[func.name] = ret_type.name
 
         # Determine the extends clause based on base_contracts
+        # TypeScript only supports single inheritance, but we need to handle Solidity's
+        # multiple inheritance by importing ALL base contracts and merging their methods.
         extends = ''
         self.current_base_classes = []  # Reset for this contract
         if contract.base_contracts:
@@ -2490,22 +2710,37 @@ class TypeScriptCodeGenerator:
             base_classes = [bc for bc in contract.base_contracts
                            if bc not in self.known_interfaces]
             if base_classes:
-                # Use the first non-interface base contract
-                base_class = base_classes[0]
-                extends = f' extends {base_class}'
-                self.base_contracts_needed.add(base_class)
+                # Use the first non-interface base contract for TypeScript extends
+                primary_base = base_classes[0]
+                extends = f' extends {primary_base}'
                 self.current_base_classes = base_classes
-                # Add base class methods to current_methods for this. prefix handling
-                if base_class in self.known_contract_methods:
-                    self.current_methods.update(self.known_contract_methods[base_class])
-                # Add base class state variables to current_state_vars for this. prefix handling
-                if base_class in self.known_contract_vars:
-                    self.current_state_vars.update(self.known_contract_vars[base_class])
-                # Add base class method return types for ABI encoding inference
-                if base_class in self.known_method_return_types:
-                    for method, ret_type in self.known_method_return_types[base_class].items():
-                        if method not in self.current_method_return_types:
-                            self.current_method_return_types[method] = ret_type
+
+                # Import ALL base contracts (for multiple inheritance support)
+                for base_class in base_classes:
+                    self.base_contracts_needed.add(base_class)
+
+                # Use transitive inheritance to get ALL inherited methods and state vars
+                # This ensures grandparent classes are also included
+                if self._registry:
+                    inherited = self._registry.get_all_inherited_methods(contract.name)
+                    self.current_methods.update(inherited)
+                    self.inherited_methods.update(inherited)
+                    self.current_state_vars.update(self._registry.get_all_inherited_vars(contract.name))
+                else:
+                    # Fallback to direct base class lookup if no registry
+                    for base_class in base_classes:
+                        if base_class in self.known_contract_methods:
+                            self.current_methods.update(self.known_contract_methods[base_class])
+                            self.inherited_methods.update(self.known_contract_methods[base_class])
+                        if base_class in self.known_contract_vars:
+                            self.current_state_vars.update(self.known_contract_vars[base_class])
+
+                # Add method return types from ALL base classes for ABI encoding inference
+                for base_class in base_classes:
+                    if base_class in self.known_method_return_types:
+                        for method, ret_type in self.known_method_return_types[base_class].items():
+                            if method not in self.current_method_return_types:
+                                self.current_method_return_types[method] = ret_type
             else:
                 extends = ' extends Contract'
                 self.current_base_classes = ['Contract']  # Ensure super() is called
@@ -2605,10 +2840,13 @@ class TypeScriptCodeGenerator:
                 for base_call in func.base_constructor_calls:
                     if base_call.base_name in self.current_base_classes:
                         if base_call.arguments:
+                            # Set flag to avoid 'this' references in base constructor args
+                            self._in_base_constructor_args = True
                             args = ', '.join([
                                 self.generate_expression(arg)
                                 for arg in base_call.arguments
                             ])
+                            self._in_base_constructor_args = False
                             lines.append(f'{self.indent()}super({args});')
                         else:
                             lines.append(f'{self.indent()}super();')
@@ -2690,8 +2928,13 @@ class TypeScriptCodeGenerator:
         elif func.visibility == 'internal':
             visibility = 'protected ' if self.current_contract_kind != 'library' else ''
 
-        # Add override modifier if the Solidity function has override
-        override_prefix = 'override ' if func.is_override else ''
+        # Add override modifier only if:
+        # 1. The Solidity function has override keyword AND
+        # 2. The method actually exists in an inherited base class (not just interfaces)
+        # This is because TypeScript's 'override' only applies to class inheritance,
+        # not interface implementation
+        should_override = func.is_override and func.name in self.inherited_methods
+        override_prefix = 'override ' if should_override else ''
 
         lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{func.name}({params}): {return_type} {{')
         self.indent_level += 1
@@ -2711,16 +2954,25 @@ class TypeScriptCodeGenerator:
 
         # Add implicit return for named return parameters
         if named_return_vars and func.body:
-            # Check if last statement is already a return
-            has_explicit_return = False
-            if func.body.statements:
-                last_stmt = func.body.statements[-1]
-                has_explicit_return = isinstance(last_stmt, ReturnStatement)
-            if not has_explicit_return:
+            # Check if all code paths have explicit returns
+            has_all_paths_return = self._all_paths_return(func.body.statements)
+            if not has_all_paths_return:
                 if len(named_return_vars) == 1:
                     lines.append(f'{self.indent()}return {named_return_vars[0]};')
                 else:
                     lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
+
+        # Handle virtual functions with no body
+        if not func.body or (func.body and not func.body.statements):
+            if named_return_vars:
+                # Return the default-initialized named return values
+                if len(named_return_vars) == 1:
+                    lines.append(f'{self.indent()}return {named_return_vars[0]};')
+                else:
+                    lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
+            elif return_type != 'void':
+                # No named return vars but non-void return type - add throw
+                lines.append(f'{self.indent()}throw new Error("Not implemented");')
 
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
@@ -2729,6 +2981,51 @@ class TypeScriptCodeGenerator:
         # Clear local vars after function
         self.current_local_vars = set()
         return '\n'.join(lines)
+
+    def _all_paths_return(self, statements: List[Statement]) -> bool:
+        """Check if all code paths through a list of statements end with a return.
+
+        This handles simple cases like:
+        - Last statement is a return
+        - Last statement is if/else where both branches return
+        """
+        if not statements:
+            return False
+
+        last_stmt = statements[-1]
+
+        # Direct return statement
+        if isinstance(last_stmt, ReturnStatement):
+            return True
+
+        # If/else where both branches return
+        if isinstance(last_stmt, IfStatement):
+            # Must have an else branch
+            if last_stmt.false_body is None:
+                return False
+
+            # Check true branch
+            if isinstance(last_stmt.true_body, Block):
+                true_returns = self._all_paths_return(last_stmt.true_body.statements)
+            elif isinstance(last_stmt.true_body, ReturnStatement):
+                true_returns = True
+            else:
+                true_returns = False
+
+            # Check false branch
+            if isinstance(last_stmt.false_body, Block):
+                false_returns = self._all_paths_return(last_stmt.false_body.statements)
+            elif isinstance(last_stmt.false_body, ReturnStatement):
+                false_returns = True
+            elif isinstance(last_stmt.false_body, IfStatement):
+                # Nested if/else (else if chain)
+                false_returns = self._all_paths_return([last_stmt.false_body])
+            else:
+                false_returns = False
+
+            return true_returns and false_returns
+
+        return False
 
     def generate_overloaded_function(self, funcs: List[FunctionDefinition]) -> str:
         """Generate a single function from multiple overloaded functions.
@@ -2777,8 +3074,8 @@ class TypeScriptCodeGenerator:
         elif main_func.visibility == 'internal':
             visibility = 'protected '
 
-        # Check if any variant is an override
-        is_override = any(f.is_override for f in funcs)
+        # Check if any variant is an override AND the method exists in an inherited base class
+        is_override = any(f.is_override for f in funcs) and main_func.name in self.inherited_methods
         override_prefix = 'override ' if is_override else ''
 
         lines.append(f'{self.indent()}{visibility}{override_prefix}{main_func.name}({", ".join(param_strs)}): {return_type} {{')
@@ -2921,8 +3218,18 @@ class TypeScriptCodeGenerator:
         """Generate initialization for nested mapping intermediate keys.
 
         For mapping[a][b] access, this generates: mapping[a] ??= {};
+        For mapping[a][b] where value is array, this generates: mapping[a] ??= [];
+        For arrays, no initialization is needed (they're pre-allocated).
         """
         lines = []
+
+        # Check if this is actually a mapping (not an array)
+        base_var_name = self._get_base_var_name(access)
+        if base_var_name and base_var_name in self.var_types:
+            type_info = self.var_types[base_var_name]
+            # Skip initialization for arrays - they're already allocated
+            if type_info and not type_info.is_mapping:
+                return ''
 
         # Generate the base access (mapping[a])
         base_expr = self.generate_expression(access)
@@ -2933,10 +3240,50 @@ class TypeScriptCodeGenerator:
             if deeper_init:
                 lines.append(deeper_init)
 
-        # Generate initialization: mapping[key] ??= {};
-        lines.append(f'{self.indent()}{base_expr} ??= {{}};')
+        # Determine the correct initialization value based on the value type
+        init_value = self._get_mapping_init_value(access)
+        lines.append(f'{self.indent()}{base_expr} ??= {init_value};')
 
         return '\n'.join(lines)
+
+    def _get_mapping_init_value(self, access: IndexAccess) -> str:
+        """Determine the initialization value for a mapping access.
+
+        Returns '[]' if the value type is an array, '{}' otherwise.
+        """
+        # Get the base variable name to look up its type
+        base_var_name = self._get_base_var_name(access.base)
+        if not base_var_name or base_var_name not in self.var_types:
+            return '{}'
+
+        type_info = self.var_types[base_var_name]
+        if not type_info or not type_info.is_mapping:
+            return '{}'
+
+        # Navigate through nested mappings to find the value type at this level
+        # Count how many levels deep we are
+        depth = 0
+        current = access
+        while isinstance(current.base, IndexAccess):
+            depth += 1
+            current = current.base
+
+        # Navigate to the correct level in the type
+        value_type = type_info.value_type
+        for _ in range(depth):
+            if value_type and value_type.is_mapping:
+                value_type = value_type.value_type
+            else:
+                break
+
+        # Check if the value type at this level is an array or another mapping
+        if value_type:
+            if value_type.is_array:
+                return '[]'
+            elif value_type.is_mapping:
+                return '{}'
+
+        return '{}'
 
     def generate_block(self, block: Block) -> str:
         """Generate block of statements."""
@@ -3307,6 +3654,8 @@ class TypeScriptCodeGenerator:
             if func in ('and', 'or', 'xor') and len(ts_args) >= 2:
                 ops = {'and': '&', 'or': '|', 'xor': '^'}
                 return f'({ts_args[0]} {ops[func]} {ts_args[1]})'
+            if func == 'or' and len(ts_args) == 1:
+                return ts_args[0]  # Single arg or() is identity
             if func == 'not' and len(ts_args) >= 1:
                 return f'(~{ts_args[0]})'
             if func in ('shl', 'shr') and len(ts_args) >= 2:
@@ -3333,7 +3682,10 @@ class TypeScriptCodeGenerator:
         if expr.isdigit():
             return f'{expr}n'
 
-        # Identifiers - apply prefix logic for known types
+        # Identifiers - check if it's a static class member first
+        if expr in self.current_static_vars:
+            return f'{self.current_class_name}.{expr}'
+        # Apply prefix logic for known types (Structs., Enums., Constants.)
         return self.get_qualified_name(expr)
 
     def _transpile_yul_call(self, func: str, args_str: str, slot_vars: Dict[str, str]) -> str:
@@ -3355,6 +3707,10 @@ class TypeScriptCodeGenerator:
 
         if func == 'revert':
             return 'throw new Error("Revert");'
+
+        # Log operations (events) - no-op in simulation
+        if func in ('log0', 'log1', 'log2', 'log3', 'log4'):
+            return f'// {func}({args_str}) - event logging skipped in simulation'
 
         return f'// Yul: {func}({args_str})'
 
@@ -3418,11 +3774,19 @@ class TypeScriptCodeGenerator:
         name = ident.name
 
         # Handle special identifiers
+        # In base constructor arguments, we can't use 'this' before super()
+        # Use placeholder values instead
         if name == 'msg':
+            if self._in_base_constructor_args:
+                return '{ sender: ADDRESS_ZERO, value: 0n, data: "0x" as `0x${string}` }'
             return 'this._msg'
         elif name == 'block':
+            if self._in_base_constructor_args:
+                return '{ timestamp: 0n, number: 0n }'
             return 'this._block'
         elif name == 'tx':
+            if self._in_base_constructor_args:
+                return '{ origin: ADDRESS_ZERO }'
             return 'this._tx'
         elif name == 'this':
             return 'this'
@@ -3495,27 +3859,34 @@ class TypeScriptCodeGenerator:
 
     def generate_function_call(self, call: FunctionCall) -> str:
         """Generate function call."""
-        # Handle array allocation: new Type[](size) -> new Array(size)
+        # Handle new expressions
         if isinstance(call.function, NewExpression):
-            if call.function.type_name.is_array and call.arguments:
-                size_arg = call.arguments[0]
-                size = self.generate_expression(size_arg)
-                # Convert BigInt to Number for array size
-                if size.startswith('BigInt('):
-                    inner = size[7:-1]  # Extract content between BigInt( and )
-                    if inner.isdigit():
-                        size = inner
-                    else:
+            if call.function.type_name.is_array:
+                # Array allocation: new Type[](size) -> new Array(size)
+                if call.arguments:
+                    size_arg = call.arguments[0]
+                    size = self.generate_expression(size_arg)
+                    # Convert BigInt to Number for array size
+                    if size.startswith('BigInt('):
+                        inner = size[7:-1]  # Extract content between BigInt( and )
+                        if inner.isdigit():
+                            size = inner
+                        else:
+                            size = f'Number({size})'
+                    elif size.endswith('n') and size[:-1].isdigit():
+                        # Only strip 'n' from BigInt literals like "5n", not variable names like "globalLen"
+                        size = size[:-1]
+                    elif isinstance(size_arg, Identifier):
+                        # Variable size needs Number() conversion
                         size = f'Number({size})'
-                elif size.endswith('n') and size[:-1].isdigit():
-                    # Only strip 'n' from BigInt literals like "5n", not variable names like "globalLen"
-                    size = size[:-1]
-                elif isinstance(size_arg, Identifier):
-                    # Variable size needs Number() conversion
-                    size = f'Number({size})'
-                return f'new Array({size})'
-            # No-argument array creation
-            return f'[]'
+                    return f'new Array({size})'
+                # No-argument array creation
+                return f'[]'
+            else:
+                # Contract/class creation: new Contract(args) -> new Contract(args)
+                type_name = call.function.type_name.name
+                args = ', '.join([self.generate_expression(arg) for arg in call.arguments])
+                return f'new {type_name}({args})'
 
         func = self.generate_expression(call.function)
 
@@ -3537,6 +3908,12 @@ class TypeScriptCodeGenerator:
                         type_params = self._infer_abi_types_from_values(call.arguments)
                         values = ', '.join([self._convert_abi_value(a) for a in call.arguments])
                         return f'encodeAbiParameters({type_params}, [{values}])'
+                elif call.function.member == 'encodePacked':
+                    # abi.encodePacked(val1, val2, ...) -> encodePacked([type1, type2, ...], [val1, val2, ...])
+                    if call.arguments:
+                        types = self._infer_packed_abi_types(call.arguments)
+                        values = ', '.join([self._convert_abi_value(a) for a in call.arguments])
+                        return f'encodePacked({types}, [{values}])'
 
         args = ', '.join([self.generate_expression(a) for a in call.arguments])
 
@@ -3599,6 +3976,9 @@ class TypeScriptCodeGenerator:
                     # Handle address(this) -> this._contractAddress
                     if isinstance(arg, Identifier) and arg.name == 'this':
                         return 'this._contractAddress'
+                    # Check if arg is already an address type (msg.sender, tx.origin, etc.)
+                    if self._is_already_address_type(arg):
+                        return self.generate_expression(arg)
                     # Handle address(someContract) -> someContract._contractAddress
                     # For contract instances, get their address
                     inner = self.generate_expression(arg)
@@ -3645,6 +4025,9 @@ class TypeScriptCodeGenerator:
             elif name[0].isupper() and call.named_arguments:
                 # Struct constructor with named args: ATTACK_PARAMS({NAME: "x", ...})
                 qualified = self.get_qualified_name(name)
+                # Track external structs for import generation
+                if self._registry and name in self._registry.struct_paths:
+                    self.external_structs_used[name] = self._registry.struct_paths[name]
                 fields = ', '.join([
                     f'{k}: {self.generate_expression(v)}'
                     for k, v in call.named_arguments.items()
@@ -3654,6 +4037,9 @@ class TypeScriptCodeGenerator:
             elif name[0].isupper() and not args:
                 # Struct with no args - return default object with proper prefix
                 qualified = self.get_qualified_name(name)
+                # Track external structs for import generation
+                if self._registry and name in self._registry.struct_paths:
+                    self.external_structs_used[name] = self._registry.struct_paths[name]
                 return f'{{}} as {qualified}'
             # Handle enum type casts: Type(newValue) -> Number(newValue) as Enums.Type
             elif name in self.known_enums:
@@ -3678,6 +4064,20 @@ class TypeScriptCodeGenerator:
             if member_name in self.known_public_state_vars:
                 # It's a public state variable getter - return property access without ()
                 return func
+
+        # Handle EnumerableSetLib method calls that are now property getters in TypeScript
+        # In Solidity: set.length() is a function call via 'using for' directive
+        # In TypeScript: Uint256Set.length is a property getter
+        if isinstance(call.function, MemberAccess):
+            member_name = call.function.member
+            # Set methods that are property getters in our TS implementation
+            if member_name == 'length':
+                # Already wrapped in BigInt by generate_member_access, just return without ()
+                return func
+            # Set methods that are still methods in our TS implementation
+            if member_name in ('contains', 'add', 'remove', 'values', 'at'):
+                # These remain as method calls
+                pass
 
         return f'{func}({args})'
 
@@ -3717,8 +4117,19 @@ class TypeScriptCodeGenerator:
         if member == 'slot':
             return f'/* {expr}.slot */'
 
-        # Handle .length - in JS returns number, but Solidity expects uint256 (bigint)
+        # Handle .length - in JS arrays return number, but Solidity expects uint256 (bigint)
+        # For EnumerableSetLib types (Uint256Set, AddressSet, etc.), our TS implementation
+        # already returns bigint, so we don't need to wrap in BigInt()
         if member == 'length':
+            # Check if base is a known Set type (from EnumerableSetLib)
+            base_var_name = self._get_base_var_name(access.expression)
+            if base_var_name and base_var_name in self.var_types:
+                type_info = self.var_types[base_var_name]
+                type_name = type_info.name if type_info else ''
+                # EnumerableSetLib types - .length returns bigint already
+                if 'Set' in type_name or type_name.endswith('Set'):
+                    return f'{expr}.{member}'
+            # Regular arrays - wrap in BigInt
             return f'BigInt({expr}.{member})'
 
         return f'{expr}.{member}'
@@ -3779,6 +4190,83 @@ class TypeScriptCodeGenerator:
             type_str = self._infer_single_abi_type(arg)
             type_strs.append(type_str)
         return f'[{", ".join(type_strs)}]'
+
+    def _infer_packed_abi_types(self, args: List[Expression]) -> str:
+        """Infer packed ABI types from value expressions (for abi.encodePacked).
+
+        encodePacked uses a simpler format: ['uint256', 'address'] instead of
+        [{type: 'uint256'}, {type: 'address'}].
+        """
+        type_strs = []
+        for arg in args:
+            type_str = self._infer_single_packed_type(arg)
+            type_strs.append(f"'{type_str}'")
+        return f'[{", ".join(type_strs)}]'
+
+    def _infer_single_packed_type(self, arg: Expression) -> str:
+        """Infer packed ABI type from a single value expression."""
+        # If it's an identifier, look up its type
+        if isinstance(arg, Identifier):
+            name = arg.name
+            # Check known variable types
+            if name in self.var_types:
+                type_info = self.var_types[name]
+                if type_info.name:
+                    type_name = type_info.name
+                    if type_name == 'address':
+                        return 'address'
+                    if type_name.startswith('uint') or type_name.startswith('int'):
+                        return type_name
+                    if type_name == 'bool':
+                        return 'bool'
+                    if type_name.startswith('bytes'):
+                        return type_name
+                    if type_name == 'string':
+                        return 'string'
+                    if type_name in self.known_enums:
+                        return 'uint8'
+            # Check known enum members
+            if name in self.known_enums:
+                return 'uint8'
+            # Default to uint256 for identifiers (common case)
+            return 'uint256'
+        # For literals
+        if isinstance(arg, Literal):
+            if arg.kind == 'string':
+                return 'string'
+            elif arg.kind in ('number', 'hex'):
+                return 'uint256'
+            elif arg.kind == 'bool':
+                return 'bool'
+        # For member access like Enums.Something or msg.sender
+        if isinstance(arg, MemberAccess):
+            if isinstance(arg.expression, Identifier):
+                if arg.expression.name == 'Enums':
+                    return 'uint8'
+                if arg.expression.name == 'this' and arg.member == '_contractAddress':
+                    return 'address'
+                if arg.expression.name in ('this', 'msg', 'tx'):
+                    member = arg.member
+                    if member in ('sender', 'origin', '_contractAddress'):
+                        return 'address'
+        # For function calls that return specific types
+        if isinstance(arg, FunctionCall):
+            if isinstance(arg.function, Identifier):
+                func_name = arg.function.name
+                # blockhash returns bytes32
+                if func_name == 'blockhash':
+                    return 'bytes32'
+                if func_name == 'keccak256':
+                    return 'bytes32'
+                # name() typically returns string (ERC20/metadata standard)
+                if func_name == 'name':
+                    return 'string'
+            # this.name() also returns string
+            elif isinstance(arg.function, MemberAccess):
+                if arg.function.member == 'name':
+                    return 'string'
+        # Default fallback
+        return 'uint256'
 
     def _infer_single_abi_type(self, arg: Expression) -> str:
         """Infer ABI type from a single value expression."""
@@ -3928,14 +4416,25 @@ class TypeScriptCodeGenerator:
                 index = inner
             elif needs_number_conversion:
                 index = f'Number({index})'
-        elif index.endswith('n'):
-            # 0n -> 0
+        elif isinstance(access.index, Literal) and index.endswith('n'):
+            # 0n -> 0 only for simple bigint literals, not binary expressions like "i - 1n"
             index = index[:-1]
         elif needs_number_conversion and isinstance(access.index, Identifier):
             # For loop variables (i, j, etc.) accessing arrays/mappings, convert to Number
             index = f'Number({index})'
         elif needs_number_conversion and isinstance(access.index, BinaryOperation):
             # For expressions like baseSlot + i, wrap in Number()
+            index = f'Number({index})'
+        elif needs_number_conversion and isinstance(access.index, UnaryOperation):
+            # For expressions like index++ or ++index, wrap in Number()
+            index = f'Number({index})'
+        elif needs_number_conversion and isinstance(access.index, IndexAccess):
+            # For nested array access like moves[typeAdvantagedMoves[i]], wrap in Number()
+            # because the inner array returns a bigint
+            index = f'Number({index})'
+        elif needs_number_conversion and isinstance(access.index, MemberAccess):
+            # For struct field access like players[ctx.playerIndex], wrap in Number()
+            # since struct fields of uint type are bigint in TS
             index = f'Number({index})'
         elif isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index):
             # Fallback: even if base type doesn't require Number conversion,
@@ -3946,6 +4445,25 @@ class TypeScriptCodeGenerator:
         # For string/address mapping keys - leave as-is
 
         return f'{base}[{index}]'
+
+    def _is_already_address_type(self, expr: Expression) -> bool:
+        """Check if expression is already an address type (doesn't need ._contractAddress).
+
+        Returns True for expressions like msg.sender, tx.origin, etc. that are
+        already strings representing addresses in the TypeScript runtime.
+        """
+        # Check for msg.sender, msg.origin patterns
+        if isinstance(expr, MemberAccess):
+            if isinstance(expr.expression, Identifier):
+                base_name = expr.expression.name
+                member = expr.member
+                # msg.sender is already an address string
+                if base_name == 'msg' and member == 'sender':
+                    return True
+                # tx.origin is already an address string
+                if base_name == 'tx' and member == 'origin':
+                    return True
+        return False
 
     def _is_likely_array_access(self, access: IndexAccess) -> bool:
         """Determine if this is an array access (needs Number index) vs mapping access.
@@ -4027,6 +4545,9 @@ class TypeScriptCodeGenerator:
             # Handle address(this) -> this._contractAddress
             if isinstance(inner_expr, Identifier) and inner_expr.name == 'this':
                 return 'this._contractAddress'
+            # Check if inner expression is already an address type (msg.sender, tx.origin, etc.)
+            if self._is_already_address_type(inner_expr):
+                return self.generate_expression(inner_expr)
             expr = self.generate_expression(inner_expr)
             if expr.startswith('"') or expr.startswith("'"):
                 return expr
@@ -4106,10 +4627,18 @@ class TypeScriptCodeGenerator:
             ts_type = 'any'  # Interfaces become 'any' in TypeScript
         elif name in self.known_structs or name in self.known_enums:
             ts_type = self.get_qualified_name(name)
+            # Track external structs (from files other than Structs.ts)
+            if self._registry and name in self._registry.struct_paths:
+                self.external_structs_used[name] = self._registry.struct_paths[name]
         elif name in self.known_contracts:
             # Contract type - track for import generation
             self.contracts_referenced.add(name)
             ts_type = name
+        elif name.startswith('EnumerableSetLib.'):
+            # Handle EnumerableSetLib types - runtime exports them directly
+            set_type = name.split('.')[1]  # e.g., 'Uint256Set'
+            self.set_types_used.add(set_type)
+            ts_type = set_type
         else:
             ts_type = name  # Other custom types
 
@@ -4164,10 +4693,78 @@ class SolidityToTypeScriptTranspiler:
         self.metadata_extractor: Optional[MetadataExtractor] = None
         self.dependency_manifest = DependencyManifest()
 
+        # Load runtime replacements configuration
+        self.runtime_replacements: Dict[str, dict] = {}
+        self._load_runtime_replacements()
+
         # Run type discovery on specified directories
         if discovery_dirs:
             for dir_path in discovery_dirs:
                 self.registry.discover_from_directory(dir_path)
+
+    def _load_runtime_replacements(self) -> None:
+        """Load the runtime-replacements.json configuration file."""
+        script_dir = Path(__file__).parent
+        replacements_file = script_dir / 'runtime-replacements.json'
+
+        if replacements_file.exists():
+            try:
+                with open(replacements_file, 'r') as f:
+                    config = json.load(f)
+                for replacement in config.get('replacements', []):
+                    source_path = replacement.get('source', '')
+                    if source_path:
+                        # Normalize the source path for matching
+                        self.runtime_replacements[source_path] = replacement
+                print(f"Loaded {len(self.runtime_replacements)} runtime replacements")
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Failed to load runtime-replacements.json: {e}")
+
+    def _get_runtime_replacement(self, filepath: str) -> Optional[dict]:
+        """Check if a file should be replaced with a runtime implementation."""
+        # Get the relative path from source_dir
+        try:
+            rel_path = Path(filepath).relative_to(self.source_dir)
+            rel_str = str(rel_path).replace('\\', '/')  # Normalize path separators
+        except ValueError:
+            # File is not under source_dir, try matching just the filename parts
+            rel_str = str(Path(filepath)).replace('\\', '/')
+
+        # Check against replacement patterns
+        for source_pattern, replacement in self.runtime_replacements.items():
+            # Match if the relative path ends with the pattern
+            if rel_str.endswith(source_pattern) or rel_str == source_pattern:
+                return replacement
+
+        return None
+
+    def _generate_runtime_reexport(self, replacement: dict, file_depth: int) -> str:
+        """Generate a re-export file for a runtime replacement."""
+        runtime_module = replacement.get('runtimeModule', '../runtime')
+        exports = replacement.get('exports', [])
+        reason = replacement.get('reason', 'Complex Yul assembly')
+
+        # Adjust the import path based on file depth
+        if file_depth > 0:
+            # Add extra ../ for each level of depth beyond the first
+            runtime_path = '../' * file_depth + 'runtime'
+        else:
+            runtime_path = runtime_module
+
+        lines = [
+            "// Auto-generated by sol2ts transpiler",
+            f"// Runtime replacement: {reason}",
+            "// See transpiler/runtime-replacements.json for configuration",
+            "",
+        ]
+
+        if exports:
+            export_list = ', '.join(exports)
+            lines.append(f"export {{ {export_list} }} from '{runtime_path}';")
+        else:
+            lines.append(f"export * from '{runtime_path}';")
+
+        return '\n'.join(lines) + '\n'
 
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
@@ -4213,22 +4810,34 @@ class SolidityToTypeScriptTranspiler:
         if contract_name in self.stubbed_contracts:
             return self._generate_stub(ast, contract_name)
 
-        # Calculate file depth for relative imports
+        # Calculate file depth and path for relative imports
         # Only count depth if file is within source_dir (directory transpilation)
+        current_file_path = ''
         try:
             resolved_filepath = Path(filepath).resolve()
             resolved_source_dir = self.source_dir.resolve()
             if resolved_filepath.is_relative_to(resolved_source_dir):
                 rel_path = resolved_filepath.relative_to(resolved_source_dir)
                 file_depth = len(rel_path.parent.parts)
+                current_file_path = str(rel_path.with_suffix(''))
             else:
                 # Single file transpilation - output goes to root of output_dir
                 file_depth = 0
         except (ValueError, TypeError, AttributeError):
             file_depth = 0
 
+        # Check if this file should be replaced with a runtime implementation
+        replacement = self._get_runtime_replacement(filepath)
+        if replacement:
+            print(f"  -> Using runtime replacement for: {Path(filepath).name}")
+            return self._generate_runtime_reexport(replacement, file_depth)
+
         # Generate TypeScript
-        generator = TypeScriptCodeGenerator(self.registry if use_registry else None, file_depth=file_depth)
+        generator = TypeScriptCodeGenerator(
+            self.registry if use_registry else None,
+            file_depth=file_depth,
+            current_file_path=current_file_path
+        )
         ts_code = generator.generate(ast)
 
         return ts_code
@@ -4295,6 +4904,25 @@ class SolidityToTypeScriptTranspiler:
             with open(path, 'w') as f:
                 f.write(content)
             print(f"Written: {filepath}")
+
+        # Copy runtime support files to output directory
+        self._copy_runtime()
+
+    def _copy_runtime(self) -> None:
+        """Copy runtime files to output directory."""
+        # Locate runtime directory relative to this script
+        script_dir = Path(__file__).parent
+        runtime_src = script_dir / 'runtime'
+        runtime_dest = self.output_dir / 'runtime'
+
+        if runtime_src.exists():
+            # Remove existing runtime dir to ensure clean copy
+            if runtime_dest.exists():
+                shutil.rmtree(runtime_dest)
+            shutil.copytree(runtime_src, runtime_dest)
+            print(f"Copied runtime to: {runtime_dest}")
+        else:
+            print(f"Warning: Runtime directory not found at {runtime_src}")
 
     def write_metadata(self, output_path: Optional[str] = None):
         """Write the dependency manifest and metadata to JSON files."""
@@ -4685,6 +5313,7 @@ def main():
 
     if input_path.is_file():
         transpiler = SolidityToTypeScriptTranspiler(
+            output_dir=args.output,
             discovery_dirs=discovery_dirs,
             stubbed_contracts=stubbed_contracts,
             emit_metadata=emit_metadata
@@ -4717,6 +5346,9 @@ def main():
             with open(output_path, 'w') as f:
                 f.write(ts_code)
             print(f"Written: {output_path}")
+
+            # Copy runtime support files
+            transpiler._copy_runtime()
 
             if emit_metadata:
                 transpiler.write_metadata(args.output)

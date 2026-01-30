@@ -79,7 +79,30 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 - **No gas simulation**: Gas costs are not tracked or enforced.
 - **No storage layout guarantees**: Storage slots are simulated but don't match on-chain layout.
 - **No modifier inlining**: Modifiers are stripped; logic must be inlined manually if needed.
-- **No assembly/Yul support**: Inline assembly blocks are skipped with warnings.
+- **No assembly/Yul support**: Inline assembly blocks are skipped with warnings. However, a **runtime replacement** system exists for files that require manual TypeScript implementations.
+
+### Runtime Replacements
+
+Some Solidity files contain Yul/assembly that cannot be transpiled. These are handled via `runtime-replacements.json`:
+
+```json
+{
+  "lib/ECDSA.sol": {
+    "replacement": "runtime/ECDSA.ts",
+    "reason": "Complex Yul assembly for gas-optimized ECDSA signature recovery"
+  }
+}
+```
+
+When a file matches a replacement entry, the transpiler:
+1. Skips transpilation
+2. Generates a re-export from the runtime implementation
+3. Emits a comment explaining the replacement
+
+To add a new runtime replacement:
+1. Create a TypeScript implementation in `runtime/`
+2. Add an entry to `runtime-replacements.json`
+3. Export the interface from `runtime/index.ts`
 
 ---
 
@@ -271,6 +294,86 @@ const effect = registry.getEffect(someAddress);
 - `keccak256`, `sha256`
 - `type(uint256).max`, `type(int256).min`
 - `msg.sender`, `block.timestamp`, `tx.origin`
+
+---
+
+## Recent Fixes (January 2026)
+
+The following issues were fixed to improve TypeScript compilation:
+
+### Fixed Issues
+
+1. **BigInt/Number Operator Mixing (TS2365)**
+   - Array index expressions like `arr[i - 1]` now correctly convert `1` to `1n`
+   - Binary operations in array indices are wrapped with `Number()` for proper type conversion
+
+2. **Function Return Type Handling (TS2355)**
+   - Virtual functions with no body now add default return statements or throws
+   - Named return parameters are properly returned for empty function bodies
+
+3. **Tuple Return Type Handling (TS2322)**
+   - Added `_all_paths_return()` to detect when all code paths have explicit returns
+   - Prevents adding unreachable implicit returns when if/else branches all return
+
+4. **ECDSA Async/Sync Mismatch**
+   - Implemented synchronous `recoverAddressSync()` for simulation compatibility
+   - Added ECDSA to runtime replacements system
+
+5. **EnumerableSetLib `.length()` Callable Issue (TS2349)**
+   - Converted from interfaces to classes with proper getter methods
+   - `set.length()` now transpiles to `set.length` (property access)
+
+6. **ABI encodePacked Type Inference (TS2345)**
+   - Added `_infer_packed_abi_types()` for proper viem `encodePacked()` format
+   - `abi.encodePacked(name(), x)` now generates `encodePacked(['string', 'uint256'], [...])`
+
+### Remaining Issues (39 errors)
+
+The following categories of issues still need fixes:
+
+#### 1. Missing Module: EIP712
+```
+ts-output/matchmaker/SignedMatchmaker.ts: Cannot find module '../EIP712'
+```
+**Fix needed**: EIP712.sol needs runtime replacement or manual implementation.
+
+#### 2. Type Mismatches: string vs bigint
+```
+BattleOfferLib.ts, StatBoosts.ts, DefaultMatchmaker.ts: Type 'string' is not assignable to type 'bigint'
+```
+**Fix needed**: `abi.decode` returns should handle bytes32 → bigint conversions.
+
+#### 3. _contractAddress on Wrong Types
+```
+SleepStatus.ts, Engine.ts, GildedRecovery.ts: Property '_contractAddress' does not exist on type 'bigint/string'
+```
+**Fix needed**: Improve type inference for `address(uint160(...))` patterns.
+
+#### 4. Missing Inherited Methods
+```
+CPUMoveManager.ts: 'calculateMove' does not exist
+GachaTeamRegistry.ts: '_initializeOwner' does not exist
+SignedMatchmaker.ts: '_hashTypedData', '_msg' do not exist
+```
+**Fix needed**: These contracts inherit from base classes not yet transpiled or missing inheritance.
+
+#### 5. Number vs BigInt Assignment
+```
+DefaultMonRegistry.ts, DefaultTeamRegistry.ts: Type 'number' is not assignable to type 'bigint'
+```
+**Fix needed**: Array `.length` returns `number`, needs `BigInt()` wrapper when assigned to bigint vars.
+
+#### 6. Override Modifier on Non-Inherited Methods
+```
+CarrotHarvest.ts: override modifier on method not in base class
+```
+**Fix needed**: Track method inheritance more accurately across interface vs class boundaries.
+
+#### 7. Type Used as Value
+```
+Strings.ts: 'string' only refers to a type, but is being used as a value here
+```
+**Fix needed**: Handle Solidity `type(string).` patterns.
 
 ---
 

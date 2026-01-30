@@ -33,6 +33,21 @@ export function sha256String(str: string): `0x${string}` {
 }
 
 // =============================================================================
+// BLOCKCHAIN BUILTINS
+// =============================================================================
+
+/**
+ * Simulated blockhash function
+ * In Solidity, blockhash(n) returns the hash of block n (if within last 256 blocks)
+ * For simulation purposes, we generate a deterministic pseudo-hash based on block number
+ */
+export function blockhash(blockNumber: bigint): `0x${string}` {
+  // Generate a deterministic hash based on block number for simulation
+  const encoded = encodeAbiParameters([{ type: 'uint256' }], [blockNumber]);
+  return keccak256(encoded);
+}
+
+// =============================================================================
 // BIGINT HELPERS
 // =============================================================================
 
@@ -406,6 +421,12 @@ export abstract class Contract {
   };
 
   /**
+   * Contract address for address(this) pattern
+   * Initialized to a unique address based on instance creation
+   */
+  readonly _contractAddress: string = ADDRESS_ZERO;
+
+  /**
    * Set the caller for the next call
    */
   setMsgSender(sender: string): void {
@@ -692,6 +713,23 @@ export class ContractContainer {
 export const globalContainer = new ContractContainer();
 
 // =============================================================================
+// RUNTIME REPLACEMENT RE-EXPORTS
+// =============================================================================
+// These modules provide TypeScript implementations for Solidity files with
+// complex Yul assembly that cannot be accurately transpiled.
+// See transpiler/runtime-replacements.json for configuration.
+
+export { Ownable } from './Ownable';
+export {
+  EnumerableSetLib,
+  AddressSet,
+  Bytes32Set,
+  Uint256Set,
+  Int256Set,
+} from './EnumerableSetLib';
+export { ECDSA } from './ECDSA';
+
+// =============================================================================
 // BATTLE HARNESS RE-EXPORT
 // =============================================================================
 
@@ -706,7 +744,6 @@ export {
   type TurnInput,
   type MonState,
   type BattleState,
-  type ModuleLoader,
   type ContainerSetupFn,
   // NOTE: SWITCH_MOVE_INDEX and NO_OP_MOVE_INDEX should be imported from
   // transpiled Constants.ts (from src/Constants.sol), not from the runtime.

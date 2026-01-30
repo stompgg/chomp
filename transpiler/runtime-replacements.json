@@ -1,0 +1,78 @@
+{
+  "$schema": "./runtime-replacements.schema.json",
+  "description": "Declares Solidity files that should be replaced with runtime implementations instead of being transpiled. This is necessary for files with complex Yul/assembly that cannot be accurately transpiled.",
+  "replacements": [
+    {
+      "source": "lib/Ownable.sol",
+      "reason": "Complex Yul assembly for storage slot manipulation and event logging",
+      "runtimeModule": "../runtime",
+      "exports": ["Ownable"],
+      "interface": {
+        "class": "Ownable",
+        "extends": "Contract",
+        "abstract": true,
+        "methods": [
+          { "name": "_guardInitializeOwner", "visibility": "protected", "returns": "boolean" },
+          { "name": "_initializeOwner", "visibility": "protected", "params": ["newOwner: string"], "returns": "void" },
+          { "name": "_setOwner", "visibility": "protected", "params": ["newOwner: string"], "returns": "void" },
+          { "name": "_checkOwner", "visibility": "protected", "returns": "void" },
+          { "name": "_ownershipHandoverValidFor", "visibility": "protected", "returns": "bigint" },
+          { "name": "transferOwnership", "visibility": "public", "params": ["newOwner: string"], "returns": "void" },
+          { "name": "renounceOwnership", "visibility": "public", "returns": "void" },
+          { "name": "requestOwnershipHandover", "visibility": "public", "returns": "void" },
+          { "name": "cancelOwnershipHandover", "visibility": "public", "returns": "void" },
+          { "name": "completeOwnershipHandover", "visibility": "public", "params": ["pendingOwner: string"], "returns": "void" },
+          { "name": "owner", "visibility": "public", "returns": "string" },
+          { "name": "ownershipHandoverExpiresAt", "visibility": "public", "params": ["pendingOwner: string"], "returns": "bigint" }
+        ]
+      }
+    },
+    {
+      "source": "lib/EnumerableSetLib.sol",
+      "reason": "Complex Yul assembly for gas-optimized set operations with inline storage manipulation",
+      "runtimeModule": "../runtime",
+      "exports": ["EnumerableSetLib", "AddressSet", "Bytes32Set", "Uint256Set", "Int256Set"],
+      "interface": {
+        "class": "EnumerableSetLib",
+        "extends": "Contract",
+        "abstract": false,
+        "types": [
+          { "name": "AddressSet", "kind": "interface" },
+          { "name": "Bytes32Set", "kind": "interface" },
+          { "name": "Uint256Set", "kind": "interface" },
+          { "name": "Int256Set", "kind": "interface" }
+        ],
+        "methods": [
+          { "name": "length", "visibility": "protected", "params": ["set: AddressSet"], "returns": "bigint" },
+          { "name": "contains", "visibility": "protected", "params": ["set: AddressSet", "value: string"], "returns": "boolean" },
+          { "name": "add", "visibility": "protected", "params": ["set: AddressSet", "value: string"], "returns": "boolean" },
+          { "name": "remove", "visibility": "protected", "params": ["set: AddressSet", "value: string"], "returns": "boolean" },
+          { "name": "values", "visibility": "protected", "params": ["set: AddressSet"], "returns": "string[]" },
+          { "name": "at", "visibility": "protected", "params": ["set: AddressSet", "index: bigint"], "returns": "string" }
+        ]
+      }
+    },
+    {
+      "source": "lib/ECDSA.sol",
+      "reason": "Complex Yul assembly for gas-optimized ECDSA signature recovery using ecrecover precompile",
+      "runtimeModule": "../runtime",
+      "exports": ["ECDSA"],
+      "interface": {
+        "class": "ECDSA",
+        "extends": "Contract",
+        "abstract": false,
+        "constants": [
+          { "name": "N", "type": "bigint", "visibility": "internal" }
+        ],
+        "methods": [
+          { "name": "recover", "visibility": "internal", "params": ["hash: string", "signature: string"], "returns": "string", "static": true },
+          { "name": "recoverCalldata", "visibility": "internal", "params": ["hash: string", "signature: string"], "returns": "string", "static": true },
+          { "name": "tryRecover", "visibility": "internal", "params": ["hash: string", "signature: string"], "returns": "string", "static": true },
+          { "name": "tryRecoverCalldata", "visibility": "internal", "params": ["hash: string", "signature: string"], "returns": "string", "static": true },
+          { "name": "toEthSignedMessageHash", "visibility": "internal", "params": ["hash: string"], "returns": "string", "static": true },
+          { "name": "canonicalHash", "visibility": "internal", "params": ["signature: string"], "returns": "string", "static": true }
+        ]
+      }
+    }
+  ]
+}
