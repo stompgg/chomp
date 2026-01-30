@@ -4417,6 +4417,8 @@ class TypeScriptCodeGenerator:
                     type_name = type_info.name
                     if type_name == 'address':
                         return "{type: 'address'}"
+                    if type_name == 'string':
+                        return "{type: 'string'}"
                     if type_name.startswith('uint') or type_name.startswith('int') or type_name == 'bool' or type_name.startswith('bytes'):
                         return f"{{type: '{type_name}'}}"
                     if type_name in self.known_enums:
@@ -4593,6 +4595,9 @@ class TypeScriptCodeGenerator:
             elif isinstance(arg.function, MemberAccess):
                 func_name = arg.function.member
             if func_name:
+                # address() cast returns address type - needs hex string cast
+                if func_name == 'address':
+                    return f'{expr} as `0x${{string}}`'
                 # keccak256, sha256, blockhash, etc. return bytes32
                 if func_name in ('keccak256', 'sha256', 'blockhash', 'hashBattle', 'hashBattleOffer'):
                     return f'{expr} as `0x${{string}}`'
@@ -4601,6 +4606,12 @@ class TypeScriptCodeGenerator:
                     return_type = self.current_method_return_types[func_name]
                     if return_type in ('bytes32', 'address'):
                         return f'{expr} as `0x${{string}}`'
+
+        # Type casts to address/bytes32 also need hex string cast
+        if isinstance(arg, TypeCast):
+            type_name = arg.type_name.name
+            if type_name in ('address', 'bytes32'):
+                return f'{expr} as `0x${{string}}`'
 
         return expr
 

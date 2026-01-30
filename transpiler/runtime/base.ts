@@ -306,8 +306,13 @@ export abstract class Contract {
   /**
    * Emit an event
    */
-  protected _emitEvent(name: string, args: Record<string, any>): void {
-    this._eventStream.emit(name, args, this._contractAddress);
+  protected _emitEvent(name: string, ...args: any[]): void {
+    // Convert args array to a more structured format
+    const argsObj: Record<string, any> = {};
+    args.forEach((arg, i) => {
+      argsObj[`arg${i}`] = arg;
+    });
+    this._eventStream.emit(name, argsObj, this._contractAddress);
   }
 
   /**
