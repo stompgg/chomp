@@ -2198,9 +2198,10 @@ class TypeRegistry:
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self, registry: Optional[TypeRegistry] = None):
+    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0):
         self.indent_level = 0
         self.indent_str = '  '
+        self.file_depth = file_depth  # Depth of output file for relative imports
         # Track current contract context for this. prefix handling
         self.current_state_vars: Set[str] = set()
         self.current_static_vars: Set[str] = set()  # Static/constant state variables
@@ -2351,23 +2352,26 @@ class TypeScriptCodeGenerator:
 
     def generate_imports(self, contract_name: str = '') -> str:
         """Generate import statements."""
+        # Compute relative import prefix based on file depth
+        prefix = '../' * self.file_depth if self.file_depth > 0 else './'
+
         lines = []
         lines.append("import { keccak256, encodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';")
-        lines.append("import { Contract, Storage, ADDRESS_ZERO, sha256, sha256String, addressToUint } from './runtime';")
+        lines.append(f"import {{ Contract, Storage, ADDRESS_ZERO, sha256, sha256String, addressToUint }} from '{prefix}runtime';")
 
         # Import base contracts needed for inheritance
         for base_contract in sorted(self.base_contracts_needed):
-            lines.append(f"import {{ {base_contract} }} from './{base_contract}';")
+            lines.append(f"import {{ {base_contract} }} from '{prefix}{base_contract}';")
 
         # Import library contracts that are referenced
         for library in sorted(self.libraries_referenced):
-            lines.append(f"import {{ {library} }} from './{library}';")
+            lines.append(f"import {{ {library} }} from '{prefix}{library}';")
 
         # Import contracts that are used as types (e.g., in constructor params or state vars)
         for contract in sorted(self.contracts_referenced):
             # Skip if already imported as base contract or if it's the current contract
             if contract not in self.base_contracts_needed and contract != contract_name:
-                lines.append(f"import {{ {contract} }} from './{contract}';")
+                lines.append(f"import {{ {contract} }} from '{prefix}{contract}';")
 
         # Import types based on current file type:
         # - Enums.ts: no imports needed from other modules
@@ -2377,14 +2381,14 @@ class TypeScriptCodeGenerator:
         if contract_name == 'Enums':
             pass  # Enums doesn't need to import anything
         elif contract_name == 'Structs':
-            lines.append("import * as Enums from './Enums';")
+            lines.append(f"import * as Enums from '{prefix}Enums';")
         elif contract_name == 'Constants':
-            lines.append("import * as Structs from './Structs';")
-            lines.append("import * as Enums from './Enums';")
+            lines.append(f"import * as Structs from '{prefix}Structs';")
+            lines.append(f"import * as Enums from '{prefix}Enums';")
         elif contract_name:
-            lines.append("import * as Structs from './Structs';")
-            lines.append("import * as Enums from './Enums';")
-            lines.append("import * as Constants from './Constants';")
+            lines.append(f"import * as Structs from '{prefix}Structs';")
+            lines.append(f"import * as Enums from '{prefix}Enums';")
+            lines.append(f"import * as Constants from '{prefix}Constants';")
 
         lines.append('')
         return '\n'.join(lines)
@@ -2686,7 +2690,10 @@ class TypeScriptCodeGenerator:
         elif func.visibility == 'internal':
             visibility = 'protected ' if self.current_contract_kind != 'library' else ''
 
-        lines.append(f'{self.indent()}{visibility}{static_prefix}{func.name}({params}): {return_type} {{')
+        # Add override modifier if the Solidity function has override
+        override_prefix = 'override ' if func.is_override else ''
+
+        lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{func.name}({params}): {return_type} {{')
         self.indent_level += 1
 
         # Declare named return parameters at start of function
@@ -2770,7 +2777,11 @@ class TypeScriptCodeGenerator:
         elif main_func.visibility == 'internal':
             visibility = 'protected '
 
-        lines.append(f'{self.indent()}{visibility}{main_func.name}({", ".join(param_strs)}): {return_type} {{')
+        # Check if any variant is an override
+        is_override = any(f.is_override for f in funcs)
+        override_prefix = 'override ' if is_override else ''
+
+        lines.append(f'{self.indent()}{visibility}{override_prefix}{main_func.name}({", ".join(param_strs)}): {return_type} {{')
         self.indent_level += 1
 
         # Declare named return parameters
@@ -3926,6 +3937,12 @@ class TypeScriptCodeGenerator:
         elif needs_number_conversion and isinstance(access.index, BinaryOperation):
             # For expressions like baseSlot + i, wrap in Number()
             index = f'Number({index})'
+        elif isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index):
+            # Fallback: even if base type doesn't require Number conversion,
+            # if the index is a bigint-typed variable, convert it for Record access
+            # This handles nested mappings like teams[addr][uint256Index]
+            if not index.startswith('Number('):
+                index = f'Number({index})'
         # For string/address mapping keys - leave as-is
 
         return f'{base}[{index}]'
@@ -3974,6 +3991,15 @@ class TypeScriptCodeGenerator:
             # For nested index like a[x][y], get the root 'a'
             return self._get_base_var_name(expr.base)
         return None
+
+    def _is_bigint_typed_identifier(self, expr: Expression) -> bool:
+        """Check if expression is an identifier with uint/int type (bigint in TypeScript)."""
+        if isinstance(expr, Identifier):
+            name = expr.name
+            if name in self.var_types:
+                type_name = self.var_types[name].name or ''
+                return type_name.startswith('uint') or type_name.startswith('int')
+        return False
 
     def generate_new_expression(self, expr: NewExpression) -> str:
         """Generate new expression."""
@@ -4187,8 +4213,22 @@ class SolidityToTypeScriptTranspiler:
         if contract_name in self.stubbed_contracts:
             return self._generate_stub(ast, contract_name)
 
+        # Calculate file depth for relative imports
+        # Only count depth if file is within source_dir (directory transpilation)
+        try:
+            resolved_filepath = Path(filepath).resolve()
+            resolved_source_dir = self.source_dir.resolve()
+            if resolved_filepath.is_relative_to(resolved_source_dir):
+                rel_path = resolved_filepath.relative_to(resolved_source_dir)
+                file_depth = len(rel_path.parent.parts)
+            else:
+                # Single file transpilation - output goes to root of output_dir
+                file_depth = 0
+        except (ValueError, TypeError, AttributeError):
+            file_depth = 0
+
         # Generate TypeScript
-        generator = TypeScriptCodeGenerator(self.registry if use_registry else None)
+        generator = TypeScriptCodeGenerator(self.registry if use_registry else None, file_depth=file_depth)
         ts_code = generator.generate(ast)
 
         return ts_code
