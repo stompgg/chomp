@@ -1,13 +1,12 @@
 mod create3;
 mod miner;
 
-use alloy_primitives::Address;
+use crate::create3::{extract_bitmap, format_address, format_b256, parse_address};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// Effect Address Miner - Mine CREATE3 salts for Effect contracts with specific address bitmaps
 #[derive(Parser)]
@@ -149,19 +148,19 @@ fn main() {
             output,
         } => {
             let bitmap_value = parse_bitmap(&bitmap).expect("Invalid bitmap");
-            let createx_addr = Address::from_str(&createx).expect("Invalid CreateX address");
+            let createx_addr = parse_address(&createx).expect("Invalid CreateX address");
 
             println!("Mining salt for {} with bitmap 0x{:03X}...", name, bitmap_value);
             println!("CreateX: {}", createx);
             println!("Expected attempts: ~{}", miner::expected_attempts());
 
-            let result = miner::mine_salt(createx_addr, bitmap_value, None, max_attempts);
+            let result = miner::mine_salt(&createx_addr, bitmap_value, None, max_attempts);
 
             match result {
                 Some(r) => {
                     println!("\nSuccess!");
-                    println!("  Salt:     {:?}", r.salt);
-                    println!("  Address:  {:?}", r.address);
+                    println!("  Salt:     {}", format_b256(&r.salt));
+                    println!("  Address:  {}", format_address(&r.address));
                     println!("  Bitmap:   0x{:03X}", r.bitmap);
                     println!("  Attempts: {}", r.attempts);
 
@@ -170,8 +169,8 @@ fn main() {
                         effects.insert(
                             name,
                             EffectResult {
-                                salt: format!("{:?}", r.salt),
-                                address: format!("{:?}", r.address),
+                                salt: format_b256(&r.salt),
+                                address: format_address(&r.address),
                                 bitmap: format!("0x{:03X}", r.bitmap),
                                 attempts: r.attempts,
                             },
@@ -202,7 +201,7 @@ fn main() {
             let mining_config: MiningConfig =
                 serde_json::from_str(&config_str).expect("Failed to parse config file");
 
-            let createx_addr = Address::from_str(&createx).expect("Invalid CreateX address");
+            let createx_addr = parse_address(&createx).expect("Invalid CreateX address");
 
             let effects: Vec<(String, u16)> = mining_config
                 .effects
@@ -221,7 +220,7 @@ fn main() {
             println!("Max attempts per effect: {}", if max_attempts == 0 { "unlimited".to_string() } else { max_attempts.to_string() });
             println!();
 
-            let results = miner::mine_multiple(createx_addr, effects, max_attempts);
+            let results = miner::mine_multiple(&createx_addr, effects, max_attempts);
 
             let mut output_effects = HashMap::new();
             let mut success_count = 0;
@@ -231,12 +230,12 @@ fn main() {
                 match result {
                     Some(r) => {
                         println!("{}: {} (bitmap: 0x{:03X}, {} attempts)",
-                            name, r.address, r.bitmap, r.attempts);
+                            name, format_address(&r.address), r.bitmap, r.attempts);
                         output_effects.insert(
                             name,
                             EffectResult {
-                                salt: format!("{:?}", r.salt),
-                                address: format!("{:?}", r.address),
+                                salt: format_b256(&r.salt),
+                                address: format_address(&r.address),
                                 bitmap: format!("0x{:03X}", r.bitmap),
                                 attempts: r.attempts,
                             },
@@ -263,9 +262,9 @@ fn main() {
         }
 
         Commands::Verify { address, bitmap } => {
-            let addr = Address::from_str(&address).expect("Invalid address");
+            let addr = parse_address(&address).expect("Invalid address");
             let expected_bitmap = parse_bitmap(&bitmap).expect("Invalid bitmap");
-            let actual_bitmap = create3::extract_bitmap(addr);
+            let actual_bitmap = extract_bitmap(&addr);
 
             println!("Address: {}", address);
             println!("Expected bitmap: 0x{:03X}", expected_bitmap);
@@ -280,23 +279,22 @@ fn main() {
         }
 
         Commands::Compute { salt, createx } => {
-            let salt_bytes = hex::decode(salt.trim_start_matches("0x"))
-                .expect("Invalid salt hex");
+            let salt_hex = salt.trim().trim_start_matches("0x");
+            let salt_bytes = hex::decode(salt_hex).expect("Invalid salt hex");
             if salt_bytes.len() != 32 {
                 eprintln!("Salt must be 32 bytes");
                 std::process::exit(1);
             }
             let mut salt_arr = [0u8; 32];
             salt_arr.copy_from_slice(&salt_bytes);
-            let salt = alloy_primitives::B256::from(salt_arr);
 
-            let createx_addr = Address::from_str(&createx).expect("Invalid CreateX address");
-            let address = create3::compute_create3_address(salt, createx_addr);
-            let bitmap = create3::extract_bitmap(address);
+            let createx_addr = parse_address(&createx).expect("Invalid CreateX address");
+            let address = create3::compute_create3_address(&salt_arr, &createx_addr);
+            let bitmap = extract_bitmap(&address);
 
             println!("Salt:    0x{}", hex::encode(salt_arr));
             println!("CreateX: {}", createx);
-            println!("Address: {:?}", address);
+            println!("Address: {}", format_address(&address));
             println!("Bitmap:  0x{:03X}", bitmap);
         }
 
