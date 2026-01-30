@@ -159,12 +159,6 @@ export class BattleHarness {
   private containerSetup?: ContainerSetupFn;
   private loadedModules: Map<string, any> = new Map();
 
-  // Core singleton instances
-  private engine: any;
-  private typeCalculator: any;
-  private validator: any;
-  private rngOracle: any;
-
   constructor(container?: ContractContainer) {
     this.container = container ?? new ContractContainer();
   }
@@ -186,52 +180,26 @@ export class BattleHarness {
 
   /**
    * Load and register core modules
+   *
+   * Uses the transpiled setupContainer() which registers:
+   * - Zero-dependency contracts as lazy singletons
+   * - Interface aliases (derived from Solidity inheritance)
+   * - Contracts with dependencies as factories
    */
   async loadCoreModules(): Promise<void> {
     if (!this.moduleLoader) {
       throw new Error('Module loader not set. Call setModuleLoader() first.');
     }
 
-    // If setupContainer was provided, use it to register all factories
-    if (this.containerSetup) {
-      this.containerSetup(this.container);
+    if (!this.containerSetup) {
+      throw new Error('Container setup not set. Call setContainerSetup() first.');
     }
 
-    // Load core module files (paths match transpiled output directory structure)
-    const [
-      engineModule,
-      typeCalculatorModule,
-      validatorModule,
-      rngOracleModule,
-    ] = await Promise.all([
-      this.loadModule('Engine'),
-      this.loadModule('types/TypeCalculator'),
-      this.loadModule('DefaultValidator'),
-      this.loadModule('rng/DefaultRandomnessOracle'),
-    ]);
-
-    // Create core singletons (these typically have no dependencies)
-    this.engine = this.createInstance(engineModule);
-    this.typeCalculator = this.createInstance(typeCalculatorModule);
-    this.rngOracle = this.createInstance(rngOracleModule);
-
-    // Register core singletons first (dependencies will resolve to these)
-    this.container.registerSingleton('Engine', this.engine);
-    this.container.registerSingleton('IEngine', this.engine);
-    this.container.registerSingleton('TypeCalculator', this.typeCalculator);
-    this.container.registerSingleton('ITypeCalculator', this.typeCalculator);
-    this.container.registerSingleton('RNGOracle', this.rngOracle);
-    this.container.registerSingleton('IRandomnessOracle', this.rngOracle);
-
-    // Validator depends on engine - resolve via container if factory registered
-    if (this.container.has('DefaultValidator')) {
-      this.validator = this.container.resolve('DefaultValidator');
-    } else {
-      const ValidatorClass = this.getExportedClass(validatorModule);
-      this.validator = new ValidatorClass(this.engine);
-    }
-    this.container.registerSingleton('Validator', this.validator);
-    this.container.registerSingleton('IValidator', this.validator);
+    // setupContainer registers everything:
+    // - Zero-dep contracts as lazy singletons (Engine, TypeCalculator, etc.)
+    // - Interface aliases (IEngine -> Engine, ITypeCalculator -> TypeCalculator, etc.)
+    // - Contracts with deps as factories that resolve dependencies on demand
+    this.containerSetup(this.container);
   }
 
   /**
@@ -264,14 +232,6 @@ export class BattleHarness {
     }
     // Fall back to default export
     return module.default;
-  }
-
-  /**
-   * Create an instance from a module
-   */
-  private createInstance(module: any, ...args: any[]): any {
-    const Class = this.getExportedClass(module);
-    return new Class(...args);
   }
 
   /**
@@ -351,7 +311,7 @@ export class BattleHarness {
    */
   async startBattle(config: BattleConfig): Promise<string> {
     // Ensure core modules are loaded
-    if (!this.engine) {
+    if (!this.container.has('Engine')) {
       await this.loadCoreModules();
     }
 
@@ -386,13 +346,14 @@ export class BattleHarness {
 
     // Call Engine.startBattle() with the configuration
     // The Engine handles all battle initialization
-    const battleKey = this.engine.startBattle({
+    const engine = this.container.resolve('Engine');
+    const battleKey = engine.startBattle({
       p0: config.player0,
       p1: config.player1,
       p0Team: teams[0],
       p1Team: teams[1],
-      validator: this.validator,
-      rngOracle: this.rngOracle,
+      validator: this.container.resolve('DefaultValidator'),
+      rngOracle: this.container.resolve('DefaultRandomnessOracle'),
     });
 
     return battleKey;
@@ -426,8 +387,10 @@ export class BattleHarness {
     // Clear events for this turn
     globalEventStream.clear();
 
+    const engine = this.container.resolve('Engine');
+
     // Set moves for both players via Engine
-    this.engine.setMove(
+    engine.setMove(
       battleKey,
       0,  // player 0
       input.player0.moveIndex,
@@ -435,7 +398,7 @@ export class BattleHarness {
       input.player0.extraData ?? 0n
     );
 
-    this.engine.setMove(
+    engine.setMove(
       battleKey,
       1,  // player 1
       input.player1.moveIndex,
@@ -444,7 +407,7 @@ export class BattleHarness {
     );
 
     // Execute the turn - Engine handles all logic
-    this.engine.execute(battleKey);
+    engine.execute(battleKey);
 
     // Read back the state from Engine
     return this.getBattleState(battleKey);
@@ -454,30 +417,32 @@ export class BattleHarness {
    * Get current battle state from the Engine
    */
   getBattleState(battleKey: string): BattleState {
+    const engine = this.container.resolve('Engine');
+
     // Get battle data from Engine
-    const battleData = this.engine.getBattleData(battleKey);
+    const battleData = engine.getBattleData(battleKey);
 
     // Use Engine's public methods instead of reimplementing unpacking
-    const activeIndices = this.engine.getActiveMonIndexForBattleState(battleKey);
+    const activeIndices = engine.getActiveMonIndexForBattleState(battleKey);
     const activeMonIndex: [number, number] = [
       Number(activeIndices[0]),
       Number(activeIndices[1])
     ];
 
     // Get team sizes from Engine
-    const p0TeamSize = Number(this.engine.getTeamSize(battleKey, 0));
-    const p1TeamSize = Number(this.engine.getTeamSize(battleKey, 1));
+    const p0TeamSize = Number(engine.getTeamSize(battleKey, 0));
+    const p1TeamSize = Number(engine.getTeamSize(battleKey, 1));
 
     // Extract mon states
     const p0States: MonState[] = [];
     const p1States: MonState[] = [];
 
     for (let i = 0; i < p0TeamSize; i++) {
-      p0States.push(this.engine.getMonState(battleKey, 0, i));
+      p0States.push(engine.getMonState(battleKey, 0, i));
     }
 
     for (let i = 0; i < p1TeamSize; i++) {
-      p1States.push(this.engine.getMonState(battleKey, 1, i));
+      p1States.push(engine.getMonState(battleKey, 1, i));
     }
 
     return {
@@ -501,7 +466,7 @@ export class BattleHarness {
    * Get the engine instance
    */
   getEngine(): any {
-    return this.engine;
+    return this.container.resolve('Engine');
   }
 }
 

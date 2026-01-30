@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple, Set
 from enum import Enum, auto
 from pathlib import Path
-from io import StringIO
 
 
 # =============================================================================
@@ -4514,6 +4513,34 @@ class DependencyManifest:
                 graph[name] = deps
         return graph
 
+    def _build_interface_mappings(self) -> Dict[str, List[str]]:
+        """Build a mapping of interface names to their implementations.
+
+        Uses the inherits_from field to find which contracts implement which interfaces.
+        Only includes interfaces (names starting with 'I' followed by uppercase).
+        """
+        interface_to_impls: Dict[str, List[str]] = {}
+
+        for name, metadata in self.contracts.items():
+            for base in metadata.inherits_from:
+                # Check if base looks like an interface (IFoo pattern)
+                if (base.startswith('I') and len(base) > 1 and
+                    base[1].isupper() and not base.startswith('Interface')):
+                    if base not in interface_to_impls:
+                        interface_to_impls[base] = []
+                    interface_to_impls[base].append(name)
+
+        return interface_to_impls
+
+    def _get_single_impl_aliases(self) -> Dict[str, str]:
+        """Get interface aliases for interfaces with exactly one implementation."""
+        mappings = self._build_interface_mappings()
+        return {
+            iface: impls[0]
+            for iface, impls in mappings.items()
+            if len(impls) == 1
+        }
+
     def generate_factories_ts(self) -> str:
         """Generate TypeScript factory functions for dependency injection."""
         lines = [
@@ -4532,14 +4559,32 @@ class DependencyManifest:
             lines.append(f"import {{ {name} }} from '{import_path}';")
 
         lines.append('')
-        lines.append('// Dependency manifest')
-        lines.append('export const dependencyManifest = {')
+        lines.append('// Dependency manifest (all contracts, including zero-dep)')
+        lines.append('export const dependencyManifest: Record<string, string[]> = {')
 
         for name, metadata in sorted(self.contracts.items()):
             deps = [d.type_name for d in metadata.dependencies]
-            if deps:
-                lines.append(f"  '{name}': {deps},")
+            lines.append(f"  '{name}': {deps},")
 
+        lines.append('};')
+
+        # Export list of zero-dependency contracts (core singletons)
+        lines.append('')
+        lines.append('// Core singletons: contracts with no dependencies')
+        zero_dep_contracts = [
+            name for name, metadata in sorted(self.contracts.items())
+            if not metadata.dependencies
+        ]
+        lines.append(f'export const coreSingletons: string[] = {zero_dep_contracts};')
+
+        # Export interface aliases (interfaces with exactly one implementation)
+        lines.append('')
+        lines.append('// Interface aliases: maps interface names to their single implementation')
+        lines.append('// Only includes interfaces with exactly one implementing contract')
+        single_impl_aliases = self._get_single_impl_aliases()
+        lines.append('export const interfaceAliases: Record<string, string> = {')
+        for iface, impl in sorted(single_impl_aliases.items()):
+            lines.append(f"  '{iface}': '{impl}',")
         lines.append('};')
         lines.append('')
 
@@ -4560,6 +4605,16 @@ class DependencyManifest:
         # Generate container setup function
         lines.append('// Container setup')
         lines.append('export function setupContainer(container: ContractContainer): void {')
+        lines.append('  // Register zero-dependency contracts as lazy singletons')
+        for name, metadata in sorted(self.contracts.items()):
+            if not metadata.dependencies:
+                lines.append(f"  container.registerLazySingleton('{name}', [], () => new {name}());")
+        lines.append('')
+        lines.append('  // Register interface aliases (interfaces with single implementation)')
+        for iface, impl in sorted(single_impl_aliases.items()):
+            lines.append(f"  container.registerAlias('{iface}', '{impl}');")
+        lines.append('')
+        lines.append('  // Register contracts with dependencies')
         for name, metadata in sorted(self.contracts.items()):
             if metadata.dependencies:
                 dep_types = ', '.join([f"'{d.type_name}'" for d in metadata.dependencies])

@@ -493,6 +493,7 @@ interface ContainerEntry {
   factory?: ContractFactory;
   dependencies?: string[];
   singleton: boolean;
+  aliasFor?: string;  // If set, this entry delegates to another registration
 }
 
 /**
@@ -567,6 +568,17 @@ export class ContractContainer {
   }
 
   /**
+   * Register an alias that resolves to another registered name.
+   * Useful for mapping interface names to implementations (e.g., 'IEngine' -> 'Engine').
+   */
+  registerAlias(aliasName: string, targetName: string): void {
+    this.entries.set(aliasName, {
+      aliasFor: targetName,
+      singleton: false,
+    });
+  }
+
+  /**
    * Check if a name is registered
    */
   has(name: string): boolean {
@@ -580,6 +592,11 @@ export class ContractContainer {
     const entry = this.entries.get(name);
     if (!entry) {
       throw new Error(`ContractContainer: '${name}' is not registered`);
+    }
+
+    // Handle aliases by delegating to the target
+    if (entry.aliasFor) {
+      return this.resolve<T>(entry.aliasFor);
     }
 
     // Return existing singleton instance
