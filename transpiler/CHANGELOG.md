@@ -360,6 +360,25 @@ The following issues were fixed to improve TypeScript compilation:
     - Tests cover: battle initialization, stat modifications, status effects, type effectiveness, event emission
     - Removed 6 outdated test files (`battle-simulation.ts`, `e2e.ts`, `engine-e2e.ts`, `harness-test.ts`, `run.ts`, `test-utils.ts`)
 
+24. **Bigint as Record Index Type (TS2538)**
+    - JavaScript/TypeScript doesn't allow `bigint` as object index
+    - Add `Number()` conversion for numeric mapping keys (uint/int types)
+    - Example: `this.monStats[Number(monId)]` instead of `this.monStats[monId]`
+    - Fixes `Type 'bigint' cannot be used as an index type` errors
+
+25. **Local Struct Factory Calls**
+    - Structs defined locally in a contract should use factory without `Structs.` prefix
+    - Check `current_local_structs` before adding prefix
+    - Example: `createDefaultBattleSummary()` instead of `Structs.createDefaultBattleSummary()`
+    - Fixes `Property 'createDefaultX' does not exist on type 'typeof Structs'` errors
+
+26. **EnumerableSetLib Initialization**
+    - `AddressSet` and `Uint256Set` are runtime classes, not structs
+    - Use constructor: `new AddressSet()` instead of `Structs.createDefaultAddressSet()`
+    - Fixes missing factory function errors for set types
+
+**Current Status**: All 19 TypeScript errors resolved. Zero compilation errors. 31 tests pass.
+
 ### Fixed Issues (Batch 2)
 
 7. **Array `.length` to BigInt Conversion (TS2322)**
