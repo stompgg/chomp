@@ -3508,11 +3508,27 @@ class TypeScriptCodeGenerator:
         mapping_expr = self.generate_expression(init_value.base)
         key_expr = self.generate_expression(init_value.index)
 
+        # Check if the mapping has numeric keys (uint/int types) - need Number() conversion
+        needs_number_key = False
+        if mapping_var_name and mapping_var_name in self.var_types:
+            type_info = self.var_types[mapping_var_name]
+            if type_info.is_mapping and type_info.key_type:
+                key_type_name = type_info.key_type.name if type_info.key_type.name else ''
+                needs_number_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
+
+        # Wrap bigint keys in Number() for Record access
+        if needs_number_key and not key_expr.startswith('Number('):
+            key_expr = f'Number({key_expr})'
+
         # Get the default value for the struct
         default_value = self._get_ts_default_value(ts_type, decl.type_name)
         if not default_value:
             struct_name = ts_type.replace('Structs.', '') if ts_type.startswith('Structs.') else ts_type
-            default_value = f'Structs.createDefault{struct_name}()'
+            # Check if this is a local struct (defined in current contract)
+            if struct_name in self.current_local_structs:
+                default_value = f'createDefault{struct_name}()'
+            else:
+                default_value = f'Structs.createDefault{struct_name}()'
 
         # Generate two statements:
         # 1. Initialize the mapping entry if it doesn't exist
@@ -3583,10 +3599,19 @@ class TypeScriptCodeGenerator:
             return '""'
         elif ts_type == 'number':
             return '0'
+        elif ts_type == 'AddressSet':
+            # EnumerableSetLib type - use constructor
+            return 'new AddressSet()'
+        elif ts_type == 'Uint256Set':
+            # EnumerableSetLib type - use constructor
+            return 'new Uint256Set()'
         elif ts_type.startswith('Structs.'):
             # Struct type - use the factory function to create a default-initialized instance
             struct_name = ts_type[8:]  # Remove 'Structs.' prefix
             return f'Structs.createDefault{struct_name}()'
+        elif ts_type in self.current_local_structs:
+            # Local struct (defined in current contract) - use factory without Structs. prefix
+            return f'createDefault{ts_type}()'
         # For complex types (objects, arrays), return None - they need different handling
         return None
 
