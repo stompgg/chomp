@@ -12,7 +12,7 @@ Key features:
 - Yul/inline assembly support
 - Interface and contract inheritance
 
-python transpiler/sol2ts.py src/ -o transpiler/ts-output -d src
+python transpiler/sol2ts.py src/
 """
 
 import re
@@ -5753,7 +5753,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Solidity to TypeScript Transpiler')
     parser.add_argument('input', help='Input Solidity file or directory')
-    parser.add_argument('-o', '--output', default='./ts-output', help='Output directory')
+    parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
     parser.add_argument('-d', '--discover', action='append', metavar='DIR',
                         help='Directory to scan for type discovery (can be specified multiple times)')
@@ -5769,7 +5769,13 @@ def main():
     input_path = Path(args.input)
 
     # Collect discovery directories and stubbed contracts
-    discovery_dirs = args.discover or []
+    # Default to input directory if no discovery dirs specified
+    if args.discover:
+        discovery_dirs = args.discover
+    elif input_path.is_dir():
+        discovery_dirs = [str(input_path)]
+    else:
+        discovery_dirs = [str(input_path.parent)]
     stubbed_contracts = args.stub or []
     emit_metadata = args.emit_metadata or args.metadata_only
 
