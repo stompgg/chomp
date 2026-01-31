@@ -8,6 +8,10 @@
 import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, fromHex, hexToBigInt, numberToHex } from 'viem';
 import { createHash } from 'crypto';
 
+// Note: Core types (Contract, Storage, EventStream) are defined in this file.
+// Runtime replacement modules (Ownable, ECDSA, etc.) should import Contract from ./base
+// to avoid circular dependencies. The ./base module has a minimal Contract implementation.
+
 // =============================================================================
 // HASH FUNCTIONS
 // =============================================================================
@@ -407,24 +411,24 @@ export const globalEventStream = new EventStream();
 export abstract class Contract {
   protected _storage: Storage = new Storage();
   protected _eventStream: EventStream = globalEventStream;
-  protected _msg = {
+  public _msg = {
     sender: ADDRESS_ZERO,
     value: 0n,
     data: '0x' as `0x${string}`,
   };
-  protected _block = {
+  public _block = {
     timestamp: BigInt(Math.floor(Date.now() / 1000)),
     number: 0n,
   };
-  protected _tx = {
+  public _tx = {
     origin: ADDRESS_ZERO,
   };
 
   /**
    * Contract address for address(this) pattern
-   * Initialized to a unique address based on instance creation
+   * Can be set during testing to simulate deployed addresses
    */
-  readonly _contractAddress: string = ADDRESS_ZERO;
+  public _contractAddress: string = ADDRESS_ZERO;
 
   /**
    * Set the caller for the next call
@@ -720,6 +724,7 @@ export const globalContainer = new ContractContainer();
 // See transpiler/runtime-replacements.json for configuration.
 
 export { Ownable } from './Ownable';
+export { EIP712 } from './EIP712';
 export {
   EnumerableSetLib,
   AddressSet,
