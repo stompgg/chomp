@@ -2313,7 +2313,7 @@ class TypeRegistry:
 class TypeScriptCodeGenerator:
     """Generates TypeScript code from the AST."""
 
-    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = '', runtime_replacement_classes: Optional[Set[str]] = None, runtime_replacement_mixins: Optional[Dict[str, str]] = None):
+    def __init__(self, registry: Optional[TypeRegistry] = None, file_depth: int = 0, current_file_path: str = '', runtime_replacement_classes: Optional[Set[str]] = None, runtime_replacement_mixins: Optional[Dict[str, str]] = None, runtime_replacement_methods: Optional[Dict[str, Set[str]]] = None):
         self.indent_level = 0
         self.indent_str = '  '
         self.file_depth = file_depth  # Depth of output file for relative imports
@@ -2388,6 +2388,8 @@ class TypeScriptCodeGenerator:
         self.runtime_replacement_classes: Set[str] = runtime_replacement_classes or set()
         # Runtime replacement mixins (class name -> mixin code for secondary inheritance)
         self.runtime_replacement_mixins: Dict[str, str] = runtime_replacement_mixins or {}
+        # Runtime replacement methods (class name -> set of method names for override detection)
+        self.runtime_replacement_methods: Dict[str, Set[str]] = runtime_replacement_methods or {}
 
     def indent(self) -> str:
         return self.indent_str * self.indent_level
@@ -2836,6 +2838,11 @@ class TypeScriptCodeGenerator:
                         if base_class in self.known_contract_vars:
                             self.current_state_vars.update(self.known_contract_vars[base_class])
 
+                # Also check runtime replacement classes for inherited methods (for override detection)
+                for base_class in base_classes:
+                    if base_class in self.runtime_replacement_methods:
+                        self.inherited_methods.update(self.runtime_replacement_methods[base_class])
+
                 # Add method return types from ALL base classes for ABI encoding inference
                 for base_class in base_classes:
                     if base_class in self.known_method_return_types:
@@ -3050,12 +3057,15 @@ class TypeScriptCodeGenerator:
         elif func.visibility == 'internal':
             visibility = 'protected ' if self.current_contract_kind != 'library' else ''
 
-        # Add override modifier only if:
-        # 1. The Solidity function has override keyword AND
-        # 2. The method actually exists in an inherited base class (not just interfaces)
-        # This is because TypeScript's 'override' only applies to class inheritance,
-        # not interface implementation
-        should_override = func.is_override and func.name in self.inherited_methods
+        # Add override modifier if:
+        # 1. The Solidity function has override keyword AND the method exists in inherited classes, OR
+        # 2. The method overrides a runtime replacement base class method (for TypeScript strict mode)
+        # This is needed because TypeScript's noImplicitOverride requires the override keyword
+        should_override = (func.is_override and func.name in self.inherited_methods) or \
+                         (func.name in self.inherited_methods and any(
+                             base in self.runtime_replacement_methods and func.name in self.runtime_replacement_methods[base]
+                             for base in self.current_base_classes
+                         ))
         override_prefix = 'override ' if should_override else ''
 
         lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{func.name}({params}): {return_type} {{')
@@ -5147,6 +5157,7 @@ class SolidityToTypeScriptTranspiler:
         self.runtime_replacements: Dict[str, dict] = {}
         self.runtime_replacement_classes: Set[str] = set()  # Set of class names that are runtime replacements
         self.runtime_replacement_mixins: Dict[str, str] = {}  # Class name -> mixin code for secondary inheritance
+        self.runtime_replacement_methods: Dict[str, Set[str]] = {}  # Class name -> set of method names
         self._load_runtime_replacements()
 
         # Run type discovery on specified directories
@@ -5177,6 +5188,11 @@ class SolidityToTypeScriptTranspiler:
                         mixin_code = interface.get('mixin', '')
                         if class_name and mixin_code:
                             self.runtime_replacement_mixins[class_name] = mixin_code
+                        # Extract method names for override detection
+                        methods = interface.get('methods', [])
+                        if class_name and methods:
+                            method_names = set(m.get('name', '') for m in methods if m.get('name'))
+                            self.runtime_replacement_methods[class_name] = method_names
                 print(f"Loaded {len(self.runtime_replacements)} runtime replacements, {len(self.runtime_replacement_mixins)} mixins")
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Warning: Failed to load runtime-replacements.json: {e}")
@@ -5299,7 +5315,8 @@ class SolidityToTypeScriptTranspiler:
             file_depth=file_depth,
             current_file_path=current_file_path,
             runtime_replacement_classes=self.runtime_replacement_classes,
-            runtime_replacement_mixins=self.runtime_replacement_mixins
+            runtime_replacement_mixins=self.runtime_replacement_mixins,
+            runtime_replacement_methods=self.runtime_replacement_methods
         )
         ts_code = generator.generate(ast)
 
@@ -5685,7 +5702,7 @@ class DependencyManifest:
             '// Auto-generated by sol2ts transpiler',
             '// Dependency injection configuration',
             '',
-            "import { ContractContainer } from '../runtime';",
+            "import { ContractContainer } from './runtime';",
             ''
         ]
 
