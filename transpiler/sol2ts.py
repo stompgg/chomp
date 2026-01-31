@@ -2981,9 +2981,10 @@ class TypeScriptCodeGenerator:
         if func.body:
             # For base classes with optional params, wrap body in conditional
             if is_base_class and func.parameters:
-                # Get first param name for the condition
-                first_param = func.parameters[0].name
-                lines.append(f'{self.indent()}if ({first_param} !== undefined) {{')
+                # Check all optional parameters to satisfy TypeScript strict mode
+                param_checks = [f'{p.name} !== undefined' for p in func.parameters if p.name]
+                condition = ' && '.join(param_checks) if param_checks else 'true'
+                lines.append(f'{self.indent()}if ({condition}) {{')
                 self.indent_level += 1
                 for stmt in func.body.statements:
                     lines.append(self.generate_statement(stmt))

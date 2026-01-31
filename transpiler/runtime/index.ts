@@ -5,8 +5,7 @@
  * including storage simulation, bit manipulation, and type utilities.
  */
 
-import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, fromHex, hexToBigInt, numberToHex } from 'viem';
-import { createHash } from 'crypto';
+import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, hexToBigInt, sha256 as viemSha256 } from 'viem';
 
 // Note: Core types (Contract, Storage, EventStream) are defined in this file.
 // Runtime replacement modules (Ownable, ECDSA, etc.) should import Contract from ./base
@@ -18,13 +17,12 @@ import { createHash } from 'crypto';
 
 /**
  * SHA-256 hash function (returns hex string with 0x prefix)
+ * Uses viem's sha256 which works in both Node.js and browsers
  */
 export function sha256(data: `0x${string}` | string): `0x${string}` {
-  // Remove 0x prefix if present for input
-  const input = data.startsWith('0x') ? data.slice(2) : data;
-  const buffer = Buffer.from(input, 'hex');
-  const hash = createHash('sha256').update(buffer).digest('hex');
-  return `0x${hash}` as `0x${string}`;
+  // Ensure input has 0x prefix for viem
+  const hexData = data.startsWith('0x') ? data as `0x${string}` : `0x${data}` as `0x${string}`;
+  return viemSha256(hexData);
 }
 
 /**
