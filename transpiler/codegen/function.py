@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .type_converter import TypeConverter
 
 from .base import BaseGenerator
+from .context import RESERVED_JS_METHODS
 from ..parser.ast_nodes import (
     FunctionDefinition,
     VariableDeclaration,
@@ -167,7 +168,12 @@ class FunctionGenerator(BaseGenerator):
                          ))
         override_prefix = 'override ' if should_override else ''
 
-        lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{func.name}({params}): {return_type} {{')
+        # Rename reserved JS methods that conflict with Object.prototype (for static methods)
+        method_name = func.name
+        if static_prefix and method_name in RESERVED_JS_METHODS:
+            method_name = RESERVED_JS_METHODS[method_name]
+
+        lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{method_name}({params}): {return_type} {{')
         self.indent_level += 1
 
         # Declare named return parameters at start of function
@@ -256,7 +262,12 @@ class FunctionGenerator(BaseGenerator):
         is_override = any(f.is_override for f in funcs) and main_func.name in self.inherited_methods
         override_prefix = 'override ' if is_override else ''
 
-        lines.append(f'{self.indent()}{visibility}{override_prefix}{main_func.name}({", ".join(param_strs)}): {return_type} {{')
+        # Rename reserved JS methods that conflict with Object.prototype (for static methods in libraries)
+        method_name = main_func.name
+        if self._ctx.current_contract_kind == 'library' and method_name in RESERVED_JS_METHODS:
+            method_name = RESERVED_JS_METHODS[method_name]
+
+        lines.append(f'{self.indent()}{visibility}{override_prefix}{method_name}({", ".join(param_strs)}): {return_type} {{')
         self.indent_level += 1
 
         # Declare named return parameters

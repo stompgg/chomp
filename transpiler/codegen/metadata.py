@@ -124,6 +124,16 @@ class FactoryGenerator:
         lines.extend(imports)
         lines.append("")
 
+        # Generate contracts registry (for external use)
+        contracts_registry = self._generate_contracts_registry()
+        lines.extend(contracts_registry)
+        lines.append("")
+
+        # Generate interface aliases map (for external use)
+        aliases_map = self._generate_interface_aliases_map()
+        lines.extend(aliases_map)
+        lines.append("")
+
         # Generate the setupContainer function
         lines.append("/**")
         lines.append(" * Register all transpiled contracts with the container.")
@@ -144,12 +154,15 @@ class FactoryGenerator:
         for name, meta in sorted(self.metadata.contracts.items()):
             if meta.kind == 'interface':
                 continue
+            if meta.is_abstract:
+                # Abstract contracts can't be instantiated directly
+                continue
+            if self._should_skip(name):
+                # Skip contracts in the skip list
+                continue
             if meta.kind == 'library':
                 # Libraries are static, register as singletons
                 lines.append(f"  container.registerSingleton('{name}', {name});")
-            elif meta.is_abstract:
-                # Abstract contracts can't be instantiated directly
-                continue
             else:
                 # Regular contracts - register with factory
                 registration = self._generate_registration(name, meta)
@@ -160,17 +173,25 @@ class FactoryGenerator:
 
         return '\n'.join(lines)
 
+    def _should_skip(self, name: str) -> bool:
+        """Check if a contract should be skipped based on the skip list."""
+        if self.resolver and name in self.resolver.skip_contracts:
+            return True
+        return False
+
     def _generate_imports(self) -> List[str]:
         """Generate import statements for all contracts."""
         imports = []
 
-        # Group by file path, excluding abstract contracts and interfaces
+        # Group by file path, excluding abstract contracts, interfaces, and skipped contracts
         by_path: Dict[str, List[str]] = {}
         for name, meta in self.metadata.contracts.items():
             if meta.kind == 'interface':
                 continue  # Don't import interfaces
             if meta.is_abstract:
                 continue  # Don't import abstract contracts (can't instantiate)
+            if self._should_skip(name):
+                continue  # Don't import skipped contracts
             path = meta.file_path
             if path not in by_path:
                 by_path[path] = []
@@ -289,21 +310,94 @@ class FactoryGenerator:
             # Skip non-contract params (they need to be provided separately)
         return ', '.join(args)
 
+    def _generate_contracts_registry(self) -> List[str]:
+        """Generate the contracts registry export."""
+        lines = [
+            "// Contract registry: maps contract names to their class and dependencies",
+            "export const contracts: Record<string, { cls: new (...args: any[]) => any; deps: string[] }> = {"
+        ]
+
+        for name, meta in sorted(self.metadata.contracts.items()):
+            if meta.kind == 'interface' or meta.is_abstract:
+                continue
+            if self._should_skip(name):
+                continue
+
+            # Get resolved dependencies
+            deps = self._get_resolved_deps(name, meta)
+            deps_list = [resolved for _, _, resolved, is_self in deps if not is_self and resolved]
+            deps_str = ', '.join(f"'{d}'" for d in deps_list)
+
+            lines.append(f"  {name}: {{ cls: {name}, deps: [{deps_str}] }},")
+
+        lines.append("};")
+        return lines
+
+    def _generate_interface_aliases_map(self) -> List[str]:
+        """Generate the interface aliases map export."""
+        lines = [
+            "// Interface aliases: maps interface names to their implementation",
+            "export const interfaceAliases: Record<string, string> = {"
+        ]
+
+        for interface_name in sorted(self.metadata.interfaces):
+            impl = self._find_implementation(interface_name)
+            if impl:
+                lines.append(f"  {interface_name}: '{impl}',")
+
+        lines.append("};")
+        return lines
+
+    def _get_resolved_deps(
+        self, contract_name: str, meta: ContractMetadata
+    ) -> List[Tuple[str, str, str, bool]]:
+        """Get resolved dependencies for a contract."""
+        deps = []
+        for idx, (param_name, param_type) in enumerate(meta.constructor_params):
+            is_interface = param_type in self.metadata.interfaces
+            is_contract = param_type in self.metadata.contracts
+
+            if is_contract or is_interface:
+                resolved_name = param_type
+                is_self = False
+
+                if self.resolver and is_interface:
+                    resolved_dep = self.resolver.resolve(
+                        contract_name=contract_name,
+                        param_name=param_name,
+                        type_name=param_type,
+                        is_interface=True,
+                        is_value_type=False,
+                        param_index=idx,
+                    )
+                    if resolved_dep.resolved_as:
+                        if resolved_dep.resolved_as == "@self":
+                            is_self = True
+                            resolved_name = None
+                        elif isinstance(resolved_dep.resolved_as, list):
+                            resolved_name = resolved_dep.resolved_as[0] if resolved_dep.resolved_as else param_type
+                        else:
+                            resolved_name = resolved_dep.resolved_as
+
+                deps.append((param_name, param_type, resolved_name, is_self))
+
+        return deps
+
     def _find_implementation(self, interface_name: str) -> Optional[str]:
-        """Find a non-abstract contract that implements an interface."""
+        """Find a non-abstract, non-skipped contract that implements an interface."""
         # Simple heuristic: look for contract with same name minus 'I' prefix
         if interface_name.startswith('I') and len(interface_name) > 1:
             impl_name = interface_name[1:]
             if impl_name in self.metadata.contracts:
                 meta = self.metadata.contracts[impl_name]
-                # Only return if it's not abstract
-                if not meta.is_abstract and meta.kind == 'contract':
+                # Only return if it's not abstract and not skipped
+                if not meta.is_abstract and meta.kind == 'contract' and not self._should_skip(impl_name):
                     return impl_name
 
         # Look for contracts that inherit from this interface
         for name, meta in self.metadata.contracts.items():
             if interface_name in meta.base_contracts:
-                if not meta.is_abstract and meta.kind == 'contract':
+                if not meta.is_abstract and meta.kind == 'contract' and not self._should_skip(name):
                     return name
 
         return None

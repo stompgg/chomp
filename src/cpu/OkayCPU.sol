@@ -15,11 +15,6 @@ contract OkayCPU is CPU {
     uint256 public constant SMART_SELECT_SHORT_CIRCUIT_DENOM = 6;
     ITypeCalculator public immutable TYPE_CALC;
 
-    event ValidMoves(bytes32 battleKey, RevealedMove[] noOp, RevealedMove[] moves, RevealedMove[] switches);
-    event SmartSelect(bytes32 battleKey, uint256 moveIndex);
-    event AttackSelect(bytes32 battleKey, uint256 moveIndex);
-    event SelfOrOtherSelect(bytes32 battleKey, uint256 moveIndex);
-
     constructor(uint256 numMoves, IEngine engine, ICPURNG rng, ITypeCalculator typeCalc) CPU(numMoves, engine, rng) {
         TYPE_CALC = typeCalc;
     }
@@ -33,8 +28,6 @@ contract OkayCPU is CPU {
         returns (uint128 moveIndex, uint240 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) = calculateValidMoves(battleKey, playerIndex);
-
-        emit ValidMoves(battleKey, noOp, moves, switches);
 
         // Merge all three arrays into one
         uint256 totalChoices = noOp.length + moves.length + switches.length;
@@ -121,7 +114,6 @@ contract OkayCPU is CPU {
                         uint128[] memory typeAdvantagedMoves = _getTypeAdvantageAttacks(battleKey, opponentIndex, opponentType1, opponentType2, moves, physicalOrSpecialMoves);
                         if (typeAdvantagedMoves.length > 0) {
                             uint256 rngIndex = _getRNG(battleKey) % typeAdvantagedMoves.length;
-                            emit AttackSelect(battleKey, moves[typeAdvantagedMoves[rngIndex]].moveIndex);
                             return (moves[typeAdvantagedMoves[rngIndex]].moveIndex, moves[typeAdvantagedMoves[rngIndex]].extraData);
                         }
                     }
@@ -133,7 +125,6 @@ contract OkayCPU is CPU {
                     uint128[] memory selfOrOtherMoves = _filterMoves(battleKey, playerIndex, moves, moveClasses);
                     if (selfOrOtherMoves.length > 0) {
                         uint256 rngIndex = _getRNG(battleKey) % selfOrOtherMoves.length;
-                        emit SelfOrOtherSelect(battleKey, moves[selfOrOtherMoves[rngIndex]].moveIndex);
                         return (moves[selfOrOtherMoves[rngIndex]].moveIndex, moves[selfOrOtherMoves[rngIndex]].extraData);
                     }
                 }
@@ -153,20 +144,16 @@ contract OkayCPU is CPU {
         if (rngIndex % adjustedTotalMovesDenom == 0) {
             uint256 switchOrNoOp = _getRNG(battleKey) % 2;
             if (switchOrNoOp == 0 && noOp.length > 0) {
-                emit SmartSelect(battleKey, noOp[0].moveIndex);
                 return (noOp[0].moveIndex, noOp[0].extraData);
             } else if (switches.length > 0) {
                 uint256 rngSwitchIndex = _getRNG(battleKey) % switches.length;
-                emit SmartSelect(battleKey, switches[rngSwitchIndex].moveIndex);
                 return (switches[rngSwitchIndex].moveIndex, switches[rngSwitchIndex].extraData);
             }
         } else if (moves.length > 0) {
             uint256 moveIndex = _getRNG(battleKey) % moves.length;
-            emit SmartSelect(battleKey, moves[moveIndex].moveIndex);
             return (moves[moveIndex].moveIndex, moves[moveIndex].extraData);
         }
         // We should never get here, but`
-        emit SmartSelect(battleKey, noOp[0].moveIndex);
         return (noOp[0].moveIndex, noOp[0].extraData);
     }
 

@@ -58,6 +58,8 @@ contract Engine is IEngine, MappingAllocator {
         uint240 extraData,
         int32 staminaCost
     );
+    event P0MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData);
+    event P1MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData);
     event DamageDeal(
         bytes32 indexed battleKey,
         uint256 playerIndex,
@@ -845,9 +847,11 @@ contract Engine is IEngine, MappingAllocator {
         if (playerIndex == 0) {
             config.p0Move = newMove;
             config.p0Salt = salt;
+            emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8));
         } else {
             config.p1Move = newMove;
             config.p1Salt = salt;
+            emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8));
         }
     }
 

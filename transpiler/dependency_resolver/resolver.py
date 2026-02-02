@@ -110,10 +110,11 @@ class DependencyResolver:
             known_classes: Set of known concrete class names
         """
         self.overrides: Dict[str, Dict[str, Union[str, List[str]]]] = {}
+        self.skip_contracts: Set[str] = set()
         self.known_classes = known_classes or set()
         self.unresolved: List[UnresolvedDependency] = []
 
-        # Load manual overrides
+        # Load manual overrides and skip list
         if overrides_path:
             self._load_overrides(overrides_path)
 
@@ -129,11 +130,12 @@ class DependencyResolver:
         self.name_inferrer = NameInferrer(self.known_classes)
 
     def _load_overrides(self, path: str) -> None:
-        """Load manual overrides from JSON file."""
+        """Load manual overrides and skip list from JSON file."""
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
                 self.overrides = data.get('overrides', {})
+                self.skip_contracts = set(data.get('skipContracts', []))
         except FileNotFoundError:
             pass  # No overrides file is fine
         except json.JSONDecodeError as e:

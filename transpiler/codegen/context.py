@@ -12,6 +12,19 @@ from ..parser.ast_nodes import TypeName
 from ..type_system import TypeRegistry
 
 
+# Reserved JavaScript method names that conflict with Object.prototype or other built-ins
+# These need to be renamed when they appear as static methods in libraries
+RESERVED_JS_METHODS: Dict[str, str] = {
+    'toString': 'toStr',
+    'valueOf': 'valueOf_',
+    'hasOwnProperty': 'hasOwnProperty_',
+    'isPrototypeOf': 'isPrototypeOf_',
+    'propertyIsEnumerable': 'propertyIsEnumerable_',
+    'toLocaleString': 'toLocaleStr',
+    'constructor': 'constructor_',
+}
+
+
 @dataclass
 class CodeGenerationContext:
     """

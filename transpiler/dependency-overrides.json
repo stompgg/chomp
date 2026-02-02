@@ -1,11 +1,17 @@
 {
   "$schema": "./dependency-overrides.schema.json",
-  "$comment": "Manual overrides for interface -> concrete class resolution. Used when parameter names or deploy scripts don't provide enough information to infer the concrete implementation.",
+  "$comment": "Configuration for dependency resolution and factory generation.",
   "overrides": {
     "DefaultRuleset": {
       "_effects": ["StaminaRegen"]
     }
   },
+  "skipContracts": [
+    "GachaTeamRegistry",
+    "GachaRegistry",
+    "DefaultTeamRegistry",
+    "LookupTeamRegistry"
+  ],
   "$documentation": {
     "$comment": "The following interfaces are handled automatically by the resolver:",
     "selfReferential": {
@@ -19,6 +25,7 @@
     },
     "inferred": {
       "IEffect parameters": "Inferred from parameter names like _FROSTBITE_STATUS -> FrostbiteStatus"
-    }
+    },
+    "skipContracts": "Contracts listed here are excluded from factories.ts imports and registrations. Use for contracts not needed for client interop."
   }
 }

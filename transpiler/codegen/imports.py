@@ -108,13 +108,26 @@ class ImportGenerator:
         return imports
 
     def _generate_base_contract_imports(self, prefix: str) -> List[str]:
-        """Generate import statements for base contracts."""
+        """Generate import statements for base contracts and their inherited structs."""
         lines = []
         for base_contract in sorted(self._ctx.base_contracts_needed):
             if base_contract in self._ctx.runtime_replacement_classes:
                 continue  # Already imported from runtime
             import_path = self._get_relative_import_path(base_contract)
-            lines.append(f"import {{ {base_contract} }} from '{import_path}';")
+
+            # Collect any structs from this base contract that we need
+            inherited_structs = [
+                struct_name
+                for struct_name, defining_contract in self._ctx.current_inherited_structs.items()
+                if defining_contract == base_contract
+            ]
+
+            if inherited_structs:
+                # Import both the base contract and its structs
+                imports = [base_contract] + sorted(inherited_structs)
+                lines.append(f"import {{ {', '.join(imports)} }} from '{import_path}';")
+            else:
+                lines.append(f"import {{ {base_contract} }} from '{import_path}';")
         return lines
 
     def _generate_library_imports(
