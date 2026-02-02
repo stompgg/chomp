@@ -72,7 +72,7 @@ class StatementGenerator(BaseGenerator):
         super().__init__(ctx)
         self._expr = expr_generator
         self._type_converter = type_converter
-        self._yul_transpiler = YulTranspiler()
+        self._yul_transpiler = YulTranspiler(known_constants=ctx.known_constants)
 
     # =========================================================================
     # MAIN DISPATCH

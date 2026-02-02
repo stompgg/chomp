@@ -48,6 +48,14 @@ class YulTranspiler:
     - mstore/mload → memory operations (usually no-op for simulation)
     """
 
+    def __init__(self, known_constants: set = None):
+        """Initialize with optional set of known constant names.
+
+        Args:
+            known_constants: Set of constant names that should be prefixed with 'Constants.'
+        """
+        self._known_constants = known_constants or set()
+
     def transpile(self, yul_code: str) -> str:
         """
         Transpile a Yul assembly block to TypeScript.
@@ -285,9 +293,8 @@ class YulTranspiler:
         if expr.isdigit():
             return f'{expr}n'
 
-        # Check if identifier is a constant (ALL_CAPS_WITH_UNDERSCORES pattern)
-        # Constants should be prefixed with Constants.
-        if expr.isupper() or (expr.replace('_', '').isupper() and '_' in expr):
+        # Check if identifier is a known constant from type registry
+        if expr in self._known_constants:
             return f'Constants.{expr}'
 
         # Return as-is (identifier)
