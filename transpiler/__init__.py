@@ -8,29 +8,25 @@ Module Structure:
 - lexer/: Tokenization (TokenType, Token, Lexer)
 - parser/: AST nodes and parsing (Parser, all AST node types)
 - types/: Type registry and mappings (TypeRegistry, type conversion utilities)
-- codegen/: Code generation helpers (YulTranspiler, AbiTypeInferer, CodeGenerationContext)
-- sol2ts.py: Main transpiler (backward compatible monolithic version)
+- codegen/: Code generation (TypeScriptCodeGenerator + specialized generators)
+- sol2ts.py: Main transpiler entry point
 
 Usage:
-    # Using the new modular structure:
+    from transpiler import SolidityToTypeScriptTranspiler
+
+    # Or import individual components:
     from transpiler.lexer import Lexer
     from transpiler.parser import Parser
     from transpiler.types import TypeRegistry
-
-    # Or using the legacy monolithic structure:
-    from transpiler.sol2ts import SolidityToTypeScriptTranspiler
-
-    # Both approaches work and produce identical output.
+    from transpiler.codegen import TypeScriptCodeGenerator
 """
 
 # Re-export main classes for convenience
-from .sol2ts import (
-    SolidityToTypeScriptTranspiler,
-    TypeScriptCodeGenerator,
-    TypeRegistry,
-    Lexer,
-    Parser,
-)
+from .sol2ts import SolidityToTypeScriptTranspiler
+from .lexer import Lexer
+from .parser import Parser
+from .types import TypeRegistry
+from .codegen import TypeScriptCodeGenerator
 
 __all__ = [
     'SolidityToTypeScriptTranspiler',

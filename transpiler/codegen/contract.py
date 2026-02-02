@@ -220,6 +220,7 @@ class ContractGenerator(BaseGenerator):
                 ret_type = func.return_parameters[0].type_name
                 if ret_type and ret_type.name:
                     method_return_types[func.name] = ret_type.name
+        self._ctx.current_method_return_types = method_return_types
 
     def _compute_extends_clause(self, contract: ContractDefinition) -> str:
         """Compute the extends clause for a contract class."""

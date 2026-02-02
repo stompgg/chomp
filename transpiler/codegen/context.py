@@ -41,6 +41,7 @@ class CodeGenerationContext:
     current_methods: Set[str] = field(default_factory=set)
     current_local_vars: Set[str] = field(default_factory=set)
     var_types: Dict[str, TypeName] = field(default_factory=dict)
+    current_method_return_types: Dict[str, str] = field(default_factory=dict)
 
     # Struct context
     current_local_structs: Set[str] = field(default_factory=set)
@@ -108,6 +109,7 @@ class CodeGenerationContext:
         self.current_methods = set()
         self.current_local_vars = set()
         self.var_types = {}
+        self.current_method_return_types = {}
         self.current_local_structs = set()
         self.current_inherited_structs = {}
 

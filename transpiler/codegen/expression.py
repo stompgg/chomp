@@ -717,6 +717,18 @@ class ExpressionGenerator(BaseGenerator):
                     return f"{{type: '{func_name}'}}"
                 if func_name in ('keccak256', 'blockhash', 'sha256'):
                     return "{type: 'bytes32'}"
+                # Check method return types from current contract
+                if func_name in self._ctx.current_method_return_types:
+                    return_type = self._ctx.current_method_return_types[func_name]
+                    return self._solidity_type_to_abi_type(return_type)
+            # Check for this.method() pattern
+            elif isinstance(arg.function, MemberAccess):
+                if isinstance(arg.function.expression, Identifier):
+                    if arg.function.expression.name == 'this':
+                        method_name = arg.function.member
+                        if method_name in self._ctx.current_method_return_types:
+                            return_type = self._ctx.current_method_return_types[method_name]
+                            return self._solidity_type_to_abi_type(return_type)
 
         if isinstance(arg, TypeCast):
             type_name = arg.type_name.name
