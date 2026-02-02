@@ -2864,6 +2864,12 @@ class TypeScriptCodeGenerator:
         for var in contract.state_variables:
             lines.append(self.generate_state_variable(var))
 
+        # Mutator methods for testing state manipulation
+        for var in contract.state_variables:
+            mutators = self.generate_mutator_methods(var)
+            if mutators:
+                lines.append(mutators)
+
         # Constructor
         if contract.constructor:
             lines.append(self.generate_constructor(contract.constructor))
@@ -2935,6 +2941,113 @@ class TypeScriptCodeGenerator:
 
         default_val = self.generate_expression(var.initial_value) if var.initial_value else self.default_value(ts_type)
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
+
+    def generate_mutator_methods(self, var: StateVariableDeclaration) -> str:
+        """Generate __mutate* method(s) for testing state mutation.
+
+        These methods allow direct mutation of state variables for testing purposes,
+        bypassing any access control or validation logic.
+        """
+        # Skip constant/immutable - they can't be mutated
+        if var.mutability in ('constant', 'immutable'):
+            return ''
+
+        lines = []
+        ts_type = self.solidity_type_to_ts(var.type_name)
+        base_name = f'__mutate{var.name[0].upper()}{var.name[1:]}'
+        body_indent = self.indent_str * (self.indent_level + 1)
+
+        if var.type_name.is_mapping:
+            # Generate key-by-key setter for mappings
+            lines.extend(self._generate_mapping_mutator(var, base_name))
+        elif var.type_name.is_array:
+            # Generate index setter + push + pop for arrays
+            lines.extend(self._generate_array_mutator(var, base_name))
+        else:
+            # Simple value replacement
+            lines.extend([
+                f'{self.indent()}{base_name}(value: {ts_type}): void {{',
+                f'{body_indent}this.{var.name} = value;',
+                f'{self.indent()}}}',
+                ''
+            ])
+
+        return '\n'.join(lines)
+
+    def _generate_mapping_mutator(self, var: StateVariableDeclaration, base_name: str) -> List[str]:
+        """Generate mutator for mapping types, handling nested mappings."""
+        lines = []
+        body_indent = self.indent_str * (self.indent_level + 1)
+
+        # Build up the key parameters and access path
+        key_params = []
+        access_path = f'this.{var.name}'
+        null_coalesce_lines = []
+
+        current_type = var.type_name
+        key_index = 1
+
+        while current_type.is_mapping:
+            key_ts_type = self.solidity_type_to_ts(current_type.key_type)
+            key_name = f'key{key_index}'
+            key_params.append(f'{key_name}: {key_ts_type}')
+
+            # Add null coalescing for intermediate levels (not the final value)
+            if current_type.value_type.is_mapping:
+                null_coalesce_lines.append(
+                    f'{body_indent}{access_path}[{key_name}] ??= {{}};'
+                )
+
+            access_path = f'{access_path}[{key_name}]'
+            current_type = current_type.value_type
+            key_index += 1
+
+        # The final value type
+        value_ts_type = self.solidity_type_to_ts(current_type)
+        key_params.append(f'value: {value_ts_type}')
+
+        # Build the method
+        params_str = ', '.join(key_params)
+        lines.append(f'{self.indent()}{base_name}({params_str}): void {{')
+        lines.extend(null_coalesce_lines)
+        lines.append(f'{body_indent}{access_path} = value;')
+        lines.append(f'{self.indent()}}}')
+        lines.append('')
+
+        return lines
+
+    def _generate_array_mutator(self, var: StateVariableDeclaration, base_name: str) -> List[str]:
+        """Generate mutator for array types: at(), push(), pop()."""
+        lines = []
+        body_indent = self.indent_str * (self.indent_level + 1)
+
+        # Get element type
+        element_type = self.solidity_type_to_ts(var.type_name)
+        # Remove the [] suffix to get element type
+        if element_type.endswith('[]'):
+            element_type = element_type[:-2]
+        else:
+            element_type = 'any'
+
+        # __mutateXAt(index, value)
+        lines.append(f'{self.indent()}{base_name}At(index: number, value: {element_type}): void {{')
+        lines.append(f'{body_indent}this.{var.name}[index] = value;')
+        lines.append(f'{self.indent()}}}')
+        lines.append('')
+
+        # __mutateXPush(value)
+        lines.append(f'{self.indent()}{base_name}Push(value: {element_type}): void {{')
+        lines.append(f'{body_indent}this.{var.name}.push(value);')
+        lines.append(f'{self.indent()}}}')
+        lines.append('')
+
+        # __mutateXPop()
+        lines.append(f'{self.indent()}{base_name}Pop(): void {{')
+        lines.append(f'{body_indent}this.{var.name}.pop();')
+        lines.append(f'{self.indent()}}}')
+        lines.append('')
+
+        return lines
 
     def generate_constructor(self, func: FunctionDefinition) -> str:
         """Generate constructor."""
@@ -5439,12 +5552,14 @@ class ContractDependency:
     name: str  # Parameter name
     type_name: str  # Type name (e.g., 'IEngine', 'Baselight')
     is_interface: bool  # Whether the type is an interface
+    is_value_type: bool = False  # Whether this is a value type (struct) needing default value
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'name': self.name,
             'typeName': self.type_name,
-            'isInterface': self.is_interface
+            'isInterface': self.is_interface,
+            'isValueType': self.is_value_type
         }
 
 
@@ -5568,13 +5683,18 @@ class MetadataExtractor:
                             'bool', 'address', 'bytes32', 'bytes', 'string'):
                 continue
 
+            # Check if this is a value type (struct) - needs default value, not factory resolution
+            is_value_type = (type_name in self.registry.struct_paths or
+                           type_name in self.registry.structs)
+
             is_interface = (type_name.startswith('I') and len(type_name) > 1 and
                           type_name[1].isupper()) or type_name in self.registry.interfaces
 
             dependencies.append(ContractDependency(
                 name=param.name,
                 type_name=type_name,
-                is_interface=is_interface
+                is_interface=is_interface,
+                is_value_type=is_value_type
             ))
 
         return dependencies
@@ -5687,14 +5807,55 @@ class DependencyManifest:
 
         return interface_to_impls
 
+    def _load_interface_preferences(self) -> Dict[str, str]:
+        """Load interface preferences from config file if it exists.
+
+        The config file (interface-preferences.json) allows specifying preferred
+        implementations for interfaces with multiple implementations.
+        """
+        import json
+        import os
+
+        # Look for config file relative to output directory
+        config_paths = [
+            'interface-preferences.json',
+            os.path.join(self.output_dir, 'interface-preferences.json') if hasattr(self, 'output_dir') else None,
+        ]
+
+        for config_path in config_paths:
+            if config_path and os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                        return config.get('interfacePreferences', {})
+                except (json.JSONDecodeError, IOError) as e:
+                    print(f"Warning: Could not load interface preferences from {config_path}: {e}")
+                    return {}
+
+        return {}
+
     def _get_single_impl_aliases(self) -> Dict[str, str]:
-        """Get interface aliases for interfaces with exactly one implementation."""
+        """Get interface aliases for interfaces with exactly one implementation,
+        plus any configured preferences for multi-implementation interfaces."""
         mappings = self._build_interface_mappings()
-        return {
+
+        # Start with single-implementation interfaces
+        aliases = {
             iface: impls[0]
             for iface, impls in mappings.items()
             if len(impls) == 1
         }
+
+        # Load and apply configured preferences for multi-implementation interfaces
+        preferences = self._load_interface_preferences()
+        for iface, preferred_impl in preferences.items():
+            if iface in mappings and preferred_impl in mappings[iface]:
+                aliases[iface] = preferred_impl
+            elif iface in mappings:
+                print(f"Warning: Preferred implementation '{preferred_impl}' for '{iface}' not found. "
+                      f"Available: {mappings[iface]}")
+
+        return aliases
 
     def generate_factories_ts(self) -> str:
         """Generate TypeScript factory functions for dependency injection."""
@@ -5706,10 +5867,19 @@ class DependencyManifest:
             ''
         ]
 
+        # Collect contracts with value type dependencies (need special handling)
+        contracts_with_value_types: Set[str] = set()
+        for name, metadata in self.contracts.items():
+            if not metadata.is_abstract and any(d.is_value_type for d in metadata.dependencies):
+                contracts_with_value_types.add(name)
+
         # Only import non-abstract contracts (abstract ones can't be instantiated)
         for name in sorted(self.contracts.keys()):
             metadata = self.contracts[name]
             if metadata.is_abstract:
+                continue
+            # Skip contracts with value type deps - they need manual registration
+            if name in contracts_with_value_types:
                 continue
             # Convert file_path from .sol to .ts path (e.g., "types/TypeCalculator.sol" -> "./types/TypeCalculator")
             import_path = './' + metadata.file_path.replace('.sol', '')
@@ -5719,13 +5889,16 @@ class DependencyManifest:
         single_impl_aliases = self._get_single_impl_aliases()
 
         # Generate the contracts registry - single source of truth
+        # Skip contracts with value type parameters (they need manual registration)
         lines.append('')
         lines.append('// Contract registry: maps contract names to their class and dependencies')
-        lines.append('// This is the single source of truth for dependency injection')
+        lines.append('// Contracts with value type parameters are excluded - see comments below for manual registration')
         lines.append('export const contracts: Record<string, { cls: new (...args: any[]) => any; deps: string[] }> = {')
         for name, metadata in sorted(self.contracts.items()):
             if metadata.is_abstract:
                 continue
+            if name in contracts_with_value_types:
+                continue  # Skip - needs manual registration
             deps = [d.type_name for d in metadata.dependencies]
             lines.append(f"  {name}: {{ cls: {name}, deps: {deps} }},")
         lines.append('};')
@@ -5739,24 +5912,53 @@ class DependencyManifest:
             lines.append(f"  {iface}: '{impl}',")
         lines.append('};')
 
-        # Generate container setup function that iterates over the data
+        # Generate container setup function
         lines.append('')
         lines.append('// Container setup - registers all contracts and aliases')
         lines.append('export function setupContainer(container: ContractContainer): void {')
-        lines.append('  // Register all contracts')
-        lines.append('  for (const [name, { cls, deps }] of Object.entries(contracts)) {')
-        lines.append('    if (deps.length === 0) {')
-        lines.append('      container.registerLazySingleton(name, deps, () => new cls());')
-        lines.append('    } else {')
-        lines.append('      container.registerFactory(name, deps, (...args: any[]) => new cls(...args));')
-        lines.append('    }')
-        lines.append('  }')
+
+        # Generate registration for each contract (skip those with value type deps)
+        for name, metadata in sorted(self.contracts.items()):
+            if metadata.is_abstract:
+                continue
+            if name in contracts_with_value_types:
+                continue  # Skip - needs manual registration
+
+            dep_names = [d.type_name for d in metadata.dependencies]
+
+            if not metadata.dependencies:
+                # No dependencies at all
+                lines.append(f"  container.registerLazySingleton('{name}', [], () => new {name}());")
+            else:
+                # Only contract dependencies, use generic factory
+                lines.append(f"  container.registerFactory('{name}', {dep_names}, (...args: any[]) => new {name}(...args));")
+
         lines.append('')
         lines.append('  // Register interface aliases')
         lines.append('  for (const [iface, impl] of Object.entries(interfaceAliases)) {')
         lines.append('    container.registerAlias(iface, impl);')
         lines.append('  }')
         lines.append('}')
+
+        # Add comment section for contracts needing manual registration
+        if contracts_with_value_types:
+            lines.append('')
+            lines.append('// =============================================================================')
+            lines.append('// CONTRACTS REQUIRING MANUAL REGISTRATION')
+            lines.append('// The following contracts have value type parameters (structs) that need')
+            lines.append('// specific configuration values. Register them manually with appropriate defaults.')
+            lines.append('// =============================================================================')
+            for name in sorted(contracts_with_value_types):
+                metadata = self.contracts[name]
+                value_types = [d for d in metadata.dependencies if d.is_value_type]
+                contract_deps = [d for d in metadata.dependencies if not d.is_value_type]
+                value_type_info = ', '.join([f"{d.name}: {d.type_name}" for d in value_types])
+                contract_dep_info = ', '.join([d.type_name for d in contract_deps])
+                lines.append(f"// - {name}")
+                lines.append(f"//     Value types: {value_type_info}")
+                if contract_deps:
+                    lines.append(f"//     Contract deps: [{contract_dep_info}]")
+
         lines.append('')
 
         return '\n'.join(lines)
