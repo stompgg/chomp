@@ -192,20 +192,39 @@ class TypeConverter(BaseGenerator):
 
         # Handle bytes32 literals and expressions
         if type_name == 'bytes32':
-            if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
-                return self._to_padded_bytes32(inner_expr.value)
+            if isinstance(inner_expr, Literal):
+                if inner_expr.kind in ('number', 'hex'):
+                    return self._to_padded_bytes32(inner_expr.value)
+                elif inner_expr.kind == 'string':
+                    # Convert string literal to hex-encoded bytes32
+                    # Remove quotes from string value
+                    string_val = inner_expr.value.strip('"\'')
+                    hex_bytes = string_val.encode('utf-8').hex()
+                    # Pad to 64 hex chars (32 bytes)
+                    hex_bytes = hex_bytes.ljust(64, '0')
+                    return f'"0x{hex_bytes}"'
             # Non-literal: convert bigint to padded hex string at runtime
+            # Wrap in parens to ensure correct operator precedence
             expr = generate_expression_fn(inner_expr)
-            return f'`0x${{{expr}.toString(16).padStart(64, "0")}}`'
+            return f'`0x${{({expr}).toString(16).padStart(64, "0")}}`'
 
         # Handle bytes types
         if type_name.startswith('bytes') and type_name != 'bytes':
-            if isinstance(inner_expr, Literal) and inner_expr.kind in ('number', 'hex'):
-                return self._to_padded_bytes32(inner_expr.value)
-            # Non-literal: convert bigint to padded hex string at runtime
             byte_size = int(type_name[5:]) if type_name[5:].isdigit() else 32
+            if isinstance(inner_expr, Literal):
+                if inner_expr.kind in ('number', 'hex'):
+                    return self._to_padded_bytes32(inner_expr.value)
+                elif inner_expr.kind == 'string':
+                    # Convert string literal to hex-encoded bytes
+                    string_val = inner_expr.value.strip('"\'')
+                    hex_bytes = string_val.encode('utf-8').hex()
+                    # Pad to appropriate size
+                    hex_bytes = hex_bytes.ljust(byte_size * 2, '0')
+                    return f'"0x{hex_bytes}"'
+            # Non-literal: convert bigint to padded hex string at runtime
+            # Wrap in parens to ensure correct operator precedence
             expr = generate_expression_fn(inner_expr)
-            return f'`0x${{{expr}.toString(16).padStart({byte_size * 2}, "0")}}`'
+            return f'`0x${{({expr}).toString(16).padStart({byte_size * 2}, "0")}}`'
 
         # For numeric types (uint256, int128, etc.), just generate the inner expression
         # TypeScript's bigint handles the underlying value

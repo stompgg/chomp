@@ -483,7 +483,7 @@ class ExpressionGenerator(BaseGenerator):
                     return 'decodeAbiParameters'
             elif access.expression.name == 'type':
                 return f'/* type().{member} */'
-            elif access.expression.name in self._ctx.known_libraries:
+            elif access.expression.name in self._ctx.known_libraries or access.expression.name in self._ctx.runtime_replacement_classes:
                 self._ctx.libraries_referenced.add(access.expression.name)
 
         # Handle type(TypeName).max/min

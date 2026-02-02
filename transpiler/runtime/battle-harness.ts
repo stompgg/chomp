@@ -9,7 +9,7 @@
  */
 
 import { ContractContainer, globalEventStream } from './index';
-import * as Structs from '../ts-output/Structs';
+import * as Structs from '../Structs';
 
 // =============================================================================
 // HARNESS CONSTANTS

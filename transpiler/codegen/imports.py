@@ -100,6 +100,11 @@ class ImportGenerator:
             if base_contract in self._ctx.runtime_replacement_classes:
                 imports.append(base_contract)
 
+        # Add runtime replacement classes used as libraries
+        for library in sorted(self._ctx.libraries_referenced):
+            if library in self._ctx.runtime_replacement_classes:
+                imports.append(library)
+
         return imports
 
     def _generate_base_contract_imports(self, prefix: str) -> List[str]:
