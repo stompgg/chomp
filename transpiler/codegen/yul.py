@@ -285,6 +285,11 @@ class YulTranspiler:
         if expr.isdigit():
             return f'{expr}n'
 
+        # Check if identifier is a constant (ALL_CAPS_WITH_UNDERSCORES pattern)
+        # Constants should be prefixed with Constants.
+        if expr.isupper() or (expr.replace('_', '').isupper() and '_' in expr):
+            return f'Constants.{expr}'
+
         # Return as-is (identifier)
         return expr
 
