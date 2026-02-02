@@ -1,4 +1,5 @@
 # Solidity to TypeScript Transpiler
+# AUTHORED BY CLAUDE
 
 A transpiler that converts Solidity contracts to TypeScript for local battle simulation in the Chomp game engine.
 

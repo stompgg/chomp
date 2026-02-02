@@ -13,7 +13,7 @@ Key features:
 - Interface and contract inheritance
 
 Usage:
-    python transpiler/sol2ts_refactored.py src/
+    python transpiler/sol2ts.py src/
 
 This refactored version uses a modular architecture with separate packages for:
 - lexer: Tokenization (tokens.py, lexer.py)
