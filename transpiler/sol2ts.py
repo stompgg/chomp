@@ -12,7 +12,23 @@ Key features:
 - Yul/inline assembly support
 - Interface and contract inheritance
 
-python transpiler/sol2ts.py src/
+Usage:
+    python transpiler/sol2ts.py src/
+
+Architecture:
+    This file is the monolithic version maintained for backward compatibility.
+    The codebase has been refactored into a modular structure:
+
+    - transpiler/lexer/     - Tokenization (TokenType, Token, Lexer)
+    - transpiler/parser/    - AST nodes and parsing (Parser, all AST node types)
+    - transpiler/types/     - Type registry and mappings (TypeRegistry)
+    - transpiler/codegen/   - Code generation helpers (YulTranspiler, AbiTypeInferer)
+
+    For new code, you can import from the modules directly:
+        from transpiler.lexer import Lexer
+        from transpiler.parser import Parser
+        from transpiler.types import TypeRegistry
+        from transpiler.codegen import YulTranspiler, AbiTypeInferer
 """
 
 import re
