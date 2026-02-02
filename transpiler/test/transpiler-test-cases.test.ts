@@ -57,8 +57,7 @@ describe('Transpiler Output Validation', () => {
       expect(DefaultMatchmaker).toBeDefined();
     });
 
-    // SignedMatchmaker requires EIP712 - skip for now
-    it.skip('should import SignedMatchmaker without errors', async () => {
+    it('should import SignedMatchmaker without errors', async () => {
       const { SignedMatchmaker } = await import('../ts-output/matchmaker/SignedMatchmaker');
       expect(SignedMatchmaker).toBeDefined();
     });
@@ -82,8 +81,7 @@ describe('Transpiler Output Validation', () => {
       expect(DefaultTeamRegistry).toBeDefined();
     });
 
-    // GachaTeamRegistry requires Ownable inheritance - skip for now
-    it.skip('should import GachaTeamRegistry without errors', async () => {
+    it('should import GachaTeamRegistry without errors', async () => {
       const { GachaTeamRegistry } = await import('../ts-output/teams/GachaTeamRegistry');
       expect(GachaTeamRegistry).toBeDefined();
     });

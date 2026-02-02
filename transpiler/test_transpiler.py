@@ -2,12 +2,21 @@
 """
 Unit tests for the sol2ts transpiler.
 
-Run with: python3 test_transpiler.py
+Run with: python3 -m pytest transpiler/test_transpiler.py
+   or: cd .. && python3 transpiler/test_transpiler.py
 """
 
-import unittest
 import sys
-from sol2ts import Lexer, Parser, TypeScriptCodeGenerator, TypeRegistry
+import os
+# Add parent directory to path for proper imports - MUST be before other imports
+# to avoid conflict with local 'types' package and Python's built-in 'types' module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import unittest
+from transpiler.lexer import Lexer
+from transpiler.parser import Parser
+from transpiler.codegen import TypeScriptCodeGenerator
+from transpiler.type_system import TypeRegistry
 
 
 class TestAbiEncodeFunctionReturnTypes(unittest.TestCase):

@@ -5,14 +5,15 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [How the Transpiler Works](#how-the-transpiler-works)
-3. [Metadata and Dependency Injection](#metadata-and-dependency-injection)
-4. [Adding New Solidity Files](#adding-new-solidity-files)
-5. [Contract Address System](#contract-address-system)
-6. [Supported Features](#supported-features)
-7. [Known Limitations](#known-limitations)
-8. [Future Work](#future-work)
-9. [Testing](#testing)
+2. [Module Structure](#module-structure)
+3. [How the Transpiler Works](#how-the-transpiler-works)
+4. [Metadata and Dependency Injection](#metadata-and-dependency-injection)
+5. [Adding New Solidity Files](#adding-new-solidity-files)
+6. [Contract Address System](#contract-address-system)
+7. [Supported Features](#supported-features)
+8. [Known Limitations](#known-limitations)
+9. [Future Work](#future-work)
+10. [Testing](#testing)
 
 ---
 
@@ -25,8 +26,7 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 │                                                                              │
 │  src/*.sol ──► sol2ts.py ──► ts-output/*.ts ──► Battle Simulation           │
 │                    │                                                         │
-│                    └──► dependency-manifest.json (optional)                  │
-│                    └──► factories.ts (optional)                              │
+│                    └──► factories.ts (with --emit-metadata)                  │
 │                                                                              │
 │  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────────────┐       │
 │  │ Solidity │───►│  Lexer   │───►│  Parser  │───►│ Code Generator   │       │
@@ -55,7 +55,7 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 │           │                                                                  │
 │           ▼                                                                  │
 │  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐        │
-│  │  runtime.ts     │     │   Structs.ts    │     │    Enums.ts     │        │
+│  │  runtime/       │     │   Structs.ts    │     │    Enums.ts     │        │
 │  │ (Contract base, │     │ (Mon, Battle,   │     │ (Type, MoveClass│        │
 │  │  Storage, Utils,│     │  MonStats, etc) │     │  EffectStep)    │        │
 │  │  ContractCont.) │     └─────────────────┘     └─────────────────┘        │
@@ -79,25 +79,78 @@ A transpiler that converts Solidity contracts to TypeScript for local battle sim
 - **No gas simulation**: Gas costs are not tracked
 - **No storage layout guarantees**: Storage slots don't match on-chain layout
 - **No modifier inlining**: Modifiers are stripped (use runtime replacements)
-- **No assembly/Yul support**: Inline assembly blocks are skipped
+- **Limited assembly/Yul support**: Inline assembly blocks use the YulTranspiler for basic cases
 
-### Runtime Replacements
+---
 
-Files with Yul/assembly are handled via `runtime-replacements.json`:
+## Module Structure
 
-```json
-{
-  "lib/ECDSA.sol": {
-    "replacement": "runtime/ECDSA.ts",
-    "reason": "Complex Yul assembly for ECDSA signature recovery"
-  }
-}
+The transpiler is organized into focused modules:
+
+```
+transpiler/
+├── sol2ts.py              # Main entry point (SolidityToTypeScriptTranspiler)
+├── __init__.py            # Package exports
+│
+├── lexer/                 # Tokenization
+│   ├── tokens.py          # Token types and Token class
+│   └── lexer.py           # Lexer implementation
+│
+├── parser/                # AST construction
+│   ├── ast_nodes.py       # AST node definitions
+│   └── parser.py          # Recursive descent parser
+│
+├── type_system/           # Type registry (named to avoid shadowing Python's types)
+│   ├── registry.py        # TypeRegistry for cross-file type discovery
+│   └── mappings.py        # Type conversion utilities
+│
+├── codegen/               # Code generation (modular)
+│   ├── generator.py       # TypeScriptCodeGenerator (orchestrator)
+│   ├── context.py         # CodeGenerationContext (shared state)
+│   ├── base.py            # BaseGenerator (shared utilities)
+│   ├── type_converter.py  # TypeConverter (Solidity → TypeScript types)
+│   ├── expression.py      # ExpressionGenerator
+│   ├── statement.py       # StatementGenerator
+│   ├── function.py        # FunctionGenerator
+│   ├── definition.py      # DefinitionGenerator (structs, enums)
+│   ├── imports.py         # ImportGenerator
+│   ├── contract.py        # ContractGenerator
+│   ├── yul.py             # YulTranspiler (inline assembly)
+│   ├── abi.py             # AbiTypeInferer (abi.encode type inference)
+│   └── metadata.py        # MetadataExtractor, FactoryGenerator
+│
+├── runtime/               # TypeScript runtime library
+│   ├── index.ts           # Contract, Storage, ContractContainer, utils
+│   ├── base.ts            # Minimal Contract for runtime replacements
+│   ├── battle-harness.ts  # BattleHarness for testing
+│   ├── ECDSA.ts           # Runtime replacement for lib/ECDSA.sol
+│   ├── EIP712.ts          # Runtime replacement for lib/EIP712.sol
+│   ├── Ownable.ts         # Runtime replacement for lib/Ownable.sol
+│   └── EnumerableSetLib.ts
+│
+├── test/                  # TypeScript tests
+│   ├── integration.test.ts
+│   ├── mutators.test.ts
+│   └── transpiler-test-cases.test.ts
+│
+└── runtime-replacements.json  # Config for Solidity files with runtime implementations
 ```
 
-To add a new runtime replacement:
-1. Create TypeScript implementation in `runtime/`
-2. Add entry to `runtime-replacements.json`
-3. Export interface from `runtime/index.ts`
+### Code Generator Architecture
+
+The `TypeScriptCodeGenerator` orchestrates specialized generators:
+
+| Generator | Responsibility |
+|-----------|---------------|
+| `TypeConverter` | Solidity → TypeScript type conversions |
+| `ExpressionGenerator` | Literals, operators, function calls, member access |
+| `StatementGenerator` | Blocks, loops, conditionals, variable declarations |
+| `FunctionGenerator` | Functions, constructors, return types |
+| `DefinitionGenerator` | Structs, enums, constants |
+| `ImportGenerator` | Import statements, relative paths |
+| `ContractGenerator` | Contract classes, inheritance, state variables |
+| `YulTranspiler` | Inline assembly (basic support) |
+| `AbiTypeInferer` | Type inference for abi.encode/decode |
 
 ---
 
@@ -108,32 +161,59 @@ To add a new runtime replacement:
 1. **Type Discovery**: Scan source to discover enums, structs, constants, contracts
 2. **Lexing**: Tokenize Solidity source
 3. **Parsing**: Build AST from tokens
-4. **Code Generation**: Traverse AST and emit TypeScript
+4. **Code Generation**: Traverse AST and emit TypeScript via specialized generators
 5. **Import Resolution**: Generate imports based on discovered types
-6. **Metadata Extraction** (optional): Extract dependencies, constants, move properties
+6. **Metadata Extraction** (optional): Extract dependencies for factory generation
+
+### Runtime Replacements
+
+Files with complex Yul/assembly are handled via `runtime-replacements.json`:
+
+```json
+{
+  "replacements": [
+    {
+      "source": "lib/ECDSA.sol",
+      "runtimeModule": "../runtime",
+      "exports": ["ECDSA"],
+      "reason": "Complex Yul assembly for ECDSA signature recovery"
+    }
+  ]
+}
+```
+
+To add a new runtime replacement:
+1. Create TypeScript implementation in `runtime/`
+2. Add entry to `runtime-replacements.json`
+3. Export from `runtime/index.ts`
 
 ---
 
 ## Metadata and Dependency Injection
 
 ```bash
-# Emit metadata alongside TypeScript
+# Emit factories.ts alongside TypeScript
 python3 sol2ts.py src/ -o ts-output -d src --emit-metadata
 
 # Only emit metadata
 python3 sol2ts.py src/ --metadata-only -d src
 ```
 
+The `--emit-metadata` flag generates `factories.ts` with:
+- Interface aliases (e.g., `IEngine` → `Engine`)
+- Lazy singleton registrations with constructor dependencies
+- Factory functions for dependency injection
+
 ### Using the Container
 
 ```typescript
 import { ContractContainer } from './runtime';
+import { setupContainer } from './factories';
 
 const container = new ContractContainer();
-container.registerSingleton('Engine', new Engine());
-container.registerFactory('UnboundedStrike', ['Engine', 'TypeCalculator'],
-  (engine, typeCalc) => new UnboundedStrike(engine, typeCalc));
+setupContainer(container);
 
+// Resolve with automatic dependency injection
 const move = container.resolve<UnboundedStrike>('UnboundedStrike');
 ```
 
@@ -146,18 +226,19 @@ const move = container.resolve<UnboundedStrike>('UnboundedStrike');
 python3 transpiler/sol2ts.py src/moves/CoolMove.sol -o transpiler/ts-output -d src
 
 # Entire directory with metadata
-python3 transpiler/sol2ts.py src/moves/ -o transpiler/ts-output -d src --emit-metadata
+python3 transpiler/sol2ts.py src/ -o transpiler/ts-output -d src --emit-metadata
 ```
 
 ### Common Transpilation Patterns
 
 | Solidity | TypeScript |
 |----------|------------|
-| `uint256 x = 5;` | `let x: bigint = BigInt(5);` |
+| `uint256 x = 5;` | `let x: bigint = 5n;` |
 | `mapping(address => uint)` | `Record<string, bigint>` |
 | `IEffect(address(this))` | `this` (object reference) |
 | `address(this)` | `this._contractAddress` |
 | `keccak256(abi.encode(...))` | `keccak256(encodeAbiParameters(...))` |
+| `msg.sender` | `this._msg.sender` |
 
 ---
 
@@ -204,7 +285,7 @@ const myContract = new MyContract('0xcccc...');
 | Feature | Status | Workaround |
 |---------|--------|------------|
 | Function pointers | Not supported | Refactor to use interfaces |
-| Complex Yul/assembly | Skipped | Use runtime replacements |
+| Complex Yul/assembly | Basic support | Use runtime replacements |
 | Modifiers | Stripped | Inline logic or use mixins |
 | try/catch | Skipped | Wrap in regular conditionals |
 | User-defined operators | Not supported | Use regular functions |
@@ -218,14 +299,6 @@ const myContract = new MyContract('0xcccc...');
 | `Array.push()` returns new length | Returns `undefined` | Minor - rarely used return |
 | `delete array[i]` zeros element | Removes element | Use `arr[i] = 0n` instead |
 | Integer overflow wraps | BigInt grows unbounded | Add masking if needed |
-
-### Type System Gaps
-
-| Issue | Description | Status |
-|-------|-------------|--------|
-| Nested mappings with numeric keys | May need manual `Number()` wrapping | Mostly fixed |
-| Complex generic types | Some edge cases may fail | Report issues |
-| Interface method overloads | May need `as any` casts | Handled for common cases |
 
 ### Files Requiring Runtime Replacements
 
@@ -273,15 +346,16 @@ const myContract = new MyContract('0xcccc...');
 ```bash
 cd transpiler
 npm install
-npm test
+npm run test:vitest
 ```
 
 ### Test Suites
 
 | Suite | Description | Count |
 |-------|-------------|-------|
+| `transpiler-test-cases.test.ts` | Module imports, type conversions | 20 tests |
 | `integration.test.ts` | Engine behavior with mocks | 13 tests |
-| `transpiler-test-cases.test.ts` | Transpiler edge cases | 18 tests |
+| `mutators.test.ts` | Mutator method behavior | 7 tests |
 
 ### Running Tests
 
@@ -291,7 +365,16 @@ npx vitest                                  # Watch mode
 npx vitest run test/integration.test.ts    # Specific file
 ```
 
-**Current Status**: 31 tests passing, 0 TypeScript compilation errors.
+### Python Unit Tests
+
+```bash
+cd /path/to/project
+python3 transpiler/test_transpiler.py
+```
+
+Tests ABI type inference for function return types and contract type imports.
+
+**Current Status**: 40 TypeScript tests passing, 8 Python unit tests passing.
 
 ---
 
@@ -301,11 +384,11 @@ npx vitest run test/integration.test.ts    # Specific file
 # Transpile single file
 python3 transpiler/sol2ts.py src/path/to/File.sol -o transpiler/ts-output -d src
 
-# Transpile directory with metadata
-python3 transpiler/sol2ts.py src/moves/ -o transpiler/ts-output -d src --emit-metadata
+# Transpile directory with factories.ts
+python3 transpiler/sol2ts.py src/ -o transpiler/ts-output -d src --emit-metadata
 
 # Metadata only
-python3 transpiler/sol2ts.py src/moves/ --metadata-only -d src
+python3 transpiler/sol2ts.py src/ --metadata-only -d src
 
 # Print to stdout (debugging)
 python3 transpiler/sol2ts.py src/path/to/File.sol --stdout -d src
