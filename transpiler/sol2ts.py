@@ -32,6 +32,7 @@ from .parser import Parser, SourceUnit
 from .type_system import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
 from .codegen.metadata import MetadataExtractor, FactoryGenerator
+from .dependency_resolver import DependencyResolver
 
 
 class SolidityToTypeScriptTranspiler:
@@ -43,7 +44,9 @@ class SolidityToTypeScriptTranspiler:
         output_dir: str = './ts-output',
         discovery_dirs: Optional[List[str]] = None,
         stubbed_contracts: Optional[List[str]] = None,
-        emit_metadata: bool = False
+        emit_metadata: bool = False,
+        script_dir: Optional[str] = None,
+        overrides_path: Optional[str] = None,
     ):
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)
@@ -51,6 +54,8 @@ class SolidityToTypeScriptTranspiler:
         self.registry = TypeRegistry()
         self.stubbed_contracts = set(stubbed_contracts or [])
         self.emit_metadata = emit_metadata
+        self.script_dir = script_dir
+        self.overrides_path = overrides_path
 
         # Metadata extraction for factory generation
         self.metadata_extractor = MetadataExtractor() if emit_metadata else None
@@ -223,7 +228,15 @@ class SolidityToTypeScriptTranspiler:
         if not self.metadata_extractor:
             return
 
-        generator = FactoryGenerator(self.metadata_extractor)
+        # Create dependency resolver with known classes from metadata
+        known_classes = set(self.metadata_extractor.contracts.keys())
+        resolver = DependencyResolver(
+            overrides_path=self.overrides_path,
+            script_dir=self.script_dir,
+            known_classes=known_classes,
+        )
+
+        generator = FactoryGenerator(self.metadata_extractor, resolver)
         factories_content = generator.generate()
 
         factories_path = self.output_dir / 'factories.ts'
@@ -231,6 +244,13 @@ class SolidityToTypeScriptTranspiler:
         with open(factories_path, 'w') as f:
             f.write(factories_content)
         print(f"Written: {factories_path}")
+
+        # Export unresolved dependencies if any
+        if resolver.has_unresolved():
+            unresolved_path = self.output_dir / 'unresolved-dependencies.json'
+            resolver.export_unresolved(str(unresolved_path))
+            print(f"Warning: Some dependencies could not be resolved. See: {unresolved_path}")
+            print("Add the missing mappings to dependency-overrides.json and re-run.")
 
 
 # =============================================================================
@@ -252,6 +272,10 @@ def main():
                         help='Emit dependency manifest and factory functions')
     parser.add_argument('--metadata-only', action='store_true',
                         help='Only emit metadata, skip TypeScript generation')
+    parser.add_argument('--script-dir', metavar='DIR',
+                        help='Directory containing deploy scripts for dependency inference')
+    parser.add_argument('--overrides', metavar='FILE',
+                        help='Path to dependency-overrides.json for manual mappings')
 
     args = parser.parse_args()
 
@@ -259,6 +283,16 @@ def main():
     discovery_dirs = args.discover or ([str(input_path)] if input_path.is_dir() else [str(input_path.parent)])
     stubbed_contracts = args.stub or []
     emit_metadata = args.emit_metadata or args.metadata_only
+
+    # Determine script dir and overrides path with defaults
+    script_dir = args.script_dir
+    overrides_path = args.overrides
+
+    # Default overrides path to transpiler/dependency-overrides.json if not specified
+    if not overrides_path:
+        default_overrides = Path(__file__).parent / 'dependency-overrides.json'
+        if default_overrides.exists():
+            overrides_path = str(default_overrides)
 
     if input_path.is_file():
         # Use first discovery dir as source_dir for correct import path calculation
@@ -268,7 +302,9 @@ def main():
             output_dir=args.output,
             discovery_dirs=discovery_dirs,
             stubbed_contracts=stubbed_contracts,
-            emit_metadata=emit_metadata
+            emit_metadata=emit_metadata,
+            script_dir=script_dir,
+            overrides_path=overrides_path,
         )
 
         ts_code = transpiler.transpile_file(str(input_path))
@@ -287,7 +323,9 @@ def main():
     elif input_path.is_dir():
         transpiler = SolidityToTypeScriptTranspiler(
             str(input_path), args.output, discovery_dirs, stubbed_contracts,
-            emit_metadata=emit_metadata
+            emit_metadata=emit_metadata,
+            script_dir=script_dir,
+            overrides_path=overrides_path,
         )
         transpiler.discover_types(str(input_path))
 

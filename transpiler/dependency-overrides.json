@@ -1,0 +1,24 @@
+{
+  "$schema": "./dependency-overrides.schema.json",
+  "$comment": "Manual overrides for interface -> concrete class resolution. Used when parameter names or deploy scripts don't provide enough information to infer the concrete implementation.",
+  "overrides": {
+    "DefaultRuleset": {
+      "_effects": ["StaminaRegen"]
+    }
+  },
+  "$documentation": {
+    "$comment": "The following interfaces are handled automatically by the resolver:",
+    "selfReferential": {
+      "ICPURNG": "CPU contracts implement ICPURNG themselves. In Solidity, address(0) triggers self-reference. Passes undefined in TS.",
+      "IGachaRNG": "GachaRegistry depends on IGachaRNG but deploy scripts pass address(0). Passes undefined in TS."
+    },
+    "aliased": {
+      "IOwnableMon": "Resolves to GachaRegistry",
+      "IEngine": "Resolves to Engine",
+      "ITypeCalculator": "Resolves to TypeCalculator"
+    },
+    "inferred": {
+      "IEffect parameters": "Inferred from parameter names like _FROSTBITE_STATUS -> FrostbiteStatus"
+    }
+  }
+}

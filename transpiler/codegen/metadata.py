@@ -14,6 +14,7 @@ from ..parser.ast_nodes import (
     FunctionDefinition,
     VariableDeclaration,
 )
+from ..dependency_resolver import DependencyResolver
 
 
 class ContractMetadata:
@@ -94,8 +95,15 @@ class MetadataExtractor:
 class FactoryGenerator:
     """Generates factories.ts file for dependency injection."""
 
-    def __init__(self, metadata: MetadataExtractor):
+    def __init__(
+        self,
+        metadata: MetadataExtractor,
+        resolver: Optional[DependencyResolver] = None
+    ):
         self.metadata = metadata
+        self.resolver = resolver
+        # Cache resolved dependencies per contract
+        self._resolved_deps: Dict[str, List[Dict]] = {}
 
     def generate(self) -> str:
         """Generate the factories.ts content.
@@ -156,11 +164,13 @@ class FactoryGenerator:
         """Generate import statements for all contracts."""
         imports = []
 
-        # Group by file path
+        # Group by file path, excluding abstract contracts and interfaces
         by_path: Dict[str, List[str]] = {}
         for name, meta in self.metadata.contracts.items():
             if meta.kind == 'interface':
                 continue  # Don't import interfaces
+            if meta.is_abstract:
+                continue  # Don't import abstract contracts (can't instantiate)
             path = meta.file_path
             if path not in by_path:
                 by_path[path] = []
@@ -178,28 +188,65 @@ class FactoryGenerator:
     def _generate_registration(self, name: str, meta: ContractMetadata) -> str:
         """Generate container registration for a contract."""
         # Determine dependencies from constructor params
+        # List of (param_name, type_name, resolved_name, is_self)
         deps = []
-        for param_name, param_type in meta.constructor_params:
+        for idx, (param_name, param_type) in enumerate(meta.constructor_params):
             # Check if param type is a contract/interface
-            if param_type in self.metadata.contracts or param_type in self.metadata.interfaces:
-                deps.append(param_type)
+            is_interface = param_type in self.metadata.interfaces
+            is_contract = param_type in self.metadata.contracts
+
+            if is_contract or is_interface:
+                resolved_name = param_type  # Default to type name
+                is_self = False  # Whether this is a self-referential dependency
+
+                # Use resolver if available and it's an interface
+                if self.resolver and is_interface:
+                    resolved_dep = self.resolver.resolve(
+                        contract_name=name,
+                        param_name=param_name,
+                        type_name=param_type,
+                        is_interface=True,
+                        is_value_type=False,
+                        param_index=idx,
+                    )
+                    if resolved_dep.resolved_as:
+                        # Handle @self marker for self-referential dependencies
+                        if resolved_dep.resolved_as == "@self":
+                            is_self = True
+                            resolved_name = None
+                        # Handle both single values and arrays
+                        elif isinstance(resolved_dep.resolved_as, list):
+                            resolved_name = resolved_dep.resolved_as[0] if resolved_dep.resolved_as else param_type
+                        else:
+                            resolved_name = resolved_dep.resolved_as
+
+                deps.append((param_name, param_type, resolved_name, is_self))
 
         if not deps:
             # No dependencies - simple registration
             return f"  container.registerLazySingleton('{name}', [], () => new {name}());"
 
-        # Has dependencies
-        deps_str = ', '.join(f"'{d}'" for d in deps)
-        params_str = ', '.join(f'd{i}' for i in range(len(deps)))
+        # Filter out self-referential deps from the container deps array
+        container_deps = [(pn, pt, rn) for pn, pt, rn, is_self in deps if not is_self]
+
+        if not container_deps:
+            # All deps are self-referential - pass undefined for each
+            args = self._generate_positional_args(meta, deps)
+            return f"  container.registerLazySingleton('{name}', [], () => new {name}({args}));"
+
+        # Has dependencies - use resolved names with positional arguments
+        deps_str = ', '.join(f"'{resolved}'" for _, _, resolved in container_deps)
+        params_str = ', '.join(f'd{i}' for i in range(len(container_deps)))
+        args = self._generate_positional_args(meta, deps)
         return (
             f"  container.registerLazySingleton('{name}', [{deps_str}], "
-            f"({params_str}) => new {name}({{ {self._generate_args(meta, deps)} }}));"
+            f"({params_str}) => new {name}({args}));"
         )
 
     def _generate_args(
         self, meta: ContractMetadata, deps: List[str]
     ) -> str:
-        """Generate constructor argument mapping."""
+        """Generate constructor argument mapping (legacy, for type-only deps)."""
         args = []
         dep_idx = 0
         for param_name, param_type in meta.constructor_params:
@@ -209,13 +256,49 @@ class FactoryGenerator:
             # Skip non-contract params (they need to be provided separately)
         return ', '.join(args)
 
+    def _generate_args_resolved(
+        self, meta: ContractMetadata, deps: List[Tuple[str, str, str]]
+    ) -> str:
+        """Generate constructor argument mapping with resolved deps."""
+        args = []
+        dep_names = {param_name for param_name, _, _ in deps}
+        dep_idx = 0
+        for param_name, _ in meta.constructor_params:
+            if param_name in dep_names:
+                args.append(f"{param_name}: d{dep_idx}")
+                dep_idx += 1
+            # Skip non-contract params (they need to be provided separately)
+        return ', '.join(args)
+
+    def _generate_positional_args(
+        self, meta: ContractMetadata, deps: List[Tuple[str, str, str, bool]]
+    ) -> str:
+        """Generate positional constructor arguments, handling self-referential deps."""
+        args = []
+        # Build lookup: param_name -> is_self
+        self_deps = {param_name for param_name, _, _, is_self in deps if is_self}
+        non_self_deps = {param_name for param_name, _, _, is_self in deps if not is_self}
+        dep_idx = 0
+        for param_name, _ in meta.constructor_params:
+            if param_name in self_deps:
+                # Self-referential: pass undefined
+                args.append("undefined")
+            elif param_name in non_self_deps:
+                args.append(f"d{dep_idx}")
+                dep_idx += 1
+            # Skip non-contract params (they need to be provided separately)
+        return ', '.join(args)
+
     def _find_implementation(self, interface_name: str) -> Optional[str]:
-        """Find a contract that implements an interface."""
+        """Find a non-abstract contract that implements an interface."""
         # Simple heuristic: look for contract with same name minus 'I' prefix
         if interface_name.startswith('I') and len(interface_name) > 1:
             impl_name = interface_name[1:]
             if impl_name in self.metadata.contracts:
-                return impl_name
+                meta = self.metadata.contracts[impl_name]
+                # Only return if it's not abstract
+                if not meta.is_abstract and meta.kind == 'contract':
+                    return impl_name
 
         # Look for contracts that inherit from this interface
         for name, meta in self.metadata.contracts.items():
