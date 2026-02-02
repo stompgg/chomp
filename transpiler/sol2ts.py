@@ -261,7 +261,10 @@ def main():
     emit_metadata = args.emit_metadata or args.metadata_only
 
     if input_path.is_file():
+        # Use first discovery dir as source_dir for correct import path calculation
+        source_dir = discovery_dirs[0] if discovery_dirs else str(input_path.parent)
         transpiler = SolidityToTypeScriptTranspiler(
+            source_dir=source_dir,
             output_dir=args.output,
             discovery_dirs=discovery_dirs,
             stubbed_contracts=stubbed_contracts,

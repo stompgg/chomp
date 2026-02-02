@@ -402,12 +402,15 @@ class ContractGenerator(BaseGenerator):
             key_name = f'key{key_index}'
             key_params.append(f'{key_name}: {key_ts_type}')
 
+            # Convert non-string keys to string for Record indexing
+            key_access = key_name if key_ts_type == 'string' else f'String({key_name})'
+
             if current_type.value_type.is_mapping:
                 null_coalesce_lines.append(
-                    f'{body_indent}{access_path}[{key_name}] ??= {{}};'
+                    f'{body_indent}{access_path}[{key_access}] ??= {{}};'
                 )
 
-            access_path = f'{access_path}[{key_name}]'
+            access_path = f'{access_path}[{key_access}]'
             current_type = current_type.value_type
             key_index += 1
 
