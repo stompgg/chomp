@@ -13,7 +13,7 @@ Key features:
 - Interface and contract inheritance
 
 Usage:
-    python -m transpiler src/
+    python transpiler/sol2ts.py src/
 
 This refactored version uses a modular architecture with separate packages for:
 - lexer: Tokenization (tokens.py, lexer.py)
@@ -244,6 +244,8 @@ def main():
     parser.add_argument('input', help='Input Solidity file or directory')
     parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
+    parser.add_argument('-d', '--discover', action='append', metavar='DIR',
+                        help='Directory to scan for type discovery')
     parser.add_argument('--stub', action='append', metavar='CONTRACT',
                         help='Contract name to generate as minimal stub')
     parser.add_argument('--emit-metadata', action='store_true',
@@ -254,12 +256,15 @@ def main():
     args = parser.parse_args()
 
     input_path = Path(args.input)
-    discovery_dirs = [str(input_path)] if input_path.is_dir() else [str(input_path.parent)]
+    discovery_dirs = args.discover or ([str(input_path)] if input_path.is_dir() else [str(input_path.parent)])
     stubbed_contracts = args.stub or []
     emit_metadata = args.emit_metadata or args.metadata_only
 
     if input_path.is_file():
+        # Use first discovery dir as source_dir for correct import path calculation
+        source_dir = discovery_dirs[0] if discovery_dirs else str(input_path.parent)
         transpiler = SolidityToTypeScriptTranspiler(
+            source_dir=source_dir,
             output_dir=args.output,
             discovery_dirs=discovery_dirs,
             stubbed_contracts=stubbed_contracts,
