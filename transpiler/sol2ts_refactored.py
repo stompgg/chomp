@@ -13,203 +13,25 @@ Key features:
 - Interface and contract inheritance
 
 Usage:
-    python transpiler/sol2ts.py src/
+    python transpiler/sol2ts_refactored.py src/
 
 This refactored version uses a modular architecture with separate packages for:
 - lexer: Tokenization (tokens.py, lexer.py)
 - parser: AST nodes and parsing (ast_nodes.py, parser.py)
 - types: Type registry and mappings (registry.py, mappings.py)
-- codegen: Code generation helpers (yul.py, abi.py, context.py)
+- codegen: Code generation (generator.py + specialized generators)
 """
 
 import json
-import shutil
-from collections import defaultdict
 from pathlib import Path
-from typing import Optional, List, Dict, Set, Tuple
+from typing import Optional, List, Dict, Set
 
 # Import from refactored modules
-from .lexer import Lexer, TokenType, Token
-from .parser import (
-    Parser,
-    # AST nodes
-    SourceUnit,
-    ContractDefinition,
-    FunctionDefinition,
-    StateVariableDeclaration,
-    VariableDeclaration,
-    StructDefinition,
-    EnumDefinition,
-    TypeName,
-    Block,
-    # Expressions
-    Expression,
-    Literal,
-    Identifier,
-    BinaryOperation,
-    UnaryOperation,
-    TernaryOperation,
-    FunctionCall,
-    MemberAccess,
-    IndexAccess,
-    NewExpression,
-    TupleExpression,
-    ArrayLiteral,
-    TypeCast,
-    # Statements
-    Statement,
-    ExpressionStatement,
-    VariableDeclarationStatement,
-    IfStatement,
-    ForStatement,
-    WhileStatement,
-    DoWhileStatement,
-    ReturnStatement,
-    EmitStatement,
-    RevertStatement,
-    BreakStatement,
-    ContinueStatement,
-    DeleteStatement,
-    AssemblyStatement,
-)
+from .lexer import Lexer
+from .parser import Parser, SourceUnit
 from .types import TypeRegistry
-from .codegen import YulTranspiler, AbiTypeInferer, CodeGenerationContext
+from .codegen import TypeScriptCodeGenerator
 
-
-# =============================================================================
-# CODE GENERATOR
-# =============================================================================
-
-class TypeScriptCodeGenerator:
-    """
-    Generates TypeScript code from Solidity AST.
-
-    This class orchestrates code generation using helper modules for:
-    - Yul/assembly transpilation (YulTranspiler)
-    - ABI type inference (AbiTypeInferer)
-    - Generation context management (CodeGenerationContext)
-    """
-
-    def __init__(
-        self,
-        registry: Optional[TypeRegistry] = None,
-        file_depth: int = 0,
-        current_file_path: str = '',
-        runtime_replacement_classes: Optional[Set[str]] = None,
-        runtime_replacement_mixins: Optional[Dict[str, str]] = None,
-        runtime_replacement_methods: Optional[Dict[str, Set[str]]] = None
-    ):
-        """
-        Initialize the code generator.
-
-        Args:
-            registry: Type registry for cross-file type information
-            file_depth: Depth of output file for relative imports
-            current_file_path: Relative path of current file (without extension)
-            runtime_replacement_classes: Classes to import from runtime
-            runtime_replacement_mixins: Mixin code for secondary inheritance
-            runtime_replacement_methods: Method names for override detection
-        """
-        # Create context from registry
-        self._ctx = CodeGenerationContext.from_registry(
-            registry,
-            file_depth=file_depth,
-            current_file_path=current_file_path,
-            runtime_replacement_classes=runtime_replacement_classes,
-            runtime_replacement_mixins=runtime_replacement_mixins,
-            runtime_replacement_methods=runtime_replacement_methods,
-        )
-
-        # Store registry reference
-        self._registry = registry
-
-        # Initialize helpers
-        self._yul_transpiler = YulTranspiler()
-
-        # Convenience accessors for backward compatibility
-        self.indent_level = 0
-        self.indent_str = '  '
-
-    # Delegate context properties for backward compatibility
-    @property
-    def current_state_vars(self) -> Set[str]:
-        return self._ctx.current_state_vars
-
-    @current_state_vars.setter
-    def current_state_vars(self, value: Set[str]):
-        self._ctx.current_state_vars = value
-
-    @property
-    def current_methods(self) -> Set[str]:
-        return self._ctx.current_methods
-
-    @current_methods.setter
-    def current_methods(self, value: Set[str]):
-        self._ctx.current_methods = value
-
-    @property
-    def var_types(self) -> Dict[str, TypeName]:
-        return self._ctx.var_types
-
-    @var_types.setter
-    def var_types(self, value: Dict[str, TypeName]):
-        self._ctx.var_types = value
-
-    @property
-    def known_structs(self) -> Set[str]:
-        return self._ctx.known_structs
-
-    @property
-    def known_enums(self) -> Set[str]:
-        return self._ctx.known_enums
-
-    @property
-    def known_contracts(self) -> Set[str]:
-        return self._ctx.known_contracts
-
-    @property
-    def known_interfaces(self) -> Set[str]:
-        return self._ctx.known_interfaces
-
-    def indent(self) -> str:
-        """Return the current indentation string."""
-        return self.indent_str * self.indent_level
-
-    def get_qualified_name(self, name: str) -> str:
-        """Get the qualified name for a type."""
-        return self._ctx.get_qualified_name(name)
-
-    def transpile_yul(self, yul_code: str) -> str:
-        """Transpile Yul assembly to TypeScript."""
-        return self._yul_transpiler.transpile(yul_code)
-
-    def _create_abi_inferer(self) -> AbiTypeInferer:
-        """Create an ABI type inferer with current context."""
-        return AbiTypeInferer(
-            var_types=self._ctx.var_types,
-            known_enums=self._ctx.known_enums,
-            known_contracts=self._ctx.known_contracts,
-            known_interfaces=self._ctx.known_interfaces,
-            known_struct_fields=self._ctx.known_struct_fields,
-            method_return_types=getattr(self, 'current_method_return_types', {}),
-        )
-
-    # ... Rest of the generator methods remain the same but use self._ctx and helpers ...
-    # The full implementation would continue here with all the generate_* methods
-    # from the original file, but using the new modular helpers.
-
-
-# =============================================================================
-# METADATA EXTRACTION
-# =============================================================================
-
-# (MetadataExtractor and DependencyManifest classes remain largely unchanged)
-# They are not tightly coupled to the code generation logic
-
-
-# =============================================================================
-# MAIN TRANSPILER CLASS
-# =============================================================================
 
 class SolidityToTypeScriptTranspiler:
     """Main transpiler class that orchestrates the conversion process."""
@@ -228,10 +50,6 @@ class SolidityToTypeScriptTranspiler:
         self.registry = TypeRegistry()
         self.stubbed_contracts = set(stubbed_contracts or [])
         self.emit_metadata = emit_metadata
-
-        # Metadata and dependency tracking
-        self.metadata_extractor = None
-        self.dependency_manifest = None
 
         # Load runtime replacements configuration
         self.runtime_replacements: Dict[str, dict] = {}
@@ -310,7 +128,7 @@ class SolidityToTypeScriptTranspiler:
         if replacement:
             return self._generate_runtime_reexport(replacement, file_depth)
 
-        # Generate TypeScript using the code generator
+        # Generate TypeScript using the modular code generator
         generator = TypeScriptCodeGenerator(
             self.registry if use_registry else None,
             file_depth=file_depth,
@@ -386,7 +204,7 @@ class SolidityToTypeScriptTranspiler:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Solidity to TypeScript Transpiler')
+    parser = argparse.ArgumentParser(description='Solidity to TypeScript Transpiler (Refactored)')
     parser.add_argument('input', help='Input Solidity file or directory')
     parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
