@@ -31,6 +31,7 @@ from .lexer import Lexer
 from .parser import Parser, SourceUnit
 from .types import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
+from .codegen.metadata import MetadataExtractor, FactoryGenerator
 
 
 class SolidityToTypeScriptTranspiler:
@@ -50,6 +51,9 @@ class SolidityToTypeScriptTranspiler:
         self.registry = TypeRegistry()
         self.stubbed_contracts = set(stubbed_contracts or [])
         self.emit_metadata = emit_metadata
+
+        # Metadata extraction for factory generation
+        self.metadata_extractor = MetadataExtractor() if emit_metadata else None
 
         # Load runtime replacements configuration
         self.runtime_replacements: Dict[str, dict] = {}
@@ -109,6 +113,20 @@ class SolidityToTypeScriptTranspiler:
 
         self.parsed_files[filepath] = ast
         self.registry.discover_from_ast(ast)
+
+        # Extract metadata for factory generation
+        if self.metadata_extractor:
+            try:
+                resolved_filepath = Path(filepath).resolve()
+                resolved_source_dir = self.source_dir.resolve()
+                if resolved_filepath.is_relative_to(resolved_source_dir):
+                    rel_path = resolved_filepath.relative_to(resolved_source_dir)
+                    file_path_no_ext = str(rel_path.with_suffix(''))
+                else:
+                    file_path_no_ext = Path(filepath).stem
+                self.metadata_extractor.extract_from_ast(ast, file_path_no_ext)
+            except (ValueError, TypeError, AttributeError):
+                pass
 
         # Calculate file depth for imports
         file_depth = 0
@@ -195,6 +213,24 @@ class SolidityToTypeScriptTranspiler:
             with open(path, 'w') as f:
                 f.write(content)
             print(f"Written: {filepath}")
+
+        # Generate and write factories.ts if metadata emission is enabled
+        if self.emit_metadata and self.metadata_extractor:
+            self.write_factories()
+
+    def write_factories(self) -> None:
+        """Generate and write the factories.ts file for dependency injection."""
+        if not self.metadata_extractor:
+            return
+
+        generator = FactoryGenerator(self.metadata_extractor)
+        factories_content = generator.generate()
+
+        factories_path = self.output_dir / 'factories.ts'
+        factories_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(factories_path, 'w') as f:
+            f.write(factories_content)
+        print(f"Written: {factories_path}")
 
 
 # =============================================================================
