@@ -10,11 +10,11 @@ from typing import Optional, Set, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
-    from ..types import TypeRegistry
+    from ..type_system import TypeRegistry
 
 from .base import BaseGenerator
 from ..parser.ast_nodes import TypeName, Expression, Literal, TypeCast, FunctionCall, Identifier
-from ..types.mappings import (
+from ..type_system.mappings import (
     SOLIDITY_TO_TS_MAP,
     DEFAULT_VALUES,
     get_type_max,

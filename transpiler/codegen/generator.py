@@ -18,7 +18,7 @@ from .imports import ImportGenerator
 from .contract import ContractGenerator
 
 from ..parser.ast_nodes import SourceUnit
-from ..types import TypeRegistry
+from ..type_system import TypeRegistry
 
 
 class TypeScriptCodeGenerator:

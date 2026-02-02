@@ -16,7 +16,7 @@ import unittest
 from transpiler.lexer import Lexer
 from transpiler.parser import Parser
 from transpiler.codegen import TypeScriptCodeGenerator
-from transpiler.types import TypeRegistry
+from transpiler.type_system import TypeRegistry
 
 
 class TestAbiEncodeFunctionReturnTypes(unittest.TestCase):

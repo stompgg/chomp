@@ -100,7 +100,7 @@ transpiler/
 │   ├── ast_nodes.py       # AST node definitions
 │   └── parser.py          # Recursive descent parser
 │
-├── types/                 # Type registry
+├── type_system/           # Type registry (named to avoid shadowing Python's types)
 │   ├── registry.py        # TypeRegistry for cross-file type discovery
 │   └── mappings.py        # Type conversion utilities
 │

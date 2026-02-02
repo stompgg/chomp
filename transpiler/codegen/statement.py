@@ -5,7 +5,7 @@ This module handles the generation of TypeScript code from Solidity statement
 AST nodes, including control flow, variable declarations, and special statements.
 """
 
-from typing import Optional, TYPE_CHECKING, Callable
+from typing import List, Optional, TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
@@ -391,17 +391,21 @@ class StatementGenerator(BaseGenerator):
     # CONTROL FLOW
     # =========================================================================
 
+    def _generate_body_statements(self, body: Statement, lines: List[str]) -> None:
+        """Generate statements from a body (Block or single statement)."""
+        if isinstance(body, Block):
+            for s in body.statements:
+                lines.append(self.generate(s))
+        else:
+            lines.append(self.generate(body))
+
     def generate_if_statement(self, stmt: IfStatement) -> str:
         """Generate TypeScript code for an if statement."""
         lines = []
         cond = self._expr.generate(stmt.condition)
         lines.append(f'{self.indent()}if ({cond}) {{')
         self.indent_level += 1
-        if isinstance(stmt.true_body, Block):
-            for s in stmt.true_body.statements:
-                lines.append(self.generate(s))
-        else:
-            lines.append(self.generate(stmt.true_body))
+        self._generate_body_statements(stmt.true_body, lines)
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
 
@@ -411,11 +415,7 @@ class StatementGenerator(BaseGenerator):
             else:
                 lines.append(f'{self.indent()}else {{')
                 self.indent_level += 1
-                if isinstance(stmt.false_body, Block):
-                    for s in stmt.false_body.statements:
-                        lines.append(self.generate(s))
-                else:
-                    lines.append(self.generate(stmt.false_body))
+                self._generate_body_statements(stmt.false_body, lines)
                 self.indent_level -= 1
                 lines.append(f'{self.indent()}}}')
 
@@ -448,11 +448,7 @@ class StatementGenerator(BaseGenerator):
         lines.append(f'{self.indent()}for ({init}; {cond}; {post}) {{')
         self.indent_level += 1
         if stmt.body:
-            if isinstance(stmt.body, Block):
-                for s in stmt.body.statements:
-                    lines.append(self.generate(s))
-            else:
-                lines.append(self.generate(stmt.body))
+            self._generate_body_statements(stmt.body, lines)
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
         return '\n'.join(lines)
@@ -463,11 +459,7 @@ class StatementGenerator(BaseGenerator):
         cond = self._expr.generate(stmt.condition)
         lines.append(f'{self.indent()}while ({cond}) {{')
         self.indent_level += 1
-        if isinstance(stmt.body, Block):
-            for s in stmt.body.statements:
-                lines.append(self.generate(s))
-        else:
-            lines.append(self.generate(stmt.body))
+        self._generate_body_statements(stmt.body, lines)
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')
         return '\n'.join(lines)
@@ -477,11 +469,7 @@ class StatementGenerator(BaseGenerator):
         lines = []
         lines.append(f'{self.indent()}do {{')
         self.indent_level += 1
-        if isinstance(stmt.body, Block):
-            for s in stmt.body.statements:
-                lines.append(self.generate(s))
-        else:
-            lines.append(self.generate(stmt.body))
+        self._generate_body_statements(stmt.body, lines)
         self.indent_level -= 1
         cond = self._expr.generate(stmt.condition)
         lines.append(f'{self.indent()}}} while ({cond});')

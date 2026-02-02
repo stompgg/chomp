@@ -156,15 +156,8 @@ class FunctionGenerator(BaseGenerator):
         ])
         return_type = self._generate_return_type(func.return_parameters)
 
-        visibility = ''
-        static_prefix = ''
-        if self._ctx.current_contract_kind == 'library':
-            static_prefix = 'static '
-
-        if func.visibility == 'private':
-            visibility = 'private '
-        elif func.visibility == 'internal':
-            visibility = 'protected ' if self._ctx.current_contract_kind != 'library' else ''
+        visibility = self._get_visibility_modifier(func.visibility)
+        static_prefix = self._get_static_modifier()
 
         # Check if should add override modifier
         should_override = (func.is_override and func.name in self.inherited_methods) or \
@@ -258,11 +251,7 @@ class FunctionGenerator(BaseGenerator):
 
         return_type = self._generate_return_type(main_func.return_parameters)
 
-        visibility = ''
-        if main_func.visibility == 'private':
-            visibility = 'private '
-        elif main_func.visibility == 'internal':
-            visibility = 'protected '
+        visibility = self._get_visibility_modifier(main_func.visibility)
 
         is_override = any(f.is_override for f in funcs) and main_func.name in self.inherited_methods
         override_prefix = 'override ' if is_override else ''
@@ -391,3 +380,15 @@ class FunctionGenerator(BaseGenerator):
     def set_inherited_methods(self, methods: Set[str]) -> None:
         """Set the inherited methods for override detection."""
         self.inherited_methods = methods
+
+    def _get_visibility_modifier(self, visibility: str) -> str:
+        """Get TypeScript visibility modifier from Solidity visibility."""
+        if visibility == 'private':
+            return 'private '
+        elif visibility == 'internal':
+            return 'protected ' if self._ctx.current_contract_kind != 'library' else ''
+        return ''
+
+    def _get_static_modifier(self) -> str:
+        """Get static modifier if in a library context."""
+        return 'static ' if self._ctx.current_contract_kind == 'library' else ''

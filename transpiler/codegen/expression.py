@@ -10,7 +10,7 @@ from typing import Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
-    from ..types import TypeRegistry
+    from ..type_system import TypeRegistry
 
 from .base import BaseGenerator
 from .type_converter import TypeConverter
@@ -656,43 +656,38 @@ class ExpressionGenerator(BaseGenerator):
             type_strs.append(f"'{type_str}'")
         return f'[{", ".join(type_strs)}]'
 
-    def _infer_single_abi_type(self, arg: Expression) -> str:
-        """Infer ABI type from a single value expression."""
+    def _infer_expression_type(self, arg: Expression) -> tuple:
+        """Infer the Solidity type from an expression.
+
+        Returns:
+            A tuple of (type_name: str, is_array: bool)
+        """
         if isinstance(arg, Identifier):
             name = arg.name
             if name in self._ctx.var_types:
                 type_info = self._ctx.var_types[name]
                 if type_info.name:
-                    type_name = type_info.name
-                    if type_name == 'address':
-                        return "{type: 'address'}"
-                    if type_name == 'string':
-                        return "{type: 'string'}"
-                    if type_name.startswith('uint') or type_name.startswith('int') or type_name == 'bool' or type_name.startswith('bytes'):
-                        return f"{{type: '{type_name}'}}"
-                    if type_name in self._ctx.known_enums:
-                        return "{type: 'uint8'}"
+                    is_array = getattr(type_info, 'is_array', False)
+                    if type_info.name in self._ctx.known_enums:
+                        return ('uint8', is_array)
+                    return (type_info.name, is_array)
             if name in self._ctx.known_enums:
-                return "{type: 'uint8'}"
-            return "{type: 'uint256'}"
+                return ('uint8', False)
+            return ('uint256', False)
 
         if isinstance(arg, Literal):
-            if arg.kind == 'string':
-                return "{type: 'string'}"
-            elif arg.kind in ('number', 'hex'):
-                return "{type: 'uint256'}"
-            elif arg.kind == 'bool':
-                return "{type: 'bool'}"
+            kind_to_type = {'string': 'string', 'bool': 'bool'}
+            return (kind_to_type.get(arg.kind, 'uint256'), False)
 
         if isinstance(arg, MemberAccess):
             if arg.member == '_contractAddress':
-                return "{type: 'address'}"
+                return ('address', False)
             if isinstance(arg.expression, Identifier):
                 if arg.expression.name == 'Enums':
-                    return "{type: 'uint8'}"
+                    return ('uint8', False)
                 if arg.expression.name in ('this', 'msg', 'tx'):
                     if arg.member in ('sender', 'origin', '_contractAddress'):
-                        return "{type: 'address'}"
+                        return ('address', False)
                 var_name = arg.expression.name
                 if var_name in self._ctx.var_types:
                     type_info = self._ctx.var_types[var_name]
@@ -701,153 +696,78 @@ class ExpressionGenerator(BaseGenerator):
                         if arg.member in struct_fields:
                             field_info = struct_fields[arg.member]
                             if isinstance(field_info, tuple):
-                                field_type, is_array = field_info
-                            else:
-                                field_type, is_array = field_info, False
-                            return self._solidity_type_to_abi_type(field_type, is_array)
+                                return field_info
+                            return (field_info, False)
 
         if isinstance(arg, FunctionCall):
             if isinstance(arg.function, Identifier):
                 func_name = arg.function.name
                 if func_name == 'address':
-                    return "{type: 'address'}"
+                    return ('address', False)
                 if func_name.startswith('uint') or func_name.startswith('int'):
-                    return f"{{type: '{func_name}'}}"
-                if func_name == 'bytes32' or func_name.startswith('bytes'):
-                    return f"{{type: '{func_name}'}}"
+                    return (func_name, False)
+                if func_name.startswith('bytes'):
+                    return (func_name, False)
                 if func_name in ('keccak256', 'blockhash', 'sha256'):
-                    return "{type: 'bytes32'}"
+                    return ('bytes32', False)
+                if func_name == 'name':
+                    return ('string', False)
                 # Check method return types from current contract
                 if func_name in self._ctx.current_method_return_types:
-                    return_type = self._ctx.current_method_return_types[func_name]
-                    return self._solidity_type_to_abi_type(return_type)
-            # Check for this.method() pattern
+                    return (self._ctx.current_method_return_types[func_name], False)
             elif isinstance(arg.function, MemberAccess):
+                if arg.function.member == 'name':
+                    return ('string', False)
                 if isinstance(arg.function.expression, Identifier):
                     if arg.function.expression.name == 'this':
                         method_name = arg.function.member
                         if method_name in self._ctx.current_method_return_types:
-                            return_type = self._ctx.current_method_return_types[method_name]
-                            return self._solidity_type_to_abi_type(return_type)
+                            return (self._ctx.current_method_return_types[method_name], False)
 
         if isinstance(arg, TypeCast):
             type_name = arg.type_name.name
-            if type_name == 'address':
-                return "{type: 'address'}"
-            if type_name.startswith('uint') or type_name.startswith('int'):
-                return f"{{type: '{type_name}'}}"
-            if type_name == 'bytes32' or type_name.startswith('bytes'):
-                return f"{{type: '{type_name}'}}"
+            return (type_name, False)
 
-        return "{type: 'uint256'}"
+        return ('uint256', False)
+
+    def _infer_single_abi_type(self, arg: Expression) -> str:
+        """Infer ABI type from a single value expression."""
+        type_name, is_array = self._infer_expression_type(arg)
+        return self._solidity_type_to_abi_type(type_name, is_array)
 
     def _infer_single_packed_type(self, arg: Expression) -> str:
         """Infer packed ABI type from a single value expression."""
-        if isinstance(arg, Identifier):
-            name = arg.name
-            if name in self._ctx.var_types:
-                type_info = self._ctx.var_types[name]
-                if type_info.name:
-                    type_name = type_info.name
-                    array_suffix = '[]' if type_info.is_array else ''
-                    if type_name == 'address':
-                        return f'address{array_suffix}'
-                    if type_name.startswith('uint') or type_name.startswith('int'):
-                        return f'{type_name}{array_suffix}'
-                    if type_name == 'bool':
-                        return f'bool{array_suffix}'
-                    if type_name.startswith('bytes'):
-                        return f'{type_name}{array_suffix}'
-                    if type_name == 'string':
-                        return f'string{array_suffix}'
-                    if type_name in self._ctx.known_enums:
-                        return f'uint8{array_suffix}'
-            if name in self._ctx.known_enums:
-                return 'uint8'
-            return 'uint256'
+        type_name, is_array = self._infer_expression_type(arg)
+        return self._get_packed_type(type_name, is_array)
 
-        if isinstance(arg, Literal):
-            if arg.kind == 'string':
-                return 'string'
-            elif arg.kind in ('number', 'hex'):
-                return 'uint256'
-            elif arg.kind == 'bool':
-                return 'bool'
+    def _resolve_abi_base_type(self, type_name: str) -> str:
+        """Resolve a Solidity type to its base ABI type string.
 
-        if isinstance(arg, MemberAccess):
-            if arg.member == '_contractAddress':
-                return 'address'
-            if isinstance(arg.expression, Identifier):
-                if arg.expression.name == 'Enums':
-                    return 'uint8'
-                if arg.expression.name in ('this', 'msg', 'tx'):
-                    if arg.member in ('sender', 'origin'):
-                        return 'address'
-                var_name = arg.expression.name
-                if var_name in self._ctx.var_types:
-                    type_info = self._ctx.var_types[var_name]
-                    if type_info.name and type_info.name in self._ctx.known_struct_fields:
-                        struct_fields = self._ctx.known_struct_fields[type_info.name]
-                        if arg.member in struct_fields:
-                            field_info = struct_fields[arg.member]
-                            if isinstance(field_info, tuple):
-                                field_type, is_array = field_info
-                            else:
-                                field_type, is_array = field_info, False
-                            return self._get_packed_type(field_type, is_array)
-
-        if isinstance(arg, FunctionCall):
-            if isinstance(arg.function, Identifier):
-                func_name = arg.function.name
-                if func_name == 'blockhash':
-                    return 'bytes32'
-                if func_name == 'keccak256':
-                    return 'bytes32'
-                if func_name == 'name':
-                    return 'string'
-            elif isinstance(arg.function, MemberAccess):
-                if arg.function.member == 'name':
-                    return 'string'
-
+        Maps enums to uint8, contracts/interfaces to address, preserves primitives.
+        """
+        if type_name in ('string', 'address', 'bool'):
+            return type_name
+        if type_name.startswith('uint') or type_name.startswith('int'):
+            return type_name
+        if type_name.startswith('bytes'):
+            return type_name
+        if type_name in self._ctx.known_enums:
+            return 'uint8'
+        if type_name in self._ctx.known_contracts or type_name in self._ctx.known_interfaces:
+            return 'address'
         return 'uint256'
 
     def _solidity_type_to_abi_type(self, type_name: str, is_array: bool = False) -> str:
-        """Convert a Solidity type name to ABI type format."""
+        """Convert a Solidity type name to ABI type format ({type: '...'})."""
+        base_type = self._resolve_abi_base_type(type_name)
         array_suffix = '[]' if is_array else ''
-        if type_name == 'string':
-            return f"{{type: 'string{array_suffix}'}}"
-        if type_name == 'address':
-            return f"{{type: 'address{array_suffix}'}}"
-        if type_name == 'bool':
-            return f"{{type: 'bool{array_suffix}'}}"
-        if type_name.startswith('uint') or type_name.startswith('int'):
-            return f"{{type: '{type_name}{array_suffix}'}}"
-        if type_name.startswith('bytes'):
-            return f"{{type: '{type_name}{array_suffix}'}}"
-        if type_name in self._ctx.known_enums:
-            return f"{{type: 'uint8{array_suffix}'}}"
-        if type_name in self._ctx.known_contracts or type_name in self._ctx.known_interfaces:
-            return f"{{type: 'address{array_suffix}'}}"
-        return f"{{type: 'uint256{array_suffix}'}}"
+        return f"{{type: '{base_type}{array_suffix}'}}"
 
     def _get_packed_type(self, type_name: str, is_array: bool = False) -> str:
-        """Get packed type string for a Solidity type."""
+        """Get packed type string for a Solidity type (plain string)."""
+        base_type = self._resolve_abi_base_type(type_name)
         array_suffix = '[]' if is_array else ''
-        if type_name == 'address':
-            return f'address{array_suffix}'
-        if type_name.startswith('uint') or type_name.startswith('int'):
-            return f'{type_name}{array_suffix}'
-        if type_name == 'bool':
-            return f'bool{array_suffix}'
-        if type_name.startswith('bytes'):
-            return f'{type_name}{array_suffix}'
-        if type_name == 'string':
-            return f'string{array_suffix}'
-        if type_name in self._ctx.known_enums:
-            return f'uint8{array_suffix}'
-        if type_name in self._ctx.known_contracts or type_name in self._ctx.known_interfaces:
-            return f'address{array_suffix}'
-        return f'uint256{array_suffix}'
+        return f'{base_type}{array_suffix}'
 
     def _convert_abi_value(self, arg: Expression) -> str:
         """Convert value for ABI encoding, ensuring proper types."""

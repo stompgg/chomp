@@ -17,7 +17,7 @@ Usage:
     # Or import individual components:
     from transpiler.lexer import Lexer
     from transpiler.parser import Parser
-    from transpiler.types import TypeRegistry
+    from transpiler.type_system import TypeRegistry
     from transpiler.codegen import TypeScriptCodeGenerator
 """
 
@@ -25,7 +25,7 @@ Usage:
 from .sol2ts import SolidityToTypeScriptTranspiler
 from .lexer import Lexer
 from .parser import Parser
-from .types import TypeRegistry
+from .type_system import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
 
 __all__ = [

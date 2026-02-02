@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .function import FunctionGenerator
     from .definition import DefinitionGenerator
     from .type_converter import TypeConverter
-    from ..types import TypeRegistry
+    from ..type_system import TypeRegistry
 
 from .base import BaseGenerator
 from ..parser.ast_nodes import (

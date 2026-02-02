@@ -29,7 +29,7 @@ from typing import Optional, List, Dict, Set
 # Import from refactored modules
 from .lexer import Lexer
 from .parser import Parser, SourceUnit
-from .types import TypeRegistry
+from .type_system import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
 from .codegen.metadata import MetadataExtractor, FactoryGenerator
 

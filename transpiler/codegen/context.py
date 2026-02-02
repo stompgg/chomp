@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Set, List, Optional
 
 from ..parser.ast_nodes import TypeName
-from ..types import TypeRegistry
+from ..type_system import TypeRegistry
 
 
 @dataclass
