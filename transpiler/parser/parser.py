@@ -5,7 +5,7 @@ The Parser converts a stream of tokens from the Lexer into an Abstract
 Syntax Tree (AST) representation of the Solidity source code.
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Callable, Set
 
 from ..lexer import Token, TokenType
 from .ast_nodes import (
@@ -60,6 +60,17 @@ from .ast_nodes import (
     AssemblyStatement,
 )
 
+# Type tokens used for type checking
+TYPE_TOKENS: Set[TokenType] = {
+    TokenType.IDENTIFIER, TokenType.UINT, TokenType.INT, TokenType.BOOL,
+    TokenType.ADDRESS, TokenType.BYTES, TokenType.STRING, TokenType.BYTES32
+}
+
+# Storage location tokens
+STORAGE_TOKENS: Set[TokenType] = {
+    TokenType.STORAGE, TokenType.MEMORY, TokenType.CALLDATA
+}
+
 
 class Parser:
     """
@@ -71,6 +82,10 @@ class Parser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
         self.pos = 0
+
+    # =========================================================================
+    # TOKEN UTILITIES
+    # =========================================================================
 
     def peek(self, offset: int = 0) -> Token:
         """Look ahead in the token stream without consuming."""
@@ -101,6 +116,44 @@ class Parser:
                 f"at line {self.current().line}, column {self.current().column}: {message}"
             )
         return self.advance()
+
+    def skip_balanced(self, open_type: TokenType, close_type: TokenType) -> None:
+        """Skip a balanced pair of tokens (e.g., parentheses or braces)."""
+        if not self.match(open_type):
+            return
+        self.advance()
+        depth = 1
+        while depth > 0 and not self.match(TokenType.EOF):
+            if self.match(open_type):
+                depth += 1
+            elif self.match(close_type):
+                depth -= 1
+            self.advance()
+
+    def parse_comma_separated(
+        self,
+        parse_item: Callable[[], any],
+        end_token: TokenType,
+        allow_trailing: bool = True
+    ) -> List[any]:
+        """Parse a comma-separated list of items."""
+        items = []
+        while not self.match(end_token, TokenType.EOF):
+            items.append(parse_item())
+            if self.match(TokenType.COMMA):
+                self.advance()
+                if allow_trailing and self.match(end_token):
+                    break
+            else:
+                break
+        return items
+
+    def parse_storage_location(self) -> str:
+        """Parse an optional storage location (storage/memory/calldata)."""
+        location = ''
+        while self.match(*STORAGE_TOKENS):
+            location = self.advance().value
+        return location
 
     # =========================================================================
     # TOP-LEVEL PARSING
@@ -195,16 +248,7 @@ class Parser:
             self.advance()
             while True:
                 base_name = self.advance().value
-                # Handle generics like MappingAllocator
-                if self.match(TokenType.LPAREN):
-                    self.advance()
-                    depth = 1
-                    while depth > 0:
-                        if self.match(TokenType.LPAREN):
-                            depth += 1
-                        elif self.match(TokenType.RPAREN):
-                            depth -= 1
-                        self.advance()
+                self.skip_balanced(TokenType.LPAREN, TokenType.RPAREN)  # Handle generics
                 base_contracts.append(base_name)
                 if self.match(TokenType.COMMA):
                     self.advance()
@@ -313,14 +357,7 @@ class Parser:
         self.expect(TokenType.EVENT)
         name = self.expect(TokenType.IDENTIFIER).value
         self.expect(TokenType.LPAREN)
-
-        parameters = []
-        while not self.match(TokenType.RPAREN, TokenType.EOF):
-            param = self.parse_parameter()
-            parameters.append(param)
-            if self.match(TokenType.COMMA):
-                self.advance()
-
+        parameters = self.parse_comma_separated(self.parse_parameter, TokenType.RPAREN)
         self.expect(TokenType.RPAREN)
         self.expect(TokenType.SEMICOLON)
         return EventDefinition(name=name, parameters=parameters)
@@ -330,14 +367,7 @@ class Parser:
         self.expect(TokenType.ERROR)
         name = self.expect(TokenType.IDENTIFIER).value
         self.expect(TokenType.LPAREN)
-
-        parameters = []
-        while not self.match(TokenType.RPAREN, TokenType.EOF):
-            param = self.parse_parameter()
-            parameters.append(param)
-            if self.match(TokenType.COMMA):
-                self.advance()
-
+        parameters = self.parse_comma_separated(self.parse_parameter, TokenType.RPAREN)
         self.expect(TokenType.RPAREN)
         self.expect(TokenType.SEMICOLON)
         return ErrorDefinition(name=name, parameters=parameters)
@@ -376,79 +406,11 @@ class Parser:
             name = self.advance().value
 
         self.expect(TokenType.LPAREN)
-        parameters = []
-        while not self.match(TokenType.RPAREN, TokenType.EOF):
-            param = self.parse_parameter()
-            parameters.append(param)
-            if self.match(TokenType.COMMA):
-                self.advance()
+        parameters = self.parse_comma_separated(self.parse_parameter, TokenType.RPAREN)
         self.expect(TokenType.RPAREN)
 
-        visibility = 'public'
-        mutability = ''
-        modifiers = []
-        is_virtual = False
-        is_override = False
-        return_parameters = []
-
-        # Parse function attributes
-        while True:
-            if self.match(TokenType.PUBLIC):
-                visibility = 'public'
-                self.advance()
-            elif self.match(TokenType.PRIVATE):
-                visibility = 'private'
-                self.advance()
-            elif self.match(TokenType.INTERNAL):
-                visibility = 'internal'
-                self.advance()
-            elif self.match(TokenType.EXTERNAL):
-                visibility = 'external'
-                self.advance()
-            elif self.match(TokenType.VIEW):
-                mutability = 'view'
-                self.advance()
-            elif self.match(TokenType.PURE):
-                mutability = 'pure'
-                self.advance()
-            elif self.match(TokenType.PAYABLE):
-                mutability = 'payable'
-                self.advance()
-            elif self.match(TokenType.VIRTUAL):
-                is_virtual = True
-                self.advance()
-            elif self.match(TokenType.OVERRIDE):
-                is_override = True
-                self.advance()
-                # Handle override(A, B)
-                if self.match(TokenType.LPAREN):
-                    self.advance()
-                    while not self.match(TokenType.RPAREN):
-                        self.advance()
-                    self.expect(TokenType.RPAREN)
-            elif self.match(TokenType.RETURNS):
-                self.advance()
-                self.expect(TokenType.LPAREN)
-                while not self.match(TokenType.RPAREN, TokenType.EOF):
-                    ret_param = self.parse_parameter()
-                    return_parameters.append(ret_param)
-                    if self.match(TokenType.COMMA):
-                        self.advance()
-                self.expect(TokenType.RPAREN)
-            elif self.match(TokenType.IDENTIFIER):
-                # Modifier call
-                modifiers.append(self.advance().value)
-                if self.match(TokenType.LPAREN):
-                    self.advance()
-                    depth = 1
-                    while depth > 0:
-                        if self.match(TokenType.LPAREN):
-                            depth += 1
-                        elif self.match(TokenType.RPAREN):
-                            depth -= 1
-                        self.advance()
-            else:
-                break
+        visibility, mutability, is_virtual, is_override, modifiers, return_parameters = \
+            self._parse_function_attributes()
 
         body = None
         if self.match(TokenType.LBRACE):
@@ -468,36 +430,77 @@ class Parser:
             body=body,
         )
 
+    def _parse_function_attributes(self) -> Tuple[str, str, bool, bool, List[str], List[VariableDeclaration]]:
+        """Parse function attributes (visibility, mutability, modifiers, returns)."""
+        # Token type -> (attribute_name, attribute_value)
+        visibility_tokens = {
+            TokenType.PUBLIC: 'public',
+            TokenType.PRIVATE: 'private',
+            TokenType.INTERNAL: 'internal',
+            TokenType.EXTERNAL: 'external',
+        }
+        mutability_tokens = {
+            TokenType.VIEW: 'view',
+            TokenType.PURE: 'pure',
+            TokenType.PAYABLE: 'payable',
+        }
+
+        visibility = 'public'
+        mutability = ''
+        modifiers = []
+        is_virtual = False
+        is_override = False
+        return_parameters = []
+
+        while True:
+            if self.current().type in visibility_tokens:
+                visibility = visibility_tokens[self.current().type]
+                self.advance()
+            elif self.current().type in mutability_tokens:
+                mutability = mutability_tokens[self.current().type]
+                self.advance()
+            elif self.match(TokenType.VIRTUAL):
+                is_virtual = True
+                self.advance()
+            elif self.match(TokenType.OVERRIDE):
+                is_override = True
+                self.advance()
+                self.skip_balanced(TokenType.LPAREN, TokenType.RPAREN)
+            elif self.match(TokenType.RETURNS):
+                self.advance()
+                self.expect(TokenType.LPAREN)
+                return_parameters = self.parse_comma_separated(self.parse_parameter, TokenType.RPAREN)
+                self.expect(TokenType.RPAREN)
+            elif self.match(TokenType.IDENTIFIER):
+                modifiers.append(self.advance().value)
+                self.skip_balanced(TokenType.LPAREN, TokenType.RPAREN)
+            else:
+                break
+
+        return visibility, mutability, is_virtual, is_override, modifiers, return_parameters
+
     def parse_constructor(self) -> FunctionDefinition:
         """Parse a constructor definition."""
         self.expect(TokenType.CONSTRUCTOR)
         self.expect(TokenType.LPAREN)
-
-        parameters = []
-        while not self.match(TokenType.RPAREN, TokenType.EOF):
-            param = self.parse_parameter()
-            parameters.append(param)
-            if self.match(TokenType.COMMA):
-                self.advance()
+        parameters = self.parse_comma_separated(self.parse_parameter, TokenType.RPAREN)
         self.expect(TokenType.RPAREN)
 
         # Parse modifiers, visibility, and base constructor calls
         base_constructor_calls = []
+        skip_tokens = {TokenType.PUBLIC, TokenType.PRIVATE, TokenType.INTERNAL,
+                       TokenType.EXTERNAL, TokenType.PAYABLE}
+
         while not self.match(TokenType.LBRACE, TokenType.EOF):
-            # Skip visibility and state mutability keywords
-            if self.match(TokenType.PUBLIC, TokenType.PRIVATE, TokenType.INTERNAL,
-                          TokenType.EXTERNAL, TokenType.PAYABLE):
+            if self.current().type in skip_tokens:
                 self.advance()
-            # Check for base constructor call: Identifier(args)
             elif self.match(TokenType.IDENTIFIER):
                 base_name = self.advance().value
                 if self.match(TokenType.LPAREN):
-                    # This is a base constructor call
                     args = self.parse_base_constructor_args()
                     base_constructor_calls.append(
                         BaseConstructorCall(base_name=base_name, arguments=args)
                     )
-                # else it's just a modifier name, skip it
             else:
                 self.advance()
 
@@ -528,15 +531,7 @@ class Parser:
     def skip_function(self) -> None:
         """Skip a function body (for receive/fallback)."""
         self.advance()  # Skip receive/fallback
-        if self.match(TokenType.LPAREN):
-            self.advance()
-            depth = 1
-            while depth > 0 and not self.match(TokenType.EOF):
-                if self.match(TokenType.LPAREN):
-                    depth += 1
-                elif self.match(TokenType.RPAREN):
-                    depth -= 1
-                self.advance()
+        self.skip_balanced(TokenType.LPAREN, TokenType.RPAREN)
 
         while not self.match(TokenType.LBRACE, TokenType.SEMICOLON, TokenType.EOF):
             self.advance()
@@ -557,21 +552,13 @@ class Parser:
         storage_location = ''
         is_indexed = False
 
-        while True:
-            if self.match(TokenType.STORAGE):
-                storage_location = 'storage'
-                self.advance()
-            elif self.match(TokenType.MEMORY):
-                storage_location = 'memory'
-                self.advance()
-            elif self.match(TokenType.CALLDATA):
-                storage_location = 'calldata'
-                self.advance()
-            elif self.match(TokenType.INDEXED):
+        # Parse storage location and indexed modifier
+        while self.match(*STORAGE_TOKENS, TokenType.INDEXED):
+            if self.match(TokenType.INDEXED):
                 is_indexed = True
                 self.advance()
             else:
-                break
+                storage_location = self.advance().value
 
         name = ''
         if self.match(TokenType.IDENTIFIER):
@@ -588,28 +575,26 @@ class Parser:
         """Parse a state variable declaration."""
         type_name = self.parse_type_name()
 
+        visibility_tokens = {
+            TokenType.PUBLIC: 'public',
+            TokenType.PRIVATE: 'private',
+            TokenType.INTERNAL: 'internal',
+        }
+        mutability_tokens = {
+            TokenType.CONSTANT: 'constant',
+            TokenType.IMMUTABLE: 'immutable',
+            TokenType.TRANSIENT: 'transient',
+        }
+
         visibility = 'internal'
         mutability = ''
-        storage_location = ''
 
         while True:
-            if self.match(TokenType.PUBLIC):
-                visibility = 'public'
+            if self.current().type in visibility_tokens:
+                visibility = visibility_tokens[self.current().type]
                 self.advance()
-            elif self.match(TokenType.PRIVATE):
-                visibility = 'private'
-                self.advance()
-            elif self.match(TokenType.INTERNAL):
-                visibility = 'internal'
-                self.advance()
-            elif self.match(TokenType.CONSTANT):
-                mutability = 'constant'
-                self.advance()
-            elif self.match(TokenType.IMMUTABLE):
-                mutability = 'immutable'
-                self.advance()
-            elif self.match(TokenType.TRANSIENT):
-                mutability = 'transient'
+            elif self.current().type in mutability_tokens:
+                mutability = mutability_tokens[self.current().type]
                 self.advance()
             elif self.match(TokenType.OVERRIDE):
                 self.advance()
@@ -630,7 +615,7 @@ class Parser:
             type_name=type_name,
             visibility=visibility,
             mutability=mutability,
-            storage_location=storage_location,
+            storage_location='',
             initial_value=initial_value,
         )
 
@@ -839,17 +824,13 @@ class Parser:
 
     def parse_variable_declaration_statement(self) -> VariableDeclarationStatement:
         """Parse a variable declaration statement."""
-        # Check for tuple declaration
         if self.match(TokenType.LPAREN):
             return self.parse_tuple_declaration()
 
         type_name = self.parse_type_name()
-
-        storage_location = ''
-        while self.match(TokenType.STORAGE, TokenType.MEMORY, TokenType.CALLDATA):
-            storage_location = self.advance().value
-
+        storage_location = self.parse_storage_location()
         name = self.expect(TokenType.IDENTIFIER).value
+
         declaration = VariableDeclaration(
             name=name,
             type_name=type_name,
@@ -876,12 +857,9 @@ class Parser:
                 continue
 
             type_name = self.parse_type_name()
-
-            storage_location = ''
-            while self.match(TokenType.STORAGE, TokenType.MEMORY, TokenType.CALLDATA):
-                storage_location = self.advance().value
-
+            storage_location = self.parse_storage_location()
             name = self.expect(TokenType.IDENTIFIER).value
+
             declarations.append(VariableDeclaration(
                 name=name,
                 type_name=type_name,
@@ -996,32 +974,17 @@ class Parser:
         """Parse try/catch statement - skip and return empty block."""
         self.expect(TokenType.TRY)
 
+        # Skip to try block
         while not self.match(TokenType.LBRACE, TokenType.EOF):
             self.advance()
+        self.skip_balanced(TokenType.LBRACE, TokenType.RBRACE)
 
-        if self.match(TokenType.LBRACE):
-            depth = 1
-            self.advance()
-            while depth > 0 and not self.match(TokenType.EOF):
-                if self.match(TokenType.LBRACE):
-                    depth += 1
-                elif self.match(TokenType.RBRACE):
-                    depth -= 1
-                self.advance()
-
+        # Skip catch clauses
         while self.match(TokenType.CATCH):
             self.advance()
             while not self.match(TokenType.LBRACE, TokenType.EOF):
                 self.advance()
-            if self.match(TokenType.LBRACE):
-                depth = 1
-                self.advance()
-                while depth > 0 and not self.match(TokenType.EOF):
-                    if self.match(TokenType.LBRACE):
-                        depth += 1
-                    elif self.match(TokenType.RBRACE):
-                        depth -= 1
-                    self.advance()
+            self.skip_balanced(TokenType.LBRACE, TokenType.RBRACE)
 
         return Block(statements=[])
 
@@ -1105,102 +1068,65 @@ class Parser:
 
         return condition
 
-    def parse_or(self) -> Expression:
-        """Parse a logical OR expression."""
-        left = self.parse_and()
-        while self.match(TokenType.PIPE_PIPE):
+    def _parse_binary_op(
+        self,
+        parse_operand: Callable[[], Expression],
+        *operator_types: TokenType
+    ) -> Expression:
+        """Parse a left-associative binary operation with the given operators."""
+        left = parse_operand()
+        while self.match(*operator_types):
             op = self.advance().value
-            right = self.parse_and()
+            right = parse_operand()
             left = BinaryOperation(left=left, operator=op, right=right)
         return left
+
+    def parse_or(self) -> Expression:
+        """Parse a logical OR expression."""
+        return self._parse_binary_op(self.parse_and, TokenType.PIPE_PIPE)
 
     def parse_and(self) -> Expression:
         """Parse a logical AND expression."""
-        left = self.parse_bitwise_or()
-        while self.match(TokenType.AMPERSAND_AMPERSAND):
-            op = self.advance().value
-            right = self.parse_bitwise_or()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_bitwise_or, TokenType.AMPERSAND_AMPERSAND)
 
     def parse_bitwise_or(self) -> Expression:
         """Parse a bitwise OR expression."""
-        left = self.parse_bitwise_xor()
-        while self.match(TokenType.PIPE):
-            op = self.advance().value
-            right = self.parse_bitwise_xor()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_bitwise_xor, TokenType.PIPE)
 
     def parse_bitwise_xor(self) -> Expression:
         """Parse a bitwise XOR expression."""
-        left = self.parse_bitwise_and()
-        while self.match(TokenType.CARET):
-            op = self.advance().value
-            right = self.parse_bitwise_and()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_bitwise_and, TokenType.CARET)
 
     def parse_bitwise_and(self) -> Expression:
         """Parse a bitwise AND expression."""
-        left = self.parse_equality()
-        while self.match(TokenType.AMPERSAND):
-            op = self.advance().value
-            right = self.parse_equality()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_equality, TokenType.AMPERSAND)
 
     def parse_equality(self) -> Expression:
         """Parse an equality expression."""
-        left = self.parse_comparison()
-        while self.match(TokenType.EQ_EQ, TokenType.BANG_EQ):
-            op = self.advance().value
-            right = self.parse_comparison()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_comparison, TokenType.EQ_EQ, TokenType.BANG_EQ)
 
     def parse_comparison(self) -> Expression:
         """Parse a comparison expression."""
-        left = self.parse_shift()
-        while self.match(TokenType.LT, TokenType.GT, TokenType.LT_EQ, TokenType.GT_EQ):
-            op = self.advance().value
-            right = self.parse_shift()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_shift, TokenType.LT, TokenType.GT, TokenType.LT_EQ, TokenType.GT_EQ)
 
     def parse_shift(self) -> Expression:
         """Parse a shift expression."""
-        left = self.parse_additive()
-        while self.match(TokenType.LT_LT, TokenType.GT_GT):
-            op = self.advance().value
-            right = self.parse_additive()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_additive, TokenType.LT_LT, TokenType.GT_GT)
 
     def parse_additive(self) -> Expression:
         """Parse an additive expression."""
-        left = self.parse_multiplicative()
-        while self.match(TokenType.PLUS, TokenType.MINUS):
-            op = self.advance().value
-            right = self.parse_multiplicative()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_multiplicative, TokenType.PLUS, TokenType.MINUS)
 
     def parse_multiplicative(self) -> Expression:
         """Parse a multiplicative expression."""
-        left = self.parse_exponentiation()
-        while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
-            op = self.advance().value
-            right = self.parse_exponentiation()
-            left = BinaryOperation(left=left, operator=op, right=right)
-        return left
+        return self._parse_binary_op(self.parse_exponentiation, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT)
 
     def parse_exponentiation(self) -> Expression:
         """Parse an exponentiation expression (right-associative)."""
         left = self.parse_unary()
         if self.match(TokenType.STAR_STAR):
             op = self.advance().value
-            right = self.parse_exponentiation()
+            right = self.parse_exponentiation()  # Right-associative: recurse
             return BinaryOperation(left=left, operator=op, right=right)
         return left
 
