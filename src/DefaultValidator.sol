@@ -137,18 +137,16 @@ contract DefaultValidator is IValidator {
         view
         returns (bool)
     {
-        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
-        uint256 activeMonIndex = (playerIndex == 0) ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
+        // Use batch context to minimize external calls (reduces SLOADs significantly)
+        ValidationContext memory vctx = ENGINE.getValidationContext(battleKey);
+        uint256 activeMonIndex = (playerIndex == 0) ? vctx.p0ActiveMonIndex : vctx.p1ActiveMonIndex;
+        bool isActiveMonKnockedOut = (playerIndex == 0) ? vctx.p0ActiveMonKnockedOut : vctx.p1ActiveMonKnockedOut;
 
         // Enforce a switch IF:
         // - if it is the zeroth turn
         // - if the active mon is knocked out
         {
-            bool isTurnZero = ctx.turnId == 0;
-            bool isActiveMonKnockedOut =
-                ENGINE.getMonStateForBattle(
-                    battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut
-                ) == 1;
+            bool isTurnZero = vctx.turnId == 0;
             if (isTurnZero || isActiveMonKnockedOut) {
                 if (moveIndex != SWITCH_MOVE_INDEX) {
                     return false;
@@ -171,11 +169,11 @@ contract DefaultValidator is IValidator {
         else if (moveIndex == SWITCH_MOVE_INDEX) {
             // extraData contains the mon index to switch to as raw uint240
             uint256 monToSwitchIndex = uint256(extraData);
-            return _validateSwitchInternal(battleKey, playerIndex, monToSwitchIndex, ctx);
+            return _validateSwitchInternalWithContext(battleKey, playerIndex, monToSwitchIndex, vctx);
         }
 
         // Otherwise, it's not a switch or a no-op, so it's a move
-        if (!_validateSpecificMoveSelectionInternal(battleKey, moveIndex, playerIndex, extraData, activeMonIndex)) {
+        if (!_validateSpecificMoveSelectionWithContext(battleKey, moveIndex, playerIndex, extraData, activeMonIndex, vctx)) {
             return false;
         }
 
@@ -228,6 +226,59 @@ contract DefaultValidator is IValidator {
             return false;
         } else {
             // Then, we check the move itself to see if it enforces any other specific conditions
+            if (!moveSet.isValidTarget(battleKey, extraData)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Internal version using ValidationContext to avoid redundant SLOADs
+    function _validateSwitchInternalWithContext(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monToSwitchIndex,
+        ValidationContext memory vctx
+    ) internal view returns (bool) {
+        uint256 activeMonIndex = (playerIndex == 0) ? vctx.p0ActiveMonIndex : vctx.p1ActiveMonIndex;
+
+        if (monToSwitchIndex >= MONS_PER_TEAM) {
+            return false;
+        }
+        // Still need external call to check if switch target is KO'd (not in context)
+        bool isNewMonKnockedOut =
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
+        if (isNewMonKnockedOut) {
+            return false;
+        }
+        // If it's not the zeroth turn, we cannot switch to the same mon
+        if (vctx.turnId != 0) {
+            if (monToSwitchIndex == activeMonIndex) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Internal version using ValidationContext for stamina check
+    function _validateSpecificMoveSelectionWithContext(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint240 extraData,
+        uint256 activeMonIndex,
+        ValidationContext memory vctx
+    ) internal view returns (bool) {
+        // Use pre-fetched stamina values from context
+        uint256 monBaseStamina = (playerIndex == 0) ? vctx.p0ActiveMonBaseStamina : vctx.p1ActiveMonBaseStamina;
+        int256 monStaminaDelta = (playerIndex == 0) ? vctx.p0ActiveMonStaminaDelta : vctx.p1ActiveMonStaminaDelta;
+        uint256 monCurrentStamina = uint256(int256(monBaseStamina) + monStaminaDelta);
+
+        // Still need external call to get the move (can't batch all moves)
+        IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+        if (moveSet.stamina(battleKey, playerIndex, activeMonIndex) > monCurrentStamina) {
+            return false;
+        } else {
             if (!moveSet.isValidTarget(battleKey, extraData)) {
                 return false;
             }

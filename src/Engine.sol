@@ -1731,11 +1731,12 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getWinner(bytes32 battleKey) external view returns (address) {
-        uint8 winnerIndex = battleData[battleKey].winnerIndex;
+        BattleData storage data = battleData[battleKey];
+        uint8 winnerIndex = data.winnerIndex;
         if (winnerIndex == 2) {
             return address(0);
         }
-        return (winnerIndex == 0) ? battleData[battleKey].p0 : battleData[battleKey].p1;
+        return (winnerIndex == 0) ? data.p0 : data.p1;
     }
 
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256) {
@@ -1815,5 +1816,34 @@ contract Engine is IEngine, MappingAllocator {
         ctx.defenderSpDefDelta = defenderState.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.specialDefenceDelta;
         ctx.defenderType1 = defenderMon.stats.type1;
         ctx.defenderType2 = defenderMon.stats.type2;
+    }
+
+    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        BattleConfig storage config = battleConfig[storageKey];
+
+        ctx.turnId = data.turnId;
+        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
+
+        // Get active mon indices
+        uint256 p0MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 0);
+        uint256 p1MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 1);
+        ctx.p0ActiveMonIndex = uint8(p0MonIndex);
+        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
+
+        // Get KO status for active mons
+        MonState storage p0State = config.p0States[p0MonIndex];
+        MonState storage p1State = config.p1States[p1MonIndex];
+        ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
+        ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
+
+        // Get stamina info for active mons
+        Mon storage p0Mon = config.p0Team[p0MonIndex];
+        Mon storage p1Mon = config.p1Team[p1MonIndex];
+        ctx.p0ActiveMonBaseStamina = p0Mon.stats.stamina;
+        ctx.p0ActiveMonStaminaDelta = p0State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0State.staminaDelta;
+        ctx.p1ActiveMonBaseStamina = p1Mon.stats.stamina;
+        ctx.p1ActiveMonStaminaDelta = p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
     }
 }

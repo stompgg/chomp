@@ -9,9 +9,9 @@ import {ICommitManager} from "./ICommitManager.sol";
 import {IEngine} from "./IEngine.sol";
 
 contract DefaultCommitManager is ICommitManager {
-    IEngine private immutable ENGINE;
+    IEngine internal immutable ENGINE;
 
-    mapping(bytes32 battleKey => mapping(uint256 playerIndex => PlayerDecisionData)) private playerData;
+    mapping(bytes32 battleKey => mapping(uint256 playerIndex => PlayerDecisionData)) internal playerData;
 
     error NotP0OrP1();
     error AlreadyCommited();
@@ -30,6 +30,27 @@ contract DefaultCommitManager is ICommitManager {
 
     constructor(IEngine engine) {
         ENGINE = engine;
+    }
+
+    /// @notice Get the player index for a given player address in a battle
+    /// @param battleKey The battle identifier
+    /// @param player The player address
+    /// @return playerIndex 0 for p0, 1 for p1
+    function _getPlayerIndex(bytes32 battleKey, address player) internal view returns (uint256) {
+        address[] memory players = ENGINE.getPlayersForBattle(battleKey);
+        return (player == players[0]) ? 0 : 1;
+    }
+
+    /// @notice Store a commitment for a player (used by FastCommitManager for signed commits)
+    /// @param battleKey The battle identifier
+    /// @param playerIndex The player index (0 or 1)
+    /// @param moveHash The move hash to store
+    /// @param turnId The current turn ID
+    function _storeCommitment(bytes32 battleKey, uint256 playerIndex, bytes32 moveHash, uint64 turnId) internal {
+        PlayerDecisionData storage pd = playerData[battleKey][playerIndex];
+        pd.lastCommitmentTurnId = uint16(turnId);
+        pd.moveHash = moveHash;
+        pd.lastMoveTimestamp = uint96(block.timestamp);
     }
 
     /**

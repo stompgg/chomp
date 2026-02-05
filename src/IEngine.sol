@@ -84,4 +84,5 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
+    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
 }
