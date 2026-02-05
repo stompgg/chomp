@@ -7,7 +7,7 @@ import {ECDSA} from "./lib/ECDSA.sol";
 import {SignedCommitLib} from "./lib/SignedCommitLib.sol";
 import {IEngine} from "./IEngine.sol";
 import {IValidator} from "./IValidator.sol";
-import {CommitContext} from "./Structs.sol";
+import {CommitContext, PlayerDecisionData} from "./Structs.sol";
 
 /// @title FastCommitManager
 /// @notice Extends DefaultCommitManager with optimistic commit flow using signed commitments

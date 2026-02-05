@@ -20,6 +20,8 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {SignedCommitLib} from "../src/lib/SignedCommitLib.sol";
+import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
+import {MoveClass} from "../src/Enums.sol";
 
 contract FastCommitManagerTest is Test, BattleHelper {
     Engine engine;
@@ -29,6 +31,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     IValidator validator;
     DefaultMatchmaker matchmaker;
+    TestMoveFactory moveFactory;
 
     // Private keys for signing
     uint256 constant ALICE_PK = 0xA11CE;
@@ -48,15 +51,19 @@ contract FastCommitManagerTest is Test, BattleHelper {
         fastCommitManager = new FastCommitManager(IEngine(address(engine)));
         defaultCommitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
+        moveFactory = new TestMoveFactory(IEngine(address(engine)));
 
         // Set up teams for both players
         _setupTeams();
     }
 
     function _setupTeams() internal {
+        // Create a simple test move
+        IMoveSet testMove = moveFactory.createMove(MoveClass.Physical, Type.Fire, 10, 10);
+
         Mon[] memory team = new Mon[](2);
-        team[0] = _createTestMon();
-        team[1] = _createTestMon();
+        team[0] = _createTestMon(testMove);
+        team[1] = _createTestMon(testMove);
 
         // Use derived addresses from private keys
         address alice = vm.addr(ALICE_PK);
@@ -72,7 +79,10 @@ contract FastCommitManagerTest is Test, BattleHelper {
         defaultRegistry.setIndices(indices);
     }
 
-    function _createTestMon() internal pure returns (Mon memory) {
+    function _createTestMon(IMoveSet move) internal pure returns (Mon memory) {
+        IMoveSet[] memory moves = new IMoveSet[](1);
+        moves[0] = move;
+
         return Mon({
             stats: MonStats({
                 hp: 100,
@@ -85,7 +95,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
+            moves: moves,
             ability: IAbility(address(0))
         });
     }
@@ -186,24 +196,25 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address bob = vm.addr(BOB_PK);
 
         // Turn 0: Alice is committer (p0), Bob is revealer (p1)
+        // On turn 0, players must use SWITCH_MOVE_INDEX to select their first mon
         uint64 turnId = 0;
 
-        // Alice creates and signs her commitment off-chain
+        // Alice creates and signs her commitment off-chain (switch to mon 0)
         bytes32 aliceSalt = bytes32(uint256(1));
-        uint8 aliceMoveIndex = NO_OP_MOVE_INDEX;
-        uint240 aliceExtraData = 0;
+        uint8 aliceMoveIndex = SWITCH_MOVE_INDEX;
+        uint240 aliceExtraData = 0; // Switch to mon index 0
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, aliceSalt, aliceExtraData));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, turnId);
 
-        // Bob reveals with Alice's signed commit
+        // Bob reveals with Alice's signed commit (Bob also switches to mon 0)
         vm.startPrank(bob);
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey,
             aliceMoveHash,
             aliceSignature,
-            NO_OP_MOVE_INDEX, // Bob's move
+            SWITCH_MOVE_INDEX, // Bob's move
             bytes32(0), // Bob's salt
-            0, // Bob's extraData
+            0, // Bob's extraData (switch to mon 0)
             false
         );
 
@@ -221,7 +232,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
         fastCommitManager.revealMove(battleKey, aliceMoveIndex, aliceSalt, aliceExtraData, true);
 
         // Verify turn advanced (execute was called)
-        uint64 newTurnId = engine.getTurnIdForBattleState(battleKey);
+        uint256 newTurnId = engine.getTurnIdForBattleState(battleKey);
         assertEq(newTurnId, 1, "Turn should have advanced to 1");
     }
 
@@ -265,7 +276,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
         fastCommitManager.revealMove(battleKey, bobMoveIndex, bobSalt, bobExtraData, true);
 
         // Verify turn advanced
-        uint64 newTurnId = engine.getTurnIdForBattleState(battleKey);
+        uint256 newTurnId = engine.getTurnIdForBattleState(battleKey);
         assertEq(newTurnId, 2, "Turn should have advanced to 2");
     }
 
@@ -274,18 +285,18 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        // Turn 0: Fast flow (Alice commits via signature, Bob reveals)
+        // Turn 0: Fast flow (Alice commits via signature, Bob reveals) - SWITCH to select first mon
         {
-            bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+            bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
             bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0);
 
             vm.startPrank(bob);
             fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-                battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+                battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
             );
 
             vm.startPrank(alice);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+            fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
         }
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
@@ -359,9 +370,9 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address bob = vm.addr(BOB_PK);
 
         // Alice signs a commit but Bob never uses it
-        // Alice falls back to normal commit flow
+        // Alice falls back to normal commit flow (turn 0: must use SWITCH)
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
 
         // Alice commits normally (fallback)
         vm.startPrank(alice);
@@ -371,13 +382,13 @@ contract FastCommitManagerTest is Test, BattleHelper {
         (bytes32 storedHash,) = fastCommitManager.getCommitment(battleKey, alice);
         assertEq(storedHash, aliceMoveHash, "Alice's commitment should be stored");
 
-        // Bob reveals normally
+        // Bob reveals normally (switch to mon 0)
         vm.startPrank(bob);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
 
         // Alice reveals and executes
         vm.startPrank(alice);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
     }
@@ -387,20 +398,20 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        // Alice commits on-chain normally
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Alice commits on-chain normally (turn 0: must use SWITCH)
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         vm.startPrank(alice);
         fastCommitManager.commitMove(battleKey, aliceMoveHash);
 
         // Bob tries to use revealWithSignedCommit with a different hash
         // The signature should be ignored and normal reveal should happen
-        bytes32 fakeMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(999)), uint240(0)));
+        bytes32 fakeMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(999)), uint240(0)));
         bytes memory fakeSignature = _signCommit(ALICE_PK, fakeMoveHash, battleKey, 0);
 
         vm.startPrank(bob);
         // This should work - the signed commit is ignored because Alice already committed on-chain
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, fakeMoveHash, fakeSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, fakeMoveHash, fakeSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // The original on-chain commitment should still be stored (not the fake one)
@@ -409,7 +420,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
 
         // Alice can reveal with her original preimage
         vm.startPrank(alice);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
     }
@@ -423,13 +434,13 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        // Bob publishes Alice's signed commit
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Bob publishes Alice's signed commit (turn 0: must use SWITCH)
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0);
 
         vm.startPrank(bob);
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // Alice doesn't reveal in time
@@ -498,15 +509,15 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        // Complete turn 0 normally
+        // Complete turn 0 normally (SWITCH)
         _completeTurn0Normal(battleKey);
 
-        // Complete turn 1 normally
+        // Complete turn 1 normally (NO_OP is fine after turn 0)
         _completeTurn1Normal(battleKey);
 
         // Now on turn 2, Alice is committer again
-        // Try to replay Alice's turn 0 signature
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Try to replay Alice's turn 0 signature (with SWITCH move hash)
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory turn0Signature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0); // Signed for turn 0
 
         vm.startPrank(bob);
@@ -561,9 +572,9 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address bob = vm.addr(BOB_PK);
 
         // Turn 0 has special handling for checking if committed (uses moveHash != 0 instead of turnId)
-        // This test verifies that works correctly with signed commits
+        // This test verifies that works correctly with signed commits (turn 0: must use SWITCH)
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0);
 
         // Before signed commit, commitment should be empty
@@ -573,7 +584,7 @@ contract FastCommitManagerTest is Test, BattleHelper {
 
         vm.startPrank(bob);
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // After signed commit, commitment should be stored
@@ -583,17 +594,17 @@ contract FastCommitManagerTest is Test, BattleHelper {
     }
 
     function test_revert_battleNotStarted() public {
-        // Don't start a battle
+        // Don't start a battle - this test doesn't need valid moves since it fails early
         bytes32 fakeBattleKey = bytes32(uint256(123));
         address bob = vm.addr(BOB_PK);
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, fakeBattleKey, 0);
 
         vm.startPrank(bob);
         vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            fakeBattleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            fakeBattleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
@@ -601,19 +612,20 @@ contract FastCommitManagerTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithFastCommitManager();
         address bob = vm.addr(BOB_PK);
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Turn 0: must use SWITCH
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0);
 
         vm.startPrank(bob);
         // First reveal
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // Try to reveal again
         vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
@@ -625,16 +637,17 @@ contract FastCommitManagerTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Turn 0: Both players switch to select their first mon
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
 
         vm.startPrank(alice);
         fastCommitManager.commitMove(battleKey, aliceMoveHash);
 
         vm.startPrank(bob);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
 
         vm.startPrank(alice);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
     }
 
     function _completeTurn1Normal(bytes32 battleKey) internal {
@@ -665,6 +678,7 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     IValidator validator;
     DefaultMatchmaker matchmaker;
+    TestMoveFactory moveFactory;
 
     uint256 constant ALICE_PK = 0xA11CE;
     uint256 constant BOB_PK = 0xB0B;
@@ -694,14 +708,18 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         fastCommitManager = new FastCommitManager(IEngine(address(engine)));
         defaultCommitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
+        moveFactory = new TestMoveFactory(IEngine(address(engine)));
 
         _setupTeams();
     }
 
     function _setupTeams() internal {
+        // Create a simple test move
+        IMoveSet testMove = moveFactory.createMove(MoveClass.Physical, Type.Fire, 10, 10);
+
         Mon[] memory team = new Mon[](2);
-        team[0] = _createTestMon();
-        team[1] = _createTestMon();
+        team[0] = _createTestMon(testMove);
+        team[1] = _createTestMon(testMove);
 
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
@@ -715,7 +733,10 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         defaultRegistry.setIndices(indices);
     }
 
-    function _createTestMon() internal pure returns (Mon memory) {
+    function _createTestMon(IMoveSet move) internal pure returns (Mon memory) {
+        IMoveSet[] memory moves = new IMoveSet[](1);
+        moves[0] = move;
+
         return Mon({
             stats: MonStats({
                 hp: 100,
@@ -728,7 +749,7 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
+            moves: moves,
             ability: IAbility(address(0))
         });
     }
@@ -815,7 +836,8 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Turn 0: must use SWITCH to select first mon
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
 
         // Measure commit gas (cold)
         vm.startPrank(alice);
@@ -826,13 +848,13 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         // Measure reveal 1 gas (cold for Bob)
         vm.startPrank(bob);
         gasBefore = gasleft();
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
         gasUsed_normalFlow_cold_reveal1 = gasBefore - gasleft();
 
         // Measure reveal 2 gas (warm for Alice - already wrote in commit)
         vm.startPrank(alice);
         gasBefore = gasleft();
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
         gasUsed_normalFlow_cold_reveal2 = gasBefore - gasleft();
 
         emit log_named_uint("Normal Flow (Cold) - Commit", gasUsed_normalFlow_cold_commit);
@@ -848,21 +870,22 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
 
-        bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+        // Turn 0: must use SWITCH to select first mon
+        bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey, 0);
 
         // Measure signed commit + reveal gas (cold for both Alice and Bob storage)
         vm.startPrank(bob);
         uint256 gasBefore = gasleft();
         fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-            battleKey, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+            battleKey, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
         gasUsed_fastFlow_cold_signedCommitReveal = gasBefore - gasleft();
 
         // Measure Alice's reveal (warm - her storage was written in previous call)
         vm.startPrank(alice);
         gasBefore = gasleft();
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
         gasUsed_fastFlow_cold_reveal = gasBefore - gasleft();
 
         emit log_named_uint("Fast Flow (Cold) - SignedCommit+Reveal", gasUsed_fastFlow_cold_signedCommitReveal);
@@ -952,7 +975,7 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
 
         // Normal flow cold
         {
-            bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+            bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
 
             vm.startPrank(alice);
             uint256 gasBefore = gasleft();
@@ -961,30 +984,30 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
 
             vm.startPrank(bob);
             gasBefore = gasleft();
-            fastCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+            fastCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
             gasUsed_normalFlow_cold_reveal1 = gasBefore - gasleft();
 
             vm.startPrank(alice);
             gasBefore = gasleft();
-            fastCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+            fastCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
             gasUsed_normalFlow_cold_reveal2 = gasBefore - gasleft();
         }
 
         // Fast flow cold
         {
-            bytes32 aliceMoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
+            bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
             bytes memory aliceSignature = _signCommit(ALICE_PK, aliceMoveHash, battleKey2, 0);
 
             vm.startPrank(bob);
             uint256 gasBefore = gasleft();
             fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-                battleKey2, aliceMoveHash, aliceSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+                battleKey2, aliceMoveHash, aliceSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
             );
             gasUsed_fastFlow_cold_signedCommitReveal = gasBefore - gasleft();
 
             vm.startPrank(alice);
             gasBefore = gasleft();
-            fastCommitManager.revealMove(battleKey2, NO_OP_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+            fastCommitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
             gasUsed_fastFlow_cold_reveal = gasBefore - gasleft();
         }
 
@@ -1091,24 +1114,26 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         address bob = vm.addr(BOB_PK);
 
         bytes32 salt = bytes32(turnId + 1);
-        bytes32 moveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, salt, uint240(0)));
+        // Turn 0 must use SWITCH_MOVE_INDEX, subsequent turns can use NO_OP
+        uint8 moveIndex = turnId == 0 ? SWITCH_MOVE_INDEX : NO_OP_MOVE_INDEX;
+        bytes32 moveHash = keccak256(abi.encodePacked(moveIndex, salt, uint240(0)));
 
         if (turnId % 2 == 0) {
             // Alice commits
             vm.startPrank(alice);
             fastCommitManager.commitMove(battleKey, moveHash);
             vm.startPrank(bob);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+            fastCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
             vm.startPrank(alice);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, salt, 0, true);
+            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         } else {
             // Bob commits
             vm.startPrank(bob);
             fastCommitManager.commitMove(battleKey, moveHash);
             vm.startPrank(alice);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, bytes32(0), 0, false);
+            fastCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
             vm.startPrank(bob);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, salt, 0, true);
+            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         }
     }
 
@@ -1117,26 +1142,28 @@ contract FastCommitManagerGasBenchmarkTest is Test, BattleHelper {
         address bob = vm.addr(BOB_PK);
 
         bytes32 salt = bytes32(turnId + 1);
-        bytes32 moveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, salt, uint240(0)));
+        // Turn 0 must use SWITCH_MOVE_INDEX, subsequent turns can use NO_OP
+        uint8 moveIndex = turnId == 0 ? SWITCH_MOVE_INDEX : NO_OP_MOVE_INDEX;
+        bytes32 moveHash = keccak256(abi.encodePacked(moveIndex, salt, uint240(0)));
 
         if (turnId % 2 == 0) {
             // Alice commits via signature
             bytes memory signature = _signCommit(ALICE_PK, moveHash, battleKey, uint64(turnId));
             vm.startPrank(bob);
             fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-                battleKey, moveHash, signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+                battleKey, moveHash, signature, moveIndex, bytes32(0), 0, false
             );
             vm.startPrank(alice);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, salt, 0, true);
+            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         } else {
             // Bob commits via signature
             bytes memory signature = _signCommit(BOB_PK, moveHash, battleKey, uint64(turnId));
             vm.startPrank(alice);
             fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
-                battleKey, moveHash, signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
+                battleKey, moveHash, signature, moveIndex, bytes32(0), 0, false
             );
             vm.startPrank(bob);
-            fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, salt, 0, true);
+            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         }
     }
 }
