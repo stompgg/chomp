@@ -228,3 +228,19 @@ struct DamageCalcContext {
     Type defenderType1;
     Type defenderType2;
 }
+
+// Batch context for move validation to reduce external calls (5+ -> 1)
+struct ValidationContext {
+    uint64 turnId;
+    uint8 playerSwitchForTurnFlag;
+    // Per-player data
+    uint8 p0ActiveMonIndex;
+    uint8 p1ActiveMonIndex;
+    bool p0ActiveMonKnockedOut;
+    bool p1ActiveMonKnockedOut;
+    // Stamina info for move validation (for active mons)
+    uint32 p0ActiveMonBaseStamina;
+    int32 p0ActiveMonStaminaDelta;
+    uint32 p1ActiveMonBaseStamina;
+    int32 p1ActiveMonStaminaDelta;
+}
