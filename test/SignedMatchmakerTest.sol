@@ -257,5 +257,113 @@ contract SignedMatchmakerTest is Test, BattleHelper {
         MonStats memory p1MonStats = engine.getMonStatsForBattle(battleKey, 1, 0);
         assertEq(p1MonStats.hp, altHp, "p1's mon should have the alternative team's HP");
     }
+
+    function test_openBattleOffer() public {
+        // Create offer with p1TeamIndex = 0
+        BattleOffer memory offer = BattleOffer({
+            battle: Battle({
+                p0: p0,
+                p0TeamIndex: 0,
+                p1: address(0),
+                p1TeamIndex: 0,
+                teamRegistry: teamRegistry,
+                validator: validator,
+                rngOracle: rngOracle,
+                ruleset: IRuleset(address(0)),
+                moveManager: address(commitManager),
+                matchmaker: matchmaker,
+                engineHooks: new IEngineHook[](0)
+            }),
+            pairHashNonce: 0
+        });
+
+        // p0 signs the offer
+        bytes memory signature = _signOffer(offer);
+
+        // p1 starts the battle
+        vm.prank(p1);
+        matchmaker.startGame(offer, signature);
+
+        // Check that nonce for p0 is now 1
+        assertEq(matchmaker.openBattleOfferNonce(p0), 1);
+    }
+
+    function test_openBattleNonceFails() public {
+        // Create offer with p1TeamIndex = 0
+        BattleOffer memory offer = BattleOffer({
+            battle: Battle({
+                p0: p0,
+                p0TeamIndex: 0,
+                p1: address(0),
+                p1TeamIndex: 0,
+                teamRegistry: teamRegistry,
+                validator: validator,
+                rngOracle: rngOracle,
+                ruleset: IRuleset(address(0)),
+                moveManager: address(commitManager),
+                matchmaker: matchmaker,
+                engineHooks: new IEngineHook[](0)
+            }),
+            pairHashNonce: 0
+        });
+
+        // p0 signs the offer
+        bytes memory signature = _signOffer(offer);
+
+        // p1 starts the battle
+        vm.prank(p1);
+        matchmaker.startGame(offer, signature);
+
+        // Try to start another battle with the same nonce - should fail
+        vm.prank(p1);
+        vm.expectRevert(SignedMatchmaker.InvalidOpenBattleOfferNonce.selector);
+        matchmaker.startGame(offer, signature);
+    }
+
+    function test_openBattleSequentialNonceMultipleTakers() public {
+        // Create offer with p1TeamIndex = 0
+        BattleOffer memory offer = BattleOffer({
+            battle: Battle({
+                p0: p0,
+                p0TeamIndex: 0,
+                p1: address(0),
+                p1TeamIndex: 0,
+                teamRegistry: teamRegistry,
+                validator: validator,
+                rngOracle: rngOracle,
+                ruleset: IRuleset(address(0)),
+                moveManager: address(commitManager),
+                matchmaker: matchmaker,
+                engineHooks: new IEngineHook[](0)
+            }),
+            pairHashNonce: 0
+        });
+
+        // p0 signs the offer
+        bytes memory signature = _signOffer(offer);
+
+        // p1 starts the battle
+        vm.prank(p1);
+        matchmaker.startGame(offer, signature);
+
+        // p0 signs a new offer with nonce of 1
+        offer.pairHashNonce = 1;
+        signature = _signOffer(offer);
+
+        // p2 starts the battle
+        address p2 = vm.addr(0x1234);
+        vm.startPrank(p2);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(matchmaker);
+        address[] memory makersToRemove = new address[](0);
+        engine.updateMatchmakers(makersToAdd, makersToRemove);
+        Mon[] memory team = new Mon[](1);
+        team[0] = _createMon();
+        teamRegistry.setTeam(p2, team);
+        matchmaker.startGame(offer, signature);
+
+        // Check that nonce for p0 is now 2
+        assertEq(matchmaker.openBattleOfferNonce(p0), 2);
+    }
 }
 
