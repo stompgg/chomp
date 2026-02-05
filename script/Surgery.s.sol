@@ -8,7 +8,6 @@ import {IEngine} from "../src/IEngine.sol";
 // import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 // import {ICPURNG} from "../src/rng/ICPURNG.sol";
 
-import {Multicall3} from "../src/lib/Multicall3.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 
 struct DeployData {

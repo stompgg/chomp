@@ -33,7 +33,7 @@ abstract contract StatusEffect is BasicEffect {
         public
         virtual
         override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
+        returns (bytes32, bool)
     {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);

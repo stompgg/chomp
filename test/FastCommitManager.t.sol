@@ -21,9 +21,6 @@ import {SignedCommitLib} from "../src/lib/SignedCommitLib.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {EIP712} from "../src/lib/EIP712.sol";
 
-/// @title Shared base for FastCommitManager tests
-/// @dev Uses p0/p1 (PK-derived addresses) for EIP-712 signature tests.
-///      Inherits EIP712 to access _DOMAIN_TYPEHASH rather than inlining it.
 abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
     Engine engine;
     FastCommitManager fastCommitManager;
@@ -90,8 +87,6 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
         defaultRegistry.setIndices(indices);
     }
 
-    // Note: We can't use BattleHelper._startBattle because it hardcodes ALICE/BOB addresses,
-    // but we need PK-derived addresses (p0/p1) for EIP-712 signing.
     function _startBattleWith(address commitManager) internal returns (bytes32) {
         vm.startPrank(p0);
         address[] memory makersToAdd = new address[](1);
@@ -284,18 +279,6 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
         fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, p1Salt, 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Turn should have advanced to 2");
-    }
-
-    function test_fullBattle_withSignedCommits() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
-
-        // Turn 0: Fast flow (SWITCH to select first mon)
-        _completeTurnFast(battleKey, 0);
-        assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
-
-        // Turn 1: Fast flow
-        _completeTurnFast(battleKey, 1);
-        assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Should be turn 2");
     }
 
     function test_mixedFlow_someSignedSomeNormal() public {

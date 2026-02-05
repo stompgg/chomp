@@ -10,6 +10,9 @@ library BattleOfferLib {
     // BattleOffer(Battle battle,uint256 pairHashNonce)Battle(address p0,uint96 p0TeamIndex,address p1,uint96 p1TeamIndex,address teamRegistry,address validator,address rngOracle,address ruleset,address moveManager,address matchmaker,address[] engineHooks)
     bytes32 public constant BATTLE_OFFER_TYPEHASH = 0xaec0ec193a3a179409bec797fb74abf352da6595e663719692c868673b4d806b;
 
+    // OpenBattleOffer(Battle battle,uint256 nonce)Battle(address p0,uint96 p0TeamIndex,address p1,uint96 p1TeamIndex,address teamRegistry,address validator,address rngOracle,address ruleset,address moveManager,address matchmaker,address[] engineHooks)
+    bytes32 public constant OPEN_BATTLE_OFFER_TYPEHASH = 0xd4d9579b6cdb437b6d1415a71957f5b7aa4bf4ebce922ecee51e870b973d80fd;
+
     /// @dev Hashes a Battle struct according to EIP-712
     function hashBattle(Battle memory battle) internal pure returns (bytes32) {
         // Convert IEngineHook[] to address[] for hashing

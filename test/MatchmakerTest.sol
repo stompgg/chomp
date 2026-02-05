@@ -459,13 +459,13 @@ contract MatchmakerTest is Test, BattleHelper {
         vm.startPrank(BOB);
         vm.startSnapshotGas("Accept1");
         bytes32 battleIntegrityHash = matchmaker.getBattleProposalIntegrityHash(proposal);
-        bytes32 updatedBattleKey = matchmaker.acceptBattle(battleKey, 0, battleIntegrityHash);
-        uint256 gasUsed2 = vm.stopSnapshotGas("Accept1");
+        matchmaker.acceptBattle(battleKey, 0, battleIntegrityHash);
+        vm.stopSnapshotGas("Accept1");
 
         // Propose battle as Alice
         vm.startPrank(ALICE);
         vm.startSnapshotGas("Accept2");
-        bytes32 battleKey2 = matchmaker.proposeBattle(proposal);
+        matchmaker.proposeBattle(proposal);
         uint256 accept2Gas = vm.stopSnapshotGas("Accept2");
         
         // Should be at least 50% cheaper

@@ -4,11 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 
 import {BattleOffer, Battle, Mon, MonStats, Type, BattleData} from "../src/Structs.sol";
-import {ITeamRegistry} from "../src/teams/ITeamRegistry.sol";
-import {IValidator} from "../src/IValidator.sol";
-import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {IRuleset} from "../src/IRuleset.sol";
-import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";
