@@ -18,7 +18,7 @@ import * as Enums from '../ts-output/Enums';
 
 // Runtime
 import { globalEventStream, ContractContainer } from '../ts-output/runtime';
-import { BattleHarness } from '../runtime/battle-harness';
+import { BattleHarness } from '../ts-output/runtime/battle-harness';
 import { setupContainer } from '../ts-output/factories';
 
 // =============================================================================

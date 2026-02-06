@@ -71,14 +71,59 @@ class MockRNGOracle {
 }
 
 /**
+ * Mock Mon Registry for ITeamRegistry.getMonRegistry()
+ */
+class MockMonRegistry {
+  _contractAddress: string;
+
+  constructor() {
+    this._contractAddress = generateAddress();
+  }
+
+  getMonData(_monId: bigint): [Structs.MonStats, string[], string[]] {
+    return [{} as Structs.MonStats, [], []];
+  }
+
+  getMonStats(_monId: bigint): Structs.MonStats {
+    return {} as Structs.MonStats;
+  }
+
+  getMonMetadata(_monId: bigint, _key: string): string {
+    return '';
+  }
+
+  getMonCount(): bigint {
+    return 0n;
+  }
+
+  getMonIds(_start: bigint, _end: bigint): bigint[] {
+    return [];
+  }
+
+  isValidMove(_monId: bigint, _move: any): boolean {
+    return true;
+  }
+
+  isValidAbility(_monId: bigint, _ability: any): boolean {
+    return true;
+  }
+
+  validateMon(_m: Structs.Mon, _monId: bigint): boolean {
+    return true;
+  }
+}
+
+/**
  * Mock Team Registry that holds teams for battles
  */
 class MockTeamRegistry {
   _contractAddress: string;
   private teams: Map<string, [Structs.Mon[], Structs.Mon[]]> = new Map();
+  private monRegistry: MockMonRegistry;
 
   constructor() {
     this._contractAddress = generateAddress();
+    this.monRegistry = new MockMonRegistry();
   }
 
   registerTeams(p0: string, p1: string, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): void {
@@ -93,6 +138,22 @@ class MockTeamRegistry {
       throw new Error(`No teams registered for ${p0} vs ${p1}`);
     }
     return teams;
+  }
+
+  getMonRegistry(): MockMonRegistry {
+    return this.monRegistry;
+  }
+
+  getTeam(_player: string, _teamIndex: bigint): Structs.Mon[] {
+    return [];
+  }
+
+  getTeamCount(_player: string): bigint {
+    return 1n;
+  }
+
+  getMonRegistryIndicesForTeam(_player: string, _teamIndex: bigint): bigint[] {
+    return [];
   }
 
   private _getPairKey(p0: string, p1: string): string {
@@ -123,6 +184,22 @@ class MockValidator {
 
   validateTeamSize(): bigint[] {
     return [1n, 6n];
+  }
+
+  validatePlayerMove(_battleKey: string, _moveIndex: bigint, _playerIndex: bigint, _extraData: bigint): boolean {
+    return true;
+  }
+
+  validateSpecificMoveSelection(_battleKey: string, _moveIndex: bigint, _playerIndex: bigint, _extraData: bigint): boolean {
+    return true;
+  }
+
+  validateSwitch(_battleKey: string, _playerIndex: bigint, _monToSwitchIndex: bigint): boolean {
+    return true;
+  }
+
+  validateTimeout(_battleKey: string, _presumedAFKPlayerIndex: bigint): string {
+    return '';
   }
 }
 
@@ -178,7 +255,11 @@ function createMon(
 
   return {
     stats,
-    ability: { _contractAddress: '0x0000000000000000000000000000000000000000' },
+    ability: {
+      _contractAddress: '0x0000000000000000000000000000000000000000',
+      name: () => 'MockAbility',
+      activateOnSwitch: (_battleKey: string, _playerIndex: bigint, _monIndex: bigint) => {},
+    },
     moves: moves.slice(0, 4), // Max 4 moves
   };
 }
