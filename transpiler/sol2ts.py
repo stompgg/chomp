@@ -32,6 +32,7 @@ from .parser import Parser, SourceUnit
 from .type_system import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
 from .codegen.metadata import MetadataExtractor, FactoryGenerator
+from .codegen.diagnostics import TranspilerDiagnostics
 from .dependency_resolver import DependencyResolver
 
 
@@ -59,6 +60,9 @@ class SolidityToTypeScriptTranspiler:
 
         # Metadata extraction for factory generation
         self.metadata_extractor = MetadataExtractor() if emit_metadata else None
+
+        # Diagnostics collector
+        self.diagnostics = TranspilerDiagnostics()
 
         # Load runtime replacements configuration
         self.runtime_replacements: Dict[str, dict] = {}
@@ -146,9 +150,13 @@ class SolidityToTypeScriptTranspiler:
         except (ValueError, TypeError, AttributeError):
             pass
 
+        # Emit diagnostics for skipped constructs in the AST
+        self._emit_ast_diagnostics(ast, filepath)
+
         # Check for runtime replacement
         replacement = self._get_runtime_replacement(filepath)
         if replacement:
+            self.diagnostics.info_runtime_replacement(filepath, replacement.get('runtime', ''))
             return self._generate_runtime_reexport(replacement, file_depth)
 
         # Generate TypeScript using the modular code generator
@@ -161,6 +169,26 @@ class SolidityToTypeScriptTranspiler:
             runtime_replacement_methods=self.runtime_replacement_methods
         )
         return generator.generate(ast)
+
+    def _emit_ast_diagnostics(self, ast: SourceUnit, filepath: str) -> None:
+        """Scan the AST and emit diagnostics for skipped/unsupported constructs."""
+        for contract in ast.contracts:
+            # Check for modifiers (they are parsed but not inlined)
+            for modifier in contract.modifiers:
+                self.diagnostics.warn_modifier_stripped(
+                    modifier.name,
+                    file_path=filepath,
+                )
+
+            # Check for function modifiers referenced on functions
+            for func in contract.functions:
+                if func.modifiers:
+                    for mod_name in func.modifiers:
+                        name = mod_name if isinstance(mod_name, str) else str(mod_name)
+                        self.diagnostics.warn_modifier_stripped(
+                            name,
+                            file_path=filepath,
+                        )
 
     def _get_runtime_replacement(self, filepath: str) -> Optional[dict]:
         """Check if a file should be replaced with a runtime implementation."""
@@ -218,6 +246,9 @@ class SolidityToTypeScriptTranspiler:
             with open(path, 'w') as f:
                 f.write(content)
             print(f"Written: {filepath}")
+
+        # Print diagnostics summary
+        self.diagnostics.print_summary()
 
         # Generate and write factories.ts if metadata emission is enabled
         if self.emit_metadata and self.metadata_extractor:

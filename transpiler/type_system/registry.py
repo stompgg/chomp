@@ -38,6 +38,8 @@ class TypeRegistry:
         self.contract_bases: Dict[str, List[str]] = {}
         self.struct_paths: Dict[str, str] = {}
         self.struct_fields: Dict[str, Dict[str, str]] = {}
+        # Interface method signatures: {interface_name: [{name, params: [(name, type)], returns: [type]}]}
+        self.interface_methods: Dict[str, List[dict]] = {}
 
     def discover_from_source(self, source: str, rel_path: Optional[str] = None) -> None:
         """Discover types from a single Solidity source string."""
@@ -96,6 +98,26 @@ class TypeRegistry:
 
             if kind == 'interface':
                 self.interfaces.add(name)
+                # Track interface method signatures for TypeScript interface generation
+                iface_methods = []
+                for func in contract.functions:
+                    if func.name:
+                        params = []
+                        for p in func.parameters:
+                            p_name = p.name if p.name else '_arg'
+                            p_type = p.type_name.name if p.type_name else 'uint256'
+                            params.append((p_name, p_type))
+                        returns = []
+                        for r in func.return_parameters:
+                            r_type = r.type_name.name if r.type_name else 'uint256'
+                            returns.append(r_type)
+                        iface_methods.append({
+                            'name': func.name,
+                            'params': params,
+                            'returns': returns,
+                        })
+                if iface_methods:
+                    self.interface_methods[name] = iface_methods
             elif kind == 'library':
                 self.libraries.add(name)
                 self.contracts.add(name)
@@ -194,6 +216,10 @@ class TypeRegistry:
                 self.struct_fields[struct_name].update(fields)
             else:
                 self.struct_fields[struct_name] = fields.copy()
+
+        for iface_name, methods in other.interface_methods.items():
+            if iface_name not in self.interface_methods:
+                self.interface_methods[iface_name] = methods.copy()
 
     def get_inherited_structs(self, contract_name: str) -> Dict[str, str]:
         """

@@ -10,6 +10,7 @@ from typing import Dict, Set, List, Optional
 
 from ..parser.ast_nodes import TypeName
 from ..type_system import TypeRegistry
+from .diagnostics import TranspilerDiagnostics
 
 
 # Reserved JavaScript method names that conflict with Object.prototype or other built-ins
@@ -94,6 +95,16 @@ class CodeGenerationContext:
 
     # Reference to the full registry (for complex queries)
     _registry: Optional[TypeRegistry] = None
+
+    # Diagnostics collector
+    _diagnostics: Optional[TranspilerDiagnostics] = None
+
+    @property
+    def diagnostics(self) -> TranspilerDiagnostics:
+        """Get the diagnostics collector, creating one if needed."""
+        if self._diagnostics is None:
+            self._diagnostics = TranspilerDiagnostics()
+        return self._diagnostics
 
     def indent(self) -> str:
         """Return the current indentation string."""

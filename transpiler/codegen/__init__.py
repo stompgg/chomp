@@ -17,6 +17,7 @@ from .imports import ImportGenerator
 from .contract import ContractGenerator
 from .generator import TypeScriptCodeGenerator
 from .metadata import MetadataExtractor, FactoryGenerator, ContractMetadata
+from .diagnostics import TranspilerDiagnostics, Diagnostic, DiagnosticSeverity
 
 __all__ = [
     'YulTranspiler',
@@ -34,4 +35,7 @@ __all__ = [
     'MetadataExtractor',
     'FactoryGenerator',
     'ContractMetadata',
+    'TranspilerDiagnostics',
+    'Diagnostic',
+    'DiagnosticSeverity',
 ]
