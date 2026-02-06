@@ -78,6 +78,20 @@ class TypeConverter(BaseGenerator):
         name = type_name.name
         ts_type = 'any'
 
+        # Handle Library.Struct pattern (e.g., SignedCommitLib.SignedCommit)
+        # In TypeScript, the struct is exported as a top-level interface
+        if '.' in name:
+            parts = name.split('.')
+            # Check if the last part is a known struct
+            struct_name = parts[-1]
+            if struct_name in self._ctx.known_structs:
+                # Use just the struct name and track it as an external struct
+                # The struct comes from the library's module
+                library_name = parts[0]
+                if self._registry and library_name in self._registry.contract_paths:
+                    self._ctx.external_structs_used[struct_name] = self._registry.contract_paths[library_name]
+                return struct_name
+
         if name.startswith('uint') or name.startswith('int'):
             ts_type = 'bigint'
         elif name == 'bool':

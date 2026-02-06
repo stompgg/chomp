@@ -268,11 +268,12 @@ class ContractGenerator(BaseGenerator):
                             )
 
                 # Check runtime replacement classes for inherited methods
-                for base_class in base_classes:
-                    if base_class in self._ctx.runtime_replacement_methods:
-                        inherited_methods.update(
-                            self._ctx.runtime_replacement_methods[base_class]
-                        )
+                # Only add methods from the primary_base (actual extends class), not from mixin classes
+                # Mixin methods are inlined, not inherited from a base class
+                if primary_base in self._ctx.runtime_replacement_methods:
+                    inherited_methods.update(
+                        self._ctx.runtime_replacement_methods[primary_base]
+                    )
             else:
                 extends = ' extends Contract'
                 self._ctx.current_base_classes = ['Contract']
@@ -286,18 +287,80 @@ class ContractGenerator(BaseGenerator):
         return extends
 
     def _add_mixin_code(self, contract: ContractDefinition, lines: List[str]) -> None:
-        """Add mixin code for secondary base classes."""
+        """Add mixin code for secondary base classes.
+
+        Filters out methods that are already defined/overridden in the contract.
+        """
+        import re
+
         non_interface_bases = [
             bc for bc in contract.base_contracts
             if bc not in self._ctx.known_interfaces
         ]
         actual_extends = non_interface_bases[0] if non_interface_bases else 'Contract'
 
+        # Get method names defined in this contract
+        contract_methods = {func.name for func in contract.functions}
+
         for base_class in contract.base_contracts:
             if (base_class in self._ctx.runtime_replacement_mixins and
                 base_class != actual_extends):
                 mixin_code = self._ctx.runtime_replacement_mixins[base_class]
-                lines.append(mixin_code)
+
+                # Parse mixin into individual members by tracking brace depth
+                # Each member is a method or property definition
+                members = []
+                current_lines = []
+                brace_depth = 0
+
+                for line in mixin_code.split('\n'):
+                    stripped = line.strip()
+
+                    # Check if starting a new member at depth 0
+                    # Must be: static/protected/public/private followed by identifier, OR identifier followed by (
+                    # Skip comment lines
+                    is_member_start = False
+                    if brace_depth == 0 and not stripped.startswith('//'):
+                        if re.match(r'^(static\s+readonly|protected|public|private)\s+\w', stripped):
+                            is_member_start = True
+                        elif re.match(r'^\w+\s*[\(<:]', stripped):
+                            # Method or property: name( or name: or name<
+                            is_member_start = True
+
+                    if is_member_start:
+                        # Save previous member if any
+                        if current_lines:
+                            members.append('\n'.join(current_lines))
+                            current_lines = []
+
+                    current_lines.append(line)
+
+                    # Count braces to track depth
+                    brace_depth += line.count('{') - line.count('}')
+
+                # Save last member
+                if current_lines:
+                    members.append('\n'.join(current_lines))
+
+                # Filter out members that define methods already in contract
+                filtered_members = []
+                for member in members:
+                    should_include = True
+                    # Only check the first line for method definition, not the entire body
+                    # This prevents filtering out methods that CALL an overridden method
+                    first_line = member.split('\n')[0].strip()
+                    for method_name in contract_methods:
+                        # Check if this member DEFINES the method (not just uses it)
+                        # Look for method definition pattern: visibility? methodName(
+                        pattern = rf'(protected|public|private)?\s*{re.escape(method_name)}\s*\('
+                        if re.search(pattern, first_line):
+                            should_include = False
+                            break
+                    if should_include:
+                        filtered_members.append(member)
+
+                if filtered_members:
+                    lines.append('\n'.join(filtered_members))
 
     # =========================================================================
     # STATE VARIABLES

@@ -50,7 +50,7 @@ class ImportGenerator:
         # viem imports
         lines.append(
             "import { keccak256, encodePacked, encodeAbiParameters, "
-            "decodeAbiParameters, parseAbiParameters } from 'viem';"
+            "decodeAbiParameters, parseAbiParameters, stringToHex } from 'viem';"
         )
 
         # Runtime imports

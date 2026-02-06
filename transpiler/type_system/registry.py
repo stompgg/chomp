@@ -135,6 +135,12 @@ class TypeRegistry:
             for struct in contract.structs:
                 self.structs.add(struct.name)
                 contract_local_structs.add(struct.name)
+                # Also record struct fields (same as top-level structs)
+                self.struct_fields[struct.name] = {}
+                for member in struct.members:
+                    if member.type_name:
+                        is_array = getattr(member.type_name, 'is_array', False)
+                        self.struct_fields[struct.name][member.name] = (member.type_name.name, is_array)
             self.contract_structs[name] = contract_local_structs
 
             # Contract-local enums

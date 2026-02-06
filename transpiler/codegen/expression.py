@@ -301,6 +301,21 @@ class ExpressionGenerator(BaseGenerator):
             if member_name == 'length':
                 return func
 
+        # Handle library struct instantiation: Library.StructName({field: value, ...})
+        # Check if this is a struct type being instantiated
+        if isinstance(call.function, MemberAccess):
+            struct_name = call.function.member
+            if struct_name in self._ctx.known_structs:
+                # Check for named arguments (struct initialization syntax)
+                if call.named_arguments:
+                    field_assignments = [
+                        f'{name}: {self.generate(value)}'
+                        for name, value in call.named_arguments.items()
+                    ]
+                    return '{ ' + ', '.join(field_assignments) + ' }'
+                # No named args - use default creator
+                return f'createDefault{struct_name}()'
+
         return f'{func}({args})'
 
     def _generate_new_call(self, call: FunctionCall) -> str:
@@ -388,6 +403,12 @@ class ExpressionGenerator(BaseGenerator):
     def _handle_special_function(self, call: FunctionCall, name: str, args: str) -> Optional[str]:
         """Handle special built-in functions."""
         if name == 'keccak256':
+            # Handle keccak256("string") - need to convert string to hex for viem
+            if len(call.arguments) == 1:
+                arg = call.arguments[0]
+                if isinstance(arg, Literal) and arg.kind == 'string':
+                    # Plain string literal - use stringToHex
+                    return f'keccak256(stringToHex({self.generate(arg)}))'
             return f'keccak256({args})'
         elif name == 'sha256':
             # Special case: sha256(abi.encode("string")) -> sha256String("string")
