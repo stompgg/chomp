@@ -65,6 +65,21 @@ class ExpressionGenerator(BaseGenerator):
         super().__init__(ctx)
         self._type_converter = type_converter
         self._registry = registry
+        self._abi_inferer: Optional['AbiTypeInferer'] = None
+
+    def _get_abi_inferer(self) -> 'AbiTypeInferer':
+        """Get or create an AbiTypeInferer with current context state."""
+        from .abi import AbiTypeInferer
+        # Rebuild on every call since context (var_types, method_return_types) changes per function
+        self._abi_inferer = AbiTypeInferer(
+            var_types=self._ctx.var_types,
+            known_enums=self._ctx.known_enums,
+            known_contracts=self._ctx.known_contracts,
+            known_interfaces=self._ctx.known_interfaces,
+            known_struct_fields=self._ctx.known_struct_fields,
+            method_return_types=self._ctx.current_method_return_types,
+        )
+        return self._abi_inferer
 
     # =========================================================================
     # MAIN DISPATCH
@@ -547,16 +562,25 @@ class ExpressionGenerator(BaseGenerator):
                 key_type_name = type_info.key_type.name if type_info.key_type.name else ''
                 mapping_has_numeric_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
 
-        # Check for struct field access with known mapping fields
+        # Check for struct field access using type registry
         if isinstance(access.base, MemberAccess):
             member_name = access.base.member
-            numeric_key_mapping_fields = {
-                'p0Team', 'p1Team', 'p0States', 'p1States',
-                'globalEffects', 'p0Effects', 'p1Effects', 'engineHooks'
-            }
-            if member_name in numeric_key_mapping_fields:
-                is_mapping = True
-                mapping_has_numeric_key = True
+            # Try to resolve the struct type of the parent object
+            parent_var = self._get_base_var_name(access.base.expression) if hasattr(access.base, 'expression') else None
+            if parent_var and parent_var in self._ctx.var_types:
+                parent_type = self._ctx.var_types[parent_var]
+                struct_name = parent_type.name if parent_type else ''
+                if struct_name and struct_name in self._ctx.known_struct_fields:
+                    field_info = self._ctx.known_struct_fields[struct_name].get(member_name)
+                    if field_info:
+                        field_type = field_info[0] if isinstance(field_info, tuple) else field_info
+                        field_is_array = field_info[1] if isinstance(field_info, tuple) else False
+                        # Arrays and mappings with numeric keys need Number() conversion
+                        if field_is_array:
+                            is_likely_array = True
+                        elif field_type and (field_type.startswith('mapping')):
+                            is_mapping = True
+                            mapping_has_numeric_key = True
 
         # Determine if we need Number conversion
         needs_number_conversion = is_likely_array or (is_mapping and mapping_has_numeric_key)
@@ -620,45 +644,20 @@ class ExpressionGenerator(BaseGenerator):
         return self._type_converter.generate_type_cast(cast, self.generate)
 
     # =========================================================================
-    # ABI ENCODING HELPERS
+    # ABI ENCODING HELPERS (delegated to AbiTypeInferer)
     # =========================================================================
 
     def _convert_abi_types(self, types_expr: Expression) -> str:
         """Convert Solidity type tuple to viem ABI parameter format."""
-        if isinstance(types_expr, TupleExpression):
-            type_strs = []
-            for comp in types_expr.components:
-                if comp:
-                    type_strs.append(self._solidity_type_to_abi_param(comp))
-            return f'[{", ".join(type_strs)}]'
-        return f'[{self._solidity_type_to_abi_param(types_expr)}]'
-
-    def _solidity_type_to_abi_param(self, type_expr: Expression) -> str:
-        """Convert a Solidity type expression to viem ABI parameter object."""
-        if isinstance(type_expr, Identifier):
-            name = type_expr.name
-            if name.startswith('uint') or name.startswith('int') or name == 'address' or name == 'bool' or name.startswith('bytes'):
-                return f"{{type: '{name}'}}"
-            if name in self._ctx.known_enums:
-                return "{type: 'uint8'}"
-            return "{type: 'bytes'}"
-        return "{type: 'bytes'}"
+        return self._get_abi_inferer().convert_types_expr(types_expr)
 
     def _infer_abi_types_from_values(self, args: List[Expression]) -> str:
         """Infer ABI types from value expressions (for abi.encode)."""
-        type_strs = []
-        for arg in args:
-            type_str = self._infer_single_abi_type(arg)
-            type_strs.append(type_str)
-        return f'[{", ".join(type_strs)}]'
+        return self._get_abi_inferer().infer_abi_types(args)
 
     def _infer_packed_abi_types(self, args: List[Expression]) -> str:
         """Infer packed ABI types from value expressions (for abi.encodePacked)."""
-        type_strs = []
-        for arg in args:
-            type_str = self._infer_single_packed_type(arg)
-            type_strs.append(f"'{type_str}'")
-        return f'[{", ".join(type_strs)}]'
+        return self._get_abi_inferer().infer_packed_types(args)
 
     def _infer_expression_type(self, arg: Expression) -> tuple:
         """Infer the Solidity type from an expression.

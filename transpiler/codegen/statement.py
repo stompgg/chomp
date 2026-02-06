@@ -346,10 +346,16 @@ class StatementGenerator(BaseGenerator):
                     type_info = self._ctx.var_types[member_name]
                     is_mapping_read = type_info.is_mapping
 
+        # Check if the base identifier has a mapping type in var_types
         if isinstance(expr.base, Identifier):
-            name = expr.base.name.lower()
-            mapping_keywords = ['nonce', 'balance', 'allowance', 'mapping', 'map', 'kv', 'storage']
-            if any(kw in name for kw in mapping_keywords):
+            name = expr.base.name
+            if name in self._ctx.var_types:
+                type_info = self._ctx.var_types[name]
+                if type_info.is_mapping:
+                    is_mapping_read = True
+            elif name in self._ctx.current_state_vars:
+                # State vars that aren't in var_types but are accessed with index
+                # are likely mappings (conservative: treat as mapping for default values)
                 is_mapping_read = True
 
         if not is_mapping_read:

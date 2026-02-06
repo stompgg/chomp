@@ -89,7 +89,9 @@ class TypeConverter(BaseGenerator):
         elif name.startswith('bytes'):
             ts_type = 'string'  # hex string
         elif name in self._ctx.known_interfaces:
-            ts_type = 'any'  # Interfaces become 'any' in TypeScript
+            ts_type = name
+            # Track for import generation
+            self._ctx.contracts_referenced.add(name)
         elif name in self._ctx.known_structs or name in self._ctx.known_enums:
             ts_type = self.get_qualified_name(name)
             # Track external structs (from files other than Structs.ts)
