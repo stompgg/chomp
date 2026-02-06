@@ -89,6 +89,7 @@ class CodeGenerationContext:
     known_contract_methods: Dict[str, Set[str]] = field(default_factory=dict)
     known_contract_vars: Dict[str, Set[str]] = field(default_factory=dict)
     known_public_state_vars: Set[str] = field(default_factory=set)
+    known_public_mappings: Set[str] = field(default_factory=set)  # Public mappings needing getter methods
     known_method_return_types: Dict[str, Dict[str, str]] = field(default_factory=dict)
     known_contract_paths: Dict[str, str] = field(default_factory=dict)
     known_struct_fields: Dict[str, Dict[str, str]] = field(default_factory=dict)
@@ -184,6 +185,7 @@ class CodeGenerationContext:
             ctx.known_contract_methods = registry.contract_methods
             ctx.known_contract_vars = registry.contract_vars
             ctx.known_public_state_vars = registry.known_public_state_vars
+            ctx.known_public_mappings = registry.known_public_mappings
             ctx.known_method_return_types = registry.method_return_types
             ctx.known_contract_paths = registry.contract_paths
             ctx.known_struct_fields = registry.struct_fields

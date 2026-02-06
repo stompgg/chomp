@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 /// @notice Library for hashing SignedCommit structs according to EIP-712
-/// @dev Used by FastCommitManager to verify signed move commitments
+/// @dev Used by SignedCommitManager to verify signed move commitments
 library SignedCommitLib {
     /// @dev keccak256("SignedCommit(bytes32 moveHash,bytes32 battleKey,uint64 turnId)")
     bytes32 public constant SIGNED_COMMIT_TYPEHASH =

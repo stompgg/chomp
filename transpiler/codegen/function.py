@@ -198,6 +198,22 @@ class FunctionGenerator(BaseGenerator):
                 else:
                     lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
 
+        # Add implicit return for functions with unnamed return parameters (default values)
+        elif func.body and func.body.statements and return_type != 'void' and not named_return_vars:
+            has_all_paths_return = self._all_paths_return(func.body.statements)
+            if not has_all_paths_return:
+                # Generate default return values for unnamed return parameters
+                default_values = [
+                    self._type_converter.default_value(
+                        self._type_converter.solidity_type_to_ts(r.type_name)
+                    )
+                    for r in func.return_parameters
+                ]
+                if len(default_values) == 1:
+                    lines.append(f'{self.indent()}return {default_values[0]};')
+                else:
+                    lines.append(f'{self.indent()}return [{", ".join(default_values)}];')
+
         # Handle virtual functions with no body
         if not func.body or (func.body and not func.body.statements):
             if named_return_vars:
@@ -326,8 +342,23 @@ class FunctionGenerator(BaseGenerator):
     # FUNCTION SIGNATURES
     # =========================================================================
 
-    def generate_function_signature(self, func: FunctionDefinition) -> str:
-        """Generate function signature for interface."""
+    def generate_function_signature(self, func: FunctionDefinition, for_interface: bool = False) -> str:
+        """Generate function signature for interface or method declaration.
+
+        Args:
+            func: The function definition
+            for_interface: If True, may generate property syntax for known state variable getters
+        """
+        # For interfaces, convert parameterless functions to properties if they correspond
+        # to public state variables in implementing classes. The type registry tracks these
+        # during the discovery phase.
+        if (for_interface and
+            not func.parameters and
+            len(func.return_parameters) == 1 and
+            func.name in self._ctx.known_public_state_vars):
+            return_type = self._type_converter.solidity_type_to_ts(func.return_parameters[0].type_name)
+            return f'{func.name}: {return_type}'
+
         params = ', '.join([
             f'{self._generate_param_name(p, i)}: {self._type_converter.solidity_type_to_ts(p.type_name)}'
             for i, p in enumerate(func.parameters)

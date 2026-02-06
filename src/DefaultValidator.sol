@@ -8,7 +8,7 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {IValidator} from "./IValidator.sol";
 
-import {ICommitManager} from "./ICommitManager.sol";
+import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {IMonRegistry} from "./teams/IMonRegistry.sol";
 
 contract DefaultValidator is IValidator {

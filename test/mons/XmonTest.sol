@@ -7,7 +7,7 @@ import {Test} from "forge-std/Test.sol";
 import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";

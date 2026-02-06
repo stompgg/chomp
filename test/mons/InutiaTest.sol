@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "../../lib/forge-std/src/Test.sol";
 
 import "../../src/Constants.sol";
-import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";

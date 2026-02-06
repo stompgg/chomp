@@ -551,7 +551,8 @@ class TestInterfaceTypeGeneration(unittest.TestCase):
 
         self.assertIn('export interface IFoo', output)
         self.assertIn('bar(', output)
-        self.assertIn('baz(', output)
+        # Parameterless getters should be properties, not methods
+        self.assertIn('baz: string;', output)
 
     def test_interface_type_not_any(self):
         """Test that interface types don't collapse to 'any'."""

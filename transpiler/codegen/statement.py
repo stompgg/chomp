@@ -256,6 +256,24 @@ class StatementGenerator(BaseGenerator):
             # Tuple declaration
             names = ', '.join([d.name if d else '' for d in stmt.declarations])
             init = self._expr.generate(stmt.initial_value) if stmt.initial_value else ''
+
+            # Check if this is an abi.decode with small integer types that need BigInt conversion
+            small_int_conversions = self._get_small_int_conversions_from_decode(stmt)
+            if small_int_conversions:
+                # Use temp names for small int values, then convert to bigint
+                temp_names = []
+                for d in stmt.declarations:
+                    if d and d.name in small_int_conversions:
+                        temp_names.append(f'_{d.name}')
+                    else:
+                        temp_names.append(d.name if d else '')
+                temp_names_str = ', '.join(temp_names)
+
+                lines = [f'{self.indent()}const [{temp_names_str}] = {init};']
+                for var_name in small_int_conversions:
+                    lines.append(f'{self.indent()}const {var_name} = BigInt(_{var_name});')
+                return '\n'.join(lines)
+
             return f'{self.indent()}const [{names}] = {init};'
 
     def _get_storage_init_statement(
@@ -392,6 +410,68 @@ class StatementGenerator(BaseGenerator):
         elif ts_type in self._ctx.current_local_structs:
             return f'createDefault{ts_type}()'
         return None
+
+    def _get_small_int_conversions_from_decode(self, stmt: VariableDeclarationStatement) -> List[str]:
+        """Get list of variable names that need BigInt conversion from abi.decode.
+
+        When abi.decode decodes small integer types (int8-int32, uint8-uint32),
+        viem returns number instead of bigint. Since the transpiler assumes all
+        integers are bigint, we need to convert these values.
+
+        Returns list of variable names that need conversion.
+        """
+        if not stmt.initial_value:
+            return []
+
+        # Check if initial value is abi.decode call
+        if not isinstance(stmt.initial_value, FunctionCall):
+            return []
+
+        func = stmt.initial_value.function
+        if not isinstance(func, MemberAccess):
+            return []
+
+        if not isinstance(func.expression, Identifier) or func.expression.name != 'abi':
+            return []
+
+        if func.member != 'decode':
+            return []
+
+        # Get the types argument (second argument to abi.decode)
+        if len(stmt.initial_value.arguments) < 2:
+            return []
+
+        types_arg = stmt.initial_value.arguments[1]
+
+        # For multi-value decode, types_arg should be a TupleExpression
+        from ..parser.ast_nodes import TupleExpression, TypeCast
+        if not isinstance(types_arg, TupleExpression):
+            return []
+
+        small_int_types = {
+            'int8', 'int16', 'int24', 'int32',
+            'uint8', 'uint16', 'uint24', 'uint32',
+        }
+
+        # Map type indices to variable names that need conversion
+        conversions = []
+        for type_comp, decl in zip(types_arg.components, stmt.declarations):
+            if decl is None:
+                continue
+
+            type_name = None
+            if isinstance(type_comp, Identifier):
+                # Check if it's an enum (enums should stay as number, not converted)
+                if type_comp.name in self._ctx.known_enums:
+                    continue
+                type_name = type_comp.name
+            elif isinstance(type_comp, TypeCast):
+                type_name = type_comp.type_name.name
+
+            if type_name and type_name in small_int_types:
+                conversions.append(decl.name)
+
+        return conversions
 
     # =========================================================================
     # CONTROL FLOW

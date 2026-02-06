@@ -32,6 +32,7 @@ class TypeRegistry:
         self.contract_methods: Dict[str, Set[str]] = {}
         self.contract_vars: Dict[str, Set[str]] = {}
         self.known_public_state_vars: Set[str] = set()
+        self.known_public_mappings: Set[str] = set()  # Track public mappings for getter generation
         self.method_return_types: Dict[str, Dict[str, str]] = {}
         self.contract_paths: Dict[str, str] = {}
         self.contract_structs: Dict[str, Set[str]] = {}
@@ -165,6 +166,9 @@ class TypeRegistry:
                     self.constants.add(var.name)
                 if var.visibility == 'public' and var.mutability not in ('constant', 'immutable'):
                     self.known_public_state_vars.add(var.name)
+                    # Track public mappings specifically for getter method generation
+                    if var.type_name and var.type_name.is_mapping:
+                        self.known_public_mappings.add(var.name)
             if state_vars:
                 self.contract_vars[name] = state_vars
 
@@ -190,6 +194,7 @@ class TypeRegistry:
                 self.contract_vars[name] = vars.copy()
 
         self.known_public_state_vars.update(other.known_public_state_vars)
+        self.known_public_mappings.update(other.known_public_mappings)
 
         for name, ret_types in other.method_return_types.items():
             if name in self.method_return_types:

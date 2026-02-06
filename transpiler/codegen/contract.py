@@ -108,8 +108,11 @@ class ContractGenerator(BaseGenerator):
         lines.append(f'export interface {contract.name} {{')
         self.indent_level += 1
 
+        # Add _contractAddress property - needed when checking address(interface) != address(0)
+        lines.append(f'{self.indent()}_contractAddress: string;')
+
         for func in contract.functions:
-            sig = self._func.generate_function_signature(func)
+            sig = self._func.generate_function_signature(func, for_interface=True)
             lines.append(f'{self.indent()}{sig};')
 
         self.indent_level -= 1
@@ -339,19 +342,59 @@ class ContractGenerator(BaseGenerator):
         modifier: str,
         ts_type: str
     ) -> str:
-        """Generate TypeScript code for a mapping state variable."""
+        """Generate TypeScript code for a mapping state variable.
+
+        For public mappings, generates a private backing field with underscore prefix
+        and a public getter method to match interface signatures.
+        """
         value_type = self._type_converter.solidity_type_to_ts(var.type_name.value_type)
+        is_public_mapping = var.visibility == 'public' and var.name in self._ctx.known_public_mappings
+
+        # Determine field name (underscore prefix for public mappings)
+        field_name = f'_{var.name}' if is_public_mapping else var.name
 
         if var.type_name.value_type.is_mapping:
             inner_value = self._type_converter.solidity_type_to_ts(
                 var.type_name.value_type.value_type
             )
-            return (
-                f'{self.indent()}{modifier}{var.name}: '
+            # Use private modifier for public mapping backing fields
+            field_modifier = 'private ' if is_public_mapping else modifier
+            field_decl = (
+                f'{self.indent()}{field_modifier}{field_name}: '
                 f'Record<string, Record<string, {inner_value}>> = {{}};'
             )
+            if is_public_mapping:
+                # Generate getter method for 2-level mappings
+                key_type = self._type_converter.solidity_type_to_ts(var.type_name.key_type)
+                inner_key_type = self._type_converter.solidity_type_to_ts(var.type_name.value_type.key_type)
+                # Convert bigint keys to string for Record access
+                key1_access = 'String(key1)' if key_type == 'bigint' else 'key1'
+                key2_access = 'String(key2)' if inner_key_type == 'bigint' else 'key2'
+                getter = (
+                    f'{self.indent()}{var.name}(key1: {key_type}, key2: {inner_key_type}): {inner_value} {{\n'
+                    f'{self.indent()}  return this.{field_name}[{key1_access}]?.[{key2_access}] ?? {self._type_converter.default_value(inner_value)};\n'
+                    f'{self.indent()}}}'
+                )
+                return f'{field_decl}\n{getter}'
+            return field_decl
 
-        return f'{self.indent()}{modifier}{var.name}: Record<string, {value_type}> = {{}};'
+        # Use private modifier for public mapping backing fields
+        field_modifier = 'private ' if is_public_mapping else modifier
+        field_decl = f'{self.indent()}{field_modifier}{field_name}: Record<string, {value_type}> = {{}};'
+
+        if is_public_mapping:
+            # Generate getter method
+            key_type = self._type_converter.solidity_type_to_ts(var.type_name.key_type)
+            # Convert bigint keys to string for Record access
+            key_access = 'String(key)' if key_type == 'bigint' else 'key'
+            getter = (
+                f'{self.indent()}{var.name}(key: {key_type}): {value_type} {{\n'
+                f'{self.indent()}  return this.{field_name}[{key_access}] ?? {self._type_converter.default_value(value_type)};\n'
+                f'{self.indent()}}}'
+            )
+            return f'{field_decl}\n{getter}'
+
+        return field_decl
 
     # =========================================================================
     # MUTATOR METHODS
@@ -391,7 +434,9 @@ class ContractGenerator(BaseGenerator):
         lines = []
 
         key_params = []
-        access_path = f'this.{var.name}'
+        # Use underscore prefix for public mappings (backing field)
+        field_name = f'_{var.name}' if var.visibility == 'public' and var.name in self._ctx.known_public_mappings else var.name
+        access_path = f'this.{field_name}'
         null_coalesce_lines = []
 
         current_type = var.type_name

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "../lib/forge-std/src/Test.sol";
 import "../src/Engine.sol";
 
-import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {GachaRegistry} from "../src/gacha/GachaRegistry.sol";

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import "./Structs.sol";
+import "../Structs.sol";
 
 interface ICommitManager {
     function commitMove(bytes32 battleKey, bytes32 moveHash) external;

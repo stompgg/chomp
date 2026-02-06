@@ -12,7 +12,7 @@ import {IAbility} from "../src/abilities/IAbility.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
-import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";

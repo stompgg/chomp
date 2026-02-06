@@ -9,7 +9,7 @@ import "../src/Structs.sol";
 
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 
-import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";

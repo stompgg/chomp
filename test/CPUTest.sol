@@ -9,7 +9,7 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 
-import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {CPUMoveManager} from "../src/cpu/CPUMoveManager.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";

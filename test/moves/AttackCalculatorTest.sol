@@ -6,7 +6,7 @@ import {Engine} from "../../src/Engine.sol";
 import { MoveClass, Type} from "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IAbility} from "../../src/abilities/IAbility.sol";
 import {AttackCalculator} from "../../src/moves/AttackCalculator.sol";

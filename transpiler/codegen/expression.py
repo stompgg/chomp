@@ -189,6 +189,9 @@ class ExpressionGenerator(BaseGenerator):
         # Add this. prefix for state variables and methods (but not local vars)
         if name not in self._ctx.current_local_vars:
             if name in self._ctx.current_state_vars or name in self._ctx.current_methods:
+                # Use underscore prefix for public mappings (backing field)
+                if name in self._ctx.known_public_mappings and name in self._ctx.current_state_vars:
+                    return f'this._{name}'
                 return f'this.{name}'
 
         return name
@@ -344,7 +347,31 @@ class ExpressionGenerator(BaseGenerator):
                 data_arg = self.generate(call.arguments[0])
                 types_arg = call.arguments[1]
                 type_params = self._convert_abi_types(types_arg)
-                return f'decodeAbiParameters({type_params}, {data_arg} as `0x${{string}}`)'
+                decode_expr = f'decodeAbiParameters({type_params}, {data_arg} as `0x${{string}}`)'
+
+                # Check if decoding a single value - Solidity returns value directly,
+                # but viem always returns a tuple, so we need to extract [0]
+                is_single_type = False
+                single_type = None
+
+                # Single type parses as Identifier (e.g., (int32) -> Identifier('int32'))
+                if isinstance(types_arg, Identifier):
+                    is_single_type = True
+                    single_type = types_arg
+                # Or could be a TupleExpression with one component
+                elif isinstance(types_arg, TupleExpression) and len(types_arg.components) == 1:
+                    is_single_type = True
+                    single_type = types_arg.components[0]
+
+                if is_single_type and single_type:
+                    type_name = self._get_abi_type_name(single_type)
+                    # Small integers (int8-int32, uint8-uint32) return number from viem,
+                    # but TypeScript code expects bigint
+                    if type_name and self._is_small_integer_type(type_name):
+                        return f'BigInt({decode_expr}[0])'
+                    return f'{decode_expr}[0]'
+
+                return decode_expr
         elif call.function.member == 'encode':
             if call.arguments:
                 type_params = self._infer_abi_types_from_values(call.arguments)
@@ -532,6 +559,13 @@ class ExpressionGenerator(BaseGenerator):
                 if type_name in enumerable_set_types or type_name.startswith('EnumerableSetLib.'):
                     return f'{expr}.{member}'
             return f'BigInt({expr}.{member})'
+
+        # Handle internal access to public mappings - use underscore prefix for backing field
+        if (isinstance(access.expression, Identifier) and
+            access.expression.name == 'this' and
+            member in self._ctx.known_public_mappings and
+            member in self._ctx.current_state_vars):
+            return f'{expr}._{member}'
 
         return f'{expr}.{member}'
 
@@ -840,3 +874,22 @@ class ExpressionGenerator(BaseGenerator):
                 return f'{expr} as `0x${{string}}`'
 
         return expr
+
+    def _get_abi_type_name(self, type_expr: Expression) -> Optional[str]:
+        """Extract the type name from an ABI type expression (e.g., int32 from a TypeCast)."""
+        if isinstance(type_expr, TypeCast):
+            return type_expr.type_name.name
+        if isinstance(type_expr, Identifier):
+            # Could be an enum or other named type
+            if type_expr.name in self._ctx.known_enums:
+                return 'uint8'
+            return type_expr.name
+        return None
+
+    def _is_small_integer_type(self, type_name: str) -> bool:
+        """Check if a type is a small integer that viem returns as number instead of bigint."""
+        small_int_types = {
+            'int8', 'int16', 'int24', 'int32',
+            'uint8', 'uint16', 'uint24', 'uint32',
+        }
+        return type_name in small_int_types

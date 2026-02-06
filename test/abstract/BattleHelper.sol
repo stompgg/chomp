@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/DefaultCommitManager.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngineHook} from "../../src/IEngineHook.sol";
 import {IValidator} from "../../src/IValidator.sol";

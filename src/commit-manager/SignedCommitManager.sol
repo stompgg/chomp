@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 import {DefaultCommitManager} from "./DefaultCommitManager.sol";
-import {EIP712} from "./lib/EIP712.sol";
-import {ECDSA} from "./lib/ECDSA.sol";
-import {SignedCommitLib} from "./lib/SignedCommitLib.sol";
-import {IEngine} from "./IEngine.sol";
-import {IValidator} from "./IValidator.sol";
-import {CommitContext, PlayerDecisionData} from "./Structs.sol";
+import {EIP712} from "../lib/EIP712.sol";
+import {ECDSA} from "../lib/ECDSA.sol";
+import {SignedCommitLib} from "./SignedCommitLib.sol";
+import {IEngine} from "../IEngine.sol";
+import {IValidator} from "../IValidator.sol";
+import {CommitContext, PlayerDecisionData} from "../Structs.sol";
 
-/// @title FastCommitManager
+/// @title SignedCommitManager
 /// @notice Extends DefaultCommitManager with optimistic commit flow using signed commitments
 /// @dev Allows the revealing player to submit the committing player's signed commitment
 ///      along with their own reveal in a single transaction, removing the need for the
@@ -20,14 +20,14 @@ import {CommitContext, PlayerDecisionData} from "./Structs.sol";
 ///        2. Bob reveals (TX 2)
 ///        3. Alice reveals (TX 3)
 ///
-///      Fast flow (2 transactions):
+///      Signed commit flow (2 transactions):
 ///        1. Alice signs commitment off-chain
 ///        2. Bob calls revealMoveWithOtherPlayerSignedCommit with Alice's signature (TX 1)
 ///        3. Alice reveals (TX 2)
 ///
 ///      Fallback: If Bob doesn't publish Alice's signed commit, Alice can still use
 ///      the normal commitMove() flow.
-contract FastCommitManager is DefaultCommitManager, EIP712 {
+contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when the signature verification fails
     error InvalidCommitSignature();
 
@@ -46,7 +46,7 @@ contract FastCommitManager is DefaultCommitManager, EIP712 {
         override
         returns (string memory name, string memory version)
     {
-        name = "FastCommitManager";
+        name = "SignedCommitManager";
         version = "1";
     }
 
@@ -62,7 +62,7 @@ contract FastCommitManager is DefaultCommitManager, EIP712 {
     /// @param salt The revealing player's salt (can be empty for revealer)
     /// @param extraData The revealing player's extra data
     /// @param autoExecute Whether to auto-execute after reveal (will be false since committer
-    ///        hasn't revealed yet in the fast flow)
+    ///        hasn't revealed yet in the signed commit flow)
     function revealMoveWithOtherPlayerSignedCommit(
         bytes32 battleKey,
         bytes32 committerMoveHash,

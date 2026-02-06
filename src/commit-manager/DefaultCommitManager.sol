@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import "./Constants.sol";
-import "./Enums.sol";
-import "./Structs.sol";
+import "../Constants.sol";
+import "../Enums.sol";
+import "../Structs.sol";
 
 import {ICommitManager} from "./ICommitManager.sol";
-import {IEngine} from "./IEngine.sol";
+import {IEngine} from "../IEngine.sol";
 
 contract DefaultCommitManager is ICommitManager {
     IEngine internal immutable ENGINE;
@@ -41,7 +41,7 @@ contract DefaultCommitManager is ICommitManager {
         return (player == players[0]) ? 0 : 1;
     }
 
-    /// @notice Store a commitment for a player (used by FastCommitManager for signed commits)
+    /// @notice Store a commitment for a player (used by SignedCommitManager for signed commits)
     /// @param battleKey The battle identifier
     /// @param playerIndex The player index (0 or 1)
     /// @param moveHash The move hash to store

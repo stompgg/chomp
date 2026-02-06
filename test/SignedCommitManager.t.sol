@@ -7,8 +7,8 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/DefaultCommitManager.sol";
-import {FastCommitManager} from "../src/FastCommitManager.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {IEngine} from "../src/IEngine.sol";
@@ -17,13 +17,13 @@ import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
-import {SignedCommitLib} from "../src/lib/SignedCommitLib.sol";
+import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {EIP712} from "../src/lib/EIP712.sol";
 
-abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
+abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
     Engine engine;
-    FastCommitManager fastCommitManager;
+    SignedCommitManager signedCommitManager;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     DefaultValidator validator;
@@ -38,7 +38,7 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
 
     // Required by EIP712 inheritance (only used to access _DOMAIN_TYPEHASH)
     function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return ("FastCommitManager", "1");
+        return ("SignedCommitManager", "1");
     }
 
     function setUp() public virtual {
@@ -52,7 +52,7 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
             IEngine(address(engine)),
             DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
         );
-        fastCommitManager = new FastCommitManager(IEngine(address(engine)));
+        signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         moveFactory = new TestMoveFactory(IEngine(address(engine)));
 
@@ -140,10 +140,10 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
         bytes32 domainSeparator = keccak256(
             abi.encode(
                 _DOMAIN_TYPEHASH,
-                keccak256("FastCommitManager"),
+                keccak256("SignedCommitManager"),
                 keccak256("1"),
                 block.chainid,
-                address(fastCommitManager)
+                address(signedCommitManager)
             )
         );
 
@@ -166,23 +166,23 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
         if (turnId % 2 == 0) {
             // p0 commits
             vm.startPrank(p0);
-            fastCommitManager.commitMove(battleKey, moveHash);
+            signedCommitManager.commitMove(battleKey, moveHash);
             vm.startPrank(p1);
-            fastCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
+            signedCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
             vm.startPrank(p0);
-            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
+            signedCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         } else {
             // p1 commits
             vm.startPrank(p1);
-            fastCommitManager.commitMove(battleKey, moveHash);
+            signedCommitManager.commitMove(battleKey, moveHash);
             vm.startPrank(p0);
-            fastCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
+            signedCommitManager.revealMove(battleKey, moveIndex, bytes32(0), 0, false);
             vm.startPrank(p1);
-            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
+            signedCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         }
     }
 
-    /// @dev Completes a turn using the fast (signed commit) flow.
+    /// @dev Completes a turn using the signed commit flow.
     ///      Turn 0 uses SWITCH_MOVE_INDEX; subsequent turns use NO_OP_MOVE_INDEX.
     function _completeTurnFast(bytes32 battleKey, uint256 turnId) internal {
         bytes32 salt = bytes32(turnId + 1);
@@ -193,32 +193,32 @@ abstract contract FastCommitManagerTestBase is Test, BattleHelper, EIP712 {
             // p0 commits via signature, p1 reveals
             bytes memory signature = _signCommit(P0_PK, moveHash, battleKey, uint64(turnId));
             vm.startPrank(p1);
-            fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+            signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
                 battleKey, moveHash, signature, moveIndex, bytes32(0), 0, false
             );
             vm.startPrank(p0);
-            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
+            signedCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         } else {
             // p1 commits via signature, p0 reveals
             bytes memory signature = _signCommit(P1_PK, moveHash, battleKey, uint64(turnId));
             vm.startPrank(p0);
-            fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+            signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
                 battleKey, moveHash, signature, moveIndex, bytes32(0), 0, false
             );
             vm.startPrank(p1);
-            fastCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
+            signedCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         }
     }
 }
 
-contract FastCommitManagerTest is FastCommitManagerTestBase {
+contract SignedCommitManagerTest is SignedCommitManagerTestBase {
 
     // =========================================================================
     // Happy Path Tests
     // =========================================================================
 
     function test_revealWithSignedCommit_turn0() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // Turn 0: p0 is committer, p1 is revealer. Must use SWITCH to select first mon.
         uint64 turnId = 0;
@@ -230,28 +230,28 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
 
         // p1 reveals with p0's signed commit (p1 also switches to mon 0)
         vm.startPrank(p1);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // Verify p0's commitment was stored
-        (bytes32 storedHash, uint256 storedTurnId) = fastCommitManager.getCommitment(battleKey, p0);
+        (bytes32 storedHash, uint256 storedTurnId) = signedCommitManager.getCommitment(battleKey, p0);
         assertEq(storedHash, p0MoveHash, "p0's move hash not stored");
         assertEq(storedTurnId, turnId, "Turn ID not stored correctly");
 
         // Verify p1's reveal was recorded
-        assertEq(fastCommitManager.getMoveCountForBattleState(battleKey, p1), 1, "p1's move count should be 1");
+        assertEq(signedCommitManager.getMoveCountForBattleState(battleKey, p1), 1, "p1's move count should be 1");
 
         // p0 can now reveal normally
         vm.startPrank(p0);
-        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, true);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, true);
 
         // Verify turn advanced
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Turn should have advanced to 1");
     }
 
     function test_revealWithSignedCommit_turn1() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // Complete turn 0 using normal flow to get to turn 1
         _completeTurnNormal(battleKey, 0);
@@ -265,30 +265,30 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
 
         // p0 reveals with p1's signed commit
         vm.startPrank(p0);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p1MoveHash, p1Signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // Verify p1's commitment was stored
-        (bytes32 storedHash, uint256 storedTurnId) = fastCommitManager.getCommitment(battleKey, p1);
+        (bytes32 storedHash, uint256 storedTurnId) = signedCommitManager.getCommitment(battleKey, p1);
         assertEq(storedHash, p1MoveHash, "p1's move hash not stored");
         assertEq(storedTurnId, turnId, "Turn ID not stored correctly");
 
         // p1 can now reveal normally
         vm.startPrank(p1);
-        fastCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, p1Salt, 0, true);
+        signedCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, p1Salt, 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Turn should have advanced to 2");
     }
 
     function test_mixedFlow_someSignedSomeNormal() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // Turn 0: Normal flow
         _completeTurnNormal(battleKey, 0);
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
 
-        // Turn 1: Fast flow
+        // Turn 1: Signed commit flow
         _completeTurnFast(battleKey, 1);
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Should be turn 2");
 
@@ -302,33 +302,33 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
     // =========================================================================
 
     function test_fallbackToNormalCommit_afterSignedCommitNotUsed() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // p0 signs a commit but p1 never uses it — p0 falls back to normal commit flow
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
 
         vm.startPrank(p0);
-        fastCommitManager.commitMove(battleKey, p0MoveHash);
+        signedCommitManager.commitMove(battleKey, p0MoveHash);
 
-        (bytes32 storedHash,) = fastCommitManager.getCommitment(battleKey, p0);
+        (bytes32 storedHash,) = signedCommitManager.getCommitment(battleKey, p0);
         assertEq(storedHash, p0MoveHash, "p0's commitment should be stored");
 
         vm.startPrank(p1);
-        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), 0, false);
 
         vm.startPrank(p0);
-        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
     }
 
     function test_revealWithSignedCommit_whenAlreadyCommitted() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // p0 commits on-chain normally
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         vm.startPrank(p0);
-        fastCommitManager.commitMove(battleKey, p0MoveHash);
+        signedCommitManager.commitMove(battleKey, p0MoveHash);
 
         // p1 tries to use revealWithSignedCommit with a different hash
         // The signature should be ignored and normal reveal should happen
@@ -336,17 +336,17 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
         bytes memory fakeSignature = _signCommit(P0_PK, fakeMoveHash, battleKey, 0);
 
         vm.startPrank(p1);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, fakeMoveHash, fakeSignature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // Original on-chain commitment should still be stored
-        (bytes32 storedHash,) = fastCommitManager.getCommitment(battleKey, p0);
+        (bytes32 storedHash,) = signedCommitManager.getCommitment(battleKey, p0);
         assertEq(storedHash, p0MoveHash, "Original commitment should remain");
 
         // p0 can reveal with original preimage
         vm.startPrank(p0);
-        fastCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(uint256(1)), 0, true);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Should be turn 1");
     }
@@ -356,14 +356,14 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
     // =========================================================================
 
     function test_timeout_committerTimesOut_afterSignedCommitPublished() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // p1 publishes p0's signed commit
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory p0Signature = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
 
         vm.startPrank(p1);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
@@ -375,7 +375,7 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
     }
 
     function test_timeout_worksNormally_withSignedCommitFlow() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // At the start, no one has timed out
         address loser = validator.validateTimeout(battleKey, 0);
@@ -394,34 +394,34 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
     // =========================================================================
 
     function test_revert_invalidSignature() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory invalidSignature = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)), uint8(27));
 
         vm.startPrank(p1);
         vm.expectRevert();
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, invalidSignature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
     function test_revert_wrongSigner() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         // p1 signs instead of p0 (wrong signer)
         bytes memory p1Signature = _signCommit(P1_PK, p0MoveHash, battleKey, 0);
 
         vm.startPrank(p1);
-        vm.expectRevert(FastCommitManager.InvalidCommitSignature.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        vm.expectRevert(SignedCommitManager.InvalidCommitSignature.selector);
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p1Signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
     function test_revert_replayAttack_differentTurn() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         _completeTurnNormal(battleKey, 0);
         _completeTurnNormal(battleKey, 1);
@@ -431,38 +431,38 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
         bytes memory turn0Signature = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
 
         vm.startPrank(p1);
-        vm.expectRevert(FastCommitManager.InvalidCommitSignature.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        vm.expectRevert(SignedCommitManager.InvalidCommitSignature.selector);
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, turn0Signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
     function test_revert_replayAttack_differentBattle() public {
-        bytes32 battleKey1 = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey1 = _startBattleWith(address(signedCommitManager));
 
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory battle1Signature = _signCommit(P0_PK, p0MoveHash, battleKey1, 0);
 
         // Start second battle and try to use battle 1's signature
-        bytes32 battleKey2 = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey2 = _startBattleWith(address(signedCommitManager));
 
         vm.startPrank(p1);
-        vm.expectRevert(FastCommitManager.InvalidCommitSignature.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        vm.expectRevert(SignedCommitManager.InvalidCommitSignature.selector);
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey2, p0MoveHash, battle1Signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
     function test_revert_callerNotRevealer() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory p0Signature = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
 
         // p0 (committer) tries to call revealWithSignedCommit - should fail
         vm.startPrank(p0);
-        vm.expectRevert(FastCommitManager.CallerNotRevealer.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        vm.expectRevert(SignedCommitManager.CallerNotRevealer.selector);
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, NO_OP_MOVE_INDEX, bytes32(0), 0, false
         );
     }
@@ -472,24 +472,24 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
     // =========================================================================
 
     function test_turn0_edgeCase_moveHashZeroCheck() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // Turn 0 checks moveHash != 0 (instead of turnId) for existing commits
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory p0Signature = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
 
         // Before signed commit, commitment should be empty
-        (bytes32 storedHash, uint256 storedTurnId) = fastCommitManager.getCommitment(battleKey, p0);
+        (bytes32 storedHash, uint256 storedTurnId) = signedCommitManager.getCommitment(battleKey, p0);
         assertEq(storedHash, bytes32(0), "Hash should be 0 before commit");
         assertEq(storedTurnId, 0, "Turn ID should be 0");
 
         vm.startPrank(p1);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         // After signed commit, commitment should be stored
-        (storedHash, storedTurnId) = fastCommitManager.getCommitment(battleKey, p0);
+        (storedHash, storedTurnId) = signedCommitManager.getCommitment(battleKey, p0);
         assertEq(storedHash, p0MoveHash, "Hash should be stored after signed commit");
         assertEq(storedTurnId, 0, "Turn ID should still be 0");
     }
@@ -502,24 +502,24 @@ contract FastCommitManagerTest is FastCommitManagerTestBase {
 
         vm.startPrank(p1);
         vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             fakeBattleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
     }
 
     function test_revert_doubleReveal() public {
-        bytes32 battleKey = _startBattleWith(address(fastCommitManager));
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(uint256(1)), uint240(0)));
         bytes memory p0Signature = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
 
         vm.startPrank(p1);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
 
         vm.expectRevert(DefaultCommitManager.AlreadyRevealed.selector);
-        fastCommitManager.revealMoveWithOtherPlayerSignedCommit(
+        signedCommitManager.revealMoveWithOtherPlayerSignedCommit(
             battleKey, p0MoveHash, p0Signature, SWITCH_MOVE_INDEX, bytes32(0), 0, false
         );
     }
