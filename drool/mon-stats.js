@@ -426,40 +426,11 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             data[rowIndex][columnName] = parseFloat(value);
           }
-          updateBST(rowIndex);
         } else {
           data[rowIndex][columnName] = value;
         }
         markUnsavedChanges();
         notifyDataUpdated();
-      }
-    }
-
-    function updateBST(rowIndex) {
-      const statsToSum = [
-        "HP",
-        "Attack",
-        "Defense",
-        "SpecialAttack",
-        "SpecialDefense",
-        "Speed",
-      ];
-      let bst = 0;
-
-      statsToSum.forEach((stat) => {
-        if (data[rowIndex][stat] !== undefined) {
-          bst += parseFloat(data[rowIndex][stat]) || 0;
-        }
-      });
-
-      data[rowIndex]["BST"] = bst;
-
-      // Update BST cell in the table if it exists
-      const bstCell = document.querySelector(
-        `td[data-row="${rowIndex}"][data-column="BST"]`
-      );
-      if (bstCell) {
-        bstCell.textContent = bst;
       }
     }
 
@@ -475,7 +446,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       data.push(newRow);
-      updateBST(data.length - 1);
       renderDataTable();
       notifyDataUpdated();
     }
@@ -554,25 +524,15 @@ document.addEventListener("DOMContentLoaded", function () {
           "specialattack",
           "specialdefense",
           "speed",
-          "bst",
           "id"
         ].includes(header.toLowerCase());
 
         columns.push({
           name: header,
           type: isLikelyNumber ? "number" : "text",
-          editable: header.toLowerCase() !== "bst", // Make BST non-editable
+          editable: true,
         });
       });
-
-      // Add BST column if it doesn't exist
-      if (!headers.some((h) => h.toLowerCase() === "bst")) {
-        columns.push({
-          name: "BST",
-          type: "number",
-          editable: false,
-        });
-      }
 
       // Parse data rows
       data = [];
@@ -594,9 +554,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         data.push(rowData);
       }
-
-      // Update BST for all rows
-      data.forEach((_, index) => updateBST(index));
 
       renderDataTable();
       notifyDataUpdated();
@@ -679,9 +636,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function updateStatsHeatmap() {
-      // Get all numeric columns except BST
+      // Get all numeric columns
       const numericColumns = columns.filter(
-        (col) => col.type === "number" && col.name !== "BST"
+        (col) => col.type === "number"
       );
 
       // Calculate min/max for each column

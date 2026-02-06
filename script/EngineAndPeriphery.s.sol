@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 
 // Fundamental entities
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
@@ -21,9 +21,10 @@ import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 import {LookupTeamRegistry} from "../src/teams/LookupTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
+import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
 
-// Important effects
+// Shared effects
 import {StatBoosts} from "../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
@@ -54,7 +55,7 @@ contract EngineAndPeriphery is Script {
         Engine engine = new Engine();
         deployedContracts.push(DeployData({name: "ENGINE", contractAddress: address(engine)}));
 
-        DefaultCommitManager commitManager = new DefaultCommitManager(engine);
+        SignedCommitManager commitManager = new SignedCommitManager(engine);
         deployedContracts.push(DeployData({name: "COMMIT MANAGER", contractAddress: address(commitManager)}));
 
         DefaultMonRegistry monRegistry = new DefaultMonRegistry();
@@ -82,6 +83,9 @@ contract EngineAndPeriphery is Script {
 
         DefaultMatchmaker matchmaker = new DefaultMatchmaker(engine);
         deployedContracts.push(DeployData({name: "DEFAULT MATCHMAKER", contractAddress: address(matchmaker)}));
+
+        SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
+        deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
         BattleHistory battleHistory = new BattleHistory(engine);
         deployedContracts.push(DeployData({name: "BATTLE HISTORY", contractAddress: address(battleHistory)}));

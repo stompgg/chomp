@@ -50,7 +50,6 @@ export async function loadFullMonsFromCsv() {
                 "SpecialAttack",
                 "SpecialDefense",
                 "Speed",
-                "BST",
               ].includes(header)
             ) {
               monData[header] = parseInt(values[index]) || 0;
