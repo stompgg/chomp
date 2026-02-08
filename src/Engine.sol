@@ -1743,6 +1743,10 @@ contract Engine is IEngine, MappingAllocator {
         return battleConfig[_getStorageKey(battleKey)].startTimestamp;
     }
 
+    function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
+        return _getKOBitmap(battleConfig[_getStorageKey(battleKey)], playerIndex);
+    }
+
     function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
         return battleData[battleKey].prevPlayerSwitchForTurnFlag;
     }

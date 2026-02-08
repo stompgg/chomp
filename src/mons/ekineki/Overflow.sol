@@ -13,18 +13,18 @@ import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {NineNineNineLib} from "./999Lib.sol";
 
-contract DualFlow is StandardAttack {
+contract Overflow is StandardAttack {
     constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
             _ENGINE,
             _TYPE_CALCULATOR,
             ATTACK_PARAMS({
-                NAME: "Dual Flow",
-                BASE_POWER: 50,
+                NAME: "Overflow",
+                BASE_POWER: 90,
                 STAMINA_COST: 3,
                 ACCURACY: 100,
-                MOVE_TYPE: Type.Liquid,
+                MOVE_TYPE: Type.Math,
                 MOVE_CLASS: MoveClass.Special,
                 PRIORITY: DEFAULT_PRIORITY,
                 CRIT_RATE: DEFAULT_CRIT_RATE,
@@ -37,8 +37,6 @@ contract DualFlow is StandardAttack {
 
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) public override {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
-
-        // First hit
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
@@ -50,22 +48,6 @@ contract DualFlow is StandardAttack {
             moveType(battleKey),
             moveClass(battleKey),
             rng,
-            effectiveCritRate
-        );
-
-        // Second hit with different RNG
-        uint256 rng2 = uint256(keccak256(abi.encode(rng, "SECOND_HIT")));
-        AttackCalculator._calculateDamage(
-            ENGINE,
-            TYPE_CALCULATOR,
-            battleKey,
-            attackerPlayerIndex,
-            basePower(battleKey),
-            accuracy(battleKey),
-            volatility(battleKey),
-            moveType(battleKey),
-            moveClass(battleKey),
-            rng2,
             effectiveCritRate
         );
     }

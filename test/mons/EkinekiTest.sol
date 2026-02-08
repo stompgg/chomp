@@ -26,14 +26,15 @@ import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // Ekineki contracts
-import {DualFlow} from "../../src/mons/ekineki/DualFlow.sol";
+import {BubbleBop} from "../../src/mons/ekineki/BubbleBop.sol";
 import {NineNineNine} from "../../src/mons/ekineki/999.sol";
+import {Overflow} from "../../src/mons/ekineki/Overflow.sol";
 import {SaviorComplex} from "../../src/mons/ekineki/SaviorComplex.sol";
 import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
 
 /**
  * Tests:
- *  - DualFlow hits twice, dealing damage with each hit [x]
+ *  - Bubble Bop hits twice, dealing damage with each hit [x]
  *  - SneakAttack hits a non-active opponent mon [x]
  *  - SneakAttack can only be used once per switch-in [x]
  *  - SneakAttack resets on switch (local effect removed on switch-out) [x]
@@ -41,6 +42,7 @@ import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
  *  - SaviorComplex boosts sp atk based on KO'd mons [x]
  *  - SaviorComplex only triggers once per game [x]
  *  - SaviorComplex does not trigger with 0 KOs (can trigger later) [x]
+ *  - Overflow deals damage [x]
  */
 contract EkinekiTest is Test, BattleHelper {
     Engine engine;
@@ -63,10 +65,10 @@ contract EkinekiTest is Test, BattleHelper {
         attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
     }
 
-    function test_dualFlowHitsTwice() public {
+    function test_bubbleBopHitsTwice() public {
         uint32 maxHp = 200;
 
-        DualFlow dualFlow = new DualFlow(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        BubbleBop bubbleBop = new BubbleBop(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
 
         // Create a single-hit reference attack with same params (0 vol, 0 crit for predictable damage)
         StandardAttack singleHit = attackFactory.createAttack(
@@ -85,16 +87,16 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        // Set up team with DualFlow
-        IMoveSet[] memory dualFlowMoves = new IMoveSet[](1);
-        dualFlowMoves[0] = dualFlow;
-        Mon memory dualFlowMon = _createMon();
-        dualFlowMon.moves = dualFlowMoves;
-        dualFlowMon.stats.hp = maxHp;
-        dualFlowMon.stats.specialAttack = 100;
-        dualFlowMon.stats.specialDefense = 100;
+        // Set up team with BubbleBop
+        IMoveSet[] memory bubbleBopMoves = new IMoveSet[](1);
+        bubbleBopMoves[0] = bubbleBop;
+        Mon memory bubbleBopMon = _createMon();
+        bubbleBopMon.moves = bubbleBopMoves;
+        bubbleBopMon.stats.hp = maxHp;
+        bubbleBopMon.stats.specialAttack = 100;
+        bubbleBopMon.stats.specialDefense = 100;
         Mon[] memory aliceTeam = new Mon[](1);
-        aliceTeam[0] = dualFlowMon;
+        aliceTeam[0] = bubbleBopMon;
 
         // Set up team with single hit for Bob (so bob takes damage, not deals it)
         IMoveSet[] memory singleMoves = new IMoveSet[](1);
@@ -123,12 +125,12 @@ contract EkinekiTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
-        // Alice uses DualFlow, Bob does nothing
+        // Alice uses Bubble Bop, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Bob took damage (dual hit should deal damage)
         int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        assertTrue(bobHpDelta < 0, "Bob should have taken damage from Dual Flow");
+        assertTrue(bobHpDelta < 0, "Bob should have taken damage from Bubble Bop");
 
         // Now do a fresh battle with single hit to compare
         Engine engine2 = new Engine();
@@ -153,11 +155,11 @@ contract EkinekiTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine2, commitManager2, battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
         int32 aliceSingleHitDamage = engine2.getMonStateForBattle(battleKey2, 0, 0, MonStateIndexName.Hp);
 
-        // DualFlow should deal more damage than a single hit of same base power
-        // (since DualFlow has volatility and two hits, we check it dealt strictly more)
+        // Bubble Bop should deal more damage than a single hit of same base power
+        // (since Bubble Bop has volatility and two hits, we check it dealt strictly more)
         assertTrue(
             bobHpDelta < aliceSingleHitDamage,
-            "Dual Flow (two hits) should deal more damage than a single hit of same base power"
+            "Bubble Bop (two hits) should deal more damage than a single hit of same base power"
         );
     }
 
@@ -689,5 +691,43 @@ contract EkinekiTest is Test, BattleHelper {
         bytes32 scKey = keccak256(abi.encode(uint256(0), "SAVIOR_COMPLEX"));
         uint192 scTriggered = engine.getGlobalKV(battleKey, scKey);
         assertEq(scTriggered, 0, "Savior Complex should not have been consumed with 0 KOs");
+    }
+
+    function test_overflowDealsDamage() public {
+        uint32 maxHp = 200;
+
+        Overflow overflow = new Overflow(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+
+        IMoveSet[] memory moves = new IMoveSet[](1);
+        moves[0] = overflow;
+
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = maxHp;
+        mon.stats.specialAttack = 100;
+        mon.stats.specialDefense = 100;
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Alice uses Overflow, Bob does nothing
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        assertTrue(bobHpDelta < 0, "Bob should have taken damage from Overflow");
     }
 }

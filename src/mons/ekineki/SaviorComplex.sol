@@ -35,16 +35,13 @@ contract SaviorComplex is IAbility {
             return;
         }
 
-        // Count KO'd mons on the player's team
-        uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
+        // Count KO'd mons via bitmap popcount
+        uint256 koBitmap = ENGINE.getKOBitmap(battleKey, playerIndex);
+        if (koBitmap == 0) return;
         uint256 koCount = 0;
-        for (uint256 i = 0; i < teamSize; i++) {
-            if (ENGINE.getMonStateForBattle(battleKey, playerIndex, i, MonStateIndexName.IsKnockedOut) == 1) {
-                koCount++;
-            }
+        for (uint256 bits = koBitmap; bits != 0; bits >>= 1) {
+            koCount += bits & 1;
         }
-
-        if (koCount == 0) return;
 
         // Determine boost based on stage
         uint8 boostPercent;
