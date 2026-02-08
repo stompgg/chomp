@@ -42,7 +42,7 @@ contract EngineAndPeriphery is Script {
 
     uint256 constant NUM_MONS = 4;
     uint256 constant NUM_MOVES = 4;
-    uint256 constant TIMEOUT_DURATION = 60;
+    uint256 constant TIMEOUT_DURATION = 30; // 30 seconds
     
     DeployData[] deployedContracts;
 
