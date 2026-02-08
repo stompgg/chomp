@@ -109,6 +109,13 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                             RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
                         extraDataToUse = uint240(validSwitchIndices[randomIndex]);
                         validMoveExtraData[validMoveCount] = extraDataToUse;
+                    } else if (move.extraDataType() == ExtraDataType.OpponentTeamIndex) {
+                        uint256 opponentIndex = (playerIndex + 1) % 2;
+                        uint256 opponentTeamSize = ENGINE.getTeamSize(battleKey, opponentIndex);
+                        uint256 randomIndex =
+                            RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % opponentTeamSize;
+                        extraDataToUse = uint240(randomIndex);
+                        validMoveExtraData[validMoveCount] = extraDataToUse;
                     }
                     if (validator.validatePlayerMove(battleKey, i, playerIndex, extraDataToUse)) {
                         validMoveIndices[validMoveCount++] = uint8(i);

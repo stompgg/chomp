@@ -44,6 +44,6 @@ Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, 50% chance to steal 1 
 Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For the next 6 turns, any mon that rests will take 1/16th of max HP as damage.",,No
 Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,No
 Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,No
-Sneak Attack,Ekineki,60,2,100,0,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,No
+Sneak Attack,Ekineki,60,2,100,0,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,Yes
 999,Ekineki,0,2,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,No
 Overflow,Ekineki,90,3,100,0,Math,Special,Deals damage.,,No

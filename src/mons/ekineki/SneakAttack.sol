@@ -109,7 +109,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
     }
 
     function extraDataType() external pure returns (ExtraDataType) {
-        return ExtraDataType.None;
+        return ExtraDataType.OpponentTeamIndex;
     }
 
     // IEffect implementation — local effect that cleans up on switch-out
