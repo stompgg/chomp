@@ -136,9 +136,9 @@ contract GachaTest is Test, BattleHelper {
         // Assert Alice won
         assertEq(engine.getWinner(battleKey), ALICE);
 
-        // Verify points are correct
-        assertEq(gachaRegistry.pointsBalance(ALICE), gachaRegistry.POINTS_PER_WIN());
-        assertEq(gachaRegistry.pointsBalance(BOB), gachaRegistry.POINTS_PER_LOSS());
+        // Verify points are correct (includes first-game bonus of ROLL_COST)
+        assertEq(gachaRegistry.pointsBalance(ALICE), gachaRegistry.ROLL_COST() + gachaRegistry.POINTS_PER_WIN());
+        assertEq(gachaRegistry.pointsBalance(BOB), gachaRegistry.ROLL_COST() + gachaRegistry.POINTS_PER_LOSS());
     }
 
     function test_spendPoints() public {
@@ -166,7 +166,7 @@ contract GachaTest is Test, BattleHelper {
             );
         }
 
-        // Start battle (do it COST / POINTS_PER_LOSS, rounded up, times)
+        // Start battle - with first-game bonus, one battle is enough to roll
         Mon[] memory team = new Mon[](1);
         team[0] = Mon({
             stats: MonStats({
@@ -185,26 +185,24 @@ contract GachaTest is Test, BattleHelper {
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        for (uint256 i = 0; i < ((gachaRegistry.ROLL_COST() / gachaRegistry.POINTS_PER_WIN()) + 1); i++) {
-            vm.warp(gachaRegistry.BATTLE_COOLDOWN() * (i + 1) + (i + 1));
-            DefaultValidator validator = new DefaultValidator(
-                engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0})
-            );
-            IEngineHook[] memory hooks = new IEngineHook[](1);
-            hooks[0] = gachaRegistry;
-            bytes32 battleKey =
-                _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+        vm.warp(gachaRegistry.BATTLE_COOLDOWN() + 1);
+        DefaultValidator validator = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0})
+        );
+        IEngineHook[] memory hooks = new IEngineHook[](1);
+        hooks[0] = gachaRegistry;
+        bytes32 battleKey =
+            _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
 
-            // Advance time to avoid GameStartsAndEndsSameBlock error
-            vm.warp(vm.getBlockTimestamp() + 1);
+        // Advance time to avoid GameStartsAndEndsSameBlock error
+        vm.warp(vm.getBlockTimestamp() + 1);
 
-            // Alice commits switching to mon index 0
-            vm.startPrank(ALICE);
-            commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
+        // Alice commits switching to mon index 0
+        vm.startPrank(ALICE);
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
 
-            // Alice wins the battle
-            engine.end(battleKey);
-        }
+        // Alice wins the battle
+        engine.end(battleKey);
 
         // Assert Alice has enough points to roll
         assertGe(gachaRegistry.pointsBalance(ALICE), gachaRegistry.ROLL_COST());

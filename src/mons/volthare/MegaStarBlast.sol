@@ -14,7 +14,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract MegaStarBlast is IMoveSet {
-    uint32 public constant BASE_ACCURACY = 50;
+    uint32 public constant BASE_ACCURACY = 60;
     uint32 public constant ZAP_ACCURACY = 30;
     uint32 public constant BASE_POWER = 150;
 

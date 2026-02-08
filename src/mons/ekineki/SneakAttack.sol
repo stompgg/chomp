@@ -12,7 +12,7 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {NineNineNineLib} from "./999Lib.sol";
+import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;

@@ -237,7 +237,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(bobHpDelta, -1 * int32(msb.BASE_POWER()), "Bob's mon should take 150 damage");
 
         // Now that Overclock has cleared, set RNG to be below 50, and ensure that nothing happens
-        mockOracle.setRNG(51);
+        mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
 
         // Alice uses Mega Star Blast, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), 0);

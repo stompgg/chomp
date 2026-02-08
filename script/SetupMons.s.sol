@@ -18,6 +18,11 @@ import {GildedRecovery} from "../src/mons/aurox/GildedRecovery.sol";
 import {IronWall} from "../src/mons/aurox/IronWall.sol";
 import {UpOnly} from "../src/mons/aurox/UpOnly.sol";
 import {VolatilePunch} from "../src/mons/aurox/VolatilePunch.sol";
+import {NineNineNine} from "../src/mons/ekineki/NineNineNine.sol";
+import {BubbleBop} from "../src/mons/ekineki/BubbleBop.sol";
+import {Overflow} from "../src/mons/ekineki/Overflow.sol";
+import {SaviorComplex} from "../src/mons/ekineki/SaviorComplex.sol";
+import {SneakAttack} from "../src/mons/ekineki/SneakAttack.sol";
 import {HeatBeacon} from "../src/mons/embursa/HeatBeacon.sol";
 import {HoneyBribe} from "../src/mons/embursa/HoneyBribe.sol";
 import {Q5} from "../src/mons/embursa/Q5.sol";
@@ -82,7 +87,7 @@ contract SetupMons is Script {
         DefaultMonRegistry registry = DefaultMonRegistry(vm.envAddress("DEFAULT_MON_REGISTRY"));
 
         // Deploy all mons and collect deployment data
-        DeployData[][] memory allDeployData = new DeployData[][](11);
+        DeployData[][] memory allDeployData = new DeployData[][](12);
 
         allDeployData[0] = deployGhouliath(registry);
         allDeployData[1] = deployInutia(registry);
@@ -95,6 +100,7 @@ contract SetupMons is Script {
         allDeployData[8] = deployVolthare(registry);
         allDeployData[9] = deployAurox(registry);
         allDeployData[10] = deployXmon(registry);
+        allDeployData[11] = deployEkineki(registry);
 
         // Calculate total length for flattened array
         uint256 totalLength = 0;
@@ -817,6 +823,70 @@ contract SetupMons is Script {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(10, stats, moves, abilities, keys, values);
+
+        return deployedContracts;
+    }
+
+    function deployEkineki(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+        DeployData[] memory deployedContracts = new DeployData[](5);
+        uint256 contractIndex = 0;
+
+        BubbleBop bubblebop = new BubbleBop(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
+        deployedContracts[contractIndex] = DeployData({
+            name: "Bubble Bop",
+            contractAddress: address(bubblebop)
+        });
+        contractIndex++;
+
+        SneakAttack sneakattack = new SneakAttack(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
+        deployedContracts[contractIndex] = DeployData({
+            name: "Sneak Attack",
+            contractAddress: address(sneakattack)
+        });
+        contractIndex++;
+
+        NineNineNine nineNineNine = new NineNineNine(IEngine(vm.envAddress("ENGINE")));
+        deployedContracts[contractIndex] = DeployData({
+            name: "999",
+            contractAddress: address(nineNineNine)
+        });
+        contractIndex++;
+
+        Overflow overflow = new Overflow(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
+        deployedContracts[contractIndex] = DeployData({
+            name: "Overflow",
+            contractAddress: address(overflow)
+        });
+        contractIndex++;
+
+        SaviorComplex saviorcomplex = new SaviorComplex(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
+        deployedContracts[contractIndex] = DeployData({
+            name: "Savior Complex",
+            contractAddress: address(saviorcomplex)
+        });
+        contractIndex++;
+
+        MonStats memory stats = MonStats({
+            hp: 299,
+            stamina: 5,
+            speed: 266,
+            attack: 130,
+            defense: 180,
+            specialAttack: 280,
+            specialDefense: 175,
+            type1: Type.Liquid,
+            type2: Type.None
+        });
+        IMoveSet[] memory moves = new IMoveSet[](4);
+        moves[0] = IMoveSet(address(bubblebop));
+        moves[1] = IMoveSet(address(sneakattack));
+        moves[2] = IMoveSet(address(nineNineNine));
+        moves[3] = IMoveSet(address(overflow));
+        IAbility[] memory abilities = new IAbility[](1);
+        abilities[0] = IAbility(address(saviorcomplex));
+        bytes32[] memory keys = new bytes32[](0);
+        bytes32[] memory values = new bytes32[](0);
+        registry.createMon(11, stats, moves, abilities, keys, values);
 
         return deployedContracts;
     }

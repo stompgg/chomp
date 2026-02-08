@@ -27,8 +27,11 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     IGachaRNG immutable RNG;
 
     mapping(address => EnumerableSetLib.Uint256Set) private monsOwned;
-    mapping(address => uint256) public pointsBalance;
-    mapping(address => uint256) public lastBattleTimestamp;
+    // Packed: bit 255 = firstGameBonusAwarded, bits 128-254 = lastBattleTimestamp, bits 0-127 = pointsBalance
+    mapping(address => uint256) private playerData;
+
+    uint256 private constant BONUS_AWARDED_BIT = 1 << 255;
+    uint256 private constant TIMESTAMP_MASK = ((1 << 127) - 1) << 128;
 
     error AlreadyFirstRolled();
     error NoMoreStock();
@@ -37,7 +40,6 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     event MonRoll(address indexed player, uint256[] monIds);
     event PointsAwarded(address indexed player, uint256 points);
     event PointsSpent(address indexed player, uint256 points);
-    event BonusPoints(bytes32 indexed battleKey);
 
     constructor(IMonRegistry _MON_REGISTRY, IEngine _ENGINE, IGachaRNG _RNG, uint256 _BATTLE_COOLDOWN) {
         MON_REGISTRY = _MON_REGISTRY;
@@ -48,6 +50,14 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
             RNG = _RNG;
         }
         BATTLE_COOLDOWN = _BATTLE_COOLDOWN;
+    }
+
+    function pointsBalance(address player) public view returns (uint256) {
+        return uint128(playerData[player]);
+    }
+
+    function lastBattleTimestamp(address player) public view returns (uint256) {
+        return (playerData[player] & TIMESTAMP_MASK) >> 128;
     }
 
     function firstRoll() external returns (uint256[] memory monIds) {
@@ -61,8 +71,11 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         if (monsOwned[msg.sender].length() == MON_REGISTRY.getMonCount()) {
             revert NoMoreStock();
         } else {
-            pointsBalance[msg.sender] -= numRolls * ROLL_COST;
-            emit PointsSpent(msg.sender, numRolls * ROLL_COST);
+            uint256 cost = numRolls * ROLL_COST;
+            uint256 data = playerData[msg.sender];
+            uint256 currentPoints = uint128(data);
+            playerData[msg.sender] = (data & (type(uint128).max << 128)) | (currentPoints - cost);
+            emit PointsSpent(msg.sender, cost);
         }
         return _roll(numRolls);
     }
@@ -129,17 +142,30 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
             p0Points = POINTS_PER_LOSS;
             p1Points = POINTS_PER_WIN;
         }
-        if (lastBattleTimestamp[players[0]] + BATTLE_COOLDOWN < block.timestamp) {
-            uint256 pointsAwarded = p0Points;
-            pointsBalance[players[0]] += pointsAwarded;
-            lastBattleTimestamp[players[0]] = block.timestamp;
-            emit PointsAwarded(players[0], pointsAwarded);
+        _awardPoints(players[0], p0Points);
+        _awardPoints(players[1], p1Points);
+    }
+
+    function _awardPoints(address player, uint256 battlePoints) internal {
+        uint256 data = playerData[player];
+        uint256 points = uint128(data);
+        bool bonusAwarded = data & BONUS_AWARDED_BIT != 0;
+        uint256 lastTimestamp = (data & TIMESTAMP_MASK) >> 128;
+
+        // Award first-game bonus if not already awarded
+        if (!bonusAwarded) {
+            points += ROLL_COST;
+            emit PointsAwarded(player, ROLL_COST);
         }
-        if (lastBattleTimestamp[players[1]] + BATTLE_COOLDOWN < block.timestamp) {
-            uint256 pointsAwarded = p1Points;
-            pointsBalance[players[1]] += pointsAwarded;
-            lastBattleTimestamp[players[1]] = block.timestamp;
-            emit PointsAwarded(players[1], pointsAwarded);
+
+        // Award battle points if cooldown has passed
+        if (lastTimestamp + BATTLE_COOLDOWN < block.timestamp) {
+            points += battlePoints;
+            playerData[player] = BONUS_AWARDED_BIT | (block.timestamp << 128) | points;
+            emit PointsAwarded(player, battlePoints);
+        } else if (!bonusAwarded) {
+            // Only first-game bonus was awarded, write it back without updating timestamp
+            playerData[player] = BONUS_AWARDED_BIT | (lastTimestamp << 128) | points;
         }
     }
 

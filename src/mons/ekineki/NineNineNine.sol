@@ -7,7 +7,7 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {NineNineNineLib} from "./999Lib.sol";
+import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract NineNineNine is IMoveSet {
     IEngine immutable ENGINE;
@@ -17,7 +17,7 @@ contract NineNineNine is IMoveSet {
     }
 
     function name() external pure returns (string memory) {
-        return "999";
+        return "Nine Nine Nine";
     }
 
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {

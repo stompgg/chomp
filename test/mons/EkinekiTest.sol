@@ -27,7 +27,7 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // Ekineki contracts
 import {BubbleBop} from "../../src/mons/ekineki/BubbleBop.sol";
-import {NineNineNine} from "../../src/mons/ekineki/999.sol";
+import {NineNineNine} from "../../src/mons/ekineki/NineNineNine.sol";
 import {Overflow} from "../../src/mons/ekineki/Overflow.sol";
 import {SaviorComplex} from "../../src/mons/ekineki/SaviorComplex.sol";
 import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
