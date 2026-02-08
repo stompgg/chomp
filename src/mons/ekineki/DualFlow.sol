@@ -11,7 +11,7 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
-import {EkinekiLib} from "./EkinekiLib.sol";
+import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract DualFlow is StandardAttack {
     constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
@@ -36,7 +36,7 @@ contract DualFlow is StandardAttack {
     {}
 
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) public override {
-        uint32 effectiveCritRate = EkinekiLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
+        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
 
         // First hit
         AttackCalculator._calculateDamage(

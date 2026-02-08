@@ -10,7 +10,7 @@ import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {EkinekiLib} from "./EkinekiLib.sol";
+import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract SneakAttack is IMoveSet {
     uint32 public constant BASE_POWER = 60;
@@ -28,9 +28,13 @@ contract SneakAttack is IMoveSet {
         return "Sneak Attack";
     }
 
+    function _getSneakAttackKey(uint256 playerIndex) internal pure returns (bytes32) {
+        return keccak256(abi.encode(playerIndex, "SNEAK_ATTACK"));
+    }
+
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
         // Check if already used this switch-in
-        if (EkinekiLib._getSneakAttackUsed(ENGINE, battleKey, attackerPlayerIndex) == 1) {
+        if (ENGINE.getGlobalKV(battleKey, _getSneakAttackKey(attackerPlayerIndex)) == 1) {
             return;
         }
 
@@ -38,7 +42,7 @@ contract SneakAttack is IMoveSet {
         uint256 targetMonIndex = uint256(extraData);
 
         // Get effective crit rate (checks 999 buff)
-        uint32 effectiveCritRate = EkinekiLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
+        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
 
         // Build DamageCalcContext manually to target any opponent mon (not just active)
         uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
@@ -80,7 +84,7 @@ contract SneakAttack is IMoveSet {
         }
 
         // Mark as used this switch-in
-        EkinekiLib._setSneakAttackUsed(ENGINE, attackerPlayerIndex, 1);
+        ENGINE.setGlobalKV(_getSneakAttackKey(attackerPlayerIndex), 1);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

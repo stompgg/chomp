@@ -585,10 +585,12 @@ contract EkinekiTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
 
         int32 spAtkDeltaSecondSwitch = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.SpecialAttack);
+        // Boost is temp so it was cleared when mon 1 switched out, and savior complex
+        // should not re-apply it (once per game), so delta should be 0
         assertEq(
             spAtkDeltaSecondSwitch,
-            spAtkDeltaFirstSwitch,
-            "Savior Complex should not trigger again (once per game)"
+            0,
+            "Savior Complex should not trigger again (once per game), temp boost cleared on switch out"
         );
     }
 

@@ -7,7 +7,7 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {EkinekiLib} from "./EkinekiLib.sol";
+import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract NineNineNine is IMoveSet {
     IEngine immutable ENGINE;
@@ -23,7 +23,7 @@ contract NineNineNine is IMoveSet {
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
         // Set crit boost for the next turn
         uint256 currentTurn = ENGINE.getTurnIdForBattleState(battleKey);
-        bytes32 key = EkinekiLib._getNineNineNineKey(attackerPlayerIndex);
+        bytes32 key = NineNineNineLib._getKey(attackerPlayerIndex);
         ENGINE.setGlobalKV(key, uint192(currentTurn + 1));
     }
 

@@ -7,7 +7,6 @@ import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {StatBoosts} from "../../effects/StatBoosts.sol";
-import {EkinekiLib} from "./EkinekiLib.sol";
 
 contract SaviorComplex is IAbility {
     uint8 public constant STAGE_1_BOOST = 15; // 1 KO'd
@@ -26,12 +25,20 @@ contract SaviorComplex is IAbility {
         return "Savior Complex";
     }
 
+    function _getSneakAttackKey(uint256 playerIndex) internal pure returns (bytes32) {
+        return keccak256(abi.encode(playerIndex, "SNEAK_ATTACK"));
+    }
+
+    function _getSaviorComplexKey(uint256 playerIndex) internal pure returns (bytes32) {
+        return keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"));
+    }
+
     function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Reset sneak attack usage on every switch-in
-        EkinekiLib._setSneakAttackUsed(ENGINE, playerIndex, 0);
+        ENGINE.setGlobalKV(_getSneakAttackKey(playerIndex), 0);
 
         // Check if already triggered this game
-        if (EkinekiLib._getSaviorComplexTriggered(ENGINE, battleKey, playerIndex)) {
+        if (ENGINE.getGlobalKV(battleKey, _getSaviorComplexKey(playerIndex)) == 1) {
             return;
         }
 
@@ -56,16 +63,16 @@ contract SaviorComplex is IAbility {
             boostPercent = STAGE_1_BOOST;
         }
 
-        // Apply sp atk boost
+        // Apply temporary sp atk boost (cleared on switch out)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.SpecialAttack,
             boostPercent: boostPercent,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(playerIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+        STAT_BOOSTS.addStatBoosts(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
 
         // Mark as triggered (once per game)
-        EkinekiLib._setSaviorComplexTriggered(ENGINE, playerIndex);
+        ENGINE.setGlobalKV(_getSaviorComplexKey(playerIndex), 1);
     }
 }
