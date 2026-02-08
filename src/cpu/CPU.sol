@@ -109,12 +109,23 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                             RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
                         extraDataToUse = uint240(validSwitchIndices[randomIndex]);
                         validMoveExtraData[validMoveCount] = extraDataToUse;
-                    } else if (move.extraDataType() == ExtraDataType.OpponentTeamIndex) {
+                    } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
                         uint256 opponentIndex = (playerIndex + 1) % 2;
                         uint256 opponentTeamSize = ENGINE.getTeamSize(battleKey, opponentIndex);
+                        uint256 koBitmap = ENGINE.getKOBitmap(battleKey, opponentIndex);
+                        uint256[] memory validTargets = new uint256[](opponentTeamSize);
+                        uint256 validTargetCount;
+                        for (uint256 j = 0; j < opponentTeamSize; j++) {
+                            if ((koBitmap & (1 << j)) == 0) {
+                                validTargets[validTargetCount++] = j;
+                            }
+                        }
+                        if (validTargetCount == 0) {
+                            continue;
+                        }
                         uint256 randomIndex =
-                            RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % opponentTeamSize;
-                        extraDataToUse = uint240(randomIndex);
+                            RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validTargetCount;
+                        extraDataToUse = uint240(validTargets[randomIndex]);
                         validMoveExtraData[validMoveCount] = extraDataToUse;
                     }
                     if (validator.validatePlayerMove(battleKey, i, playerIndex, extraDataToUse)) {
