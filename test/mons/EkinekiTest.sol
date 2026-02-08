@@ -27,7 +27,7 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // Ekineki contracts
 import {DualFlow} from "../../src/mons/ekineki/DualFlow.sol";
-import {NineNineNine} from "../../src/mons/ekineki/NineNineNine.sol";
+import {NineNineNine} from "../../src/mons/ekineki/999.sol";
 import {SaviorComplex} from "../../src/mons/ekineki/SaviorComplex.sol";
 import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
 
@@ -36,7 +36,7 @@ import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
  *  - DualFlow hits twice, dealing damage with each hit [x]
  *  - SneakAttack hits a non-active opponent mon [x]
  *  - SneakAttack can only be used once per switch-in [x]
- *  - SneakAttack resets on switch-in via SaviorComplex ability [x]
+ *  - SneakAttack resets on switch (local effect removed on switch-out) [x]
  *  - 999 boosts crit rate to 90% on the next turn [x]
  *  - SaviorComplex boosts sp atk based on KO'd mons [x]
  *  - SaviorComplex only triggers once per game [x]
@@ -300,7 +300,7 @@ contract EkinekiTest is Test, BattleHelper {
         int32 damageAfterFirst = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertTrue(damageAfterFirst < 0, "First sneak attack should deal damage");
 
-        // Alice switches to mon 1 (resets sneak attack via SaviorComplex)
+        // Alice switches to mon 1 (sneak attack effect removed on switch-out)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
         );

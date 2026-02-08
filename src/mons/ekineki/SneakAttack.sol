@@ -12,7 +12,7 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {NineNineNineLib} from "./NineNineNineLib.sol";
+import {NineNineNineLib} from "./999Lib.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
@@ -30,24 +30,14 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return "Sneak Attack";
     }
 
-    function _getSneakAttackKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, "SNEAK_ATTACK"));
-    }
-
-    function _ensureGlobalEffect(bytes32 battleKey) internal {
-        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, 2, 0);
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
+        // Check if already used this switch-in (effect present = already used)
+        uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
+        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
-        }
-        ENGINE.addEffect(2, 0, IEffect(address(this)), bytes32(0));
-    }
-
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
-        // Check if already used this switch-in
-        if (ENGINE.getGlobalKV(battleKey, _getSneakAttackKey(attackerPlayerIndex)) == 1) {
-            return;
         }
 
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
@@ -57,7 +47,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
 
         // Build DamageCalcContext manually to target any opponent mon (not just active)
-        uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         MonStats memory attackerStats = ENGINE.getMonStatsForBattle(battleKey, attackerPlayerIndex, attackerMonIndex);
         MonStats memory defenderStats = ENGINE.getMonStatsForBattle(battleKey, defenderPlayerIndex, targetMonIndex);
 
@@ -95,11 +84,8 @@ contract SneakAttack is IMoveSet, BasicEffect {
             ENGINE.emitEngineEvent(eventType, "");
         }
 
-        // Mark as used this switch-in
-        ENGINE.setGlobalKV(_getSneakAttackKey(attackerPlayerIndex), 1);
-
-        // Register global effect to reset flag on future switch-ins
-        _ensureGlobalEffect(battleKey);
+        // Mark as used by adding local effect on the attacker's mon
+        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
@@ -126,17 +112,17 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return ExtraDataType.None;
     }
 
-    // IEffect implementation — global effect that resets sneak attack on switch-in
+    // IEffect implementation — local effect that cleans up on switch-out
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return step == EffectStep.OnMonSwitchIn;
+        return step == EffectStep.OnMonSwitchOut;
     }
 
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256 playerIndex, uint256)
+    function onMonSwitchOut(uint256, bytes32, uint256, uint256)
         external
+        pure
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        ENGINE.setGlobalKV(_getSneakAttackKey(playerIndex), 0);
-        return (extraData, false);
+        return (bytes32(0), true);
     }
 }

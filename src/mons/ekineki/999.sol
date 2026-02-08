@@ -7,7 +7,7 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {NineNineNineLib} from "./NineNineNineLib.sol";
+import {NineNineNineLib} from "./999Lib.sol";
 
 contract NineNineNine is IMoveSet {
     IEngine immutable ENGINE;

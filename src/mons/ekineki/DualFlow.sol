@@ -11,7 +11,7 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
-import {NineNineNineLib} from "./NineNineNineLib.sol";
+import {NineNineNineLib} from "./999Lib.sol";
 
 contract DualFlow is StandardAttack {
     constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
