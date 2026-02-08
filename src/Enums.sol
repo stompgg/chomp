@@ -75,5 +75,6 @@ enum StatBoostFlag {
 
 enum ExtraDataType {
     None,
-    SelfTeamIndex
+    SelfTeamIndex,
+    OpponentNonKOTeamIndex
 }
