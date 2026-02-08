@@ -25,18 +25,11 @@ contract SaviorComplex is IAbility {
         return "Savior Complex";
     }
 
-    function _getSneakAttackKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, "SNEAK_ATTACK"));
-    }
-
     function _getSaviorComplexKey(uint256 playerIndex) internal pure returns (bytes32) {
         return keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"));
     }
 
     function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
-        // Reset sneak attack usage on every switch-in
-        ENGINE.setGlobalKV(_getSneakAttackKey(playerIndex), 0);
-
         // Check if already triggered this game
         if (ENGINE.getGlobalKV(battleKey, _getSaviorComplexKey(playerIndex)) == 1) {
             return;

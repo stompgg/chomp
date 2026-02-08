@@ -10,9 +10,11 @@ import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {IEffect} from "../../effects/IEffect.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
 
-contract SneakAttack is IMoveSet {
+contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
     uint32 public constant STAMINA_COST = 2;
 
@@ -24,12 +26,22 @@ contract SneakAttack is IMoveSet {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() external pure returns (string memory) {
+    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Sneak Attack";
     }
 
     function _getSneakAttackKey(uint256 playerIndex) internal pure returns (bytes32) {
         return keccak256(abi.encode(playerIndex, "SNEAK_ATTACK"));
+    }
+
+    function _ensureGlobalEffect(bytes32 battleKey) internal {
+        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, 2, 0);
+        for (uint256 i = 0; i < effects.length; i++) {
+            if (address(effects[i].effect) == address(this)) {
+                return;
+            }
+        }
+        ENGINE.addEffect(2, 0, IEffect(address(this)), bytes32(0));
     }
 
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
@@ -85,6 +97,9 @@ contract SneakAttack is IMoveSet {
 
         // Mark as used this switch-in
         ENGINE.setGlobalKV(_getSneakAttackKey(attackerPlayerIndex), 1);
+
+        // Register global effect to reset flag on future switch-ins
+        _ensureGlobalEffect(battleKey);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
@@ -109,5 +124,19 @@ contract SneakAttack is IMoveSet {
 
     function extraDataType() external pure returns (ExtraDataType) {
         return ExtraDataType.None;
+    }
+
+    // IEffect implementation — global effect that resets sneak attack on switch-in
+    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
+        return step == EffectStep.OnMonSwitchIn;
+    }
+
+    function onMonSwitchIn(uint256, bytes32 extraData, uint256 playerIndex, uint256)
+        external
+        override
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
+        ENGINE.setGlobalKV(_getSneakAttackKey(playerIndex), 0);
+        return (extraData, false);
     }
 }
