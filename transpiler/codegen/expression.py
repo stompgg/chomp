@@ -215,6 +215,13 @@ class ExpressionGenerator(BaseGenerator):
 
     def generate_binary_operation(self, op: BinaryOperation) -> str:
         """Generate TypeScript code for a binary operation."""
+        # Special handling for address(x) == address(0) or address(x) != address(0)
+        # When x might be null/undefined, we need to add a null check
+        if op.operator in ('==', '!='):
+            null_safe = self._generate_null_safe_address_comparison(op)
+            if null_safe:
+                return null_safe
+
         left = self.generate(op.left)
         right = self.generate(op.right)
         operator = op.operator
@@ -230,6 +237,90 @@ class ExpressionGenerator(BaseGenerator):
             right = f'({right})'
 
         return f'{left} {operator} {right}'
+
+    def _generate_null_safe_address_comparison(self, op: BinaryOperation) -> Optional[str]:
+        """Generate null-safe address comparison for address(x) == address(0) patterns.
+
+        In Solidity, address(contractRef) returns address(0) when the reference is null.
+        In TypeScript, we access contractRef._contractAddress, which throws if null.
+        This method detects this pattern and generates null-safe comparisons.
+
+        Note: This only applies to contract/interface references, NOT to:
+        - Numeric casts like address(uint160(...))
+        - Literals like address(0x...)
+        - Already-address expressions like msg.sender
+        """
+        operator = op.operator
+        if operator not in ('==', '!='):
+            return None
+
+        # Check if one side is address(0) and the other is address(something)
+        left_is_zero = self._is_zero_address(op.left)
+        right_is_zero = self._is_zero_address(op.right)
+
+        if not (left_is_zero or right_is_zero):
+            return None
+
+        # Get the non-zero side
+        addr_expr = op.right if left_is_zero else op.left
+
+        # Check if it's address(someContract) where someContract might be null
+        if not isinstance(addr_expr, TypeCast):
+            return None
+        if addr_expr.type_name.name != 'address':
+            return None
+
+        inner = addr_expr.expression
+
+        # Skip if inner is a literal
+        if isinstance(inner, Literal):
+            return None
+
+        # Skip if inner is 'this', 'msg', 'tx' (always defined)
+        if isinstance(inner, Identifier) and inner.name in ('this', 'msg', 'tx'):
+            return None
+
+        # Skip if inner is a numeric type cast (e.g., uint160(...), uint256(...))
+        # These are converting numbers to addresses, not contract references
+        if isinstance(inner, TypeCast):
+            inner_type = inner.type_name.name
+            if inner_type.startswith('uint') or inner_type.startswith('int'):
+                return None
+
+        # Skip if inner is a numeric function call result
+        # (e.g., something that returns uint256)
+        if isinstance(inner, FunctionCall):
+            # If it's a type cast function (like uint160(...)), skip
+            if isinstance(inner.function, Identifier):
+                func_name = inner.function.name
+                if func_name.startswith('uint') or func_name.startswith('int'):
+                    return None
+
+        # Generate the inner expression (the contract reference)
+        inner_code = self.generate(inner)
+        zero_addr = '"0x0000000000000000000000000000000000000000"'
+
+        # For != address(0): x != null && x._contractAddress != zero
+        # For == address(0): x == null || x._contractAddress == zero
+        if operator == '!=':
+            return f'({inner_code} != null && {inner_code}._contractAddress != {zero_addr})'
+        else:  # ==
+            return f'({inner_code} == null || {inner_code}._contractAddress == {zero_addr})'
+
+    def _is_zero_address(self, expr: Expression) -> bool:
+        """Check if an expression is address(0) or a zero address literal."""
+        if isinstance(expr, Literal):
+            val = expr.value
+            # Check for 0 or 0x0...0
+            if val == '0' or val == '0x0' or val == '0x0000000000000000000000000000000000000000':
+                return True
+        if isinstance(expr, TypeCast) and expr.type_name.name == 'address':
+            inner = expr.expression
+            if isinstance(inner, Literal):
+                val = inner.value
+                if val == '0' or val == '0x0' or val == '0x0000000000000000000000000000000000000000':
+                    return True
+        return False
 
     def generate_unary_operation(self, op: UnaryOperation) -> str:
         """Generate TypeScript code for a unary operation."""
