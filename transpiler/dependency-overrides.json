@@ -4,6 +4,9 @@
   "overrides": {
     "DefaultRuleset": {
       "_effects": ["StaminaRegen"]
+    },
+    "MegaStarBlast": {
+      "_OVERCLOCK": "Overclock"
     }
   },
   "skipContracts": [

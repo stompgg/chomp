@@ -76,22 +76,8 @@ describe('Transpiler Output Validation', () => {
       expect(DefaultMonRegistry).toBeDefined();
     });
 
-    it('should import DefaultTeamRegistry without errors', async () => {
-      const { DefaultTeamRegistry } = await import('../ts-output/teams/DefaultTeamRegistry');
-      expect(DefaultTeamRegistry).toBeDefined();
-    });
-
-    it('should import GachaTeamRegistry without errors', async () => {
-      const { GachaTeamRegistry } = await import('../ts-output/teams/GachaTeamRegistry');
-      expect(GachaTeamRegistry).toBeDefined();
-    });
-  });
-
-  describe('Gacha modules compile', () => {
-    it('should import GachaRegistry without errors', async () => {
-      const { GachaRegistry } = await import('../ts-output/gacha/GachaRegistry');
-      expect(GachaRegistry).toBeDefined();
-    });
+    // Note: DefaultTeamRegistry, GachaTeamRegistry, LookupTeamRegistry, and GachaRegistry
+    // are in skipContracts and not transpiled
   });
 
   describe('Mon moves compile', () => {
