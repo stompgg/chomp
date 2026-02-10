@@ -293,6 +293,29 @@ def collect_all_contracts(mons: Dict[str, MonData], base_path: str) -> Dict[str,
     return contracts
 
 
+def collect_env_addresses_for_mon(mon_contracts: Dict[str, ContractInfo], intra_dependencies: Dict[str, List[str]]) -> Dict[str, int]:
+    """Collect all env addresses used by a mon's contracts and count their usage.
+
+    Returns a dict of env_name -> usage_count for external dependencies only.
+    """
+    env_usage = {}
+
+    for contract_name, contract_info in mon_contracts.items():
+        for dep in contract_info.dependencies:
+            contract_type = dep["type"]
+            env_name = dep["name"]
+
+            # Skip intra-mon dependencies (they use deployed addresses, not env)
+            if contract_type in intra_dependencies.get(contract_name, []):
+                continue
+
+            # Track this env address usage with its type
+            key = (env_name, contract_type)
+            env_usage[key] = env_usage.get(key, 0) + 1
+
+    return env_usage
+
+
 def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color: bool = False) -> List[str]:
     """Generate the deploy function for a specific mon"""
     function_name = f"deploy{mon.name.replace(' ', '')}"
@@ -306,20 +329,39 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
     # Create array to track deployed contracts
     num_contracts = len(mon_contracts) if mon_contracts else 0
     lines.append(f"        DeployData[] memory deployedContracts = new DeployData[]({num_contracts});")
-    lines.append("        uint256 contractIndex = 0;")
-    lines.append("")
 
     if mon_contracts:
         # Analyze intra-mon dependencies and get deployment order
         deployment_order, intra_dependencies = analyze_intra_mon_dependencies(mon_contracts)
 
-        # Track deployed contract instances for intra-mon references
-        deployed_instances = {}
+        # Collect env addresses and find ones used multiple times to cache
+        env_usage = collect_env_addresses_for_mon(mon_contracts, intra_dependencies)
 
-        # Deploy contracts in dependency order
-        for contract_name in deployment_order:
+        # Cache addresses used more than once (or always cache common ones for consistency)
+        cached_addresses = {}
+        for (env_name, contract_type), count in env_usage.items():
+            if count > 1:
+                var_name = env_name.lower().replace("_", "")
+                cached_addresses[(env_name, contract_type)] = var_name
+
+        # Emit cached address declarations
+        if cached_addresses:
+            lines.append("")
+            lines.append("        // Cache commonly used addresses")
+            for (env_name, contract_type), var_name in sorted(cached_addresses.items()):
+                lines.append(f"        address {var_name} = vm.envAddress(\"{env_name}\");")
+
+        # Create array to store deployed addresses for later use
+        lines.append("")
+        lines.append(f"        address[{num_contracts}] memory addrs;")
+        lines.append("")
+
+        # Track deployed contract addresses by index for intra-mon references
+        deployed_indices = {}
+
+        # Deploy contracts in dependency order, each in its own scope
+        for idx, contract_name in enumerate(deployment_order):
             contract = mon_contracts[contract_name]
-            contract_var_name = contract.variable_name
 
             # Build constructor arguments
             constructor_args = []
@@ -329,109 +371,128 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
 
                 # Check if this is an intra-mon dependency
                 if contract_type in intra_dependencies.get(contract_name, []):
-                    # Use the deployed instance from this mon
-                    if contract_type in deployed_instances:
-                        constructor_args.append(f"{contract_type}(address({deployed_instances[contract_type]}))")
+                    # Use the deployed address from this mon
+                    if contract_type in deployed_indices:
+                        dep_idx = deployed_indices[contract_type]
+                        constructor_args.append(f"{contract_type}(addrs[{dep_idx}])")
                     else:
                         raise ValueError(f"Intra-mon dependency {contract_type} not yet deployed for {contract_name}")
                 else:
-                    # Use environment variable for external dependencies
-                    constructor_args.append(f"{contract_type}(vm.envAddress(\"{env_name}\"))")
+                    # Use cached address if available, otherwise inline envAddress call
+                    key = (env_name, contract_type)
+                    if key in cached_addresses:
+                        var_name = cached_addresses[key]
+                        constructor_args.append(f"{contract_type}({var_name})")
+                    else:
+                        constructor_args.append(f"{contract_type}(vm.envAddress(\"{env_name}\"))")
 
             args_str = ", ".join(constructor_args)
-            lines.append(f"        {contract_name} {contract_var_name} = new {contract_name}({args_str});")
 
-            # Track this deployed instance for future intra-mon references
-            deployed_instances[contract_name] = contract_var_name
+            # Use block scope to limit variable lifetime
+            lines.append("        {")
+            lines.append(f"            addrs[{idx}] = address(new {contract_name}({args_str}));")
+            lines.append(f"            deployedContracts[{idx}] = DeployData({{name: \"{contract.name}\", contractAddress: addrs[{idx}]}});")
+            lines.append("        }")
 
-            # Add to deployed contracts array
-            lines.append(f"        deployedContracts[contractIndex] = DeployData({{")
-            lines.append(f"            name: \"{contract.name}\",")
-            lines.append(f"            contractAddress: address({contract_var_name})")
-            lines.append("        });")
-            lines.append("        contractIndex++;")
-            lines.append("")
+            # Track this deployed address index for future intra-mon references
+            deployed_indices[contract_name] = idx
 
-    # Generate MonStats
-    type1 = convert_type_to_solidity(mon.type1)
-    type2 = convert_type_to_solidity(mon.type2)
-    lines.extend([
-        "        MonStats memory stats = MonStats({",
-        f"            hp: {mon.hp},",
-        f"            stamina: {mon.stamina},",
-        f"            speed: {mon.speed},",
-        f"            attack: {mon.attack},",
-        f"            defense: {mon.defense},",
-        f"            specialAttack: {mon.special_attack},",
-        f"            specialDefense: {mon.special_defense},",
-        f"            type1: {type1},",
-        f"            type2: {type2}",
-        "        });"
-    ])
+        # Call helper function to register the mon (reduces stack pressure)
+        lines.append("")
+        helper_name = f"_register{mon.name.replace(' ', '')}"
+        lines.append(f"        {helper_name}(registry, addrs);")
 
-    # Generate moves array
-    if mon.moves:
-        lines.append(f"        IMoveSet[] memory moves = new IMoveSet[]({len(mon.moves)});")
-        for i, move_name in enumerate(mon.moves):
-            contract_name = contract_name_from_move_or_ability(move_name)
-            if contract_name in mon_contracts:
-                var_name = mon_contracts[contract_name].variable_name
-                lines.append(f"        moves[{i}] = IMoveSet(address({var_name}));")
-    else:
-        lines.append("        IMoveSet[] memory moves = new IMoveSet[](0);")
-
-    # Generate abilities array
-    if mon.abilities:
-        lines.append(f"        IAbility[] memory abilities = new IAbility[]({len(mon.abilities)});")
-        for i, ability_name in enumerate(mon.abilities):
-            contract_name = contract_name_from_move_or_ability(ability_name)
-            if contract_name in mon_contracts:
-                var_name = mon_contracts[contract_name].variable_name
-                lines.append(f"        abilities[{i}] = IAbility(address({var_name}));")
-    else:
-        lines.append("        IAbility[] memory abilities = new IAbility[](0);")
-
-    # Generate metadata arrays with sprite and palette data (if color flag is enabled)
-    if include_color:
-        total_metadata_count = len(mon.sprite_data) + len(mon.palette_data)
-
-        if total_metadata_count > 0:
-            lines.extend([
-                f"        bytes32[] memory keys = new bytes32[]({total_metadata_count});",
-                f"        bytes32[] memory values = new bytes32[]({total_metadata_count});"
-            ])
-
-            metadata_index = 0
-
-            # Add sprite data as IMG_0, IMG_1, IMG_2, etc.
-            for i, uint256_value in enumerate(mon.sprite_data):
-                lines.append(f"        keys[{metadata_index}] = bytes32(\"IMG_{i}\");")
-                lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
-                metadata_index += 1
-
-            # Add palette data as PAL_0, PAL_1, PAL_2, etc.
-            for i, uint256_value in enumerate(mon.palette_data):
-                lines.append(f"        keys[{metadata_index}] = bytes32(\"PAL_{i}\");")
-                lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
-                metadata_index += 1
-        else:
-            lines.extend([
-                "        bytes32[] memory keys = new bytes32[](0);",
-                "        bytes32[] memory values = new bytes32[](0);"
-            ])
-    else:
-        # No color data - empty metadata arrays
-        lines.extend([
-            "        bytes32[] memory keys = new bytes32[](0);",
-            "        bytes32[] memory values = new bytes32[](0);"
-        ])
-
-    # Generate createMon call
-    lines.append(f"        registry.createMon({mon.mon_id}, stats, moves, abilities, keys, values);")
     lines.append("")
     lines.append("        return deployedContracts;")
     lines.append("    }")
     lines.append("")
+
+    # Generate the helper function for registering the mon
+    if mon_contracts:
+        deployment_order, intra_dependencies = analyze_intra_mon_dependencies(mon_contracts)
+        deployed_indices = {name: idx for idx, name in enumerate(deployment_order)}
+
+        helper_name = f"_register{mon.name.replace(' ', '')}"
+        lines.append(f"    function {helper_name}(DefaultMonRegistry registry, address[{num_contracts}] memory addrs) internal {{")
+
+        # Generate MonStats
+        type1 = convert_type_to_solidity(mon.type1)
+        type2 = convert_type_to_solidity(mon.type2)
+        lines.extend([
+            "        MonStats memory stats = MonStats({",
+            f"            hp: {mon.hp},",
+            f"            stamina: {mon.stamina},",
+            f"            speed: {mon.speed},",
+            f"            attack: {mon.attack},",
+            f"            defense: {mon.defense},",
+            f"            specialAttack: {mon.special_attack},",
+            f"            specialDefense: {mon.special_defense},",
+            f"            type1: {type1},",
+            f"            type2: {type2}",
+            "        });"
+        ])
+
+        # Generate moves array using addrs indices
+        if mon.moves:
+            lines.append(f"        IMoveSet[] memory moves = new IMoveSet[]({len(mon.moves)});")
+            for i, move_name in enumerate(mon.moves):
+                contract_name = contract_name_from_move_or_ability(move_name)
+                if contract_name in deployed_indices:
+                    idx = deployed_indices[contract_name]
+                    lines.append(f"        moves[{i}] = IMoveSet(addrs[{idx}]);")
+        else:
+            lines.append("        IMoveSet[] memory moves = new IMoveSet[](0);")
+
+        # Generate abilities array using addrs indices
+        if mon.abilities:
+            lines.append(f"        IAbility[] memory abilities = new IAbility[]({len(mon.abilities)});")
+            for i, ability_name in enumerate(mon.abilities):
+                contract_name = contract_name_from_move_or_ability(ability_name)
+                if contract_name in deployed_indices:
+                    idx = deployed_indices[contract_name]
+                    lines.append(f"        abilities[{i}] = IAbility(addrs[{idx}]);")
+        else:
+            lines.append("        IAbility[] memory abilities = new IAbility[](0);")
+
+        # Generate metadata arrays with sprite and palette data (if color flag is enabled)
+        if include_color:
+            total_metadata_count = len(mon.sprite_data) + len(mon.palette_data)
+
+            if total_metadata_count > 0:
+                lines.extend([
+                    f"        bytes32[] memory keys = new bytes32[]({total_metadata_count});",
+                    f"        bytes32[] memory values = new bytes32[]({total_metadata_count});"
+                ])
+
+                metadata_index = 0
+
+                # Add sprite data as IMG_0, IMG_1, IMG_2, etc.
+                for i, uint256_value in enumerate(mon.sprite_data):
+                    lines.append(f"        keys[{metadata_index}] = bytes32(\"IMG_{i}\");")
+                    lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
+                    metadata_index += 1
+
+                # Add palette data as PAL_0, PAL_1, PAL_2, etc.
+                for i, uint256_value in enumerate(mon.palette_data):
+                    lines.append(f"        keys[{metadata_index}] = bytes32(\"PAL_{i}\");")
+                    lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
+                    metadata_index += 1
+            else:
+                lines.extend([
+                    "        bytes32[] memory keys = new bytes32[](0);",
+                    "        bytes32[] memory values = new bytes32[](0);"
+                ])
+        else:
+            # No color data - empty metadata arrays
+            lines.extend([
+                "        bytes32[] memory keys = new bytes32[](0);",
+                "        bytes32[] memory values = new bytes32[](0);"
+            ])
+
+        # Generate createMon call
+        lines.append(f"        registry.createMon({mon.mon_id}, stats, moves, abilities, keys, values);")
+        lines.append("    }")
+        lines.append("")
 
     return lines
 

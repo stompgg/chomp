@@ -18,8 +18,8 @@ import {GildedRecovery} from "../src/mons/aurox/GildedRecovery.sol";
 import {IronWall} from "../src/mons/aurox/IronWall.sol";
 import {UpOnly} from "../src/mons/aurox/UpOnly.sol";
 import {VolatilePunch} from "../src/mons/aurox/VolatilePunch.sol";
-import {NineNineNine} from "../src/mons/ekineki/NineNineNine.sol";
 import {BubbleBop} from "../src/mons/ekineki/BubbleBop.sol";
+import {NineNineNine} from "../src/mons/ekineki/NineNineNine.sol";
 import {Overflow} from "../src/mons/ekineki/Overflow.sol";
 import {SaviorComplex} from "../src/mons/ekineki/SaviorComplex.sol";
 import {SneakAttack} from "../src/mons/ekineki/SneakAttack.sol";
@@ -125,43 +125,40 @@ contract SetupMons is Script {
 
     function deployGhouliath(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        EternalGrudge eternalgrudge = new EternalGrudge(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Eternal Grudge",
-            contractAddress: address(eternalgrudge)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        InfernalFlame infernalflame = new InfernalFlame(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("BURN_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Infernal Flame",
-            contractAddress: address(infernalflame)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        WitherAway witheraway = new WitherAway(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("PANIC_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Wither Away",
-            contractAddress: address(witheraway)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new EternalGrudge(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            deployedContracts[0] = DeployData({name: "Eternal Grudge", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new InfernalFlame(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS"))));
+            deployedContracts[1] = DeployData({name: "Infernal Flame", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new WitherAway(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
+            deployedContracts[2] = DeployData({name: "Wither Away", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new Osteoporosis(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Osteoporosis", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new RiseFromTheGrave(IEngine(engine)));
+            deployedContracts[4] = DeployData({name: "Rise From The Grave", contractAddress: addrs[4]});
+        }
 
-        Osteoporosis osteoporosis = new Osteoporosis(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Osteoporosis",
-            contractAddress: address(osteoporosis)
-        });
-        contractIndex++;
+        _registerGhouliath(registry, addrs);
 
-        RiseFromTheGrave risefromthegrave = new RiseFromTheGrave(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Rise From The Grave",
-            contractAddress: address(risefromthegrave)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerGhouliath(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 303,
             stamina: 5,
@@ -174,58 +171,54 @@ contract SetupMons is Script {
             type2: Type.Fire
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(eternalgrudge));
-        moves[1] = IMoveSet(address(infernalflame));
-        moves[2] = IMoveSet(address(witheraway));
-        moves[3] = IMoveSet(address(osteoporosis));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(risefromthegrave));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(0, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployInutia(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        ChainExpansion chainexpansion = new ChainExpansion(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Chain Expansion",
-            contractAddress: address(chainexpansion)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address statboosts = vm.envAddress("STAT_BOOSTS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        Initialize initialize = new Initialize(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Initialize",
-            contractAddress: address(initialize)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        BigBite bigbite = new BigBite(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Big Bite",
-            contractAddress: address(bigbite)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new ChainExpansion(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[0] = DeployData({name: "Chain Expansion", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new Initialize(IEngine(engine), StatBoosts(statboosts)));
+            deployedContracts[1] = DeployData({name: "Initialize", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new BigBite(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[2] = DeployData({name: "Big Bite", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new HitAndDip(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Hit And Dip", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Interweaving(IEngine(engine), StatBoosts(statboosts)));
+            deployedContracts[4] = DeployData({name: "Interweaving", contractAddress: addrs[4]});
+        }
 
-        HitAndDip hitanddip = new HitAndDip(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Hit And Dip",
-            contractAddress: address(hitanddip)
-        });
-        contractIndex++;
+        _registerInutia(registry, addrs);
 
-        Interweaving interweaving = new Interweaving(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Interweaving",
-            contractAddress: address(interweaving)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerInutia(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 351,
             stamina: 5,
@@ -238,58 +231,54 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(chainexpansion));
-        moves[1] = IMoveSet(address(initialize));
-        moves[2] = IMoveSet(address(bigbite));
-        moves[3] = IMoveSet(address(hitanddip));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(interweaving));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(1, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployMalalien(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        TripleThink triplethink = new TripleThink(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Triple Think",
-            contractAddress: address(triplethink)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address statboosts = vm.envAddress("STAT_BOOSTS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        FederalInvestigation federalinvestigation = new FederalInvestigation(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Federal Investigation",
-            contractAddress: address(federalinvestigation)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        NegativeThoughts negativethoughts = new NegativeThoughts(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("PANIC_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Negative Thoughts",
-            contractAddress: address(negativethoughts)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new TripleThink(IEngine(engine), StatBoosts(statboosts)));
+            deployedContracts[0] = DeployData({name: "Triple Think", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new FederalInvestigation(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Federal Investigation", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new NegativeThoughts(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
+            deployedContracts[2] = DeployData({name: "Negative Thoughts", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new InfiniteLove(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("SLEEP_STATUS"))));
+            deployedContracts[3] = DeployData({name: "Infinite Love", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new ActusReus(IEngine(engine), StatBoosts(statboosts)));
+            deployedContracts[4] = DeployData({name: "Actus Reus", contractAddress: addrs[4]});
+        }
 
-        InfiniteLove infinitelove = new InfiniteLove(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("SLEEP_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Infinite Love",
-            contractAddress: address(infinitelove)
-        });
-        contractIndex++;
+        _registerMalalien(registry, addrs);
 
-        ActusReus actusreus = new ActusReus(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Actus Reus",
-            contractAddress: address(actusreus)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerMalalien(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 258,
             stamina: 5,
@@ -302,58 +291,54 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(triplethink));
-        moves[1] = IMoveSet(address(federalinvestigation));
-        moves[2] = IMoveSet(address(negativethoughts));
-        moves[3] = IMoveSet(address(infinitelove));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(actusreus));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(2, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployIblivion(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        Baselight baselight = new Baselight(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Baselight",
-            contractAddress: address(baselight)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address statboosts = vm.envAddress("STAT_BOOSTS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        UnboundedStrike unboundedstrike = new UnboundedStrike(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), Baselight(address(baselight)));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Unbounded Strike",
-            contractAddress: address(unboundedstrike)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        Loop loop = new Loop(IEngine(vm.envAddress("ENGINE")), Baselight(address(baselight)), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Loop",
-            contractAddress: address(loop)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new Baselight(IEngine(engine)));
+            deployedContracts[0] = DeployData({name: "Baselight", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new UnboundedStrike(IEngine(engine), ITypeCalculator(typecalculator), Baselight(addrs[0])));
+            deployedContracts[1] = DeployData({name: "Unbounded Strike", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new Loop(IEngine(engine), Baselight(addrs[0]), StatBoosts(statboosts)));
+            deployedContracts[2] = DeployData({name: "Loop", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new Brightback(IEngine(engine), ITypeCalculator(typecalculator), Baselight(addrs[0])));
+            deployedContracts[3] = DeployData({name: "Brightback", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Renormalize(IEngine(engine), Baselight(addrs[0]), StatBoosts(statboosts), Loop(addrs[2])));
+            deployedContracts[4] = DeployData({name: "Renormalize", contractAddress: addrs[4]});
+        }
 
-        Brightback brightback = new Brightback(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), Baselight(address(baselight)));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Brightback",
-            contractAddress: address(brightback)
-        });
-        contractIndex++;
+        _registerIblivion(registry, addrs);
 
-        Renormalize renormalize = new Renormalize(IEngine(vm.envAddress("ENGINE")), Baselight(address(baselight)), StatBoosts(vm.envAddress("STAT_BOOSTS")), Loop(address(loop)));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Renormalize",
-            contractAddress: address(renormalize)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerIblivion(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 277,
             stamina: 5,
@@ -366,58 +351,53 @@ contract SetupMons is Script {
             type2: Type.Air
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(unboundedstrike));
-        moves[1] = IMoveSet(address(loop));
-        moves[2] = IMoveSet(address(brightback));
-        moves[3] = IMoveSet(address(renormalize));
+        moves[0] = IMoveSet(addrs[1]);
+        moves[1] = IMoveSet(addrs[2]);
+        moves[2] = IMoveSet(addrs[3]);
+        moves[3] = IMoveSet(addrs[4]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(baselight));
+        abilities[0] = IAbility(addrs[0]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(3, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployGorillax(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        RockPull rockpull = new RockPull(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Rock Pull",
-            contractAddress: address(rockpull)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        PoundGround poundground = new PoundGround(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Pound Ground",
-            contractAddress: address(poundground)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        Blow blow = new Blow(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Blow",
-            contractAddress: address(blow)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new RockPull(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[0] = DeployData({name: "Rock Pull", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new PoundGround(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Pound Ground", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new Blow(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[2] = DeployData({name: "Blow", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new ThrowPebble(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Throw Pebble", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Angery(IEngine(engine)));
+            deployedContracts[4] = DeployData({name: "Angery", contractAddress: addrs[4]});
+        }
 
-        ThrowPebble throwpebble = new ThrowPebble(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Throw Pebble",
-            contractAddress: address(throwpebble)
-        });
-        contractIndex++;
+        _registerGorillax(registry, addrs);
 
-        Angery angery = new Angery(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Angery",
-            contractAddress: address(angery)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerGorillax(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 407,
             stamina: 5,
@@ -430,58 +410,53 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(rockpull));
-        moves[1] = IMoveSet(address(poundground));
-        moves[2] = IMoveSet(address(blow));
-        moves[3] = IMoveSet(address(throwpebble));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(angery));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(4, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deploySofabbi(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        Gachachacha gachachacha = new Gachachacha(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Gachachacha",
-            contractAddress: address(gachachacha)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        GuestFeature guestfeature = new GuestFeature(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Guest Feature",
-            contractAddress: address(guestfeature)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        UnexpectedCarrot unexpectedcarrot = new UnexpectedCarrot(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Unexpected Carrot",
-            contractAddress: address(unexpectedcarrot)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new Gachachacha(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[0] = DeployData({name: "Gachachacha", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new GuestFeature(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Guest Feature", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new UnexpectedCarrot(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[2] = DeployData({name: "Unexpected Carrot", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new SnackBreak(IEngine(engine)));
+            deployedContracts[3] = DeployData({name: "Snack Break", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new CarrotHarvest(IEngine(engine)));
+            deployedContracts[4] = DeployData({name: "Carrot Harvest", contractAddress: addrs[4]});
+        }
 
-        SnackBreak snackbreak = new SnackBreak(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Snack Break",
-            contractAddress: address(snackbreak)
-        });
-        contractIndex++;
+        _registerSofabbi(registry, addrs);
 
-        CarrotHarvest carrotharvest = new CarrotHarvest(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Carrot Harvest",
-            contractAddress: address(carrotharvest)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerSofabbi(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 333,
             stamina: 5,
@@ -494,58 +469,54 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(gachachacha));
-        moves[1] = IMoveSet(address(guestfeature));
-        moves[2] = IMoveSet(address(unexpectedcarrot));
-        moves[3] = IMoveSet(address(snackbreak));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(carrotharvest));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(5, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployPengym(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        ChillOut chillout = new ChillOut(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("FROSTBITE_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Chill Out",
-            contractAddress: address(chillout)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address frostbitestatus = vm.envAddress("FROSTBITE_STATUS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        Deadlift deadlift = new Deadlift(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Deadlift",
-            contractAddress: address(deadlift)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        DeepFreeze deepfreeze = new DeepFreeze(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("FROSTBITE_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Deep Freeze",
-            contractAddress: address(deepfreeze)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new ChillOut(IEngine(engine), ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
+            deployedContracts[0] = DeployData({name: "Chill Out", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new Deadlift(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            deployedContracts[1] = DeployData({name: "Deadlift", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new DeepFreeze(IEngine(engine), ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
+            deployedContracts[2] = DeployData({name: "Deep Freeze", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new PistolSquat(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Pistol Squat", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new PostWorkout(IEngine(engine)));
+            deployedContracts[4] = DeployData({name: "Post-Workout", contractAddress: addrs[4]});
+        }
 
-        PistolSquat pistolsquat = new PistolSquat(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Pistol Squat",
-            contractAddress: address(pistolsquat)
-        });
-        contractIndex++;
+        _registerPengym(registry, addrs);
 
-        PostWorkout postworkout = new PostWorkout(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Post-Workout",
-            contractAddress: address(postworkout)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerPengym(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 371,
             stamina: 5,
@@ -558,58 +529,55 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(chillout));
-        moves[1] = IMoveSet(address(deadlift));
-        moves[2] = IMoveSet(address(deepfreeze));
-        moves[3] = IMoveSet(address(pistolsquat));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(postworkout));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(6, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployEmbursa(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        HoneyBribe honeybribe = new HoneyBribe(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Honey Bribe",
-            contractAddress: address(honeybribe)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address burnstatus = vm.envAddress("BURN_STATUS");
+        address engine = vm.envAddress("ENGINE");
+        address statboosts = vm.envAddress("STAT_BOOSTS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        SetAblaze setablaze = new SetAblaze(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("BURN_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Set Ablaze",
-            contractAddress: address(setablaze)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        HeatBeacon heatbeacon = new HeatBeacon(IEngine(vm.envAddress("ENGINE")), IEffect(vm.envAddress("BURN_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Heat Beacon",
-            contractAddress: address(heatbeacon)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new HoneyBribe(IEngine(engine), StatBoosts(statboosts)));
+            deployedContracts[0] = DeployData({name: "Honey Bribe", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new SetAblaze(IEngine(engine), ITypeCalculator(typecalculator), IEffect(burnstatus)));
+            deployedContracts[1] = DeployData({name: "Set Ablaze", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new HeatBeacon(IEngine(engine), IEffect(burnstatus)));
+            deployedContracts[2] = DeployData({name: "Heat Beacon", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new Q5(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Q5", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Tinderclaws(IEngine(engine), IEffect(burnstatus), StatBoosts(statboosts)));
+            deployedContracts[4] = DeployData({name: "Tinderclaws", contractAddress: addrs[4]});
+        }
 
-        Q5 q5 = new Q5(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Q5",
-            contractAddress: address(q5)
-        });
-        contractIndex++;
+        _registerEmbursa(registry, addrs);
 
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(vm.envAddress("ENGINE")), IEffect(vm.envAddress("BURN_STATUS")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Tinderclaws",
-            contractAddress: address(tinderclaws)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerEmbursa(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 420,
             stamina: 5,
@@ -622,58 +590,54 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(honeybribe));
-        moves[1] = IMoveSet(address(setablaze));
-        moves[2] = IMoveSet(address(heatbeacon));
-        moves[3] = IMoveSet(address(q5));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(tinderclaws));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(7, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployVolthare(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        Electrocute electrocute = new Electrocute(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("ZAP_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Electrocute",
-            contractAddress: address(electrocute)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
+        address zapstatus = vm.envAddress("ZAP_STATUS");
 
-        RoundTrip roundtrip = new RoundTrip(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Round Trip",
-            contractAddress: address(roundtrip)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        MegaStarBlast megastarblast = new MegaStarBlast(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("ZAP_STATUS")), IEffect(vm.envAddress("OVERCLOCK")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Mega Star Blast",
-            contractAddress: address(megastarblast)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new Electrocute(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus)));
+            deployedContracts[0] = DeployData({name: "Electrocute", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new RoundTrip(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Round Trip", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new MegaStarBlast(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus), IEffect(vm.envAddress("OVERCLOCK"))));
+            deployedContracts[2] = DeployData({name: "Mega Star Blast", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new DualShock(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus), Overclock(vm.envAddress("OVERCLOCK"))));
+            deployedContracts[3] = DeployData({name: "Dual Shock", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new PreemptiveShock(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[4] = DeployData({name: "Preemptive Shock", contractAddress: addrs[4]});
+        }
 
-        DualShock dualshock = new DualShock(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("ZAP_STATUS")), Overclock(vm.envAddress("OVERCLOCK")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Dual Shock",
-            contractAddress: address(dualshock)
-        });
-        contractIndex++;
+        _registerVolthare(registry, addrs);
 
-        PreemptiveShock preemptiveshock = new PreemptiveShock(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Preemptive Shock",
-            contractAddress: address(preemptiveshock)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerVolthare(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 310,
             stamina: 5,
@@ -686,58 +650,53 @@ contract SetupMons is Script {
             type2: Type.Cyber
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(electrocute));
-        moves[1] = IMoveSet(address(roundtrip));
-        moves[2] = IMoveSet(address(megastarblast));
-        moves[3] = IMoveSet(address(dualshock));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(preemptiveshock));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(8, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployAurox(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        VolatilePunch volatilepunch = new VolatilePunch(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Volatile Punch",
-            contractAddress: address(volatilepunch)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        GildedRecovery gildedrecovery = new GildedRecovery(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Gilded Recovery",
-            contractAddress: address(gildedrecovery)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        IronWall ironwall = new IronWall(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Iron Wall",
-            contractAddress: address(ironwall)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new VolatilePunch(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
+            deployedContracts[0] = DeployData({name: "Volatile Punch", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new GildedRecovery(IEngine(engine)));
+            deployedContracts[1] = DeployData({name: "Gilded Recovery", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new IronWall(IEngine(engine)));
+            deployedContracts[2] = DeployData({name: "Iron Wall", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new BullRush(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Bull Rush", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new UpOnly(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            deployedContracts[4] = DeployData({name: "Up Only", contractAddress: addrs[4]});
+        }
 
-        BullRush bullrush = new BullRush(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Bull Rush",
-            contractAddress: address(bullrush)
-        });
-        contractIndex++;
+        _registerAurox(registry, addrs);
 
-        UpOnly uponly = new UpOnly(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Up Only",
-            contractAddress: address(uponly)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerAurox(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 400,
             stamina: 5,
@@ -750,58 +709,54 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(volatilepunch));
-        moves[1] = IMoveSet(address(gildedrecovery));
-        moves[2] = IMoveSet(address(ironwall));
-        moves[3] = IMoveSet(address(bullrush));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(uponly));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(9, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployXmon(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        ContagiousSlumber contagiousslumber = new ContagiousSlumber(IEngine(vm.envAddress("ENGINE")), IEffect(vm.envAddress("SLEEP_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Contagious Slumber",
-            contractAddress: address(contagiousslumber)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address sleepstatus = vm.envAddress("SLEEP_STATUS");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        VitalSiphon vitalsiphon = new VitalSiphon(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Vital Siphon",
-            contractAddress: address(vitalsiphon)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        Somniphobia somniphobia = new Somniphobia(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Somniphobia",
-            contractAddress: address(somniphobia)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new ContagiousSlumber(IEngine(engine), IEffect(sleepstatus)));
+            deployedContracts[0] = DeployData({name: "Contagious Slumber", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new VitalSiphon(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Vital Siphon", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new Somniphobia(IEngine(engine)));
+            deployedContracts[2] = DeployData({name: "Somniphobia", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new NightTerrors(IEngine(engine), ITypeCalculator(typecalculator), IEffect(sleepstatus)));
+            deployedContracts[3] = DeployData({name: "Night Terrors", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Dreamcatcher(IEngine(engine)));
+            deployedContracts[4] = DeployData({name: "Dreamcatcher", contractAddress: addrs[4]});
+        }
 
-        NightTerrors nightterrors = new NightTerrors(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")), IEffect(vm.envAddress("SLEEP_STATUS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Night Terrors",
-            contractAddress: address(nightterrors)
-        });
-        contractIndex++;
+        _registerXmon(registry, addrs);
 
-        Dreamcatcher dreamcatcher = new Dreamcatcher(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Dreamcatcher",
-            contractAddress: address(dreamcatcher)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerXmon(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 311,
             stamina: 5,
@@ -814,58 +769,53 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(contagiousslumber));
-        moves[1] = IMoveSet(address(vitalsiphon));
-        moves[2] = IMoveSet(address(somniphobia));
-        moves[3] = IMoveSet(address(nightterrors));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(dreamcatcher));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(10, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
     function deployEkineki(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
-        uint256 contractIndex = 0;
 
-        BubbleBop bubblebop = new BubbleBop(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Bubble Bop",
-            contractAddress: address(bubblebop)
-        });
-        contractIndex++;
+        // Cache commonly used addresses
+        address engine = vm.envAddress("ENGINE");
+        address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        SneakAttack sneakattack = new SneakAttack(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Sneak Attack",
-            contractAddress: address(sneakattack)
-        });
-        contractIndex++;
+        address[5] memory addrs;
 
-        NineNineNine nineNineNine = new NineNineNine(IEngine(vm.envAddress("ENGINE")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "999",
-            contractAddress: address(nineNineNine)
-        });
-        contractIndex++;
+        {
+            addrs[0] = address(new BubbleBop(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[0] = DeployData({name: "Bubble Bop", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new SneakAttack(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[1] = DeployData({name: "Sneak Attack", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new NineNineNine(IEngine(engine)));
+            deployedContracts[2] = DeployData({name: "Nine Nine Nine", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new Overflow(IEngine(engine), ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Overflow", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new SaviorComplex(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            deployedContracts[4] = DeployData({name: "Savior Complex", contractAddress: addrs[4]});
+        }
 
-        Overflow overflow = new Overflow(IEngine(vm.envAddress("ENGINE")), ITypeCalculator(vm.envAddress("TYPE_CALCULATOR")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Overflow",
-            contractAddress: address(overflow)
-        });
-        contractIndex++;
+        _registerEkineki(registry, addrs);
 
-        SaviorComplex saviorcomplex = new SaviorComplex(IEngine(vm.envAddress("ENGINE")), StatBoosts(vm.envAddress("STAT_BOOSTS")));
-        deployedContracts[contractIndex] = DeployData({
-            name: "Savior Complex",
-            contractAddress: address(saviorcomplex)
-        });
-        contractIndex++;
+        return deployedContracts;
+    }
 
+    function _registerEkineki(DefaultMonRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 299,
             stamina: 5,
@@ -878,17 +828,15 @@ contract SetupMons is Script {
             type2: Type.None
         });
         IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = IMoveSet(address(bubblebop));
-        moves[1] = IMoveSet(address(sneakattack));
-        moves[2] = IMoveSet(address(nineNineNine));
-        moves[3] = IMoveSet(address(overflow));
+        moves[0] = IMoveSet(addrs[0]);
+        moves[1] = IMoveSet(addrs[1]);
+        moves[2] = IMoveSet(addrs[2]);
+        moves[3] = IMoveSet(addrs[3]);
         IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(address(saviorcomplex));
+        abilities[0] = IAbility(addrs[4]);
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(11, stats, moves, abilities, keys, values);
-
-        return deployedContracts;
     }
 
 }

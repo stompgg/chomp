@@ -29,7 +29,7 @@ Unexpected Carrot,Sofabbi,120,4,100,0,Nature,Physical,Deals damage.,,No
 Snack Break,Sofabbi,0,1,100,0,Nature,Self,"Heal for 1/2 of health. Effectiveness reduces by half each time, until a min of 1/16.",,No
 Electrocute,Volthare,90,2,100,0,Lightning,Special,"Deals damage, 10% chance to cause Zap. A Zapped mon skips its next turn.",,No
 Round Trip,Volthare,30,1,100,0,Lightning,Special,"Deals damage, then switches out.",,Yes
-Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"+2 priority. If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 50%. Deals damage, 30% chance to cause Zap.",,No
+Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"+2 priority. If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, 30% chance to cause Zap.",,No
 Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Also Overclocks your team,,No
 Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals both self and opponent by 1/2 of max HP. (Each subsequent use cuts HP healed in half). Lowers opponent SpDEF by 50%.,,No
 Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, 30% chance of Burn.",,No
@@ -45,5 +45,5 @@ Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For the next 6 turns, any mon that rest
 Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,No
 Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,No
 Sneak Attack,Ekineki,60,2,100,0,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,Yes
-NineNineNine,Ekineki,0,2,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,No
+Nine Nine Nine,Ekineki,0,2,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,No
 Overflow,Ekineki,90,3,100,0,Math,Special,Deals damage.,,No
