@@ -37,7 +37,7 @@ Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflict
 Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns and Burns the enemy.,,No
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,No
 Gilded Recovery,Aurox,0,2,100,0,Mythic,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,Yes
-Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated, Aurox gains 25% of max HP",,
+Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated for the first time each switch-in, Aurox gains 25% of max HP",,
 Bull Rush,Aurox,120,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to Aurox.,,
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,"Inflicts Sleep on self and opponent. When asleep, you are forced to rest.",,No
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, 50% chance to steal 1 stamina from opponent.",,No
