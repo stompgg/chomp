@@ -320,18 +320,12 @@ contract DefaultValidator is IValidator {
 
         address[2] memory players = [ctx.p0, ctx.p1];
         uint256 lastTurnTimestamp;
-        // If the last turn was a single player turn, and it's not the first turn (as the prev flag is always zero), we get the timestamp from their last move
-        if (turnId != 0 && (ctx.prevPlayerSwitchForTurnFlag == 0 || ctx.prevPlayerSwitchForTurnFlag == 1)) {
-            lastTurnTimestamp =
-                commitManager.getLastMoveTimestampForPlayer(battleKey, players[ctx.prevPlayerSwitchForTurnFlag]);
-        }
-        // Otherwise it was either turn 0 (we grab the battle start time), or a two player turn (we grab the timestamp whoever made the last move)
-        else {
-            if (turnId == 0) {
-                lastTurnTimestamp = ctx.startTimestamp;
-            } else {
-                lastTurnTimestamp = commitManager.getLastMoveTimestampForPlayer(battleKey, players[(turnId - 1) % 2]);
-            }
+        // Turn 0: use battle start timestamp
+        // Otherwise: use lastExecuteTimestamp from engine (covers both single and two-player turns)
+        if (turnId == 0) {
+            lastTurnTimestamp = ctx.startTimestamp;
+        } else {
+            lastTurnTimestamp = ENGINE.getLastExecuteTimestamp(battleKey);
         }
 
         // It's a single player turn, and it's our turn:

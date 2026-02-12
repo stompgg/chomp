@@ -79,6 +79,7 @@ struct BattleConfig {
     uint8 engineHooksLength;
     uint16 koBitmaps; // Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap (supports up to 8 mons per team)
     uint48 startTimestamp;
+    uint48 lastExecuteTimestamp; // Written at end of every execute() for timeout tracking
     bytes32 p0Salt;
     bytes32 p1Salt;
     MoveDecision p0Move;

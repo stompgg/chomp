@@ -6,7 +6,6 @@ import {EIP712} from "../lib/EIP712.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {SignedCommitLib} from "./SignedCommitLib.sol";
 import {IEngine} from "../IEngine.sol";
-import {IValidator} from "../IValidator.sol";
 import {CommitContext, PlayerDecisionData} from "../Structs.sol";
 
 /// @title SignedCommitManager
@@ -55,7 +54,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         version = "1";
     }
 
-    /// @notice Executes a turn using dual-signed moves from both players
+    /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
     /// @dev The committer (A) submits both moves. The revealer (B) has signed over
     ///      their move and A's move hash, binding both players to their moves.
     /// @param battleKey The battle identifier
@@ -77,42 +76,11 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint240 revealerExtraData,
         bytes memory revealerSignature
     ) external {
-        // Get battle context
-        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        // Use lightweight getter (validates internally, reverts on bad state)
+        (address committer, address revealer, uint64 turnId) =
+            ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        // Validate battle state
-        if (ctx.startTimestamp == 0) {
-            revert BattleNotYetStarted();
-        }
-        if (ctx.winnerIndex != 2) {
-            revert BattleAlreadyComplete();
-        }
-
-        // This function only works for two-player turns
-        if (ctx.playerSwitchForTurnFlag != 2) {
-            revert NotTwoPlayerTurn();
-        }
-
-        // Determine who is the committer vs revealer based on turn parity
-        uint64 turnId = ctx.turnId;
-        address committer;
-        address revealer;
-        uint256 committerIndex;
-        uint256 revealerIndex;
-
-        if (turnId % 2 == 0) {
-            committer = ctx.p0;
-            revealer = ctx.p1;
-            committerIndex = 0;
-            revealerIndex = 1;
-        } else {
-            committer = ctx.p1;
-            revealer = ctx.p0;
-            committerIndex = 1;
-            revealerIndex = 0;
-        }
-
-        // Caller must be the committing player (A submits)
+        // Caller must be the committing player
         if (msg.sender != committer) {
             revert CallerNotCommitter();
         }
@@ -131,37 +99,28 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             revealerExtraData: revealerExtraData
         });
 
-        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(reveal);
-        bytes32 digest = _hashTypedData(structHash);
-        address signer = ECDSA.recover(digest, revealerSignature);
-
-        if (signer != revealer) {
+        bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+        if (ECDSA.recover(digest, revealerSignature) != revealer) {
             revert InvalidSignature();
         }
 
-        // Validate both moves
-        if (!IValidator(ctx.validator).validatePlayerMove(battleKey, committerMoveIndex, committerIndex, committerExtraData)) {
-            revert InvalidMove(committer);
+        // Execute with moves in a single call (engine validates during execution)
+        // No playerData updates needed - engine tracks lastExecuteTimestamp for timeouts
+        if (turnId % 2 == 0) {
+            // Committer is p0
+            ENGINE.executeWithMoves(
+                battleKey,
+                committerMoveIndex, committerSalt, committerExtraData,
+                revealerMoveIndex, revealerSalt, revealerExtraData
+            );
+        } else {
+            // Committer is p1
+            ENGINE.executeWithMoves(
+                battleKey,
+                revealerMoveIndex, revealerSalt, revealerExtraData,
+                committerMoveIndex, committerSalt, committerExtraData
+            );
         }
-        if (!IValidator(ctx.validator).validatePlayerMove(battleKey, revealerMoveIndex, revealerIndex, revealerExtraData)) {
-            revert InvalidMove(revealer);
-        }
-
-        // Set both moves
-        ENGINE.setMove(battleKey, committerIndex, committerMoveIndex, committerSalt, committerExtraData);
-        ENGINE.setMove(battleKey, revealerIndex, revealerMoveIndex, revealerSalt, revealerExtraData);
-
-        // Update both players' state (for timeout tracking and fallback flow compatibility)
-        PlayerDecisionData storage committerPd = playerData[battleKey][committerIndex];
-        PlayerDecisionData storage revealerPd = playerData[battleKey][revealerIndex];
-        uint96 timestamp = uint96(block.timestamp);
-        committerPd.lastMoveTimestamp = timestamp;
-        committerPd.numMovesRevealed += 1;
-        revealerPd.lastMoveTimestamp = timestamp;
-        revealerPd.numMovesRevealed += 1;
-
-        // Execute the turn
-        ENGINE.execute(battleKey);
     }
 
     /// @notice Allows anyone to publish the committer's signed commitment on-chain

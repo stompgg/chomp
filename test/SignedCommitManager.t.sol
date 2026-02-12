@@ -315,9 +315,9 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         // Verify turn advanced
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Turn should have advanced to 1");
 
-        // Verify both players' move counts updated
-        assertEq(signedCommitManager.getMoveCountForBattleState(battleKey, p0), 1, "p0's move count should be 1");
-        assertEq(signedCommitManager.getMoveCountForBattleState(battleKey, p1), 1, "p1's move count should be 1");
+        // Note: In the optimized dual-signed flow, we don't update playerData.numMovesRevealed
+        // The engine's lastExecuteTimestamp is used for timeout tracking instead
+        assertEq(engine.getLastExecuteTimestamp(battleKey), uint48(block.timestamp), "lastExecuteTimestamp should be set");
     }
 
     function test_executeWithDualSigned_turn1() public {
@@ -554,7 +554,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         );
 
         vm.startPrank(p0);
-        vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
+        vm.expectRevert(Engine.BattleNotStarted.selector);
         signedCommitManager.executeWithDualSignedMoves(
             fakeBattleKey,
             SWITCH_MOVE_INDEX,

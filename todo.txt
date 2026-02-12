@@ -1,6 +1,8 @@
 # TODO
 
-0) Add setMoves() to allow setting for an array of moves for players to reduce external calls.
+Commit Manager optimizations:
+- Add setMoves() to allow setting for an array of moves for players to reduce external calls.
+- Add batch validate moves call as well for validator
 
 1) Gas optimization:
 - Use address mining to determine if we should run on a certain step vs calling the function. (Would need some meta tag to signify this in the source stil)

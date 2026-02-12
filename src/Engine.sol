@@ -34,6 +34,8 @@ contract Engine is IEngine, MappingAllocator {
     error InvalidBattleConfig();
     error GameAlreadyOver();
     error GameStartsAndEndsSameBlock();
+    error BattleNotStarted();
+    error NotTwoPlayerTurn();
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
@@ -263,6 +265,56 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
 
+        BattleConfig storage config = battleConfig[storageKey];
+
+        // Check that at least one move has been set (isRealTurn is stored in bit 7 of packedMoveIndex)
+        if ((config.p0Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0 && (config.p1Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0) {
+            revert MovesNotSet();
+        }
+
+        _executeInternal(battleKey, storageKey);
+    }
+
+    /// @notice Combined setMove + setMove + execute for gas optimization
+    /// @dev Only callable by moveManager. Sets both moves and executes in one call.
+    function executeWithMoves(
+        bytes32 battleKey,
+        uint8 p0MoveIndex,
+        bytes32 p0Salt,
+        uint240 p0ExtraData,
+        uint8 p1MoveIndex,
+        bytes32 p1Salt,
+        uint240 p1ExtraData
+    ) external {
+        // Cache storage key
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+
+        BattleConfig storage config = battleConfig[storageKey];
+
+        // Only moveManager can call this
+        if (msg.sender != config.moveManager) {
+            revert WrongCaller();
+        }
+
+        // Set both moves inline (same as setMove but without external call overhead)
+        // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
+        uint8 p0Stored = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
+        config.p0Move = MoveDecision({packedMoveIndex: p0Stored | IS_REAL_TURN_BIT, extraData: p0ExtraData});
+        config.p0Salt = p0Salt;
+        emit P0MoveSet(battleKey, uint256(p0MoveIndex) | (uint256(p0ExtraData) << 8));
+
+        uint8 p1Stored = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
+        config.p1Move = MoveDecision({packedMoveIndex: p1Stored | IS_REAL_TURN_BIT, extraData: p1ExtraData});
+        config.p1Salt = p1Salt;
+        emit P1MoveSet(battleKey, uint256(p1MoveIndex) | (uint256(p1ExtraData) << 8));
+
+        // Execute (skip MovesNotSet check since we just set them)
+        _executeInternal(battleKey, storageKey);
+    }
+
+    /// @notice Internal execution logic shared by execute() and executeWithMoves()
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -270,11 +322,6 @@ contract Engine is IEngine, MappingAllocator {
         // Check for game over
         if (battle.winnerIndex != 2) {
             revert GameAlreadyOver();
-        }
-
-        // Check that at least one move has been set (isRealTurn is stored in bit 7 of packedMoveIndex)
-        if ((config.p0Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0 && (config.p1Move.packedMoveIndex & IS_REAL_TURN_BIT) == 0) {
-            revert MovesNotSet();
         }
 
         // Set up turn / player vars
@@ -491,10 +538,12 @@ contract Engine is IEngine, MappingAllocator {
         // - Progress turn index
         // - Set the player switch for turn flag on battle data
         // - Clear move flags for next turn (clear isRealTurn bit by setting packedMoveIndex to 0)
+        // - Update lastExecuteTimestamp for timeout tracking
         battle.turnId += 1;
         battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
         config.p0Move.packedMoveIndex = 0;
         config.p1Move.packedMoveIndex = 0;
+        config.lastExecuteTimestamp = uint48(block.timestamp);
 
         // Emits switch for turn flag for the next turn, but the priority index for this current turn
         emit EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex);
@@ -1743,6 +1792,10 @@ contract Engine is IEngine, MappingAllocator {
         return battleConfig[_getStorageKey(battleKey)].startTimestamp;
     }
 
+    function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
+        return battleConfig[_getStorageKey(battleKey)].lastExecuteTimestamp;
+    }
+
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
         return _getKOBitmap(battleConfig[_getStorageKey(battleKey)], playerIndex);
     }
@@ -1785,6 +1838,31 @@ contract Engine is IEngine, MappingAllocator {
         ctx.turnId = data.turnId;
         ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
         ctx.validator = address(config.validator);
+    }
+
+    /// @notice Lightweight getter for dual-signed flow that validates state and returns only needed fields
+    /// @dev Reverts internally if battle not started, already complete, or not a two-player turn
+    function getCommitAuthForDualSigned(bytes32 battleKey)
+        external
+        view
+        returns (address committer, address revealer, uint64 turnId)
+    {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        BattleConfig storage config = battleConfig[storageKey];
+
+        if (config.startTimestamp == 0) revert BattleNotStarted();
+        if (data.winnerIndex != 2) revert GameAlreadyOver();
+        if (data.playerSwitchForTurnFlag != 2) revert NotTwoPlayerTurn();
+
+        turnId = data.turnId;
+        if (turnId % 2 == 0) {
+            committer = data.p0;
+            revealer = data.p1;
+        } else {
+            committer = data.p1;
+            revealer = data.p0;
+        }
     }
 
     function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)

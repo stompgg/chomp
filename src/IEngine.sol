@@ -25,6 +25,15 @@ interface IEngine {
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
     function execute(bytes32 battleKey) external;
+    function executeWithMoves(
+        bytes32 battleKey,
+        uint8 p0MoveIndex,
+        bytes32 p0Salt,
+        uint240 p0ExtraData,
+        uint8 p1MoveIndex,
+        bytes32 p1Salt,
+        uint240 p1ExtraData
+    ) external;
     function emitEngineEvent(bytes32 eventType, bytes memory extraData) external;
     function setUpstreamCaller(address caller) external;
 
@@ -77,10 +86,15 @@ interface IEngine {
         returns (EffectInstance[] memory, uint256[] memory);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
+    function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
+    function getCommitAuthForDualSigned(bytes32 battleKey)
+        external
+        view
+        returns (address committer, address revealer, uint64 turnId);
     function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
         external
         view
