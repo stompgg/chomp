@@ -1,10 +1,9 @@
 # TODO
 
+0) Add setMoves() to allow setting for an array of moves for players to reduce external calls.
+
 1) Gas optimization:
 - Use address mining to determine if we should run on a certain step vs calling the function. (Would need some meta tag to signify this in the source stil)
-
-2) Latency optimization:
-- Use signatures to agree to battle params, and then just pass doubly-signed payload into startBattle
 
 ---------------------------------------------------------------------------------------------
 LATER FEATURES

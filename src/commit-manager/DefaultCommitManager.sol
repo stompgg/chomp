@@ -233,7 +233,7 @@ contract DefaultCommitManager is ICommitManager {
         }
 
         // 8) Emit move reveal event before game engine execution
-        emit MoveReveal(battleKey, msg.sender, moveIndex);
+        // emit MoveReveal(battleKey, msg.sender, moveIndex);
 
         // 9) Auto execute if desired/available
         if (autoExecute) {

@@ -191,8 +191,9 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
     # Define contracts to process: (contract_name, output_filename, abi_const_name)
     contracts = [
         ("Engine", "engine.ts", "EngineABI"),
-        ("DefaultCommitManager", "commit.ts", "DefaultCommitManagerABI"),
+        ("SignedCommitManager", "commit.ts", "SignedCommitManagerABI"),
         ("DefaultMatchmaker", "matchmaker.ts", "DefaultMatchmakerABI"),
+        ("SignedMatchmaker", "signed-matchmaker.ts", "SignedMatchmakerABI"),
     ]
 
     # Define output paths for both repositories
