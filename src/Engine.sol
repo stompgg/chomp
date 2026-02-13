@@ -246,9 +246,6 @@ contract Engine is IEngine, MappingAllocator {
             config.engineHooksLength = 0;
         }
 
-        // Set start timestamp
-        config.startTimestamp = uint48(block.timestamp);
-
         // Build teams array for validation
         Mon[][] memory teams = new Mon[][](2);
         teams[0] = p0Team;
@@ -265,6 +262,10 @@ contract Engine is IEngine, MappingAllocator {
             battle.engineHooks[i].onBattleStart(battleKey);
             unchecked { ++i; }
         }
+
+        // Set start timestamp last — on MegaETH, block.timestamp triggers a 20M compute ceiling
+        // for the remainder of the function, so defer it past all heavy validation/hook work
+        config.startTimestamp = uint48(block.timestamp);
 
         emit BattleStart(battleKey, battle.p0, battle.p1);
     }
@@ -797,8 +798,10 @@ contract Engine is IEngine, MappingAllocator {
             effect.onRemove(data, 2, monIndex);
         }
 
-        // Tombstone the effect (indices are stable, no need to re-find)
+        // Tombstone the effect and clear data for storage refunds
         effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
+        effectToRemove.stepsBitmap = 0;
+        effectToRemove.data = bytes32(0);
 
         emit EffectRemove(battleKey, 2, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep);
     }
@@ -827,8 +830,10 @@ contract Engine is IEngine, MappingAllocator {
             effect.onRemove(data, targetIndex, monIndex);
         }
 
-        // Tombstone the effect (indices are stable, no need to re-find)
+        // Tombstone the effect and clear data for storage refunds
         effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
+        effectToRemove.stepsBitmap = 0;
+        effectToRemove.data = bytes32(0);
 
         emit EffectRemove(battleKey, targetIndex, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep);
     }
@@ -1155,21 +1160,19 @@ contract Engine is IEngine, MappingAllocator {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
         }
 
-        // Use a loop index that reads current length each iteration (allows processing newly added effects)
+        // Cache initial effects count to avoid repeated SLOAD on every iteration
+        // Re-read only after processing a non-tombstoned effect (which may add new effects)
+        uint256 effectsCount;
+        if (effectIndex == 2) {
+            effectsCount = config.globalEffectsLength;
+        } else if (effectIndex == 0) {
+            effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+        } else {
+            effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        }
+
         uint256 i = 0;
-        while (true) {
-            // Get current length (may grow if effects add new effects)
-            uint256 effectsCount;
-            if (effectIndex == 2) {
-                effectsCount = config.globalEffectsLength;
-            } else if (effectIndex == 0) {
-                effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-            } else {
-                effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            }
-
-            if (i >= effectsCount) break;
-
+        while (i < effectsCount) {
             // Read effect directly from storage
             EffectInstance storage eff;
             uint256 slotIndex;
@@ -1190,6 +1193,16 @@ contract Engine is IEngine, MappingAllocator {
                     config, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData,
                     eff.effect, eff.stepsBitmap, eff.data, uint96(slotIndex)
                 );
+                // Re-read count after running effect (it may have added new effects)
+                uint256 newCount;
+                if (effectIndex == 2) {
+                    newCount = config.globalEffectsLength;
+                } else if (effectIndex == 0) {
+                    newCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+                } else {
+                    newCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+                }
+                effectsCount = newCount;
             }
 
             unchecked { ++i; }
@@ -1787,6 +1800,11 @@ contract Engine is IEngine, MappingAllocator {
         result[0] = _unpackActiveMonIndex(packed, 0);
         result[1] = _unpackActiveMonIndex(packed, 1);
         return result;
+    }
+
+    /// @notice Gas-optimized version returning raw packed uint16 (lower 8 bits = p0, upper 8 bits = p1)
+    function getActiveMonIndexPacked(bytes32 battleKey) external view returns (uint16) {
+        return battleData[battleKey].activeMonIndex;
     }
 
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
