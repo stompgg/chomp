@@ -51,10 +51,6 @@ contract StatBoosts is BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return (r == EffectStep.OnMonSwitchOut);
-    }
-
     // Removes all temporary boosts on mon switch out
     function onMonSwitchOut(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external

@@ -43,10 +43,6 @@ contract PostWorkout is IAbility, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.OnMonSwitchOut);
-    }
-
     function onMonSwitchOut(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override

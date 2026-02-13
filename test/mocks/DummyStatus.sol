@@ -17,8 +17,4 @@ contract DummyStatus is BasicEffect {
     function getStepsToRun() external pure override returns (EffectStep[] memory) {
         return new EffectStep[](0);
     }
-
-    function shouldRunAtStep(EffectStep) external pure override returns (bool) {
-        return false;
-    }
 }

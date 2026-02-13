@@ -29,11 +29,6 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
         return steps;
     }
 
-    // Should run at end of round
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return r == EffectStep.OnMonSwitchIn;
-    }
-
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)
     function onMonSwitchIn(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external

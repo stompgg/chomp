@@ -31,11 +31,6 @@ contract StaminaRegen is BasicEffect {
         return steps;
     }
 
-    // Should run at end of round
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return (r == EffectStep.RoundEnd) || (r == EffectStep.AfterMove);
-    }
-
     // No overhealing stamina
     function _regenStamina(uint256 playerIndex, uint256 monIndex) internal {
         int256 currentActiveMonStaminaDelta =

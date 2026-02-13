@@ -31,10 +31,6 @@ contract OnUpdateMonStateHealEffect is BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return r == EffectStep.OnUpdateMonState;
-    }
-
     // WARNING: Avoid chaining this effect to prevent recursive calls
     // This effect is safe because it only heals HP, it doesn't trigger state updates that would recurse
     function onUpdateMonState(

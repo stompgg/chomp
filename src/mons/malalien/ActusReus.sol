@@ -49,10 +49,6 @@ contract ActusReus is IAbility, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.AfterMove || step == EffectStep.AfterDamage);
-    }
-
     function onAfterMove(uint256, bytes32 extraData, uint256 targetIndex, uint256)
         external
         override

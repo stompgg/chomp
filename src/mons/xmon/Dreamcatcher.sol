@@ -45,10 +45,6 @@ contract Dreamcatcher is IAbility, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return step == EffectStep.OnUpdateMonState;
-    }
-
     function onUpdateMonState(
         uint256,
         bytes32 extraData,

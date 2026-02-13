@@ -30,11 +30,6 @@ contract TempStatBoostEffect is BasicEffect {
         return steps;
     }
 
-    // Should run at end of round and on apply
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return (r == EffectStep.OnMonSwitchOut || r == EffectStep.OnApply);
-    }
-
     function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override

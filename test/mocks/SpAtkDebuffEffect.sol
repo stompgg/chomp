@@ -32,10 +32,6 @@ contract SpAtkDebuffEffect is StatusEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return (r == EffectStep.OnApply || r == EffectStep.OnRemove);
-    }
-
     function onApply(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         public
         override

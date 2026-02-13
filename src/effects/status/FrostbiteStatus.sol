@@ -35,10 +35,6 @@ contract FrostbiteStatus is StatusEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return (r == EffectStep.OnApply || r == EffectStep.RoundEnd || r == EffectStep.OnRemove);
-    }
-
     function onApply(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         public
         override

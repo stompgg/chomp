@@ -29,10 +29,6 @@ contract SingleInstanceEffect is BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return r == EffectStep.OnApply;
-    }
-
     function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override

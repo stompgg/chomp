@@ -51,10 +51,6 @@ contract Tinderclaws is IAbility, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.AfterMove || step == EffectStep.RoundEnd);
-    }
-
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
     function onAfterMove(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external

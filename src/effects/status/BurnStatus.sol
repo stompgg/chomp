@@ -42,13 +42,6 @@ contract BurnStatus is StatusEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        // Need to also return OnRemove to remove the global status flag
-        return
-            (r == EffectStep.RoundStart || r == EffectStep.RoundEnd || r == EffectStep.OnApply
-                    || r == EffectStep.OnRemove);
-    }
-
     function shouldApply(bytes32, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);

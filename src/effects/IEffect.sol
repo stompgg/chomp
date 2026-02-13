@@ -14,9 +14,6 @@ interface IEffect {
     // Returns array of steps this effect runs at (used to build bitmap for gas optimization)
     function getStepsToRun() external pure returns (EffectStep[] memory);
 
-    // Whether to run the effect at a specific step
-    function shouldRunAtStep(EffectStep r) external returns (bool);
-
     // Whether or not to add the effect if some condition is met
     function shouldApply(bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);
 

@@ -84,10 +84,6 @@ contract Q5 is IMoveSet, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.RoundStart);
-    }
-
     function onRoundStart(uint256 rng, bytes32 extraData, uint256, uint256)
         external
         override

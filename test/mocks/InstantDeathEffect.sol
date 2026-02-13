@@ -29,11 +29,6 @@ contract InstantDeathEffect is BasicEffect {
         return steps;
     }
 
-    // Should run at end of round
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return r == EffectStep.RoundEnd;
-    }
-
     function onRoundEnd(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override

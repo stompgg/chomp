@@ -30,12 +30,6 @@ contract SleepStatus is StatusEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return
-            r == EffectStep.RoundStart || r == EffectStep.RoundEnd || r == EffectStep.OnApply
-                || r == EffectStep.OnRemove;
-    }
-
     function _globalSleepKey(uint256 targetIndex) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(name(), targetIndex));
     }

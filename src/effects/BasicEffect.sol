@@ -18,9 +18,6 @@ abstract contract BasicEffect is IEffect {
         return "";
     }
 
-    // Whether to run the effect at a specific step
-    function shouldRunAtStep(EffectStep r) external virtual returns (bool);
-
     // Whether or not to add the effect if the step condition is met
     function shouldApply(bytes32, uint256, uint256) external virtual returns (bool) {
         return true;

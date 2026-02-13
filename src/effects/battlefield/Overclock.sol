@@ -40,12 +40,6 @@ contract Overclock is BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return
-            (r == EffectStep.OnApply || r == EffectStep.RoundEnd || r == EffectStep.OnMonSwitchIn
-                    || r == EffectStep.OnRemove);
-    }
-
     function _effectKey(uint256 playerIndex) internal pure returns (bytes32) {
         return keccak256(abi.encode(playerIndex, name()));
     }

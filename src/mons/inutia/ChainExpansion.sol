@@ -88,10 +88,6 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.OnMonSwitchIn);
-    }
-
     function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override

@@ -123,10 +123,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return step == EffectStep.OnMonSwitchOut;
-    }
-
     function onMonSwitchOut(uint256, bytes32, uint256, uint256)
         external
         pure

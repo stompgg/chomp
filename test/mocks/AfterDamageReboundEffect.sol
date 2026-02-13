@@ -25,11 +25,6 @@ contract AfterDamageReboundEffect is BasicEffect {
         return steps;
     }
 
-    // Should run at end of round
-    function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
-        return r == EffectStep.AfterDamage;
-    }
-
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
         external

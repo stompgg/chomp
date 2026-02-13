@@ -93,10 +93,6 @@ contract Baselight is IAbility, BasicEffect {
         return steps;
     }
 
-    function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
-        return (step == EffectStep.RoundEnd);
-    }
-
     function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
         external
         pure
