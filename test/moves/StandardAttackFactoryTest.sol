@@ -147,48 +147,4 @@ contract StandardAttackFactoryTest is Test {
         factory.setTypeCalculator(TypeCalculator(address(0)));
     }
 
-    function test_onlyOwnerCanSetAttackVars() public {
-        StandardAttack attack = factory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 80,
-                STAMINA_COST: 2,
-                ACCURACY: 95,
-                PRIORITY: 3,
-                MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 100,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 10,
-                VOLATILITY: 5,
-                NAME: "Fire Attack",
-                EFFECT: IEffect(address(0))
-            })
-        );
-
-        vm.startPrank(address(0x123));
-        vm.expectRevert();
-        attack.changeVar(0, 100); // Try to change base power
-
-        // Now set the owner to the current caller (calls should succeed)
-        vm.startPrank(address(this));
-        attack.changeVar(0, 100); // Change base power
-        assertEq(attack.basePower(TEST_BATTLE_KEY), 100, "Base power mismatch");
-        attack.changeVar(1, 2); // Change stamina cost
-        assertEq(attack.stamina(TEST_BATTLE_KEY, 0, 0), 2, "Stamina cost mismatch");
-        attack.changeVar(2, 90); // Change accuracy
-        assertEq(attack.accuracy(TEST_BATTLE_KEY), 90, "Accuracy mismatch");
-        attack.changeVar(3, 4); // Change priority
-        assertEq(attack.priority(TEST_BATTLE_KEY, 0), 4, "Priority mismatch");
-        attack.changeVar(4, uint256(Type.Liquid)); // Change move type
-        assertEq(uint32(attack.moveType(TEST_BATTLE_KEY)), uint32(Type.Liquid), "Move type mismatch");
-        attack.changeVar(5, 90); // Change effect accuracy
-        assertEq(attack.effectAccuracy(TEST_BATTLE_KEY), 90, "Effect accuracy mismatch");
-        attack.changeVar(6, uint256(MoveClass.Special)); // Change move class
-        assertEq(uint32(attack.moveClass(TEST_BATTLE_KEY)), uint32(MoveClass.Special), "Move class mismatch");
-        attack.changeVar(7, 15); // Change crit rate
-        assertEq(attack.critRate(TEST_BATTLE_KEY), 15, "Crit rate mismatch");
-        attack.changeVar(8, 3); // Change volatility
-        assertEq(attack.volatility(TEST_BATTLE_KEY), 3, "Volatility mismatch");
-        attack.changeVar(9, uint256(uint160(address(0x456)))); // Change effect address
-        assertEq(address(attack.effect(TEST_BATTLE_KEY)), address(0x456), "Effect address mismatch");
-    }
 }

@@ -18,16 +18,16 @@ contract StandardAttack is IMoveSet, Ownable {
     IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    uint32 private _basePower;
-    uint32 private _stamina;
-    uint32 private _accuracy;
-    uint32 private _priority;
-    Type private _moveType;
-    uint32 private _effectAccuracy;
-    MoveClass private _moveClass;
-    uint32 private _critRate;
-    uint32 private _volatility;
-    IEffect private _effect;
+    uint32 private immutable _basePower;
+    uint32 private immutable _stamina;
+    uint32 private immutable _accuracy;
+    uint32 private immutable _priority;
+    Type private immutable _moveType;
+    uint32 private immutable _effectAccuracy;
+    MoveClass private immutable _moveClass;
+    uint32 private immutable _critRate;
+    uint32 private immutable _volatility;
+    IEffect private immutable _effect;
     string private _name;
 
     constructor(address owner, IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, ATTACK_PARAMS memory params) {
@@ -130,30 +130,6 @@ contract StandardAttack is IMoveSet, Ownable {
 
     function effectAccuracy(bytes32) public view returns (uint32) {
         return _effectAccuracy;
-    }
-
-    function changeVar(uint256 varToChange, uint256 newValue) external onlyOwner {
-        if (varToChange == 0) {
-            _basePower = uint32(newValue);
-        } else if (varToChange == 1) {
-            _stamina = uint32(newValue);
-        } else if (varToChange == 2) {
-            _accuracy = uint32(newValue);
-        } else if (varToChange == 3) {
-            _priority = uint32(newValue);
-        } else if (varToChange == 4) {
-            _moveType = Type(newValue);
-        } else if (varToChange == 5) {
-            _effectAccuracy = uint32(newValue);
-        } else if (varToChange == 6) {
-            _moveClass = MoveClass(newValue);
-        } else if (varToChange == 7) {
-            _critRate = uint32(newValue);
-        } else if (varToChange == 8) {
-            _volatility = uint32(newValue);
-        } else if (varToChange == 9) {
-            _effect = IEffect(address(uint160(newValue)));
-        }
     }
 
     function extraDataType() external pure virtual returns (ExtraDataType) {
