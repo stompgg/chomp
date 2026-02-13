@@ -88,7 +88,7 @@ contract EkinekiTest is Test, BattleHelper {
         );
 
         // Set up team with BubbleBop
-        IMoveSet[] memory bubbleBopMoves = new IMoveSet[](1);
+        IMoveSet[4] memory bubbleBopMoves;
         bubbleBopMoves[0] = bubbleBop;
         Mon memory bubbleBopMon = _createMon();
         bubbleBopMon.moves = bubbleBopMoves;
@@ -99,7 +99,7 @@ contract EkinekiTest is Test, BattleHelper {
         aliceTeam[0] = bubbleBopMon;
 
         // Set up team with single hit for Bob (so bob takes damage, not deals it)
-        IMoveSet[] memory singleMoves = new IMoveSet[](1);
+        IMoveSet[4] memory singleMoves;
         singleMoves[0] = singleHit;
         Mon memory singleMon = _createMon();
         singleMon.moves = singleMoves;
@@ -169,7 +169,7 @@ contract EkinekiTest is Test, BattleHelper {
         SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = sneakAttack;
 
         Mon memory mon = _createMon();
@@ -216,7 +216,7 @@ contract EkinekiTest is Test, BattleHelper {
         SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = sneakAttack;
 
         Mon memory mon = _createMon();
@@ -268,7 +268,7 @@ contract EkinekiTest is Test, BattleHelper {
         SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
         SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = sneakAttack;
 
         Mon memory mon = _createMon();
@@ -337,7 +337,7 @@ contract EkinekiTest is Test, BattleHelper {
         );
 
         // Team with 999 + test attack
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = nineNineNine;
         moves[1] = testAttack;
 
@@ -405,7 +405,7 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = koAttack;
 
         // Alice's team: 3 mons, one with savior complex
@@ -506,7 +506,7 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = koAttack;
 
         Mon memory aliceMon = _createMon();
@@ -617,7 +617,7 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = koAttack;
 
         Mon memory monWithAbility = _createMon();
@@ -698,7 +698,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Overflow overflow = new Overflow(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = overflow;
 
         Mon memory mon = _createMon();

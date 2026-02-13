@@ -171,8 +171,7 @@ contract TeamsTest is Test {
 
         uint256[] memory monIndices = new uint256[](1);
         monIndices[0] = 0;
-        IMoveSet[][] memory movesToUse = new IMoveSet[][](1);
-        movesToUse[0] = new IMoveSet[](1);
+        IMoveSet[4][] memory movesToUse = new IMoveSet[4][](1);
         movesToUse[0][0] = move1;
         IAbility[] memory abilitiesToUse = new IAbility[](1);
         abilitiesToUse[0] = ability;
@@ -246,7 +245,7 @@ contract TeamsTest is Test {
         abilitiesToUse[3] = ability;
         abilitiesToUse[4] = ability;
         abilitiesToUse[5] = ability;
-        teamRegistry2.createTeam(monIndices, new IMoveSet[][](6), abilitiesToUse);
+        teamRegistry2.createTeam(monIndices, new IMoveSet[4][](6), abilitiesToUse);
 
         // Assert the team for Alice exists
         assertEq(teamRegistry2.getTeamCount(ALICE), 1);
@@ -326,7 +325,7 @@ contract TeamsTest is Test {
         );
 
         vm.expectRevert(DefaultTeamRegistry.DuplicateMonId.selector);
-        teamRegistry2.createTeam(monIndices, new IMoveSet[][](2), abilitiesToUse);
+        teamRegistry2.createTeam(monIndices, new IMoveSet[4][](2), abilitiesToUse);
     }
 
     function test_createUniqueTeam() public {
@@ -796,13 +795,6 @@ contract TeamsTest is Test {
         DefaultTeamRegistry teamRegistry2 = new DefaultTeamRegistry(
             DefaultTeamRegistry.Args({REGISTRY: monRegistry, MONS_PER_TEAM: 6, MOVES_PER_MON: 4})
         );
-        IMoveSet[][] memory moveMetaArray = new IMoveSet[][](6);
-        moveMetaArray[0] = moves0;
-        moveMetaArray[1] = moves1;
-        moveMetaArray[2] = moves2;
-        moveMetaArray[3] = moves3;
-        moveMetaArray[4] = moves4;
-        moveMetaArray[5] = moves5;
         uint256[] memory monIndices = new uint256[](6);
         monIndices[0] = 0;
         monIndices[1] = 1;
@@ -810,12 +802,14 @@ contract TeamsTest is Test {
         monIndices[3] = 3;
         monIndices[4] = 4;
         monIndices[5] = 5;
-        IMoveSet[][] memory moves = new IMoveSet[][](6);
-        for (uint256 i = 0; i < 6; i++) {
-            moves[i] = new IMoveSet[](4);
-            for (uint256 j = 0; j < 4; j++) {
-                moves[i][j] = moveMetaArray[i][j];
-            }
+        IMoveSet[4][] memory moves = new IMoveSet[4][](6);
+        for (uint256 j = 0; j < 4; j++) {
+            moves[0][j] = moves0[j];
+            moves[1][j] = moves1[j];
+            moves[2][j] = moves2[j];
+            moves[3][j] = moves3[j];
+            moves[4][j] = moves4[j];
+            moves[5][j] = moves5[j];
         }
         IAbility[] memory allAbilities = new IAbility[](6);
         allAbilities[0] = ability;

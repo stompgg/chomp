@@ -105,7 +105,7 @@ contract GachaTeamRegistryTest is Test {
         assertEq(gachaTeamRegistry.getTeamCount(ALICE), 1);
         Mon[] memory team = gachaTeamRegistry.getTeam(ALICE, 0);
         for (uint256 i; i < MONS_PER_TEAM; i++) {
-            IMoveSet[] memory moves = team[i].moves;
+            IMoveSet[4] memory moves = team[i].moves;
             assertEq(address(moves[0]), MOVE_ADDRESS);
             assertEq(address(team[i].ability), ABILITY_ADDRESS);
         }

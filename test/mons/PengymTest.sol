@@ -104,10 +104,10 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Create Alice's team: one mon with PostWorkout ability and one regular mon
-        IMoveSet[] memory aliceMon1Moves = new IMoveSet[](1);
+        IMoveSet[4] memory aliceMon1Moves;
         aliceMon1Moves[0] = standardAttack;
 
-        IMoveSet[] memory aliceMon2Moves = new IMoveSet[](1);
+        IMoveSet[4] memory aliceMon2Moves;
         aliceMon2Moves[0] = standardAttack;
 
         Mon memory postWorkoutMon = Mon({
@@ -143,10 +143,10 @@ contract PengymTest is Test, BattleHelper {
         });
 
         // Create Bob's team: one mon with PanicStatus attack and one regular mon
-        IMoveSet[] memory bobMon1Moves = new IMoveSet[](1);
+        IMoveSet[4] memory bobMon1Moves;
         bobMon1Moves[0] = panicAttack;
 
-        IMoveSet[] memory bobMon2Moves = new IMoveSet[](1);
+        IMoveSet[4] memory bobMon2Moves;
         bobMon2Moves[0] = standardAttack;
 
         Mon memory bobPanicMon = Mon({
@@ -279,10 +279,10 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Create Alice's team: one mon with PostWorkout ability and one regular mon
-        IMoveSet[] memory aliceMon1Moves = new IMoveSet[](1);
+        IMoveSet[4] memory aliceMon1Moves;
         aliceMon1Moves[0] = standardAttack;
 
-        IMoveSet[] memory aliceMon2Moves = new IMoveSet[](1);
+        IMoveSet[4] memory aliceMon2Moves;
         aliceMon2Moves[0] = standardAttack;
 
         Mon memory postWorkoutMon = Mon({
@@ -318,10 +318,10 @@ contract PengymTest is Test, BattleHelper {
         });
 
         // Create Bob's team: one mon with FrostbiteStatus attack and one regular mon
-        IMoveSet[] memory bobMon1Moves = new IMoveSet[](1);
+        IMoveSet[4] memory bobMon1Moves;
         bobMon1Moves[0] = frostbiteAttack;
 
-        IMoveSet[] memory bobMon2Moves = new IMoveSet[](1);
+        IMoveSet[4] memory bobMon2Moves;
         bobMon2Moves[0] = standardAttack;
 
         Mon memory bobFrostbiteMon = Mon({
@@ -438,7 +438,7 @@ contract PengymTest is Test, BattleHelper {
         ChillOut chillOut = new ChillOut(engine, typeCalc, frostbiteStatus);
         DeepFreeze deepFreeze = new DeepFreeze(engine, typeCalc, frostbiteStatus);
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = chillOut;
         moves[1] = deepFreeze;
 
@@ -506,7 +506,7 @@ contract PengymTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
         PistolSquat ps = new PistolSquat(engine, typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ps;
         moves[1] = attackFactory.createAttack(
             ATTACK_PARAMS({

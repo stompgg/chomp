@@ -69,7 +69,7 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
         ContagiousSlumber contagiousSlumber = new ContagiousSlumber(IEngine(address(engine)), IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = contagiousSlumber;
 
         Mon memory mon = _createMon();
@@ -139,7 +139,7 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = vitalSiphon;
         moves[1] = nullMove;
 
@@ -199,7 +199,7 @@ contract XmonTest is Test, BattleHelper {
     function test_somniphobiaDamagesMonsWhoRest() public {
         Somniphobia somniphobia = new Somniphobia(IEngine(address(engine)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = somniphobia;
 
         Mon memory mon = _createMon();
@@ -300,7 +300,7 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = attack;
         moves[1] = staminaBurn;
 
@@ -326,7 +326,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         // Create ruleset with StaminaRegen
@@ -380,7 +380,7 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
         NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = nightTerrors;
 
         Mon memory mon = _createMon();
@@ -394,7 +394,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -445,7 +445,7 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
         NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = nightTerrors;
 
         Mon memory mon = _createMon();
@@ -461,7 +461,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -532,7 +532,7 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = nightTerrors;
         moves[1] = sleepMove;
 
@@ -549,7 +549,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));

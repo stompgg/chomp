@@ -93,7 +93,7 @@ contract EngineGasTest is Test, BattleHelper {
         mon.stats.attack = 10;
         mon.stats.specialAttack = 10;
 
-        mon.moves = new IMoveSet[](4);
+        // mon.moves already zero-initialized
         StatBoosts statBoosts = new StatBoosts(engine);
         IMoveSet burnMove = new EffectAttack(engine, new BurnStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet frostbiteMove = new EffectAttack(engine, new FrostbiteStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
@@ -111,7 +111,7 @@ contract EngineGasTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: mon.moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
         StaminaRegen staminaRegen = new StaminaRegen(engine);
         IEffect[] memory effects = new IEffect[](1);
@@ -343,7 +343,7 @@ contract EngineGasTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
 
@@ -415,7 +415,7 @@ contract EngineGasTest is Test, BattleHelper {
     function test_identicalBattlesWithEffectsGas() public {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 100, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
 

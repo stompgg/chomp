@@ -145,7 +145,7 @@ struct MonStats {
 struct Mon {
     MonStats stats;
     IAbility ability;
-    IMoveSet[] moves;
+    IMoveSet[4] moves;
 }
 
 struct MonState {

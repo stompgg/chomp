@@ -60,7 +60,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
 
@@ -77,7 +77,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type1: Type.Liquid,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
 

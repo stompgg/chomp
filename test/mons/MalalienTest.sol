@@ -56,7 +56,7 @@ contract MalalienTest is Test, BattleHelper {
 
     function test_actusReusIndictment() public {
         // Create a StandardAttack that can KO a mon in one hit
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         uint256 hpScale = 100;
 
         moves[0] = attackFactory.createAttack(
@@ -181,7 +181,7 @@ contract MalalienTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         TripleThink tripleThink = new TripleThink(engine, statBoosts);
         moves[0] = tripleThink;
         Mon memory mon = Mon({

@@ -71,7 +71,7 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
         mon.stats.defense = 100;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
-        mon.moves = new IMoveSet[](1);
+        // mon.moves already zero-initialized
         mon.moves[0] = testMove;
 
         Mon[] memory team = new Mon[](2);

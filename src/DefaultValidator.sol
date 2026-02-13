@@ -65,9 +65,7 @@ contract DefaultValidator is IValidator {
 
             // Check that each mon is still up to date with the current mon registry values
             for (uint256 j; j < MONS_PER_TEAM;) {
-                if (teams[i][j].moves.length != MOVES_PER_MON) {
-                    return false;
-                }
+                // Fixed-size array is always length 4; MOVES_PER_MON controls valid move indices at runtime
                 // Call the IMonRegistry to see if the stats, moves, and ability are still valid
                 if (address(monRegistry) != address(0) && !monRegistry.validateMon(teams[i][j], teamIndices[j])) {
                     return false;

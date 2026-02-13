@@ -118,7 +118,8 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
             return false;
         }
         // Check that the mon's moves are valid for the current mon ID
-        for (uint256 i; i < m.moves.length; ++i) {
+        for (uint256 i; i < 4; ++i) {
+            if (address(m.moves[i]) == address(0)) continue;
             if (!monMoves[monId].contains(address(m.moves[i]))) {
                 return false;
             }

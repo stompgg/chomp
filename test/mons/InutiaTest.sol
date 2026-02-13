@@ -54,7 +54,7 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_interweaving() public {
         // Create a team with a mon that has Interweaving ability
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        IMoveSet[4] memory moves;
         // Create a mon with Interweaving ability
         Mon memory interweavingMon = Mon({
             stats: MonStats({
@@ -148,7 +148,7 @@ contract InutiaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = initialize;
 
         // Create mon with initialize
@@ -246,7 +246,7 @@ contract InutiaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ce;
         moves[1] = attackFactory.createAttack(
             ATTACK_PARAMS({

@@ -50,7 +50,7 @@ contract MatchmakerTest is Test, BattleHelper {
         engine.updateMatchmakers(makersToAdd, makersToRemove);
         vm.startPrank(BOB);
         engine.updateMatchmakers(makersToAdd, makersToRemove);
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        IMoveSet[4] memory moves;
         Mon memory dummyMon = Mon({
             stats: MonStats({
                 hp: 1,

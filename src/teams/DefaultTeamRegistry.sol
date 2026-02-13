@@ -36,7 +36,7 @@ contract DefaultTeamRegistry is ITeamRegistry {
         MOVES_PER_MON = args.MOVES_PER_MON;
     }
 
-    function createTeam(uint256[] memory monIndices, IMoveSet[][] memory moves, IAbility[] memory abilities)
+    function createTeam(uint256[] memory monIndices, IMoveSet[4][] memory moves, IAbility[] memory abilities)
         public
         virtual
     {
@@ -46,18 +46,15 @@ contract DefaultTeamRegistry is ITeamRegistry {
     function _createTeamForUser(
         address user,
         uint256[] memory monIndices,
-        IMoveSet[][] memory moves,
+        IMoveSet[4][] memory moves,
         IAbility[] memory abilities
     ) internal {
         if (monIndices.length != MONS_PER_TEAM) {
             revert InvalidTeamSize();
         }
         for (uint256 i; i < MONS_PER_TEAM; i++) {
-            uint256 numMoves = moves[i].length;
-            if (numMoves != MOVES_PER_MON) {
-                revert InvalidNumMovesPerMon();
-            }
-            for (uint256 j; j < numMoves; j++) {
+            for (uint256 j; j < MOVES_PER_MON; j++) {
+                if (address(moves[i][j]) == address(0)) continue;
                 if (!REGISTRY.isValidMove(monIndices[i], moves[i][j])) {
                     revert InvalidMove();
                 }
@@ -86,7 +83,7 @@ contract DefaultTeamRegistry is ITeamRegistry {
         uint256 teamIndex,
         uint256[] memory teamMonIndicesToOverride,
         uint256[] memory newMonIndices,
-        IMoveSet[][] memory newMoves,
+        IMoveSet[4][] memory newMoves,
         IAbility[] memory newAbilities
     ) public virtual {
         uint256 numMonsToOverride = teamMonIndicesToOverride.length;
@@ -94,11 +91,8 @@ contract DefaultTeamRegistry is ITeamRegistry {
         // Verify that the new moves and abilities are valid
         for (uint256 i; i < numMonsToOverride; i++) {
             uint256 monIndex = newMonIndices[i];
-            uint256 numMoves = newMoves[i].length;
-            if (numMoves != MOVES_PER_MON) {
-                revert InvalidNumMovesPerMon();
-            }
-            for (uint256 j; j < numMoves; j++) {
+            for (uint256 j; j < MOVES_PER_MON; j++) {
+                if (address(newMoves[i][j]) == address(0)) continue;
                 if (!REGISTRY.isValidMove(monIndex, newMoves[i][j])) {
                     revert InvalidMove();
                 }

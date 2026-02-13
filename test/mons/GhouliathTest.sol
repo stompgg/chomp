@@ -79,7 +79,7 @@ contract GhouliathTest is Test, BattleHelper {
     */
     function testRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = standardAttackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 100,
@@ -203,7 +203,7 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testDoubleRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = standardAttackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 100,
@@ -286,7 +286,7 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testWitherAway() public {
         // Create a team with a mon that has WitherAway move
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = witherAway;
 
         // Create a mon with specific stats
@@ -388,7 +388,7 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testOsteoporosis() public {
         // Create a team with a mon that has Osteoporosis move
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = osteoporosis;
 
         // Create a mon with specific stats to make damage calculation predictable
@@ -458,7 +458,7 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testEternalGrudge() public {
         // Create a team with a mon that has EternalGrudge move
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = eternalGrudge;
 
         // Create a mon with specific stats to make damage calculation predictable

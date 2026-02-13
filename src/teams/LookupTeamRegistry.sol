@@ -120,8 +120,8 @@ contract LookupTeamRegistry is ITeamRegistry {
         for (uint256 i; i < MONS_PER_TEAM; ++i) {
             uint256 monId = _getMonRegistryIndex(player, teamIndex, i);
             (MonStats memory monStats, address[] memory moves, address[] memory abilities) = REGISTRY.getMonData(monId);
-            IMoveSet[] memory movesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
+            IMoveSet[4] memory movesToUse;
+            for (uint256 j; j < MOVES_PER_MON && j < 4; ++j) {
                 movesToUse[j] = IMoveSet(moves[j]);
             }
             team[i] = Mon({stats: monStats, ability: IAbility(abilities[0]), moves: movesToUse});
@@ -136,16 +136,16 @@ contract LookupTeamRegistry is ITeamRegistry {
         for (uint256 i; i < MONS_PER_TEAM; ++i) {
             uint256 p0MonId = _getMonRegistryIndex(p0, p0TeamIndex, i);
             (MonStats memory p0MonStats, address[] memory p0Moves, address[] memory p0Abilities) = REGISTRY.getMonData(p0MonId);
-            IMoveSet[] memory p0MovesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
+            IMoveSet[4] memory p0MovesToUse;
+            for (uint256 j; j < MOVES_PER_MON && j < 4; ++j) {
                 p0MovesToUse[j] = IMoveSet(p0Moves[j]);
             }
             p0Team[i] = Mon({stats: p0MonStats, ability: IAbility(p0Abilities[0]), moves: p0MovesToUse});
 
             uint256 p1MonId = _getMonRegistryIndex(p1, p1TeamIndex, i);
             (MonStats memory p1MonStats, address[] memory p1Moves, address[] memory p1Abilities) = REGISTRY.getMonData(p1MonId);
-            IMoveSet[] memory p1MovesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
+            IMoveSet[4] memory p1MovesToUse;
+            for (uint256 j; j < MOVES_PER_MON && j < 4; ++j) {
                 p1MovesToUse[j] = IMoveSet(p1Moves[j]);
             }
             p1Team[i] = Mon({stats: p1MonStats, ability: IAbility(p1Abilities[0]), moves: p1MovesToUse});

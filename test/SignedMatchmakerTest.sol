@@ -230,7 +230,7 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 type1: Type.Liquid,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
 

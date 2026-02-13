@@ -96,7 +96,7 @@ contract CPUTest is Test {
         IMoveSet roundTrip = new RoundTrip(engine, typeCalc);
         IMoveSet guestFeature = new GuestFeature(engine, typeCalc);
 
-        IMoveSet[] memory boringMoves = new IMoveSet[](2);
+        IMoveSet[4] memory boringMoves;
         boringMoves[0] = move1;
         boringMoves[1] = move2;
         Mon memory mon1 = Mon({
@@ -144,7 +144,7 @@ contract CPUTest is Test {
             moves: boringMoves,
             ability: IAbility(address(0))
         });
-        IMoveSet[] memory movesWithEffects = new IMoveSet[](2);
+        IMoveSet[4] memory movesWithEffects;
         movesWithEffects[0] = roundTrip;
         movesWithEffects[1] = guestFeature;
         Mon memory mon4 = Mon({
@@ -402,7 +402,7 @@ contract CPUTest is Test {
                 type1: t,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
+            moves: [IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0)), IMoveSet(address(0))],
             ability: IAbility(address(0))
         });
         return mon;
@@ -465,7 +465,7 @@ contract CPUTest is Test {
 
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         TestMoveFactory moveFactory = new TestMoveFactory(engine);
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
         Mon memory mon = _createMon(Type.Fire);
@@ -516,7 +516,7 @@ contract CPUTest is Test {
 
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         TestMoveFactory moveFactory = new TestMoveFactory(engine);
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
         Mon memory mon = _createMon(Type.Fire);
@@ -575,7 +575,7 @@ contract CPUTest is Test {
     function test_okayCPUSelectsSelfMoveAtFullHealth() public {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         TestMoveFactory moveFactory = new TestMoveFactory(engine);
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
         moves[1] = moveFactory.createMove(MoveClass.Self, Type.Fire, 1, 0);
@@ -590,7 +590,7 @@ contract CPUTest is Test {
 
         DefaultValidator validatorToUse = new DefaultValidator(
             engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         ProposedBattle memory proposal = ProposedBattle({
@@ -631,7 +631,7 @@ contract CPUTest is Test {
     function test_okayCPUSelectsOtherMoveAtFullHealth() public {
         // Both teams have 3 moves, one Attack that costs 0 stamina, one Self that costs 1 stamina, and one Other that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](3);
+        IMoveSet[4] memory moves;
         TestMoveFactory moveFactory = new TestMoveFactory(engine);
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
         moves[1] = moveFactory.createMove(MoveClass.Special, Type.Fire, 0, 0);
@@ -647,7 +647,7 @@ contract CPUTest is Test {
 
         DefaultValidator validatorToUse = new DefaultValidator(
             engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         ProposedBattle memory proposal = ProposedBattle({
@@ -688,7 +688,7 @@ contract CPUTest is Test {
     function test_okayCPUSelectsAttackMoveAtNonFullHealth() public {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         TestMoveFactory moveFactory = new TestMoveFactory(engine);
         moves[0] = moveFactory.createMove(MoveClass.Self, Type.Fire, 0, 0); 
         moves[1] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1);
@@ -704,7 +704,7 @@ contract CPUTest is Test {
 
         DefaultValidator validatorToUse = new DefaultValidator(
             engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         ProposedBattle memory proposal = ProposedBattle({

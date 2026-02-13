@@ -63,7 +63,7 @@ contract StatBoostsTest is Test, BattleHelper {
 
     function test_statBoostMove() public {
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = statBoostMove; // Stat boost move (we'll pass different params when using it)
 
         Mon memory mon1 = Mon({
@@ -237,7 +237,7 @@ contract StatBoostsTest is Test, BattleHelper {
 
     function test_allStatBoosts() public {
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = statBoostMove; // Stat boost move (we'll pass different params when using it)
 
         Mon memory mon1 = Mon({
@@ -356,7 +356,7 @@ contract StatBoostsTest is Test, BattleHelper {
         SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(engine, statBoosts);
 
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = statBoostMove;
         moves[1] = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -385,7 +385,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         // Both players select their first mon (index 0)

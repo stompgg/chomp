@@ -73,7 +73,7 @@ contract AuroxTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         BullRush bullRush = new BullRush(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = bullRush;
 
         Mon memory mon = _createMon();
@@ -153,7 +153,7 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](4);
+        IMoveSet[4] memory moves;
         moves[0] = frostbiteAttack;
         moves[1] = attack;
         moves[2] = gildedRecovery;
@@ -171,7 +171,7 @@ contract AuroxTest is Test, BattleHelper {
 
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -267,7 +267,7 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ironWall;
         moves[1] = attack;
 
@@ -287,7 +287,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, slowTeam);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: fastTeam.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: fastTeam.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -356,7 +356,7 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ironWall;
         moves[1] = attack;
 
@@ -374,7 +374,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -423,7 +423,7 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ironWall;
         moves[1] = attack;
 
@@ -437,7 +437,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -498,7 +498,7 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = ironWall;
         moves[1] = attack;
 
@@ -512,7 +512,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -590,7 +590,7 @@ contract AuroxTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = attack;
 
         Mon memory mon = _createMon();
@@ -607,7 +607,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
@@ -640,7 +640,7 @@ contract AuroxTest is Test, BattleHelper {
         VolatilePunch volatilePunch = new VolatilePunch(
             IEngine(address(engine)), typeCalc, burnStatus, frostbiteStatus
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = volatilePunch;
 
         Mon memory mon = _createMon();
@@ -653,7 +653,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));

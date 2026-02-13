@@ -53,7 +53,7 @@ contract GorillaxTest is Test, BattleHelper {
         Angery angery = new Angery(IEngine(address(engine)));
 
         // Create a team with a mon that has Angery ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         uint256 hpScale = 100;
 
         // Strong attack is exactly max hp / threshold
@@ -119,7 +119,7 @@ contract GorillaxTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         RockPull rockPull = new RockPull(engine, typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = rockPull;
 
         Mon memory gorillax = Mon({

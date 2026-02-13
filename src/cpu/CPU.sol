@@ -102,6 +102,11 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 for (uint256 i = 0; i < NUM_MOVES;) {
                     IMoveSet move =
                         ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
+                    // Skip empty move slots (address(0) in fixed-size array)
+                    if (address(move) == address(0)) {
+                        unchecked { ++i; }
+                        continue;
+                    }
                     uint240 extraDataToUse = 0;
                     if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
                         // Skip if there are no valid switches

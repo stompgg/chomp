@@ -56,7 +56,7 @@ contract SofabbiTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
         );
         // Create move arrays
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        IMoveSet[4] memory moves;
 
         // Create a mon with CarrotHarvest ability
         Mon memory sofabbiMon = Mon({
@@ -140,7 +140,7 @@ contract SofabbiTest is Test, BattleHelper {
         );
 
         // Create move arrays
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        IMoveSet[4] memory moves;
 
         // Create a mon with CarrotHarvest ability
         Mon memory sofabbiMon = Mon({
@@ -215,7 +215,7 @@ contract SofabbiTest is Test, BattleHelper {
         );
 
         GuestFeature gf = new GuestFeature(engine, calc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = gf;
 
         /**
@@ -348,7 +348,7 @@ contract SofabbiTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        IMoveSet[4] memory moves;
         moves[0] = sb;
         moves[1] = bigAttack;
         Mon memory chunkyMon = Mon({
@@ -423,7 +423,7 @@ contract SofabbiTest is Test, BattleHelper {
 
     function test_gachachacha() public {
         Gachachacha gacha = new Gachachacha(engine, typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        IMoveSet[4] memory moves;
         moves[0] = gacha;
         Mon memory mon = Mon({
             stats: MonStats({
