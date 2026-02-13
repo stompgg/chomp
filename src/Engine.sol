@@ -1514,7 +1514,9 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
-        BattleConfig storage config = battleConfig[_getStorageKey(battleKey)];
+        // Use cached storage key if available (during execute), otherwise compute
+        bytes32 storageKey = storageKeyForWrite != bytes32(0) ? storageKeyForWrite : _getStorageKey(battleKey);
+        BattleConfig storage config = battleConfig[storageKey];
         BattleData storage battle = battleData[battleKey];
 
         // Unpack move indices from packed format

@@ -46,7 +46,7 @@ contract DeepFreeze is IMoveSet {
     function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
         uint32 damageToDeal = BASE_POWER;
         int32 frostbiteIndex = _frostbiteExists(battleKey, otherPlayerIndex, otherPlayerActiveMonIndex);
         // Remove frostbite if it exists, and double the damage dealt

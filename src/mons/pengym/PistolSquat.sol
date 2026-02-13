@@ -65,7 +65,7 @@ contract PistolSquat is StandardAttack {
         // Deal damage and then force a switch if the opposing mon is not KO'ed
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
         bool isKOed =
             ENGINE.getMonStateForBattle(
                 battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut

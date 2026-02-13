@@ -75,7 +75,7 @@ contract MegaStarBlast is IMoveSet {
             if (rng2 % 100 < ZAP_ACCURACY) {
                 uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
                 uint256 defenderMonIndex =
-                    ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
+                    ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
                 ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");
             }
         }

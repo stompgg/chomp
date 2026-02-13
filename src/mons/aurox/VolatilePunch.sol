@@ -52,7 +52,7 @@ contract VolatilePunch is StandardAttack {
         if (damage > 0) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
             uint256 defenderMonIndex =
-                ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
+                ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
 
             // Use a different part of the RNG for status application
             uint256 statusRng = uint256(keccak256(abi.encode(rng, "STATUS_EFFECT")));

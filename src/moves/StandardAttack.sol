@@ -79,7 +79,7 @@ contract StandardAttack is IMoveSet, Ownable {
         if (rng % 100 < _effectAccuracy) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
             uint256 defenderMonIndex =
-                ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
+                ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
             if (address(_effect) != address(0)) {
                 ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
             }
