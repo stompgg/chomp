@@ -26,10 +26,11 @@ contract Dreamcatcher is IAbility, BasicEffect {
     function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
+            unchecked { ++i; }
         }
         ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }

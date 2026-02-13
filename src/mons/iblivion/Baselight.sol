@@ -39,10 +39,11 @@ contract Baselight is IAbility, BasicEffect {
         returns (bool exists, uint256 effectIndex, uint256 level)
     {
         (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 return (true, indices[i], uint256(effects[i].data));
             }
+            unchecked { ++i; }
         }
         return (false, 0, 0);
     }

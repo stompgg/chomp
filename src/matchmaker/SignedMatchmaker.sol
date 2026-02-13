@@ -39,7 +39,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
         B signs proposed battle with actual team index (with same pair hash nonce), submits to SignedMatchmaker along with A's signature.
         Battle starts, SignedMatchmaker validates the signatures, validates pair hash nonce
     */
-    function startGame(BattleOffer memory offer, bytes memory p0Signature) external {
+    function startGame(BattleOffer memory offer, bytes calldata p0Signature) external {
         uint96 actualP1TeamIndex = offer.battle.p1TeamIndex;
 
         // Set to 0 (assume p0 signs with default team index of 0) for p0 signature validation

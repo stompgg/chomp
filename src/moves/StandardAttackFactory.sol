@@ -23,7 +23,7 @@ contract StandardAttackFactory is Ownable {
         _initializeOwner(msg.sender);
     }
 
-    function createAttack(ATTACK_PARAMS memory params) external returns (StandardAttack attack) {
+    function createAttack(ATTACK_PARAMS calldata params) external returns (StandardAttack attack) {
         attack = new StandardAttack(msg.sender, ENGINE, TYPE_CALCULATOR, params);
         emit StandardAttackCreated(address(attack));
     }

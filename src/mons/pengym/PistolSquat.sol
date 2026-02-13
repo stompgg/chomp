@@ -41,7 +41,7 @@ contract PistolSquat is StandardAttack {
     {
         bytes32 battleKey = ENGINE.battleKeyForWrite();
         uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
-        for (uint256 i; i < teamSize; ++i) {
+        for (uint256 i; i < teamSize;) {
             uint256 monIndex = (i + rng) % teamSize;
             // Only look at other mons
             if (monIndex != currentMonIndex) {
@@ -51,6 +51,7 @@ contract PistolSquat is StandardAttack {
                     return int32(int256(monIndex));
                 }
             }
+            unchecked { ++i; }
         }
         return -1;
     }

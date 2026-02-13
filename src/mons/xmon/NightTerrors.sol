@@ -42,7 +42,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         uint256 effectIndex = 0;
         uint64 currentTerrorCount = 0;
 
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 found = true;
                 effectIndex = indices[i];
@@ -51,6 +51,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
                 currentTerrorCount = storedTerrorCount;
                 break;
             }
+            unchecked { ++i; }
         }
 
         // Increment terror count
@@ -133,11 +134,12 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // Check if opponent (defender) is asleep by iterating through their effects
         (EffectInstance[] memory defenderEffects, ) = ENGINE.getEffects(battleKey, defenderPlayerIndex, defenderMonIndex);
         bool isAsleep = false;
-        for (uint256 i = 0; i < defenderEffects.length; i++) {
+        for (uint256 i = 0; i < defenderEffects.length;) {
             if (address(defenderEffects[i].effect) == address(SLEEP_STATUS)) {
                 isAsleep = true;
                 break;
             }
+            unchecked { ++i; }
         }
 
         // Determine damage per stack based on sleep status

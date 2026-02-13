@@ -55,7 +55,7 @@ contract DefaultValidator is IValidator {
             }
         }
         // Otherwise,we check team and move length
-        for (uint256 i; i < playerIndices.length; ++i) {
+        for (uint256 i; i < playerIndices.length;) {
             if (teams[i].length != MONS_PER_TEAM) {
                 return false;
             }
@@ -64,7 +64,7 @@ contract DefaultValidator is IValidator {
             uint256[] memory teamIndices = teamRegistry.getMonRegistryIndicesForTeam(players[i], teamIndex[i]);
 
             // Check that each mon is still up to date with the current mon registry values
-            for (uint256 j; j < MONS_PER_TEAM; ++j) {
+            for (uint256 j; j < MONS_PER_TEAM;) {
                 if (teams[i][j].moves.length != MOVES_PER_MON) {
                     return false;
                 }
@@ -72,7 +72,9 @@ contract DefaultValidator is IValidator {
                 if (address(monRegistry) != address(0) && !monRegistry.validateMon(teams[i][j], teamIndices[j])) {
                     return false;
                 }
+                unchecked { ++j; }
             }
+            unchecked { ++i; }
         }
         return true;
     }

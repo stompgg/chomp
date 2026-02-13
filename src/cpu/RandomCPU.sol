@@ -27,14 +27,17 @@ contract RandomCPU is CPU {
         RevealedMove[] memory allChoices = new RevealedMove[](totalChoices);
 
         uint256 index = 0;
-        for (uint256 i = 0; i < noOp.length; i++) {
+        for (uint256 i = 0; i < noOp.length;) {
             allChoices[index++] = noOp[i];
+            unchecked { ++i; }
         }
-        for (uint256 i = 0; i < moves.length; i++) {
+        for (uint256 i = 0; i < moves.length;) {
             allChoices[index++] = moves[i];
+            unchecked { ++i; }
         }
-        for (uint256 i = 0; i < switches.length; i++) {
+        for (uint256 i = 0; i < switches.length;) {
             allChoices[index++] = switches[i];
+            unchecked { ++i; }
         }
 
         // Select a random move from all choices

@@ -31,10 +31,11 @@ contract IronWall is IMoveSet, BasicEffect {
 
         // Check to see if the effect is already active
         (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, attackerPlayerIndex, activeMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
+            unchecked { ++i; }
         }
 
         // The effect will last until Aurox switches out

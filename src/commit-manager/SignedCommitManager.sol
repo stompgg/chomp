@@ -74,7 +74,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint8 revealerMoveIndex,
         bytes32 revealerSalt,
         uint240 revealerExtraData,
-        bytes memory revealerSignature
+        bytes calldata revealerSignature
     ) external {
         // Use lightweight getter (validates internally, reverts on bad state)
         (address committer, address revealer, uint64 turnId) =
@@ -134,7 +134,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     function commitWithSignature(
         bytes32 battleKey,
         bytes32 moveHash,
-        bytes memory committerSignature
+        bytes calldata committerSignature
     ) external {
         // Get battle context
         CommitContext memory ctx = ENGINE.getCommitContext(battleKey);

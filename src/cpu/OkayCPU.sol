@@ -34,14 +34,17 @@ contract OkayCPU is CPU {
         RevealedMove[] memory allChoices = new RevealedMove[](totalChoices);
         {
             uint256 index = 0;
-            for (uint256 i = 0; i < noOp.length; i++) {
+            for (uint256 i = 0; i < noOp.length;) {
                 allChoices[index++] = noOp[i];
+                unchecked { ++i; }
             }
-            for (uint256 i = 0; i < moves.length; i++) {
+            for (uint256 i = 0; i < moves.length;) {
                 allChoices[index++] = moves[i];
+                unchecked { ++i; }
             }
-            for (uint256 i = 0; i < switches.length; i++) {
+            for (uint256 i = 0; i < switches.length;) {
                 allChoices[index++] = switches[i];
+                unchecked { ++i; }
             }
         }
         uint256 opponentIndex = (playerIndex + 1) % 2;
@@ -52,8 +55,9 @@ contract OkayCPU is CPU {
         if (turnId == 0) {
             Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, uint256(opponentMove.extraData), MonStateIndexName.Type1));
             Type[] memory selfTypes = new Type[](switches.length);
-            for (uint256 i = 0; i < switches.length; i++) {
+            for (uint256 i = 0; i < switches.length;) {
                 selfTypes[i] = Type(ENGINE.getMonValueForBattle(battleKey, playerIndex, uint256(switches[i].extraData), MonStateIndexName.Type1));
+                unchecked { ++i; }
             }
             int256 bestIndex = _getTypeAdvantageOrNullToDefend(opponentType1, selfTypes);
             if (bestIndex != -1) {
@@ -160,20 +164,23 @@ contract OkayCPU is CPU {
     function _filterMoves(bytes32 battleKey, uint256 playerIndex, RevealedMove[] memory moves, MoveClass[] memory moveClasses) internal view returns (uint128[] memory) {
         uint128[] memory validIndices = new uint128[](moves.length);
         uint256 validCount = 0;
-        for (uint256 i = 0; i < moves.length; i++) {
+        for (uint256 i = 0; i < moves.length;) {
             MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex], moves[i].moveIndex).moveClass(battleKey);
-            for (uint256 j = 0; j < moveClasses.length; j++) {
+            for (uint256 j = 0; j < moveClasses.length;) {
                 if (currentMoveClass == moveClasses[j]) {
                     validIndices[validCount] = uint128(i);
                     validCount++;
                     break;
                 }
+                unchecked { ++j; }
             }
+            unchecked { ++i; }
         }
         // Copy the valid indices into a new array with only the valid ones
         uint128[] memory validIndicesCopy = new uint128[](validCount);
-        for (uint256 i = 0; i < validCount; i++) {
+        for (uint256 i = 0; i < validCount;) {
             validIndicesCopy[i] = validIndices[i];
+            unchecked { ++i; }
         }
         return validIndicesCopy;
     }
@@ -181,7 +188,7 @@ contract OkayCPU is CPU {
     function _getTypeAdvantageAttacks(bytes32 battleKey, uint256 defenderPlayerIndex, Type defenderType1, Type defenderType2, RevealedMove[] memory attacks, uint128[] memory validAttackIndices) internal view returns (uint128[] memory) {
         uint128[] memory validIndices = new uint128[](validAttackIndices.length);
         uint256 validCount = 0;
-        for (uint256 i = 0; i < validAttackIndices.length; i++) {
+        for (uint256 i = 0; i < validAttackIndices.length;) {
             IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, defenderPlayerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex], attacks[validAttackIndices[i]].moveIndex);
             uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(currentMoveSet.moveType(battleKey), defenderType1, 2);
             if (defenderType2 != Type.None) {
@@ -192,21 +199,24 @@ contract OkayCPU is CPU {
                 validIndices[validCount] = validAttackIndices[i];
                 validCount++;
             }
+            unchecked { ++i; }
         }
         // Copy the valid indices into a new array with only the valid ones
         uint128[] memory validIndicesCopy = new uint128[](validCount);
-        for (uint256 i = 0; i < validCount; i++) {
+        for (uint256 i = 0; i < validCount;) {
             validIndicesCopy[i] = validIndices[i];
+            unchecked { ++i; }
         }
         return validIndicesCopy;
     }
 
     function _getTypeAdvantageOrNullToDefend(Type attackerType, Type[] memory defenderTypes) internal view returns (int) {
-        for (uint256 i = 0; i < defenderTypes.length; i++) {
+        for (uint256 i = 0; i < defenderTypes.length;) {
             uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(attackerType, defenderTypes[i], 2);
             if (effectiveness == 0 || effectiveness == 1) {
                 return int256(i);
             }
+            unchecked { ++i; }
         }
         return -1;
     }

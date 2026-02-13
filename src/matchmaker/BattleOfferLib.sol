@@ -17,8 +17,9 @@ library BattleOfferLib {
     function hashBattle(Battle memory battle) internal pure returns (bytes32) {
         // Convert IEngineHook[] to address[] for hashing
         address[] memory hookAddresses = new address[](battle.engineHooks.length);
-        for (uint256 i = 0; i < battle.engineHooks.length; i++) {
+        for (uint256 i = 0; i < battle.engineHooks.length;) {
             hookAddresses[i] = address(battle.engineHooks[i]);
+            unchecked { ++i; }
         }
 
         return keccak256(abi.encode(

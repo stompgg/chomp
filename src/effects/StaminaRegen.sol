@@ -40,8 +40,9 @@ contract StaminaRegen is BasicEffect {
         uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
         // Update stamina for both active mons only if it's a 2 player turn
         if (playerSwitchForTurnFlag == 2) {
-            for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
+            for (uint256 playerIndex; playerIndex < 2;) {
                 _regenStamina(playerIndex, activeMonIndex[playerIndex]);
+                unchecked { ++playerIndex; }
             }
         }
         return (bytes32(0), false);

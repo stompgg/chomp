@@ -52,7 +52,7 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
      P0 can bypass the final acceptBattle call by setting p0TeamIndex in the initial call and bytes32(0) for the p0TeamHash
      In this case, a different event is emitted, and calling acceptBattle will immediately start the battle
     */
-    function proposeBattle(ProposedBattle memory proposal) external returns (bytes32 battleKey) {
+    function proposeBattle(ProposedBattle calldata proposal) external returns (bytes32 battleKey) {
         if (proposal.p0 != msg.sender) {
             revert ProposerNotP0();
         }

@@ -110,12 +110,14 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 indexed battleKey, bytes32 eventType, bytes eventData, address source, uint256 step
     );
 
-    function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external {
-        for (uint256 i; i < makersToAdd.length; ++i) {
+    function updateMatchmakers(address[] calldata makersToAdd, address[] calldata makersToRemove) external {
+        for (uint256 i; i < makersToAdd.length;) {
             isMatchmakerFor[msg.sender][makersToAdd[i]] = true;
+            unchecked { ++i; }
         }
-        for (uint256 i; i < makersToRemove.length; ++i) {
+        for (uint256 i; i < makersToRemove.length;) {
             isMatchmakerFor[msg.sender][makersToRemove[i]] = false;
+            unchecked { ++i; }
         }
     }
 
@@ -146,7 +148,7 @@ contract Engine is IEngine, MappingAllocator {
         // Clear previous battle's mon states by setting non-zero values to sentinel
         // MonState packs into a single 256-bit slot (7 x int32 + 2 x bool = 240 bits)
         // We use assembly to read/write the entire slot in one operation
-        for (uint256 j = 0; j < prevP0Size; j++) {
+        for (uint256 j = 0; j < prevP0Size;) {
             MonState storage monState = config.p0States[j];
             assembly {
                 let slot := monState.slot
@@ -154,8 +156,9 @@ contract Engine is IEngine, MappingAllocator {
                     sstore(slot, PACKED_CLEARED_MON_STATE)
                 }
             }
+            unchecked { ++j; }
         }
-        for (uint256 j = 0; j < prevP1Size; j++) {
+        for (uint256 j = 0; j < prevP1Size;) {
             MonState storage monState = config.p1States[j];
             assembly {
                 let slot := monState.slot
@@ -163,6 +166,7 @@ contract Engine is IEngine, MappingAllocator {
                     sstore(slot, PACKED_CLEARED_MON_STATE)
                 }
             }
+            unchecked { ++j; }
         }
 
         // Store the battle config (update fields individually to preserve effects mapping slots)
@@ -203,11 +207,13 @@ contract Engine is IEngine, MappingAllocator {
         config.teamSizes = uint8(p0Len) | (uint8(p1Len) << 4);
 
         // Store teams in mappings
-        for (uint256 j = 0; j < p0Len; j++) {
+        for (uint256 j = 0; j < p0Len;) {
             config.p0Team[j] = p0Team[j];
+            unchecked { ++j; }
         }
-        for (uint256 j = 0; j < p1Len; j++) {
+        for (uint256 j = 0; j < p1Len;) {
             config.p1Team[j] = p1Team[j];
+            unchecked { ++j; }
         }
 
         // Set the global effects and data to start the game if any
@@ -215,10 +221,11 @@ contract Engine is IEngine, MappingAllocator {
             (IEffect[] memory effects, bytes32[] memory data) = battle.ruleset.getInitialGlobalEffects();
             uint256 numEffects = effects.length;
             if (numEffects > 0) {
-                for (uint i = 0; i < numEffects; ++i) {
+                for (uint i = 0; i < numEffects;) {
                     config.globalEffects[i].effect = effects[i];
                     config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
                     config.globalEffects[i].data = data[i];
+                    unchecked { ++i; }
                 }
                 config.globalEffectsLength = uint8(effects.length);
             }
@@ -229,8 +236,9 @@ contract Engine is IEngine, MappingAllocator {
         // Set the engine hooks to start the game if any
         uint256 numHooks = battle.engineHooks.length;
         if (numHooks > 0) {
-            for (uint i; i < numHooks; ++i) {
+            for (uint i; i < numHooks;) {
                 config.engineHooks[i] = battle.engineHooks[i];
+                unchecked { ++i; }
             }
             config.engineHooksLength = uint8(numHooks);
         }
@@ -253,8 +261,9 @@ contract Engine is IEngine, MappingAllocator {
             revert InvalidBattleConfig();
         }
 
-        for (uint256 i = 0; i < battle.engineHooks.length; ++i) {
+        for (uint256 i = 0; i < battle.engineHooks.length;) {
             battle.engineHooks[i].onBattleStart(battleKey);
+            unchecked { ++i; }
         }
 
         emit BattleStart(battleKey, battle.p0, battle.p1);
@@ -338,8 +347,9 @@ contract Engine is IEngine, MappingAllocator {
         battleKeyForWrite = battleKey;
 
         uint256 numHooks = config.engineHooksLength;
-        for (uint256 i = 0; i < numHooks; ++i) {
+        for (uint256 i = 0; i < numHooks;) {
             config.engineHooks[i].onRoundStart(battleKey);
+            unchecked { ++i; }
         }
 
         // If only a single player has a move to submit, then we don't trigger any effects
@@ -521,8 +531,9 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Run the round end hooks
-        for (uint256 i = 0; i < numHooks; ++i) {
+        for (uint256 i = 0; i < numHooks;) {
             config.engineHooks[i].onRoundEnd(battleKey);
+            unchecked { ++i; }
         }
 
         // If a winner has been set, handle the game over
@@ -558,7 +569,7 @@ contract Engine is IEngine, MappingAllocator {
         if (data.winnerIndex != 2) {
             revert GameAlreadyOver();
         }
-        for (uint256 i; i < 2; ++i) {
+        for (uint256 i; i < 2;) {
             address potentialLoser = config.validator.validateTimeout(battleKey, i);
             if (potentialLoser != address(0)) {
                 address winner = potentialLoser == data.p0 ? data.p1 : data.p0;
@@ -566,6 +577,7 @@ contract Engine is IEngine, MappingAllocator {
                 _handleGameOver(battleKey, winner);
                 return;
             }
+            unchecked { ++i; }
         }
         // Allow forcible end of battle after max duration
         if (block.timestamp - config.startTimestamp > MAX_BATTLE_DURATION) {
@@ -582,8 +594,9 @@ contract Engine is IEngine, MappingAllocator {
             revert GameStartsAndEndsSameBlock();
         }
 
-        for (uint256 i = 0; i < config.engineHooksLength; ++i) {
+        for (uint256 i = 0; i < config.engineHooksLength;) {
             config.engineHooks[i].onBattleEnd(battleKey);
+            unchecked { ++i; }
         }
 
         // Free the key used for battle configs so other battles can use it
@@ -915,7 +928,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
+    function emitEngineEvent(bytes32 eventType, bytes calldata eventData) external {
         bytes32 battleKey = battleKeyForWrite;
         emit EngineEvent(battleKey, eventType, eventData, _getUpstreamCallerAndResetValue(), currentStep);
     }
@@ -925,9 +938,10 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {
-        pairHash = keccak256(abi.encode(p0, p1));
         if (uint256(uint160(p0)) > uint256(uint160(p1))) {
             pairHash = keccak256(abi.encode(p1, p0));
+        } else {
+            pairHash = keccak256(abi.encode(p0, p1));
         }
         uint256 pairHashNonce = pairHashNonces[pairHash];
         battleKey = keccak256(abi.encode(pairHash, pairHashNonce));
@@ -1178,7 +1192,7 @@ contract Engine is IEngine, MappingAllocator {
                 );
             }
 
-            ++i;
+            unchecked { ++i; }
         }
     }
 
@@ -1459,12 +1473,13 @@ contract Engine is IEngine, MappingAllocator {
             EffectInstance[] memory globalResult = new EffectInstance[](globalEffectsLength);
             uint256[] memory globalIndices = new uint256[](globalEffectsLength);
             uint256 globalIdx = 0;
-            for (uint256 i = 0; i < globalEffectsLength; ++i) {
+            for (uint256 i = 0; i < globalEffectsLength;) {
                 if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
                     globalResult[globalIdx] = config.globalEffects[i];
                     globalIndices[globalIdx] = i;
                     globalIdx++;
                 }
+                unchecked { ++i; }
             }
             // Resize arrays to actual count
             assembly ("memory-safe") {
@@ -1483,13 +1498,14 @@ contract Engine is IEngine, MappingAllocator {
         EffectInstance[] memory result = new EffectInstance[](monEffectCount);
         uint256[] memory indices = new uint256[](monEffectCount);
         uint256 idx = 0;
-        for (uint256 i = 0; i < monEffectCount; ++i) {
+        for (uint256 i = 0; i < monEffectCount;) {
             uint256 slotIndex = baseSlot + i;
             if (address(effects[slotIndex].effect) != TOMBSTONE_ADDRESS) {
                 result[idx] = effects[slotIndex];
                 indices[idx] = slotIndex;
                 idx++;
             }
+            unchecked { ++i; }
         }
 
         // Resize arrays to actual count
@@ -1512,11 +1528,12 @@ contract Engine is IEngine, MappingAllocator {
         uint256 globalLen = config.globalEffectsLength;
         EffectInstance[] memory globalEffects = new EffectInstance[](globalLen);
         uint256 gIdx = 0;
-        for (uint256 i = 0; i < globalLen; ++i) {
+        for (uint256 i = 0; i < globalLen;) {
             if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
                 globalEffects[gIdx] = config.globalEffects[i];
                 gIdx++;
             }
+            unchecked { ++i; }
         }
         // Resize array to actual count
         assembly ("memory-safe") {
@@ -1535,22 +1552,26 @@ contract Engine is IEngine, MappingAllocator {
         Mon[][] memory teams = new Mon[][](2);
         teams[0] = new Mon[](p0TeamSize);
         teams[1] = new Mon[](p1TeamSize);
-        for (uint256 i = 0; i < p0TeamSize; i++) {
+        for (uint256 i = 0; i < p0TeamSize;) {
             teams[0][i] = config.p0Team[i];
+            unchecked { ++i; }
         }
-        for (uint256 i = 0; i < p1TeamSize; i++) {
+        for (uint256 i = 0; i < p1TeamSize;) {
             teams[1][i] = config.p1Team[i];
+            unchecked { ++i; }
         }
 
         // Build monStates array from mappings
         MonState[][] memory monStates = new MonState[][](2);
         monStates[0] = new MonState[](p0TeamSize);
         monStates[1] = new MonState[](p1TeamSize);
-        for (uint256 i = 0; i < p0TeamSize; i++) {
+        for (uint256 i = 0; i < p0TeamSize;) {
             monStates[0][i] = config.p0States[i];
+            unchecked { ++i; }
         }
-        for (uint256 i = 0; i < p1TeamSize; i++) {
+        for (uint256 i = 0; i < p1TeamSize;) {
             monStates[1][i] = config.p1States[i];
+            unchecked { ++i; }
         }
 
         BattleConfigView memory configView = BattleConfigView({
@@ -1583,18 +1604,19 @@ contract Engine is IEngine, MappingAllocator {
         // Allocate outer array for each mon
         EffectInstance[][] memory result = new EffectInstance[][](teamSize);
 
-        for (uint256 m = 0; m < teamSize; m++) {
+        for (uint256 m = 0; m < teamSize;) {
             uint256 monCount = _getMonEffectCount(packedCounts, m);
             uint256 baseSlot = _getEffectSlotIndex(m, 0);
 
             // Allocate max size for this mon's effects
             EffectInstance[] memory monEffects = new EffectInstance[](monCount);
             uint256 idx = 0;
-            for (uint256 i = 0; i < monCount; ++i) {
+            for (uint256 i = 0; i < monCount;) {
                 if (address(effects[baseSlot + i].effect) != TOMBSTONE_ADDRESS) {
                     monEffects[idx] = effects[baseSlot + i];
                     idx++;
                 }
+                unchecked { ++i; }
             }
 
             // Resize array to actual count
@@ -1602,6 +1624,7 @@ contract Engine is IEngine, MappingAllocator {
                 mstore(monEffects, idx)
             }
             result[m] = monEffects;
+            unchecked { ++m; }
         }
 
         return result;

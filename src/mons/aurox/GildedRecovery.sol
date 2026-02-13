@@ -38,11 +38,12 @@ contract GildedRecovery is IMoveSet {
             (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, attackerPlayerIndex, targetMonIndex);
             address statusEffectAddress = address(uint160(statusFlag));
 
-            for (uint256 i = 0; i < effects.length; i++) {
+            for (uint256 i = 0; i < effects.length;) {
                 if (address(effects[i].effect) == statusEffectAddress) {
                     ENGINE.removeEffect(attackerPlayerIndex, targetMonIndex, indices[i]);
                     break;
                 }
+                unchecked { ++i; }
             }
             // Give +1 stamina
             ENGINE.updateMonState(attackerPlayerIndex, targetMonIndex, MonStateIndexName.Stamina, STAMINA_BONUS);

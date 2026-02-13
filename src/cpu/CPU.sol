@@ -51,8 +51,9 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         if (turnId == 0) {
             uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
             RevealedMove[] memory switchChoices = new RevealedMove[](teamSize);
-            for (uint256 i = 0; i < teamSize; i++) {
+            for (uint256 i = 0; i < teamSize;) {
                 switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(i)});
+                unchecked { ++i; }
             }
             nonceToUse = nonce;
             return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
@@ -65,13 +66,14 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
                 uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
                 validSwitchIndices = new uint256[](teamSize);
-                for (uint256 i = 0; i < teamSize; i++) {
+                for (uint256 i = 0; i < teamSize;) {
                     if (i != activeMonIndex[playerIndex]) {
                         if (validator
                             .validatePlayerMove(battleKey, SWITCH_MOVE_INDEX, playerIndex, uint240(i))) {
                             validSwitchIndices[validSwitchCount++] = i;
                         }
                     }
+                    unchecked { ++i; }
                 }
             }
             // If it's a turn where we need to make a switch, then we should just return valid switches
@@ -79,10 +81,11 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
                 if (playerSwitchForTurnFlag == 1) {
                     RevealedMove[] memory switchChoices = new RevealedMove[](validSwitchCount);
-                    for (uint256 i = 0; i < validSwitchCount; i++) {
+                    for (uint256 i = 0; i < validSwitchCount;) {
                         switchChoices[i] = RevealedMove({
                             moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
                         });
+                        unchecked { ++i; }
                     }
                     nonceToUse = nonce;
                     return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
@@ -96,13 +99,14 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
                 validMoveIndices = new uint8[](NUM_MOVES);
                 validMoveExtraData = new uint240[](NUM_MOVES);
-                for (uint256 i = 0; i < NUM_MOVES; i++) {
+                for (uint256 i = 0; i < NUM_MOVES;) {
                     IMoveSet move =
                         ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
                     uint240 extraDataToUse = 0;
                     if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
                         // Skip if there are no valid switches
                         if (validSwitchCount == 0) {
+                            unchecked { ++i; }
                             continue;
                         }
                         uint256 randomIndex =
@@ -115,12 +119,14 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                         uint256 koBitmap = ENGINE.getKOBitmap(battleKey, opponentIndex);
                         uint256[] memory validTargets = new uint256[](opponentTeamSize);
                         uint256 validTargetCount;
-                        for (uint256 j = 0; j < opponentTeamSize; j++) {
+                        for (uint256 j = 0; j < opponentTeamSize;) {
                             if ((koBitmap & (1 << j)) == 0) {
                                 validTargets[validTargetCount++] = j;
                             }
+                            unchecked { ++j; }
                         }
                         if (validTargetCount == 0) {
+                            unchecked { ++i; }
                             continue;
                         }
                         uint256 randomIndex =
@@ -131,19 +137,22 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     if (validator.validatePlayerMove(battleKey, i, playerIndex, extraDataToUse)) {
                         validMoveIndices[validMoveCount++] = uint8(i);
                     }
+                    unchecked { ++i; }
                 }
             }
             // Build separate arrays for moves, switches, and noOp
             RevealedMove[] memory validMovesArray = new RevealedMove[](validMoveCount);
-            for (uint256 i = 0; i < validMoveCount; i++) {
+            for (uint256 i = 0; i < validMoveCount;) {
                 validMovesArray[i] =
                     RevealedMove({moveIndex: validMoveIndices[i], salt: "", extraData: validMoveExtraData[i]});
+                unchecked { ++i; }
             }
             RevealedMove[] memory validSwitchesArray = new RevealedMove[](validSwitchCount);
-            for (uint256 i = 0; i < validSwitchCount; i++) {
+            for (uint256 i = 0; i < validSwitchCount;) {
                 validSwitchesArray[i] = RevealedMove({
                     moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
                 });
+                unchecked { ++i; }
             }
             RevealedMove[] memory noOpArray = new RevealedMove[](1);
             noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: 0});
@@ -157,7 +166,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         return uint256(seed);
     }
 
-    function startBattle(ProposedBattle memory proposal) external returns (bytes32 battleKey) {
+    function startBattle(ProposedBattle calldata proposal) external returns (bytes32 battleKey) {
         (battleKey,) = ENGINE.computeBattleKey(proposal.p0, proposal.p1);
         ENGINE.startBattle(
             Battle({

@@ -17,8 +17,9 @@ contract DefaultRuleset is IRuleset {
 
     constructor(IEngine _ENGINE, IEffect[] memory _effects) {
         ENGINE = _ENGINE;
-        for (uint256 i; i < _effects.length; i++) {
+        for (uint256 i; i < _effects.length;) {
             effects.push(_effects[i]);
+            unchecked { ++i; }
         }
     }
 

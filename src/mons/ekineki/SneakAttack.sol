@@ -34,10 +34,11 @@ contract SneakAttack is IMoveSet, BasicEffect {
         // Check if already used this switch-in (effect present = already used)
         uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
+            unchecked { ++i; }
         }
 
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;

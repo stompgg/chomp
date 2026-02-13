@@ -13,7 +13,7 @@ interface IEngine {
     function tempRNG() external view returns (uint256);
 
     // State mutating effects
-    function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external;
+    function updateMatchmakers(address[] calldata makersToAdd, address[] calldata makersToRemove) external;
     function startBattle(Battle memory battle) external;
     function updateMonState(uint256 playerIndex, uint256 monIndex, MonStateIndexName stateVarIndex, int32 valueToAdd)
         external;
@@ -34,7 +34,7 @@ interface IEngine {
         bytes32 p1Salt,
         uint240 p1ExtraData
     ) external;
-    function emitEngineEvent(bytes32 eventType, bytes memory extraData) external;
+    function emitEngineEvent(bytes32 eventType, bytes calldata extraData) external;
     function setUpstreamCaller(address caller) external;
 
     // Getters

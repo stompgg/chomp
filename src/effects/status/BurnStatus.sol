@@ -82,12 +82,13 @@ contract BurnStatus is StatusEffect {
             uint256 indexOfBurnEffect;
             uint256 burnDegree;
             bytes32 newExtraData;
-            for (uint256 i = 0; i < effects.length; i++) {
+            for (uint256 i = 0; i < effects.length;) {
                 if (address(effects[i].effect) == address(this)) {
                     indexOfBurnEffect = indices[i];
                     burnDegree = uint256(effects[i].data);
                     newExtraData = effects[i].data;
                 }
+                unchecked { ++i; }
             }
             if (burnDegree < MAX_BURN_DEGREE) {
                 newExtraData = bytes32(burnDegree + 1);

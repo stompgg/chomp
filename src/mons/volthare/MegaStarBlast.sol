@@ -37,10 +37,11 @@ contract MegaStarBlast is IMoveSet {
     function _checkForOverclock(bytes32 battleKey) internal view returns (int32) {
         // Check all global effects to see if Overclock is active
         (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, 2, 2);
-        for (uint256 i; i < effects.length; i++) {
+        for (uint256 i; i < effects.length;) {
             if (address(effects[i].effect) == address(OVERCLOCK)) {
                 return int32(int256(indices[i]));
             }
+            unchecked { ++i; }
         }
         return -1;
     }

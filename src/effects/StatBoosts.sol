@@ -80,12 +80,13 @@ contract StatBoosts is BasicEffect {
         uint256 packed = isPerm ? (uint256(1) << PERM_FLAG_OFFSET) : 0;
         packed |= uint256(key) << KEY_OFFSET;
 
-        for (uint256 i = 0; i < statBoostsToApply.length; i++) {
+        for (uint256 i = 0; i < statBoostsToApply.length;) {
             uint256 statIndex = _monStateIndexToStatBoostIndex(statBoostsToApply[i].stat);
             uint256 offset = statIndex * 16;
             bool isMultiply = statBoostsToApply[i].boostType == StatBoostType.Multiply;
             uint256 boostInstance = (uint256(statBoostsToApply[i].boostPercent) << 8) | (1 << 1) | (isMultiply ? 1 : 0);
             packed |= boostInstance << offset;
+            unchecked { ++i; }
         }
         return bytes32(packed);
     }
@@ -106,12 +107,13 @@ contract StatBoosts is BasicEffect {
         uint256 packed = uint256(data);
         isPerm = uint8(packed >> PERM_FLAG_OFFSET) != 0;
         key = uint168((packed >> KEY_OFFSET) & KEY_MASK);
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             uint256 offset = i * 16;
             uint256 boostInstance = (packed >> offset) & 0xFFFF;
             boostPercents[i] = uint8(boostInstance >> 8);
             boostCounts[i] = uint8((boostInstance >> 1) & 0x7F);
             isMultiply[i] = (boostInstance & 0x1) == 1;
+            unchecked { ++i; }
         }
     }
 
@@ -141,12 +143,13 @@ contract StatBoosts is BasicEffect {
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) internal pure {
-        for (uint256 k = 0; k < 5; k++) {
-            if (boostCounts[k] == 0) continue;
+        for (uint256 k = 0; k < 5;) {
+            if (boostCounts[k] == 0) { unchecked { ++k; } continue; }
             uint256 existingStatValue = (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
             uint256 scalingFactor = isMultiply[k] ? DENOM + boostPercents[k] : DENOM - boostPercents[k];
             accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCounts[k]);
             numBoostsPerStat[k] += boostCounts[k];
+            unchecked { ++k; }
         }
     }
 
@@ -186,20 +189,22 @@ contract StatBoosts is BasicEffect {
 
         // Calculate final values
         uint32[5] memory newBoostedStats;
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             if (numBoostsPerStat[i] > 0) {
                 newBoostedStats[i] = uint32(accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]));
             } else {
                 newBoostedStats[i] = baseStats[i];
             }
+            unchecked { ++i; }
         }
 
         // Apply deltas
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             int32 delta = int32(newBoostedStats[i]) - int32(oldBoostedStats[i]);
             if (delta != 0) {
                 ENGINE.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
             }
+            unchecked { ++i; }
         }
 
         // Update snapshot in globalKV
@@ -217,10 +222,11 @@ contract StatBoosts is BasicEffect {
         snapshotPerStat[2] = uint32((boostSnapshot >> 96) & 0xFFFFFFFF);
         snapshotPerStat[3] = uint32((boostSnapshot >> 64) & 0xFFFFFFFF);
         snapshotPerStat[4] = uint32((boostSnapshot >> 32) & 0xFFFFFFFF);
-        for (uint256 i; i < 5; i++) {
+        for (uint256 i; i < 5;) {
             if (snapshotPerStat[i] == 0) {
                 snapshotPerStat[i] = baseStats[i];
             }
+            unchecked { ++i; }
         }
     }
 
@@ -268,31 +274,34 @@ contract StatBoosts is BasicEffect {
         uint256[5] memory accumulatedNumeratorPerStat;
 
         // Iterate through all StatBoosts effects and aggregate
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 (bool isPerm, , uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
                     _unpackBoostData(effects[i].data);
                 // Skip temp boosts if excludeTempBoosts is true
-                if (excludeTempBoosts && !isPerm) continue;
+                if (excludeTempBoosts && !isPerm) { unchecked { ++i; } continue; }
                 _accumulateBoosts(stats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
             }
+            unchecked { ++i; }
         }
 
         // Calculate final values
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             if (numBoostsPerStat[i] > 0) {
                 newBoostedStats[i] = uint32(accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]));
             } else {
                 newBoostedStats[i] = stats[i];
             }
+            unchecked { ++i; }
         }
 
         // Apply deltas
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             int32 delta = int32(newBoostedStats[i]) - int32(oldBoostedStats[i]);
             if (delta != 0) {
                 ENGINE.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
             }
+            unchecked { ++i; }
         }
 
         // Update snapshot in globalKV (reuse cached snapshotKey)
@@ -312,7 +321,7 @@ contract StatBoosts is BasicEffect {
         mergedBoostPercents = existingBoostPercents;
         mergedBoostCounts = existingBoostCounts;
         mergedIsMultiply = existingIsMultiply;
-        for (uint256 i; i < newBoostsToApply.length; i++) {
+        for (uint256 i; i < newBoostsToApply.length;) {
             uint256 statIndex = _monStateIndexToStatBoostIndex(newBoostsToApply[i].stat);
             if (existingBoostPercents[statIndex] != 0) {
                 mergedBoostCounts[statIndex]++;
@@ -321,6 +330,7 @@ contract StatBoosts is BasicEffect {
                 mergedBoostCounts[statIndex] = 1;
                 mergedIsMultiply[statIndex] = newBoostsToApply[i].boostType == StatBoostType.Multiply;
             }
+            unchecked { ++i; }
         }
         return (mergedBoostPercents, mergedBoostCounts, mergedIsMultiply);
     }
@@ -333,10 +343,11 @@ contract StatBoosts is BasicEffect {
         uint256 packed = isPerm ? (uint256(1) << PERM_FLAG_OFFSET) : 0;
         packed |= uint256(key) << KEY_OFFSET;
 
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 5;) {
             uint256 offset = i * 16;
             uint256 boostInstance = (uint256(boostPercents[i]) << 8) | (uint256(boostCounts[i]) << 1) | (isMultiply[i] ? 1 : 0);
             packed |= boostInstance << offset;
+            unchecked { ++i; }
         }
         return bytes32(packed);
     }
@@ -384,7 +395,7 @@ contract StatBoosts is BasicEffect {
         uint256[5] memory accumulatedNumeratorPerStat;
 
         // Single pass: find matching key AND aggregate all OTHER StatBoost effects
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 (bool effIsPerm, uint168 existingKey, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
                     _unpackBoostData(effects[i].data);
@@ -395,12 +406,14 @@ contract StatBoosts is BasicEffect {
                     foundEffectIndex = indices[i];
                     existingData = effects[i].data;
                     // DON'T add to aggregation - we'll add the merged version later
+                    unchecked { ++i; }
                     continue;
                 }
 
                 // Aggregate this effect's boosts
                 _accumulateBoosts(baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
             }
+            unchecked { ++i; }
         }
 
         // Compute the new/merged boost data and add its contribution to aggregation
@@ -466,7 +479,7 @@ contract StatBoosts is BasicEffect {
         uint256[5] memory accumulatedNumeratorPerStat;
 
         // Single pass: find matching key AND aggregate all OTHER StatBoost effects
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 (bool effIsPerm, uint168 existingKey, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
                     _unpackBoostData(effects[i].data);
@@ -476,12 +489,14 @@ contract StatBoosts is BasicEffect {
                     found = true;
                     foundEffectIndex = indices[i];
                     // DON'T add to aggregation - we're removing this effect
+                    unchecked { ++i; }
                     continue;
                 }
 
                 // Aggregate this effect's boosts
                 _accumulateBoosts(baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
             }
+            unchecked { ++i; }
         }
 
         if (found) {
@@ -503,11 +518,12 @@ contract StatBoosts is BasicEffect {
         // Single pass: collect indices to remove in reverse order
         // We iterate forward but store in reverse to enable proper removal
         uint256 removeCount = 0;
-        for (uint256 i = effects.length; i > 0; i--) {
-            if (address(effects[i - 1].effect) == address(this)) {
+        for (uint256 i = effects.length; i > 0;) {
+            unchecked { --i; }
+            if (address(effects[i].effect) == address(this)) {
                 // Remove immediately while iterating in reverse (avoids index shifting)
-                ENGINE.removeEffect(targetIndex, monIndex, indices[i - 1]);
-                removeCount++;
+                ENGINE.removeEffect(targetIndex, monIndex, indices[i]);
+                unchecked { ++removeCount; }
             }
         }
 

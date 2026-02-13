@@ -39,8 +39,9 @@ contract SaviorComplex is IAbility {
         uint256 koBitmap = ENGINE.getKOBitmap(battleKey, playerIndex);
         if (koBitmap == 0) return;
         uint256 koCount = 0;
-        for (uint256 bits = koBitmap; bits != 0; bits >>= 1) {
+        for (uint256 bits = koBitmap; bits != 0;) {
             koCount += bits & 1;
+            unchecked { bits >>= 1; }
         }
 
         // Determine boost based on stage

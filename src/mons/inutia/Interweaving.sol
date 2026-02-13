@@ -39,10 +39,11 @@ contract Interweaving is IAbility, BasicEffect {
 
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
+        for (uint256 i = 0; i < effects.length;) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
+            unchecked { ++i; }
         }
         // Otherwise, add this effect to the mon when it switches in
         // This way we can trigger on switch out
