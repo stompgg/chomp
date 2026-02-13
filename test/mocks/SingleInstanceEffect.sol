@@ -19,6 +19,16 @@ contract SingleInstanceEffect is BasicEffect {
         return "Instant Death";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x01;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](1);
+        steps[0] = EffectStep.OnApply;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return r == EffectStep.OnApply;
     }

@@ -43,6 +43,17 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     }
 
     // IEffect implementation
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x44;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.RoundEnd;
+        steps[1] = EffectStep.AfterDamage;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
         return (step == EffectStep.RoundEnd || step == EffectStep.AfterDamage);
     }

@@ -10,6 +10,14 @@ contract DummyStatus is BasicEffect {
         return "Dummy";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x00;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        return new EffectStep[](0);
+    }
+
     function shouldRunAtStep(EffectStep) external pure override returns (bool) {
         return false;
     }

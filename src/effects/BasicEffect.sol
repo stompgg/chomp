@@ -5,6 +5,15 @@ import "../Enums.sol";
 import "../Structs.sol";
 
 abstract contract BasicEffect is IEffect {
+    // Each subclass must override getStepsBitmap() to return a static constant
+    // Bitmap layout: bit i is set if effect runs at EffectStep(i)
+    // EffectStep enum: OnApply=0, RoundStart=1, RoundEnd=2, OnRemove=3,
+    //                  OnMonSwitchIn=4, OnMonSwitchOut=5, AfterDamage=6, AfterMove=7, OnUpdateMonState=8
+    function getStepsBitmap() external pure virtual returns (uint16);
+
+    // Each subclass must override to return the steps array
+    function getStepsToRun() external pure virtual returns (EffectStep[] memory);
+
     function name() external virtual returns (string memory) {
         return "";
     }

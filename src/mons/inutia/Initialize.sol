@@ -85,6 +85,10 @@ contract Initialize is IMoveSet, BasicEffect {
     /**
      *  Effect implementation
      */
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x30;
+    }
+
     function _encodeState(uint256 playerIndex, uint256 monIndex) internal pure returns (bytes32) {
         return bytes32((playerIndex << 128) | monIndex);
     }
@@ -92,6 +96,13 @@ contract Initialize is IMoveSet, BasicEffect {
     function _decodeState(bytes32 data) internal pure returns (uint256 playerIndex, uint256 monIndex) {
         playerIndex = uint256(data) >> 128;
         monIndex = uint256(data) & type(uint128).max;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.OnMonSwitchIn;
+        steps[1] = EffectStep.OnMonSwitchOut;
+        return steps;
     }
 
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {

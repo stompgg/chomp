@@ -113,6 +113,16 @@ contract SneakAttack is IMoveSet, BasicEffect {
     }
 
     // IEffect implementation — local effect that cleans up on switch-out
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x20;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](1);
+        steps[0] = EffectStep.OnMonSwitchOut;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
         return step == EffectStep.OnMonSwitchOut;
     }

@@ -7,6 +7,13 @@ import "../Structs.sol";
 interface IEffect {
     function name() external returns (string memory);
 
+    // Returns pre-computed bitmap of steps this effect runs at (set at deploy time)
+    // Bit i is set if effect runs at EffectStep(i)
+    function getStepsBitmap() external view returns (uint16);
+
+    // Returns array of steps this effect runs at (used to build bitmap for gas optimization)
+    function getStepsToRun() external pure returns (EffectStep[] memory);
+
     // Whether to run the effect at a specific step
     function shouldRunAtStep(EffectStep r) external returns (bool);
 

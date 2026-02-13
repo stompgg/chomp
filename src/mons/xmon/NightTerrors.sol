@@ -100,6 +100,17 @@ contract NightTerrors is IMoveSet, BasicEffect {
     }
 
     // Effect implementation
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x24;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.RoundEnd;
+        steps[1] = EffectStep.OnMonSwitchOut;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
         return (step == EffectStep.RoundEnd || step == EffectStep.OnMonSwitchOut);
     }

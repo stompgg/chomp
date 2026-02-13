@@ -60,6 +60,17 @@ contract Somniphobia is IMoveSet, BasicEffect {
     }
 
     // Effect implementation
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x84;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.AfterMove;
+        steps[1] = EffectStep.RoundEnd;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
         return (step == EffectStep.AfterMove || step == EffectStep.RoundEnd);
     }

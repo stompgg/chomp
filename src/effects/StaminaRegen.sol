@@ -19,6 +19,18 @@ contract StaminaRegen is BasicEffect {
         return "Stamina Regen";
     }
 
+    // RoundEnd=2, AfterMove=7 -> (1<<2)|(1<<7) = 0x84
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x84;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.RoundEnd;
+        steps[1] = EffectStep.AfterMove;
+        return steps;
+    }
+
     // Should run at end of round
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return (r == EffectStep.RoundEnd) || (r == EffectStep.AfterMove);

@@ -19,6 +19,17 @@ contract OneTurnStatBoost is BasicEffect {
         return "";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x05;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](2);
+        steps[0] = EffectStep.RoundEnd;
+        steps[1] = EffectStep.OnApply;
+        return steps;
+    }
+
     // Should run at end of round and on apply
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return (r == EffectStep.RoundEnd || r == EffectStep.OnApply);

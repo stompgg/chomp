@@ -95,8 +95,10 @@ struct BattleConfig {
 }
 
 struct EffectInstance {
-    IEffect effect;
-    bytes32 data;
+    IEffect effect;       // 160 bits
+    uint16 stepsBitmap;   // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
+    // 80 bits unused in slot 0
+    bytes32 data;         // 256 bits in slot 1
 }
 
 // View struct for getBattle - contains array instead of mapping for memory return

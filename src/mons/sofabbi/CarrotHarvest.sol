@@ -38,6 +38,16 @@ contract CarrotHarvest is IAbility, BasicEffect {
     }
 
     // IEffect implementation
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x04;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](1);
+        steps[0] = EffectStep.RoundEnd;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep step) external pure override returns (bool) {
         return step == EffectStep.RoundEnd;
     }

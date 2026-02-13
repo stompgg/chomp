@@ -19,6 +19,16 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
         return "Instant Death On Switch";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x10;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](1);
+        steps[0] = EffectStep.OnMonSwitchIn;
+        return steps;
+    }
+
     // Should run at end of round
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return r == EffectStep.OnMonSwitchIn;

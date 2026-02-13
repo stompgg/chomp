@@ -15,6 +15,16 @@ contract AfterDamageReboundEffect is BasicEffect {
         ENGINE = _ENGINE;
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x40;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](1);
+        steps[0] = EffectStep.AfterDamage;
+        return steps;
+    }
+
     // Should run at end of round
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return r == EffectStep.AfterDamage;

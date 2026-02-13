@@ -17,6 +17,19 @@ contract SleepStatus is StatusEffect {
         return "Sleep";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x0F;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](4);
+        steps[0] = EffectStep.RoundStart;
+        steps[1] = EffectStep.RoundEnd;
+        steps[2] = EffectStep.OnApply;
+        steps[3] = EffectStep.OnRemove;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return
             r == EffectStep.RoundStart || r == EffectStep.RoundEnd || r == EffectStep.OnApply

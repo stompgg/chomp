@@ -217,6 +217,7 @@ contract Engine is IEngine, MappingAllocator {
             if (numEffects > 0) {
                 for (uint i = 0; i < numEffects; ++i) {
                     config.globalEffects[i].effect = effects[i];
+                    config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
                     config.globalEffects[i].data = data[i];
                 }
                 config.globalEffectsLength = uint8(effects.length);
@@ -661,6 +662,9 @@ contract Engine is IEngine, MappingAllocator {
             bytes32 extraDataToUse = extraData;
             bool removeAfterRun = false;
 
+            // Fetch steps bitmap once from effect (stored as immutable in effect contract)
+            uint16 stepsBitmap = effect.getStepsBitmap();
+
             // Emit event first, then handle side effects
             emit EffectAdd(
                 battleKey,
@@ -672,8 +676,8 @@ contract Engine is IEngine, MappingAllocator {
                 uint256(EffectStep.OnApply)
             );
 
-            // Check if we have to run an onApply state update
-            if (effect.shouldRunAtStep(EffectStep.OnApply)) {
+            // Check if we have to run an onApply state update (use bitmap instead of external call)
+            if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(tempRNG, extraData, targetIndex, monIndex);
             }
@@ -686,6 +690,7 @@ contract Engine is IEngine, MappingAllocator {
                     uint256 effectIndex = config.globalEffectsLength;
                     EffectInstance storage effectSlot = config.globalEffects[effectIndex];
                     effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
                     effectSlot.data = extraDataToUse;
                     config.globalEffectsLength = uint8(effectIndex + 1);
                 } else if (targetIndex == 0) {
@@ -694,6 +699,7 @@ contract Engine is IEngine, MappingAllocator {
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
                     EffectInstance storage effectSlot = config.p0Effects[slotIndex];
                     effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
                     effectSlot.data = extraDataToUse;
                     config.packedP0EffectsCount = _setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + 1);
                 } else {
@@ -701,6 +707,7 @@ contract Engine is IEngine, MappingAllocator {
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
                     EffectInstance storage effectSlot = config.p1Effects[slotIndex];
                     effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
                     effectSlot.data = extraDataToUse;
                     config.packedP1EffectsCount = _setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + 1);
                 }
@@ -764,6 +771,7 @@ contract Engine is IEngine, MappingAllocator {
     ) private {
         EffectInstance storage effectToRemove = config.globalEffects[indexToRemove];
         IEffect effect = effectToRemove.effect;
+        uint16 stepsBitmap = effectToRemove.stepsBitmap;
         bytes32 data = effectToRemove.data;
 
         // Skip if already tombstoned
@@ -771,7 +779,8 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
+        // Use stored bitmap instead of external call to shouldRunAtStep()
+        if ((stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             effect.onRemove(data, 2, monIndex);
         }
 
@@ -792,6 +801,7 @@ contract Engine is IEngine, MappingAllocator {
 
         EffectInstance storage effectToRemove = effects[indexToRemove];
         IEffect effect = effectToRemove.effect;
+        uint16 stepsBitmap = effectToRemove.stepsBitmap;
         bytes32 data = effectToRemove.data;
 
         // Skip if already tombstoned
@@ -799,7 +809,8 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        if (effect.shouldRunAtStep(EffectStep.OnRemove)) {
+        // Use stored bitmap instead of external call to shouldRunAtStep()
+        if ((stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             effect.onRemove(data, targetIndex, monIndex);
         }
 
@@ -1163,7 +1174,7 @@ contract Engine is IEngine, MappingAllocator {
             if (address(eff.effect) != TOMBSTONE_ADDRESS) {
                 _runSingleEffect(
                     config, rng, effectIndex, playerIndex, monIndex, round, extraEffectsData,
-                    eff.effect, eff.data, uint96(slotIndex)
+                    eff.effect, eff.stepsBitmap, eff.data, uint96(slotIndex)
                 );
             }
 
@@ -1180,10 +1191,12 @@ contract Engine is IEngine, MappingAllocator {
         EffectStep round,
         bytes memory extraEffectsData,
         IEffect effect,
+        uint16 stepsBitmap,
         bytes32 data,
         uint96 slotIndex
     ) private {
-        if (!effect.shouldRunAtStep(round)) {
+        // Use stored bitmap instead of external call to shouldRunAtStep()
+        if ((stepsBitmap & (1 << uint8(round))) == 0) {
             return;
         }
 

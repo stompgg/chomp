@@ -27,6 +27,19 @@ contract Overclock is BasicEffect {
         return "Overclock";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x1D;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](4);
+        steps[0] = EffectStep.OnApply;
+        steps[1] = EffectStep.RoundEnd;
+        steps[2] = EffectStep.OnMonSwitchIn;
+        steps[3] = EffectStep.OnRemove;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return
             (r == EffectStep.OnApply || r == EffectStep.RoundEnd || r == EffectStep.OnMonSwitchIn

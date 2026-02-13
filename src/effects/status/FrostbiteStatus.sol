@@ -23,6 +23,18 @@ contract FrostbiteStatus is StatusEffect {
         return "Frostbite";
     }
 
+    function getStepsBitmap() external pure override returns (uint16) {
+        return 0x0D;
+    }
+
+    function getStepsToRun() external pure override returns (EffectStep[] memory) {
+        EffectStep[] memory steps = new EffectStep[](3);
+        steps[0] = EffectStep.OnApply;
+        steps[1] = EffectStep.RoundEnd;
+        steps[2] = EffectStep.OnRemove;
+        return steps;
+    }
+
     function shouldRunAtStep(EffectStep r) external pure override returns (bool) {
         return (r == EffectStep.OnApply || r == EffectStep.RoundEnd || r == EffectStep.OnRemove);
     }
