@@ -41,7 +41,7 @@ contract Renormalize is IMoveSet {
         uint256 monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
 
         // Set Baselight level to 3
-        BASELIGHT.setBaselightLevel(attackerPlayerIndex, monIndex, 3);
+        BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, monIndex, 3);
 
         // Clear Loop active flag so Loop can be used again
         LOOP.clearLoopActive(attackerPlayerIndex, monIndex);

@@ -24,7 +24,7 @@ contract SingleInstanceEffect is BasicEffect {
         return 0x01;
     }
 
-    function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool removeAfterRun)
@@ -34,9 +34,9 @@ contract SingleInstanceEffect is BasicEffect {
         return (bytes32(0), false);
     }
 
-    function shouldApply(bytes32, uint256 targetIndex, uint256 monIndex) external view override returns (bool) {
+    function shouldApply(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) external view override returns (bool) {
         bytes32 indexHash = keccak256(abi.encode(targetIndex, monIndex));
-        uint192 value = ENGINE.getGlobalKV(ENGINE.battleKeyForWrite(), indexHash);
+        uint192 value = ENGINE.getGlobalKV(battleKey, indexHash);
         return value == 0;
     }
 }

@@ -77,7 +77,7 @@ contract Q5 is IMoveSet, BasicEffect {
         return 0x02;
     }
 
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256, uint256)
+    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -88,13 +88,13 @@ contract Q5 is IMoveSet, BasicEffect {
             AttackCalculator._calculateDamage(
                 ENGINE,
                 TYPE_CALCULATOR,
-                ENGINE.battleKeyForWrite(),
+                battleKey,
                 attackerPlayerIndex,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
-                moveType(ENGINE.battleKeyForWrite()),
-                moveClass(ENGINE.battleKeyForWrite()),
+                moveType(battleKey),
+                moveClass(battleKey),
                 rng,
                 DEFAULT_CRIT_RATE
             );

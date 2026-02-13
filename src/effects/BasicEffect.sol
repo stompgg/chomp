@@ -15,12 +15,12 @@ abstract contract BasicEffect is IEffect {
     }
 
     // Whether or not to add the effect if the step condition is met
-    function shouldApply(bytes32, uint256, uint256) external virtual returns (bool) {
+    function shouldApply(bytes32, bytes32, uint256, uint256) external virtual returns (bool) {
         return true;
     }
 
     // Lifecycle hooks during normal battle flow
-    function onRoundStart(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundStart(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -28,7 +28,7 @@ abstract contract BasicEffect is IEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -37,7 +37,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256, uint256)
+    function onMonSwitchIn(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -46,7 +46,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -55,7 +55,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(uint256, bytes32 extraData, uint256, uint256, int32)
+    function onAfterDamage(bytes32, uint256, bytes32 extraData, uint256, uint256, int32)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -63,7 +63,7 @@ abstract contract BasicEffect is IEffect {
         return (extraData, false);
     }
 
-    function onAfterMove(uint256, bytes32 extraData, uint256, uint256)
+    function onAfterMove(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -73,7 +73,7 @@ abstract contract BasicEffect is IEffect {
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     // WARNING: Avoid chaining this effect to prevent recursive calls
-    function onUpdateMonState(uint256, bytes32 extraData, uint256, uint256, MonStateIndexName, int32)
+    function onUpdateMonState(bytes32, uint256, bytes32 extraData, uint256, uint256, MonStateIndexName, int32)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -82,7 +82,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // Lifecycle hooks when being applied or removed
-    function onApply(uint256, bytes32, uint256, uint256)
+    function onApply(bytes32, uint256, bytes32, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -90,5 +90,5 @@ abstract contract BasicEffect is IEffect {
         return (updatedExtraData, removeAfterRun);
     }
 
-    function onRemove(bytes32 extraData, uint256 targetIndex, uint256 monIndex) external virtual {}
+    function onRemove(bytes32, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external virtual {}
 }

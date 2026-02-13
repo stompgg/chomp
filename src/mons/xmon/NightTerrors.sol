@@ -104,7 +104,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return 0x24;
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
@@ -112,8 +112,6 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // targetIndex/monIndex is the attacker (who has the effect)
         // defenderPlayerIndex is stored in extraData (who should take damage)
         (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
-
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
 
         // Check current stamina of the attacker (who has the effect)
         int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
@@ -164,7 +162,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override

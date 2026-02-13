@@ -11,7 +11,7 @@ import {IEffect} from "../../effects/IEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract IronWall is IMoveSet, BasicEffect {
-    
+
     int32 public constant HEAL_PERCENT = 50;
     int32 public constant INITIAL_HEAL_PERCENT = 20;
 
@@ -83,7 +83,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return 0x60;
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damageDealt)
+    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damageDealt)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -94,7 +94,7 @@ contract IronWall is IMoveSet, BasicEffect {
         if (
             healAmount > 0
                 && ENGINE.getMonStateForBattle(
-                        ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.IsKnockedOut
+                        battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                     ) == 0
         ) {
             ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
@@ -102,7 +102,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256)
         external
         pure
         override

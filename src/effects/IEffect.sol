@@ -13,30 +13,30 @@ interface IEffect {
     function getStepsBitmap() external view returns (uint16);
 
     // Whether or not to add the effect if some condition is met
-    function shouldApply(bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);
+    function shouldApply(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);
 
     // Lifecycle hooks during normal battle flow
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
-    function onRoundEnd(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
-
-    function onMonSwitchIn(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
 
-    function onMonSwitchOut(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+        external
+        returns (bytes32 updatedExtraData, bool removeAfterRun);
+
+    function onMonSwitchOut(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damage)
+    function onAfterDamage(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damage)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
 
-    function onAfterMove(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
 
@@ -44,6 +44,7 @@ interface IEffect {
     // WARNING: Avoid chaining this effect to prevent recursive calls
     // (e.g., an effect that mutates state triggering another effect that mutates state)
     function onUpdateMonState(
+        bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
         uint256 playerIndex,
@@ -53,8 +54,8 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // Lifecycle hooks when being applied or removed
-    function onApply(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         returns (bytes32 updatedExtraData, bool removeAfterRun);
-    function onRemove(bytes32 extraData, uint256 targetIndex, uint256 monIndex) external;
+    function onRemove(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external;
 }

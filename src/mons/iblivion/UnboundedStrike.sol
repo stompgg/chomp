@@ -48,7 +48,7 @@ contract UnboundedStrike is IMoveSet {
         if (baselightLevel >= REQUIRED_STACKS) {
             // Empowered version: consume all 3 stacks
             power = EMPOWERED_POWER;
-            BASELIGHT.setBaselightLevel(attackerPlayerIndex, monIndex, 0);
+            BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, monIndex, 0);
         } else {
             // Normal version: no stacks consumed
             power = BASE_POWER;

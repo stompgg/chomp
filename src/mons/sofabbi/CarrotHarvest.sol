@@ -43,7 +43,7 @@ contract CarrotHarvest is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

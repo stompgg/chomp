@@ -46,7 +46,7 @@ contract StatBoosts is BasicEffect {
     }
 
     // Removes all temporary boosts on mon switch out
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
@@ -56,7 +56,7 @@ contract StatBoosts is BasicEffect {
         if (!isPerm) {
             // This is a temp boost, remove it and recalculate stats
             // Pass excludeTempBoosts=true since all temp boosts are being removed
-            _recalculateAndApplyStats(targetIndex, monIndex, true);
+            _recalculateAndApplyStats(battleKey, targetIndex, monIndex, true);
             return (extraData, true); // Remove this effect
         }
         return (extraData, false);
@@ -253,8 +253,7 @@ contract StatBoosts is BasicEffect {
 
     // Recalculate stats by iterating through all StatBoosts effects
     // If excludeTempBoosts is true, skip temp boosts (used during onMonSwitchOut when temp boosts are being removed)
-    function _recalculateAndApplyStats(uint256 targetIndex, uint256 monIndex, bool excludeTempBoosts) internal {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+    function _recalculateAndApplyStats(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, bool excludeTempBoosts) internal {
         bytes32 snapshotKey = _snapshotKey(targetIndex, monIndex);
         uint192 prevSnapshot = ENGINE.getGlobalKV(battleKey, snapshotKey);
 

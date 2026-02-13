@@ -64,12 +64,11 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return 0x84;
     }
 
-    function onAfterMove(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
 
         // Unpack the move index from packedMoveIndex
@@ -88,7 +87,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override
@@ -102,4 +101,3 @@ contract Somniphobia is IMoveSet, BasicEffect {
         }
     }
 }
-

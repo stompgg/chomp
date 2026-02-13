@@ -46,12 +46,11 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
-    function onAfterMove(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
@@ -66,7 +65,7 @@ contract Tinderclaws is IAbility, BasicEffect {
             rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
             if (rng % BURN_CHANCE == BURN_CHANCE - 1) {
                 // Apply burn to self (if it can be applied)
-                if (BURN_STATUS.shouldApply(battleKey, targetIndex, monIndex)) {
+                if (BURN_STATUS.shouldApply(battleKey, bytes32(0), targetIndex, monIndex)) {
                     ENGINE.addEffect(targetIndex, monIndex, BURN_STATUS, bytes32(0));
                 }
             }
@@ -75,12 +74,11 @@ contract Tinderclaws is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         bool isBurned = _isBurned(battleKey, targetIndex, monIndex);
         bool hasBoost = uint256(extraData) == 1;
 
@@ -120,4 +118,3 @@ contract Tinderclaws is IAbility, BasicEffect {
         }
     }
 }
-

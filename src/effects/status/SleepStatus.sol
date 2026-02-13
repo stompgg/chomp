@@ -27,15 +27,14 @@ contract SleepStatus is StatusEffect {
     }
 
     // Whether or not to add the effect if the step condition is met
-    function shouldApply(bytes32 data, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
-        bool shouldApplyStatusInGeneral = super.shouldApply(data, targetIndex, monIndex);
+    function shouldApply(bytes32 battleKey, bytes32 data, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
+        bool shouldApplyStatusInGeneral = super.shouldApply(battleKey, data, targetIndex, monIndex);
         bool playerHasZeroSleepers =
-            address(uint160(ENGINE.getGlobalKV(ENGINE.battleKeyForWrite(), _globalSleepKey(targetIndex)))) == address(0);
+            address(uint160(ENGINE.getGlobalKV(battleKey, _globalSleepKey(targetIndex)))) == address(0);
         return (shouldApplyStatusInGeneral && playerHasZeroSleepers);
     }
 
-    function _applySleep(uint256 targetIndex, uint256) internal {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+    function _applySleep(bytes32 battleKey, uint256 targetIndex, uint256) internal {
         // Get exiting move index (unpack from packedMoveIndex)
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
@@ -45,35 +44,34 @@ contract SleepStatus is StatusEffect {
     }
 
     // At the start of the turn, check to see if we should apply sleep or end early
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32, bool)
     {
         bool wakeEarly = rng % 3 == 0;
         if (!wakeEarly) {
-            _applySleep(targetIndex, monIndex);
+            _applySleep(battleKey, targetIndex, monIndex);
         }
         return (extraData, wakeEarly);
     }
 
     // On apply, checks to apply the sleep flag, and then sets the extraData to be the duration
-    function onApply(uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32 battleKey, uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(rng, data, targetIndex, monIndex);
+        super.onApply(battleKey, rng, data, targetIndex, monIndex);
         // Check if opponent has yet to move and if so, also affect their move for this round
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(battleKey, rng);
         if (targetIndex != priorityPlayerIndex) {
-            _applySleep(targetIndex, monIndex);
+            _applySleep(battleKey, targetIndex, monIndex);
         }
         return (bytes32(DURATION), false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override
@@ -87,8 +85,8 @@ contract SleepStatus is StatusEffect {
         }
     }
 
-    function onRemove(bytes32 extraData, uint256 targetIndex, uint256 monIndex) public override {
-        super.onRemove(extraData, targetIndex, monIndex);
+    function onRemove(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) public override {
+        super.onRemove(battleKey, extraData, targetIndex, monIndex);
         ENGINE.setGlobalKV(_globalSleepKey(targetIndex), 0);
     }
 }

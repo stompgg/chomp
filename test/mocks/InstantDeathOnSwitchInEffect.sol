@@ -25,7 +25,7 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
     }
 
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)
-    function onMonSwitchIn(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

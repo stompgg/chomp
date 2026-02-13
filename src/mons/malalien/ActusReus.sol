@@ -43,7 +43,7 @@ contract ActusReus is IAbility, BasicEffect {
         return 0xC0;
     }
 
-    function onAfterMove(uint256, bytes32 extraData, uint256 targetIndex, uint256)
+    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256)
         external
         override
         view
@@ -52,10 +52,10 @@ contract ActusReus is IAbility, BasicEffect {
         // Check if opposing mon is KOed
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
         bool isOtherMonKOed =
             ENGINE.getMonStateForBattle(
-                ENGINE.battleKeyForWrite(), otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
+                battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
             ) == 1;
         if (isOtherMonKOed) {
             return (bytes32(uint256(1)), false);
@@ -63,7 +63,7 @@ contract ActusReus is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
         external
         override
         returns (bytes32, bool)
@@ -73,12 +73,12 @@ contract ActusReus is IAbility, BasicEffect {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed
             bool isKOed =
                 ENGINE.getMonStateForBattle(
-                    ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.IsKnockedOut
+                    battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                 ) == 1;
             if (isKOed) {
                 uint256 otherPlayerIndex = (targetIndex + 1) % 2;
                 uint256 otherPlayerActiveMonIndex =
-                    ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+                    ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
                 StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
                 statBoosts[0] = StatBoostToApply({
                     stat: MonStateIndexName.Speed,

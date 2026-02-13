@@ -53,6 +53,6 @@ contract DualShock is StandardAttack {
         ENGINE.addEffect(attackerPlayerIndex, activeMonIndex, ZAP_STATUS, "");
 
         // Apply Overclock to team
-        OVERCLOCK.applyOverclock(attackerPlayerIndex);
+        OVERCLOCK.applyOverclock(battleKey, attackerPlayerIndex);
     }
 }

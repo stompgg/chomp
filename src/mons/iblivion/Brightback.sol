@@ -57,7 +57,7 @@ contract Brightback is IMoveSet {
         // Only heal if we have at least 1 Baselight stack
         if (baselightLevel >= 1) {
             // Consume 1 Baselight stack
-            BASELIGHT.decreaseBaselightLevel(attackerPlayerIndex, monIndex, 1);
+            BASELIGHT.decreaseBaselightLevel(battleKey, attackerPlayerIndex, monIndex, 1);
 
             // Heal for half of damage done
             int32 healAmount = damageDealt / 2;

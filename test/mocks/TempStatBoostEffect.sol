@@ -24,7 +24,7 @@ contract TempStatBoostEffect is BasicEffect {
         return 0x21;
     }
 
-    function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -33,7 +33,7 @@ contract TempStatBoostEffect is BasicEffect {
         return (bytes32(0), false);
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

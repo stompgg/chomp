@@ -99,7 +99,7 @@ contract Initialize is IMoveSet, BasicEffect {
         monIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -112,7 +112,7 @@ contract Initialize is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

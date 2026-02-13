@@ -118,7 +118,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return 0x20;
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256)
         external
         pure
         override

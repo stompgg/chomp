@@ -36,9 +36,8 @@ contract Overclock is BasicEffect {
         return keccak256(abi.encode(playerIndex, name()));
     }
 
-    function applyOverclock(uint256 playerIndex) public {
+    function applyOverclock(bytes32 battleKey, uint256 playerIndex) public {
         // Check if we have an active Overclock effect
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         uint256 duration = getDuration(battleKey, playerIndex);
         if (duration == 0) {
             // If not, add the effect to the global effects array
@@ -78,7 +77,7 @@ contract Overclock is BasicEffect {
         STAT_BOOST.removeStatBoosts(playerIndex, monIndex, StatBoostFlag.Temp);
     }
 
-    function onApply(uint256, bytes32 extraData, uint256, uint256)
+    function onApply(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -89,19 +88,19 @@ contract Overclock is BasicEffect {
         setDuration(DEFAULT_DURATION, playerIndex);
 
         // Apply stat change to the team of the player who summoned Overclock
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[playerIndex];
+        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex];
         _applyStatChange(playerIndex, activeMonIndex);
 
         return (extraData, false);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         uint256 playerIndex = uint256(extraData);
-        uint256 duration = getDuration(ENGINE.battleKeyForWrite(), playerIndex);
+        uint256 duration = getDuration(battleKey, playerIndex);
         if (duration == 1) {
             return (extraData, true);
         } else {
@@ -110,7 +109,7 @@ contract Overclock is BasicEffect {
         }
     }
 
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -123,13 +122,20 @@ contract Overclock is BasicEffect {
         return (extraData, false);
     }
 
-    function onRemove(bytes32 extraData, uint256, uint256) external override {
+    function onRoundStart(bytes32, uint256, bytes32 extraData, uint256, uint256)
+        external
+        override
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
+        return (extraData, false);
+    }
+
+    function onRemove(bytes32 battleKey, bytes32 extraData, uint256, uint256) external override {
         uint256 playerIndex = uint256(extraData);
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[playerIndex];
+        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex];
         // Reset stat changes from the mon on the team of the player who summoned Overclock
         _removeStatChange(playerIndex, activeMonIndex);
         // Clear the duration when we clear the effect
         setDuration(0, playerIndex);
     }
 }
-

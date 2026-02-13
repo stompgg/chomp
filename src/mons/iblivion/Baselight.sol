@@ -52,19 +52,17 @@ contract Baselight is IAbility, BasicEffect {
         return level;
     }
 
-    function setBaselightLevel(uint256 playerIndex, uint256 monIndex, uint256 level) public {
+    function setBaselightLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 level) public {
         if (level > MAX_BASELIGHT_LEVEL) {
             level = MAX_BASELIGHT_LEVEL;
         }
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         (bool exists, uint256 effectIndex,) = _findBaselightEffect(battleKey, playerIndex, monIndex);
         if (exists) {
             ENGINE.editEffect(playerIndex, monIndex, effectIndex, bytes32(level));
         }
     }
 
-    function decreaseBaselightLevel(uint256 playerIndex, uint256 monIndex, uint256 amount) public {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+    function decreaseBaselightLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 amount) public {
         (bool exists, uint256 effectIndex, uint256 currentLevel) = _findBaselightEffect(battleKey, playerIndex, monIndex);
         if (exists) {
             uint256 newLevel = amount >= currentLevel ? 0 : currentLevel - amount;
@@ -87,7 +85,7 @@ contract Baselight is IAbility, BasicEffect {
         return 0x04;
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256)
         external
         pure
         override
