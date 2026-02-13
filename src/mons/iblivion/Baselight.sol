@@ -85,7 +85,7 @@ contract Baselight is IAbility, BasicEffect {
         return 0x04;
     }
 
-    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override

@@ -30,9 +30,15 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return "Sneak Attack";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240 extraData,
+        uint256 rng
+    ) external {
         // Check if already used this switch-in (effect present = already used)
-        uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
@@ -118,7 +124,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return 0x20;
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
         external
         pure
         override

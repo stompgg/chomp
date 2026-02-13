@@ -18,7 +18,7 @@ contract EditEffectAttack is IMoveSet {
         return "Edit Effect Attack";
     }
 
-    function move(bytes32, uint256, uint240 extraData, uint256) external {
+    function move(bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
         // Unpack extraData: lower 80 bits = targetIndex, next 80 bits = monIndex, upper 80 bits = effectIndex
         uint256 targetIndex = uint256(extraData) & ((1 << 80) - 1);
         uint256 monIndex = (uint256(extraData) >> 80) & ((1 << 80) - 1);

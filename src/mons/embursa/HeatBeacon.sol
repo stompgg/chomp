@@ -23,11 +23,16 @@ contract HeatBeacon is IMoveSet {
         return "Heat Beacon";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256
+    ) external {
         // Apply burn to opposing mon
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 defenderMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
         ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
 
         // Clear the priority boost

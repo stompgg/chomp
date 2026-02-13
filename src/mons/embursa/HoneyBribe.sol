@@ -39,22 +39,27 @@ contract HoneyBribe is IMoveSet {
         }
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256
+    ) external {
         // Heal active mon by max HP / 2**bribeLevel
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        uint256 bribeLevel = _getBribeLevel(battleKey, attackerPlayerIndex, activeMonIndex);
-        uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp);
+        uint256 bribeLevel = _getBribeLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
+        uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** bribeLevel))));
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp);
+            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }
-        ENGINE.updateMonState(attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp, healAmount);
+        ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
 
         // Heal opposing active mon by max HP / 2**(bribeLevel + 1)
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
         healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** (bribeLevel + 1)))));
         currentDamage =
             ENGINE.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
@@ -73,7 +78,7 @@ contract HoneyBribe is IMoveSet {
         STAT_BOOSTS.addStatBoosts(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // Update the bribe level
-        _increaseBribeLevel(battleKey, attackerPlayerIndex, activeMonIndex);
+        _increaseBribeLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Clear the priority boost
         if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {

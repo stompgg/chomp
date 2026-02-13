@@ -34,20 +34,34 @@ contract StaminaRegen is BasicEffect {
     }
 
     // Regen stamina on round end for both active mons
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32, uint256, uint256) external override returns (bytes32, bool) {
+    function onRoundEnd(
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256,
+        uint256,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external override returns (bytes32, bool) {
         uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
-        uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
         // Update stamina for both active mons only if it's a 2 player turn
         if (playerSwitchForTurnFlag == 2) {
-            for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
-                _regenStamina(battleKey, playerIndex, activeMonIndex[playerIndex]);
-            }
+            _regenStamina(battleKey, 0, p0ActiveMonIndex);
+            _regenStamina(battleKey, 1, p1ActiveMonIndex);
         }
         return (bytes32(0), false);
     }
 
     // Regen stamina if the mon did a No Op (i.e. resting)
-    function onAfterMove(bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32, bool)

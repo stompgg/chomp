@@ -46,7 +46,7 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
-    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -74,7 +74,7 @@ contract Tinderclaws is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

@@ -44,7 +44,15 @@ contract SleepStatus is StatusEffect {
     }
 
     // At the start of the turn, check to see if we should apply sleep or end early
-    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32, bool)
@@ -57,12 +65,20 @@ contract SleepStatus is StatusEffect {
     }
 
     // On apply, checks to apply the sleep flag, and then sets the extraData to be the duration
-    function onApply(bytes32 battleKey, uint256 rng, bytes32 data, uint256 targetIndex, uint256 monIndex)
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 data,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    )
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(battleKey, rng, data, targetIndex, monIndex);
+        super.onApply(battleKey, rng, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
         // Check if opponent has yet to move and if so, also affect their move for this round
         uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(battleKey, rng);
         if (targetIndex != priorityPlayerIndex) {
@@ -71,7 +87,7 @@ contract SleepStatus is StatusEffect {
         return (bytes32(DURATION), false);
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override
@@ -85,8 +101,15 @@ contract SleepStatus is StatusEffect {
         }
     }
 
-    function onRemove(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) public override {
-        super.onRemove(battleKey, extraData, targetIndex, monIndex);
+    function onRemove(
+        bytes32 battleKey,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) public override {
+        super.onRemove(battleKey, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
         ENGINE.setGlobalKV(_globalSleepKey(targetIndex), 0);
     }
 }

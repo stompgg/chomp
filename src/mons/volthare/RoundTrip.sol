@@ -34,12 +34,16 @@ contract RoundTrip is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) public override {
         // Deal the damage
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, rng);
+        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
 
         if (damage > 0) {
             // extraData contains the swap index as raw uint240

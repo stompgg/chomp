@@ -16,29 +16,68 @@ interface IEffect {
     function shouldApply(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);
 
     // Lifecycle hooks during normal battle flow
-    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
-    function onRoundEnd(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
+    // p0ActiveMonIndex and p1ActiveMonIndex are passed to avoid external calls back to Engine
+    function onRoundStart(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
-    function onMonSwitchIn(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
+    function onRoundEnd(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
-    function onMonSwitchOut(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
+    function onMonSwitchIn(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
+
+    function onMonSwitchOut(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32 damage)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
+    function onAfterDamage(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex,
+        int32 damage
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
-    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
+    function onAfterMove(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     // WARNING: Avoid chaining this effect to prevent recursive calls
@@ -49,13 +88,29 @@ interface IEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // Lifecycle hooks when being applied or removed
-    function onApply(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
-        external
-        returns (bytes32 updatedExtraData, bool removeAfterRun);
-    function onRemove(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external;
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
+
+    function onRemove(
+        bytes32 battleKey,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external;
 }

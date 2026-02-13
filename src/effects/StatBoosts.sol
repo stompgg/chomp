@@ -46,7 +46,15 @@ contract StatBoosts is BasicEffect {
     }
 
     // Removes all temporary boosts on mon switch out
-    function onMonSwitchOut(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32, bool)

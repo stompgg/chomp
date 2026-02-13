@@ -41,16 +41,19 @@ contract DualShock is StandardAttack {
         OVERCLOCK = _OVERCLOCK;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, extraData, rng);
+        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
 
         // Apply Zap to self
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        ENGINE.addEffect(attackerPlayerIndex, activeMonIndex, ZAP_STATUS, "");
+        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, ZAP_STATUS, "");
 
         // Apply Overclock to team
         OVERCLOCK.applyOverclock(battleKey, attackerPlayerIndex);

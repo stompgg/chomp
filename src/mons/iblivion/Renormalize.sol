@@ -37,17 +37,22 @@ contract Renormalize is IMoveSet {
         return "Renormalize";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
-        uint256 monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
         // Set Baselight level to 3
-        BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, monIndex, 3);
+        BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex, 3);
 
         // Clear Loop active flag so Loop can be used again
-        LOOP.clearLoopActive(attackerPlayerIndex, monIndex);
+        LOOP.clearLoopActive(attackerPlayerIndex, attackerMonIndex);
 
         // Clear all StatBoost effects and reset stats to base values
-        STAT_BOOSTS.clearAllBoostsForMon(attackerPlayerIndex, monIndex);
+        STAT_BOOSTS.clearAllBoostsForMon(attackerPlayerIndex, attackerMonIndex);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

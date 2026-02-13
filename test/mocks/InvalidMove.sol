@@ -20,7 +20,7 @@ contract InvalidMove is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(bytes32, uint256, uint240, uint256) external pure {
+    function move(bytes32, uint256, uint256, uint256, uint240, uint256) external pure {
         // No-op
     }
 

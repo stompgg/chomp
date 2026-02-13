@@ -43,7 +43,7 @@ contract ActusReus is IAbility, BasicEffect {
         return 0xC0;
     }
 
-    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256)
+    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         view
@@ -51,8 +51,7 @@ contract ActusReus is IAbility, BasicEffect {
     {
         // Check if opposing mon is KOed
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
+        uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
         bool isOtherMonKOed =
             ENGINE.getMonStateForBattle(
                 battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
@@ -63,7 +62,7 @@ contract ActusReus is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32)
         external
         override
         returns (bytes32, bool)
@@ -77,8 +76,7 @@ contract ActusReus is IAbility, BasicEffect {
                 ) == 1;
             if (isKOed) {
                 uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-                uint256 otherPlayerActiveMonIndex =
-                    ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
+                uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
                 StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
                 statBoosts[0] = StatBoostToApply({
                     stat: MonStateIndexName.Speed,

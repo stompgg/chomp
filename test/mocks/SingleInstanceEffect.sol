@@ -24,7 +24,7 @@ contract SingleInstanceEffect is BasicEffect {
         return 0x01;
     }
 
-    function onApply(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32, bool removeAfterRun)

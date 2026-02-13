@@ -45,6 +45,8 @@ contract Dreamcatcher is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
+        uint256,
+        uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {

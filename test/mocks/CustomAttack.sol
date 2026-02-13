@@ -50,8 +50,15 @@ contract CustomAttack is IMoveSet {
         return "CustomAttack";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
-        _standardAttack.move(battleKey, attackerPlayerIndex, extraData, rng);
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) external {
+        _standardAttack.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
     }
 
     function priority(bytes32 battleKey, uint256 playerIndex) external view returns (uint32) {

@@ -37,7 +37,7 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
         // Add effect to global effects
         ENGINE.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
@@ -77,7 +77,7 @@ contract Q5 is IMoveSet, BasicEffect {
         return 0x02;
     }
 
-    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256)
+    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32, bool)

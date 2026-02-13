@@ -25,15 +25,12 @@ contract ReduceSpAtkMove is IMoveSet {
         return "Reduce SpAtk";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         // Get the opposing player's index
         uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
-        // Get the opposing player's active mon index
-        uint256 opposingMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[opposingPlayerIndex];
-
         // Reduce the opposing mon's SpecialAttack by 1
-        ENGINE.updateMonState(opposingPlayerIndex, opposingMonIndex, MonStateIndexName.SpecialAttack, -1);
+        ENGINE.updateMonState(opposingPlayerIndex, defenderMonIndex, MonStateIndexName.SpecialAttack, -1);
     }
 
     function priority(bytes32, uint256) external pure returns (uint32) {

@@ -26,10 +26,9 @@ contract TestMove is IMoveSet {
         return "Test Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         uint256 opponentIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 opponentMonIndex = ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[opponentIndex];
-        ENGINE.dealDamage(opponentIndex, opponentMonIndex, _damage);
+        ENGINE.dealDamage(opponentIndex, defenderMonIndex, _damage);
     }
 
     function priority(bytes32, uint256) external pure returns (uint32) {

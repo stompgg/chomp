@@ -34,15 +34,18 @@ contract WitherAway is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) public override {
         // Deal the damage and inflict panic
-        super.move(battleKey, attackerPlayerIndex, extraData, rng);
+        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
 
         // Also inflict panic on self
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        ENGINE.addEffect(attackerPlayerIndex, activeMonIndex, effect(battleKey), "");
+        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, effect(battleKey), "");
     }
 }

@@ -24,7 +24,14 @@ contract GildedRecovery is IMoveSet {
         return "Gilded Recovery";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240 extraData,
+        uint256
+    ) external {
         // extraData contains the mon index as raw uint240
         uint256 targetMonIndex = uint256(extraData);
 
@@ -48,20 +55,19 @@ contract GildedRecovery is IMoveSet {
             ENGINE.updateMonState(attackerPlayerIndex, targetMonIndex, MonStateIndexName.Stamina, STAMINA_BONUS);
 
             // Heal 50% of max HP for self
-            uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
             int32 maxHp =
-                int32(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp));
+                int32(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp));
             int32 healAmount = (maxHp * HEAL_PERCENT) / 100;
 
             // Don't overheal
             int32 currentHpDelta =
-                ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp);
+                ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
             if (currentHpDelta + healAmount > 0) {
                 healAmount = -currentHpDelta;
             }
 
             if (healAmount != 0) {
-                ENGINE.updateMonState(attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp, healAmount);
+                ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
             }
         }
         // If no status effect, do nothing

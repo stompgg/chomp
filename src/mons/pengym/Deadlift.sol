@@ -26,9 +26,15 @@ contract Deadlift is IMoveSet {
         return "Deadlift";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
         // Apply the buffs
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.Attack,
@@ -40,7 +46,7 @@ contract Deadlift is IMoveSet {
             boostPercent: DEF_BUFF_PERCENT,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, activeMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

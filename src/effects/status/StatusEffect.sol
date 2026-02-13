@@ -28,7 +28,7 @@ abstract contract StatusEffect is BasicEffect {
         }
     }
 
-    function onApply(bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         public
         virtual
         override
@@ -43,7 +43,7 @@ abstract contract StatusEffect is BasicEffect {
         }
     }
 
-    function onRemove(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public virtual override {
+    function onRemove(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
         // On remove, reset the status flag
         ENGINE.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), 0);
     }

@@ -40,15 +40,21 @@ contract UnboundedStrike is IMoveSet {
         return "Unbounded Strike";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
-        uint256 monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, monIndex);
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256 rng
+    ) external {
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
 
         uint32 power;
         if (baselightLevel >= REQUIRED_STACKS) {
             // Empowered version: consume all 3 stacks
             power = EMPOWERED_POWER;
-            BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, monIndex, 0);
+            BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex, 0);
         } else {
             // Normal version: no stacks consumed
             power = BASE_POWER;

@@ -23,12 +23,20 @@ contract ZapStatus is StatusEffect {
         return 0x0F;
     }
 
-    function onApply(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    )
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(battleKey, rng, extraData, targetIndex, monIndex);
+        super.onApply(battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Compute priority player index
         uint256 priorityPlayerIndex = ENGINE.computePriorityPlayerIndex(battleKey, rng);
@@ -47,7 +55,15 @@ contract ZapStatus is StatusEffect {
         return (bytes32(uint256(state)), false);
     }
 
-    function onRoundStart(bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -62,11 +78,18 @@ contract ZapStatus is StatusEffect {
         return (bytes32(uint256(ALREADY_SKIPPED)), false);
     }
 
-    function onRemove(bytes32 battleKey, bytes32 data, uint256 targetIndex, uint256 monIndex) public override {
-        super.onRemove(battleKey, data, targetIndex, monIndex);
+    function onRemove(
+        bytes32 battleKey,
+        bytes32 data,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) public override {
+        super.onRemove(battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         public
         pure
         override
