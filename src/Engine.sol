@@ -22,6 +22,9 @@ contract Engine is IEngine, MappingAllocator {
 
     bytes32 public transient battleKeyForWrite; // intended to be used during call stack by other contracts
     bytes32 private transient storageKeyForWrite; // cached storage key to avoid repeated lookups
+    // Bitmap tracking which effect lists were modified (for caching effect counts)
+    // Bit 0: global effects, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
+    uint256 private transient effectsDirtyBitmap;
     mapping(bytes32 => uint256) public pairHashNonces; // imposes a global ordering across all matches
     mapping(address player => mapping(address maker => bool)) public isMatchmakerFor; // tracks approvals for matchmakers
 
@@ -856,6 +859,8 @@ contract Engine is IEngine, MappingAllocator {
                     effectSlot.stepsBitmap = stepsBitmap;
                     effectSlot.data = extraDataToUse;
                     config.globalEffectsLength = uint8(effectIndex + 1);
+                    // Set dirty bit 0 for global effects
+                    effectsDirtyBitmap |= 1;
                 } else if (targetIndex == 0) {
                     // Player effects use per-mon indexing: slot = MAX_EFFECTS_PER_MON * monIndex + count[monIndex]
                     uint256 monEffectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
@@ -866,6 +871,8 @@ contract Engine is IEngine, MappingAllocator {
                     effectSlot.data = extraDataToUse;
                     config.packedP0EffectsCount =
                         _setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + 1);
+                    // Set dirty bit (1 + monIndex) for P0 effects
+                    effectsDirtyBitmap |= (1 << (1 + monIndex));
                 } else {
                     uint256 monEffectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
@@ -875,6 +882,8 @@ contract Engine is IEngine, MappingAllocator {
                     effectSlot.data = extraDataToUse;
                     config.packedP1EffectsCount =
                         _setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + 1);
+                    // Set dirty bit (9 + monIndex) for P1 effects
+                    effectsDirtyBitmap |= (1 << (9 + monIndex));
                 }
             }
         }
@@ -1328,21 +1337,29 @@ contract Engine is IEngine, MappingAllocator {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
         }
 
-        // Use a loop index that reads current length each iteration (allows processing newly added effects)
+        // Compute the dirty bit for this effect/mon combination
+        // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
+        uint256 dirtyBit;
+        if (effectIndex == 2) {
+            dirtyBit = 1;
+        } else if (effectIndex == 0) {
+            dirtyBit = 1 << (1 + monIndex);
+        } else {
+            dirtyBit = 1 << (9 + monIndex);
+        }
+
+        // Cache the initial effect count (only re-read if dirty bit is set)
+        uint256 effectsCount;
+        if (effectIndex == 2) {
+            effectsCount = config.globalEffectsLength;
+        } else if (effectIndex == 0) {
+            effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+        } else {
+            effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        }
+
         uint256 i = 0;
-        while (true) {
-            // Get current length (may grow if effects add new effects)
-            uint256 effectsCount;
-            if (effectIndex == 2) {
-                effectsCount = config.globalEffectsLength;
-            } else if (effectIndex == 0) {
-                effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-            } else {
-                effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            }
-
-            if (i >= effectsCount) break;
-
+        while (i < effectsCount) {
             // Read effect directly from storage
             EffectInstance storage eff;
             uint256 slotIndex;
@@ -1372,9 +1389,22 @@ contract Engine is IEngine, MappingAllocator {
                     eff.data,
                     uint96(slotIndex)
                 );
+
+                // Check if this effect added new effects (dirty bit set)
+                // Only re-read count if dirty, then clear the bit
+                if (effectsDirtyBitmap & dirtyBit != 0) {
+                    if (effectIndex == 2) {
+                        effectsCount = config.globalEffectsLength;
+                    } else if (effectIndex == 0) {
+                        effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+                    } else {
+                        effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+                    }
+                    effectsDirtyBitmap &= ~dirtyBit;
+                }
             }
 
-            ++i;
+            unchecked { ++i; }
         }
     }
 
