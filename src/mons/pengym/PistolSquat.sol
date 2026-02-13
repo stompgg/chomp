@@ -55,23 +55,25 @@ contract PistolSquat is StandardAttack {
         return -1;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, extraData, rng);
+        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
 
         // Deal damage and then force a switch if the opposing mon is not KO'ed
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
         bool isKOed =
             ENGINE.getMonStateForBattle(
-                battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
+                battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
             ) == 1;
         if (!isKOed) {
-            int32 possibleSwitchTarget = _findRandomNonKOedMon(otherPlayerIndex, otherPlayerActiveMonIndex, rng);
+            int32 possibleSwitchTarget = _findRandomNonKOedMon(otherPlayerIndex, defenderMonIndex, rng);
             if (possibleSwitchTarget != -1) {
                 ENGINE.switchActiveMon(otherPlayerIndex, uint256(uint32(possibleSwitchTarget)));
             }

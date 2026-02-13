@@ -25,7 +25,7 @@ contract OneTurnStatBoost is BasicEffect {
     }
 
     // Adds a bonus
-    function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onApply(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -35,7 +35,7 @@ contract OneTurnStatBoost is BasicEffect {
     }
 
     // Adds another bonus
-    function onRoundEnd(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

@@ -6,7 +6,14 @@ import "../Structs.sol";
 
 interface IMoveSet {
     function name() external view returns (string memory);
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external;
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) external;
     function priority(bytes32 battleKey, uint256 attackerPlayerIndex) external view returns (uint32);
     function stamina(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) external view returns (uint32);
     function moveType(bytes32 battleKey) external view returns (Type);

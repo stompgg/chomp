@@ -36,30 +36,32 @@ contract VitalSiphon is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256 rng
+    ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, extraData, rng);
+        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
 
         // 50% chance to steal stamina
         if (rng % 100 >= STAMINA_STEAL_PERCENT) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-            uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
-            
+
             // Check if opponent has at least 1 stamina
             int32 defenderStamina = ENGINE.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
             uint32 defenderBaseStamina = ENGINE.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
             int32 totalDefenderStamina = int32(defenderBaseStamina) + defenderStamina;
-            
+
             if (totalDefenderStamina >= 1) {
                 // Steal 1 stamina from opponent
                 ENGINE.updateMonState(defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina, -1);
-                
+
                 // Give 1 stamina to self
-                uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-                ENGINE.updateMonState(attackerPlayerIndex, activeMonIndex, MonStateIndexName.Stamina, 1);
+                ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Stamina, 1);
             }
         }
     }

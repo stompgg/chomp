@@ -22,14 +22,19 @@ contract ContagiousSlumber is IMoveSet {
         return "Contagious Slumber";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256
+    ) external {
         // Apply sleep to self
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        ENGINE.addEffect(attackerPlayerIndex, activeMonIndex, SLEEP_STATUS, "");
+        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, SLEEP_STATUS, "");
 
         // Apply sleep to opponent
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
         ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, SLEEP_STATUS, "");
     }
 

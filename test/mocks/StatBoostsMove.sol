@@ -24,7 +24,7 @@ contract StatBoostsMove is IMoveSet {
         return "";
     }
 
-    function move(bytes32, uint256, uint240 extraData, uint256) external {
+    function move(bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
         // Unpack extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
         uint256 playerIndex = uint256(extraData) & ((1 << 60) - 1);
         uint256 monIndex = (uint256(extraData) >> 60) & ((1 << 60) - 1);

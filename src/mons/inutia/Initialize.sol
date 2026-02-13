@@ -31,18 +31,24 @@ contract Initialize is IMoveSet, BasicEffect {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
         // Check if global KV is set
-        uint192 flag = ENGINE.getGlobalKV(battleKey, _initializeKey(attackerPlayerIndex, activeMonIndex));
+        uint192 flag = ENGINE.getGlobalKV(battleKey, _initializeKey(attackerPlayerIndex, attackerMonIndex));
         if (flag == 0) {
             // Apply the buffs
-            _applyBuff(attackerPlayerIndex, activeMonIndex);
+            _applyBuff(attackerPlayerIndex, attackerMonIndex);
 
             // Apply effect globally
-            ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(attackerPlayerIndex, activeMonIndex));
+            ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(attackerPlayerIndex, attackerMonIndex));
             // Set global KV to prevent this move doing anything until Inutia swaps out
-            ENGINE.setGlobalKV(_initializeKey(attackerPlayerIndex, activeMonIndex), 1);
+            ENGINE.setGlobalKV(_initializeKey(attackerPlayerIndex, attackerMonIndex), 1);
         }
         // Otherwise we don't do anything
     }
@@ -99,7 +105,7 @@ contract Initialize is IMoveSet, BasicEffect {
         monIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -112,7 +118,7 @@ contract Initialize is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onMonSwitchIn(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

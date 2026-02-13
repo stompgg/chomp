@@ -24,21 +24,25 @@ contract MockEffectRemover is IMoveSet {
         return "Mock Effect Remover";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240 extraData,
+        uint256
+    ) external {
         // extraData contains the address of the effect to remove (packed as uint160)
         address effectToRemove = address(uint160(extraData));
 
         // Target the opponent's active mon
         uint256 targetPlayerIndex = 1 - attackerPlayerIndex;
-        uint256 targetMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[targetPlayerIndex];
 
-        // Find and remove the effect
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetPlayerIndex, targetMonIndex);
+        // Find and remove the effect (removeEffect in Engine handles calling onRemove with proper params)
+        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetPlayerIndex, defenderMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == effectToRemove) {
-                // Call onRemove on the effect before removing
-                effects[i].effect.onRemove(effects[i].data, targetPlayerIndex, targetMonIndex);
-                ENGINE.removeEffect(targetPlayerIndex, targetMonIndex, indices[i]);
+                ENGINE.removeEffect(targetPlayerIndex, defenderMonIndex, indices[i]);
                 break;
             }
         }

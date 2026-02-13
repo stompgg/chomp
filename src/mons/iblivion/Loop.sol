@@ -65,16 +65,21 @@ contract Loop is IMoveSet {
         }
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
-        uint256 monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
         // Check if Loop is already active
-        if (isLoopActive(battleKey, attackerPlayerIndex, monIndex)) {
+        if (isLoopActive(battleKey, attackerPlayerIndex, attackerMonIndex)) {
             // Fail - Loop is already active
             return;
         }
 
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, monIndex);
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
         uint8 boostPercent = _getBoostPercent(baselightLevel);
 
         // If baselight level is 0, no boost to apply
@@ -83,7 +88,7 @@ contract Loop is IMoveSet {
         }
 
         // Mark Loop as active
-        ENGINE.setGlobalKV(_loopActiveKey(attackerPlayerIndex, monIndex), 1);
+        ENGINE.setGlobalKV(_loopActiveKey(attackerPlayerIndex, attackerMonIndex), 1);
 
         // Apply stat boosts to all 5 stats (Attack, Defense, SpecialAttack, SpecialDefense, Speed)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](5);
@@ -114,7 +119,7 @@ contract Loop is IMoveSet {
         });
 
         // Use Temp flag so boosts are removed on switch out
-        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

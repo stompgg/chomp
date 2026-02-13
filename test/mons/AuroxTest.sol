@@ -61,7 +61,7 @@ contract AuroxTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine();
+        engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         statBoosts = new StatBoosts(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);

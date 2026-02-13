@@ -36,7 +36,14 @@ contract Brightback is IMoveSet {
         return "Brightback";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256 rng
+    ) external {
         (int32 damageDealt,) = AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
@@ -51,17 +58,16 @@ contract Brightback is IMoveSet {
             DEFAULT_CRIT_RATE
         );
 
-        uint256 monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, monIndex);
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Only heal if we have at least 1 Baselight stack
         if (baselightLevel >= 1) {
             // Consume 1 Baselight stack
-            BASELIGHT.decreaseBaselightLevel(attackerPlayerIndex, monIndex, 1);
+            BASELIGHT.decreaseBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex, 1);
 
             // Heal for half of damage done
             int32 healAmount = damageDealt / 2;
-            int32 hpDelta = ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Hp);
+            int32 hpDelta = ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
 
             // Prevent overhealing
             if (hpDelta + healAmount > 0) {
@@ -69,7 +75,7 @@ contract Brightback is IMoveSet {
             }
 
             // Do the heal
-            ENGINE.updateMonState(attackerPlayerIndex, monIndex, MonStateIndexName.Hp, healAmount);
+            ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
         }
     }
 

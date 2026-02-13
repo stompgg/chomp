@@ -23,14 +23,12 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return "Self Switch And Damage Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint240 extraData, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240 extraData, uint256) external {
         uint256 monToSwitchIndex = uint256(extraData);
 
         // Deal damage first to opponent
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
-        ENGINE.dealDamage(otherPlayerIndex, otherPlayerActiveMonIndex, DAMAGE);
+        ENGINE.dealDamage(otherPlayerIndex, defenderMonIndex, DAMAGE);
 
         // Use the new switchActiveMon function
         ENGINE.switchActiveMon(attackerPlayerIndex, monToSwitchIndex);

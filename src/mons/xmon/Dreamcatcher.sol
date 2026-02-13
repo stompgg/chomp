@@ -40,16 +40,18 @@ contract Dreamcatcher is IAbility, BasicEffect {
     }
 
     function onUpdateMonState(
+        bytes32 battleKey,
         uint256,
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
+        uint256,
+        uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {
         // Only trigger if Stamina is being increased (positive valueToAdd)
         if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
-            bytes32 battleKey = ENGINE.battleKeyForWrite();
             uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             int32 healAmount = int32(uint32(maxHp)) / HEAL_DENOM;
 
@@ -66,4 +68,3 @@ contract Dreamcatcher is IAbility, BasicEffect {
         return (extraData, false);
     }
 }
-

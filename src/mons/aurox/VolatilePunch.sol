@@ -41,18 +41,20 @@ contract VolatilePunch is StandardAttack {
         FROSTBITE_STATUS = _FROSTBITE_STATUS;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256 rng
+    ) public override {
         // Deal the damage to opponent
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, rng);
+        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
 
         // Apply status effects if damage was dealt
         if (damage > 0) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-            uint256 defenderMonIndex =
-                ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
 
             // Use a different part of the RNG for status application
             uint256 statusRng = uint256(keccak256(abi.encode(rng, "STATUS_EFFECT")));

@@ -28,13 +28,21 @@ contract FrostbiteStatus is StatusEffect {
         return 0x0D;
     }
 
-    function onApply(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    )
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
 
-        super.onApply(rng, extraData, targetIndex, monIndex);
+        super.onApply(battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -49,21 +57,36 @@ contract FrostbiteStatus is StatusEffect {
         return (extraData, false);
     }
 
-    function onRemove(bytes32 data, uint256 targetIndex, uint256 monIndex) public override {
-        super.onRemove(data, targetIndex, monIndex);
+    function onRemove(
+        bytes32 battleKey,
+        bytes32 data,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) public override {
+        super.onRemove(battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the special attack reduction
         STAT_BOOST.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         public
         override
         returns (bytes32, bool)
     {
         // Calculate damage to deal
         uint32 maxHealth =
-            ENGINE.getMonValueForBattle(ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.Hp);
+            ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
         int32 damage = int32(maxHealth) / DAMAGE_DENOM;
         ENGINE.dealDamage(targetIndex, monIndex, damage);
 

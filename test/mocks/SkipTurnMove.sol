@@ -32,10 +32,9 @@ contract SkipTurnMove is IMoveSet {
         return "Skip Turn";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[targetIndex];
-        ENGINE.updateMonState(targetIndex, activeMonIndex, MonStateIndexName.ShouldSkipTurn, 1);
+        ENGINE.updateMonState(targetIndex, defenderMonIndex, MonStateIndexName.ShouldSkipTurn, 1);
     }
 
     function priority(bytes32, uint256) external view returns (uint32) {

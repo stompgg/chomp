@@ -25,40 +25,52 @@ contract StaminaRegen is BasicEffect {
     }
 
     // No overhealing stamina
-    function _regenStamina(uint256 playerIndex, uint256 monIndex) internal {
+    function _regenStamina(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
         int256 currentActiveMonStaminaDelta =
-            ENGINE.getMonStateForBattle(ENGINE.battleKeyForWrite(), playerIndex, monIndex, MonStateIndexName.Stamina);
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Stamina);
         if (currentActiveMonStaminaDelta < 0) {
             ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.Stamina, 1);
         }
     }
 
     // Regen stamina on round end for both active mons
-    function onRoundEnd(uint256, bytes32, uint256, uint256) external override returns (bytes32, bool) {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
+    function onRoundEnd(
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256,
+        uint256,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) external override returns (bytes32, bool) {
         uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
-        uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
         // Update stamina for both active mons only if it's a 2 player turn
         if (playerSwitchForTurnFlag == 2) {
-            for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
-                _regenStamina(playerIndex, activeMonIndex[playerIndex]);
-            }
+            _regenStamina(battleKey, 0, p0ActiveMonIndex);
+            _regenStamina(battleKey, 1, p1ActiveMonIndex);
         }
         return (bytes32(0), false);
     }
 
     // Regen stamina if the mon did a No Op (i.e. resting)
-    function onAfterMove(uint256, bytes32, uint256 targetIndex, uint256 monIndex)
+    function onAfterMove(
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32, bool)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
         MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            _regenStamina(targetIndex, monIndex);
+            _regenStamina(battleKey, targetIndex, monIndex);
         }
         return (bytes32(0), false);
     }

@@ -32,8 +32,14 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return "Night Terrors";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
-        uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         // Check if the effect is already applied to the attacker
@@ -104,7 +110,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return 0x24;
     }
 
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         returns (bytes32, bool)
@@ -112,8 +118,6 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // targetIndex/monIndex is the attacker (who has the effect)
         // defenderPlayerIndex is stored in extraData (who should take damage)
         (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
-
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
 
         // Check current stamina of the attacker (who has the effect)
         int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
@@ -128,7 +132,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -int32(uint32(terrorCount)));
 
         // Get the defender's active mon index
-        uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
+        uint256 defenderMonIndex = defenderPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
 
         // Check if opponent (defender) is asleep by iterating through their effects
         (EffectInstance[] memory defenderEffects, ) = ENGINE.getEffects(battleKey, defenderPlayerIndex, defenderMonIndex);
@@ -164,7 +168,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(uint256, bytes32 extraData, uint256, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override

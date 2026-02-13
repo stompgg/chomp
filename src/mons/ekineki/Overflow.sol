@@ -35,7 +35,14 @@ contract Overflow is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) public override {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256,
+        uint240,
+        uint256 rng
+    ) public override {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
         AttackCalculator._calculateDamage(
             ENGINE,

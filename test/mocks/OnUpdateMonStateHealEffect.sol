@@ -29,10 +29,13 @@ contract OnUpdateMonStateHealEffect is BasicEffect {
     // WARNING: Avoid chaining this effect to prevent recursive calls
     // This effect is safe because it only heals HP, it doesn't trigger state updates that would recurse
     function onUpdateMonState(
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
+        uint256,
+        uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {

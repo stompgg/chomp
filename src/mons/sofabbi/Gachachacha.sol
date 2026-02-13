@@ -36,22 +36,28 @@ contract Gachachacha is IMoveSet {
         return "Gachachacha";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256 rng
+    ) external {
         uint256 chance = rng % OPP_KO_THRESHOLD_R;
         uint32 basePower;
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 playerForCalculator = attackerPlayerIndex;
-        uint256[] memory activeMon = ENGINE.getActiveMonIndexForBattleState(battleKey);
         if (chance <= SELF_KO_THRESHOLD_L) {
             basePower = uint32(chance);
         } else if (chance > SELF_KO_THRESHOLD_L && chance <= SELF_KO_THRESHOLD_R) {
             basePower = ENGINE.getMonValueForBattle(
-                battleKey, attackerPlayerIndex, activeMon[attackerPlayerIndex], MonStateIndexName.Hp
+                battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp
             );
             playerForCalculator = defenderPlayerIndex;
         } else {
             basePower = ENGINE.getMonValueForBattle(
-                battleKey, defenderPlayerIndex, activeMon[defenderPlayerIndex], MonStateIndexName.Hp
+                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp
             );
         }
         AttackCalculator._calculateDamage(

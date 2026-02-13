@@ -28,7 +28,7 @@ contract Interweaving is IAbility, BasicEffect {
         // Lower opposing mon Attack stat
         uint256 otherPlayerIndex = (playerIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.Attack,
@@ -54,14 +54,13 @@ contract Interweaving is IAbility, BasicEffect {
         return 0x21;
     }
 
-    function onMonSwitchOut(uint256, bytes32, uint256 targetIndex, uint256)
+    function onMonSwitchOut(bytes32, uint256, bytes32, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[otherPlayerIndex];
+        uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.SpecialAttack,

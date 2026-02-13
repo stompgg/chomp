@@ -1,0 +1,3 @@
+InlineEngineGasTest:test_consecutiveBattleGas() (gas: 18257376)
+InlineEngineGasTest:test_identicalBattlesGas() (gas: 15177982)
+InlineEngineGasTest:test_identicalBattlesWithEffectsGas() (gas: 19225213)

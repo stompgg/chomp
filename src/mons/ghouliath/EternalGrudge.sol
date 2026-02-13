@@ -26,10 +26,16 @@ contract EternalGrudge is IMoveSet {
         return "Eternal Grudge";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256
+    ) external {
         // Apply the debuff (50% debuff to both attack and special attack)
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        uint256 defenderMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.Attack,
@@ -42,7 +48,6 @@ contract EternalGrudge is IMoveSet {
             boostType: StatBoostType.Divide
         });
         STAT_BOOSTS.addStatBoosts(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
-        uint256 attackerMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
 
         // KO self by dealing just enough damage
         int32 currentDamage =

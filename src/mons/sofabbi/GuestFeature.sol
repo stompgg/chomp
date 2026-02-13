@@ -25,7 +25,14 @@ contract GuestFeature is IMoveSet {
         return "Guest Feature";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240 extraData, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256,
+        uint240 extraData,
+        uint256 rng
+    ) external {
         uint256 monIndex = uint256(extraData);
         Type guestType =
             Type(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Type1));

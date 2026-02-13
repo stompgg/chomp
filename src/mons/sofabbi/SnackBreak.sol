@@ -33,22 +33,28 @@ contract SnackBreak is IMoveSet {
         }
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256) external {
-        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[attackerPlayerIndex];
-        uint256 snackLevel = _getSnackLevel(battleKey, attackerPlayerIndex, activeMonIndex);
-        uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp);
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256
+    ) external {
+        uint256 snackLevel = _getSnackLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
+        uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
 
         // Heal active mon by max HP / 2**snackLevel
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** snackLevel))));
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp);
+            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }
-        ENGINE.updateMonState(attackerPlayerIndex, activeMonIndex, MonStateIndexName.Hp, healAmount);
+        ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
 
         // Update the snack level
-        _increaseSnackLevel(battleKey, attackerPlayerIndex, activeMonIndex);
+        _increaseSnackLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
     }
 
     function stamina(bytes32, uint256, uint256) external pure returns (uint32) {

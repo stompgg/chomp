@@ -26,11 +26,22 @@ contract SpAtkDebuffEffect is StatusEffect {
         return 0x09;
     }
 
-    function onApply(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    )
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
+        // Call parent to set status flag
+        super.onApply(battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
@@ -44,11 +55,17 @@ contract SpAtkDebuffEffect is StatusEffect {
         return (extraData, false);
     }
 
-    function onRemove(bytes32 data, uint256 targetIndex, uint256 monIndex) public override {
-        super.onRemove(data, targetIndex, monIndex);
+    function onRemove(
+        bytes32 battleKey,
+        bytes32 data,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) public override {
+        super.onRemove(battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the special attack reduction
         STAT_BOOST.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
     }
 }
-

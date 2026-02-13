@@ -48,7 +48,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         return 0x44;
     }
 
-    function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
+    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -60,7 +60,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         // If the mon is KO'd, add this effect to the global effects list and remove the mon effect
         if (
             ENGINE.getMonStateForBattle(
-                    ENGINE.battleKeyForWrite(), targetIndex, monIndex, MonStateIndexName.IsKnockedOut
+                    battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                 ) == 1
         ) {
             uint64 v1 = REVIVAL_DELAY;
@@ -74,7 +74,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(uint256, bytes32 extraData, uint256, uint256)
+    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -93,7 +93,6 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         else if (turnsLeft == 1) {
             // Revive the mon and set HP to 1
             ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.IsKnockedOut, 0);
-            bytes32 battleKey = ENGINE.battleKeyForWrite();
             int32 currentDamage = ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             int32 hpShiftAmount = 1 - currentDamage - int32(maxHp);

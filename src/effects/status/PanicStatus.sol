@@ -21,7 +21,15 @@ contract PanicStatus is StatusEffect {
     }
 
     // At the start of the turn, check to see if we should apply stamina debuff or end early
-    function onRoundStart(uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundStart(
+        bytes32,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         pure
         override
@@ -37,23 +45,37 @@ contract PanicStatus is StatusEffect {
     }
 
     // On apply, checks to apply the flag, and then sets the extraData to be the duration
-    function onApply(uint256 rng, bytes32 data, uint256 monIndex, uint256 playerIndex)
+    function onApply(
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 data,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    )
         public
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        super.onApply(rng, data, monIndex, playerIndex);
+        super.onApply(battleKey, rng, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
         return (bytes32(DURATION), false);
     }
 
     // Apply effect on end of turn, and then check how many turns are left
-    function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+    function onRoundEnd(
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    )
         external
         override
         returns (bytes32, bool removeAfterRun)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-
         // Get current stamina delta of the target mon
         int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
 

@@ -45,7 +45,14 @@ contract MegaStarBlast is IMoveSet {
         return -1;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256 rng
+    ) external {
         // Check if Overclock is active
         uint32 acc = BASE_ACCURACY;
         int32 overclockIndex = _checkForOverclock(battleKey);
@@ -74,8 +81,6 @@ contract MegaStarBlast is IMoveSet {
             uint256 rng2 = uint256(keccak256(abi.encode(rng)));
             if (rng2 % 100 < ZAP_ACCURACY) {
                 uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-                uint256 defenderMonIndex =
-                    ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
                 ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");
             }
         }

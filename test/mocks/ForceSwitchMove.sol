@@ -32,7 +32,7 @@ contract ForceSwitchMove is IMoveSet {
         return "Force Switch";
     }
 
-    function move(bytes32, uint256, uint240 extraData, uint256) external {
+    function move(bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
         // Decode data as packed (playerIndex in lower 120 bits, monToSwitchIndex in upper 120 bits)
         uint256 playerIndex = uint256(extraData) & ((1 << 120) - 1);
         uint256 monToSwitchIndex = uint256(extraData) >> 120;

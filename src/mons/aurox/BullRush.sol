@@ -35,18 +35,19 @@ contract BullRush is StandardAttack {
         )
     {}
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng)
-        public
-        override
-    {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256 rng
+    ) public override {
         // Deal the damage to opponent
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, rng);
+        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
 
         // Deal self-damage
         if (damage > 0) {
-            uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-            uint256 attackerMonIndex = activeMonIndex[attackerPlayerIndex];
-
             int32 maxHp = int32(
                 ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
             );

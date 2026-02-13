@@ -33,7 +33,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
 
     function setUp() public {
         // Set up the core components
-        engine = new Engine();
+        engine = new Engine(0, 0, 0);
         typeCalc = new TypeCalculator();
         mockOracle = new MockRandomnessOracle();
         commitManager = new DefaultCommitManager(engine);

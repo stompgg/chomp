@@ -43,7 +43,7 @@ contract SofabbiTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine();
+        engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Initialize the CarrotHarvest ability

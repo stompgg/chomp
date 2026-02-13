@@ -36,7 +36,14 @@ contract RockPull is IMoveSet {
         return moveIndex == SWITCH_MOVE_INDEX;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) external {
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint240,
+        uint256 rng
+    ) external {
         if (_didOtherPlayerChooseSwitch(battleKey, attackerPlayerIndex)) {
             // Deal damage to the opposing mon
             AttackCalculator._calculateDamage(
@@ -68,8 +75,7 @@ contract RockPull is IMoveSet {
                 rng,
                 DEFAULT_CRIT_RATE
             );
-            uint256[] memory monIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-            ENGINE.dealDamage(attackerPlayerIndex, monIndex[attackerPlayerIndex], selfDamage);
+            ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage);
         }
     }
 

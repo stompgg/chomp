@@ -47,11 +47,18 @@ contract StandardAttack is IMoveSet, Ownable {
         _initializeOwner(owner);
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint240, uint256 rng) public virtual {
-        _move(battleKey, attackerPlayerIndex, rng);
+    function move(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 defenderMonIndex,
+        uint240,
+        uint256 rng
+    ) public virtual {
+        _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
     }
 
-    function _move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 rng)
+    function _move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderMonIndex, uint256 rng)
         internal
         virtual
         returns (int32, bytes32)
@@ -78,8 +85,6 @@ contract StandardAttack is IMoveSet, Ownable {
         // NOTE: technically we should reroll the rng value here instead of using it raw, but the current way that the AttackCalculator works means that if a move misses (e.g. its accuracy is above the threshold), then the effect will not be applied, because it will also fail this check.
         if (rng % 100 < _effectAccuracy) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-            uint256 defenderMonIndex =
-                ENGINE.getActiveMonIndexForBattleState(ENGINE.battleKeyForWrite())[defenderPlayerIndex];
             if (address(_effect) != address(0)) {
                 ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
             }
