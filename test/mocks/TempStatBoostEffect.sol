@@ -19,15 +19,9 @@ contract TempStatBoostEffect is BasicEffect {
         return "";
     }
 
+    // Steps: OnApply, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x21;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](2);
-        steps[0] = EffectStep.OnMonSwitchOut;
-        steps[1] = EffectStep.OnApply;
-        return steps;
     }
 
     function onApply(uint256, bytes32, uint256 targetIndex, uint256 monIndex)

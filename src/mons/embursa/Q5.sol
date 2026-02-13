@@ -71,17 +71,10 @@ contract Q5 is IMoveSet, BasicEffect {
         return ExtraDataType.None;
     }
 
-    /**
-     *  Effect implementation
-     */
+    // Effect implementation
+    // Steps: RoundStart
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x02;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.RoundStart;
-        return steps;
     }
 
     function onRoundStart(uint256 rng, bytes32 extraData, uint256, uint256)

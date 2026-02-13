@@ -19,14 +19,9 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
         return "Instant Death On Switch";
     }
 
+    // Steps: OnMonSwitchIn
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x10;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.OnMonSwitchIn;
-        return steps;
     }
 
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)

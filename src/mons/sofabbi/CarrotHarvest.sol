@@ -37,15 +37,9 @@ contract CarrotHarvest is IAbility, BasicEffect {
         ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
-    // IEffect implementation
+    // Steps: RoundEnd
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x04;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.RoundEnd;
-        return steps;
     }
 
     // Regain stamina on round end, this can overheal stamina

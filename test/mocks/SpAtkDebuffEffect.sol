@@ -21,15 +21,9 @@ contract SpAtkDebuffEffect is StatusEffect {
         return "SpAtk Debuff";
     }
 
+    // Steps: OnApply, OnRemove
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x09;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](2);
-        steps[0] = EffectStep.OnApply;
-        steps[1] = EffectStep.OnRemove;
-        return steps;
     }
 
     function onApply(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)

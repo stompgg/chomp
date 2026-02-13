@@ -15,14 +15,9 @@ contract AfterDamageReboundEffect is BasicEffect {
         ENGINE = _ENGINE;
     }
 
+    // Steps: AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x40;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.AfterDamage;
-        return steps;
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)

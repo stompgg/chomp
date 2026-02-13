@@ -40,15 +40,9 @@ contract StatBoosts is BasicEffect {
         return "Stat Boost";
     }
 
-    // OnMonSwitchOut=5 -> (1<<5) = 0x20
+    // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x20;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.OnMonSwitchOut;
-        return steps;
     }
 
     // Removes all temporary boosts on mon switch out

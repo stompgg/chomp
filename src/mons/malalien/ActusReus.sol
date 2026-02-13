@@ -38,15 +38,9 @@ contract ActusReus is IAbility, BasicEffect {
         ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
+    // Steps: AfterDamage, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
         return 0xC0;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](2);
-        steps[0] = EffectStep.AfterMove;
-        steps[1] = EffectStep.AfterDamage;
-        return steps;
     }
 
     function onAfterMove(uint256, bytes32 extraData, uint256 targetIndex, uint256)

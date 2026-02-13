@@ -19,14 +19,9 @@ contract InstantDeathEffect is BasicEffect {
         return "Instant Death";
     }
 
+    // Steps: RoundEnd
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x04;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.RoundEnd;
-        return steps;
     }
 
     function onRoundEnd(uint256, bytes32, uint256 targetIndex, uint256 monIndex)

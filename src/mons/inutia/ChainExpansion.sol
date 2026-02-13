@@ -69,6 +69,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
     /**
      *  Effect implementation
      */
+    // Steps: OnMonSwitchIn
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x10;
     }
@@ -80,12 +81,6 @@ contract ChainExpansion is IMoveSet, BasicEffect {
     function _decodeState(bytes32 data) internal pure returns (uint256 chargesLeft, uint256 playerIndex) {
         chargesLeft = uint256(data) >> 128;
         playerIndex = uint256(data) & type(uint128).max;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.OnMonSwitchIn;
-        return steps;
     }
 
     function onMonSwitchIn(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)

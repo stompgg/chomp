@@ -39,15 +39,9 @@ contract Angery is IAbility, BasicEffect {
     }
 
     // IEffect implementation
+    // Steps: RoundEnd, AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x44;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](2);
-        steps[0] = EffectStep.RoundEnd;
-        steps[1] = EffectStep.AfterDamage;
-        return steps;
     }
 
     function onRoundEnd(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex)

@@ -21,14 +21,9 @@ contract OnUpdateMonStateHealEffect is BasicEffect {
         ENGINE = _ENGINE;
     }
 
+    // Steps: OnUpdateMonState
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x100;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.OnUpdateMonState;
-        return steps;
     }
 
     // WARNING: Avoid chaining this effect to prevent recursive calls

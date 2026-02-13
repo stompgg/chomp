@@ -15,17 +15,9 @@ contract PanicStatus is StatusEffect {
         return "Panic";
     }
 
+    // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x0F;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](4);
-        steps[0] = EffectStep.RoundStart;
-        steps[1] = EffectStep.RoundEnd;
-        steps[2] = EffectStep.OnApply;
-        steps[3] = EffectStep.OnRemove;
-        return steps;
     }
 
     // At the start of the turn, check to see if we should apply stamina debuff or end early

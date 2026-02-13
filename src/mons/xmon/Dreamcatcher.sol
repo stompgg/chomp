@@ -34,15 +34,9 @@ contract Dreamcatcher is IAbility, BasicEffect {
         ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
-    // IEffect implementation
+    // Steps: OnUpdateMonState
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x100;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.OnUpdateMonState;
-        return steps;
     }
 
     function onUpdateMonState(

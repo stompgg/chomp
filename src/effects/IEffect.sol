@@ -8,11 +8,9 @@ interface IEffect {
     function name() external returns (string memory);
 
     // Returns pre-computed bitmap of steps this effect runs at (set at deploy time)
-    // Bit i is set if effect runs at EffectStep(i)
+    // Bit layout: OnApply=0x01, RoundStart=0x02, RoundEnd=0x04, OnRemove=0x08,
+    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80, OnUpdateMonState=0x100
     function getStepsBitmap() external view returns (uint16);
-
-    // Returns array of steps this effect runs at (used to build bitmap for gas optimization)
-    function getStepsToRun() external pure returns (EffectStep[] memory);
 
     // Whether or not to add the effect if some condition is met
     function shouldApply(bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);

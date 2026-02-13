@@ -40,14 +40,9 @@ contract UpOnly is IAbility, BasicEffect {
     }
 
     // IEffect implementation
+    // Steps: AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x40;
-    }
-
-    function getStepsToRun() external pure override returns (EffectStep[] memory) {
-        EffectStep[] memory steps = new EffectStep[](1);
-        steps[0] = EffectStep.AfterDamage;
-        return steps;
     }
 
     function onAfterDamage(uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, int32)
