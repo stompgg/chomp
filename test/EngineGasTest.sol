@@ -57,7 +57,7 @@ contract EngineGasTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(engine);
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
@@ -525,7 +525,7 @@ contract EngineGasTest is Test, BattleHelper {
     /// @notice Compare gas usage between inline validation (address(0) validator) vs external validator
     function test_inlineVsExternalValidationGas() public {
         // Create engine with proper inline validation defaults
-        Engine inlineEngine = new Engine(1, 4);
+        Engine inlineEngine = new Engine(1, 4, 1);
         DefaultCommitManager inlineCommitManager = new DefaultCommitManager(inlineEngine);
         DefaultMatchmaker inlineMatchmaker = new DefaultMatchmaker(inlineEngine);
 

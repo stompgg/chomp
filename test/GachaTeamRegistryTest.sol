@@ -38,7 +38,7 @@ contract GachaTeamRegistryTest is Test {
 
     function setUp() public {
         monRegistry = new DefaultMonRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(0, 0, 0);
         mockRNG = new MockGachaRNG();
 
         gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG, 1);

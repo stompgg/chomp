@@ -17,7 +17,7 @@ contract StandardAttackFactoryTest is Test {
     bytes32 constant TEST_BATTLE_KEY = bytes32(uint256(1));
 
     function setUp() public {
-        engine = new Engine(0, 0);
+        engine = new Engine(0, 0, 0);
         typeCalc = new TypeCalculator();
         factory = new StandardAttackFactory(engine, typeCalc);
     }

@@ -63,7 +63,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
         // Create engine with inline validation defaults
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
         commitManager = new DefaultCommitManager(engine);
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
@@ -288,7 +288,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
     function test_identicalBattlesGas() public {
         // Note: We need to recreate engine with correct team size for inline validation
         // Important: Create engine BEFORE moves so moves reference the correct engine
-        Engine inlineEngine = new Engine(1, 4);
+        Engine inlineEngine = new Engine(1, 4, 1);
 
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
@@ -362,7 +362,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         });
 
         // Recreate engine with correct team size
-        Engine inlineEngine = new Engine(1, 4);
+        Engine inlineEngine = new Engine(1, 4, 1);
         DefaultCommitManager inlineCommitManager = new DefaultCommitManager(inlineEngine);
         DefaultMatchmaker inlineMatchmaker = new DefaultMatchmaker(inlineEngine);
 

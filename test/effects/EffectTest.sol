@@ -77,7 +77,7 @@ contract EffectTest is Test, BattleHelper {
      */
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(engine);
         oneMonOneMoveValidator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
