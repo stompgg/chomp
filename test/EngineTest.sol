@@ -69,7 +69,7 @@ contract EngineTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine();
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         validator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})

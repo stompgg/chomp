@@ -10,8 +10,13 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
+import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
 
 contract Engine is IEngine, MappingAllocator {
+
+    // Default validator config (immutable, for inline validation when validator is address(0))
+    uint256 public immutable DEFAULT_MONS_PER_TEAM;
+    uint256 public immutable DEFAULT_MOVES_PER_MON;
 
     bytes32 public transient battleKeyForWrite; // intended to be used during call stack by other contracts
     bytes32 private transient storageKeyForWrite; // cached storage key to avoid repeated lookups
@@ -110,6 +115,18 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 indexed battleKey, bytes32 eventType, bytes eventData, address source, uint256 step
     );
 
+    /// @notice Constructor to set default validator config for inline validation
+    /// @dev When a battle's validator is address(0), Engine uses inline validation logic with these params
+    /// @param _DEFAULT_MONS_PER_TEAM Default mons per team for inline validation
+    /// @param _DEFAULT_MOVES_PER_MON Default moves per mon for inline validation
+    constructor(
+        uint256 _DEFAULT_MONS_PER_TEAM,
+        uint256 _DEFAULT_MOVES_PER_MON
+    ) {
+        DEFAULT_MONS_PER_TEAM = _DEFAULT_MONS_PER_TEAM;
+        DEFAULT_MOVES_PER_MON = _DEFAULT_MOVES_PER_MON;
+    }
+
     function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external {
         for (uint256 i; i < makersToAdd.length; ++i) {
             isMatchmakerFor[msg.sender][makersToAdd[i]] = true;
@@ -166,10 +183,10 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Store the battle config (update fields individually to preserve effects mapping slots)
-        if (config.validator != battle.validator) {
+        if (address(config.validator) != address(battle.validator)) {
             config.validator = battle.validator;
         }
-        if (config.rngOracle != battle.rngOracle) {
+        if (address(config.rngOracle) != address(battle.rngOracle)) {
             config.rngOracle = battle.rngOracle;
         }
         if (config.moveManager != battle.moveManager) {
@@ -246,11 +263,13 @@ contract Engine is IEngine, MappingAllocator {
         teams[0] = p0Team;
         teams[1] = p1Team;
 
-        // Validate the battle config
-        if (!battle.validator
-                .validateGameStart(battle.p0, battle.p1, teams, battle.teamRegistry, battle.p0TeamIndex, battle.p1TeamIndex))
-        {
-            revert InvalidBattleConfig();
+        // Validate the battle config (skip if using inline validation)
+        if (address(battle.validator) != address(0)) {
+            if (!battle.validator
+                    .validateGameStart(battle.p0, battle.p1, teams, battle.teamRegistry, battle.p0TeamIndex, battle.p1TeamIndex))
+            {
+                revert InvalidBattleConfig();
+            }
         }
 
         for (uint256 i = 0; i < battle.engineHooks.length; ++i) {
@@ -864,7 +883,23 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage battle = battleData[battleKey];
 
         // Use the validator to check if the switch is valid
-        if (config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex))
+        bool isValid;
+        if (address(config.validator) == address(0)) {
+            // Use inline validation (no external call)
+            uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
+            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            isValid = ValidatorLogic.validateSwitch(
+                battle.turnId,
+                activeMonIndex,
+                monToSwitchIndex,
+                isTargetKnockedOut,
+                DEFAULT_MONS_PER_TEAM
+            );
+        } else {
+            // Use external validator
+            isValid = config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex);
+        }
+        if (isValid)
         {
             // Only call the internal switch function if the switch is valid
             _handleSwitch(battleKey, playerIndex, monToSwitchIndex, msg.sender);
@@ -1075,15 +1110,33 @@ contract Engine is IEngine, MappingAllocator {
         }
         // Execute the move and then set updated state, active mons, and effects/data
         else {
-            // Call validateSpecificMoveSelection again from the validator to ensure that it is still valid to execute
+            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
+
+            // Call validateSpecificMoveSelection again to ensure it is still valid to execute
             // If not, then we just return early
             // Handles cases where e.g. some condition outside of the player's control leads to an invalid move
-            if (!config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData))
-            {
+            bool isValid;
+            if (address(config.validator) == address(0)) {
+                // Use inline validation (no external call)
+                MonState storage monState = _getMonState(config, playerIndex, activeMonIndex);
+                uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
+                int32 staminaDelta = monState.staminaDelta;
+                isValid = ValidatorLogic.validateSpecificMoveSelection(
+                    battleKey,
+                    moveSet,
+                    playerIndex,
+                    activeMonIndex,
+                    move.extraData,
+                    baseStamina,
+                    staminaDelta
+                );
+            } else {
+                // Use external validator
+                isValid = config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData);
+            }
+            if (!isValid) {
                 return playerSwitchForTurnFlag;
             }
-
-            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
             // Update the mon state directly to account for the stamina cost of the move
             staminaCost = int32(moveSet.stamina(battleKey, playerIndex, activeMonIndex));

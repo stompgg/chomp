@@ -52,7 +52,7 @@ contract EngineAndPeriphery is Script {
         TypeCalculator typeCalc = new TypeCalculator();
         deployedContracts.push(DeployData({name: "TYPE CALCULATOR", contractAddress: address(typeCalc)}));
 
-        Engine engine = new Engine();
+        Engine engine = new Engine(0, 0);
         deployedContracts.push(DeployData({name: "ENGINE", contractAddress: address(engine)}));
 
         SignedCommitManager commitManager = new SignedCommitManager(engine);

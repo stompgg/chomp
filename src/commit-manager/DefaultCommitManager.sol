@@ -214,9 +214,11 @@ contract DefaultCommitManager is ICommitManager {
 
         // 5) Validate that the commited moves are legal
         // (e.g. there is enough stamina, move is not disabled, etc.)
-        // Use validator from context instead of calling getBattleValidator
-        if (!IValidator(ctx.validator).validatePlayerMove(battleKey, moveIndex, currentPlayerIndex, extraData)) {
-            revert InvalidMove(msg.sender);
+        // Skip if validator is address(0) - validation will happen inline in Engine.execute()
+        if (ctx.validator != address(0)) {
+            if (!IValidator(ctx.validator).validatePlayerMove(battleKey, moveIndex, currentPlayerIndex, extraData)) {
+                revert InvalidMove(msg.sender);
+            }
         }
 
         // 6) Store revealed move and extra data for the current player

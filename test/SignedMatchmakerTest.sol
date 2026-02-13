@@ -39,7 +39,7 @@ contract SignedMatchmakerTest is Test, BattleHelper {
         p1 = vm.addr(P1_PK);
 
         // Deploy contracts
-        engine = new Engine();
+        engine = new Engine(0, 0);
         rngOracle = new DefaultRandomnessOracle();
         commitManager = new DefaultCommitManager(engine);
         validator = new DefaultValidator(

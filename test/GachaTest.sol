@@ -30,7 +30,7 @@ contract GachaTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine();
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         monRegistry = new DefaultMonRegistry();

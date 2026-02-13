@@ -47,7 +47,7 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
 
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine();
+        engine = new Engine(0, 0);
         validator = new DefaultValidator(
             IEngine(address(engine)),
             DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
