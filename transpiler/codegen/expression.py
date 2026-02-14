@@ -936,8 +936,9 @@ class ExpressionGenerator(BaseGenerator):
                             return f'{expr} as `0x${{string}}`[]'
                         else:
                             return f'{expr} as `0x${{string}}`'
-                    if var_type_name in ('int8', 'int16', 'int32', 'int64', 'int128',
-                                          'uint8', 'uint16', 'uint32', 'uint64', 'uint128'):
+                    # Small integers that viem expects as number (up to 48 bits)
+                    if var_type_name in ('int8', 'int16', 'int24', 'int32', 'int40', 'int48',
+                                          'uint8', 'uint16', 'uint24', 'uint32', 'uint40', 'uint48'):
                         return f'Number({expr})'
 
         if isinstance(arg, MemberAccess):
@@ -967,6 +968,10 @@ class ExpressionGenerator(BaseGenerator):
                                     return f'{expr}.map((c: any) => c._contractAddress as `0x${{string}}`)'
                                 else:
                                     return f'{expr}._contractAddress as `0x${{string}}`'
+                            # Small integers that viem expects as number (up to 48 bits)
+                            if field_type in ('int8', 'int16', 'int24', 'int32', 'int40', 'int48',
+                                              'uint8', 'uint16', 'uint24', 'uint32', 'uint40', 'uint48'):
+                                return f'Number({expr})'
 
         if isinstance(arg, FunctionCall):
             func_name = None

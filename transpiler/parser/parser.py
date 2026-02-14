@@ -1087,7 +1087,15 @@ class Parser:
 
     def parse_and(self) -> Expression:
         """Parse a logical AND expression."""
-        return self._parse_binary_op(self.parse_bitwise_or, TokenType.AMPERSAND_AMPERSAND)
+        return self._parse_binary_op(self.parse_equality, TokenType.AMPERSAND_AMPERSAND)
+
+    def parse_equality(self) -> Expression:
+        """Parse an equality expression."""
+        return self._parse_binary_op(self.parse_comparison, TokenType.EQ_EQ, TokenType.BANG_EQ)
+
+    def parse_comparison(self) -> Expression:
+        """Parse a comparison expression."""
+        return self._parse_binary_op(self.parse_bitwise_or, TokenType.LT, TokenType.GT, TokenType.LT_EQ, TokenType.GT_EQ)
 
     def parse_bitwise_or(self) -> Expression:
         """Parse a bitwise OR expression."""
@@ -1099,15 +1107,7 @@ class Parser:
 
     def parse_bitwise_and(self) -> Expression:
         """Parse a bitwise AND expression."""
-        return self._parse_binary_op(self.parse_equality, TokenType.AMPERSAND)
-
-    def parse_equality(self) -> Expression:
-        """Parse an equality expression."""
-        return self._parse_binary_op(self.parse_comparison, TokenType.EQ_EQ, TokenType.BANG_EQ)
-
-    def parse_comparison(self) -> Expression:
-        """Parse a comparison expression."""
-        return self._parse_binary_op(self.parse_shift, TokenType.LT, TokenType.GT, TokenType.LT_EQ, TokenType.GT_EQ)
+        return self._parse_binary_op(self.parse_shift, TokenType.AMPERSAND)
 
     def parse_shift(self) -> Expression:
         """Parse a shift expression."""
