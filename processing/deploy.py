@@ -82,6 +82,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
+        "--password", password,
     ]
 
     print(f"\n{'='*60}")
@@ -97,7 +98,6 @@ def run_forge_script(
         cwd=chomp_dir,
         capture_output=True,
         text=True,
-        input=password,
     )
 
     # Print stdout for visibility
