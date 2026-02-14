@@ -144,7 +144,6 @@ def read_mons_data(
                 "specialAttack": int(row["SpecialAttack"]),
                 "specialDefense": int(row["SpecialDefense"]),
                 "speed": int(row["Speed"]),
-                "bst": int(row["BST"]),
             },
             "type1": row["Type1"],
             "type2": row["Type2"] if row["Type2"] != "NA" else None,
@@ -401,10 +400,14 @@ export const MAX_MON_STATS: Record<keyof Mon['stats'], number> = {{
 }};
 for (const monData of Object.values(MonMetadata)) {{
   const stats = monData.stats;
-  for (const statName of Object.keys(stats) as (keyof Mon['stats'])[]) {{
+  const bst = stats.hp + stats.attack + stats.defense + stats.specialAttack + stats.specialDefense + stats.speed;
+  for (const statName of Object.keys(stats) as (keyof typeof stats)[]) {{
     if (stats[statName] > MAX_MON_STATS[statName]) {{
       MAX_MON_STATS[statName] = stats[statName];
     }}
+  }}
+  if (bst > MAX_MON_STATS.bst) {{
+    MAX_MON_STATS.bst = bst;
   }}
 }}
 """
