@@ -63,9 +63,12 @@ contract BetterCPU is CPU {
             opponentMonIndex = uint256(opponentMove.extraData);
         }
 
+        // Cache damage calc context once - used by _findKOMove and _findHighestDamageMove
+        DamageCalcContext memory attackCtx = ENGINE.getDamageCalcContext(battleKey, playerIndex, opponentIndex);
+
         // === KILL THREAT DETECTION ===
         // Check if we can KO the opponent - if so, take it!
-        int256 koMoveIndex = _findKOMove(battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, moves);
+        int256 koMoveIndex = _findKOMove(battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, attackCtx, moves);
         if (koMoveIndex >= 0) {
             return (moves[uint256(koMoveIndex)].moveIndex, moves[uint256(koMoveIndex)].extraData);
         }
@@ -98,15 +101,13 @@ contract BetterCPU is CPU {
         int256 hpDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Hp);
         if (hpDelta != 0) {
             // Damaged: prefer attacking moves with type advantage
-            Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type1));
-            Type opponentType2 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type2));
-            uint128[] memory attackMoves = _filterMoves(battleKey, playerIndex, activeMonIndex, moves, MoveClass.Physical, MoveClass.Special);
-            if (attackMoves.length > 0) {
-                // Find best move by estimated damage
-                int256 bestMove = _findHighestDamageMove(battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, opponentType1, opponentType2, moves, attackMoves);
-                if (bestMove >= 0) {
-                    return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
-                }
+            // Use types from cached context instead of separate ENGINE calls
+            Type opponentType1 = attackCtx.defenderType1;
+            Type opponentType2 = attackCtx.defenderType2;
+            // Find best move by estimated damage (filters inline to avoid double iteration)
+            int256 bestMove = _findHighestDamageMove(battleKey, playerIndex, activeMonIndex, attackCtx, opponentType1, opponentType2, moves);
+            if (bestMove >= 0) {
+                return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
         } else {
             // Full HP: prefer setup moves
@@ -129,6 +130,7 @@ contract BetterCPU is CPU {
         uint256 attackerMonIndex,
         uint256 defenderIndex,
         uint256 defenderMonIndex,
+        DamageCalcContext memory ctx,
         RevealedMove[] memory moves
     ) internal view returns (int256) {
         // Get defender's remaining HP
@@ -136,9 +138,6 @@ contract BetterCPU is CPU {
         int32 defenderHpDelta = ENGINE.getMonStateForBattle(battleKey, defenderIndex, defenderMonIndex, MonStateIndexName.Hp);
         int256 defenderCurrentHp = int256(uint256(defenderBaseHp)) + int256(defenderHpDelta);
         if (defenderCurrentHp <= 0) return -1; // Already KO'd
-
-        // Get damage calc context
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerIndex, defenderIndex);
 
         int256 bestMoveIndex = -1;
         uint256 bestDamage = 0;
@@ -308,41 +307,58 @@ contract BetterCPU is CPU {
         return (switches[rngIndex].moveIndex, switches[rngIndex].extraData);
     }
 
+    /// @notice Find highest damage move, filtering for Physical/Special inline to avoid double iteration
     function _findHighestDamageMove(
         bytes32 battleKey,
         uint256 attackerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderIndex,
-        uint256,
+        DamageCalcContext memory ctx,
         Type defenderType1,
         Type defenderType2,
-        RevealedMove[] memory moves,
-        uint128[] memory attackMoveIndices
+        RevealedMove[] memory moves
     ) internal view returns (int256) {
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerIndex, defenderIndex);
-
         int256 bestMoveIndex = -1;
         uint256 bestDamage = 0;
+        int256 firstAttackMoveIndex = -1;
+        int256 typeAdvantageMoveIndex = -1;
 
-        for (uint256 i = 0; i < attackMoveIndices.length; i++) {
-            uint256 moveArrayIndex = uint256(attackMoveIndices[i]);
-            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[moveArrayIndex].moveIndex);
+        for (uint256 i = 0; i < moves.length; i++) {
+            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
             MoveClass moveClass = moveSet.moveClass(battleKey);
+
+            // Only consider damaging moves (filter inline)
+            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) continue;
+
+            // Track first attack move for fallback
+            if (firstAttackMoveIndex == -1) {
+                firstAttackMoveIndex = int256(i);
+            }
 
             uint256 estimatedDamage = _estimateDamage(battleKey, ctx, moveSet, moveClass);
             if (estimatedDamage > bestDamage) {
                 bestDamage = estimatedDamage;
-                bestMoveIndex = int256(moveArrayIndex);
+                bestMoveIndex = int256(i);
+            }
+
+            // Track type advantage for fallback (if no damage estimate available)
+            if (typeAdvantageMoveIndex == -1 && estimatedDamage == 0) {
+                Type moveType = moveSet.moveType(battleKey);
+                uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(moveType, defenderType1, 2);
+                if (defenderType2 != Type.None) {
+                    effectiveness = effectiveness * TYPE_CALC.getTypeEffectiveness(moveType, defenderType2, 2);
+                }
+                if (effectiveness > 2) {
+                    typeAdvantageMoveIndex = int256(i);
+                }
             }
         }
 
         // Fall back to type advantage if no damage estimate available
-        if (bestMoveIndex == -1 && attackMoveIndices.length > 0) {
-            uint128[] memory typeAdvantagedMoves = _getTypeAdvantageAttacks(battleKey, attackerIndex, attackerMonIndex, defenderType1, defenderType2, moves, attackMoveIndices);
-            if (typeAdvantagedMoves.length > 0) {
-                return int256(uint256(typeAdvantagedMoves[0]));
+        if (bestMoveIndex == -1) {
+            if (typeAdvantageMoveIndex != -1) {
+                return typeAdvantageMoveIndex;
             }
-            return int256(uint256(attackMoveIndices[0]));
+            return firstAttackMoveIndex;
         }
 
         return bestMoveIndex;
@@ -388,35 +404,6 @@ contract BetterCPU is CPU {
             MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex).moveClass(battleKey);
             if (currentMoveClass == class1 || currentMoveClass == class2) {
                 validIndices[validCount++] = uint128(i);
-            }
-        }
-        uint128[] memory result = new uint128[](validCount);
-        for (uint256 i = 0; i < validCount; i++) {
-            result[i] = validIndices[i];
-        }
-        return result;
-    }
-
-    function _getTypeAdvantageAttacks(
-        bytes32 battleKey,
-        uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
-        Type defenderType1,
-        Type defenderType2,
-        RevealedMove[] memory attacks,
-        uint128[] memory validAttackIndices
-    ) internal view returns (uint128[] memory) {
-        uint128[] memory validIndices = new uint128[](validAttackIndices.length);
-        uint256 validCount = 0;
-        for (uint256 i = 0; i < validAttackIndices.length; i++) {
-            IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, attacks[validAttackIndices[i]].moveIndex);
-            Type moveType = currentMoveSet.moveType(battleKey);
-            uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(moveType, defenderType1, 2);
-            if (defenderType2 != Type.None) {
-                effectiveness = effectiveness * TYPE_CALC.getTypeEffectiveness(moveType, defenderType2, 2);
-            }
-            if (effectiveness > 2) {
-                validIndices[validCount++] = validAttackIndices[i];
             }
         }
         uint128[] memory result = new uint128[](validCount);

@@ -734,10 +734,11 @@ contract CPUTest is Test {
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
 
-        // Turn 1, set RNG to trigger smart random select ([no op, move 0 (self), move 1 (damage)])
-        // and SMART_SELECT_SHORT_CIRCUIT_DENOM is set to 6, so if RNG is 5, we'll end up on move index 1
+        // Turn 1, set RNG to trigger smart random select and pick move index 1
+        // RNG needs: (RNG % 6 == 5) to trigger smart random, (RNG % 3 != 0) to not switch, ((RNG >> 8) % 2 == 1) to pick move 1
+        // 257 satisfies all: 257 % 6 = 5, 257 % 3 = 2, (257 >> 8) = 1
         // So both mons should take 1 damage, as p0 also selects the damage move
-        mockCPURNG.setRNG(okayCPU.SMART_SELECT_SHORT_CIRCUIT_DENOM() - 1);
+        mockCPURNG.setRNG(257);
         okayCPU.selectMove(battleKey, 1, "", 0);
 
         // Assert that the hp delta is -1 for p0's active mon and p1's active mon
