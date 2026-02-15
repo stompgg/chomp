@@ -27,42 +27,45 @@ abstract contract CPUMoveManager {
             revert NotP0();
         }
 
-        address winner = ENGINE.getWinner(battleKey);
-        if (winner != address(0)) {
+        if (ENGINE.getWinner(battleKey) != address(0)) {
             return;
         }
 
         uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
 
-        // Determine move configuration based on turn flag
+        // Prepare moves based on turn flag
+        uint8 p0MoveIndex;
+        uint240 p0ExtraData;
+        uint8 p1MoveIndex;
+        bytes32 p1Salt;
+        uint240 p1ExtraData;
+
         if (playerSwitchForTurnFlag == 0) {
             // P0's turn: player moves, CPU no-ops
-            _addPlayerMove(battleKey, moveIndex, salt, extraData);
-            _addCPUMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-        } else if (playerSwitchForTurnFlag == 1) {
-            // P1's turn: player no-ops, CPU moves
-            _addPlayerMove(battleKey, NO_OP_MOVE_INDEX, salt, extraData);
-            _addCPUMoveFromAI(battleKey);
+            p0MoveIndex = moveIndex;
+            p0ExtraData = extraData;
+            p1MoveIndex = NO_OP_MOVE_INDEX;
+            p1Salt = "";
+            p1ExtraData = 0;
         } else {
-            // Both players move
-            _addPlayerMove(battleKey, moveIndex, salt, extraData);
-            _addCPUMoveFromAI(battleKey);
+            // P1's turn or both players move: CPU calculates its move
+            (uint128 cpuMoveIndex, uint240 cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1);
+            p1MoveIndex = uint8(cpuMoveIndex);
+            p1Salt = keccak256(abi.encode(battleKey, msg.sender, block.timestamp));
+            p1ExtraData = cpuExtraData;
+
+            if (playerSwitchForTurnFlag == 1) {
+                // P1's turn only: player no-ops
+                p0MoveIndex = NO_OP_MOVE_INDEX;
+                p0ExtraData = 0;
+            } else {
+                // Both players move
+                p0MoveIndex = moveIndex;
+                p0ExtraData = extraData;
+            }
         }
 
-        ENGINE.execute(battleKey);
-    }
-
-    function _addPlayerMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) private {
-        ENGINE.setMove(battleKey, 0, moveIndex, salt, extraData);
-    }
-
-    function _addCPUMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) private {
-        ENGINE.setMove(battleKey, 1, moveIndex, salt, extraData);
-    }
-
-    function _addCPUMoveFromAI(bytes32 battleKey) private {
-        (uint128 cpuMoveIndex, uint240 cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1);
-        bytes32 cpuSalt = keccak256(abi.encode(battleKey, msg.sender, block.timestamp));
-        _addCPUMove(battleKey, uint8(cpuMoveIndex), cpuSalt, cpuExtraData);
+        // Single external call: set both moves and execute
+        ENGINE.executeWithMoves(battleKey, p0MoveIndex, salt, p0ExtraData, p1MoveIndex, p1Salt, p1ExtraData);
     }
 }

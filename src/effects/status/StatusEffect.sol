@@ -32,7 +32,7 @@ abstract contract StatusEffect is BasicEffect {
         public
         virtual
         override
-        returns (bytes32, bool)
+        returns (bytes32 extraData, bool removeAfterRun)
     {
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
@@ -41,9 +41,10 @@ abstract contract StatusEffect is BasicEffect {
             // Set the global status flag to be the address of the status
             ENGINE.setGlobalKV(keyForMon, uint192(uint160(address(this))));
         }
+        return (extraData, removeAfterRun);
     }
 
-    function onRemove(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
+    function onRemove(bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
         // On remove, reset the status flag
         ENGINE.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), 0);
     }

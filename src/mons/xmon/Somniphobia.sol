@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY, MOVE_INDEX_MASK} from "../../Constants.sol";
-import {EffectStep, ExtraDataType, MoveClass, Type} from "../../Enums.sol";
+import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
 import {MoveDecision, MonStateIndexName, EffectInstance} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../src/Enums.sol";
+import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {StatBoostToApply} from "../../src/Structs.sol";
 

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
-import {EffectStep} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
 

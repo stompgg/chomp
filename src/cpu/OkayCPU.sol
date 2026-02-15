@@ -29,21 +29,6 @@ contract OkayCPU is CPU {
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) = calculateValidMoves(battleKey, playerIndex);
 
-        // Merge all three arrays into one
-        uint256 totalChoices = noOp.length + moves.length + switches.length;
-        RevealedMove[] memory allChoices = new RevealedMove[](totalChoices);
-        {
-            uint256 index = 0;
-            for (uint256 i = 0; i < noOp.length; i++) {
-                allChoices[index++] = noOp[i];
-            }
-            for (uint256 i = 0; i < moves.length; i++) {
-                allChoices[index++] = moves[i];
-            }
-            for (uint256 i = 0; i < switches.length; i++) {
-                allChoices[index++] = switches[i];
-            }
-        }
         uint256 opponentIndex = (playerIndex + 1) % 2;
         MoveDecision memory opponentMove = ENGINE.getMoveDecisionForBattleState(battleKey, opponentIndex);
         uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
@@ -73,8 +58,12 @@ contract OkayCPU is CPU {
             - Otherwise, do a smart random select
         */
         else {
+            // Cache active mon indices - single external call instead of multiple
+            uint256[] memory activeMonIndices = ENGINE.getActiveMonIndexForBattleState(battleKey);
+            uint256 activeMonIndex = activeMonIndices[playerIndex];
+            uint256 opponentMonIndex = activeMonIndices[opponentIndex];
+
             // If we are KO'ed
-            uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex];
             int32 isKOed = ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut);
             if (isKOed == 1) {
                 uint256 rngIndex = _getRNG(battleKey) % switches.length;
@@ -85,7 +74,7 @@ contract OkayCPU is CPU {
                 return _smartRandomSelect(battleKey, noOp, moves, switches);
             }
             // Otherwise, try and act smart
-            int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex], MonStateIndexName.Stamina);
+            int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
             if (staminaDelta <= -3) {
                 if (_getRNG(battleKey) % 4 != 0 && noOp.length > 0) {
                     return (noOp[0].moveIndex, noOp[0].extraData);
@@ -95,23 +84,18 @@ contract OkayCPU is CPU {
                 }
             }
             else {
-                int256 hpDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Hp);                
+                int256 hpDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Hp);
                 if (hpDelta != 0) {
-                    // Look up move if the opponent is switching and set the correct active mon index
-                    uint256 opponentMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[opponentIndex];
-                    // Unpack the move index from packedMoveIndex
-                    uint8 opponentMoveIndex = opponentMove.packedMoveIndex & MOVE_INDEX_MASK;
-                    if (opponentMoveIndex == SWITCH_MOVE_INDEX) {
+                    // Check if the opponent is switching and update mon index accordingly
+                    uint8 opponentMoveIdx = opponentMove.packedMoveIndex & MOVE_INDEX_MASK;
+                    if (opponentMoveIdx == SWITCH_MOVE_INDEX) {
                         opponentMonIndex = uint256(opponentMove.extraData);
                     }
                     Type opponentType1 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type1));
                     Type opponentType2 = Type(ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Type2));
-                    MoveClass[] memory moveClasses = new MoveClass[](2);
-                    moveClasses[0] = MoveClass.Physical;
-                    moveClasses[1] = MoveClass.Special;
-                    uint128[] memory physicalOrSpecialMoves = _filterMoves(battleKey, playerIndex, moves, moveClasses);
+                    uint128[] memory physicalOrSpecialMoves = _filterMoves(battleKey, playerIndex, activeMonIndex, moves, MoveClass.Physical, MoveClass.Special);
                     if (physicalOrSpecialMoves.length > 0) {
-                        uint128[] memory typeAdvantagedMoves = _getTypeAdvantageAttacks(battleKey, opponentIndex, opponentType1, opponentType2, moves, physicalOrSpecialMoves);
+                        uint128[] memory typeAdvantagedMoves = _getTypeAdvantageAttacks(battleKey, playerIndex, activeMonIndex, opponentType1, opponentType2, moves, physicalOrSpecialMoves);
                         if (typeAdvantagedMoves.length > 0) {
                             uint256 rngIndex = _getRNG(battleKey) % typeAdvantagedMoves.length;
                             return (moves[typeAdvantagedMoves[rngIndex]].moveIndex, moves[typeAdvantagedMoves[rngIndex]].extraData);
@@ -119,10 +103,7 @@ contract OkayCPU is CPU {
                     }
                 }
                 else {
-                    MoveClass[] memory moveClasses = new MoveClass[](2);
-                    moveClasses[0] = MoveClass.Self;
-                    moveClasses[1] = MoveClass.Other;
-                    uint128[] memory selfOrOtherMoves = _filterMoves(battleKey, playerIndex, moves, moveClasses);
+                    uint128[] memory selfOrOtherMoves = _filterMoves(battleKey, playerIndex, activeMonIndex, moves, MoveClass.Self, MoveClass.Other);
                     if (selfOrOtherMoves.length > 0) {
                         uint256 rngIndex = _getRNG(battleKey) % selfOrOtherMoves.length;
                         return (moves[selfOrOtherMoves[rngIndex]].moveIndex, moves[selfOrOtherMoves[rngIndex]].extraData);
@@ -139,35 +120,45 @@ contract OkayCPU is CPU {
 
     // Biased towards moves versus swapping or resting
     function _smartRandomSelect(bytes32 battleKey, RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) internal returns (uint128, uint240) {
-        uint256 rngIndex = _getRNG(battleKey);
-        uint256 adjustedTotalMovesDenom = moves.length + 1;
-        if (rngIndex % adjustedTotalMovesDenom == 0) {
-            uint256 switchOrNoOp = _getRNG(battleKey) % 2;
+        // Single RNG call - use different bit ranges for different random decisions
+        uint256 rng = _getRNG(battleKey);
+        uint256 movesLen = moves.length;
+        uint256 adjustedTotalMovesDenom = movesLen + 1;
+
+        if (rng % adjustedTotalMovesDenom == 0) {
+            // Use bits 8-15 for switch vs noOp decision
+            uint256 switchOrNoOp = (rng >> 8) % 2;
             if (switchOrNoOp == 0 && noOp.length > 0) {
                 return (noOp[0].moveIndex, noOp[0].extraData);
             } else if (switches.length > 0) {
-                uint256 rngSwitchIndex = _getRNG(battleKey) % switches.length;
+                // Use bits 16-31 for switch index
+                uint256 rngSwitchIndex = (rng >> 16) % switches.length;
                 return (switches[rngSwitchIndex].moveIndex, switches[rngSwitchIndex].extraData);
             }
-        } else if (moves.length > 0) {
-            uint256 moveIndex = _getRNG(battleKey) % moves.length;
-            return (moves[moveIndex].moveIndex, moves[moveIndex].extraData);
+        } else if (movesLen > 0) {
+            // Use bits 8-23 for move index
+            uint256 moveIdx = (rng >> 8) % movesLen;
+            return (moves[moveIdx].moveIndex, moves[moveIdx].extraData);
         }
-        // We should never get here, but`
+        // Fallback
         return (noOp[0].moveIndex, noOp[0].extraData);
     }
 
-    function _filterMoves(bytes32 battleKey, uint256 playerIndex, RevealedMove[] memory moves, MoveClass[] memory moveClasses) internal view returns (uint128[] memory) {
+    function _filterMoves(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 activeMonIndex,
+        RevealedMove[] memory moves,
+        MoveClass class1,
+        MoveClass class2
+    ) internal view returns (uint128[] memory) {
         uint128[] memory validIndices = new uint128[](moves.length);
         uint256 validCount = 0;
-        for (uint256 i = 0; i < moves.length; i++) {
-            MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex], moves[i].moveIndex).moveClass(battleKey);
-            for (uint256 j = 0; j < moveClasses.length; j++) {
-                if (currentMoveClass == moveClasses[j]) {
-                    validIndices[validCount] = uint128(i);
-                    validCount++;
-                    break;
-                }
+        uint256 movesLen = moves.length;
+        for (uint256 i = 0; i < movesLen; i++) {
+            MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex).moveClass(battleKey);
+            if (currentMoveClass == class1 || currentMoveClass == class2) {
+                validIndices[validCount++] = uint128(i);
             }
         }
         // Copy the valid indices into a new array with only the valid ones
@@ -178,19 +169,27 @@ contract OkayCPU is CPU {
         return validIndicesCopy;
     }
 
-    function _getTypeAdvantageAttacks(bytes32 battleKey, uint256 defenderPlayerIndex, Type defenderType1, Type defenderType2, RevealedMove[] memory attacks, uint128[] memory validAttackIndices) internal view returns (uint128[] memory) {
+    function _getTypeAdvantageAttacks(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        Type defenderType1,
+        Type defenderType2,
+        RevealedMove[] memory attacks,
+        uint128[] memory validAttackIndices
+    ) internal view returns (uint128[] memory) {
         uint128[] memory validIndices = new uint128[](validAttackIndices.length);
         uint256 validCount = 0;
-        for (uint256 i = 0; i < validAttackIndices.length; i++) {
-            IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, defenderPlayerIndex, ENGINE.getActiveMonIndexForBattleState(battleKey)[defenderPlayerIndex], attacks[validAttackIndices[i]].moveIndex);
-            uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(currentMoveSet.moveType(battleKey), defenderType1, 2);
+        uint256 indicesLen = validAttackIndices.length;
+        for (uint256 i = 0; i < indicesLen; i++) {
+            IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, attacks[validAttackIndices[i]].moveIndex);
+            Type moveType = currentMoveSet.moveType(battleKey);
+            uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(moveType, defenderType1, 2);
             if (defenderType2 != Type.None) {
-                uint256 effectiveness2 = TYPE_CALC.getTypeEffectiveness(currentMoveSet.moveType(battleKey), defenderType2, 2);
-                effectiveness = (effectiveness * effectiveness2);
+                effectiveness = effectiveness * TYPE_CALC.getTypeEffectiveness(moveType, defenderType2, 2);
             }
             if (effectiveness > 2) {
-                validIndices[validCount] = validAttackIndices[i];
-                validCount++;
+                validIndices[validCount++] = validAttackIndices[i];
             }
         }
         // Copy the valid indices into a new array with only the valid ones

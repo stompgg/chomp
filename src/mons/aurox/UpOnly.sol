@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.0;
 
-import {EffectStep} from "../../Enums.sol";
 import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";

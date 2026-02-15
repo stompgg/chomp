@@ -11,6 +11,7 @@ import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {PlayerCPU} from "../src/cpu/PlayerCPU.sol";
 import {RandomCPU} from "../src/cpu/RandomCPU.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
+import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
 import {GachaRegistry, IGachaRNG} from "../src/gacha/GachaRegistry.sol";
@@ -80,6 +81,9 @@ contract EngineAndPeriphery is Script {
 
         OkayCPU okayCPU = new OkayCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "OKAY CPU", contractAddress: address(okayCPU)}));
+
+        BetterCPU betterCPU = new BetterCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
+        deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
         DefaultMatchmaker matchmaker = new DefaultMatchmaker(engine);
         deployedContracts.push(DeployData({name: "DEFAULT MATCHMAKER", contractAddress: address(matchmaker)}));

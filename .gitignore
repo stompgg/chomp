@@ -49,3 +49,5 @@ drool/*
 # Transpiler output
 ts-output/
 transpiler/ts-output/
+
+.vscode/

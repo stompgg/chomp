@@ -137,7 +137,7 @@ contract DefaultValidator is IValidator {
         bool isActiveMonKnockedOut = (playerIndex == 0) ? vctx.p0ActiveMonKnockedOut : vctx.p1ActiveMonKnockedOut;
 
         // Use library for basic validation
-        (bool requiresSwitch, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
             ValidatorLogic.validatePlayerMoveBasics(moveIndex, vctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
 
         if (!basicValid) {

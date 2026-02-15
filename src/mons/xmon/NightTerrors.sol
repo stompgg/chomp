@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_CRIT_RATE} from "../../Constants.sol";
-import {EffectStep, ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
+import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
 import {EffectInstance} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";

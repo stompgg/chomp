@@ -148,6 +148,7 @@ contract Overclock is BasicEffect {
 
     function onRoundStart(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
+        pure
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {

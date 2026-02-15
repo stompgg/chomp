@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
-import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
+import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
