@@ -7,7 +7,7 @@ Meta-script to orchestrate the full deployment pipeline:
 4. Run createAddressAndABIs.py and generateMonsTypescript.py
 
 Usage:
-    python processing/deploy.py --rpc-url <RPC_URL> [--testnet|--mainnet]
+    python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet
 """
 
 import argparse
@@ -22,6 +22,10 @@ from pathlib import Path
 # Constants
 SENDER = "0x4206957609f2936D166aF8E5d0870a11496302AD"
 ACCOUNT = "defaultKey"
+
+# Default RPC URLs
+DEFAULT_RPC_MAINNET = "https://mainnet.megaeth.com/rpc"
+DEFAULT_RPC_TESTNET = "https://carrot.megaeth.com/rpc"
 
 # Script paths relative to chomp directory
 SCRIPTS = [
@@ -158,8 +162,7 @@ def main():
     )
     parser.add_argument(
         '--rpc-url',
-        required=True,
-        help='RPC URL for the target network'
+        help='RPC URL for the target network (defaults to MegaETH RPC based on network)'
     )
 
     network_group = parser.add_mutually_exclusive_group(required=True)
@@ -188,11 +191,16 @@ def main():
     args = parser.parse_args()
     network = "mainnet" if args.mainnet else "testnet"
 
+    # Use default RPC URL if not provided
+    rpc_url = args.rpc_url
+    if not rpc_url:
+        rpc_url = DEFAULT_RPC_MAINNET if args.mainnet else DEFAULT_RPC_TESTNET
+
     chomp_dir = get_chomp_dir()
     env_path = chomp_dir / ".env"
 
     print(f"Deploying to {network.upper()}")
-    print(f"RPC URL: {args.rpc_url}")
+    print(f"RPC URL: {rpc_url}")
     print(f"Sender: {SENDER}")
     print(f"Chomp directory: {chomp_dir}")
 
@@ -206,7 +214,7 @@ def main():
         for script_path in SCRIPTS:
             output = run_forge_script(
                 script_path,
-                args.rpc_url,
+                rpc_url,
                 password,
                 chomp_dir,
                 dry_run=args.dry_run
