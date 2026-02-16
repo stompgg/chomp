@@ -26,6 +26,26 @@ interface IValidator {
     // Validates that a switch is valid
     function validateSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) external returns (bool);
 
+    // Validates a move for a specific slot in doubles mode
+    function validatePlayerMoveForSlot(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint240 extraData
+    ) external returns (bool);
+
+    // Validates a move for a specific slot, accounting for what the other slot is switching to
+    // claimedByOtherSlot is the mon index the other slot is switching to (type(uint256).max if not applicable)
+    function validatePlayerMoveForSlotWithClaimed(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint240 extraData,
+        uint256 claimedByOtherSlot
+    ) external returns (bool);
+
     // Validates that there is a valid timeout, returns address(0) if no winner, otherwise returns the winner
     function validateTimeout(bytes32 battleKey, uint256 presumedAFKPlayerIndex) external returns (address);
 }
