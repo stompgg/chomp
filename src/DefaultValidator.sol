@@ -80,6 +80,7 @@ contract DefaultValidator is IValidator {
     }
 
     // A switch is valid if the new mon isn't knocked out and the index is valid (not out of range or the same one)
+    // For doubles, also checks that the mon isn't already active in either slot
     function validateSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex)
         public
         view
@@ -88,16 +89,27 @@ contract DefaultValidator is IValidator {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         uint256 activeMonIndex = (playerIndex == 0) ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
 
-        bool isTargetKnockedOut =
+        if (monToSwitchIndex >= MONS_PER_TEAM) {
+            return false;
+        }
+        bool isNewMonKnockedOut =
             ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
-
-        return ValidatorLogic.validateSwitch(
-            ctx.turnId,
-            activeMonIndex,
-            monToSwitchIndex,
-            isTargetKnockedOut,
-            MONS_PER_TEAM
-        );
+        if (isNewMonKnockedOut) {
+            return false;
+        }
+        if (ctx.turnId != 0) {
+            if (monToSwitchIndex == activeMonIndex) {
+                return false;
+            }
+            // For doubles, also check the second slot
+            if (ctx.gameMode == GameMode.Doubles) {
+                uint256 activeMonIndex2 = (playerIndex == 0) ? ctx.p0ActiveMonIndex1 : ctx.p1ActiveMonIndex1;
+                if (monToSwitchIndex == activeMonIndex2) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     function validateSpecificMoveSelection(
@@ -221,37 +233,7 @@ contract DefaultValidator is IValidator {
         uint256 slotIndex,
         uint240 extraData
     ) external view returns (bool) {
-        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
-        uint256 activeMonIndex = _getActiveMonForSlot(ctx, playerIndex, slotIndex);
-
-        bool isActiveMonKnockedOut =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut) == 1;
-
-        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
-            ValidatorLogic.validatePlayerMoveBasics(moveIndex, ctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
-
-        if (!basicValid) return false;
-        if (isNoOp) return true;
-
-        if (isSwitch) {
-            uint256 monToSwitchIndex = uint256(extraData);
-            bool isTargetKnockedOut =
-                ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
-            return ValidatorLogic.validateSwitch(ctx.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, MONS_PER_TEAM);
-        }
-
-        if (isRegularMove) {
-            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
-            int32 staminaDelta =
-                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
-            uint32 baseStamina =
-                ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
-            return ValidatorLogic.validateSpecificMoveSelection(
-                battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
-            );
-        }
-
-        return true;
+        return _validatePlayerMoveForSlotImpl(battleKey, moveIndex, playerIndex, slotIndex, extraData, type(uint256).max);
     }
 
     // Validates a move for a specific slot, preventing the same mon from being claimed by both slots
@@ -263,46 +245,128 @@ contract DefaultValidator is IValidator {
         uint240 extraData,
         uint256 claimedByOtherSlot
     ) external view returns (bool) {
+        return _validatePlayerMoveForSlotImpl(battleKey, moveIndex, playerIndex, slotIndex, extraData, claimedByOtherSlot);
+    }
+
+    // Shared implementation for slot move validation
+    function _validatePlayerMoveForSlotImpl(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint240 extraData,
+        uint256 claimedByOtherSlot
+    ) internal view returns (bool) {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+
         uint256 activeMonIndex = _getActiveMonForSlot(ctx, playerIndex, slotIndex);
+        uint256 otherSlotActiveMonIndex = _getActiveMonForSlot(ctx, playerIndex, 1 - slotIndex);
 
-        bool isActiveMonKnockedOut =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut) == 1;
+        bool isActiveMonKnockedOut = ENGINE.getMonStateForBattle(
+            battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut
+        ) == 1;
 
-        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
-            ValidatorLogic.validatePlayerMoveBasics(moveIndex, ctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
+        // Turn 0 or KO'd mon: must switch (unless no valid targets -> NO_OP allowed)
+        if (ctx.turnId == 0 || isActiveMonKnockedOut) {
+            if (moveIndex != SWITCH_MOVE_INDEX) {
+                // Allow NO_OP if there are no valid switch targets
+                if (moveIndex == NO_OP_MOVE_INDEX && !_hasValidSwitchTargetForSlot(battleKey, playerIndex, otherSlotActiveMonIndex, claimedByOtherSlot)) {
+                    return true;
+                }
+                return false;
+            }
+        }
 
-        if (!basicValid) return false;
-        if (isNoOp) return true;
-
-        if (isSwitch) {
+        // Validate move index range
+        if (moveIndex != NO_OP_MOVE_INDEX && moveIndex != SWITCH_MOVE_INDEX) {
+            if (moveIndex >= MOVES_PER_MON) {
+                return false;
+            }
+        }
+        // NO_OP is always valid (if we got past the KO check)
+        else if (moveIndex == NO_OP_MOVE_INDEX) {
+            return true;
+        }
+        // Switch validation
+        else if (moveIndex == SWITCH_MOVE_INDEX) {
             uint256 monToSwitchIndex = uint256(extraData);
-            // Prevent both slots from switching to the same mon
-            if (claimedByOtherSlot != type(uint256).max && monToSwitchIndex == claimedByOtherSlot) {
-                return false;
-            }
-            // Prevent switching to a mon that's currently active in the other slot
-            uint256 otherSlotActiveMonIndex = _getActiveMonForSlot(ctx, playerIndex, 1 - slotIndex);
-            if (ctx.turnId != 0 && monToSwitchIndex == otherSlotActiveMonIndex) {
-                return false;
-            }
-            bool isTargetKnockedOut =
-                ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
-            return ValidatorLogic.validateSwitch(ctx.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, MONS_PER_TEAM);
+            return _validateSwitchForSlot(battleKey, playerIndex, monToSwitchIndex, activeMonIndex, otherSlotActiveMonIndex, claimedByOtherSlot, ctx);
         }
 
-        if (isRegularMove) {
-            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
-            int32 staminaDelta =
-                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
-            uint32 baseStamina =
-                ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
-            return ValidatorLogic.validateSpecificMoveSelection(
-                battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
-            );
-        }
+        // Validate specific move selection
+        return _validateSpecificMoveSelectionInternal(battleKey, moveIndex, playerIndex, extraData, activeMonIndex);
+    }
 
+    // Checks if there's any valid switch target for a slot in doubles
+    function _hasValidSwitchTargetForSlot(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 otherSlotActiveMonIndex,
+        uint256 claimedByOtherSlot
+    ) internal view returns (bool) {
+        for (uint256 i = 0; i < MONS_PER_TEAM; i++) {
+            if (i == otherSlotActiveMonIndex) continue;
+            if (i == claimedByOtherSlot) continue;
+            bool isKnockedOut = ENGINE.getMonStateForBattle(
+                battleKey, playerIndex, i, MonStateIndexName.IsKnockedOut
+            ) == 1;
+            if (!isKnockedOut) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Validates switch for a specific slot in doubles
+    function _validateSwitchForSlot(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monToSwitchIndex,
+        uint256 currentSlotActiveMonIndex,
+        uint256 otherSlotActiveMonIndex,
+        uint256 claimedByOtherSlot,
+        BattleContext memory ctx
+    ) internal view returns (bool) {
+        if (monToSwitchIndex >= MONS_PER_TEAM) {
+            return false;
+        }
+        bool isNewMonKnockedOut = ENGINE.getMonStateForBattle(
+            battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut
+        ) == 1;
+        if (isNewMonKnockedOut) {
+            return false;
+        }
+        // Can't switch to mon already active in the other slot
+        if (monToSwitchIndex == otherSlotActiveMonIndex) {
+            return false;
+        }
+        // Can't switch to mon being claimed by the other slot
+        if (monToSwitchIndex == claimedByOtherSlot) {
+            return false;
+        }
+        // Can't switch to same mon (except turn 0)
+        if (ctx.turnId != 0 && monToSwitchIndex == currentSlotActiveMonIndex) {
+            return false;
+        }
         return true;
+    }
+
+    // Internal version for specific move selection validation
+    function _validateSpecificMoveSelectionInternal(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint240 extraData,
+        uint256 activeMonIndex
+    ) internal view returns (bool) {
+        IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+        int32 staminaDelta =
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+        uint32 baseStamina =
+            ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+        return ValidatorLogic.validateSpecificMoveSelection(
+            battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
+        );
     }
 
     // Helper to get active mon index for a specific slot from BattleContext

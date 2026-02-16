@@ -27,13 +27,19 @@ contract DoublesSlotAttack is IMoveSet {
         TYPE_CALCULATOR = typeCalc;
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256 rng) external {
-        // Use AttackCalculator with the current interface
+    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240 extraData, uint256 rng) external {
+        // Extract slot indices from extraData: lower 4 bits = attacker slot, next 4 bits = defender slot
+        uint256 attackerSlotIndex = uint256(extraData) & 0x0F;
+        uint256 defenderSlotIndex = (uint256(extraData) >> 4) & 0x0F;
+
+        // Use slot-aware AttackCalculator overload for correct doubles targeting
         AttackCalculator._calculateDamage(
             ENGINE,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            attackerSlotIndex,
+            defenderSlotIndex,
             BASE_POWER,
             ACCURACY,
             DEFAULT_VOL,

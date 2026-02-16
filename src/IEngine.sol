@@ -107,6 +107,14 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
+    // Slot-aware overload for doubles - uses explicit slot indices to get correct mon
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderSlotIndex
+    ) external view returns (DamageCalcContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
 
     // Doubles-specific
