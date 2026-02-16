@@ -213,6 +213,111 @@ contract DefaultValidator is IValidator {
         );
     }
 
+    // Validates a move for a specific slot in doubles mode
+    function validatePlayerMoveForSlot(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint240 extraData
+    ) external view returns (bool) {
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+        uint256 activeMonIndex = _getActiveMonForSlot(ctx, playerIndex, slotIndex);
+
+        bool isActiveMonKnockedOut =
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut) == 1;
+
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
+            ValidatorLogic.validatePlayerMoveBasics(moveIndex, ctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
+
+        if (!basicValid) return false;
+        if (isNoOp) return true;
+
+        if (isSwitch) {
+            uint256 monToSwitchIndex = uint256(extraData);
+            bool isTargetKnockedOut =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
+            return ValidatorLogic.validateSwitch(ctx.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, MONS_PER_TEAM);
+        }
+
+        if (isRegularMove) {
+            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+            int32 staminaDelta =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+            uint32 baseStamina =
+                ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+            return ValidatorLogic.validateSpecificMoveSelection(
+                battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
+            );
+        }
+
+        return true;
+    }
+
+    // Validates a move for a specific slot, preventing the same mon from being claimed by both slots
+    function validatePlayerMoveForSlotWithClaimed(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint240 extraData,
+        uint256 claimedByOtherSlot
+    ) external view returns (bool) {
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+        uint256 activeMonIndex = _getActiveMonForSlot(ctx, playerIndex, slotIndex);
+
+        bool isActiveMonKnockedOut =
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut) == 1;
+
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
+            ValidatorLogic.validatePlayerMoveBasics(moveIndex, ctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
+
+        if (!basicValid) return false;
+        if (isNoOp) return true;
+
+        if (isSwitch) {
+            uint256 monToSwitchIndex = uint256(extraData);
+            // Prevent both slots from switching to the same mon
+            if (claimedByOtherSlot != type(uint256).max && monToSwitchIndex == claimedByOtherSlot) {
+                return false;
+            }
+            // Prevent switching to a mon that's currently active in the other slot
+            uint256 otherSlotActiveMonIndex = _getActiveMonForSlot(ctx, playerIndex, 1 - slotIndex);
+            if (ctx.turnId != 0 && monToSwitchIndex == otherSlotActiveMonIndex) {
+                return false;
+            }
+            bool isTargetKnockedOut =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
+            return ValidatorLogic.validateSwitch(ctx.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, MONS_PER_TEAM);
+        }
+
+        if (isRegularMove) {
+            IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+            int32 staminaDelta =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+            uint32 baseStamina =
+                ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+            return ValidatorLogic.validateSpecificMoveSelection(
+                battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
+            );
+        }
+
+        return true;
+    }
+
+    // Helper to get active mon index for a specific slot from BattleContext
+    function _getActiveMonForSlot(BattleContext memory ctx, uint256 playerIndex, uint256 slotIndex)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (playerIndex == 0) {
+            return slotIndex == 0 ? ctx.p0ActiveMonIndex : ctx.p0ActiveMonIndex1;
+        } else {
+            return slotIndex == 0 ? ctx.p1ActiveMonIndex : ctx.p1ActiveMonIndex1;
+        }
+    }
+
     /*
         Check switch for turn flag:
 
