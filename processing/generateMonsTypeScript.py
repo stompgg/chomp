@@ -362,7 +362,6 @@ export type Mon = {{
     readonly specialAttack: number;
     readonly specialDefense: number;
     readonly speed: number;
-    readonly bst: number;
   }};
   readonly type1: Type;
   readonly type2: Type | null;
@@ -396,20 +395,7 @@ export const MAX_MON_STATS: Record<keyof Mon['stats'], number> = {{
   specialAttack: 0,
   specialDefense: 0,
   speed: 0,
-  bst: 0,
 }};
-for (const monData of Object.values(MonMetadata)) {{
-  const stats = monData.stats;
-  const bst = stats.hp + stats.attack + stats.defense + stats.specialAttack + stats.specialDefense + stats.speed;
-  for (const statName of Object.keys(stats) as (keyof typeof stats)[]) {{
-    if (stats[statName] > MAX_MON_STATS[statName]) {{
-      MAX_MON_STATS[statName] = stats[statName];
-    }}
-  }}
-  if (bst > MAX_MON_STATS.bst) {{
-    MAX_MON_STATS.bst = bst;
-  }}
-}}
 """
 
     with open(output_file, "w", encoding="utf-8") as f:

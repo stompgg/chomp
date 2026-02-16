@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import getpass
-import os
 import re
 import subprocess
 import sys
@@ -120,7 +119,12 @@ def run_forge_script(
     return result.stdout + result.stderr
 
 
-def run_typescript_scripts(network: str, chomp_dir: Path, dry_run: bool = False):
+def run_typescript_scripts(
+    network: str,
+    chomp_dir: Path,
+    all_addresses: list[tuple[str, str]],
+    dry_run: bool = False
+):
     """Run createAddressAndABIs.py and generateMonsTypescript.py."""
     processing_dir = chomp_dir / "processing"
 
@@ -130,12 +134,16 @@ def run_typescript_scripts(network: str, chomp_dir: Path, dry_run: bool = False)
     print(f"{'='*60}")
 
     network_flag = "--mainnet" if network == "mainnet" else "--testnet"
-    cmd = [sys.executable, str(processing_dir / "createAddressAndABIs.py"), network_flag]
+    cmd = [sys.executable, str(processing_dir / "createAddressAndABIs.py"), "--stdin", network_flag]
+
+    # Prepare stdin content from collected addresses
+    stdin_content = "\n".join(f"{name}={address}" for name, address in all_addresses)
 
     if dry_run:
         print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+        print(f"[DRY RUN] With stdin:\n{stdin_content}")
     else:
-        result = subprocess.run(cmd, cwd=chomp_dir)
+        result = subprocess.run(cmd, cwd=chomp_dir, input=stdin_content, text=True)
         if result.returncode != 0:
             print("ERROR: createAddressAndABIs.py failed")
             sys.exit(1)
@@ -209,6 +217,9 @@ def main():
     if not args.skip_forge and not args.dry_run:
         password = getpass.getpass("Enter keystore password: ")
 
+    # Collect all addresses across forge scripts
+    all_addresses: list[tuple[str, str]] = []
+
     if not args.skip_forge:
         # Run forge scripts and update .env after each
         for script_path in SCRIPTS:
@@ -225,6 +236,7 @@ def main():
                 matches = parse_deploy_data(output)
                 if matches:
                     print(f"\nParsed {len(matches)} contract addresses")
+                    all_addresses.extend(matches)
                     if not args.dry_run:
                         update_env_file(matches, env_path)
                         print(f"Updated .env with {len(matches)} addresses")
@@ -232,7 +244,7 @@ def main():
                     print("No DeployData found in output")
 
     # Run TypeScript generation scripts
-    run_typescript_scripts(network, chomp_dir, dry_run=args.dry_run)
+    run_typescript_scripts(network, chomp_dir, all_addresses, dry_run=args.dry_run)
 
     print(f"\n{'='*60}")
     print("DEPLOYMENT COMPLETE!")
