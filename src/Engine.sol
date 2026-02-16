@@ -1112,10 +1112,13 @@ contract Engine is IEngine, MappingAllocator {
         if (address(config.validator) != address(0)) {
             isValid = config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex);
         } else {
-            // Basic inline validation for doubles
+            // Use inline validation via library (no external call)
             uint256 activeMonIndex = _getActiveMonIndexForSlot(battle.activeMonIndex, playerIndex, slotIndex);
+            uint256 otherSlotActiveMonIndex = _getActiveMonIndexForSlot(battle.activeMonIndex, playerIndex, 1 - slotIndex);
             bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
-            isValid = !isTargetKnockedOut && (battle.turnId == 0 || monToSwitchIndex != activeMonIndex);
+            isValid = ValidatorLogic.validateSwitchForSlot(
+                battle.turnId, monToSwitchIndex, activeMonIndex, otherSlotActiveMonIndex, type(uint256).max, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
+            );
         }
 
         if (isValid) {
