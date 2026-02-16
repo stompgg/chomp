@@ -138,7 +138,8 @@ contract BattleHistoryTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: hooks,
             moveManager: address(commitManager),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         // Propose battle
