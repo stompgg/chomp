@@ -256,7 +256,6 @@ contract DoublesValidationTest is Test {
      * @dev Validates the fix for the bug where StaminaRegen.onRoundEnd() only handled slot 0
      */
     function test_staminaRegenAffectsBothSlotsInDoubles() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Create StaminaRegen effect and ruleset
         StaminaRegen staminaRegen = new StaminaRegen(engine);
         IEffect[] memory effects = new IEffect[](1);
@@ -360,7 +359,6 @@ contract DoublesValidationTest is Test {
      * @notice Test that switch to mon active in other slot is invalid
      */
     function test_switchToOtherSlotActiveMonInvalid() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         bytes32 battleKey = _startDoublesBattle();
         vm.warp(block.timestamp + 1);
         _doInitialSwitch(battleKey);
@@ -440,7 +438,6 @@ contract DoublesValidationTest is Test {
      *         Expected: Alice can use NO_OP for slot 0 since no valid switch target
      */
     function test_onePlayerOneKO_noValidTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use only 2 mons per team for this test
         DefaultValidator validator2Mon = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: TIMEOUT_DURATION})
@@ -608,7 +605,6 @@ contract DoublesValidationTest is Test {
      *         Expected: Both can use NO_OP for slot 0
      */
     function test_bothPlayersOneKO_neitherHasValidTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use 2-mon teams
         DefaultValidator validator2Mon = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: TIMEOUT_DURATION})
@@ -1042,7 +1038,6 @@ contract DoublesValidationTest is Test {
      * @dev Mirror of test_onePlayerOneKO_noValidTarget but for P1
      */
     function test_p1OneKO_noValidTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use 2-mon teams
         DefaultValidator validator2Mon = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: TIMEOUT_DURATION})
@@ -1157,7 +1152,6 @@ contract DoublesValidationTest is Test {
      *      when the asymmetric situation occurs
      */
     function test_asymmetric_p0HasTarget_p1NoTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use targeted attacks
         IMoveSet[] memory targetedMoves = new IMoveSet[](4);
         targetedMoves[0] = targetedStrongAttack;
@@ -1244,7 +1238,6 @@ contract DoublesValidationTest is Test {
      * @dev Mirror of above - should be P1-only switch turn
      */
     function test_asymmetric_p0NoTarget_p1HasTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         IMoveSet[] memory moves = new IMoveSet[](4);
         moves[0] = strongAttack;
         moves[1] = strongAttack;
@@ -1388,7 +1381,6 @@ contract DoublesValidationTest is Test {
      *      Slot 0 switches to mon 2, slot 1 keeps KO'd mon 1 (plays with one mon).
      */
     function test_bothSlotsKO_oneReserve() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use targeted attacks for Bob
         IMoveSet[] memory targetedMoves = new IMoveSet[](4);
         targetedMoves[0] = targetedStrongAttack;
@@ -1703,7 +1695,6 @@ contract DoublesValidationTest is Test {
      * @dev Player should be able to keep playing with their remaining alive mon
      */
     function test_continueWithOneMon_afterKONoTarget() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Use 2-mon teams
         DefaultValidator validator2Mon = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: TIMEOUT_DURATION})
@@ -1845,7 +1836,6 @@ contract DoublesValidationTest is Test {
      * @dev Uses validateSwitch which should check both slots in doubles mode
      */
     function test_forceSwitchMove_cannotSwitchToOtherSlotActiveMon() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Create force switch move
         ForceSwitchMove forceSwitchMove = new ForceSwitchMove(
             engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 0})
@@ -2877,7 +2867,6 @@ contract DoublesValidationTest is Test {
      *      then verifies damage is calculated using slot 1's defense when targeting slot 1
      */
     function test_slot1DamageUsesCorrectDefenderStats() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         // Create a DoublesSlotAttack that uses AttackCalculator with slot parameters
         DoublesSlotAttack slotAttack = new DoublesSlotAttack(engine, typeCalc);
 
@@ -2991,7 +2980,6 @@ contract DoublesValidationTest is Test {
      *      verifying that high attack slot deals more damage
      */
     function test_slot1AttackerUsesCorrectStats() public {
-        vm.skip(true); // TODO: Needs Validator/Effect/Mock updates for doubles
         DoublesSlotAttack slotAttack = new DoublesSlotAttack(engine, typeCalc);
 
         IMoveSet[] memory moves = new IMoveSet[](4);
