@@ -297,6 +297,8 @@ contract Engine is IEngine, MappingAllocator {
                 revert InvalidBattleConfig();
             }
         }
+        // NOTE: in case where we do inline validation, we currently skip the game start validation logic
+        // (we'll fix this in a later version)
 
         for (uint256 i = 0; i < numHooks;) {
             if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
