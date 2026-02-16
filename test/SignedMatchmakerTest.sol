@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 
 import {BattleOffer, Battle, Mon, MonStats, Type, BattleData} from "../src/Structs.sol";
+import {GameMode} from "../src/Enums.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
@@ -83,7 +84,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
                 matchmaker: matchmaker,
-                engineHooks: new IEngineHook[](0)
+                engineHooks: new IEngineHook[](0),
+                gameMode: GameMode.Singles
             }),
             pairHashNonce: pairHashNonce
         });
@@ -105,7 +107,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 ruleset: offer.battle.ruleset,
                 moveManager: offer.battle.moveManager,
                 matchmaker: offer.battle.matchmaker,
-                engineHooks: offer.battle.engineHooks
+                engineHooks: offer.battle.engineHooks,
+                gameMode: offer.battle.gameMode
             }),
             pairHashNonce: offer.pairHashNonce
         });
@@ -272,7 +275,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
                 matchmaker: matchmaker,
-                engineHooks: new IEngineHook[](0)
+                engineHooks: new IEngineHook[](0),
+                gameMode: GameMode.Singles
             }),
             pairHashNonce: 0
         });
@@ -302,7 +306,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
                 matchmaker: matchmaker,
-                engineHooks: new IEngineHook[](0)
+                engineHooks: new IEngineHook[](0),
+                gameMode: GameMode.Singles
             }),
             pairHashNonce: 0
         });
@@ -334,7 +339,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
                 matchmaker: matchmaker,
-                engineHooks: new IEngineHook[](0)
+                engineHooks: new IEngineHook[](0),
+                gameMode: GameMode.Singles
             }),
             pairHashNonce: 0
         });

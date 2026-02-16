@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {Type, MonStateIndexName, StatBoostType} from "./Enums.sol";
+import {Type, MonStateIndexName, StatBoostType, GameMode} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
 import {IValidator} from "./IValidator.sol";
@@ -26,6 +26,7 @@ struct ProposedBattle {
     address moveManager;
     IMatchmaker matchmaker;
     IEngineHook[] engineHooks;
+    GameMode gameMode; // Singles or Doubles
 }
 
 // Used by SignedMatchmaker
@@ -47,6 +48,7 @@ struct Battle {
     address moveManager;
     IMatchmaker matchmaker;
     IEngineHook[] engineHooks;
+    GameMode gameMode; // Singles or Doubles
 }
 
 // Packed into 1 storage slot (8 + 240 = 248 bits)
@@ -64,7 +66,12 @@ struct BattleData {
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
-    uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
+    // Packed active mon indices:
+    // Singles: lower 8 bits = p0 active, upper 8 bits = p1 active
+    // Doubles: 4 bits per slot (p0s0, p0s1, p1s0, p1s1)
+    uint16 activeMonIndex;
+    // Packed: lower 4 bits = per-slot switch flags, bit 4 = game mode (0=singles, 1=doubles)
+    uint8 slotSwitchFlagsAndGameMode;
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
@@ -82,8 +89,10 @@ struct BattleConfig {
     uint48 lastExecuteTimestamp; // Written at end of every execute() for timeout tracking
     bytes32 p0Salt;
     bytes32 p1Salt;
-    MoveDecision p0Move;
-    MoveDecision p1Move;
+    MoveDecision p0Move; // Slot 0 move for p0 (singles: only move, doubles: first mon's move)
+    MoveDecision p1Move; // Slot 0 move for p1
+    MoveDecision p0Move2; // Slot 1 move for p0 (doubles only)
+    MoveDecision p1Move2; // Slot 1 move for p1 (doubles only)
     mapping(uint256 index => Mon) p0Team;
     mapping(uint256 index => Mon) p1Team;
     mapping(uint256 index => MonState) p0States;
@@ -120,6 +129,8 @@ struct BattleConfigView {
     bytes32 p1Salt;
     MoveDecision p0Move;
     MoveDecision p1Move;
+    MoveDecision p0Move2; // Doubles only
+    MoveDecision p1Move2; // Doubles only
     EffectInstance[] globalEffects;
     EffectInstance[][] p0Effects; // Returns effects per mon in team
     EffectInstance[][] p1Effects;
@@ -132,7 +143,10 @@ struct BattleState {
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
-    uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
+    // Packed active mon indices (see BattleData for layout)
+    uint16 activeMonIndex;
+    // Packed: lower 4 bits = per-slot switch flags, bit 4 = game mode (0=singles, 1=doubles)
+    uint8 slotSwitchFlagsAndGameMode;
     uint64 turnId;
 }
 
@@ -204,6 +218,10 @@ struct BattleContext {
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
+    uint8 p0ActiveMonIndex1; // Slot 1 active mon for p0 (doubles only)
+    uint8 p1ActiveMonIndex1; // Slot 1 active mon for p1 (doubles only)
+    uint8 slotSwitchFlags; // Per-slot switch flags (doubles)
+    GameMode gameMode;
     address validator;
     address moveManager;
 }
@@ -216,7 +234,18 @@ struct CommitContext {
     uint8 winnerIndex;
     uint64 turnId;
     uint8 playerSwitchForTurnFlag;
+    uint8 slotSwitchFlags; // Per-slot switch flags (doubles)
+    GameMode gameMode;
     address validator;
+}
+
+// Used for Doubles commit manager - reveals both slot moves at once
+struct RevealedMovesPair {
+    uint8 moveIndex0; // Slot 0 move index
+    uint240 extraData0; // Slot 0 extra data (includes target)
+    uint8 moveIndex1; // Slot 1 move index
+    uint240 extraData1; // Slot 1 extra data (includes target)
+    bytes32 salt; // Single salt for both moves
 }
 
 // Batch context for damage calculation to reduce external calls (7 -> 1)

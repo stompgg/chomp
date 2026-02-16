@@ -658,7 +658,8 @@ contract EngineGasTest is Test, BattleHelper {
             ruleset: ruleset,
             engineHooks: hooks,
             moveManager: moveManager,
-            matchmaker: maker
+            matchmaker: maker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);

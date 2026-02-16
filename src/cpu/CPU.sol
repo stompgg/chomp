@@ -10,7 +10,7 @@ import {ICPU} from "./ICPU.sol";
 import {CPUMoveManager} from "./CPUMoveManager.sol";
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
 
-import {ExtraDataType} from "../Enums.sol";
+import {ExtraDataType, GameMode} from "../Enums.sol";
 import {Battle, ProposedBattle, RevealedMove} from "../Structs.sol";
 
 abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
@@ -168,7 +168,8 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 ruleset: proposal.ruleset,
                 engineHooks: proposal.engineHooks,
                 moveManager: proposal.moveManager,
-                matchmaker: proposal.matchmaker
+                matchmaker: proposal.matchmaker,
+                gameMode: GameMode.Singles
             })
         );
     }

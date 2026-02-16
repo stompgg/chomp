@@ -219,7 +219,8 @@ contract Engine is IEngine, MappingAllocator {
             prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
             activeMonIndex: 0, // Defaults to 0 (both players start with mon index 0)
-            turnId: 0
+            turnId: 0,
+            slotSwitchFlagsAndGameMode: 0
         });
 
         // Set the team for p0 and p1 in the reusable config storage
@@ -1847,6 +1848,8 @@ contract Engine is IEngine, MappingAllocator {
             p1Salt: config.p1Salt,
             p0Move: config.p0Move,
             p1Move: config.p1Move,
+            p0Move2: config.p0Move2,
+            p1Move2: config.p1Move2,
             globalEffects: globalEffects,
             p0Effects: p0Effects,
             p1Effects: p1Effects,

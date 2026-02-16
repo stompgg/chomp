@@ -105,7 +105,8 @@ contract InlineValidationTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(commitManager),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(p0);
