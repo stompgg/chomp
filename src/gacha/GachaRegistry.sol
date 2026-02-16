@@ -15,6 +15,9 @@ import {IMoveSet} from "../moves/IMoveSet.sol";
 contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     using EnumerableSetLib for EnumerableSetLib.Uint256Set;
 
+    // Only runs at OnBattleEnd (bit 3 = 0x08)
+    uint16 public constant STEPS_BITMAP = 0x08;
+
     uint256 public constant INITIAL_ROLLS = 4;
     uint256 public constant ROLL_COST = 7;
     uint256 public constant POINTS_PER_WIN = 2;
@@ -118,6 +121,10 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     }
 
     // IEngineHook implementation
+    function getStepsBitmap() external pure override returns (uint16) {
+        return STEPS_BITMAP;
+    }
+
     function onBattleStart(bytes32 battleKey) external override {}
 
     function onRoundStart(bytes32 battleKey) external override {}

@@ -91,7 +91,7 @@ struct BattleConfig {
     mapping(uint256 => EffectInstance) globalEffects;
     mapping(uint256 => EffectInstance) p0Effects;
     mapping(uint256 => EffectInstance) p1Effects;
-    mapping(uint256 => IEngineHook) engineHooks;
+    mapping(uint256 => EngineHookInstance) engineHooks;
 }
 
 struct EffectInstance {
@@ -99,6 +99,12 @@ struct EffectInstance {
     uint16 stepsBitmap;   // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
     // 80 bits unused in slot 0
     bytes32 data;         // 256 bits in slot 1
+}
+
+struct EngineHookInstance {
+    IEngineHook hook;     // 160 bits (packed with stepsBitmap in slot 0)
+    uint16 stepsBitmap;   // 16 bits - packs with hook in slot 0 (bit i = runs at EngineHookStep(i))
+    // 80 bits unused in slot 0
 }
 
 // View struct for getBattle - contains array instead of mapping for memory return

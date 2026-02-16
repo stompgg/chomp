@@ -78,3 +78,10 @@ enum ExtraDataType {
     SelfTeamIndex,
     OpponentNonKOTeamIndex
 }
+
+enum EngineHookStep {
+    OnBattleStart,
+    OnRoundStart,
+    OnRoundEnd,
+    OnBattleEnd
+}

@@ -268,7 +268,9 @@ contract Engine is IEngine, MappingAllocator {
         uint256 numHooks = battle.engineHooks.length;
         if (numHooks > 0) {
             for (uint256 i; i < numHooks;) {
-                config.engineHooks[i] = battle.engineHooks[i];
+                IEngineHook hook = battle.engineHooks[i];
+                config.engineHooks[i].hook = hook;
+                config.engineHooks[i].stepsBitmap = hook.getStepsBitmap();
                 unchecked {
                     ++i;
                 }
@@ -296,8 +298,10 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        for (uint256 i = 0; i < battle.engineHooks.length;) {
-            battle.engineHooks[i].onBattleStart(battleKey);
+        for (uint256 i = 0; i < numHooks;) {
+            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
+                config.engineHooks[i].hook.onBattleStart(battleKey);
+            }
             unchecked {
                 ++i;
             }
@@ -388,7 +392,9 @@ contract Engine is IEngine, MappingAllocator {
 
         uint256 numHooks = config.engineHooksLength;
         for (uint256 i = 0; i < numHooks;) {
-            config.engineHooks[i].onRoundStart(battleKey);
+            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
+                config.engineHooks[i].hook.onRoundStart(battleKey);
+            }
             unchecked {
                 ++i;
             }
@@ -590,7 +596,9 @@ contract Engine is IEngine, MappingAllocator {
 
         // Run the round end hooks
         for (uint256 i = 0; i < numHooks;) {
-            config.engineHooks[i].onRoundEnd(battleKey);
+            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
+                config.engineHooks[i].hook.onRoundEnd(battleKey);
+            }
             unchecked {
                 ++i;
             }
@@ -737,7 +745,9 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         for (uint256 i = 0; i < config.engineHooksLength;) {
-            config.engineHooks[i].onBattleEnd(battleKey);
+            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnBattleEnd))) != 0) {
+                config.engineHooks[i].hook.onBattleEnd(battleKey);
+            }
             unchecked {
                 ++i;
             }

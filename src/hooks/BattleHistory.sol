@@ -11,8 +11,11 @@ import {EnumerableSetLib} from "../lib/EnumerableSetLib.sol";
 contract BattleHistory is IEngineHook {
     using EnumerableSetLib for EnumerableSetLib.AddressSet;
 
+    // Only runs at OnBattleEnd (bit 3 = 0x08)
+    uint16 public constant STEPS_BITMAP = 0x08;
+
     IEngine public immutable engine;
-    
+
     mapping(address => uint256) private _numBattles;
 
     // Mapping from player address to set of all opponents fought
@@ -29,6 +32,10 @@ contract BattleHistory is IEngineHook {
 
     constructor(IEngine _engine) {
         engine = _engine;
+    }
+
+    function getStepsBitmap() external pure override returns (uint16) {
+        return STEPS_BITMAP;
     }
 
     function onBattleStart(bytes32 battleKey) external {}
