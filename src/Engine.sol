@@ -361,14 +361,11 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Set both moves inline (same as setMove but without external call overhead)
-        // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
-        uint8 p0Stored = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
-        config.p0Move = MoveDecision({packedMoveIndex: p0Stored | IS_REAL_TURN_BIT, extraData: p0ExtraData});
+        config.p0Move = _packMoveDecision(p0MoveIndex, p0ExtraData);
         config.p0Salt = p0Salt;
         emit P0MoveSet(battleKey, uint256(p0MoveIndex) | (uint256(p0ExtraData) << 8));
 
-        uint8 p1Stored = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
-        config.p1Move = MoveDecision({packedMoveIndex: p1Stored | IS_REAL_TURN_BIT, extraData: p1ExtraData});
+        config.p1Move = _packMoveDecision(p1MoveIndex, p1ExtraData);
         config.p1Salt = p1Salt;
         emit P1MoveSet(battleKey, uint256(p1MoveIndex) | (uint256(p1ExtraData) << 8));
 
@@ -1122,10 +1119,10 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKey];
 
-        // Validate switch
+        // Validate switch (use slot-aware validation for both external and inline paths)
         bool isValid;
         if (address(config.validator) != address(0)) {
-            isValid = config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex);
+            isValid = config.validator.validateSwitchForSlot(battleKey, playerIndex, slotIndex, monToSwitchIndex);
         } else {
             // Use inline validation via library (no external call)
             uint256 activeMonIndex = _getActiveMonIndexForSlot(battle.activeMonIndex, playerIndex, slotIndex);
@@ -1150,24 +1147,8 @@ contract Engine is IEngine, MappingAllocator {
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
         external
     {
-        // Use cached key if called during execute(), otherwise lookup
-        bool isForCurrentBattle = battleKeyForWrite == battleKey;
-        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
-
-        // Cache storage pointer to avoid repeated mapping lookups
-        BattleConfig storage config = battleConfig[storageKey];
-
-        bool isMoveManager = msg.sender == address(config.moveManager);
-        if (!isMoveManager && !isForCurrentBattle) {
-            revert NoWriteAllowed();
-        }
-
-        // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
-        // Regular moves (< SWITCH_MOVE_INDEX) are stored as moveIndex + 1 to avoid zero ambiguity
-        uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
-        uint8 packedMoveIndex = storedMoveIndex | IS_REAL_TURN_BIT;
-
-        MoveDecision memory newMove = MoveDecision({packedMoveIndex: packedMoveIndex, extraData: extraData});
+        BattleConfig storage config = _prepareMoveSet(battleKey);
+        MoveDecision memory newMove = _packMoveDecision(moveIndex, extraData);
 
         if (playerIndex == 0) {
             config.p0Move = newMove;
@@ -1186,7 +1167,7 @@ contract Engine is IEngine, MappingAllocator {
      * @param playerIndex 0 or 1
      * @param slotIndex 0 or 1
      * @param moveIndex The move index
-     * @param salt Salt for RNG
+     * @param salt Salt for RNG (applied per-player, not per-slot — slot 1 shares the player's salt set via slot 0)
      * @param extraData Extra data for the move (e.g., target)
      */
     function setMoveForSlot(
@@ -1197,18 +1178,8 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 salt,
         uint240 extraData
     ) external {
-        bool isForCurrentBattle = battleKeyForWrite == battleKey;
-        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
-        BattleConfig storage config = battleConfig[storageKey];
-
-        bool isMoveManager = msg.sender == address(config.moveManager);
-        if (!isMoveManager && !isForCurrentBattle) {
-            revert NoWriteAllowed();
-        }
-
-        uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
-        uint8 packedMoveIndex = storedMoveIndex | IS_REAL_TURN_BIT;
-        MoveDecision memory newMove = MoveDecision({packedMoveIndex: packedMoveIndex, extraData: extraData});
+        BattleConfig storage config = _prepareMoveSet(battleKey);
+        MoveDecision memory newMove = _packMoveDecision(moveIndex, extraData);
 
         if (playerIndex == 0) {
             if (slotIndex == 0) {
@@ -1216,6 +1187,7 @@ contract Engine is IEngine, MappingAllocator {
                 config.p0Salt = salt;
             } else {
                 config.p0Move2 = newMove;
+                // Salt is per-player, not per-slot; slot 0 sets p0Salt for RNG derivation
             }
         } else {
             if (slotIndex == 0) {
@@ -1223,8 +1195,26 @@ contract Engine is IEngine, MappingAllocator {
                 config.p1Salt = salt;
             } else {
                 config.p1Move2 = newMove;
+                // Salt is per-player, not per-slot; slot 0 sets p1Salt for RNG derivation
             }
         }
+    }
+
+    /// @dev Validates caller permissions and returns the BattleConfig storage pointer for move-setting
+    function _prepareMoveSet(bytes32 battleKey) private view returns (BattleConfig storage config) {
+        bool isForCurrentBattle = battleKeyForWrite == battleKey;
+        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
+        config = battleConfig[storageKey];
+        bool isMoveManager = msg.sender == address(config.moveManager);
+        if (!isMoveManager && !isForCurrentBattle) {
+            revert NoWriteAllowed();
+        }
+    }
+
+    /// @dev Packs a moveIndex + extraData into a MoveDecision with IS_REAL_TURN_BIT set
+    function _packMoveDecision(uint8 moveIndex, uint240 extraData) private pure returns (MoveDecision memory) {
+        uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
+        return MoveDecision({packedMoveIndex: storedMoveIndex | IS_REAL_TURN_BIT, extraData: extraData});
     }
 
     function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
@@ -1249,57 +1239,34 @@ contract Engine is IEngine, MappingAllocator {
         internal
         returns (uint256 playerSwitchForTurnFlag, bool isGameOver)
     {
+        // Use shared game over check (loads KO bitmaps once)
+        (uint256 winnerIndex, uint256 p0KOBitmap, uint256 p1KOBitmap) = _checkForGameOver(config, battle);
+
+        if (winnerIndex != 2) {
+            battle.winnerIndex = uint8(winnerIndex);
+            return (playerSwitchForTurnFlag, true);
+        }
+
+        // No game over — check active mons for KOs to set the player switch for turn flag
         uint256 otherPlayerIndex = (priorityPlayerIndex + 1) % 2;
-        uint8 existingWinnerIndex = battle.winnerIndex;
+        playerSwitchForTurnFlag = 2;
 
-        // First check if we already calculated a winner
-        if (existingWinnerIndex != 2) {
-            return (playerSwitchForTurnFlag, true);
+        // Use already-loaded KO bitmaps to check active mon KO status (avoids SLOAD)
+        uint256 priorityActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
+        uint256 otherActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
+        uint256 priorityKOBitmap = priorityPlayerIndex == 0 ? p0KOBitmap : p1KOBitmap;
+        uint256 otherKOBitmap = priorityPlayerIndex == 0 ? p1KOBitmap : p0KOBitmap;
+        bool isPriorityPlayerActiveMonKnockedOut = (priorityKOBitmap & (1 << priorityActiveMonIndex)) != 0;
+        bool isNonPriorityPlayerActiveMonKnockedOut = (otherKOBitmap & (1 << otherActiveMonIndex)) != 0;
+
+        // If the priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the other player
+        if (isPriorityPlayerActiveMonKnockedOut && !isNonPriorityPlayerActiveMonKnockedOut) {
+            playerSwitchForTurnFlag = priorityPlayerIndex;
         }
 
-        // Check for game over using KO bitmaps (O(1) instead of O(n) loop)
-        // A game is over if all of a player's mons are KOed (all bits set up to teamSize)
-        uint256 newWinnerIndex = 2;
-        uint256 p0TeamSize = config.teamSizes & 0x0F;
-        uint256 p1TeamSize = config.teamSizes >> 4;
-        uint256 p0KOBitmap = _getKOBitmap(config, 0);
-        uint256 p1KOBitmap = _getKOBitmap(config, 1);
-        // Full team mask: (1 << teamSize) - 1, e.g. teamSize=3 -> 0b111
-        uint256 p0FullMask = (1 << p0TeamSize) - 1;
-        uint256 p1FullMask = (1 << p1TeamSize) - 1;
-
-        if (p0KOBitmap == p0FullMask) {
-            newWinnerIndex = 1; // p1 wins
-        } else if (p1KOBitmap == p1FullMask) {
-            newWinnerIndex = 0; // p0 wins
-        }
-        // If we found a winner, set it on the battle data and return
-        if (newWinnerIndex != 2) {
-            battle.winnerIndex = uint8(newWinnerIndex);
-            return (playerSwitchForTurnFlag, true);
-        }
-        // Otherwise if it isn't a game over, we check for KOs and set the player switch for turn flag
-        else {
-            // Always set default switch to be 2 (allow both players to make a move)
-            playerSwitchForTurnFlag = 2;
-
-            // Use already-loaded KO bitmaps to check active mon KO status (avoids SLOAD)
-            uint256 priorityActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
-            uint256 otherActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
-            uint256 priorityKOBitmap = priorityPlayerIndex == 0 ? p0KOBitmap : p1KOBitmap;
-            uint256 otherKOBitmap = priorityPlayerIndex == 0 ? p1KOBitmap : p0KOBitmap;
-            bool isPriorityPlayerActiveMonKnockedOut = (priorityKOBitmap & (1 << priorityActiveMonIndex)) != 0;
-            bool isNonPriorityPlayerActiveMonKnockedOut = (otherKOBitmap & (1 << otherActiveMonIndex)) != 0;
-
-            // If the priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the other player
-            if (isPriorityPlayerActiveMonKnockedOut && !isNonPriorityPlayerActiveMonKnockedOut) {
-                playerSwitchForTurnFlag = priorityPlayerIndex;
-            }
-
-            // If the non priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the priority player
-            if (!isPriorityPlayerActiveMonKnockedOut && isNonPriorityPlayerActiveMonKnockedOut) {
-                playerSwitchForTurnFlag = otherPlayerIndex;
-            }
+        // If the non priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the priority player
+        if (!isPriorityPlayerActiveMonKnockedOut && isNonPriorityPlayerActiveMonKnockedOut) {
+            playerSwitchForTurnFlag = otherPlayerIndex;
         }
     }
 
@@ -2846,24 +2813,12 @@ contract Engine is IEngine, MappingAllocator {
             return (battle.winnerIndex, 0, 0);
         }
 
-        // Load KO bitmaps and team sizes
-        uint256 p0TeamSize = config.teamSizes & 0x0F;
-        uint256 p1TeamSize = config.teamSizes >> 4;
+        // Load KO bitmaps and team sizes, delegate pure comparison to library
         p0KOBitmap = _getKOBitmap(config, 0);
         p1KOBitmap = _getKOBitmap(config, 1);
-
-        // Full team mask: (1 << teamSize) - 1
-        uint256 p0FullMask = (1 << p0TeamSize) - 1;
-        uint256 p1FullMask = (1 << p1TeamSize) - 1;
-
-        // Check if all mons are KO'd for either player
-        if (p0KOBitmap == p0FullMask) {
-            winnerIndex = 1; // p1 wins
-        } else if (p1KOBitmap == p1FullMask) {
-            winnerIndex = 0; // p0 wins
-        } else {
-            winnerIndex = 2; // No winner yet
-        }
+        winnerIndex = ValidatorLogic.checkGameOver(
+            p0KOBitmap, p1KOBitmap, config.teamSizes & 0x0F, config.teamSizes >> 4
+        );
     }
 
     // Check for game over or KO in doubles mode

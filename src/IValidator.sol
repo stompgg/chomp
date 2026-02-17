@@ -26,6 +26,9 @@ interface IValidator {
     // Validates that a switch is valid
     function validateSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) external returns (bool);
 
+    // Validates that a switch is valid for a specific slot in doubles mode
+    function validateSwitchForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex) external returns (bool);
+
     // Validates a move for a specific slot in doubles mode
     function validatePlayerMoveForSlot(
         bytes32 battleKey,
