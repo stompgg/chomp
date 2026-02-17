@@ -309,14 +309,7 @@ contract Engine is IEngine, MappingAllocator {
         // NOTE: in case where we do inline validation, we currently skip the game start validation logic
         // (we'll fix this in a later version)
 
-        for (uint256 i = 0; i < numHooks;) {
-            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
-                config.engineHooks[i].hook.onBattleStart(battleKey);
-            }
-            unchecked {
-                ++i;
-            }
-        }
+        _runEngineHooks(config, battleKey, EngineHookStep.OnBattleStart);
 
         emit BattleStart(battleKey, battle.p0, battle.p1);
     }
@@ -390,19 +383,11 @@ contract Engine is IEngine, MappingAllocator {
         // (gets cleared at the end of the transaction)
         battleKeyForWrite = battleKey;
 
-        uint256 numHooks = config.engineHooksLength;
-        for (uint256 i = 0; i < numHooks;) {
-            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
-                config.engineHooks[i].hook.onRoundStart(battleKey);
-            }
-            unchecked {
-                ++i;
-            }
-        }
+        _runEngineHooks(config, battleKey, EngineHookStep.OnRoundStart);
 
         // Branch for doubles mode
         if (_isDoublesMode(battle)) {
-            _executeDoubles(battleKey, config, battle, turnId, numHooks);
+            _executeDoubles(battleKey, config, battle, turnId, config.engineHooksLength);
             return;
         }
 
@@ -601,14 +586,7 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Run the round end hooks
-        for (uint256 i = 0; i < numHooks;) {
-            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
-                config.engineHooks[i].hook.onRoundEnd(battleKey);
-            }
-            unchecked {
-                ++i;
-            }
-        }
+        _runEngineHooks(config, battleKey, EngineHookStep.OnRoundEnd);
 
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
@@ -716,14 +694,7 @@ contract Engine is IEngine, MappingAllocator {
             revert GameStartsAndEndsSameBlock();
         }
 
-        for (uint256 i = 0; i < config.engineHooksLength;) {
-            if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnBattleEnd))) != 0) {
-                config.engineHooks[i].hook.onBattleEnd(battleKey);
-            }
-            unchecked {
-                ++i;
-            }
-        }
+        _runEngineHooks(config, battleKey, EngineHookStep.OnBattleEnd);
 
         // Free the key used for battle configs so other battles can use it
         _freeStorageKey(battleKey, storageKey);
@@ -1347,9 +1318,7 @@ contract Engine is IEngine, MappingAllocator {
         int32 staminaCost;
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
 
-        // Unpack moveIndex from packedMoveIndex (lower 7 bits, with +1 offset for regular moves)
-        uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
-        uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
+        uint8 moveIndex = _unpackMoveIndex(move.packedMoveIndex);
 
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
@@ -1376,27 +1345,13 @@ contract Engine is IEngine, MappingAllocator {
         }
         // Execute the move and then set updated state, active mons, and effects/data
         else {
-            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
-
-            // Call validateSpecificMoveSelection again to ensure it is still valid to execute
-            // If not, then we just return early
+            // Validate the move is still valid to execute
             // Handles cases where e.g. some condition outside of the player's control leads to an invalid move
-            bool isValid;
-            if (address(config.validator) == address(0)) {
-                // Use inline validation (no external call)
-                uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
-                int32 staminaDelta = currentMonState.staminaDelta;
-                isValid = ValidatorLogic.validateSpecificMoveSelection(
-                    battleKey, moveSet, playerIndex, activeMonIndex, move.extraData, baseStamina, staminaDelta
-                );
-            } else {
-                // Use external validator
-                isValid =
-                    config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData);
-            }
-            if (!isValid) {
+            if (!_validateMoveSelection(config, battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData)) {
                 return playerSwitchForTurnFlag;
             }
+
+            IMoveSet moveSet = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
             // Update the mon state directly to account for the stamina cost of the move
             staminaCost = int32(moveSet.stamina(battleKey, playerIndex, activeMonIndex));
@@ -1704,33 +1659,15 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config = battleConfig[storageKey];
         BattleData storage battle = battleData[battleKey];
 
-        // Unpack move indices from packed format
-        uint8 p0StoredIndex = config.p0Move.packedMoveIndex & MOVE_INDEX_MASK;
-        uint8 p1StoredIndex = config.p1Move.packedMoveIndex & MOVE_INDEX_MASK;
-        uint8 p0MoveIndex = p0StoredIndex >= SWITCH_MOVE_INDEX ? p0StoredIndex : p0StoredIndex - MOVE_INDEX_OFFSET;
-        uint8 p1MoveIndex = p1StoredIndex >= SWITCH_MOVE_INDEX ? p1StoredIndex : p1StoredIndex - MOVE_INDEX_OFFSET;
+        uint8 p0MoveIndex = _unpackMoveIndex(config.p0Move.packedMoveIndex);
+        uint8 p1MoveIndex = _unpackMoveIndex(config.p1Move.packedMoveIndex);
 
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-        uint256 p0Priority;
-        uint256 p1Priority;
 
-        // Call the move for its priority, unless it's the switch or no op move index
-        {
-            if (p0MoveIndex == SWITCH_MOVE_INDEX || p0MoveIndex == NO_OP_MOVE_INDEX) {
-                p0Priority = SWITCH_PRIORITY;
-            } else {
-                IMoveSet p0MoveSet = _getTeamMon(config, 0, p0ActiveMonIndex).moves[p0MoveIndex];
-                p0Priority = p0MoveSet.priority(battleKey, 0);
-            }
-
-            if (p1MoveIndex == SWITCH_MOVE_INDEX || p1MoveIndex == NO_OP_MOVE_INDEX) {
-                p1Priority = SWITCH_PRIORITY;
-            } else {
-                IMoveSet p1MoveSet = _getTeamMon(config, 1, p1ActiveMonIndex).moves[p1MoveIndex];
-                p1Priority = p1MoveSet.priority(battleKey, 1);
-            }
-        }
+        // Get priority and speed for each player's move
+        (uint256 p0Priority, uint32 p0MonSpeed) = _getPriorityAndSpeed(config, battleKey, 0, p0ActiveMonIndex, p0MoveIndex);
+        (uint256 p1Priority, uint32 p1MonSpeed) = _getPriorityAndSpeed(config, battleKey, 1, p1ActiveMonIndex, p1MoveIndex);
 
         // Determine priority based on (in descending order of importance):
         // - the higher priority tier
@@ -1741,18 +1678,6 @@ contract Engine is IEngine, MappingAllocator {
         } else if (p0Priority < p1Priority) {
             return 1;
         } else {
-            // Calculate speeds by combining base stats with deltas
-            // Note: speedDelta may be sentinel value (CLEARED_MON_STATE_SENTINEL) which should be treated as 0
-            int32 p0SpeedDelta = _getMonState(config, 0, p0ActiveMonIndex).speedDelta;
-            int32 p1SpeedDelta = _getMonState(config, 1, p1ActiveMonIndex).speedDelta;
-            uint32 p0MonSpeed = uint32(
-                int32(_getTeamMon(config, 0, p0ActiveMonIndex).stats.speed)
-                    + (p0SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0SpeedDelta)
-            );
-            uint32 p1MonSpeed = uint32(
-                int32(_getTeamMon(config, 1, p1ActiveMonIndex).stats.speed)
-                    + (p1SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1SpeedDelta)
-            );
             if (p0MonSpeed > p1MonSpeed) {
                 return 0;
             } else if (p0MonSpeed < p1MonSpeed) {
@@ -1851,6 +1776,80 @@ contract Engine is IEngine, MappingAllocator {
         returns (MonState storage)
     {
         return playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
+    }
+
+    // Unpack moveIndex from packedMoveIndex (lower 7 bits, with +1 offset for regular moves)
+    function _unpackMoveIndex(uint8 packedMoveIndex) private pure returns (uint8) {
+        uint8 storedMoveIndex = packedMoveIndex & MOVE_INDEX_MASK;
+        return storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
+    }
+
+    // Get priority and effective speed for a player's move (shared between singles and doubles)
+    function _getPriorityAndSpeed(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint8 moveIndex
+    ) private view returns (uint256 priority, uint32 speed) {
+        if (moveIndex == SWITCH_MOVE_INDEX || moveIndex == NO_OP_MOVE_INDEX) {
+            priority = SWITCH_PRIORITY;
+        } else {
+            IMoveSet moveSet = _getTeamMon(config, playerIndex, monIndex).moves[moveIndex];
+            priority = moveSet.priority(battleKey, playerIndex);
+        }
+
+        int32 speedDelta = _getMonState(config, playerIndex, monIndex).speedDelta;
+        speed = uint32(
+            int32(_getTeamMon(config, playerIndex, monIndex).stats.speed)
+                + (speedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : speedDelta)
+        );
+    }
+
+    // Validate a specific move selection using either inline or external validator
+    function _validateMoveSelection(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint8 moveIndex,
+        uint240 extraData
+    ) private returns (bool) {
+        if (address(config.validator) == address(0)) {
+            // Use inline validation (no external call)
+            IMoveSet moveSet = _getTeamMon(config, playerIndex, monIndex).moves[moveIndex];
+            uint32 baseStamina = _getTeamMon(config, playerIndex, monIndex).stats.stamina;
+            int32 staminaDelta = _getMonState(config, playerIndex, monIndex).staminaDelta;
+            return ValidatorLogic.validateSpecificMoveSelection(
+                battleKey, moveSet, playerIndex, monIndex, extraData, baseStamina, staminaDelta
+            );
+        } else {
+            // Use external validator
+            return config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, extraData);
+        }
+    }
+
+    // Run engine hooks for a specific step
+    function _runEngineHooks(BattleConfig storage config, bytes32 battleKey, EngineHookStep step) internal {
+        uint256 numHooks = config.engineHooksLength;
+        uint256 stepBit = 1 << uint8(step);
+        for (uint256 i = 0; i < numHooks;) {
+            if ((config.engineHooks[i].stepsBitmap & stepBit) != 0) {
+                IEngineHook hook = config.engineHooks[i].hook;
+                if (step == EngineHookStep.OnBattleStart) {
+                    hook.onBattleStart(battleKey);
+                } else if (step == EngineHookStep.OnRoundStart) {
+                    hook.onRoundStart(battleKey);
+                } else if (step == EngineHookStep.OnRoundEnd) {
+                    hook.onRoundEnd(battleKey);
+                } else {
+                    hook.onBattleEnd(battleKey);
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)
@@ -2574,15 +2573,12 @@ contract Engine is IEngine, MappingAllocator {
                 // Game is over, handle cleanup and return
                 address winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
                 _handleGameOver(battleKey, winner);
-
-                // Run round end hooks
                 for (uint256 j = 0; j < numHooks;) {
                     if ((config.engineHooks[j].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
                         config.engineHooks[j].hook.onRoundEnd(battleKey);
                     }
                     unchecked { ++j; }
                 }
-
                 emit EngineExecute(battleKey, turnId, 2, moveOrder[0].playerIndex);
                 return;
             }
@@ -2618,14 +2614,12 @@ contract Engine is IEngine, MappingAllocator {
         if (_checkForGameOverOrKO_Doubles(config, battle)) {
             address winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
-
             for (uint256 j = 0; j < numHooks;) {
                 if ((config.engineHooks[j].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
                     config.engineHooks[j].hook.onRoundEnd(battleKey);
                 }
                 unchecked { ++j; }
             }
-
             emit EngineExecute(battleKey, turnId, 2, moveOrder[0].playerIndex);
             return;
         }
@@ -2647,14 +2641,12 @@ contract Engine is IEngine, MappingAllocator {
         if (_checkForGameOverOrKO_Doubles(config, battle)) {
             address winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
-
             for (uint256 j = 0; j < numHooks;) {
                 if ((config.engineHooks[j].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
                     config.engineHooks[j].hook.onRoundEnd(battleKey);
                 }
                 unchecked { ++j; }
             }
-
             emit EngineExecute(battleKey, turnId, 2, moveOrder[0].playerIndex);
             return;
         }
@@ -2696,9 +2688,7 @@ contract Engine is IEngine, MappingAllocator {
             return false;
         }
 
-        // Unpack moveIndex from packedMoveIndex
-        uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
-        uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
+        uint8 moveIndex = _unpackMoveIndex(move.packedMoveIndex);
 
         // Get active mon for this slot
         uint256 activeMonIndex = _getActiveMonIndexForSlot(battle.activeMonIndex, playerIndex, slotIndex);
@@ -2730,22 +2720,8 @@ contract Engine is IEngine, MappingAllocator {
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
         } else {
-            // Validate move is still valid (pass slotIndex for correct mon lookup in doubles)
-            bool isValid;
-            {
-                if (address(config.validator) == address(0)) {
-                    // Use inline validation
-                    uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
-                    int32 staminaDelta = currentMonState.staminaDelta;
-                    IMoveSet ms = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
-                    isValid = ValidatorLogic.validateSpecificMoveSelection(
-                        battleKey, ms, playerIndex, activeMonIndex, move.extraData, baseStamina, staminaDelta
-                    );
-                } else {
-                    isValid = config.validator.validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData);
-                }
-            }
-            if (!isValid) {
+            // Validate the move is still valid to execute
+            if (!_validateMoveSelection(config, battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData)) {
                 return false;
             }
 
@@ -2803,26 +2779,12 @@ contract Engine is IEngine, MappingAllocator {
                     continue;
                 }
 
-                uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
-                uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
-
+                uint8 moveIndex = _unpackMoveIndex(move.packedMoveIndex);
                 uint256 monIndex = _getActiveMonIndexForSlot(battle.activeMonIndex, p, s);
 
-                // Get priority
-                if (moveIndex == SWITCH_MOVE_INDEX || moveIndex == NO_OP_MOVE_INDEX) {
-                    moveOrder[idx].priority = SWITCH_PRIORITY;
-                } else {
-                    IMoveSet moveSet = _getTeamMon(config, p, monIndex).moves[moveIndex];
-                    moveOrder[idx].priority = moveSet.priority(battleKey, p);
-                }
-
-                // Get speed
-                int32 speedDelta = _getMonState(config, p, monIndex).speedDelta;
-                uint32 monSpeed = uint32(
-                    int32(_getTeamMon(config, p, monIndex).stats.speed)
-                        + (speedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : speedDelta)
-                );
-                moveOrder[idx].speed = monSpeed;
+                (uint256 priority, uint32 speed) = _getPriorityAndSpeed(config, battleKey, p, monIndex, moveIndex);
+                moveOrder[idx].priority = priority;
+                moveOrder[idx].speed = speed;
             }
         }
 
