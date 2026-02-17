@@ -396,6 +396,15 @@ export const MAX_MON_STATS: Record<keyof Mon['stats'], number> = {{
   specialDefense: 0,
   speed: 0,
 }};
+
+for (const monData of Object.values(MonMetadata)) {{
+  const stats = monData.stats;
+  for (const statName of Object.keys(stats) as (keyof typeof stats)[]) {{
+    if (stats[statName] > MAX_MON_STATS[statName]) {{
+      MAX_MON_STATS[statName] = stats[statName];
+    }}
+  }}
+}}
 """
 
     with open(output_file, "w", encoding="utf-8") as f:
