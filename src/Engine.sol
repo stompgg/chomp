@@ -360,6 +360,49 @@ contract Engine is IEngine, MappingAllocator {
         _executeInternal(battleKey, storageKey);
     }
 
+    /// @notice Sets all 4 slot moves for doubles and executes in a single call
+    /// @dev Like executeWithMoves but for doubles battles — sets p0Move, p0Move2, p1Move, p1Move2.
+    ///      Salt is per-player (not per-slot), matching the revealMovePair convention.
+    function executeWithMovesForDoubles(
+        bytes32 battleKey,
+        uint8 p0MoveIndex0,
+        uint240 p0ExtraData0,
+        uint8 p0MoveIndex1,
+        uint240 p0ExtraData1,
+        bytes32 p0Salt,
+        uint8 p1MoveIndex0,
+        uint240 p1ExtraData0,
+        uint8 p1MoveIndex1,
+        uint240 p1ExtraData1,
+        bytes32 p1Salt
+    ) external {
+        // Cache storage key
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+
+        BattleConfig storage config = battleConfig[storageKey];
+
+        // Only moveManager can call this
+        if (msg.sender != config.moveManager) {
+            revert WrongCaller();
+        }
+
+        // Set p0 slot 0 + slot 1 moves
+        config.p0Move = _packMoveDecision(p0MoveIndex0, p0ExtraData0);
+        config.p0Move2 = _packMoveDecision(p0MoveIndex1, p0ExtraData1);
+        config.p0Salt = p0Salt;
+        emit P0MoveSet(battleKey, uint256(p0MoveIndex0) | (uint256(p0ExtraData0) << 8));
+
+        // Set p1 slot 0 + slot 1 moves
+        config.p1Move = _packMoveDecision(p1MoveIndex0, p1ExtraData0);
+        config.p1Move2 = _packMoveDecision(p1MoveIndex1, p1ExtraData1);
+        config.p1Salt = p1Salt;
+        emit P1MoveSet(battleKey, uint256(p1MoveIndex0) | (uint256(p1ExtraData0) << 8));
+
+        // Execute (skip MovesNotSet check since we just set them)
+        _executeInternal(battleKey, storageKey);
+    }
+
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal {
         // Load storage vars
@@ -2413,19 +2456,24 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     /// @notice Lightweight getter for dual-signed flow that validates state and returns only needed fields
-    /// @dev Reverts internally if battle not started, already complete, or not a two-player turn
+    /// @dev Reverts if battle already complete or not a two-player turn.
+    ///      Skips startTimestamp check (saves 2 SLOADs): if battle was never started,
+    ///      winnerIndex defaults to 0 (not 2), so the GameAlreadyOver check catches it.
+    ///      Returns gameMode for free since slotSwitchFlagsAndGameMode is in the same
+    ///      storage slot as winnerIndex/playerSwitchForTurnFlag.
     function getCommitAuthForDualSigned(bytes32 battleKey)
         external
         view
-        returns (address committer, address revealer, uint64 turnId)
+        returns (address committer, address revealer, uint64 turnId, GameMode gameMode)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
 
-        if (config.startTimestamp == 0) revert BattleNotStarted();
+        // winnerIndex == 0 for never-started battles (all zeros), != 2 catches both cases
         if (data.winnerIndex != 2) revert GameAlreadyOver();
         if (data.playerSwitchForTurnFlag != 2) revert NotTwoPlayerTurn();
+
+        // gameMode is free: slotSwitchFlagsAndGameMode is in the same slot as winnerIndex
+        gameMode = (data.slotSwitchFlagsAndGameMode & GAME_MODE_BIT) != 0 ? GameMode.Doubles : GameMode.Singles;
 
         turnId = data.turnId;
         if (turnId % 2 == 0) {

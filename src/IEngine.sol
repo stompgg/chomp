@@ -36,6 +36,19 @@ interface IEngine {
         bytes32 p1Salt,
         uint240 p1ExtraData
     ) external;
+    function executeWithMovesForDoubles(
+        bytes32 battleKey,
+        uint8 p0MoveIndex0,
+        uint240 p0ExtraData0,
+        uint8 p0MoveIndex1,
+        uint240 p0ExtraData1,
+        bytes32 p0Salt,
+        uint8 p1MoveIndex0,
+        uint240 p1ExtraData0,
+        uint8 p1MoveIndex1,
+        uint240 p1ExtraData1,
+        bytes32 p1Salt
+    ) external;
     function emitEngineEvent(bytes32 eventType, bytes memory extraData) external;
     function setUpstreamCaller(address caller) external;
 
@@ -102,7 +115,7 @@ interface IEngine {
     function getCommitAuthForDualSigned(bytes32 battleKey)
         external
         view
-        returns (address committer, address revealer, uint64 turnId);
+        returns (address committer, address revealer, uint64 turnId, GameMode gameMode);
     function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
         external
         view

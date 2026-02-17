@@ -7,6 +7,7 @@ import {ECDSA} from "../lib/ECDSA.sol";
 import {SignedCommitLib} from "./SignedCommitLib.sol";
 import {IEngine} from "../IEngine.sol";
 import {CommitContext, PlayerDecisionData} from "../Structs.sol";
+import {GameMode} from "../Enums.sol";
 
 /// @title SignedCommitManager
 /// @notice Extends DefaultCommitManager with optimistic dual-signed commit flow
@@ -41,6 +42,9 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when trying to use dual-signed flow on a single-player turn
     error NotTwoPlayerTurn();
 
+    /// @notice Thrown when using singles function for a doubles battle or vice versa
+    error WrongGameMode();
+
     constructor(IEngine engine) DefaultCommitManager(engine) {}
 
     /// @inheritdoc EIP712
@@ -54,7 +58,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         version = "1";
     }
 
-    /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
+    /// @notice Executes a turn using dual-signed moves from both players (singles only)
     /// @dev The committer (A) submits both moves. The revealer (B) has signed over
     ///      their move and A's move hash, binding both players to their moves.
     /// @param battleKey The battle identifier
@@ -77,8 +81,10 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         bytes memory revealerSignature
     ) external {
         // Use lightweight getter (validates internally, reverts on bad state)
-        (address committer, address revealer, uint64 turnId) =
+        (address committer, address revealer, uint64 turnId, GameMode gameMode) =
             ENGINE.getCommitAuthForDualSigned(battleKey);
+
+        if (gameMode != GameMode.Singles) revert WrongGameMode();
 
         // Caller must be the committing player
         if (msg.sender != committer) {
@@ -123,10 +129,102 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         }
     }
 
+    /// @notice Executes a turn using dual-signed moves for doubles battles
+    /// @dev Same security model as executeWithDualSignedMoves but each player has 2 slot moves.
+    ///      The committer's hash covers both slot moves: keccak256(moveIndex0, moveIndex1, salt, extraData0, extraData1)
+    ///      matching the revealMovePair preimage format.
+    /// @param battleKey The battle identifier
+    /// @param committerMoveIndex0 The committer's slot 0 move index
+    /// @param committerExtraData0 The committer's slot 0 extra data
+    /// @param committerMoveIndex1 The committer's slot 1 move index
+    /// @param committerExtraData1 The committer's slot 1 extra data
+    /// @param committerSalt The committer's salt (shared across both slots)
+    /// @param revealerMoveIndex0 The revealer's slot 0 move index
+    /// @param revealerExtraData0 The revealer's slot 0 extra data
+    /// @param revealerMoveIndex1 The revealer's slot 1 move index
+    /// @param revealerExtraData1 The revealer's slot 1 extra data
+    /// @param revealerSalt The revealer's salt (shared across both slots)
+    /// @param revealerSignature EIP-712 signature from the revealer over DualSignedRevealDoubles
+    function executeWithDualSignedMovesForDoubles(
+        bytes32 battleKey,
+        uint8 committerMoveIndex0,
+        uint240 committerExtraData0,
+        uint8 committerMoveIndex1,
+        uint240 committerExtraData1,
+        bytes32 committerSalt,
+        uint8 revealerMoveIndex0,
+        uint240 revealerExtraData0,
+        uint8 revealerMoveIndex1,
+        uint240 revealerExtraData1,
+        bytes32 revealerSalt,
+        bytes memory revealerSignature
+    ) external {
+        // Use lightweight getter (validates internally, reverts on bad state)
+        (address committer, address revealer, uint64 turnId, GameMode gameMode) =
+            ENGINE.getCommitAuthForDualSigned(battleKey);
+
+        if (gameMode != GameMode.Doubles) revert WrongGameMode();
+
+        // Caller must be the committing player
+        if (msg.sender != committer) {
+            revert CallerNotCommitter();
+        }
+
+        // Compute the committer's move hash (matches revealMovePair preimage format)
+        bytes32 committerMoveHash = keccak256(
+            abi.encodePacked(
+                committerMoveIndex0, committerMoveIndex1, committerSalt, committerExtraData0, committerExtraData1
+            )
+        );
+
+        // Verify the revealer's signature over DualSignedRevealDoubles
+        SignedCommitLib.DualSignedRevealDoubles memory reveal = SignedCommitLib.DualSignedRevealDoubles({
+            battleKey: battleKey,
+            turnId: turnId,
+            committerMoveHash: committerMoveHash,
+            revealerMoveIndex0: revealerMoveIndex0,
+            revealerMoveIndex1: revealerMoveIndex1,
+            revealerSalt: revealerSalt,
+            revealerExtraData0: revealerExtraData0,
+            revealerExtraData1: revealerExtraData1
+        });
+
+        bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedRevealDoubles(reveal));
+        if (ECDSA.recover(digest, revealerSignature) != revealer) {
+            revert InvalidSignature();
+        }
+
+        // Execute with all 4 slot moves in a single call
+        if (turnId % 2 == 0) {
+            // Committer is p0
+            ENGINE.executeWithMovesForDoubles(
+                battleKey,
+                committerMoveIndex0, committerExtraData0,
+                committerMoveIndex1, committerExtraData1,
+                committerSalt,
+                revealerMoveIndex0, revealerExtraData0,
+                revealerMoveIndex1, revealerExtraData1,
+                revealerSalt
+            );
+        } else {
+            // Committer is p1
+            ENGINE.executeWithMovesForDoubles(
+                battleKey,
+                revealerMoveIndex0, revealerExtraData0,
+                revealerMoveIndex1, revealerExtraData1,
+                revealerSalt,
+                committerMoveIndex0, committerExtraData0,
+                committerMoveIndex1, committerExtraData1,
+                committerSalt
+            );
+        }
+    }
+
     /// @notice Allows anyone to publish the committer's signed commitment on-chain
     /// @dev This is a fallback mechanism if the committer (A) doesn't submit via
     ///      executeWithDualSignedMoves. The revealer (B) can use this to force A's
     ///      commitment on-chain, then proceed with the normal reveal flow.
+    ///      Works for both singles and doubles - the moveHash is format-agnostic.
     /// @param battleKey The battle identifier
     /// @param moveHash The committer's move hash
     /// @param committerSignature EIP-712 signature from the committer over
