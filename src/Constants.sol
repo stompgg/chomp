@@ -44,6 +44,29 @@ address constant TOMBSTONE_ADDRESS = address(0xdead);
 
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
+// Active mon index packing (uint16):
+// Singles: lower 8 bits = p0 active, upper 8 bits = p1 active (backwards compatible)
+// Doubles: 4 bits per slot (supports up to 16 mons per team)
+//   Bits 0-3:   p0 slot 0 active mon index
+//   Bits 4-7:   p0 slot 1 active mon index
+//   Bits 8-11:  p1 slot 0 active mon index
+//   Bits 12-15: p1 slot 1 active mon index
+uint8 constant ACTIVE_MON_INDEX_BITS = 4;
+uint8 constant ACTIVE_MON_INDEX_MASK = 0x0F; // 4 bits
+
+// Slot switch flags + game mode packing (uint8):
+//   Bit 0: p0 slot 0 needs switch
+//   Bit 1: p0 slot 1 needs switch
+//   Bit 2: p1 slot 0 needs switch
+//   Bit 3: p1 slot 1 needs switch
+//   Bit 4: game mode (0 = singles, 1 = doubles)
+uint8 constant SWITCH_FLAG_P0_SLOT0 = 0x01;
+uint8 constant SWITCH_FLAG_P0_SLOT1 = 0x02;
+uint8 constant SWITCH_FLAG_P1_SLOT0 = 0x04;
+uint8 constant SWITCH_FLAG_P1_SLOT1 = 0x08;
+uint8 constant SWITCH_FLAGS_MASK = 0x0F;
+uint8 constant GAME_MODE_BIT = 0x10; // Bit 4: 0 = singles, 1 = doubles
+
 bytes32 constant MOVE_MISS_EVENT_TYPE = sha256(abi.encode("MoveMiss"));
 bytes32 constant MOVE_CRIT_EVENT_TYPE = sha256(abi.encode("MoveCrit"));
 bytes32 constant MOVE_TYPE_IMMUNITY_EVENT_TYPE = sha256(abi.encode("MoveTypeImmunity"));

@@ -25,6 +25,11 @@ enum GameStatus {
     Ended
 }
 
+enum GameMode {
+    Singles,
+    Doubles
+}
+
 enum EffectStep {
     OnApply,
     RoundStart,

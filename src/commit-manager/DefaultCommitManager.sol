@@ -7,6 +7,7 @@ import "../Structs.sol";
 
 import {ICommitManager} from "./ICommitManager.sol";
 import {IEngine} from "../IEngine.sol";
+import {IValidator} from "../IValidator.sol";
 
 contract DefaultCommitManager is ICommitManager {
     IEngine internal immutable ENGINE;
@@ -246,6 +247,94 @@ contract DefaultCommitManager is ICommitManager {
             // We can execute if:
             // - it's a single player turn (no other commitments to wait on)
             // - we're the player who previously committed (the other party already revealed)
+            if ((playerSwitchForTurnFlag == currentPlayerIndex) || (!playerSkipsPreimageCheck)) {
+                ENGINE.execute(battleKey);
+            }
+        }
+    }
+
+    /// @notice Reveal both slot moves for doubles battles
+    /// @dev The hash preimage is: keccak256(abi.encodePacked(moveIndex0, moveIndex1, salt, extraData0, extraData1))
+    function revealMovePair(bytes32 battleKey, RevealedMovesPair calldata moves, bool autoExecute) external {
+        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+
+        if (ctx.startTimestamp == 0) revert BattleNotYetStarted();
+        if (msg.sender != ctx.p0 && msg.sender != ctx.p1) revert NotP0OrP1();
+        if (ctx.winnerIndex != 2) revert BattleAlreadyComplete();
+
+        uint256 currentPlayerIndex = msg.sender == ctx.p0 ? 0 : 1;
+        uint256 otherPlayerIndex = 1 - currentPlayerIndex;
+
+        PlayerDecisionData storage currentPd = playerData[battleKey][currentPlayerIndex];
+        PlayerDecisionData storage otherPd = playerData[battleKey][otherPlayerIndex];
+
+        uint64 turnId = ctx.turnId;
+        uint8 playerSwitchForTurnFlag = ctx.playerSwitchForTurnFlag;
+
+        // Same commit/reveal ordering logic as revealMove
+        bool playerSkipsPreimageCheck;
+        if (playerSwitchForTurnFlag == 2) {
+            playerSkipsPreimageCheck =
+                (((turnId % 2 == 1) && (currentPlayerIndex == 0)) || ((turnId % 2 == 0) && (currentPlayerIndex == 1)));
+        } else {
+            playerSkipsPreimageCheck = (playerSwitchForTurnFlag == currentPlayerIndex);
+            if (!playerSkipsPreimageCheck) revert PlayerNotAllowed();
+        }
+
+        if (playerSkipsPreimageCheck) {
+            if (playerSwitchForTurnFlag == 2) {
+                if (turnId != 0) {
+                    if (otherPd.lastCommitmentTurnId != turnId) revert RevealBeforeOtherCommit();
+                } else {
+                    if (otherPd.moveHash == bytes32(0)) revert RevealBeforeOtherCommit();
+                }
+            }
+        } else {
+            // Validate preimage for doubles: hash is over both slot moves packed
+            bytes32 expectedHash = keccak256(
+                abi.encodePacked(moves.moveIndex0, moves.moveIndex1, moves.salt, moves.extraData0, moves.extraData1)
+            );
+            if (expectedHash != currentPd.moveHash) revert WrongPreimage();
+            if (currentPd.lastCommitmentTurnId != turnId) revert RevealBeforeSelfCommit();
+            if (otherPd.numMovesRevealed < turnId || otherPd.lastMoveTimestamp == 0) revert NotYetRevealed();
+        }
+
+        if (currentPd.numMovesRevealed > turnId) revert AlreadyRevealed();
+
+        // Validate both slot moves if validator is set
+        if (ctx.validator != address(0)) {
+            // Validate slot 0
+            if (!IValidator(ctx.validator).validatePlayerMoveForSlot(
+                battleKey, moves.moveIndex0, currentPlayerIndex, 0, moves.extraData0
+            )) {
+                revert InvalidMove(msg.sender);
+            }
+            // Validate slot 1, with slot 0's switch target as claimed
+            uint256 claimedBySlot0 = moves.moveIndex0 == SWITCH_MOVE_INDEX ? uint256(moves.extraData0) : type(uint256).max;
+            if (!IValidator(ctx.validator).validatePlayerMoveForSlotWithClaimed(
+                battleKey, moves.moveIndex1, currentPlayerIndex, 1, moves.extraData1, claimedBySlot0
+            )) {
+                revert InvalidMove(msg.sender);
+            }
+        }
+
+        // Set both slot moves on the engine
+        ENGINE.setMoveForSlot(battleKey, currentPlayerIndex, 0, moves.moveIndex0, moves.salt, moves.extraData0);
+        ENGINE.setMoveForSlot(battleKey, currentPlayerIndex, 1, moves.moveIndex1, moves.salt, moves.extraData1);
+
+        currentPd.lastMoveTimestamp = uint96(block.timestamp);
+        unchecked {
+            currentPd.numMovesRevealed += 1;
+        }
+
+        if (playerSwitchForTurnFlag == 0 || playerSwitchForTurnFlag == 1) {
+            otherPd.lastMoveTimestamp = uint96(block.timestamp);
+            unchecked {
+                otherPd.numMovesRevealed += 1;
+            }
+        }
+
+        if (autoExecute) {
             if ((playerSwitchForTurnFlag == currentPlayerIndex) || (!playerSkipsPreimageCheck)) {
                 ENGINE.execute(battleKey);
             }
