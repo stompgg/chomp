@@ -22,6 +22,17 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
+def to_screaming_snake_case(name: str) -> str:
+    """Convert camelCase/PascalCase to SCREAMING_SNAKE_CASE."""
+    # Insert underscore before uppercase letters (except at start)
+    result = re.sub(r'(?<!^)(?=[A-Z])', '_', name)
+    # Replace spaces and hyphens with underscores, then uppercase
+    result = result.replace(" ", "_").replace("-", "_").upper()
+    # Remove any other invalid characters
+    result = re.sub(r'[^A-Z0-9_]', '', result)
+    return result
+
+
 def parse_addresses_from_content(content: str) -> Dict[str, str]:
     """Parse addresses from content string with KEY=VALUE lines."""
     addresses = {}
@@ -34,8 +45,8 @@ def parse_addresses_from_content(content: str) -> Dict[str, str]:
         # Split the line into key and value
         key, value = line.split('=', 1)
 
-        # Convert the key to uppercase and remove any non-alphanumeric characters
-        key = re.sub(r'[^A-Z0-9_]', '', key.upper())
+        # Convert the key to SCREAMING_SNAKE_CASE
+        key = to_screaming_snake_case(key)
 
         # Convert the value to lowercase (for LowercaseHex type)
         value = value.lower()
@@ -58,8 +69,8 @@ def read_addresses(input_file: str) -> Dict[str, str]:
             # Split the line into key and value
             key, value = line.split('=', 1)
 
-            # Convert the key to uppercase and remove any non-alphanumeric characters
-            key = re.sub(r'[^A-Z0-9_]', '', key.upper())
+            # Convert the key to SCREAMING_SNAKE_CASE
+            key = to_screaming_snake_case(key)
 
             # Convert the value to lowercase (for LowercaseHex type)
             value = value.lower()
