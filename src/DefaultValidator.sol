@@ -112,6 +112,26 @@ contract DefaultValidator is IValidator {
         return true;
     }
 
+    // A slot-aware switch validation for doubles
+    // Uses the slot index to determine which active mon is the "current" vs "other" slot
+    function validateSwitchForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex)
+        public
+        view
+        returns (bool)
+    {
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+        uint256 activeMonIndex = _getActiveMonForSlot(ctx, playerIndex, slotIndex);
+        uint256 otherSlotActiveMonIndex = _getActiveMonForSlot(ctx, playerIndex, 1 - slotIndex);
+
+        bool isTargetKnockedOut = ENGINE.getMonStateForBattle(
+            battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut
+        ) == 1;
+
+        return ValidatorLogic.validateSwitchForSlot(
+            ctx.turnId, monToSwitchIndex, activeMonIndex, otherSlotActiveMonIndex, type(uint256).max, isTargetKnockedOut, MONS_PER_TEAM
+        );
+    }
+
     function validateSpecificMoveSelection(
         bytes32 battleKey,
         uint256 moveIndex,

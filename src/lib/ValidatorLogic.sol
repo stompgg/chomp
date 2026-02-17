@@ -273,6 +273,25 @@ library ValidatorLogic {
         return (requiresSwitch, isNoOp, isSwitch, isRegularMove, true);
     }
 
+    /// @notice Pure game-over check using KO bitmaps and team sizes
+    /// @param p0KOBitmap Bitmap where bit i is set if p0's mon i is knocked out
+    /// @param p1KOBitmap Bitmap where bit i is set if p1's mon i is knocked out
+    /// @param p0TeamSize Number of mons on p0's team
+    /// @param p1TeamSize Number of mons on p1's team
+    /// @return winnerIndex 0 if p0 wins, 1 if p1 wins, 2 if no winner yet
+    function checkGameOver(
+        uint256 p0KOBitmap,
+        uint256 p1KOBitmap,
+        uint256 p0TeamSize,
+        uint256 p1TeamSize
+    ) internal pure returns (uint256 winnerIndex) {
+        uint256 p0FullMask = (1 << p0TeamSize) - 1;
+        uint256 p1FullMask = (1 << p1TeamSize) - 1;
+        if (p0KOBitmap == p0FullMask) return 1; // p1 wins (all p0 mons KO'd)
+        if (p1KOBitmap == p1FullMask) return 0; // p0 wins (all p1 mons KO'd)
+        return 2; // No winner yet
+    }
+
     /// @notice Checks if there's a valid switch target for a slot using a KO bitmap
     /// @param koBitmap Bitmap where bit i is set if mon i is knocked out
     /// @param otherSlotActiveMonIndex Mon index active in the other slot
