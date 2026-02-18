@@ -80,6 +80,12 @@ interface IEngine {
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, bytes32 key) external view returns (uint192);
     function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
+    function validatePlayerMoveForBattle(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint240 extraData
+    ) external returns (bool);
     function getEffects(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
         external
         view

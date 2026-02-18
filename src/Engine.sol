@@ -1934,6 +1934,63 @@ contract Engine is IEngine, MappingAllocator {
         return battleConfig[_getStorageKey(battleKey)].validator;
     }
 
+    /// @notice Validates a player move, handling both inline validation (when validator is address(0)) and external validators
+    /// @dev This allows callers like CPU to validate moves without needing to handle the address(0) case themselves
+    function validatePlayerMoveForBattle(
+        bytes32 battleKey,
+        uint256 moveIndex,
+        uint256 playerIndex,
+        uint240 extraData
+    ) external returns (bool) {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        BattleConfig storage config = battleConfig[storageKey];
+
+        // If external validator exists, delegate to it
+        if (address(config.validator) != address(0)) {
+            return config.validator.validatePlayerMove(battleKey, moveIndex, playerIndex, extraData);
+        }
+
+        // Inline validation when validator is address(0)
+        BattleData storage data = battleData[battleKey];
+        uint256 activeMonIndex = _unpackActiveMonIndex(data.activeMonIndex, playerIndex);
+        MonState storage activeMonState = _getMonState(config, playerIndex, activeMonIndex);
+
+        // Basic validation (bounds, forced switch checks)
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
+            ValidatorLogic.validatePlayerMoveBasics(moveIndex, data.turnId, activeMonState.isKnockedOut, DEFAULT_MOVES_PER_MON);
+
+        if (!basicValid) {
+            return false;
+        }
+
+        // No-op is always valid if basic validation passed
+        if (isNoOp) {
+            return true;
+        }
+
+        // Switch validation
+        if (isSwitch) {
+            uint256 monToSwitchIndex = uint256(extraData);
+            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            return ValidatorLogic.validateSwitch(
+                data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
+            );
+        }
+
+        // Regular move validation
+        if (isRegularMove) {
+            Mon storage activeMon = _getTeamMon(config, playerIndex, activeMonIndex);
+            IMoveSet moveSet = activeMon.moves[moveIndex];
+            uint32 baseStamina = activeMon.stats.stamina;
+            int32 staminaDelta = activeMonState.staminaDelta;
+            return ValidatorLogic.validateSpecificMoveSelection(
+                battleKey, moveSet, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
+            );
+        }
+
+        return true;
+    }
+
     function getMonValueForBattle(
         bytes32 battleKey,
         uint256 playerIndex,
