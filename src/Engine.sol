@@ -70,8 +70,8 @@ contract Engine is IEngine, MappingAllocator {
         uint240 extraData,
         int32 staminaCost
     );
-    event P0MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData);
-    event P1MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData);
+    event P0MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData, bytes32 salt);
+    event P1MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData, bytes32 salt);
     event DamageDeal(
         bytes32 indexed battleKey,
         uint256 playerIndex,
@@ -358,12 +358,12 @@ contract Engine is IEngine, MappingAllocator {
         uint8 p0Stored = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
         config.p0Move = MoveDecision({packedMoveIndex: p0Stored | IS_REAL_TURN_BIT, extraData: p0ExtraData});
         config.p0Salt = p0Salt;
-        emit P0MoveSet(battleKey, uint256(p0MoveIndex) | (uint256(p0ExtraData) << 8));
+        emit P0MoveSet(battleKey, uint256(p0MoveIndex) | (uint256(p0ExtraData) << 8), p0Salt);
 
         uint8 p1Stored = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
         config.p1Move = MoveDecision({packedMoveIndex: p1Stored | IS_REAL_TURN_BIT, extraData: p1ExtraData});
         config.p1Salt = p1Salt;
-        emit P1MoveSet(battleKey, uint256(p1MoveIndex) | (uint256(p1ExtraData) << 8));
+        emit P1MoveSet(battleKey, uint256(p1MoveIndex) | (uint256(p1ExtraData) << 8), p1Salt);
 
         // Execute (skip MovesNotSet check since we just set them)
         _executeInternal(battleKey, storageKey);
@@ -1116,11 +1116,11 @@ contract Engine is IEngine, MappingAllocator {
         if (playerIndex == 0) {
             config.p0Move = newMove;
             config.p0Salt = salt;
-            emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8));
+            emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
         } else {
             config.p1Move = newMove;
             config.p1Salt = salt;
-            emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8));
+            emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
         }
     }
 

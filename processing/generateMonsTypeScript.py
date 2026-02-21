@@ -185,7 +185,7 @@ def read_moves_data(
             "type": row["Type"],
             "class": row["Class"],
             "description": row["DevDescription"],
-            "extraDataNeeded": row["ExtraData"] == "Yes",
+            "inputType": row.get("InputType", "none").strip() or "none",
         }
         sprite = build_attack_sprite(
             move_name, attack_spritesheet_data, non_standard_spritesheet_data
@@ -326,6 +326,8 @@ export enum MoveClass {{
   Self = 'Self',
 }};
 
+export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon';
+
 export const MonMetadata = {json_str} as const;
 
 export type Move = {{
@@ -338,7 +340,7 @@ export type Move = {{
   readonly type: Type;
   readonly class: MoveClass;
   readonly description: string;
-  readonly extraDataNeeded: boolean;
+  readonly inputType: MoveInputType;
   readonly sprite?: SpriteAnimationConfig;
 }};
 
