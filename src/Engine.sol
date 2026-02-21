@@ -342,30 +342,18 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 p1Salt,
         uint240 p1ExtraData
     ) external {
-        // Cache storage key
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
 
         BattleConfig storage config = battleConfig[storageKey];
 
-        // Only moveManager can call this
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
 
-        // Set both moves inline (same as setMove but without external call overhead)
-        // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
-        uint8 p0Stored = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
-        config.p0Move = MoveDecision({packedMoveIndex: p0Stored | IS_REAL_TURN_BIT, extraData: p0ExtraData});
-        config.p0Salt = p0Salt;
-        emit P0MoveSet(battleKey, uint256(p0MoveIndex) | (uint256(p0ExtraData) << 8), p0Salt);
+        _setMoveInternal(config, battleKey, 0, p0MoveIndex, p0Salt, p0ExtraData);
+        _setMoveInternal(config, battleKey, 1, p1MoveIndex, p1Salt, p1ExtraData);
 
-        uint8 p1Stored = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
-        config.p1Move = MoveDecision({packedMoveIndex: p1Stored | IS_REAL_TURN_BIT, extraData: p1ExtraData});
-        config.p1Salt = p1Salt;
-        emit P1MoveSet(battleKey, uint256(p1MoveIndex) | (uint256(p1ExtraData) << 8), p1Salt);
-
-        // Execute (skip MovesNotSet check since we just set them)
         _executeInternal(battleKey, storageKey);
     }
 
@@ -1091,27 +1079,23 @@ contract Engine is IEngine, MappingAllocator {
         // If the switch is invalid, we simply do nothing and continue execution
     }
 
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
-        external
-    {
-        // Use cached key if called during execute(), otherwise lookup
-        bool isForCurrentBattle = battleKeyForWrite == battleKey;
-        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
-
-        // Cache storage pointer to avoid repeated mapping lookups
-        BattleConfig storage config = battleConfig[storageKey];
-
-        bool isMoveManager = msg.sender == address(config.moveManager);
-        if (!isMoveManager && !isForCurrentBattle) {
-            revert NoWriteAllowed();
-        }
-
+    /// @notice Internal helper to set a player's move
+    /// @dev Shared by setMove() and executeWithMoves() to avoid duplication
+    function _setMoveInternal(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint8 moveIndex,
+        bytes32 salt,
+        uint240 extraData
+    ) internal {
         // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
         // Regular moves (< SWITCH_MOVE_INDEX) are stored as moveIndex + 1 to avoid zero ambiguity
         uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
-        uint8 packedMoveIndex = storedMoveIndex | IS_REAL_TURN_BIT;
-
-        MoveDecision memory newMove = MoveDecision({packedMoveIndex: packedMoveIndex, extraData: extraData});
+        MoveDecision memory newMove = MoveDecision({
+            packedMoveIndex: storedMoveIndex | IS_REAL_TURN_BIT,
+            extraData: extraData
+        });
 
         if (playerIndex == 0) {
             config.p0Move = newMove;
@@ -1122,6 +1106,23 @@ contract Engine is IEngine, MappingAllocator {
             config.p1Salt = salt;
             emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
         }
+    }
+
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
+        external
+    {
+        // Use cached key if called during execute(), otherwise lookup
+        bool isForCurrentBattle = battleKeyForWrite == battleKey;
+        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
+
+        // Cache storage pointer to avoid repeated mapping lookups
+        BattleConfig storage config = battleConfig[storageKey];
+
+        if (msg.sender != address(config.moveManager) && !isForCurrentBattle) {
+            revert NoWriteAllowed();
+        }
+
+        _setMoveInternal(config, battleKey, playerIndex, moveIndex, salt, extraData);
     }
 
     function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
