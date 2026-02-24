@@ -1,5 +1,12 @@
 # TODO
 
+SimplePM flow tests:
+- Fails buying if too many turns have passed
+- Fails redemption if no winner is set
+- Fee is correctly calculated if shares are bought on a later turn
+- Distribution is correctly calculated once a battle is over
+
+-----------------------------------------------------
 Implement https://docs.bungee.exchange/bungee-api/integration-guides/additional-guides/destination-payload to handle bridge + calls
 
 ---------------------------------------------------------------------------------------------
