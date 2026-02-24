@@ -1,5 +1,15 @@
 # TODO
 
+Sofabbi
+- Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
+
+
+Nirvamma ideas:
+- Record --> start / stop, becomes whatever move the opponent used, at 2 stamina, 2 uses, then reverts back to Record.
+- Ice -> Fire -> Lightning cycling move, can only choose one that hasn't been chosen yet, resets on switch out
+    - separate into different layers, and then hide the resulting layer when chosen (20% chance to inflict Burn, Frostbite, Zap)
+- Ability: Value Lock
+
 SimplePM flow tests:
 - Fails buying if too many turns have passed
 - Fails redemption if no winner is set
