@@ -9,6 +9,7 @@ out/
 /broadcast
 
 log.txt
+PLAN.md
 
 # Dotenv file
 .env

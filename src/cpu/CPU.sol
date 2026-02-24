@@ -32,7 +32,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(bytes32 battleKey, uint256 playerIndex)
+    function calculateMove(bytes32 battleKey, uint256 playerIndex, uint8 playerMoveIndex, uint240 playerExtraData)
         external
         virtual
         returns (uint128 moveIndex, uint240 extraData);

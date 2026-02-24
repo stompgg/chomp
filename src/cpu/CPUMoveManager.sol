@@ -49,7 +49,7 @@ abstract contract CPUMoveManager {
             p1ExtraData = 0;
         } else {
             // P1's turn or both players move: CPU calculates its move
-            (uint128 cpuMoveIndex, uint240 cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1);
+            (uint128 cpuMoveIndex, uint240 cpuExtraData) = ICPU(address(this)).calculateMove(battleKey, 1, moveIndex, extraData);
             p1MoveIndex = uint8(cpuMoveIndex);
             p1Salt = keccak256(abi.encode(battleKey, msg.sender, block.timestamp));
             p1ExtraData = cpuExtraData;

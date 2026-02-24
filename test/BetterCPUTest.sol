@@ -339,14 +339,13 @@ contract BetterCPUTest is Test {
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -5, "Stamina should be -5 after expensive attack");
 
-        // Turn 2: CPU should rest (stamina delta <= -3)
-        // Set RNG to 1 (1 % 4 != 0 so rest is favored, and 1 % 10 != 0 so no random)
+        // Turn 2: Opponent rests (P4 path). New BetterCPU attacks on free turns even at low stamina.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
 
-        // Stamina should stay at -5 (rest doesn't consume more, but doesn't recover either)
+        // Stamina should be -10 (attacked again with the 5-cost move on the free turn)
         staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
-        assertEq(staminaDelta, -5, "Stamina should stay the same after rest (not decrease)");
+        assertEq(staminaDelta, -10, "Should attack on free turn even at low stamina");
     }
 
     // ============ SETUP MOVE PREFERENCE AT FULL HP ============

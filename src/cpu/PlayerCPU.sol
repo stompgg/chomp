@@ -24,7 +24,7 @@ contract PlayerCPU is CPU {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(bytes32 battleKey, uint256)
+    function calculateMove(bytes32 battleKey, uint256, uint8, uint240)
         external
         view
         override

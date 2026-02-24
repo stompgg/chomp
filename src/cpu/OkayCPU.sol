@@ -22,7 +22,7 @@ contract OkayCPU is CPU {
     /**
      * If it's turn 0, swap in a mon that resists the other player's type1 (if possible)
      */
-    function calculateMove(bytes32 battleKey, uint256 playerIndex)
+    function calculateMove(bytes32 battleKey, uint256 playerIndex, uint8, uint240)
         external
         override
         returns (uint128 moveIndex, uint240 extraData)
