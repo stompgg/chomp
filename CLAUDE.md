@@ -56,18 +56,10 @@ chomp/
 │   │   ├── DefaultMatchmaker.sol     # Propose/accept/confirm flow
 │   │   └── SignedMatchmaker.sol      # EIP-712 signed matchmaking
 │   ├── mons/               # Individual mon implementations (one dir per mon)
-│   │   ├── aurox/          # Aurox moves (BullRush, IronWall, UpOnly, etc.)
-│   │   ├── ekineki/        # Ekineki moves
-│   │   ├── embursa/        # Embursa moves
-│   │   ├── ghouliath/      # Ghouliath moves
-│   │   ├── gorillax/       # Gorillax moves
-│   │   ├── iblivion/       # Iblivion moves
-│   │   ├── inutia/         # Inutia moves
-│   │   ├── malalien/       # Malalien moves
-│   │   ├── pengym/         # Pengym moves
-│   │   ├── sofabbi/        # Sofabbi moves
-│   │   ├── volthare/       # Volthare moves
-│   │   └── xmon/           # Xmon moves
+│   │   ├── <monname>/      # Lowercase dir: 4 move .sol files + 1 ability .sol (+ optional libs)
+│   │   ├── aurox/          # e.g. BullRush.sol, GildedRecovery.sol, IronWall.sol, UpOnly.sol, ...
+│   │   ├── embursa/        # e.g. HeatBeacon.sol, SetAblaze.sol, Tinderclaws.sol, ...
+│   │   └── ...             # See drool/mons.csv for full roster
 │   ├── moves/              # Move system
 │   │   ├── IMoveSet.sol    # Move interface
 │   │   ├── StandardAttack.sol        # Base attack implementation
@@ -222,6 +214,17 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 - Move indices: 0-3 for regular moves (stored +1 to avoid zero ambiguity), 125 = switch, 126 = no-op
 - State sentinel: `CLEARED_MON_STATE_SENTINEL = type(int32).max - 1`
 
+### Mon Directory Conventions
+
+Each mon lives in `src/mons/<monname>/` (lowercase). A typical directory contains:
+- **4 move contracts** — one `.sol` file per move, `PascalCase` matching the move name (e.g., "Bull Rush" → `BullRush.sol`)
+- **1 ability contract** — `PascalCase.sol` matching the ability name (e.g., `UpOnly.sol`)
+- **Optional library files** — shared logic between moves in the same mon (e.g., `NineNineNineLib.sol`, `HeatBeaconLib.sol`)
+
+Each mon has exactly one test file at `test/mons/<MonName>Test.sol` (PascalCase + "Test", e.g., `AuroxTest.sol`). Tests extend `BattleHelper`.
+
+The CSV files in `drool/` are the source of truth for mon stats, move parameters, and ability assignments. The Solidity contracts must match these values — run `python processing/validateMoves.py` to verify.
+
 ### Testing Patterns
 
 - Tests extend `BattleHelper` (in `test/abstract/`) which provides:
@@ -234,46 +237,90 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 
 ### Adding a New Mon
 
-1. Create a directory `src/mons/<monname>/` (lowercase)
-2. Implement move contracts (extend `StandardAttack` or implement `IMoveSet`)
-3. Add mon stats to `drool/mons.csv`
-4. Add moves to `drool/moves.csv`
-5. Add abilities to `drool/abilities.csv` (if applicable)
-6. Run `python processing/validateMoves.py` to validate contracts match CSV
-7. Run `python processing/buildAll.py --skip-sprites` to regenerate `SetupMons.s.sol`
-8. Add tests in `test/mons/<MonName>Test.sol`
+1. Add mon stats to `drool/mons.csv` (HP, Attack, Defense, SpAtk, SpDef, Speed, Types)
+2. Add 4 moves to `drool/moves.csv` (Name, Mon, Power, Stamina, Accuracy, Priority, Type, Class, etc.)
+3. Add ability to `drool/abilities.csv` (Name, Mon, Effect description)
+4. Create directory `src/mons/<monname>/` (lowercase, e.g., `src/mons/aurox/`)
+5. Implement 4 move contracts as `PascalCase.sol` files (see "Move Implementation Patterns" below)
+6. Implement 1 ability contract as `PascalCase.sol` (see "Ability Patterns" below)
+7. Run `python processing/validateMoves.py` to validate contracts match CSV data
+8. Run `python processing/buildAll.py --skip-sprites` to regenerate `SetupMons.s.sol`
+9. Add tests in `test/mons/<MonName>Test.sol` extending `BattleHelper`
 
-### Adding a New Move
+### Move Implementation Patterns
 
-For standard attacks:
+Choose the simplest pattern that fits the move's behavior:
+
+**1. Pure `StandardAttack`** — constructor-only, no `move()` override. For straightforward damaging moves or simple effect-applying moves. Pass `EFFECT` + `EFFECT_ACCURACY` for probabilistic status application (e.g., 30% chance to burn):
+
 ```solidity
-contract MyMove is StandardAttack {
+contract Blow is StandardAttack {
     constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
         StandardAttack(msg.sender, _ENGINE, _TYPE_CALCULATOR, ATTACK_PARAMS({
-            BASE_POWER: 60,
-            STAMINA_COST: 2,
-            ACCURACY: DEFAULT_ACCURACY,
-            PRIORITY: DEFAULT_PRIORITY,
-            MOVE_TYPE: Type.Fire,
-            EFFECT_ACCURACY: 0,
-            MOVE_CLASS: MoveClass.Physical,
-            CRIT_RATE: DEFAULT_CRIT_RATE,
-            VOLATILITY: DEFAULT_VOL,
-            NAME: "My Move",
-            EFFECT: IEffect(address(0))
+            BASE_POWER: 70, STAMINA_COST: 2, ACCURACY: DEFAULT_ACCURACY,
+            PRIORITY: DEFAULT_PRIORITY, MOVE_TYPE: Type.Air,
+            EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+            CRIT_RATE: DEFAULT_CRIT_RATE, VOLATILITY: DEFAULT_VOL,
+            NAME: "Blow", EFFECT: IEffect(address(0))
         }))
     {}
 }
 ```
 
-For custom moves, implement `IMoveSet` directly.
+**2. `StandardAttack` + `move()` override** — for moves with side effects after damage (recoil, self-switch, self-status, multi-hit). Call `_move()` which returns `(int32 damage, bool crit)`, then add custom logic:
+
+```solidity
+function move(...) public override {
+    (int32 damage,) = _move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, rng);
+    if (damage > 0) {
+        ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage); // recoil
+    }
+}
+```
+
+Moves that require the player to select a target mon override `extraDataType()` to return `ExtraDataType.SelfTeamIndex` or `ExtraDataType.OpponentNonKOTeamIndex`.
+
+**3. Custom `IMoveSet`** — for complex conditional moves (variable power, healing, stat manipulation, reading opponent state). Implement all 7 `IMoveSet` functions directly. Use `AttackCalculator._calculateDamage()` for damage. Store dependencies as `immutable`.
+
+**4. `IMoveSet` + `BasicEffect` hybrid** — for moves that persist as effects across turns (traps, delayed damage, per-turn modifiers). Implement both interfaces in one contract. The `move()` function calls `ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), ...)`.
+
+**Shared libraries** — when multiple moves in the same mon share logic, extract into a `library` contract in the same directory (e.g., `NineNineNineLib.sol`, `HeatBeaconLib.sol`).
+
+### Ability Patterns
+
+Each mon has exactly one ability, implemented in its own `PascalCase.sol` file within the mon directory.
+
+**Pure `IAbility`** — for one-time switch-in actions (deal damage, apply a stat boost). Implement `name()` and `activateOnSwitch()`. No persistent state. (e.g., `PreemptiveShock`, `SaviorComplex`)
+
+**`IAbility` + `BasicEffect`** (most common) — for abilities with ongoing lifecycle effects. `activateOnSwitch()` registers `address(this)` as an effect on the mon, then hooks into effect lifecycle via `getStepsBitmap()`. Must override `name()` with `override(IAbility, BasicEffect)`. Uses an idempotency guard to prevent duplicate registration:
+
+```solidity
+function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+    for (uint256 i; i < effects.length; i++) {
+        if (address(effects[i].effect) == address(this)) return;
+    }
+    ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+}
+```
+
+For once-per-battle abilities (e.g., `RiseFromTheGrave`), use a `globalKV` flag instead of the effect-list check.
 
 ### Adding a New Effect
 
-1. Implement `IEffect` (or extend `BasicEffect` / `StatusEffect`)
-2. Override the relevant lifecycle hooks
+Effects fall into several categories depending on scope:
+
+- **Status effects** (`src/effects/status/`): Extend `StatusEffect` which enforces one-status-per-mon via a KV flag. Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
+- **Battlefield effects** (`src/effects/battlefield/`): Extend `BasicEffect`, use `targetIndex=2` for global scope. (e.g., `Overclock`)
+- **Shared utility effects** (`src/effects/`): Deployed once, used by many contracts. (e.g., `StatBoosts` for stat modifiers, `StaminaRegen` for per-turn recovery)
+- **Mon-local effects** (`src/mons/<monname>/`): Abilities or move-effect hybrids that only apply to one mon. These live in the mon's directory, not in `src/effects/`.
+
+To implement a new effect:
+1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
+2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, etc.)
 3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call
-4. Return `(updatedExtraData, removeAfterRun)` from hooks
+4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
+5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
 
 ## Build & Deploy Pipeline
 
@@ -320,10 +367,16 @@ GitHub Actions runs on pull requests (`.github/workflows/main.yml`):
 
 | File | Purpose |
 |------|---------|
-| `drool/mons.csv` | Mon stats: Id, Name, HP, Speed, Attack, Defense, SpAtk, SpDef, Type1, Type2 |
-| `drool/moves.csv` | Move data: Name, Mon, Power, Stamina, Accuracy, Priority, Type, Class, Description, ExtraData |
-| `drool/abilities.csv` | Ability assignments: Name, Mon |
+| `drool/mons.csv` | Mon stats: Id, Name, HP, Attack, Defense, SpAtk, SpDef, Speed, Type1, Type2, Flavor |
+| `drool/moves.csv` | Move data: Name, Mon, Power, Stamina, Accuracy, Priority, Type, Class, DevDescription, UserDescription, InputType |
+| `drool/abilities.csv` | Ability assignments: Name, Mon, Effect |
 | `drool/types.csv` | Type effectiveness chart |
+
+CSV-to-code mapping notes:
+- **Priority** in `moves.csv` is a signed offset from `DEFAULT_PRIORITY` (3). So `0` = default, `1` = faster, `-1` = slower.
+- **Power** can be `?` for variable-power custom moves (Tier 3/4 implementations)
+- **InputType** maps to `ExtraDataType` enum: `none` → `None`, `self-mon` → `SelfTeamIndex`, `opponent-mon` → `OpponentNonKOTeamIndex`
+- **Type2** is `"NA"` for single-type mons
 
 ## Known Issues / Gotchas
 
