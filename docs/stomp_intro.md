@@ -10,8 +10,9 @@ We have collectively as an industry tried to make web3 gaming a "thing" for the 
 - https://x.com/playchronoforge/status/1998501250464362517
 - https://x.com/tax_cuts/status/1888991002536411332 
 - https://x.com/latticexyz/status/1827031013505069421
-- runiverse 
-- crabada
+- https://x.com/RuniverseGame/status/2015967471161745673
+- https://x.com/PlayCrabada/status/1663604365587001345
+- everybody else: https://x.com/StarPlatinum_/status/1983979809060655522
 
 So why am I doing something so stupid as to try again?
 
