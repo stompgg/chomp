@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
+import {Ownable} from "../lib/Ownable.sol";
 
 struct PMEntry {
     uint96 p0Shares;
@@ -14,10 +15,11 @@ struct PMBalance {
     uint128 p1SharesBalance;
 }
 
-contract SimplePM {
+contract SimplePM is Ownable {
 
     error TooLate(uint256 turnId);
     error GameNotOver(bytes32 battleKey);
+    error InvalidBattle(bytes32 battleKey);
 
     uint256 public constant DENOM = 100;
     uint256 public constant LAST_TURN_TO_JOIN = 15;
@@ -30,9 +32,13 @@ contract SimplePM {
 
     constructor(IEngine _ENGINE) {
         ENGINE = _ENGINE;
+        _initializeOwner(msg.sender);
     }
 
     function buyShares(bytes32 battleKey, bool isP0) payable public {
+        if (ENGINE.getStartTimestamp(battleKey) == 0) {
+            revert InvalidBattle(battleKey);
+        }
         uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
         if (turnId > LAST_TURN_TO_JOIN) {
             revert TooLate(turnId);
@@ -70,6 +76,17 @@ contract SimplePM {
         uint256 redemptionAmount = marketDetails.totalDeposits * sharesToRedeem / totalWinningShares;
         if (redemptionAmount > 0) {
             payable(msg.sender).call{value: redemptionAmount}("");
+        }
+    }
+
+    function rescue(bytes32 battleKey) public onlyOwner {
+        address winner = ENGINE.getWinner(battleKey);
+        if (winner == address(0)) {
+            revert GameNotOver(battleKey);
+        }
+        uint256 remaining = address(this).balance;
+        if (remaining > 0) {
+            payable(msg.sender).call{value: remaining}("");
         }
     }
 }
