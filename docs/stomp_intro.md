@@ -44,7 +44,13 @@ We haven't had such a unifying cultural force since the last time everyone went 
 
 This is obviously not going to be anything close to esports or a normal gaming phenomenon. And that's okay, I want to celebrate the little cultural wins that we have had across crypto. In a time where people keep looking to RWAs and finding ways to bring cool IP back onto the chain, I remain wistfully hopeful for the weirdness that was web3-native IPs. 
 
-Come try the game out if you get a chance, we got your bullas, beras, miladies, hypurrs, llamas, and more coming in the roster.
+Come try the game out if you get a chance; we got your bullas, beras, miladies, hypurrs, llamas, and more coming in the roster.
+
+![aurox](../drool/imgs/aurox_mini.gif)
+![embursa](../drool/imgs/embursa_mini.gif)
+![malalien](../drool/imgs/malalien_mini.gif)
+![ekineki](../drool/imgs/ekineki_mini.gif)
+![nirvamma](../drool/imgs/Nirvamma_32x32.gif)
 
 Along the way, I hope that some of the ideas built around the game engine can find root in other projects. For the nerds, come check out the codebase! We've got a super fucked up solidity to typescript transpiler for full js emulation and a super fast one-step commit-reveal flow for handling matchmaking and turns. Onchain maximalism where it matters.
 
