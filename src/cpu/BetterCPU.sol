@@ -64,7 +64,7 @@ contract BetterCPU is CPU {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
             calculateValidMoves(battleKey, playerIndex);
 
-        uint256 opponentIndex = (playerIndex + 1) % 2;
+        uint256 opponentIndex = playerIndex ^ 1;
         uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
 
         // ══════════════════════════════════════════
@@ -299,11 +299,14 @@ contract BetterCPU is CPU {
         int256 bestMoveIndex = -1;
         uint32 bestStaminaCost = type(uint32).max;
 
-        for (uint256 i = 0; i < moves.length; i++) {
+        for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
             MoveClass moveClass = moveSet.moveClass(battleKey);
-            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) continue;
+            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) {
+                unchecked { ++i; }
+                continue;
+            }
 
             uint256 estimatedDamage = _estimateDamage(ctx, battleKey, moveSet, moveClass);
             if (estimatedDamage >= uint256(defenderCurrentHp)) {
@@ -313,6 +316,7 @@ contract BetterCPU is CPU {
                     bestMoveIndex = int256(i);
                 }
             }
+            unchecked { ++i; }
         }
         return bestMoveIndex;
     }
@@ -329,39 +333,37 @@ contract BetterCPU is CPU {
         uint256 bestDamage = 0;
         uint32 bestStaminaCost = type(uint32).max;
 
-        // First pass: find highest damage
-        for (uint256 i = 0; i < moves.length; i++) {
+        // Cache damage and stamina in memory to avoid redundant external calls
+        uint256[] memory damages = new uint256[](moves.length);
+        uint32[] memory costs = new uint32[](moves.length);
+
+        // First pass: compute + cache damage and stamina
+        for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
             MoveClass moveClass = moveSet.moveClass(battleKey);
-            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) continue;
-
-            uint256 estimatedDamage = _estimateDamage(ctx, battleKey, moveSet, moveClass);
-            if (estimatedDamage > bestDamage) {
-                bestDamage = estimatedDamage;
-                bestStaminaCost = moveSet.stamina(battleKey, attackerIndex, attackerMonIndex);
-                bestMoveIndex = int256(i);
+            if (moveClass == MoveClass.Physical || moveClass == MoveClass.Special) {
+                damages[i] = _estimateDamage(ctx, battleKey, moveSet, moveClass);
+                costs[i] = moveSet.stamina(battleKey, attackerIndex, attackerMonIndex);
+                if (damages[i] > bestDamage) {
+                    bestDamage = damages[i];
+                    bestStaminaCost = costs[i];
+                    bestMoveIndex = int256(i);
+                }
             }
+            unchecked { ++i; }
         }
 
         if (bestDamage == 0) return bestMoveIndex;
 
-        // Second pass: check if a cheaper move is within SIMILAR_DAMAGE_THRESHOLD
+        // Second pass: scan cached arrays only (cheap memory reads)
         uint256 threshold = (bestDamage * SIMILAR_DAMAGE_THRESHOLD) / 100;
-        for (uint256 i = 0; i < moves.length; i++) {
-            IMoveSet moveSet =
-                ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
-            MoveClass moveClass = moveSet.moveClass(battleKey);
-            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) continue;
-
-            uint256 estimatedDamage = _estimateDamage(ctx, battleKey, moveSet, moveClass);
-            if (estimatedDamage >= threshold) {
-                uint32 staminaCost = moveSet.stamina(battleKey, attackerIndex, attackerMonIndex);
-                if (staminaCost < bestStaminaCost) {
-                    bestStaminaCost = staminaCost;
-                    bestMoveIndex = int256(i);
-                }
+        for (uint256 i; i < moves.length;) {
+            if (damages[i] >= threshold && costs[i] < bestStaminaCost) {
+                bestStaminaCost = costs[i];
+                bestMoveIndex = int256(i);
             }
+            unchecked { ++i; }
         }
 
         return bestMoveIndex;
@@ -384,9 +386,8 @@ contract BetterCPU is CPU {
 
         int256 bestScore = type(int256).min;
         uint256 bestIndex = 0;
-        bool foundAdvantage = false;
 
-        for (uint256 i = 0; i < switches.length; i++) {
+        for (uint256 i; i < switches.length;) {
             MonStats memory candidateStats =
                 ENGINE.getMonStatsForBattle(battleKey, playerIndex, uint256(switches[i].extraData));
             Type candType1 = candidateStats.type1;
@@ -424,17 +425,11 @@ contract BetterCPU is CPU {
             if (score > bestScore) {
                 bestScore = score;
                 bestIndex = i;
-                foundAdvantage = true;
             }
+            unchecked { ++i; }
         }
 
-        if (foundAdvantage) {
-            return (switches[bestIndex].moveIndex, switches[bestIndex].extraData);
-        }
-
-        // Random fallback
-        uint256 rngIndex = _getRNG(battleKey) % switches.length;
-        return (switches[rngIndex].moveIndex, switches[rngIndex].extraData);
+        return (switches[bestIndex].moveIndex, switches[bestIndex].extraData);
     }
 
     // ============ SWITCH SELECTION ============
@@ -474,7 +469,7 @@ contract BetterCPU is CPU {
         uint256 bestIdx = 0;
         uint256 leastDamage = type(uint256).max;
 
-        for (uint256 i = 0; i < switches.length; i++) {
+        for (uint256 i; i < switches.length;) {
             uint256 candidateMonIndex = uint256(switches[i].extraData);
             DamageCalcContext memory ctx =
                 _buildDamageCalcContext(battleKey, opponentIndex, opponentMonIndex, playerIndex, candidateMonIndex);
@@ -483,6 +478,7 @@ contract BetterCPU is CPU {
                 leastDamage = dmg;
                 bestIdx = i;
             }
+            unchecked { ++i; }
         }
 
         return (switches[bestIdx].moveIndex, switches[bestIdx].extraData);
@@ -604,7 +600,7 @@ contract BetterCPU is CPU {
         RevealedMove[] memory switches
     ) internal view returns (uint256 bestIdx, uint256 bestDamagePct, bool bestSurvives) {
         bestDamagePct = type(uint256).max;
-        for (uint256 i = 0; i < switches.length; i++) {
+        for (uint256 i; i < switches.length;) {
             (uint256 damagePctToCandidate, bool candidateSurvives) =
                 _evaluateSwitchCandidate(battleKey, params, uint256(switches[i].extraData));
             if (damagePctToCandidate < bestDamagePct) {
@@ -612,6 +608,7 @@ contract BetterCPU is CPU {
                 bestIdx = i;
                 bestSurvives = candidateSurvives;
             }
+            unchecked { ++i; }
         }
     }
 
@@ -689,14 +686,7 @@ contract BetterCPU is CPU {
         RevealedMove[] memory moves
     ) internal returns (int256) {
         uint256 configValue = monConfig[activeMonIndex][CONFIG_SWITCH_IN_MOVE];
-        if (configValue == 0 && monConfig[activeMonIndex][CONFIG_SWITCH_IN_MOVE] == 0) {
-            // Check if it's actually set to 0 (move index 0) vs unset
-            // We use CONFIG_UNSET to distinguish; if the mapping returns 0 and was never set, skip
-            // Since Solidity defaults to 0, we need a separate "is set" check.
-            // Convention: store move index + 1, so 0 means unset
-            return -1;
-        }
-        // Actually, let's use the convention that CONFIG_SWITCH_IN_MOVE stores (moveIndex + 1), 0 = unset
+        // Convention: stores (moveIndex + 1), 0 = unset
         if (configValue == 0) return -1;
         uint256 targetMoveIndex = configValue - 1;
 
@@ -704,12 +694,13 @@ contract BetterCPU is CPU {
         if ((switchInMoveUsedBitmap[battleKey] & (1 << activeMonIndex)) != 0) return -1;
 
         // Find the move in the moves array
-        for (uint256 i = 0; i < moves.length; i++) {
+        for (uint256 i; i < moves.length;) {
             if (moves[i].moveIndex == targetMoveIndex) {
                 // Mark as used
                 switchInMoveUsedBitmap[battleKey] |= (1 << activeMonIndex);
                 return int256(i);
             }
+            unchecked { ++i; }
         }
         return -1;
     }
@@ -732,11 +723,14 @@ contract BetterCPU is CPU {
         uint256 preferredDamage = 0;
         uint256 bestDamage = 0;
 
-        for (uint256 i = 0; i < moves.length; i++) {
+        for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
             MoveClass moveClass = moveSet.moveClass(battleKey);
-            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) continue;
+            if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) {
+                unchecked { ++i; }
+                continue;
+            }
 
             uint256 dmg = _estimateDamage(ctx, battleKey, moveSet, moveClass);
             if (dmg > bestDamage) bestDamage = dmg;
@@ -745,6 +739,7 @@ contract BetterCPU is CPU {
                 preferredIdx = int256(i);
                 preferredDamage = dmg;
             }
+            unchecked { ++i; }
         }
 
         if (preferredIdx < 0) return -1;
