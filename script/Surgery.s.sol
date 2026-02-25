@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 
 import {IEngine} from "../src/IEngine.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
+import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
@@ -19,7 +20,9 @@ contract Surgery is Script {
     function run() external returns (DeployData[] memory) {
         vm.startBroadcast();
 
-        BetterCPU cpu = new BetterCPU(4, IEngine(0xaE14d4eFD7F30AFA679CD7e971f7b6CE9C445329), ICPURNG(address(0)), ITypeCalculator(0x65BcF9e5a0A6adedB6BA71b86eb255E9e9aF65dF));
+        OkayCPU cpu2 = new OkayCPU(4, IEngine(0x0db7f5f66fFFCA63Ef92D7A57Ad84bbdAf646b70), ICPURNG(address(0)), ITypeCalculator(0xbe585139aB24aE96794f65a33205EE931fbb6A42));
+
+        BetterCPU cpu = new BetterCPU(4, IEngine(0x0db7f5f66fFFCA63Ef92D7A57Ad84bbdAf646b70), ICPURNG(address(0)), ITypeCalculator(0xbe585139aB24aE96794f65a33205EE931fbb6A42));
         deployedContracts.push(DeployData({name: "Better CPU", contractAddress: address(cpu)}));
 
         vm.stopBroadcast();

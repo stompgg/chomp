@@ -19,7 +19,7 @@ contract SetupCPU is Script {
 
         GachaTeamRegistry gachaTeamRegistry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
         string[] memory cpuPlayers = new string[](2);
-        cpuPlayers[0] = "BETTER_CPU";
+        cpuPlayers[0] = "OKAY_CPU";
         cpuPlayers[1] = "BETTER_CPU";
 
         // Create team of Ghouliath, Malalien, Pengym, and Volthare for cpu player

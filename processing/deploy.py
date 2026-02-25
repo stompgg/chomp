@@ -85,6 +85,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
+        "-g", 105,
         "--password", password,
     ]
 
