@@ -92,8 +92,7 @@ abstract contract Ownable {
     /// is an existing owner.
     function _initializeOwner(address newOwner) internal virtual {
         if (_guardInitializeOwner()) {
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 let ownerSlot := _OWNER_SLOT
                 if sload(ownerSlot) {
                     mstore(0x00, 0x0dc149f0) // `AlreadyInitialized()`.
@@ -107,8 +106,7 @@ abstract contract Ownable {
                 log3(0, 0, _OWNERSHIP_TRANSFERRED_EVENT_SIGNATURE, 0, newOwner)
             }
         } else {
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 // Clean the upper 96 bits.
                 newOwner := shr(96, shl(96, newOwner))
                 // Store the new value.
@@ -122,8 +120,7 @@ abstract contract Ownable {
     /// @dev Sets the owner directly without authorization guard.
     function _setOwner(address newOwner) internal virtual {
         if (_guardInitializeOwner()) {
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 let ownerSlot := _OWNER_SLOT
                 // Clean the upper 96 bits.
                 newOwner := shr(96, shl(96, newOwner))
@@ -133,8 +130,7 @@ abstract contract Ownable {
                 sstore(ownerSlot, or(newOwner, shl(255, iszero(newOwner))))
             }
         } else {
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 let ownerSlot := _OWNER_SLOT
                 // Clean the upper 96 bits.
                 newOwner := shr(96, shl(96, newOwner))
@@ -148,8 +144,7 @@ abstract contract Ownable {
 
     /// @dev Throws if the sender is not the owner.
     function _checkOwner() internal view virtual {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             // If the caller is not the stored owner, revert.
             if iszero(eq(caller(), sload(_OWNER_SLOT))) {
                 mstore(0x00, 0x82b42900) // `Unauthorized()`.
@@ -171,8 +166,7 @@ abstract contract Ownable {
 
     /// @dev Allows the owner to transfer the ownership to `newOwner`.
     function transferOwnership(address newOwner) public payable virtual onlyOwner {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             if iszero(shl(96, newOwner)) {
                 mstore(0x00, 0x7448fbae) // `NewOwnerIsZeroAddress()`.
                 revert(0x1c, 0x04)
@@ -191,8 +185,7 @@ abstract contract Ownable {
     function requestOwnershipHandover() public payable virtual {
         unchecked {
             uint256 expires = block.timestamp + _ownershipHandoverValidFor();
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 // Compute and set the handover slot to `expires`.
                 mstore(0x0c, _HANDOVER_SLOT_SEED)
                 mstore(0x00, caller())
@@ -205,8 +198,7 @@ abstract contract Ownable {
 
     /// @dev Cancels the two-step ownership handover to the caller, if any.
     function cancelOwnershipHandover() public payable virtual {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             // Compute and set the handover slot to 0.
             mstore(0x0c, _HANDOVER_SLOT_SEED)
             mstore(0x00, caller())
@@ -219,8 +211,7 @@ abstract contract Ownable {
     /// @dev Allows the owner to complete the two-step ownership handover to `pendingOwner`.
     /// Reverts if there is no existing ownership handover requested by `pendingOwner`.
     function completeOwnershipHandover(address pendingOwner) public payable virtual onlyOwner {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             // Compute and set the handover slot to 0.
             mstore(0x0c, _HANDOVER_SLOT_SEED)
             mstore(0x00, pendingOwner)
@@ -242,16 +233,14 @@ abstract contract Ownable {
 
     /// @dev Returns the owner of the contract.
     function owner() public view virtual returns (address result) {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             result := sload(_OWNER_SLOT)
         }
     }
 
     /// @dev Returns the expiry timestamp for the two-step ownership handover to `pendingOwner`.
     function ownershipHandoverExpiresAt(address pendingOwner) public view virtual returns (uint256 result) {
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             // Compute the handover slot.
             mstore(0x0c, _HANDOVER_SLOT_SEED)
             mstore(0x00, pendingOwner)

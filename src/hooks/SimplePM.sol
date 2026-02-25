@@ -78,7 +78,8 @@ contract SimplePM is Ownable {
         sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance = 0;
         uint256 redemptionAmount = marketDetails.totalDeposits * sharesToRedeem / totalWinningShares;
         if (redemptionAmount > 0) {
-            payable(msg.sender).call{value: redemptionAmount}("");
+            (bool _s,) = payable(msg.sender).call{value: redemptionAmount}("");
+            (_s);
         }
     }
 
@@ -89,7 +90,8 @@ contract SimplePM is Ownable {
         }
         uint256 remaining = address(this).balance;
         if (remaining > 0) {
-            payable(msg.sender).call{value: remaining}("");
+            (bool _s,) = payable(msg.sender).call{value: remaining}("");
+            (_s);
         }
     }
 }

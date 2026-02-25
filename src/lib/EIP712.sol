@@ -50,8 +50,7 @@ abstract contract EIP712 {
 
         bytes32 separator;
         if (!_domainNameAndVersionMayChange()) {
-            /// @solidity memory-safe-assembly
-            assembly {
+                        assembly ("memory-safe") {
                 let m := mload(0x40) // Load the free memory pointer.
                 mstore(m, _DOMAIN_TYPEHASH)
                 mstore(add(m, 0x20), nameHash)
@@ -128,8 +127,7 @@ abstract contract EIP712 {
             digest = _cachedDomainSeparator;
             if (_cachedDomainSeparatorInvalidated()) digest = _buildDomainSeparator();
         }
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             // Compute the digest.
             mstore(0x00, 0x1901000000000000) // Store "\x19\x01".
             mstore(0x1a, digest) // Store the domain separator.
@@ -183,8 +181,7 @@ abstract contract EIP712 {
             separator = _cachedNameHash;
             versionHash = _cachedVersionHash;
         }
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer.
             mstore(m, _DOMAIN_TYPEHASH)
             mstore(add(m, 0x20), separator) // Name hash.
@@ -199,8 +196,7 @@ abstract contract EIP712 {
     function _cachedDomainSeparatorInvalidated() private view returns (bool result) {
         uint256 cachedChainId = _cachedChainId;
         uint256 cachedThis = _cachedThis;
-        /// @solidity memory-safe-assembly
-        assembly {
+                assembly ("memory-safe") {
             result := iszero(and(eq(chainid(), cachedChainId), eq(address(), cachedThis)))
         }
     }
