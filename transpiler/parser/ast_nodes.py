@@ -224,6 +224,7 @@ class FunctionCall(Expression):
     function: Expression
     arguments: List[Expression] = field(default_factory=list)
     named_arguments: Dict[str, Expression] = field(default_factory=dict)
+    call_options: Dict[str, Expression] = field(default_factory=dict)
 
 
 @dataclass

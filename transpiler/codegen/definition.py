@@ -167,6 +167,9 @@ class DefinitionGenerator(BaseGenerator):
         elif ts_type in self._ctx.known_structs:
             # Unqualified struct name (used when inside Structs file)
             return f'createDefault{ts_type}()'
+        elif ts_type in self._ctx.known_interfaces or ts_type in self._ctx.known_contracts:
+            # Contract/interface types need a stub with _contractAddress so property access doesn't crash
+            return '{ _contractAddress: "0x0000000000000000000000000000000000000000" } as any'
         else:
             # Unknown type
             return 'undefined as any'

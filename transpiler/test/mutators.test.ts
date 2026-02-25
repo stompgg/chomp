@@ -151,24 +151,22 @@ describe('__mutate* methods', () => {
       // Use the mutator to set the value directly
       (engine as any).__mutateIsMatchmakerFor(player, matchmaker, true);
 
-      // Verify the value was set
-      expect(engine.isMatchmakerFor[player]).toBeDefined();
-      expect(engine.isMatchmakerFor[player][matchmaker]).toBe(true);
+      // Verify the value was set via the public getter function
+      expect(engine.isMatchmakerFor(player, matchmaker)).toBe(true);
     });
 
     it('should create intermediate objects for nested mappings', () => {
       const player = generateAddress();
       const matchmaker = generateAddress();
 
-      // Before mutation, the player key shouldn't exist
-      expect(engine.isMatchmakerFor[player]).toBeUndefined();
+      // Before mutation, the getter should return the default value (false)
+      expect(engine.isMatchmakerFor(player, matchmaker)).toBe(false);
 
       // Mutation should create the intermediate object
       (engine as any).__mutateIsMatchmakerFor(player, matchmaker, true);
 
-      // Now it should exist
-      expect(engine.isMatchmakerFor[player]).toBeDefined();
-      expect(engine.isMatchmakerFor[player][matchmaker]).toBe(true);
+      // Now it should return true
+      expect(engine.isMatchmakerFor(player, matchmaker)).toBe(true);
     });
 
     it('should allow overwriting values in nested mappings', () => {
@@ -177,11 +175,11 @@ describe('__mutate* methods', () => {
 
       // Set to true first
       (engine as any).__mutateIsMatchmakerFor(player, matchmaker, true);
-      expect(engine.isMatchmakerFor[player][matchmaker]).toBe(true);
+      expect(engine.isMatchmakerFor(player, matchmaker)).toBe(true);
 
       // Then set to false
       (engine as any).__mutateIsMatchmakerFor(player, matchmaker, false);
-      expect(engine.isMatchmakerFor[player][matchmaker]).toBe(false);
+      expect(engine.isMatchmakerFor(player, matchmaker)).toBe(false);
     });
   });
 

@@ -351,6 +351,13 @@ class ExpressionGenerator(BaseGenerator):
         if isinstance(call.function, NewExpression):
             return self._generate_new_call(call)
 
+        # Handle low-level calls (.call, .send, .transfer, .delegatecall, .staticcall)
+        # These are ETH transfer operations meaningless in simulation
+        if isinstance(call.function, MemberAccess) and call.function.member in (
+            'call', 'send', 'transfer', 'delegatecall', 'staticcall'
+        ):
+            return '/* low-level call (no-op in simulation) */'
+
         func = self.generate(call.function)
 
         # Handle abi.decode specially - need to swap args and format types

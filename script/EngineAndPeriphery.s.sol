@@ -8,8 +8,6 @@ import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {PlayerCPU} from "../src/cpu/PlayerCPU.sol";
-import {RandomCPU} from "../src/cpu/RandomCPU.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
@@ -24,6 +22,7 @@ import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
+import {SimplePM} from "../src/hooks/SimplePM.sol";
 
 // Shared effects
 import {StatBoosts} from "../src/effects/StatBoosts.sol";
@@ -73,26 +72,20 @@ contract EngineAndPeriphery is Script {
         DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
         deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
 
-        RandomCPU cpu = new RandomCPU(NUM_MOVES, engine, ICPURNG(address(0)));
-        deployedContracts.push(DeployData({name: "RANDOM CPU", contractAddress: address(cpu)}));
-
-        PlayerCPU playerCPU = new PlayerCPU(NUM_MOVES, engine, ICPURNG(address(0)));
-        deployedContracts.push(DeployData({name: "PLAYER CPU", contractAddress: address(playerCPU)}));
-
         OkayCPU okayCPU = new OkayCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "OKAY CPU", contractAddress: address(okayCPU)}));
 
         BetterCPU betterCPU = new BetterCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
-        DefaultMatchmaker matchmaker = new DefaultMatchmaker(engine);
-        deployedContracts.push(DeployData({name: "DEFAULT MATCHMAKER", contractAddress: address(matchmaker)}));
-
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
         BattleHistory battleHistory = new BattleHistory(engine);
         deployedContracts.push(DeployData({name: "BATTLE HISTORY", contractAddress: address(battleHistory)}));
+
+        SimplePM simplePM = new SimplePM(engine);
+        deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
         deployGameFundamentals(engine);
         

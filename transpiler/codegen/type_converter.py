@@ -156,6 +156,8 @@ class TypeConverter(BaseGenerator):
             return f'{{}} as {ts_type}'
         elif ts_type in self._ctx.known_structs:
             return f'{{}} as {ts_type}'
+        elif ts_type in self._ctx.known_interfaces or ts_type in self._ctx.known_contracts:
+            return '{ _contractAddress: "0x0000000000000000000000000000000000000000" } as any'
         return 'undefined as any'
 
     # =========================================================================
@@ -178,6 +180,10 @@ class TypeConverter(BaseGenerator):
         """
         type_name = cast.type_name.name
         inner_expr = cast.expression
+
+        # payable(x) is equivalent to address(x) for simulation
+        if type_name == 'payable':
+            type_name = 'address'
 
         # Handle address literals like address(0xdead) and address(this)
         if type_name == 'address':

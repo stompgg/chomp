@@ -1154,6 +1154,22 @@ class Parser:
                 index = self.parse_expression()
                 self.expect(TokenType.RBRACKET)
                 expr = IndexAccess(base=expr, index=index)
+            elif self.match(TokenType.LBRACE):
+                # Call options: expr{key: value, ...}(args)
+                self.advance()
+                call_options = {}
+                while not self.match(TokenType.RBRACE, TokenType.EOF):
+                    name = self.advance().value
+                    self.expect(TokenType.COLON)
+                    value = self.parse_expression()
+                    call_options[name] = value
+                    if self.match(TokenType.COMMA):
+                        self.advance()
+                self.expect(TokenType.RBRACE)
+                self.expect(TokenType.LPAREN)
+                args, named_args = self.parse_arguments()
+                self.expect(TokenType.RPAREN)
+                expr = FunctionCall(function=expr, arguments=args, named_arguments=named_args, call_options=call_options)
             elif self.match(TokenType.LPAREN):
                 self.advance()
                 args, named_args = self.parse_arguments()
@@ -1256,7 +1272,7 @@ class Parser:
 
         # Type cast: type(expr)
         if self.match(TokenType.UINT, TokenType.INT, TokenType.BOOL, TokenType.ADDRESS,
-                     TokenType.BYTES, TokenType.STRING, TokenType.BYTES32):
+                     TokenType.BYTES, TokenType.STRING, TokenType.BYTES32, TokenType.PAYABLE):
             type_token = self.advance()
             if self.match(TokenType.LPAREN):
                 self.advance()
