@@ -12,6 +12,7 @@ cbor_metadata = false
 sparse_mode = false
 build_info = true
 via_ir = true
+gas_estimate_multiplier = 101
 
 [lint]
 exclude_lints = ["unsafe-typecast", "unaliased-plain-import", "mixed-case-variable", "mixed-case-function", "asm-keccak256", "pascal-case-struct", "screaming-snake-case-immutable", "incorrect-shift"]
