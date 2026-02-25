@@ -21,6 +21,8 @@ contract SimplePM is Ownable {
     error GameNotOver(bytes32 battleKey);
     error InvalidBattle(bytes32 battleKey);
 
+    event sharesBought(bytes32 indexed battleKey, uint256 amount, bool isP0);
+
     uint256 public constant DENOM = 100;
     uint256 public constant LAST_TURN_TO_JOIN = 15;
     uint256 public constant FEE_MULTIPLIER_PERCENT_PER_TURN = 2;
@@ -54,6 +56,7 @@ contract SimplePM is Ownable {
             marketForBattle[battleKey].p1Shares += sharesToMint;
             sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance += sharesToMint;
         }
+        emit sharesBought(battleKey, depositValue, isP0);
     }
 
     function claimShares(bytes32 battleKey) public {
