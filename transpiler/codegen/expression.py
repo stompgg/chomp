@@ -140,6 +140,9 @@ class ExpressionGenerator(BaseGenerator):
         elif lit.kind == 'hex':
             # Hex literals: 0x... -> BigInt("0x...")
             return f'BigInt("{lit.value}")'
+        elif lit.kind == 'hex_string':
+            # Hex string literals: hex"0f" -> "0x0f"
+            return f'"{lit.value}"'
         elif lit.kind == 'string':
             return lit.value  # Already has quotes
         elif lit.kind == 'bool':

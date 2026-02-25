@@ -78,6 +78,18 @@ class Lexer:
             result += self.advance()
         return result
 
+    def read_hex_string(self) -> str:
+        """Read a hex string literal (hex"..." or hex'...'), returning '0x' + cleaned hex content."""
+        quote = self.advance()  # opening quote
+        content = ''
+        while self.peek() and self.peek() != quote:
+            content += self.advance()
+        if self.peek() == quote:
+            self.advance()  # closing quote
+        # Strip underscores and whitespace from hex content
+        cleaned = content.replace('_', '').replace(' ', '')
+        return '0x' + cleaned
+
     def read_number(self) -> Tuple[str, TokenType]:
         """Read a numeric literal (decimal or hex)."""
         result = ''
@@ -166,6 +178,13 @@ class Lexer:
             # Identifiers and keywords
             if ch.isalpha() or ch == '_':
                 value = self.read_identifier()
+
+                # Hex string literals: hex"..." or hex'...'
+                if value == 'hex' and self.peek() in '"\'':
+                    hex_value = self.read_hex_string()
+                    self.tokens.append(Token(TokenType.HEX_STRING, hex_value, start_line, start_col))
+                    continue
+
                 token_type = KEYWORDS.get(value, TokenType.IDENTIFIER)
                 # Check for type keywords like uint256, int32, bytes32
                 if token_type == TokenType.IDENTIFIER:

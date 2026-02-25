@@ -1232,6 +1232,8 @@ class Parser:
                 )
 
             return Literal(value=value, kind=kind)
+        if self.match(TokenType.HEX_STRING):
+            return Literal(value=self.advance().value, kind='hex_string')
         if self.match(TokenType.STRING_LITERAL):
             return Literal(value=self.advance().value, kind='string')
         if self.match(TokenType.TRUE):
@@ -1302,6 +1304,11 @@ class Parser:
                     self.advance()
             self.expect(TokenType.RBRACKET)
             return ArrayLiteral(elements=elements)
+
+        # require/assert as callable identifiers
+        if self.match(TokenType.REQUIRE, TokenType.ASSERT):
+            name = self.advance().value
+            return Identifier(name=name)
 
         # Identifier
         if self.match(TokenType.IDENTIFIER):

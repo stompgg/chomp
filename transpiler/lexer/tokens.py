@@ -132,6 +132,7 @@ class TokenType(Enum):
     # Literals
     NUMBER = auto()
     HEX_NUMBER = auto()
+    HEX_STRING = auto()
     STRING_LITERAL = auto()
     IDENTIFIER = auto()
 
