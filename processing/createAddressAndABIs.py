@@ -23,13 +23,17 @@ from typing import Dict, List, Tuple
 
 
 def to_screaming_snake_case(name: str) -> str:
-    """Convert camelCase/PascalCase to SCREAMING_SNAKE_CASE."""
-    # Insert underscore before uppercase letters (except at start)
-    result = re.sub(r'(?<!^)(?=[A-Z])', '_', name)
+    """Convert camelCase/PascalCase/space-separated to SCREAMING_SNAKE_CASE."""
+    # Insert underscore at camelCase boundaries (lowercase/digit followed by uppercase)
+    result = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
+    # Handle consecutive uppercase followed by lowercase (e.g., "HTMLParser" -> "HTML_Parser")
+    result = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', result)
     # Replace spaces and hyphens with underscores, then uppercase
     result = result.replace(" ", "_").replace("-", "_").upper()
     # Remove any other invalid characters
     result = re.sub(r'[^A-Z0-9_]', '', result)
+    # Collapse multiple underscores
+    result = re.sub(r'_+', '_', result)
     return result
 
 
