@@ -544,6 +544,46 @@ class YulParser:
 # YUL CODE GENERATOR (AST -> TypeScript)
 # =============================================================================
 
+# Dispatch tables for Yul opcode -> TypeScript translation
+_BINARY_OPS = {
+    'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'sdiv': '/', 'mod': '%', 'exp': '**',
+    'and': '&', 'or': '|', 'xor': '^',
+}
+
+_SHIFT_OPS = {'shl': '<<', 'shr': '>>', 'sar': '>>'}
+
+_COMPARISON_OPS = {'eq': '===', 'lt': '<', 'gt': '>', 'slt': '<', 'sgt': '>'}
+
+_TERNARY_MOD_OPS = {'addmod': '+', 'mulmod': '*'}
+
+_CONTEXT_VALUES = {
+    'caller': 'this._msgSender()',
+    'callvalue': 'this._msg.value',
+    'timestamp': 'BigInt(Math.floor(Date.now() / 1000))',
+    'number': '0n  // block number placeholder',
+    'gas': '1000000n  // gas placeholder',
+    'gasprice': '1000000n  // gas placeholder',
+    'origin': 'this._msg.sender',
+    'chainid': '31337n  // chainid placeholder',
+    'balance': '0n  // balance placeholder',
+    'selfbalance': '0n  // selfbalance placeholder',
+    'blockhash': '"0x0000000000000000000000000000000000000000000000000000000000000000"',
+    'coinbase': '"0x0000000000000000000000000000000000000000"',
+    'difficulty': '0n  // difficulty/prevrandao placeholder',
+    'prevrandao': '0n  // difficulty/prevrandao placeholder',
+    'gaslimit': '30000000n  // gaslimit placeholder',
+    'basefee': '0n  // basefee placeholder',
+    'datasize': '0n',
+    'dataoffset': '0n',
+}
+
+_ZERO_OPS = frozenset({
+    'mload', 'calldataload', 'returndatasize', 'codesize',
+    'extcodesize', 'returndatacopy', 'codecopy', 'extcodecopy',
+    'extcodehash', 'calldatacopy', 'calldatasize',
+})
+
+
 class YulTranspiler:
     """
     Transpiler for Yul/inline assembly code.
@@ -879,7 +919,7 @@ class YulTranspiler:
         func = call.name
         args = call.arguments
 
-        # Storage operations
+        # Storage load (special: slot variable resolution)
         if func == 'sload':
             if args:
                 slot_expr = args[0]
@@ -889,204 +929,77 @@ class YulTranspiler:
                 return f'this._storageRead({slot})'
             return 'this._storageRead(0n)'
 
-        # Arithmetic
-        if func == 'add' and len(args) == 2:
+        # Binary: (BigInt(left) op BigInt(right))
+        if func in _BINARY_OPS and len(args) == 2:
             left = self._generate_expression(args[0], slot_vars)
             right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) + BigInt({right}))'
+            return f'(BigInt({left}) {_BINARY_OPS[func]} BigInt({right}))'
 
-        if func == 'sub' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) - BigInt({right}))'
-
-        if func == 'mul' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) * BigInt({right}))'
-
-        if func == 'div' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) / BigInt({right}))'
-
-        if func == 'sdiv' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) / BigInt({right}))'
-
-        if func == 'mod' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) % BigInt({right}))'
-
-        if func == 'exp' and len(args) == 2:
-            base = self._generate_expression(args[0], slot_vars)
-            exp = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({base}) ** BigInt({exp}))'
-
-        if func == 'addmod' and len(args) == 3:
+        # Ternary mod: ((BigInt(a) op BigInt(b)) % BigInt(m))
+        if func in _TERNARY_MOD_OPS and len(args) == 3:
             a = self._generate_expression(args[0], slot_vars)
             b = self._generate_expression(args[1], slot_vars)
             m = self._generate_expression(args[2], slot_vars)
-            return f'((BigInt({a}) + BigInt({b})) % BigInt({m}))'
+            return f'((BigInt({a}) {_TERNARY_MOD_OPS[func]} BigInt({b})) % BigInt({m}))'
 
-        if func == 'mulmod' and len(args) == 3:
-            a = self._generate_expression(args[0], slot_vars)
-            b = self._generate_expression(args[1], slot_vars)
-            m = self._generate_expression(args[2], slot_vars)
-            return f'((BigInt({a}) * BigInt({b})) % BigInt({m}))'
-
-        # Bitwise operations
-        if func == 'and' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) & BigInt({right}))'
-
-        if func == 'or' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) | BigInt({right}))'
-
-        if func == 'xor' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) ^ BigInt({right}))'
-
+        # Unary not
         if func == 'not' and len(args) >= 1:
             operand = self._generate_expression(args[0], slot_vars)
             return f'(~BigInt({operand}))'
 
-        if func == 'shl' and len(args) == 2:
+        # Shift: args are (shift_amount, value)
+        if func in _SHIFT_OPS and len(args) == 2:
             shift = self._generate_expression(args[0], slot_vars)
             val = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({val}) << BigInt({shift}))'
+            return f'(BigInt({val}) {_SHIFT_OPS[func]} BigInt({shift}))'
 
-        if func == 'shr' and len(args) == 2:
-            shift = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({val}) >> BigInt({shift}))'
-
-        if func == 'sar' and len(args) == 2:
-            shift = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({val}) >> BigInt({shift}))'
-
+        # byte extraction
         if func == 'byte' and len(args) == 2:
             pos = self._generate_expression(args[0], slot_vars)
             val = self._generate_expression(args[1], slot_vars)
             return f'((BigInt({val}) >> (BigInt(248) - BigInt({pos}) * 8n)) & 0xFFn)'
 
+        # signextend
         if func == 'signextend' and len(args) == 2:
             b = self._generate_expression(args[0], slot_vars)
             val = self._generate_expression(args[1], slot_vars)
             return f'BigInt.asIntN(Number(BigInt({b}) + 1n) * 8, BigInt({val}))'
 
-        # Comparison
-        if func == 'eq' and len(args) == 2:
+        # Comparison: (BigInt(left) op BigInt(right) ? 1n : 0n)
+        if func in _COMPARISON_OPS and len(args) == 2:
             left = self._generate_expression(args[0], slot_vars)
             right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) === BigInt({right}) ? 1n : 0n)'
+            return f'(BigInt({left}) {_COMPARISON_OPS[func]} BigInt({right}) ? 1n : 0n)'
 
-        if func == 'lt' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) < BigInt({right}) ? 1n : 0n)'
-
-        if func == 'gt' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) > BigInt({right}) ? 1n : 0n)'
-
-        if func == 'slt' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) < BigInt({right}) ? 1n : 0n)'
-
-        if func == 'sgt' and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) > BigInt({right}) ? 1n : 0n)'
-
+        # iszero
         if func == 'iszero' and len(args) >= 1:
             operand = self._generate_expression(args[0], slot_vars)
             return f'(BigInt({operand}) === 0n ? 1n : 0n)'
 
-        # Memory operations (return placeholders for simulation)
-        if func in ('mload', 'calldataload', 'returndatasize', 'codesize',
-                     'extcodesize', 'returndatacopy', 'codecopy', 'extcodecopy',
-                     'extcodehash', 'calldatacopy', 'calldatasize'):
+        # Memory/calldata zero placeholders
+        if func in _ZERO_OPS:
             return '0n'
 
         # Hashing
-        if func == 'keccak256' and len(args) >= 2:
+        if func == 'keccak256':
             return '0n  // keccak256 (requires memory model)'
 
-        # Context functions
-        if func == 'caller':
-            return 'this._msgSender()'
+        # Context/environment values (static returns)
+        if func in _CONTEXT_VALUES:
+            return _CONTEXT_VALUES[func]
 
-        if func == 'callvalue':
-            return 'this._msg.value'
-
-        if func == 'timestamp':
-            return 'BigInt(Math.floor(Date.now() / 1000))'
-
-        if func == 'number':
-            return '0n  // block number placeholder'
-
-        if func == 'gas' or func == 'gasprice':
-            return '1000000n  // gas placeholder'
-
-        if func == 'origin':
-            return 'this._msg.sender'
-
-        if func == 'chainid':
-            return '31337n  // chainid placeholder'
-
+        # address (special: 0 or 1 arg)
         if func == 'address':
             if not args:
                 return 'this._contractAddress'
             return self._generate_expression(args[0], slot_vars)
 
-        if func == 'balance':
-            return '0n  // balance placeholder'
-
-        if func == 'selfbalance':
-            return '0n  // selfbalance placeholder'
-
-        if func == 'blockhash':
-            return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
-
-        if func == 'coinbase':
-            return '"0x0000000000000000000000000000000000000000"'
-
-        if func == 'difficulty' or func == 'prevrandao':
-            return '0n  // difficulty/prevrandao placeholder'
-
-        if func == 'gaslimit':
-            return '30000000n  // gaslimit placeholder'
-
-        if func == 'basefee':
-            return '0n  // basefee placeholder'
-
-        # Create operations
+        # Create/call placeholders
         if func in ('create', 'create2'):
             return '"0x0000000000000000000000000000000000000000"  // create placeholder'
 
-        # Call operations
         if func in ('call', 'staticcall', 'delegatecall'):
             return '1n  // call placeholder (success)'
-
-        if func == 'returndatasize':
-            return '0n'
-
-        # Data size
-        if func == 'datasize':
-            return '0n'
-
-        if func == 'dataoffset':
-            return '0n'
 
         # Generic: transpile as function call
         ts_args = ', '.join(self._generate_expression(a, slot_vars) for a in args)

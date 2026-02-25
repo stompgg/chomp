@@ -30,19 +30,6 @@ class ResolvedDependency:
     resolved_as: Optional[Union[str, List[str]]] = None  # Concrete class(es)
     resolution_source: Optional[str] = None  # How it was resolved
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
-        result = {
-            "name": self.name,
-            "typeName": self.type_name,
-            "isInterface": self.is_interface,
-            "isValueType": self.is_value_type,
-        }
-        if self.is_array:
-            result["isArray"] = True
-        if self.resolved_as is not None:
-            result["resolvedAs"] = self.resolved_as
-        return result
 
 
 @dataclass
@@ -305,6 +292,3 @@ class DependencyResolver:
         with open(output_path, 'w') as f:
             json.dump(output, f, indent=2)
 
-    def clear_unresolved(self) -> None:
-        """Clear the unresolved dependencies list."""
-        self.unresolved.clear()

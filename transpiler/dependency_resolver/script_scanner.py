@@ -154,16 +154,8 @@ class DeployScriptScanner:
         parts = name.split('_')
         return ''.join(part.capitalize() for part in parts)
 
-    def get_concrete_for_env(self, env_var: str) -> Optional[str]:
-        """Get the concrete class for an env var name."""
-        return self._resolve_env_var(env_var)
-
     def get_concrete_for_constructor(
         self, contract_name: str, param_index: int
     ) -> Optional[str]:
         """Get the concrete class for a specific constructor parameter."""
         return self.constructor_mappings.get((contract_name, param_index))
-
-    def get_all_mappings(self) -> Dict[str, str]:
-        """Get all env var -> concrete class mappings."""
-        return dict(self.env_to_concrete)

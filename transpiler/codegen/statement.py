@@ -5,7 +5,7 @@ This module handles the generation of TypeScript code from Solidity statement
 AST nodes, including control flow, variable declarations, and special statements.
 """
 
-from typing import List, Optional, TYPE_CHECKING, Callable
+from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
@@ -589,8 +589,12 @@ class StatementGenerator(BaseGenerator):
         if isinstance(stmt.event_call, FunctionCall):
             if isinstance(stmt.event_call.function, Identifier):
                 event_name = stmt.event_call.function.name
-                args = ', '.join([self._expr.generate(a) for a in stmt.event_call.arguments])
-                return f'{self.indent()}this._emitEvent("{event_name}", {args});'
+                # Collect positional args, then named args (event emission doesn't need names)
+                all_args = [self._expr.generate(a) for a in stmt.event_call.arguments]
+                all_args.extend(self._expr.generate(v) for v in stmt.event_call.named_arguments.values())
+                if all_args:
+                    return f'{self.indent()}this._emitEvent("{event_name}", {", ".join(all_args)});'
+                return f'{self.indent()}this._emitEvent("{event_name}");'
         expr = self._expr.generate(stmt.event_call)
         return f'{self.indent()}this._emitEvent({expr});'
 

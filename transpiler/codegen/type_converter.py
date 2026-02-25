@@ -14,12 +14,6 @@ if TYPE_CHECKING:
 
 from .base import BaseGenerator
 from ..parser.ast_nodes import TypeName, Expression, Literal, TypeCast, FunctionCall, Identifier
-from ..type_system.mappings import (
-    SOLIDITY_TO_TS_MAP,
-    DEFAULT_VALUES,
-    get_type_max,
-    get_type_min,
-)
 
 
 class TypeConverter(BaseGenerator):
@@ -257,56 +251,6 @@ class TypeConverter(BaseGenerator):
 
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
-
-    # =========================================================================
-    # TYPE UTILITIES
-    # =========================================================================
-
-    def get_type_max(self, type_name: str) -> str:
-        """Get the maximum value for a Solidity integer type."""
-        return get_type_max(type_name)
-
-    def get_type_min(self, type_name: str) -> str:
-        """Get the minimum value for a Solidity integer type."""
-        return get_type_min(type_name)
-
-    def is_numeric_type(self, type_name: str) -> bool:
-        """Check if a type name is a numeric type (uint/int)."""
-        return type_name.startswith('uint') or type_name.startswith('int')
-
-    def is_bytes_type(self, type_name: str) -> bool:
-        """Check if a type name is a bytes type."""
-        return type_name.startswith('bytes')
-
-    def is_address_type(self, type_name: str) -> bool:
-        """Check if a type name is an address type."""
-        return type_name == 'address'
-
-    def is_bool_type(self, type_name: str) -> bool:
-        """Check if a type name is a boolean type."""
-        return type_name == 'bool'
-
-    def is_string_type(self, type_name: str) -> bool:
-        """Check if a type name is a string type."""
-        return type_name == 'string'
-
-    def is_value_type(self, type_name: str) -> bool:
-        """Check if a type name is a value type (not reference type)."""
-        return (
-            self.is_numeric_type(type_name) or
-            self.is_bytes_type(type_name) or
-            self.is_address_type(type_name) or
-            self.is_bool_type(type_name)
-        )
-
-    def is_reference_type(self, type_name: str) -> bool:
-        """Check if a type name is a reference type (struct, array, mapping, string)."""
-        return (
-            type_name == 'string' or
-            type_name.endswith('[]') or
-            type_name in self._ctx.known_structs or
-            type_name.startswith('mapping')
-        )
 
     def get_mapping_value_type(self, type_name: TypeName) -> Optional[str]:
         """Get the value type of a mapping, recursively handling nested mappings."""

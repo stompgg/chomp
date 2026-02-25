@@ -5,7 +5,7 @@ This module provides the BaseGenerator class that contains common utilities
 used across all specialized generator classes in the code generation pipeline.
 """
 
-from typing import Optional, Dict, Set, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
@@ -209,100 +209,3 @@ class BaseGenerator:
 
         return False
 
-    # =========================================================================
-    # TYPE CHECKING UTILITIES
-    # =========================================================================
-
-    def _is_state_var(self, name: str) -> bool:
-        """Check if a name is a state variable."""
-        return name in self._ctx.current_state_vars
-
-    def _is_static_var(self, name: str) -> bool:
-        """Check if a name is a static (immutable/constant) variable."""
-        return name in self._ctx.current_static_vars
-
-    def _is_local_var(self, name: str) -> bool:
-        """Check if a name is a local variable."""
-        return name in self._ctx.current_local_vars
-
-    def _is_method(self, name: str) -> bool:
-        """Check if a name is a method in the current contract."""
-        return name in self._ctx.current_methods
-
-    def _is_known_struct(self, name: str) -> bool:
-        """Check if a name is a known struct type."""
-        return name in self._ctx.known_structs
-
-    def _is_known_enum(self, name: str) -> bool:
-        """Check if a name is a known enum type."""
-        return name in self._ctx.known_enums
-
-    def _is_known_contract(self, name: str) -> bool:
-        """Check if a name is a known contract type."""
-        return name in self._ctx.known_contracts
-
-    def _is_known_interface(self, name: str) -> bool:
-        """Check if a name is a known interface type."""
-        return name in self._ctx.known_interfaces
-
-    def _is_known_library(self, name: str) -> bool:
-        """Check if a name is a known library type."""
-        return name in self._ctx.known_libraries
-
-    def _get_var_type(self, name: str) -> Optional[TypeName]:
-        """Get the TypeName for a variable if known."""
-        return self._ctx.var_types.get(name)
-
-    # =========================================================================
-    # CONTEXT ACCESSORS (for subclasses that need direct access)
-    # =========================================================================
-
-    @property
-    def ctx(self) -> 'CodeGenerationContext':
-        """Get the code generation context."""
-        return self._ctx
-
-    @property
-    def var_types(self) -> Dict[str, TypeName]:
-        """Get the variable types dictionary."""
-        return self._ctx.var_types
-
-    @property
-    def known_structs(self) -> Set[str]:
-        """Get the set of known struct names."""
-        return self._ctx.known_structs
-
-    @property
-    def known_enums(self) -> Set[str]:
-        """Get the set of known enum names."""
-        return self._ctx.known_enums
-
-    @property
-    def known_contracts(self) -> Set[str]:
-        """Get the set of known contract names."""
-        return self._ctx.known_contracts
-
-    @property
-    def known_interfaces(self) -> Set[str]:
-        """Get the set of known interface names."""
-        return self._ctx.known_interfaces
-
-    @property
-    def known_libraries(self) -> Set[str]:
-        """Get the set of known library names."""
-        return self._ctx.known_libraries
-
-    @property
-    def known_struct_fields(self) -> Dict[str, Dict[str, str]]:
-        """Get the struct fields dictionary."""
-        return self._ctx.known_struct_fields
-
-    @property
-    def current_state_vars(self) -> Set[str]:
-        """Get the current contract's state variables."""
-        return self._ctx.current_state_vars
-
-    @property
-    def current_methods(self) -> Set[str]:
-        """Get the current contract's methods."""
-        return self._ctx.current_methods

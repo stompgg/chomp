@@ -349,13 +349,14 @@ class FunctionGenerator(BaseGenerator):
             func: The function definition
             for_interface: If True, may generate property syntax for known state variable getters
         """
-        # For interfaces, convert parameterless functions to properties if they correspond
-        # to public state variables in implementing classes. The type registry tracks these
-        # during the discovery phase.
+        # For interfaces, convert parameterless view/pure functions to property syntax.
+        # In Solidity, these typically correspond to auto-generated getters for public
+        # state variables. Property syntax is more permissive in TypeScript (classes can
+        # satisfy it with either a property or a getter).
         if (for_interface and
             not func.parameters and
             len(func.return_parameters) == 1 and
-            func.name in self._ctx.known_public_state_vars):
+            func.mutability in ('view', 'pure', '')):
             return_type = self._type_converter.solidity_type_to_ts(func.return_parameters[0].type_name)
             return f'{func.name}: {return_type}'
 

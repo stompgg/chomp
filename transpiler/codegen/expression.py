@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 from .base import BaseGenerator
 from .context import RESERVED_JS_METHODS
 from .type_converter import TypeConverter
+from ..type_system.mappings import get_type_max, get_type_min
 from ..parser.ast_nodes import (
     Expression,
     Literal,
@@ -356,10 +357,11 @@ class ExpressionGenerator(BaseGenerator):
 
         # Handle low-level calls (.call, .send, .transfer, .delegatecall, .staticcall)
         # These are ETH transfer operations meaningless in simulation
+        # Return [true, "0x"] to match the (bool success, bytes returnData) shape
         if isinstance(call.function, MemberAccess) and call.function.member in (
             'call', 'send', 'transfer', 'delegatecall', 'staticcall'
         ):
-            return '/* low-level call (no-op in simulation) */'
+            return '[true, "0x"]'
 
         func = self.generate(call.function)
 
@@ -663,9 +665,9 @@ class ExpressionGenerator(BaseGenerator):
                         if isinstance(type_arg, Identifier):
                             type_name = type_arg.name
                             if member == 'max':
-                                return self._type_converter.get_type_max(type_name)
+                                return get_type_max(type_name)
                             elif member == 'min':
-                                return self._type_converter.get_type_min(type_name)
+                                return get_type_min(type_name)
 
         # Handle .slot for storage variables
         if member == 'slot':
