@@ -107,7 +107,7 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         return monMetadata[monId][key];
     }
 
-    function validateMon(Mon memory m, uint256 monId) external view returns (bool) {
+    function validateMon(Mon memory m, uint256 monId) public view returns (bool) {
         // Check that the mon's stats match the current mon ID's stats
         if (
             m.stats.attack != monStats[monId].attack || m.stats.defense != monStats[monId].defense
@@ -130,6 +130,19 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         return true;
     }
 
+    function validateMonBatch(Mon[] calldata mons, uint256[] calldata ids) external view returns (bool) {
+        uint256 len = mons.length;
+        for (uint256 i; i < len;) {
+            if (!validateMon(mons[i], ids[i])) {
+                return false;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        return true;
+    }
+
     function getMonData(uint256 monId)
         external
         view
@@ -138,6 +151,26 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         _monStats = monStats[monId];
         moves = monMoves[monId].values();
         abilities = monAbilities[monId].values();
+    }
+
+    function getMonDataBatch(uint256[] calldata ids)
+        external
+        view
+        returns (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities)
+    {
+        uint256 len = ids.length;
+        stats = new MonStats[](len);
+        moves = new address[][](len);
+        abilities = new address[][](len);
+        for (uint256 i; i < len;) {
+            uint256 monId = ids[i];
+            stats[i] = monStats[monId];
+            moves[i] = monMoves[monId].values();
+            abilities[i] = monAbilities[monId].values();
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     function getMonIds(uint256 start, uint256 end) external view returns (uint256[] memory) {

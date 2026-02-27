@@ -70,16 +70,30 @@ contract DefaultTeamRegistry is ITeamRegistry {
         // Check for duplicate mon indices
         _checkForDuplicates(monIndices);
 
-        // Initialize team and set indices
-        uint256 teamId = numTeams[user];
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            teams[user][teamId]
-            .push(Mon({stats: REGISTRY.getMonStats(monIndices[i]), moves: moves[i], ability: abilities[i]}));
-            _setMonRegistryIndices(teamId, uint32(monIndices[i]), i, user);
+        // Build packed value in memory (1 SSTORE instead of MONS_PER_TEAM)
+        uint256 packed;
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            packed |= uint256(uint32(monIndices[i])) << (i * BITS_PER_MON_INDEX);
+            unchecked {
+                ++i;
+            }
         }
 
+        // Initialize team and set indices
+        uint256 teamId = numTeams[user];
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            teams[user][teamId]
+            .push(Mon({stats: REGISTRY.getMonStats(monIndices[i]), moves: moves[i], ability: abilities[i]}));
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Single SSTORE for packed indices
+        monRegistryIndicesForTeamPacked[user][teamId] = packed;
+
         // Update the team index
-        numTeams[user] += 1;
+        numTeams[user] = teamId + 1;
     }
 
     function updateTeam(

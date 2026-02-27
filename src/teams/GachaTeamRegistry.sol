@@ -16,10 +16,8 @@ contract GachaTeamRegistry is LookupTeamRegistry, Ownable {
     }
 
     function _validateOwnership(uint256[] memory monIndices) internal view {
-        for (uint256 i; i < monIndices.length; i++) {
-            if (!OWNER_LOOKUP.isOwner(msg.sender, monIndices[i])) {
-                revert NotOwner();
-            }
+        if (!OWNER_LOOKUP.isOwnerBatch(msg.sender, monIndices)) {
+            revert NotOwner();
         }
     }
 

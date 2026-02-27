@@ -10,7 +10,7 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
-import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
+import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 
 contract Engine is IEngine, MappingAllocator {
@@ -653,7 +653,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    /// @dev Inline timeout validation logic (mirrors DefaultValidator.validateTimeout)
+    /// @dev Inline timeout validation logic using shared ValidatorLogic
     function _validateTimeoutInline(
         bytes32 battleKey,
         BattleData storage data,
@@ -661,67 +661,33 @@ contract Engine is IEngine, MappingAllocator {
         uint256 playerIndexToCheck
     ) private view returns (address loser) {
         uint256 otherPlayerIndex = 1 - playerIndexToCheck;
-        uint64 turnId = data.turnId;
-        uint256 playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-
         ICommitManager commitManager = ICommitManager(config.moveManager);
         address[2] memory players = [data.p0, data.p1];
 
-        uint256 lastTurnTimestamp;
-        // Turn 0: use battle start timestamp
-        // Otherwise: use lastExecuteTimestamp from engine
-        if (turnId == 0) {
-            lastTurnTimestamp = config.startTimestamp;
-        } else {
-            lastTurnTimestamp = config.lastExecuteTimestamp;
-        }
+        // Fetch commit data for both players
+        (bytes32 playerMoveHash, uint256 playerCommitTurnId) =
+            commitManager.getCommitment(battleKey, players[playerIndexToCheck]);
+        (bytes32 otherPlayerMoveHash, uint256 otherPlayerCommitTurnId) =
+            commitManager.getCommitment(battleKey, players[otherPlayerIndex]);
 
-        // It's a single player turn, and it's our turn:
-        if (playerSwitchForTurnFlag == playerIndexToCheck) {
-            if (block.timestamp >= lastTurnTimestamp + PREV_TURN_MULTIPLIER * DEFAULT_TIMEOUT_DURATION) {
-                return players[playerIndexToCheck];
-            }
-        }
-        // It's a two player turn:
-        else if (playerSwitchForTurnFlag == 2) {
-            // We are committing + revealing:
-            if (turnId % 2 == playerIndexToCheck) {
-                (bytes32 playerMoveHash, uint256 playerTurnId) =
-                    commitManager.getCommitment(battleKey, players[playerIndexToCheck]);
-                // If we have already committed:
-                if (playerTurnId == turnId && playerMoveHash != bytes32(0)) {
-                    // Check if other player has already revealed
-                    uint256 numMovesOtherPlayerRevealed =
-                        commitManager.getMoveCountForBattleState(battleKey, players[otherPlayerIndex]);
-                    uint256 otherPlayerTimestamp =
-                        commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]);
-                    // If so, then check for timeout
-                    if (numMovesOtherPlayerRevealed > turnId) {
-                        if (block.timestamp >= otherPlayerTimestamp + DEFAULT_TIMEOUT_DURATION) {
-                            return players[playerIndexToCheck];
-                        }
-                    }
-                }
-                // If we have not committed yet:
-                else {
-                    if (block.timestamp >= lastTurnTimestamp + PREV_TURN_MULTIPLIER * DEFAULT_TIMEOUT_DURATION) {
-                        return players[playerIndexToCheck];
-                    }
-                }
-            }
-            // We are revealing:
-            else {
-                (bytes32 otherPlayerMoveHash, uint256 otherPlayerTurnId) =
-                    commitManager.getCommitment(battleKey, players[otherPlayerIndex]);
-                // If other player has already committed:
-                if (otherPlayerTurnId == turnId && otherPlayerMoveHash != bytes32(0)) {
-                    uint256 otherPlayerTimestamp =
-                        commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]);
-                    if (block.timestamp >= otherPlayerTimestamp + DEFAULT_TIMEOUT_DURATION) {
-                        return players[playerIndexToCheck];
-                    }
-                }
-            }
+        // Build params struct
+        TimeoutCheckParams memory params = TimeoutCheckParams({
+            turnId: data.turnId,
+            playerSwitchForTurnFlag: data.playerSwitchForTurnFlag,
+            playerIndexToCheck: playerIndexToCheck,
+            lastTurnTimestamp: data.turnId == 0 ? config.startTimestamp : config.lastExecuteTimestamp,
+            timeoutDuration: DEFAULT_TIMEOUT_DURATION,
+            prevTurnMultiplier: PREV_TURN_MULTIPLIER,
+            playerMoveHash: playerMoveHash,
+            playerCommitTurnId: playerCommitTurnId,
+            otherPlayerRevealCount: commitManager.getMoveCountForBattleState(battleKey, players[otherPlayerIndex]),
+            otherPlayerTimestamp: commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]),
+            otherPlayerMoveHash: otherPlayerMoveHash,
+            otherPlayerCommitTurnId: otherPlayerCommitTurnId
+        });
+
+        if (ValidatorLogic.validateTimeoutLogic(params)) {
+            return players[playerIndexToCheck];
         }
         return address(0);
     }

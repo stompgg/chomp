@@ -7,7 +7,7 @@ import "./moves/IMoveSet.sol";
 
 import {IEngine} from "./IEngine.sol";
 import {IValidator} from "./IValidator.sol";
-import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
+import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
 
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {IMonRegistry} from "./teams/IMonRegistry.sol";
@@ -55,22 +55,23 @@ contract DefaultValidator is IValidator {
                 return false;
             }
         }
-        // Otherwise,we check team and move length
+        // Otherwise, we check team and move length
         for (uint256 i; i < playerIndices.length; ++i) {
             if (teams[i].length != MONS_PER_TEAM) {
                 return false;
             }
 
-            // Should be the same length as teams[i].length
-            uint256[] memory teamIndices = teamRegistry.getMonRegistryIndicesForTeam(players[i], teamIndex[i]);
-
-            // Check that each mon is still up to date with the current mon registry values
+            // Check moves length for each mon
             for (uint256 j; j < MONS_PER_TEAM; ++j) {
                 if (teams[i][j].moves.length != MOVES_PER_MON) {
                     return false;
                 }
-                // Call the IMonRegistry to see if the stats, moves, and ability are still valid
-                if (address(monRegistry) != address(0) && !monRegistry.validateMon(teams[i][j], teamIndices[j])) {
+            }
+
+            // Batch validate all mons against registry (1 external call instead of MONS_PER_TEAM)
+            if (address(monRegistry) != address(0)) {
+                uint256[] memory teamIndices = teamRegistry.getMonRegistryIndicesForTeam(players[i], teamIndex[i]);
+                if (!monRegistry.validateMonBatch(teams[i], teamIndices)) {
                     return false;
                 }
             }
@@ -239,67 +240,35 @@ contract DefaultValidator is IValidator {
     */
     function validateTimeout(bytes32 battleKey, uint256 playerIndexToCheck) external view returns (address loser) {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
-        uint256 otherPlayerIndex = (playerIndexToCheck + 1) % 2;
-        uint64 turnId = ctx.turnId;
+        uint256 otherPlayerIndex = 1 - playerIndexToCheck;
 
         ICommitManager commitManager = ICommitManager(ctx.moveManager);
-
         address[2] memory players = [ctx.p0, ctx.p1];
-        uint256 lastTurnTimestamp;
-        // Turn 0: use battle start timestamp
-        // Otherwise: use lastExecuteTimestamp from engine (covers both single and two-player turns)
-        if (turnId == 0) {
-            lastTurnTimestamp = ctx.startTimestamp;
-        } else {
-            lastTurnTimestamp = ENGINE.getLastExecuteTimestamp(battleKey);
-        }
 
-        // It's a single player turn, and it's our turn:
-        if (ctx.playerSwitchForTurnFlag == playerIndexToCheck) {
-            if (block.timestamp >= lastTurnTimestamp + PREV_TURN_MULTIPLIER * TIMEOUT_DURATION) {
-                return players[playerIndexToCheck];
-            }
-        }
-        // It's a two player turn:
-        else if (ctx.playerSwitchForTurnFlag == 2) {
-            // We are committing + revealing:
-            if (turnId % 2 == playerIndexToCheck) {
-                (bytes32 playerMoveHash, uint256 playerTurnId) =
-                    commitManager.getCommitment(battleKey, players[playerIndexToCheck]);
-                // If we have already committed:
-                if (playerTurnId == turnId && playerMoveHash != bytes32(0)) {
-                    // Check if other player has already revealed
-                    uint256 numMovesOtherPlayerRevealed =
-                        commitManager.getMoveCountForBattleState(battleKey, players[otherPlayerIndex]);
-                    uint256 otherPlayerTimestamp =
-                        commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]);
-                    // If so, then check for timeout (no need to check if this player revealed, we assume reveal() auto-executes)
-                    if (numMovesOtherPlayerRevealed > turnId) {
-                        if (block.timestamp >= otherPlayerTimestamp + TIMEOUT_DURATION) {
-                            return players[playerIndexToCheck];
-                        }
-                    }
-                }
-                // If we have not committed yet:
-                else {
-                    if (block.timestamp >= lastTurnTimestamp + PREV_TURN_MULTIPLIER * TIMEOUT_DURATION) {
-                        return players[playerIndexToCheck];
-                    }
-                }
-            }
-            // We are revealing:
-            else {
-                (bytes32 otherPlayerMoveHash, uint256 otherPlayerTurnId) =
-                    commitManager.getCommitment(battleKey, players[otherPlayerIndex]);
-                // If other player has already committed:
-                if (otherPlayerTurnId == turnId && otherPlayerMoveHash != bytes32(0)) {
-                    uint256 otherPlayerTimestamp =
-                        commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]);
-                    if (block.timestamp >= otherPlayerTimestamp + TIMEOUT_DURATION) {
-                        return players[playerIndexToCheck];
-                    }
-                }
-            }
+        // Fetch commit data for both players
+        (bytes32 playerMoveHash, uint256 playerCommitTurnId) =
+            commitManager.getCommitment(battleKey, players[playerIndexToCheck]);
+        (bytes32 otherPlayerMoveHash, uint256 otherPlayerCommitTurnId) =
+            commitManager.getCommitment(battleKey, players[otherPlayerIndex]);
+
+        // Build params struct
+        TimeoutCheckParams memory params = TimeoutCheckParams({
+            turnId: ctx.turnId,
+            playerSwitchForTurnFlag: ctx.playerSwitchForTurnFlag,
+            playerIndexToCheck: playerIndexToCheck,
+            lastTurnTimestamp: ctx.turnId == 0 ? ctx.startTimestamp : ENGINE.getLastExecuteTimestamp(battleKey),
+            timeoutDuration: TIMEOUT_DURATION,
+            prevTurnMultiplier: PREV_TURN_MULTIPLIER,
+            playerMoveHash: playerMoveHash,
+            playerCommitTurnId: playerCommitTurnId,
+            otherPlayerRevealCount: commitManager.getMoveCountForBattleState(battleKey, players[otherPlayerIndex]),
+            otherPlayerTimestamp: commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]),
+            otherPlayerMoveHash: otherPlayerMoveHash,
+            otherPlayerCommitTurnId: otherPlayerCommitTurnId
+        });
+
+        if (ValidatorLogic.validateTimeoutLogic(params)) {
+            return players[playerIndexToCheck];
         }
         return address(0);
     }

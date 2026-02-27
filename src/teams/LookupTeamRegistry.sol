@@ -45,14 +45,19 @@ contract LookupTeamRegistry is ITeamRegistry {
         // Check for duplicate mon indices
         _checkForDuplicates(monIndices);
 
-        // Initialize team and set indices
-        uint256 teamId = numTeams[user];
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            _setMonRegistryIndices(teamId, uint32(monIndices[i]), i, user);
+        uint256 packed;
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            packed |= uint256(uint32(monIndices[i])) << (i * BITS_PER_MON_INDEX);
+            unchecked {
+                ++i;
+            }
         }
 
+        uint256 teamId = numTeams[user];
+        monRegistryIndicesForTeamPacked[user][teamId] = packed;
+
         // Update the team index
-        numTeams[user] += 1;
+        numTeams[user] = teamId + 1;
     }
 
     function updateTeam(uint256 teamIndex, uint256[] memory teamMonIndicesToOverride, uint256[] memory newMonIndices)
@@ -107,9 +112,14 @@ contract LookupTeamRegistry is ITeamRegistry {
         if (teamIndex >= numTeams[player]) {
             revert InvalidTeamIndex();
         }
+        // Cache packed value (1 SLOAD instead of MONS_PER_TEAM)
+        uint256 packed = monRegistryIndicesForTeamPacked[player][teamIndex];
         uint256[] memory ids = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; ++i) {
-            ids[i] = _getMonRegistryIndex(player, teamIndex, i);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            ids[i] = uint32(packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
+            }
         }
         return ids;
     }
@@ -117,14 +127,35 @@ contract LookupTeamRegistry is ITeamRegistry {
     // Read directly from the registry
     function getTeam(address player, uint256 teamIndex) external view returns (Mon[] memory) {
         Mon[] memory team = new Mon[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; ++i) {
-            uint256 monId = _getMonRegistryIndex(player, teamIndex, i);
-            (MonStats memory monStats, address[] memory moves, address[] memory abilities) = REGISTRY.getMonData(monId);
-            IMoveSet[] memory movesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
-                movesToUse[j] = IMoveSet(moves[j]);
+
+        // Cache packed index (1 SLOAD instead of MONS_PER_TEAM)
+        uint256 packed = monRegistryIndicesForTeamPacked[player][teamIndex];
+
+        // Build monIds for batch call
+        uint256[] memory monIds = new uint256[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            monIds[i] = uint32(packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
             }
-            team[i] = Mon({stats: monStats, ability: IAbility(abilities[0]), moves: movesToUse});
+        }
+
+        // Single batch call instead of MONS_PER_TEAM individual calls
+        (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities) = REGISTRY.getMonDataBatch(monIds);
+
+        // Unpack into team
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            IMoveSet[] memory movesToUse = new IMoveSet[](MOVES_PER_MON);
+            for (uint256 j; j < MOVES_PER_MON;) {
+                movesToUse[j] = IMoveSet(moves[i][j]);
+                unchecked {
+                    ++j;
+                }
+            }
+            team[i] = Mon({stats: stats[i], ability: IAbility(abilities[i][0]), moves: movesToUse});
+            unchecked {
+                ++i;
+            }
         }
         return team;
     }
@@ -133,22 +164,38 @@ contract LookupTeamRegistry is ITeamRegistry {
         Mon[] memory p0Team = new Mon[](MONS_PER_TEAM);
         Mon[] memory p1Team = new Mon[](MONS_PER_TEAM);
 
-        for (uint256 i; i < MONS_PER_TEAM; ++i) {
-            uint256 p0MonId = _getMonRegistryIndex(p0, p0TeamIndex, i);
-            (MonStats memory p0MonStats, address[] memory p0Moves, address[] memory p0Abilities) = REGISTRY.getMonData(p0MonId);
-            IMoveSet[] memory p0MovesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
-                p0MovesToUse[j] = IMoveSet(p0Moves[j]);
-            }
-            p0Team[i] = Mon({stats: p0MonStats, ability: IAbility(p0Abilities[0]), moves: p0MovesToUse});
+        uint256 p0Packed = monRegistryIndicesForTeamPacked[p0][p0TeamIndex];
+        uint256 p1Packed = monRegistryIndicesForTeamPacked[p1][p1TeamIndex];
 
-            uint256 p1MonId = _getMonRegistryIndex(p1, p1TeamIndex, i);
-            (MonStats memory p1MonStats, address[] memory p1Moves, address[] memory p1Abilities) = REGISTRY.getMonData(p1MonId);
-            IMoveSet[] memory p1MovesToUse = new IMoveSet[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) {
-                p1MovesToUse[j] = IMoveSet(p1Moves[j]);
+        // Build all monIds for batch call
+        uint256 totalMons = MONS_PER_TEAM * 2;
+        uint256[] memory monIds = new uint256[](totalMons);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            monIds[i] = uint32(p0Packed >> (i * BITS_PER_MON_INDEX));
+            monIds[i + MONS_PER_TEAM] = uint32(p1Packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
             }
-            p1Team[i] = Mon({stats: p1MonStats, ability: IAbility(p1Abilities[0]), moves: p1MovesToUse});
+        }
+
+        (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities) = REGISTRY.getMonDataBatch(monIds);
+
+        // Unpack into teams
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            IMoveSet[] memory p0MovesToUse = new IMoveSet[](MOVES_PER_MON);
+            IMoveSet[] memory p1MovesToUse = new IMoveSet[](MOVES_PER_MON);
+            for (uint256 j; j < MOVES_PER_MON;) {
+                p0MovesToUse[j] = IMoveSet(moves[i][j]);
+                p1MovesToUse[j] = IMoveSet(moves[i + MONS_PER_TEAM][j]);
+                unchecked {
+                    ++j;
+                }
+            }
+            p0Team[i] = Mon({stats: stats[i], ability: IAbility(abilities[i][0]), moves: p0MovesToUse});
+            p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: IAbility(abilities[i + MONS_PER_TEAM][0]), moves: p1MovesToUse});
+            unchecked {
+                ++i;
+            }
         }
 
         return (p0Team, p1Team);

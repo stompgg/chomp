@@ -4,6 +4,24 @@ pragma solidity ^0.8.0;
 import "../Constants.sol";
 import "../moves/IMoveSet.sol";
 
+/// @dev Parameters for timeout validation (allows pure function)
+struct TimeoutCheckParams {
+    uint64 turnId;
+    uint256 playerSwitchForTurnFlag;
+    uint256 playerIndexToCheck;
+    uint256 lastTurnTimestamp;
+    uint256 timeoutDuration;
+    uint256 prevTurnMultiplier;
+    // Commit data for player being checked
+    bytes32 playerMoveHash;
+    uint256 playerCommitTurnId;
+    // Commit data for other player
+    uint256 otherPlayerRevealCount;
+    uint256 otherPlayerTimestamp;
+    bytes32 otherPlayerMoveHash;
+    uint256 otherPlayerCommitTurnId;
+}
+
 /// @title ValidatorLogic
 /// @notice Pure validation logic extracted from DefaultValidator for reuse by Engine
 /// @dev This library contains no external calls - all data must be passed in
@@ -114,5 +132,50 @@ library ValidatorLogic {
         }
 
         return (requiresSwitch, isNoOp, isSwitch, isRegularMove, true);
+    }
+
+    /// @notice Validates whether a player has timed out
+    /// @dev View function (uses block.timestamp) - all commit manager data must be pre-fetched and passed in
+    /// @param params All parameters needed for timeout validation
+    /// @return isTimeout Whether the player has timed out
+    function validateTimeoutLogic(TimeoutCheckParams memory params) internal view returns (bool isTimeout) {
+        // Single player turn, and it's the player's turn:
+        if (params.playerSwitchForTurnFlag == params.playerIndexToCheck) {
+            if (block.timestamp >= params.lastTurnTimestamp + params.prevTurnMultiplier * params.timeoutDuration) {
+                return true;
+            }
+        }
+        // Two player turn:
+        else if (params.playerSwitchForTurnFlag == 2) {
+            // Player is committing + revealing:
+            if (params.turnId % 2 == params.playerIndexToCheck) {
+                // If player has already committed:
+                if (params.playerCommitTurnId == params.turnId && params.playerMoveHash != bytes32(0)) {
+                    // Check if other player has already revealed
+                    // If so, check for timeout from their reveal timestamp
+                    if (params.otherPlayerRevealCount > params.turnId) {
+                        if (block.timestamp >= params.otherPlayerTimestamp + params.timeoutDuration) {
+                            return true;
+                        }
+                    }
+                }
+                // If player has not committed yet:
+                else {
+                    if (block.timestamp >= params.lastTurnTimestamp + params.prevTurnMultiplier * params.timeoutDuration) {
+                        return true;
+                    }
+                }
+            }
+            // Player is revealing:
+            else {
+                // If other player has already committed:
+                if (params.otherPlayerCommitTurnId == params.turnId && params.otherPlayerMoveHash != bytes32(0)) {
+                    if (block.timestamp >= params.otherPlayerTimestamp + params.timeoutDuration) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 }

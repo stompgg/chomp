@@ -112,6 +112,20 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         return monsOwned[player].contains(monId);
     }
 
+    function isOwnerBatch(address player, uint256[] calldata monIds) external view returns (bool) {
+        EnumerableSetLib.Uint256Set storage owned = monsOwned[player];
+        uint256 len = monIds.length;
+        for (uint256 i; i < len;) {
+            if (!owned.contains(monIds[i])) {
+                return false;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        return true;
+    }
+
     function balanceOf(address player) external view returns (uint256) {
         return monsOwned[player].length();
     }
@@ -185,6 +199,14 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         return MON_REGISTRY.getMonData(monId);
     }
 
+    function getMonDataBatch(uint256[] calldata monIds)
+        external
+        view
+        returns (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities)
+    {
+        return MON_REGISTRY.getMonDataBatch(monIds);
+    }
+
     function getMonStats(uint256 monId) external view returns (MonStats memory) {
         return MON_REGISTRY.getMonStats(monId);
     }
@@ -211,5 +233,9 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
 
     function validateMon(Mon memory m, uint256 monId) external view returns (bool) {
         return MON_REGISTRY.validateMon(m, monId);
+    }
+
+    function validateMonBatch(Mon[] calldata mons, uint256[] calldata monIds) external view returns (bool) {
+        return MON_REGISTRY.validateMonBatch(mons, monIds);
     }
 }
