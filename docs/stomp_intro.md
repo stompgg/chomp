@@ -54,23 +54,10 @@ Come try the game out if you get a chance; we got your bullas, beras, miladies, 
 
 Along the way, I hope that some of the ideas built around the game engine can find root in other projects. For the nerds, come check out the codebase! We've got a super fucked up solidity to typescript transpiler for full js emulation and a super fast one-step commit-reveal flow for handling matchmaking and turns. Onchain maximalism where it matters.
 
-So here's the tldr of what I'm thinking with Stomp: Onchain markets are the most powerful and expressive tools we have for exchanging value, so they seem like a perfect fit for games that use the same substrate. But if that's ALL your game has, then it too quickly devolves into a mere money game (see: every single gamefi project with a down-only inflationary token). You cannot play-to-earn, win-to-earn, risk-to-earn, shit-to-earn, eat-to-earn, etc for a game. That is simply called having a job.
+So here's the tldr of what I'm thinking with Stomp: Onchain markets are the most powerful and expressive tools we have for exchanging value, so they seem like a perfect fit for games that use the same substrate. But if that's ALL your game has, then it too quickly devolves into a mere money game (see: every single gamefi project with a down-only inflationary token). You cannot play-to-earn, win-to-earn, risk-to-earn, shit-to-earn, eat-to-earn, etc for a game. That is called having a job.
 
-Games are labors of love and expression and emotion. We literally have a phrase for doing something for the love of it. 
+Games are labors of love and expression and emotion. We literally have a phrase for doing something for the love of it.
 
-But, BUT. If the game is good, if the base layer is interesting enough that people care about the characters, the progression, the outcome, then we have something interesting. You can let loose all the experimentation we've seen with bonding curves, order books, hyperps, whatever. Then, you have real stakes and real value.
+But, BUT. If the game is good, if the base layer is interesting enough that people care about the characters, the progression, the outcome, then we have something interesting. You can let loose all the experimentation we've seen with bonding curves, order books, hyperps, whatever. You have real stakes and real value.
 
-I am not early to these ideas. You are not early. Nobody reading this is early. Stomp is a project that has come too late. 
-
-
-
-
-
-
-But now, we actually have good enough tooling and fast enough chains. It's the elventh hour, and good news is the cavalry is coming. 
-
-> "But Doctor, I AM the cavalry!"
-
-In our crypto "friendly" regime, sentiment and prices are basically at an ATL. Thought work itself is getting automated away, and everyone is gone. There's about four of us Japanese soldiers left in this jungle, and we've been running ourselves ragged. 
-
-Why not take a little break?
+I am not early to these ideas. Nobody reading this is early. But if all of work is going to get automated in the next three months, why not enjoy ourselves a little more?
