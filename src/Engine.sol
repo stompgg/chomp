@@ -353,8 +353,8 @@ contract Engine is IEngine, MappingAllocator {
             revert WrongCaller();
         }
 
-        _setMoveInternal(config, battleKey, 0, p0MoveIndex, p0Salt, p0ExtraData);
-        _setMoveInternal(config, battleKey, 1, p1MoveIndex, p1Salt, p1ExtraData);
+        _setMoveInternal(config, battleKey, 0, 0, p0MoveIndex, p0Salt, p0ExtraData);
+        _setMoveInternal(config, battleKey, 1, 0, p1MoveIndex, p1Salt, p1ExtraData);
 
         // Execute (skip MovesNotSet check since we just set them)
         _executeInternal(battleKey, storageKey);
@@ -388,16 +388,12 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Set p0 slot 0 + slot 1 moves
-        config.p0Move = _packMoveDecision(p0MoveIndex0, p0ExtraData0);
-        config.p0Move2 = _packMoveDecision(p0MoveIndex1, p0ExtraData1);
-        config.p0Salt = p0Salt;
-        emit P0MoveSet(battleKey, uint256(p0MoveIndex0) | (uint256(p0ExtraData0) << 8), p0Salt);
+        _setMoveInternal(config, battleKey, 0, 0, p0MoveIndex0, p0Salt, p0ExtraData0);
+        _setMoveInternal(config, battleKey, 0, 1, p0MoveIndex1, bytes32(0), p0ExtraData1);
 
         // Set p1 slot 0 + slot 1 moves
-        config.p1Move = _packMoveDecision(p1MoveIndex0, p1ExtraData0);
-        config.p1Move2 = _packMoveDecision(p1MoveIndex1, p1ExtraData1);
-        config.p1Salt = p1Salt;
-        emit P1MoveSet(battleKey, uint256(p1MoveIndex0) | (uint256(p1ExtraData0) << 8), p1Salt);
+        _setMoveInternal(config, battleKey, 1, 0, p1MoveIndex0, p1Salt, p1ExtraData0);
+        _setMoveInternal(config, battleKey, 1, 1, p1MoveIndex1, bytes32(0), p1ExtraData1);
 
         // Execute (skip MovesNotSet check since we just set them)
         _executeInternal(battleKey, storageKey);
@@ -1078,12 +1074,15 @@ contract Engine is IEngine, MappingAllocator {
         // If the switch is invalid, we simply do nothing and continue execution
     }
 
-    /// @notice Internal helper to set a player's move
-    /// @dev Shared by setMove() and executeWithMoves() to avoid duplication
+    /// @notice Internal helper to set a player's move for a given slot
+    /// @dev Shared by setMove(), setMoveForSlot(), executeWithMoves(), and executeWithMovesForDoubles().
+    ///      Slot 0 writes p{N}Move + p{N}Salt and emits an event.
+    ///      Slot 1 writes p{N}Move2 only (salt is per-player, set via slot 0).
     function _setMoveInternal(
         BattleConfig storage config,
         bytes32 battleKey,
         uint256 playerIndex,
+        uint256 slotIndex,
         uint8 moveIndex,
         bytes32 salt,
         uint240 extraData
@@ -1097,13 +1096,21 @@ contract Engine is IEngine, MappingAllocator {
         });
 
         if (playerIndex == 0) {
-            config.p0Move = newMove;
-            config.p0Salt = salt;
-            emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
+            if (slotIndex == 0) {
+                config.p0Move = newMove;
+                config.p0Salt = salt;
+                emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
+            } else {
+                config.p0Move2 = newMove;
+            }
         } else {
-            config.p1Move = newMove;
-            config.p1Salt = salt;
-            emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
+            if (slotIndex == 0) {
+                config.p1Move = newMove;
+                config.p1Salt = salt;
+                emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
+            } else {
+                config.p1Move2 = newMove;
+            }
         }
     }
 
@@ -1150,18 +1157,8 @@ contract Engine is IEngine, MappingAllocator {
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
         external
     {
-        // Use cached key if called during execute(), otherwise lookup
-        bool isForCurrentBattle = battleKeyForWrite == battleKey;
-        bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
-
-        // Cache storage pointer to avoid repeated mapping lookups
-        BattleConfig storage config = battleConfig[storageKey];
-
-        if (msg.sender != address(config.moveManager) && !isForCurrentBattle) {
-            revert NoWriteAllowed();
-        }
-
-        _setMoveInternal(config, battleKey, playerIndex, moveIndex, salt, extraData);
+        (BattleConfig storage config, bytes32 resolvedBattleKey) = _prepareMoveSet(battleKey);
+        _setMoveInternal(config, resolvedBattleKey, playerIndex, 0, moveIndex, salt, extraData);
     }
 
     /**
@@ -1181,43 +1178,23 @@ contract Engine is IEngine, MappingAllocator {
         bytes32 salt,
         uint240 extraData
     ) external {
-        BattleConfig storage config = _prepareMoveSet(battleKey);
-        MoveDecision memory newMove = _packMoveDecision(moveIndex, extraData);
-
-        if (playerIndex == 0) {
-            if (slotIndex == 0) {
-                config.p0Move = newMove;
-                config.p0Salt = salt;
-            } else {
-                config.p0Move2 = newMove;
-                // Salt is per-player, not per-slot; slot 0 sets p0Salt for RNG derivation
-            }
-        } else {
-            if (slotIndex == 0) {
-                config.p1Move = newMove;
-                config.p1Salt = salt;
-            } else {
-                config.p1Move2 = newMove;
-                // Salt is per-player, not per-slot; slot 0 sets p1Salt for RNG derivation
-            }
-        }
+        (BattleConfig storage config, bytes32 resolvedBattleKey) = _prepareMoveSet(battleKey);
+        _setMoveInternal(config, resolvedBattleKey, playerIndex, slotIndex, moveIndex, salt, extraData);
     }
 
-    /// @dev Validates caller permissions and returns the BattleConfig storage pointer for move-setting
-    function _prepareMoveSet(bytes32 battleKey) private view returns (BattleConfig storage config) {
+    /// @dev Validates caller permissions and returns the BattleConfig storage pointer + battleKey for move-setting
+    function _prepareMoveSet(bytes32 battleKey)
+        private
+        view
+        returns (BattleConfig storage config, bytes32 resolvedBattleKey)
+    {
         bool isForCurrentBattle = battleKeyForWrite == battleKey;
         bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
         config = battleConfig[storageKey];
-        bool isMoveManager = msg.sender == address(config.moveManager);
-        if (!isMoveManager && !isForCurrentBattle) {
+        if (msg.sender != address(config.moveManager) && !isForCurrentBattle) {
             revert NoWriteAllowed();
         }
-    }
-
-    /// @dev Packs a moveIndex + extraData into a MoveDecision with IS_REAL_TURN_BIT set
-    function _packMoveDecision(uint8 moveIndex, uint240 extraData) private pure returns (MoveDecision memory) {
-        uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
-        return MoveDecision({packedMoveIndex: storedMoveIndex | IS_REAL_TURN_BIT, extraData: extraData});
+        resolvedBattleKey = battleKey;
     }
 
     function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
