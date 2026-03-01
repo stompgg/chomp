@@ -391,13 +391,13 @@ contract Engine is IEngine, MappingAllocator {
         config.p0Move = _packMoveDecision(p0MoveIndex0, p0ExtraData0);
         config.p0Move2 = _packMoveDecision(p0MoveIndex1, p0ExtraData1);
         config.p0Salt = p0Salt;
-        emit P0MoveSet(battleKey, uint256(p0MoveIndex0) | (uint256(p0ExtraData0) << 8));
+        emit P0MoveSet(battleKey, uint256(p0MoveIndex0) | (uint256(p0ExtraData0) << 8), p0Salt);
 
         // Set p1 slot 0 + slot 1 moves
         config.p1Move = _packMoveDecision(p1MoveIndex0, p1ExtraData0);
         config.p1Move2 = _packMoveDecision(p1MoveIndex1, p1ExtraData1);
         config.p1Salt = p1Salt;
-        emit P1MoveSet(battleKey, uint256(p1MoveIndex0) | (uint256(p1ExtraData0) << 8));
+        emit P1MoveSet(battleKey, uint256(p1MoveIndex0) | (uint256(p1ExtraData0) << 8), p1Salt);
 
         // Execute (skip MovesNotSet check since we just set them)
         _executeInternal(battleKey, storageKey);

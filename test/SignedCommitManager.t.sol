@@ -555,7 +555,9 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         );
 
         vm.startPrank(p0);
-        vm.expectRevert(Engine.BattleNotStarted.selector);
+        // Note: For unstarted battles, winnerIndex defaults to 0 (not 2),
+        // so the optimized getCommitAuthForDualSigned reverts with GameAlreadyOver
+        vm.expectRevert(Engine.GameAlreadyOver.selector);
         signedCommitManager.executeWithDualSignedMoves(
             fakeBattleKey,
             SWITCH_MOVE_INDEX,
