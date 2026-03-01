@@ -69,4 +69,40 @@ library SignedCommitLib {
             )
         );
     }
+
+    /// @notice Struct for the dual-signed reveal flow in doubles battles
+    /// @dev Like DualSignedReveal but covers 2 slot moves per player.
+    ///      The committer's hash covers both their slot moves (matching revealMovePair preimage).
+    ///      The revealer signs over both their slot moves + the committer's hash.
+    struct DualSignedRevealDoubles {
+        bytes32 battleKey;
+        uint64 turnId;
+        bytes32 committerMoveHash; // hash(moveIndex0, moveIndex1, salt, extraData0, extraData1)
+        uint8 revealerMoveIndex0; // Slot 0 move
+        uint8 revealerMoveIndex1; // Slot 1 move
+        bytes32 revealerSalt;
+        uint240 revealerExtraData0; // Slot 0 extra data
+        uint240 revealerExtraData1; // Slot 1 extra data
+    }
+
+    /// @notice Hashes a DualSignedRevealDoubles struct according to EIP-712
+    /// @param reveal The DualSignedRevealDoubles struct to hash
+    /// @return The EIP-712 struct hash
+    function hashDualSignedRevealDoubles(DualSignedRevealDoubles memory reveal) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256(
+                    "DualSignedRevealDoubles(bytes32 battleKey,uint64 turnId,bytes32 committerMoveHash,uint8 revealerMoveIndex0,uint8 revealerMoveIndex1,bytes32 revealerSalt,uint240 revealerExtraData0,uint240 revealerExtraData1)"
+                ),
+                reveal.battleKey,
+                reveal.turnId,
+                reveal.committerMoveHash,
+                reveal.revealerMoveIndex0,
+                reveal.revealerMoveIndex1,
+                reveal.revealerSalt,
+                reveal.revealerExtraData0,
+                reveal.revealerExtraData1
+            )
+        );
+    }
 }

@@ -7,6 +7,8 @@ interface ICommitManager {
     function commitMove(bytes32 battleKey, bytes32 moveHash) external;
     function revealMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData, bool autoExecute)
         external;
+    // Doubles: reveal both slot moves at once (hash is over both moves packed)
+    function revealMovePair(bytes32 battleKey, RevealedMovesPair calldata moves, bool autoExecute) external;
     function getCommitment(bytes32 battleKey, address player) external view returns (bytes32 moveHash, uint256 turnId);
     function getMoveCountForBattleState(bytes32 battleKey, address player) external view returns (uint256);
     function getLastMoveTimestampForPlayer(bytes32 battleKey, address player) external view returns (uint256);

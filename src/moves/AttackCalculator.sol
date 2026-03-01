@@ -76,6 +76,38 @@ library AttackCalculator {
         );
     }
 
+    // Slot-aware overload for doubles - uses explicit slot indices for correct mon lookup
+    function _calculateDamage(
+        IEngine ENGINE,
+        ITypeCalculator TYPE_CALCULATOR,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderSlotIndex,
+        uint32 basePower,
+        uint32 accuracy,
+        uint256 volatility,
+        Type attackType,
+        MoveClass attackSupertype,
+        uint256 rng,
+        uint256 critRate
+    ) internal returns (int32, bytes32) {
+        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(
+            battleKey, attackerPlayerIndex, attackerSlotIndex, defenderPlayerIndex, defenderSlotIndex
+        );
+        (int32 damage, bytes32 eventType) = _calculateDamageFromContext(
+            TYPE_CALCULATOR, ctx, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
+        );
+        if (damage != 0) {
+            ENGINE.dealDamage(defenderPlayerIndex, ctx.defenderMonIndex, damage);
+        }
+        if (eventType != bytes32(0)) {
+            ENGINE.emitEngineEvent(eventType, "");
+        }
+        return (damage, eventType);
+    }
+
     function _calculateDamageFromContext(
         ITypeCalculator TYPE_CALCULATOR,
         DamageCalcContext memory ctx,

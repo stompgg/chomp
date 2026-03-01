@@ -112,7 +112,8 @@ abstract contract BattleHelper is Test {
             ruleset: ruleset,
             engineHooks: engineHooks,
             moveManager: moveManager,
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         // Propose battle
