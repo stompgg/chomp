@@ -52,3 +52,6 @@ ts-output/
 transpiler/ts-output/
 
 .vscode/
+.pytest_cache/
+.venv/
+.claude/
