@@ -86,15 +86,15 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
 
         // Deploy StandardAttackFactory
-        standardAttackFactory = new StandardAttackFactory(engine, typeCalc);
+        standardAttackFactory = new StandardAttackFactory(typeCalc);
 
         // Deploy all effects
-        statBoosts = new StatBoosts(engine);
-        frostbiteStatus = new FrostbiteStatus(engine, statBoosts);
-        sleepStatus = new SleepStatus(engine);
-        panicStatus = new PanicStatus(engine);
-        burnStatus = new BurnStatus(engine, statBoosts);
-        zapStatus = new ZapStatus(engine);
+        statBoosts = new StatBoosts();
+        frostbiteStatus = new FrostbiteStatus(statBoosts);
+        sleepStatus = new SleepStatus();
+        panicStatus = new PanicStatus();
+        burnStatus = new BurnStatus(statBoosts);
+        zapStatus = new ZapStatus();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -677,7 +677,7 @@ contract EffectTest is Test, BattleHelper {
     }
 
     function test_staminaRegen() public {
-        StaminaRegen regen = new StaminaRegen(engine);
+        StaminaRegen regen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = regen;
         DefaultRuleset rules = new DefaultRuleset(engine, effects);
@@ -748,9 +748,9 @@ contract EffectTest is Test, BattleHelper {
 
     function test_onUpdateMonStateHook() public {
         // Import the mock effect and move
-        OnUpdateMonStateHealEffect healEffect = new OnUpdateMonStateHealEffect(engine);
-        EffectAbility healAbility = new EffectAbility(engine, healEffect);
-        ReduceSpAtkMove reduceSpAtkMove = new ReduceSpAtkMove(engine);
+        OnUpdateMonStateHealEffect healEffect = new OnUpdateMonStateHealEffect();
+        EffectAbility healAbility = new EffectAbility(healEffect);
+        ReduceSpAtkMove reduceSpAtkMove = new ReduceSpAtkMove();
 
         // Create a mon with the ReduceSpAtkMove for Alice
         IMoveSet[] memory aliceMoves = new IMoveSet[](1);

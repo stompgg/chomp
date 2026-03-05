@@ -60,15 +60,15 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function test_bubbleBopHitsTwice() public {
         uint32 maxHp = 200;
 
-        BubbleBop bubbleBop = new BubbleBop(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        BubbleBop bubbleBop = new BubbleBop(ITypeCalculator(address(typeCalc)));
 
         // Create a single-hit reference attack with same params (0 vol, 0 crit for predictable damage)
         StandardAttack singleHit = attackFactory.createAttack(
@@ -166,8 +166,8 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackHitsNonActiveMon() public {
         uint32 maxHp = 100;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = sneakAttack;
@@ -213,8 +213,8 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackOncePerSwitchIn() public {
         uint32 maxHp = 100;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = sneakAttack;
@@ -265,8 +265,8 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackResetsOnSwitchIn() public {
         uint32 maxHp = 200;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = sneakAttack;
@@ -316,8 +316,8 @@ contract EkinekiTest is Test, BattleHelper {
     function test_nineNineNineBoostsCritRate() public {
         uint32 maxHp = 200;
 
-        NineNineNine nineNineNine = new NineNineNine(IEngine(address(engine)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        NineNineNine nineNineNine = new NineNineNine();
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         // Create a predictable attack (0 vol, 0 default crit) to isolate crit boost
         StandardAttack testAttack = attackFactory.createAttack(
@@ -386,7 +386,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexBoostsOnKO() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         // Create a strong attack that will KO in one hit
         StandardAttack koAttack = attackFactory.createAttack(
@@ -488,7 +488,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexTriggersOncePerGame() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -599,7 +599,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexNoBoostWithZeroKOs() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -696,7 +696,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_overflowDealsDamage() public {
         uint32 maxHp = 200;
 
-        Overflow overflow = new Overflow(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        Overflow overflow = new Overflow(ITypeCalculator(address(typeCalc)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = overflow;

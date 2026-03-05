@@ -13,11 +13,9 @@ contract SaviorComplex is IAbility {
     uint8 public constant STAGE_2_BOOST = 25; // 2 KO'd
     uint8 public constant STAGE_3_BOOST = 30; // 3+ KO'd
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -29,14 +27,14 @@ contract SaviorComplex is IAbility {
         return keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"));
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if already triggered this game
-        if (ENGINE.getGlobalKV(battleKey, _getSaviorComplexKey(playerIndex)) == 1) {
+        if (engine.getGlobalKV(battleKey, _getSaviorComplexKey(playerIndex)) == 1) {
             return;
         }
 
         // Count KO'd mons via bitmap popcount
-        uint256 koBitmap = ENGINE.getKOBitmap(battleKey, playerIndex);
+        uint256 koBitmap = engine.getKOBitmap(battleKey, playerIndex);
         if (koBitmap == 0) return;
         uint256 koCount = 0;
         for (uint256 bits = koBitmap; bits != 0; bits >>= 1) {
@@ -60,9 +58,9 @@ contract SaviorComplex is IAbility {
             boostPercent: boostPercent,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
 
         // Mark as triggered (once per game)
-        ENGINE.setGlobalKV(_getSaviorComplexKey(playerIndex), 1);
+        engine.setGlobalKV(_getSaviorComplexKey(playerIndex), 1);
     }
 }

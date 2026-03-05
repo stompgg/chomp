@@ -269,7 +269,7 @@ contract BetterCPU is CPU {
         }
         if (basePower == 0) return 0;
 
-        Type moveType = moveSet.moveType(battleKey);
+        Type moveType = moveSet.moveType(ENGINE, battleKey);
         // accuracy=100 (always hits), volatility=0 (no variance), rng=50, critRate=0
         (int32 damage,) =
             AttackCalculator._calculateDamageFromContext(TYPE_CALC, ctx, basePower, 100, 0, moveType, moveClass, 50, 0);
@@ -302,7 +302,7 @@ contract BetterCPU is CPU {
         for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
-            MoveClass moveClass = moveSet.moveClass(battleKey);
+            MoveClass moveClass = moveSet.moveClass(ENGINE, battleKey);
             if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) {
                 unchecked { ++i; }
                 continue;
@@ -310,7 +310,7 @@ contract BetterCPU is CPU {
 
             uint256 estimatedDamage = _estimateDamage(ctx, battleKey, moveSet, moveClass);
             if (estimatedDamage >= uint256(defenderCurrentHp)) {
-                uint32 staminaCost = moveSet.stamina(battleKey, attackerIndex, attackerMonIndex);
+                uint32 staminaCost = moveSet.stamina(ENGINE, battleKey, attackerIndex, attackerMonIndex);
                 if (staminaCost < bestStaminaCost) {
                     bestStaminaCost = staminaCost;
                     bestMoveIndex = int256(i);
@@ -341,10 +341,10 @@ contract BetterCPU is CPU {
         for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
-            MoveClass moveClass = moveSet.moveClass(battleKey);
+            MoveClass moveClass = moveSet.moveClass(ENGINE, battleKey);
             if (moveClass == MoveClass.Physical || moveClass == MoveClass.Special) {
                 damages[i] = _estimateDamage(ctx, battleKey, moveSet, moveClass);
-                costs[i] = moveSet.stamina(battleKey, attackerIndex, attackerMonIndex);
+                costs[i] = moveSet.stamina(ENGINE, battleKey, attackerIndex, attackerMonIndex);
                 if (damages[i] > bestDamage) {
                     bestDamage = damages[i];
                     bestStaminaCost = costs[i];
@@ -456,7 +456,7 @@ contract BetterCPU is CPU {
             IMoveSet ms
         ) {
             oppMoveSet = ms;
-            oppMoveClass = ms.moveClass(battleKey);
+            oppMoveClass = ms.moveClass(ENGINE, battleKey);
             canEstimate = (oppMoveClass == MoveClass.Physical || oppMoveClass == MoveClass.Special);
         } catch {
             canEstimate = false;
@@ -502,7 +502,7 @@ contract BetterCPU is CPU {
             ourPriority = 6; // SWITCH_PRIORITY
         } else {
             IMoveSet ourMove = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, ourMonIndex, ourMoveIndex);
-            ourPriority = ourMove.priority(battleKey, playerIndex);
+            ourPriority = ourMove.priority(ENGINE, battleKey, playerIndex);
         }
 
         uint32 oppPriority;
@@ -511,7 +511,7 @@ contract BetterCPU is CPU {
         } else {
             IMoveSet oppMove =
                 ENGINE.getMoveForMonForBattle(battleKey, opponentIndex, opponentMonIndex, opponentMoveIndex);
-            oppPriority = oppMove.priority(battleKey, opponentIndex);
+            oppPriority = oppMove.priority(ENGINE, battleKey, opponentIndex);
         }
 
         if (ourPriority > oppPriority) return true;
@@ -553,7 +553,7 @@ contract BetterCPU is CPU {
             IMoveSet ms
         ) {
             oppMoveSet = ms;
-            oppMoveClass = ms.moveClass(battleKey);
+            oppMoveClass = ms.moveClass(ENGINE, battleKey);
         } catch {
             return false;
         }
@@ -631,7 +631,7 @@ contract BetterCPU is CPU {
                 IMoveSet ms
             ) {
                 oppMoveSet = ms;
-                oppMoveClass = ms.moveClass(battleKey);
+                oppMoveClass = ms.moveClass(ENGINE, battleKey);
             } catch {
                 return (false, 0);
             }
@@ -726,7 +726,7 @@ contract BetterCPU is CPU {
         for (uint256 i; i < moves.length;) {
             IMoveSet moveSet =
                 ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
-            MoveClass moveClass = moveSet.moveClass(battleKey);
+            MoveClass moveClass = moveSet.moveClass(ENGINE, battleKey);
             if (moveClass != MoveClass.Physical && moveClass != MoveClass.Special) {
                 unchecked { ++i; }
                 continue;

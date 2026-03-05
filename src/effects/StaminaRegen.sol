@@ -9,12 +9,6 @@ import {IEngine} from "../IEngine.sol";
 import {BasicEffect} from "./BasicEffect.sol";
 
 contract StaminaRegen is BasicEffect {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function name() external pure override returns (string memory) {
         return "Stamina Regen";
     }
@@ -25,16 +19,17 @@ contract StaminaRegen is BasicEffect {
     }
 
     // No overhealing stamina
-    function _regenStamina(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
+    function _regenStamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
         int256 currentActiveMonStaminaDelta =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Stamina);
+            engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Stamina);
         if (currentActiveMonStaminaDelta < 0) {
-            ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.Stamina, 1);
+            engine.updateMonState(playerIndex, monIndex, MonStateIndexName.Stamina, 1);
         }
     }
 
     // Regen stamina on round end for both active mons
     function onRoundEnd(
+        IEngine engine,
         bytes32 battleKey,
         uint256,
         bytes32,
@@ -43,17 +38,18 @@ contract StaminaRegen is BasicEffect {
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) external override returns (bytes32, bool) {
-        uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
+        uint256 playerSwitchForTurnFlag = engine.getPlayerSwitchForTurnFlagForBattleState(battleKey);
         // Update stamina for both active mons only if it's a 2 player turn
         if (playerSwitchForTurnFlag == 2) {
-            _regenStamina(battleKey, 0, p0ActiveMonIndex);
-            _regenStamina(battleKey, 1, p1ActiveMonIndex);
+            _regenStamina(engine, battleKey, 0, p0ActiveMonIndex);
+            _regenStamina(engine, battleKey, 1, p1ActiveMonIndex);
         }
         return (bytes32(0), false);
     }
 
     // Regen stamina if the mon did a No Op (i.e. resting)
     function onAfterMove(
+        IEngine engine,
         bytes32 battleKey,
         uint256,
         bytes32,
@@ -61,16 +57,12 @@ contract StaminaRegen is BasicEffect {
         uint256 monIndex,
         uint256,
         uint256
-    )
-        external
-        override
-        returns (bytes32, bool)
-    {
-        MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
+    ) external override returns (bytes32, bool) {
+        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            _regenStamina(battleKey, targetIndex, monIndex);
+            _regenStamina(engine, battleKey, targetIndex, monIndex);
         }
         return (bytes32(0), false);
     }

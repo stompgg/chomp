@@ -9,11 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract AfterDamageReboundEffect is BasicEffect {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
 
     // Steps: AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
@@ -21,15 +16,15 @@ contract AfterDamageReboundEffect is BasicEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
         external
         override
         returns (bytes32, bool)
     {
         // Heals for all damage done
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
-        ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, currentDamage * -1);
+            engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, currentDamage * -1);
         return (extraData, false);
     }
 }

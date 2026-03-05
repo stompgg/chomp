@@ -12,11 +12,9 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 
 contract StatBoostsMove is IMoveSet {
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -24,7 +22,7 @@ contract StatBoostsMove is IMoveSet {
         return "";
     }
 
-    function move(bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
+    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
         // Unpack extraData: lower 60 bits = playerIndex, next 60 bits = monIndex, next 60 bits = statIndex, upper 60 bits = boostAmount
         uint256 playerIndex = uint256(extraData) & ((1 << 60) - 1);
         uint256 monIndex = (uint256(extraData) >> 60) & ((1 << 60) - 1);
@@ -46,26 +44,26 @@ contract StatBoostsMove is IMoveSet {
             boostPercent: uint8(uint32(boostAmount)),
             boostType: boostType
         });
-        STAT_BOOSTS.addStatBoosts(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function moveType(bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) external pure returns (Type) {
         return Type.Air;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 

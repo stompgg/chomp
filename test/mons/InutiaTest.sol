@@ -46,9 +46,9 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        interweaving = new Interweaving(IEngine(address(engine)), statBoost);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoost = new StatBoosts();
+        interweaving = new Interweaving(statBoost);
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -141,7 +141,7 @@ contract InutiaTest is Test, BattleHelper {
     }
 
     function test_initialize() public {
-        Initialize initialize = new Initialize(engine, statBoost);
+        Initialize initialize = new Initialize(statBoost);
 
         // Create a validator with 2 mons and 1 move per mon
         DefaultValidator validator = new DefaultValidator(
@@ -241,7 +241,7 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_chainExpansion() public {
         TypeCalculator tc = new TypeCalculator();
-        ChainExpansion ce = new ChainExpansion(engine, tc);
+        ChainExpansion ce = new ChainExpansion(tc);
         DefaultValidator v = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );

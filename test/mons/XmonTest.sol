@@ -62,12 +62,12 @@ contract XmonTest is Test, BattleHelper {
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function test_contagiousSlumberAppliesSleepToBothMons() public {
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        ContagiousSlumber contagiousSlumber = new ContagiousSlumber(IEngine(address(engine)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = new SleepStatus();
+        ContagiousSlumber contagiousSlumber = new ContagiousSlumber(IEffect(address(sleepStatus)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = contagiousSlumber;
@@ -120,7 +120,7 @@ contract XmonTest is Test, BattleHelper {
     }
 
     function test_vitalSiphonDrainsStaminaOnlyWhenOpponentHasStamina() public {
-        VitalSiphon vitalSiphon = new VitalSiphon(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        VitalSiphon vitalSiphon = new VitalSiphon(ITypeCalculator(address(typeCalc)));
 
         // Create a stamina-draining attack to reduce Bob's stamina to 0
         StandardAttack nullMove = attackFactory.createAttack(
@@ -176,7 +176,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Alice spent 2 stamina for the move, gained 1 back = -1
         // Bob gained 1 from rest, lost 1 from drain = 0
-        assertEq(aliceStaminaDelta, 1 - int32(vitalSiphon.stamina(0, 0, 0)), "Alice should have -1 stamina delta (spent 2, gained 1)");
+        assertEq(aliceStaminaDelta, 1 - int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)), "Alice should have -1 stamina delta (spent 2, gained 1)");
         assertEq(bobStaminaDelta, -1, "Bob should have -1 stamina delta from the drain");
 
         // Alice does nothing, Bob uses null move, no more stamina
@@ -193,11 +193,11 @@ contract XmonTest is Test, BattleHelper {
         bobStaminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         aliceStaminaDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         assertEq(bobStaminaDelta, -5, "Bob should still have -5 stamina delta");
-        assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina(0, 0, 0)), "Alice should have -3 stamina delta (after using the move)");
+        assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)), "Alice should have -3 stamina delta (after using the move)");
     }
 
     function test_somniphobiaDamagesMonsWhoRest() public {
-        Somniphobia somniphobia = new Somniphobia(IEngine(address(engine)));
+        Somniphobia somniphobia = new Somniphobia();
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = somniphobia;
@@ -260,8 +260,8 @@ contract XmonTest is Test, BattleHelper {
     }
 
     function test_dreamcatcherHealsOnStaminaGain() public {
-        Dreamcatcher dreamcatcher = new Dreamcatcher(IEngine(address(engine)));
-        StaminaRegen staminaRegen = new StaminaRegen(IEngine(address(engine)));
+        Dreamcatcher dreamcatcher = new Dreamcatcher();
+        StaminaRegen staminaRegen = new StaminaRegen();
 
         uint32 BASE_HP = 10;
         uint32 maxHp = uint32(dreamcatcher.HEAL_DENOM()) * BASE_HP; // 160 HP
@@ -377,8 +377,8 @@ contract XmonTest is Test, BattleHelper {
          * Turn 2: Alice uses Night Terrors (2 stacks on Alice), Alice loses 2 stamina at end of turn (4 -> 2)
          * Turn 3: Alice uses Night Terrors (3 stacks on Alice), Alice has only 2 stamina, so no trigger
          */
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = new SleepStatus();
+        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = nightTerrors;
@@ -442,8 +442,8 @@ contract XmonTest is Test, BattleHelper {
          * Turn 2: Alice swaps to mon 1
          * Verify: Alice's mon 0 no longer has Night Terrors effect
          */
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = new SleepStatus();
+        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = nightTerrors;
@@ -512,8 +512,8 @@ contract XmonTest is Test, BattleHelper {
          * Turn 5: Alice uses Night Terrors, damages sleeping Bob
          * Verify: Asleep damage is at least 50% more than awake damage (30/20 = 1.5)
          */
-        SleepStatus sleepStatus = new SleepStatus(IEngine(address(engine)));
-        NightTerrors nightTerrors = new NightTerrors(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
+        SleepStatus sleepStatus = new SleepStatus();
+        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
         // Create a sleep-inflicting move with zero cost and zero damage
         StandardAttack sleepMove = attackFactory.createAttack(

@@ -6,18 +6,18 @@ import {BasicEffect} from "../BasicEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
 
 abstract contract StatusEffect is BasicEffect {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     // Whether or not to add the effect if the step condition is met
-    function shouldApply(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public virtual view override returns (bool) {
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
+        public
+        virtual
+        view
+        override
+        returns (bool)
+    {
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
         // Get value from ENGINE KV
-        uint192 monStatusFlag = ENGINE.getGlobalKV(battleKey, keyForMon);
+        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
 
         // Check if a status already exists for the mon
         if (monStatusFlag == 0) {
@@ -28,7 +28,7 @@ abstract contract StatusEffect is BasicEffect {
         }
     }
 
-    function onApply(bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onApply(IEngine engine, bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         public
         virtual
         override
@@ -36,16 +36,16 @@ abstract contract StatusEffect is BasicEffect {
     {
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
-        uint192 monValue = ENGINE.getGlobalKV(battleKey, keyForMon);
+        uint192 monValue = engine.getGlobalKV(battleKey, keyForMon);
         if (monValue == 0) {
             // Set the global status flag to be the address of the status
-            ENGINE.setGlobalKV(keyForMon, uint192(uint160(address(this))));
+            engine.setGlobalKV(keyForMon, uint192(uint160(address(this))));
         }
         return (extraData, removeAfterRun);
     }
 
-    function onRemove(bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
+    function onRemove(IEngine engine, bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
         // On remove, reset the status flag
-        ENGINE.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), 0);
+        engine.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), 0);
     }
 }

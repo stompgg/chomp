@@ -15,12 +15,10 @@ contract Tinderclaws is IAbility, BasicEffect {
     uint256 constant BURN_CHANCE = 3; // 1 in 3 chance
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
-    IEngine immutable ENGINE;
     IEffect immutable BURN_STATUS;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, IEffect _BURN_STATUS, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(IEffect _BURN_STATUS, StatBoosts _STAT_BOOSTS) {
         BURN_STATUS = _BURN_STATUS;
         STAT_BOOSTS = _STAT_BOOSTS;
     }
@@ -29,15 +27,15 @@ contract Tinderclaws is IAbility, BasicEffect {
         return "Tinderclaws";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
         }
-        ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: RoundEnd, AfterMove
@@ -46,18 +44,23 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
-    function onAfterMove(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-        MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
+    function onAfterMove(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
 
         // If resting, remove burn
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            _removeBurnIfPresent(battleKey, targetIndex, monIndex);
+            _removeBurnIfPresent(engine, battleKey, targetIndex, monIndex);
         }
         // If used a move (not switch), 1/3 chance to self-burn
         else if (moveIndex != SWITCH_MOVE_INDEX) {
@@ -65,8 +68,8 @@ contract Tinderclaws is IAbility, BasicEffect {
             rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
             if (rng % BURN_CHANCE == BURN_CHANCE - 1) {
                 // Apply burn to self (if it can be applied)
-                if (BURN_STATUS.shouldApply(battleKey, bytes32(0), targetIndex, monIndex)) {
-                    ENGINE.addEffect(targetIndex, monIndex, BURN_STATUS, bytes32(0));
+                if (BURN_STATUS.shouldApply(engine, battleKey, bytes32(0), targetIndex, monIndex)) {
+                    engine.addEffect(targetIndex, monIndex, BURN_STATUS, bytes32(0));
                 }
             }
         }
@@ -74,12 +77,17 @@ contract Tinderclaws is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-        bool isBurned = _isBurned(battleKey, targetIndex, monIndex);
+    function onRoundEnd(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        bool isBurned = _isBurned(engine, battleKey, targetIndex, monIndex);
         bool hasBoost = uint256(extraData) == 1;
 
         if (isBurned && !hasBoost) {
@@ -90,29 +98,33 @@ contract Tinderclaws is IAbility, BasicEffect {
                 boostPercent: SP_ATTACK_BOOST_PERCENT,
                 boostType: StatBoostType.Multiply
             });
-            STAT_BOOSTS.addStatBoosts(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+            STAT_BOOSTS.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
             return (bytes32(uint256(1)), false);
         } else if (!isBurned && hasBoost) {
             // Remove SpATK boost
-            STAT_BOOSTS.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
+            STAT_BOOSTS.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
             return (bytes32(0), false);
         }
 
         return (extraData, false);
     }
 
-    function _isBurned(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal view returns (bool) {
+    function _isBurned(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
+        internal
+        view
+        returns (bool)
+    {
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-        uint192 monStatusFlag = ENGINE.getGlobalKV(battleKey, keyForMon);
+        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
         return monStatusFlag == uint192(uint160(address(BURN_STATUS)));
     }
 
-    function _removeBurnIfPresent(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
+    function _removeBurnIfPresent(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
         (EffectInstance[] memory effects, uint256[] memory indices) =
-            ENGINE.getEffects(battleKey, targetIndex, monIndex);
+            engine.getEffects(battleKey, targetIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(BURN_STATUS)) {
-                ENGINE.removeEffect(targetIndex, monIndex, indices[i]);
+                engine.removeEffect(targetIndex, monIndex, indices[i]);
                 return;
             }
         }

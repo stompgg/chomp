@@ -54,7 +54,7 @@ contract BetterCPUTest is Test {
         );
         teamRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(engine, typeCalc);
+        attackFactory = new StandardAttackFactory(typeCalc);
     }
 
     function _createMon(Type t, uint32 hp, uint32 attack, uint32 defense) internal pure returns (Mon memory) {

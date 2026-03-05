@@ -18,12 +18,6 @@ contract Baselight is IAbility, BasicEffect {
     uint256 public constant MAX_BASELIGHT_LEVEL = 3;
     uint256 public constant INITIAL_BASELIGHT_LEVEL = 1;
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Baselight";
     }
@@ -32,12 +26,12 @@ contract Baselight is IAbility, BasicEffect {
     /// @return exists Whether the effect exists on this mon
     /// @return effectIndex The index to use with editEffect (only valid if exists)
     /// @return level The current Baselight level (0 if not exists)
-    function _findBaselightEffect(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+    function _findBaselightEffect(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         internal
         view
         returns (bool exists, uint256 effectIndex, uint256 level)
     {
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return (true, indices[i], uint256(effects[i].data));
@@ -46,37 +40,37 @@ contract Baselight is IAbility, BasicEffect {
         return (false, 0, 0);
     }
 
-    function getBaselightLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (uint256) {
-        (,, uint256 level) = _findBaselightEffect(battleKey, playerIndex, monIndex);
+    function getBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (uint256) {
+        (,, uint256 level) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         return level;
     }
 
-    function setBaselightLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 level) public {
+    function setBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 level) public {
         if (level > MAX_BASELIGHT_LEVEL) {
             level = MAX_BASELIGHT_LEVEL;
         }
-        (bool exists, uint256 effectIndex,) = _findBaselightEffect(battleKey, playerIndex, monIndex);
+        (bool exists, uint256 effectIndex,) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
-            ENGINE.editEffect(playerIndex, monIndex, effectIndex, bytes32(level));
+            engine.editEffect(playerIndex, monIndex, effectIndex, bytes32(level));
         }
     }
 
-    function decreaseBaselightLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 amount) public {
-        (bool exists, uint256 effectIndex, uint256 currentLevel) = _findBaselightEffect(battleKey, playerIndex, monIndex);
+    function decreaseBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 amount) public {
+        (bool exists, uint256 effectIndex, uint256 currentLevel) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
             uint256 newLevel = amount >= currentLevel ? 0 : currentLevel - amount;
-            ENGINE.editEffect(playerIndex, monIndex, effectIndex, bytes32(newLevel));
+            engine.editEffect(playerIndex, monIndex, effectIndex, bytes32(newLevel));
         }
     }
 
     // IAbility implementation - called when the mon switches in
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
-        (bool exists,,) = _findBaselightEffect(battleKey, playerIndex, monIndex);
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+        (bool exists,,) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
             return;
         }
         // First switch-in: add effect with initial Baselight level stored in extraData
-        ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(uint256(INITIAL_BASELIGHT_LEVEL)));
+        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(uint256(INITIAL_BASELIGHT_LEVEL)));
     }
 
     // Steps: RoundEnd
@@ -84,7 +78,7 @@ contract Baselight is IAbility, BasicEffect {
         return 0x04;
     }
 
-    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override

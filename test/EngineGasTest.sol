@@ -96,11 +96,11 @@ contract EngineGasTest is Test, BattleHelper {
         mon.stats.specialAttack = 10;
 
         mon.moves = new IMoveSet[](4);
-        StatBoosts statBoosts = new StatBoosts(engine);
-        IMoveSet burnMove = new EffectAttack(engine, new BurnStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(engine, new FrostbiteStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet statBoostMove = new StatBoostsMove(engine, statBoosts);
-        IMoveSet damageMove = new CustomAttack(engine, ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
+        StatBoosts statBoosts = new StatBoosts();
+        IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
+        IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
         mon.moves[0] = burnMove;
         mon.moves[1] = frostbiteMove;
         mon.moves[2] = statBoostMove;
@@ -115,7 +115,7 @@ contract EngineGasTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: mon.moves.length, TIMEOUT_DURATION: 10})
         );
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
@@ -350,7 +350,7 @@ contract EngineGasTest is Test, BattleHelper {
         });
 
         // Simple high-damage move to end battle quickly (200 power, 100% accuracy, 0 stamina cost)
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(engine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
         mon.moves[0] = damageMove;
         mon.moves[1] = damageMove;
         mon.moves[2] = damageMove;
@@ -422,11 +422,11 @@ contract EngineGasTest is Test, BattleHelper {
         });
 
         // Move that applies a status effect to opponent (no damage)
-        SingleInstanceEffect testEffect = new SingleInstanceEffect(engine);
-        EffectAttack effectMove = new EffectAttack(engine, IEffect(address(testEffect)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 3}));
+        SingleInstanceEffect testEffect = new SingleInstanceEffect();
+        EffectAttack effectMove = new EffectAttack(IEffect(address(testEffect)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 3}));
 
         // Damage move - high power to guarantee KO
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(engine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 500, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 500, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
 
         mon.moves[0] = effectMove;
         mon.moves[1] = damageMove;
@@ -444,7 +444,7 @@ contract EngineGasTest is Test, BattleHelper {
         );
 
         // Use ruleset with StaminaRegen effect
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         IRuleset rulesetWithEffect = IRuleset(address(new DefaultRuleset(engine, effects)));
@@ -535,7 +535,7 @@ contract EngineGasTest is Test, BattleHelper {
             moves: new IMoveSet[](4),
             ability: IAbility(address(0))
         });
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(inlineEngine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
         mon.moves[0] = damageMove;
         mon.moves[1] = damageMove;
         mon.moves[2] = damageMove;

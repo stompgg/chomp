@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../Constants.sol";
+import {IEngine} from "../IEngine.sol";
 import "../moves/IMoveSet.sol";
 
 /// @dev Parameters for timeout validation (allows pure function)
@@ -36,6 +37,7 @@ library ValidatorLogic {
     /// @param staminaDelta The mon's current stamina delta (or CLEARED_MON_STATE_SENTINEL if unset)
     /// @return valid Whether the move selection is valid
     function validateSpecificMoveSelection(
+        IEngine engine,
         bytes32 battleKey,
         IMoveSet moveSet,
         uint256 playerIndex,
@@ -49,12 +51,12 @@ library ValidatorLogic {
         uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
 
         // Check stamina cost
-        if (moveSet.stamina(battleKey, playerIndex, activeMonIndex) > currentStamina) {
+        if (moveSet.stamina(engine, battleKey, playerIndex, activeMonIndex) > currentStamina) {
             return false;
         }
 
         // Check move's own validation
-        if (!moveSet.isValidTarget(battleKey, extraData)) {
+        if (!moveSet.isValidTarget(engine, battleKey, extraData)) {
             return false;
         }
 

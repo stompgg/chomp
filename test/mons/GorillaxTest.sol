@@ -42,7 +42,7 @@ contract GorillaxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -50,7 +50,7 @@ contract GorillaxTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        Angery angery = new Angery(IEngine(address(engine)));
+        Angery angery = new Angery();
 
         // Create a team with a mon that has Angery ability
         IMoveSet[] memory moves = new IMoveSet[](1);
@@ -118,7 +118,7 @@ contract GorillaxTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        RockPull rockPull = new RockPull(engine, typeCalc);
+        RockPull rockPull = new RockPull(typeCalc);
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = rockPull;
 

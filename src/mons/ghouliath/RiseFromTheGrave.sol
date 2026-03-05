@@ -12,31 +12,25 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     uint64 public constant REVIVAL_DELAY = 3;
     uint64 constant MON_EFFECT_IDENTIFIER = 17;
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     // IAbility implementation
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Rise From The Grave";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon (can only be set once)
         bytes32 monEffectId = keccak256(abi.encode(playerIndex, monIndex, name()));
-        if (ENGINE.getGlobalKV(battleKey, monEffectId) != 0) {
+        if (engine.getGlobalKV(battleKey, monEffectId) != 0) {
             return;
         }
         // Otherwise, add this effect to the mon when it switches in
         else {
-            ENGINE.setGlobalKV(monEffectId, 1);
+            engine.setGlobalKV(monEffectId, 1);
             uint64 v1 = MON_EFFECT_IDENTIFIER; // turns left, or sentinel value
             uint64 v2 = uint64(playerIndex) & 0x3F; // player index (masked to 6 bits)
             uint64 v3 = uint64(monIndex) & 0x3F; // mon index (masked to 6 bits)
             uint256 packedValue = (v1 << 12) | (v2 << 6) | v3;
-            ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(packedValue));
+            engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(packedValue));
         }
     }
 
@@ -46,7 +40,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         return 0x44;
     }
 
-    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -57,7 +51,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         */
         // If the mon is KO'd, add this effect to the global effects list and remove the mon effect
         if (
-            ENGINE.getMonStateForBattle(
+            engine.getMonStateForBattle(
                     battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                 ) == 1
         ) {
@@ -65,14 +59,14 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
             uint64 v2 = uint64(targetIndex) & 0x3F; // player index (masked to 6 bits)
             uint64 v3 = uint64(monIndex) & 0x3F; // mon index (masked to 6 bits)
             uint256 packedValue = (v1 << 12) | (v2 << 6) | v3;
-            ENGINE.addEffect(2, targetIndex, IEffect(address(this)), bytes32(packedValue));
+            engine.addEffect(2, targetIndex, IEffect(address(this)), bytes32(packedValue));
             return (extraData, true);
         }
         return (extraData, false);
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -90,11 +84,11 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         // Otherwise, we are applied as a global effect and we should check if we should revive the mon
         else if (turnsLeft == 1) {
             // Revive the mon and set HP to 1
-            ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.IsKnockedOut, 0);
-            int32 currentDamage = ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
-            uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            engine.updateMonState(playerIndex, monIndex, MonStateIndexName.IsKnockedOut, 0);
+            int32 currentDamage = engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
             int32 hpShiftAmount = 1 - currentDamage - int32(maxHp);
-            ENGINE.updateMonState(playerIndex, monIndex, MonStateIndexName.Hp, hpShiftAmount);
+            engine.updateMonState(playerIndex, monIndex, MonStateIndexName.Hp, hpShiftAmount);
 
             // Clear the effect after running
             return (extraData, true);

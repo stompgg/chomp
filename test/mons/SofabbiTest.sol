@@ -47,7 +47,7 @@ contract SofabbiTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Initialize the CarrotHarvest ability
-        carrotHarvest = new CarrotHarvest(IEngine(address(engine)));
+        carrotHarvest = new CarrotHarvest();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -214,7 +214,7 @@ contract SofabbiTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
 
-        GuestFeature gf = new GuestFeature(engine, calc);
+        GuestFeature gf = new GuestFeature(calc);
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = gf;
 
@@ -331,8 +331,8 @@ contract SofabbiTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
-        StandardAttackFactory attackFactory = new StandardAttackFactory(IEngine(address(engine)), typeCalc);
-        SnackBreak sb = new SnackBreak(engine);
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
+        SnackBreak sb = new SnackBreak();
         StandardAttack bigAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 127,
@@ -422,7 +422,7 @@ contract SofabbiTest is Test, BattleHelper {
     }
 
     function test_gachachacha() public {
-        Gachachacha gacha = new Gachachacha(engine, typeCalc);
+        Gachachacha gacha = new Gachachacha(typeCalc);
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = gacha;
         Mon memory mon = Mon({

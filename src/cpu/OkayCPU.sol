@@ -156,7 +156,7 @@ contract OkayCPU is CPU {
         uint256 validCount = 0;
         uint256 movesLen = moves.length;
         for (uint256 i = 0; i < movesLen; i++) {
-            MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex).moveClass(battleKey);
+            MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex).moveClass(ENGINE, battleKey);
             if (currentMoveClass == class1 || currentMoveClass == class2) {
                 validIndices[validCount++] = uint128(i);
             }
@@ -183,7 +183,7 @@ contract OkayCPU is CPU {
         uint256 indicesLen = validAttackIndices.length;
         for (uint256 i = 0; i < indicesLen; i++) {
             IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, attacks[validAttackIndices[i]].moveIndex);
-            Type moveType = currentMoveSet.moveType(battleKey);
+            Type moveType = currentMoveSet.moveType(ENGINE, battleKey);
             uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(moveType, defenderType1, 2);
             if (defenderType2 != Type.None) {
                 effectiveness = effectiveness * TYPE_CALC.getTypeEffectiveness(moveType, defenderType2, 2);

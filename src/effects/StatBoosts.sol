@@ -30,12 +30,6 @@ contract StatBoosts is BasicEffect {
     uint256 private constant KEY_OFFSET = 80;
     uint256 private constant KEY_MASK = (1 << 168) - 1;
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function name() public pure override returns (string memory) {
         return "Stat Boost";
     }
@@ -47,6 +41,7 @@ contract StatBoosts is BasicEffect {
 
     // Removes all temporary boosts on mon switch out
     function onMonSwitchOut(
+        IEngine engine,
         bytes32 battleKey,
         uint256,
         bytes32 extraData,
@@ -54,17 +49,13 @@ contract StatBoosts is BasicEffect {
         uint256 monIndex,
         uint256,
         uint256
-    )
-        external
-        override
-        returns (bytes32, bool)
-    {
+    ) external override returns (bytes32, bool) {
         // Check if this is a temp boost (isPerm flag is 0)
         bool isPerm = _isPerm(extraData);
         if (!isPerm) {
             // This is a temp boost, remove it and recalculate stats
             // Pass excludeTempBoosts=true since all temp boosts are being removed
-            _recalculateAndApplyStats(battleKey, targetIndex, monIndex, true);
+            _recalculateAndApplyStats(engine, battleKey, targetIndex, monIndex, true);
             return (extraData, true); // Remove this effect
         }
         return (extraData, false);
@@ -92,7 +83,8 @@ contract StatBoosts is BasicEffect {
             uint256 statIndex = _monStateIndexToStatBoostIndex(statBoostsToApply[i].stat);
             uint256 offset = statIndex * 16;
             bool isMultiply = statBoostsToApply[i].boostType == StatBoostType.Multiply;
-            uint256 boostInstance = (uint256(statBoostsToApply[i].boostPercent) << 8) | (1 << 1) | (isMultiply ? 1 : 0);
+            uint256 boostInstance =
+                (uint256(statBoostsToApply[i].boostPercent) << 8) | (1 << 1) | (isMultiply ? 1 : 0);
             packed |= boostInstance << offset;
         }
         return bytes32(packed);
@@ -109,7 +101,13 @@ contract StatBoosts is BasicEffect {
     function _unpackBoostData(bytes32 data)
         internal
         pure
-        returns (bool isPerm, uint168 key, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply)
+        returns (
+            bool isPerm,
+            uint168 key,
+            uint8[5] memory boostPercents,
+            uint8[5] memory boostCounts,
+            bool[5] memory isMultiply
+        )
     {
         uint256 packed = uint256(data);
         isPerm = uint8(packed >> PERM_FLAG_OFFSET) != 0;
@@ -151,7 +149,8 @@ contract StatBoosts is BasicEffect {
     ) internal pure {
         for (uint256 k = 0; k < 5; k++) {
             if (boostCounts[k] == 0) continue;
-            uint256 existingStatValue = (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
+            uint256 existingStatValue =
+                (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
             uint256 scalingFactor = isMultiply[k] ? DENOM + boostPercents[k] : DENOM - boostPercents[k];
             accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCounts[k]);
             numBoostsPerStat[k] += boostCounts[k];
@@ -181,6 +180,7 @@ contract StatBoosts is BasicEffect {
 
     // Apply stat deltas from pre-aggregated boost data (avoids re-iterating effects)
     function _applyStatsFromAggregatedData(
+        IEngine engine,
         bytes32 battleKey,
         uint256 targetIndex,
         uint256 monIndex,
@@ -189,7 +189,7 @@ contract StatBoosts is BasicEffect {
         uint256[5] memory accumulatedNumeratorPerStat
     ) internal {
         bytes32 snapshotKey = _snapshotKey(targetIndex, monIndex);
-        uint192 prevSnapshot = ENGINE.getGlobalKV(battleKey, snapshotKey);
+        uint192 prevSnapshot = engine.getGlobalKV(battleKey, snapshotKey);
         uint32[5] memory oldBoostedStats = _unpackBoostSnapshot(prevSnapshot, baseStats);
 
         // Calculate final values
@@ -206,12 +206,12 @@ contract StatBoosts is BasicEffect {
         for (uint256 i = 0; i < 5; i++) {
             int32 delta = int32(newBoostedStats[i]) - int32(oldBoostedStats[i]);
             if (delta != 0) {
-                ENGINE.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
+                engine.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
             }
         }
 
         // Update snapshot in globalKV
-        ENGINE.setGlobalKV(snapshotKey, _packBoostSnapshot(newBoostedStats));
+        engine.setGlobalKV(snapshotKey, _packBoostSnapshot(newBoostedStats));
     }
 
     // Unpack snapshot, using provided base stats to fill in zeros (avoids redundant ENGINE call)
@@ -250,8 +250,12 @@ contract StatBoosts is BasicEffect {
         return MonStateIndexName(statBoostIndex + 3);
     }
 
-    function _getMonStatSubset(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal view returns (uint32[5] memory stats) {
-        MonStats memory monStats = ENGINE.getMonStatsForBattle(battleKey, playerIndex, monIndex);
+    function _getMonStatSubset(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        internal
+        view
+        returns (uint32[5] memory stats)
+    {
+        MonStats memory monStats = engine.getMonStatsForBattle(battleKey, playerIndex, monIndex);
         stats[0] = monStats.attack;
         stats[1] = monStats.defense;
         stats[2] = monStats.specialAttack;
@@ -261,14 +265,20 @@ contract StatBoosts is BasicEffect {
 
     // Recalculate stats by iterating through all StatBoosts effects
     // If excludeTempBoosts is true, skip temp boosts (used during onMonSwitchOut when temp boosts are being removed)
-    function _recalculateAndApplyStats(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, bool excludeTempBoosts) internal {
+    function _recalculateAndApplyStats(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 targetIndex,
+        uint256 monIndex,
+        bool excludeTempBoosts
+    ) internal {
         bytes32 snapshotKey = _snapshotKey(targetIndex, monIndex);
-        uint192 prevSnapshot = ENGINE.getGlobalKV(battleKey, snapshotKey);
+        uint192 prevSnapshot = engine.getGlobalKV(battleKey, snapshotKey);
 
-        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, targetIndex, monIndex);
 
         // Get base stats once and pass to _unpackBoostSnapshot to avoid duplicate ENGINE call
-        uint32[5] memory stats = _getMonStatSubset(battleKey, targetIndex, monIndex);
+        uint32[5] memory stats = _getMonStatSubset(engine, battleKey, targetIndex, monIndex);
         uint32[5] memory oldBoostedStats = _unpackBoostSnapshot(prevSnapshot, stats);
         uint32[5] memory newBoostedStats;
         uint32[5] memory numBoostsPerStat;
@@ -277,11 +287,18 @@ contract StatBoosts is BasicEffect {
         // Iterate through all StatBoosts effects and aggregate
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
-                (bool isPerm, , uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
-                    _unpackBoostData(effects[i].data);
+                (
+                    bool isPerm,
+                    ,
+                    uint8[5] memory boostPercents,
+                    uint8[5] memory boostCounts,
+                    bool[5] memory isMultiply
+                ) = _unpackBoostData(effects[i].data);
                 // Skip temp boosts if excludeTempBoosts is true
                 if (excludeTempBoosts && !isPerm) continue;
-                _accumulateBoosts(stats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
+                _accumulateBoosts(
+                    stats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat
+                );
             }
         }
 
@@ -298,12 +315,12 @@ contract StatBoosts is BasicEffect {
         for (uint256 i = 0; i < 5; i++) {
             int32 delta = int32(newBoostedStats[i]) - int32(oldBoostedStats[i]);
             if (delta != 0) {
-                ENGINE.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
+                engine.updateMonState(targetIndex, monIndex, _statBoostIndexToMonStateIndex(i), delta);
             }
         }
 
         // Update snapshot in globalKV (reuse cached snapshotKey)
-        ENGINE.setGlobalKV(snapshotKey, _packBoostSnapshot(newBoostedStats));
+        engine.setGlobalKV(snapshotKey, _packBoostSnapshot(newBoostedStats));
     }
 
     function _mergeExistingAndNewBoosts(
@@ -332,33 +349,38 @@ contract StatBoosts is BasicEffect {
         return (mergedBoostPercents, mergedBoostCounts, mergedIsMultiply);
     }
 
-    function _packBoostDataWithArrays(uint168 key, bool isPerm, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function _packBoostDataWithArrays(
+        uint168 key,
+        bool isPerm,
+        uint8[5] memory boostPercents,
+        uint8[5] memory boostCounts,
+        bool[5] memory isMultiply
+    ) internal pure returns (bytes32) {
         uint256 packed = isPerm ? (uint256(1) << PERM_FLAG_OFFSET) : 0;
         packed |= uint256(key) << KEY_OFFSET;
 
         for (uint256 i = 0; i < 5; i++) {
             uint256 offset = i * 16;
-            uint256 boostInstance = (uint256(boostPercents[i]) << 8) | (uint256(boostCounts[i]) << 1) | (isMultiply[i] ? 1 : 0);
+            uint256 boostInstance =
+                (uint256(boostPercents[i]) << 8) | (uint256(boostCounts[i]) << 1) | (isMultiply[i] ? 1 : 0);
             packed |= boostInstance << offset;
         }
         return bytes32(packed);
     }
 
     function addStatBoosts(
+        IEngine engine,
         uint256 targetIndex,
         uint256 monIndex,
         StatBoostToApply[] memory statBoostsToApply,
         StatBoostFlag boostFlag
     ) public {
         uint168 key = _generateKeyNoSalt(targetIndex, monIndex, msg.sender);
-        _addStatBoostsWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag, key);
+        _addStatBoostsWithKey(engine, targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
     }
 
     function addKeyedStatBoosts(
+        IEngine engine,
         uint256 targetIndex,
         uint256 monIndex,
         StatBoostToApply[] memory statBoostsToApply,
@@ -366,23 +388,23 @@ contract StatBoosts is BasicEffect {
         string memory keyToUse
     ) public {
         uint168 key = _generateKey(targetIndex, monIndex, msg.sender, keyToUse);
-        _addStatBoostsWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag, key);
+        _addStatBoostsWithKey(engine, targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
     }
 
     function _addStatBoostsWithKey(
+        IEngine engine,
         uint256 targetIndex,
         uint256 monIndex,
         StatBoostToApply[] memory statBoostsToApply,
-        StatBoostFlag boostFlag,
+        bool isPerm,
         uint168 key
     ) internal {
-        bool isPerm = boostFlag == StatBoostFlag.Perm;
 
         // Single-pass: find existing boost AND aggregate all OTHER boosts
         // We exclude the matching effect from aggregation so we can add the merged/new version
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
-        uint32[5] memory baseStats = _getMonStatSubset(battleKey, targetIndex, monIndex);
+        bytes32 battleKey = engine.battleKeyForWrite();
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
+        uint32[5] memory baseStats = _getMonStatSubset(engine, battleKey, targetIndex, monIndex);
 
         bool found;
         uint256 foundEffectIndex;
@@ -393,8 +415,13 @@ contract StatBoosts is BasicEffect {
         // Single pass: find matching key AND aggregate all OTHER StatBoost effects
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
-                (bool effIsPerm, uint168 existingKey, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
-                    _unpackBoostData(effects[i].data);
+                (
+                    bool effIsPerm,
+                    uint168 existingKey,
+                    uint8[5] memory boostPercents,
+                    uint8[5] memory boostCounts,
+                    bool[5] memory isMultiply
+                ) = _unpackBoostData(effects[i].data);
 
                 // Check if this is the effect we're searching for
                 if (existingKey == key && effIsPerm == isPerm) {
@@ -406,66 +433,86 @@ contract StatBoosts is BasicEffect {
                 }
 
                 // Aggregate this effect's boosts
-                _accumulateBoosts(baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
+                _accumulateBoosts(
+                    baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat
+                );
             }
         }
 
         // Compute the new/merged boost data and add its contribution to aggregation
-        uint8[5] memory finalPercents;
-        uint8[5] memory finalCounts;
-        bool[5] memory finalIsMultiply;
         bytes32 newData;
+        {
+            uint8[5] memory finalPercents;
+            uint8[5] memory finalCounts;
+            bool[5] memory finalIsMultiply;
 
-        if (found) {
-            // Merge with existing boost
-            (, , uint8[5] memory existingBoostPercents, uint8[5] memory existingBoostCounts, bool[5] memory existingIsMultiply) =
-                _unpackBoostData(existingData);
-            (finalPercents, finalCounts, finalIsMultiply) =
-                _mergeExistingAndNewBoosts(existingBoostPercents, existingBoostCounts, existingIsMultiply, statBoostsToApply);
-            newData = _packBoostDataWithArrays(key, isPerm, finalPercents, finalCounts, finalIsMultiply);
-        } else {
-            // Pack new boost data and extract its components for aggregation
-            newData = _packBoostData(key, isPerm, statBoostsToApply);
-            (, , finalPercents, finalCounts, finalIsMultiply) = _unpackBoostData(newData);
+            if (found) {
+                // Merge with existing boost
+                (
+                    ,
+                    ,
+                    uint8[5] memory existingBoostPercents,
+                    uint8[5] memory existingBoostCounts,
+                    bool[5] memory existingIsMultiply
+                ) = _unpackBoostData(existingData);
+                (finalPercents, finalCounts, finalIsMultiply) = _mergeExistingAndNewBoosts(
+                    existingBoostPercents, existingBoostCounts, existingIsMultiply, statBoostsToApply
+                );
+                newData = _packBoostDataWithArrays(key, isPerm, finalPercents, finalCounts, finalIsMultiply);
+            } else {
+                // Pack new boost data and extract its components for aggregation
+                newData = _packBoostData(key, isPerm, statBoostsToApply);
+                (, , finalPercents, finalCounts, finalIsMultiply) = _unpackBoostData(newData);
+            }
+
+            // Add the new/merged boost's contribution to aggregation
+            _accumulateBoosts(
+                baseStats, finalPercents, finalCounts, finalIsMultiply, numBoostsPerStat, accumulatedNumeratorPerStat
+            );
         }
 
-        // Add the new/merged boost's contribution to aggregation
-        _accumulateBoosts(baseStats, finalPercents, finalCounts, finalIsMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
-
         // Update effect storage
-        ENGINE.setUpstreamCaller(msg.sender);
+        engine.setUpstreamCaller(msg.sender);
         if (found) {
-            ENGINE.editEffect(targetIndex, monIndex, foundEffectIndex, newData);
+            engine.editEffect(targetIndex, monIndex, foundEffectIndex, newData);
         } else {
-            ENGINE.addEffect(targetIndex, monIndex, IEffect(address(this)), newData);
+            engine.addEffect(targetIndex, monIndex, IEffect(address(this)), newData);
         }
 
         // Apply stats using already-computed aggregation (no second iteration needed)
-        _applyStatsFromAggregatedData(battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatsFromAggregatedData(
+            engine, battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
+        );
     }
 
-    function removeStatBoosts(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) public {
+    function removeStatBoosts(IEngine engine, uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) public {
         uint168 key = _generateKeyNoSalt(targetIndex, monIndex, msg.sender);
-        _removeStatBoostsWithKey(targetIndex, monIndex, key, boostFlag);
+        _removeStatBoostsWithKey(engine, targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
     }
 
     function removeKeyedStatBoosts(
+        IEngine engine,
         uint256 targetIndex,
         uint256 monIndex,
         StatBoostFlag boostFlag,
         string memory stringToUse
     ) public {
         uint168 key = _generateKey(targetIndex, monIndex, msg.sender, stringToUse);
-        _removeStatBoostsWithKey(targetIndex, monIndex, key, boostFlag);
+        _removeStatBoostsWithKey(engine, targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
     }
 
-    function _removeStatBoostsWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, StatBoostFlag boostFlag) internal {
-        bool isPerm = boostFlag == StatBoostFlag.Perm;
+    function _removeStatBoostsWithKey(
+        IEngine engine,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint168 key,
+        bool isPerm
+    ) internal {
 
         // Single-pass: find existing boost AND aggregate all OTHER boosts (excluding the one to remove)
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
-        uint32[5] memory baseStats = _getMonStatSubset(battleKey, targetIndex, monIndex);
+        bytes32 battleKey = engine.battleKeyForWrite();
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
+        uint32[5] memory baseStats = _getMonStatSubset(engine, battleKey, targetIndex, monIndex);
 
         bool found;
         uint256 foundEffectIndex;
@@ -475,8 +522,13 @@ contract StatBoosts is BasicEffect {
         // Single pass: find matching key AND aggregate all OTHER StatBoost effects
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
-                (bool effIsPerm, uint168 existingKey, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMultiply) =
-                    _unpackBoostData(effects[i].data);
+                (
+                    bool effIsPerm,
+                    uint168 existingKey,
+                    uint8[5] memory boostPercents,
+                    uint8[5] memory boostCounts,
+                    bool[5] memory isMultiply
+                ) = _unpackBoostData(effects[i].data);
 
                 // Check if this is the effect we're removing
                 if (existingKey == key && effIsPerm == isPerm) {
@@ -487,25 +539,30 @@ contract StatBoosts is BasicEffect {
                 }
 
                 // Aggregate this effect's boosts
-                _accumulateBoosts(baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat);
+                _accumulateBoosts(
+                    baseStats, boostPercents, boostCounts, isMultiply, numBoostsPerStat, accumulatedNumeratorPerStat
+                );
             }
         }
 
         if (found) {
             // Remove the effect
-            ENGINE.removeEffect(targetIndex, monIndex, foundEffectIndex);
+            engine.removeEffect(targetIndex, monIndex, foundEffectIndex);
             // Apply stats using already-computed aggregation (no second iteration needed)
-            _applyStatsFromAggregatedData(battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+            _applyStatsFromAggregatedData(
+                engine, battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
+            );
         }
     }
 
     /// @notice Clears all stat boosts for a mon and resets stats to base values
+    /// @param engine The engine instance
     /// @param targetIndex The player index
     /// @param monIndex The mon index
-    function clearAllBoostsForMon(uint256 targetIndex, uint256 monIndex) external {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
-        uint32[5] memory baseStats = _getMonStatSubset(battleKey, targetIndex, monIndex);
+    function clearAllBoostsForMon(IEngine engine, uint256 targetIndex, uint256 monIndex) external {
+        bytes32 battleKey = engine.battleKeyForWrite();
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
+        uint32[5] memory baseStats = _getMonStatSubset(engine, battleKey, targetIndex, monIndex);
 
         // Single pass: collect indices to remove in reverse order
         // We iterate forward but store in reverse to enable proper removal
@@ -513,7 +570,7 @@ contract StatBoosts is BasicEffect {
         for (uint256 i = effects.length; i > 0; i--) {
             if (address(effects[i - 1].effect) == address(this)) {
                 // Remove immediately while iterating in reverse (avoids index shifting)
-                ENGINE.removeEffect(targetIndex, monIndex, indices[i - 1]);
+                engine.removeEffect(targetIndex, monIndex, indices[i - 1]);
                 removeCount++;
             }
         }
@@ -525,6 +582,8 @@ contract StatBoosts is BasicEffect {
         // Reset stats to base values by applying with empty aggregation
         uint32[5] memory numBoostsPerStat;
         uint256[5] memory accumulatedNumeratorPerStat;
-        _applyStatsFromAggregatedData(battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatsFromAggregatedData(
+            engine, battleKey, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
+        );
     }
 }

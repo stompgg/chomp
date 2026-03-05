@@ -15,11 +15,9 @@ contract Initialize is IMoveSet, BasicEffect {
     uint8 public constant ATTACK_BUFF_PERCENT = 50;
     uint8 public constant SP_ATTACK_BUFF_PERCENT = 50;
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -32,6 +30,7 @@ contract Initialize is IMoveSet, BasicEffect {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -40,20 +39,20 @@ contract Initialize is IMoveSet, BasicEffect {
         uint256
     ) external {
         // Check if global KV is set
-        uint192 flag = ENGINE.getGlobalKV(battleKey, _initializeKey(attackerPlayerIndex, attackerMonIndex));
+        uint192 flag = engine.getGlobalKV(battleKey, _initializeKey(attackerPlayerIndex, attackerMonIndex));
         if (flag == 0) {
             // Apply the buffs
-            _applyBuff(attackerPlayerIndex, attackerMonIndex);
+            _applyBuff(engine, attackerPlayerIndex, attackerMonIndex);
 
             // Apply effect globally
-            ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(attackerPlayerIndex, attackerMonIndex));
+            engine.addEffect(2, attackerPlayerIndex, this, _encodeState(attackerPlayerIndex, attackerMonIndex));
             // Set global KV to prevent this move doing anything until Inutia swaps out
-            ENGINE.setGlobalKV(_initializeKey(attackerPlayerIndex, attackerMonIndex), 1);
+            engine.setGlobalKV(_initializeKey(attackerPlayerIndex, attackerMonIndex), 1);
         }
         // Otherwise we don't do anything
     }
 
-    function _applyBuff(uint256 playerIndex, uint256 monIndex) internal {
+    function _applyBuff(IEngine engine, uint256 playerIndex, uint256 monIndex) internal {
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.SpecialAttack,
@@ -65,26 +64,26 @@ contract Initialize is IMoveSet, BasicEffect {
             boostPercent: ATTACK_BUFF_PERCENT,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Mythic;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -105,7 +104,7 @@ contract Initialize is IMoveSet, BasicEffect {
         monIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onMonSwitchOut(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -113,12 +112,12 @@ contract Initialize is IMoveSet, BasicEffect {
         // Clear the initialize lock, but do not remove effect
         (uint256 attackerPlayerIndex, uint256 attackingMonIndex) = _decodeState(extraData);
         if ((attackerPlayerIndex == targetIndex) && (attackingMonIndex == monIndex)) {
-            ENGINE.setGlobalKV(_initializeKey(attackerPlayerIndex, attackingMonIndex), 0);
+            engine.setGlobalKV(_initializeKey(attackerPlayerIndex, attackingMonIndex), 0);
         }
         return (extraData, false);
     }
 
-    function onMonSwitchIn(bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onMonSwitchIn(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -126,7 +125,7 @@ contract Initialize is IMoveSet, BasicEffect {
         (uint256 attackerPlayerIndex,) = _decodeState(extraData);
         if (attackerPlayerIndex == targetIndex) {
             // Give the buff to the next mon
-            _applyBuff(attackerPlayerIndex, monIndex);
+            _applyBuff(engine, attackerPlayerIndex, monIndex);
 
             // We remove the effect from global tracking
             return (extraData, true);

@@ -26,12 +26,10 @@ contract UnboundedStrike is IMoveSet {
     uint32 public constant EMPOWERED_STAMINA = 1;
     uint256 public constant REQUIRED_STACKS = 3;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
     Baselight immutable BASELIGHT;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, Baselight _BASELIGHT) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR, Baselight _BASELIGHT) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
         BASELIGHT = _BASELIGHT;
     }
@@ -41,6 +39,7 @@ contract UnboundedStrike is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -48,54 +47,54 @@ contract UnboundedStrike is IMoveSet {
         uint240,
         uint256 rng
     ) external {
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
 
         uint32 power;
         if (baselightLevel >= REQUIRED_STACKS) {
             // Empowered version: consume all 3 stacks
             power = EMPOWERED_POWER;
-            BASELIGHT.setBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex, 0);
+            BASELIGHT.setBaselightLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex, 0);
         } else {
             // Normal version: no stacks consumed
             power = BASE_POWER;
         }
 
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
             power,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
-            moveType(battleKey),
-            moveClass(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
             rng,
             DEFAULT_CRIT_RATE
         );
     }
 
-    function stamina(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) external view returns (uint32) {
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, monIndex);
+    function stamina(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) external view returns (uint32) {
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(engine, battleKey, attackerPlayerIndex, monIndex);
         if (baselightLevel >= REQUIRED_STACKS) {
             return EMPOWERED_STAMINA;
         }
         return BASE_STAMINA;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Air;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

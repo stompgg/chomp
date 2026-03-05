@@ -18,11 +18,9 @@ contract ChainExpansion is IMoveSet, BasicEffect {
     int32 public constant DAMAGE_2_DENOM = 8;
     int32 public constant DAMAGE_3_DENOM = 4;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALC;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALC = _TYPE_CALCULATOR;
     }
 
@@ -34,35 +32,35 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
         // Check if the ability is already applied globally
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, 2, 2);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
         }
         // Otherwise, add this effect globally
-        ENGINE.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
+        engine.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Mythic;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -83,7 +81,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         playerIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchIn(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -92,24 +90,24 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         // If it's a friendly mon, then we heal (flat 1/8 of max HP)
         if (targetIndex == ownerIndex) {
             int32 amtToHeal =
-                int32(ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / HEAL_DENOM;
-            int32 damageReceived = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / HEAL_DENOM;
+            int32 damageReceived = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
             // Prevent overhealing
             if (amtToHeal > (-1 * damageReceived)) {
                 amtToHeal = -1 * damageReceived;
             }
-            ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, amtToHeal);
+            engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, amtToHeal);
         }
         // Otherwise, we deal damage (depending on type effectiveness)
         else {
             Type defenderT1 =
-                Type(ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Type1));
+                Type(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Type1));
             Type defenderT2 =
-                Type(ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Type2));
-            uint256 m1 = TYPE_CALC.getTypeEffectiveness(moveType(battleKey), defenderT1, 2);
+                Type(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Type2));
+            uint256 m1 = TYPE_CALC.getTypeEffectiveness(moveType(engine, battleKey), defenderT1, 2);
             uint256 m2 = 2;
             if (defenderT2 != Type.None) {
-                m2 = TYPE_CALC.getTypeEffectiveness(moveType(battleKey), defenderT2, 2);
+                m2 = TYPE_CALC.getTypeEffectiveness(moveType(engine, battleKey), defenderT2, 2);
             }
             uint256 scale = m1 * m2;
             // Default value should be 4
@@ -122,8 +120,8 @@ contract ChainExpansion is IMoveSet, BasicEffect {
                 damageDenom = DAMAGE_3_DENOM;
             }
             int32 damageToDeal =
-                int32(ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / damageDenom;
-            ENGINE.dealDamage(targetIndex, monIndex, damageToDeal);
+                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / damageDenom;
+            engine.dealDamage(targetIndex, monIndex, damageToDeal);
         }
         if (chargesLeft == 1) {
             return (bytes32(0), true);

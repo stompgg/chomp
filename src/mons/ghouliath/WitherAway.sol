@@ -13,10 +13,9 @@ import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract WitherAway is StandardAttack {
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR, IEffect PANIC_STATUS)
+    constructor(ITypeCalculator TYPE_CALCULATOR, IEffect PANIC_STATUS)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Wither Away",
@@ -35,6 +34,7 @@ contract WitherAway is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -43,9 +43,9 @@ contract WitherAway is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage and inflict panic
-        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        super.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
 
         // Also inflict panic on self
-        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, effect(battleKey), "");
+        engine.addEffect(attackerPlayerIndex, attackerMonIndex, effect(battleKey), "");
     }
 }

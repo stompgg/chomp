@@ -18,13 +18,11 @@ contract MegaStarBlast is IMoveSet {
     uint32 public constant ZAP_ACCURACY = 30;
     uint32 public constant BASE_POWER = 150;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
     IEffect immutable ZAP_STATUS;
     IEffect immutable OVERCLOCK;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, IEffect _ZAP_STATUS, IEffect _OVERCLOCK) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR, IEffect _ZAP_STATUS, IEffect _OVERCLOCK) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
         ZAP_STATUS = _ZAP_STATUS;
         OVERCLOCK = _OVERCLOCK;
@@ -34,9 +32,9 @@ contract MegaStarBlast is IMoveSet {
         return "Mega Star Blast";
     }
 
-    function _checkForOverclock(bytes32 battleKey) internal view returns (int32) {
+    function _checkForOverclock(IEngine engine, bytes32 battleKey) internal view returns (int32) {
         // Check all global effects to see if Overclock is active
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, 2, 2);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i; i < effects.length; i++) {
             if (address(effects[i].effect) == address(OVERCLOCK)) {
                 return int32(int256(indices[i]));
@@ -46,6 +44,7 @@ contract MegaStarBlast is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -55,24 +54,24 @@ contract MegaStarBlast is IMoveSet {
     ) external {
         // Check if Overclock is active
         uint32 acc = BASE_ACCURACY;
-        int32 overclockIndex = _checkForOverclock(battleKey);
+        int32 overclockIndex = _checkForOverclock(engine, battleKey);
         if (overclockIndex >= 0) {
             // Remove Overclock
-            ENGINE.removeEffect(2, 2, uint256(uint32(overclockIndex)));
+            engine.removeEffect(2, 2, uint256(uint32(overclockIndex)));
             // Upgrade accuracy
             acc = 100;
         }
         // Deal damage
         (int32 damage,) = AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
             BASE_POWER,
             acc,
             DEFAULT_VOL,
-            moveType(battleKey),
-            moveClass(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
             rng,
             DEFAULT_CRIT_RATE
         );
@@ -81,28 +80,28 @@ contract MegaStarBlast is IMoveSet {
             uint256 rng2 = uint256(keccak256(abi.encode(rng)));
             if (rng2 % 100 < ZAP_ACCURACY) {
                 uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-                ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");
+                engine.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");
             }
         }
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY + 2;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Lightning;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
