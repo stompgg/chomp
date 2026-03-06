@@ -621,6 +621,70 @@ contract EngineGasTest is Test, BattleHelper {
         console.log("========================================");
     }
 
+    /// @notice Verify that inline RNG (address(0) oracle) produces identical battle outcomes to DefaultRandomnessOracle
+    function test_inlineRNGMatchesDefaultOracle() public {
+        // Create a mon with a damage move (outcome depends on RNG for volatility/crit)
+        Mon memory mon = Mon({
+            stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 50, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
+            moves: new IMoveSet[](4),
+            ability: IAbility(address(0))
+        });
+
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 30, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0}))));
+        mon.moves[0] = damageMove;
+        mon.moves[1] = damageMove;
+        mon.moves[2] = damageMove;
+        mon.moves[3] = damageMove;
+
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        IEffect[] memory noEffects = new IEffect[](0);
+        IRuleset simpleRuleset = IRuleset(address(new DefaultRuleset(engine, noEffects)));
+
+        // --- Battle with external DefaultRandomnessOracle ---
+        DefaultValidator validatorExternal = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
+        );
+        bytes32 battleKey1 = _startBattleForEngine(
+            validatorExternal, engine, defaultOracle, defaultRegistry, matchmaker,
+            new IEngineHook[](0), simpleRuleset, address(commitManager)
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _commitRevealExecuteForEngine(engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(engine, commitManager, battleKey1, 0, 0, 0, 0);
+
+        // Get final HP deltas
+        int32 externalP0Hp = engine.getMonStateForBattle(battleKey1, 0, 0, MonStateIndexName.Hp);
+        int32 externalP1Hp = engine.getMonStateForBattle(battleKey1, 1, 0, MonStateIndexName.Hp);
+
+        // --- Battle with inline RNG (address(0) oracle) ---
+        // Need a fresh engine to get a separate battle key pair
+        Engine inlineEngine = new Engine(1, 4, 10);
+        DefaultCommitManager inlineCM = new DefaultCommitManager(inlineEngine);
+        DefaultMatchmaker inlineMM = new DefaultMatchmaker(inlineEngine);
+
+        IRuleset inlineRuleset = IRuleset(address(new DefaultRuleset(inlineEngine, noEffects)));
+
+        bytes32 battleKey2 = _startBattleForEngine(
+            IValidator(address(0)), inlineEngine, IRandomnessOracle(address(0)), defaultRegistry, inlineMM,
+            new IEngineHook[](0), inlineRuleset, address(inlineCM)
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _commitRevealExecuteForEngine(inlineEngine, inlineCM, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(inlineEngine, inlineCM, battleKey2, 0, 0, 0, 0);
+
+        // Get final HP deltas
+        int32 inlineP0Hp = inlineEngine.getMonStateForBattle(battleKey2, 0, 0, MonStateIndexName.Hp);
+        int32 inlineP1Hp = inlineEngine.getMonStateForBattle(battleKey2, 1, 0, MonStateIndexName.Hp);
+
+        // Verify identical outcomes
+        assertEq(externalP0Hp, inlineP0Hp, "P0 HP delta should match between inline and external RNG");
+        assertEq(externalP1Hp, inlineP1Hp, "P1 HP delta should match between inline and external RNG");
+    }
+
     // Helper to start battle with a specific engine
     function _startBattleForEngine(
         IValidator validator,

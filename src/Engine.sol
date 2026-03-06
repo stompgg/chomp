@@ -428,7 +428,13 @@ contract Engine is IEngine, MappingAllocator {
         */
         else {
             // Update the temporary RNG to the newest value
-            uint256 rng = config.rngOracle.getRNG(config.p0Salt, config.p1Salt);
+            // Inline RNG computation when oracle is address(0) to avoid external call
+            uint256 rng;
+            if (address(config.rngOracle) == address(0)) {
+                rng = uint256(keccak256(abi.encode(config.p0Salt, config.p1Salt)));
+            } else {
+                rng = config.rngOracle.getRNG(config.p0Salt, config.p1Salt);
+            }
             tempRNG = rng;
 
             // Calculate the priority and non-priority player indices
@@ -1528,27 +1534,40 @@ contract Engine is IEngine, MappingAllocator {
         if (battle.winnerIndex != 2) {
             return playerSwitchForTurnFlag;
         }
-        // If non-global effect, check if we should still run if mon is KOed
-        if (effectIndex != 2) {
-            bool isMonKOed =
-                _getMonState(config, playerIndex, _unpackActiveMonIndex(battle.activeMonIndex, playerIndex))
-            .isKnockedOut;
-            if (isMonKOed && condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
-                return playerSwitchForTurnFlag;
+
+        // Short-circuit if no effects exist for this target (skip both effects and KO check)
+        bool hasEffects;
+        if (effectIndex == 2) {
+            hasEffects = config.globalEffectsLength > 0;
+        } else {
+            uint256 monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
+
+            // Check if mon is KOed (reuse monIndex we already computed)
+            if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
+                if (_getMonState(config, playerIndex, monIndex).isKnockedOut) {
+                    return playerSwitchForTurnFlag;
+                }
             }
+
+            // Check effect count for this mon
+            uint256 effectCount = (effectIndex == 0)
+                ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+            hasEffects = effectCount > 0;
         }
 
-        // Otherwise, run the effect
-        _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+        if (hasEffects) {
+            // Run the effects
+            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+        }
 
-        // Set Game Over if true, and calculate and return switch for turn flag
+        // Always check for Game Over / KO (effects from prior actions may have caused KOs)
         (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
         return playerSwitchForTurnFlag;
     }
 
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
-        // Use cached storage key if available (during execute), otherwise compute
-        bytes32 storageKey = storageKeyForWrite != bytes32(0) ? storageKeyForWrite : _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         BattleData storage battle = battleData[battleKey];
 
@@ -2008,7 +2027,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (IMoveSet)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         return _getTeamMon(config, playerIndex, monIndex).moves[moveIndex];
     }
@@ -2018,7 +2037,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (MoveDecision memory)
     {
-        BattleConfig storage config = battleConfig[_getStorageKey(battleKey)];
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
         return (playerIndex == 0) ? config.p0Move : config.p1Move;
     }
 
@@ -2034,7 +2053,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (MonStats memory)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         return _getTeamMon(config, playerIndex, monIndex).stats;
     }
@@ -2045,7 +2064,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32) {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
         int32 value;
@@ -2125,7 +2144,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getGlobalKV(bytes32 battleKey, bytes32 key) external view returns (uint192) {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         bytes32 packed = globalKV[storageKey][key];
         // Extract timestamp (upper 64 bits) and value (lower 192 bits)
         uint64 storedTimestamp = uint64(uint256(packed) >> 192);
@@ -2142,7 +2161,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (EffectInstance[] memory, uint256[] memory)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         return _getEffectsForTarget(storageKey, targetIndex, monIndex);
     }
 
@@ -2156,15 +2175,15 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256) {
-        return battleConfig[_getStorageKey(battleKey)].startTimestamp;
+        return battleConfig[_resolveStorageKey(battleKey)].startTimestamp;
     }
 
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
-        return battleConfig[_getStorageKey(battleKey)].lastExecuteTimestamp;
+        return battleConfig[_resolveStorageKey(battleKey)].lastExecuteTimestamp;
     }
 
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
-        return _getKOBitmap(battleConfig[_getStorageKey(battleKey)], playerIndex);
+        return _getKOBitmap(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
     }
 
     function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
@@ -2172,11 +2191,11 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getMoveManager(bytes32 battleKey) external view returns (address) {
-        return battleConfig[_getStorageKey(battleKey)].moveManager;
+        return battleConfig[_resolveStorageKey(battleKey)].moveManager;
     }
 
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory ctx) {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -2194,7 +2213,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory ctx) {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -2214,7 +2233,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (address committer, address revealer, uint64 turnId)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -2237,7 +2256,7 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (DamageCalcContext memory ctx)
     {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -2274,7 +2293,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {
-        bytes32 storageKey = _getStorageKey(battleKey);
+        bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
