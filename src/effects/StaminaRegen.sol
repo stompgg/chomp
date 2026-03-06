@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
+import {ALWAYS_APPLIES_BIT, NO_OP_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
 import "../Enums.sol";
 import {MoveDecision} from "../Structs.sol";
 
@@ -15,7 +15,7 @@ contract StaminaRegen is BasicEffect {
 
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x84;
+        return 0x84 | ALWAYS_APPLIES_BIT;
     }
 
     // No overhealing stamina

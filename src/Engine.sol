@@ -10,6 +10,7 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
+import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 
@@ -252,7 +253,12 @@ contract Engine is IEngine, MappingAllocator {
             if (numEffects > 0) {
                 for (uint256 i = 0; i < numEffects;) {
                     config.globalEffects[i].effect = effects[i];
-                    config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
+                    if (address(effects[i]) == address(0)) {
+                        // Inline StaminaRegen: RoundEnd (bit 2) + AfterMove (bit 7) + ALWAYS_APPLIES
+                        config.globalEffects[i].stepsBitmap = 0x84 | ALWAYS_APPLIES_BIT;
+                    } else {
+                        config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
+                    }
                     config.globalEffects[i].data = data[i];
                     unchecked {
                         ++i;
@@ -796,12 +802,20 @@ contract Engine is IEngine, MappingAllocator {
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
-        if (effect.shouldApply(IEngine(address(this)), battleKey, extraData, targetIndex, monIndex)) {
+        // Fetch steps bitmap once (reused for storage and ALWAYS_APPLIES check)
+        uint16 stepsBitmap = effect.getStepsBitmap();
+
+        // Skip external shouldApply() call if ALWAYS_APPLIES_BIT is set
+        bool applies;
+        if ((stepsBitmap & ALWAYS_APPLIES_BIT) != 0) {
+            applies = true;
+        } else {
+            applies = effect.shouldApply(IEngine(address(this)), battleKey, extraData, targetIndex, monIndex);
+        }
+
+        if (applies) {
             bytes32 extraDataToUse = extraData;
             bool removeAfterRun = false;
-
-            // Fetch steps bitmap once from effect (stored as immutable in effect contract)
-            uint16 stepsBitmap = effect.getStepsBitmap();
 
             // Emit event first, then handle side effects
             emit EffectAdd(
@@ -1432,6 +1446,12 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
+        // Inline execution for address(0) effects (StaminaRegen)
+        if (address(effect) == address(0)) {
+            _inlineStaminaRegen(round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            return;
+        }
+
         currentStep = uint256(round);
 
         // Emit event first, then handle side effects (use transient battleKeyForWrite)
@@ -1689,6 +1709,21 @@ contract Engine is IEngine, MappingAllocator {
         returns (Mon storage)
     {
         return playerIndex == 0 ? config.p0Team[monIndex] : config.p1Team[monIndex];
+    }
+
+    function _inlineStaminaRegen(
+        EffectStep round,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex
+    ) private {
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        if (round == EffectStep.RoundEnd) {
+            StaminaRegenLogic.onRoundEnd(config, p0ActiveMonIndex, p1ActiveMonIndex);
+        } else if (round == EffectStep.AfterMove) {
+            StaminaRegenLogic.onAfterMove(config, playerIndex, monIndex);
+        }
     }
 
     function _getMonState(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
