@@ -61,7 +61,7 @@ contract CPUTest is Test {
         typeCalc = new TestTypeCalculator();
         teamRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
-        StandardAttackFactory attackFactory = new StandardAttackFactory(engine, typeCalc);
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
 
         IMoveSet move1 = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -93,8 +93,8 @@ contract CPUTest is Test {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet roundTrip = new RoundTrip(engine, typeCalc);
-        IMoveSet guestFeature = new GuestFeature(engine, typeCalc);
+        IMoveSet roundTrip = new RoundTrip(typeCalc);
+        IMoveSet guestFeature = new GuestFeature(typeCalc);
 
         IMoveSet[] memory boringMoves = new IMoveSet[](2);
         boringMoves[0] = move1;
@@ -466,7 +466,7 @@ contract CPUTest is Test {
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
         IMoveSet[] memory moves = new IMoveSet[](1);
-        TestMoveFactory moveFactory = new TestMoveFactory(engine);
+        TestMoveFactory moveFactory = new TestMoveFactory();
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
         Mon memory mon = _createMon(Type.Fire);
         mon.moves = moves;
@@ -517,7 +517,7 @@ contract CPUTest is Test {
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
         IMoveSet[] memory moves = new IMoveSet[](1);
-        TestMoveFactory moveFactory = new TestMoveFactory(engine);
+        TestMoveFactory moveFactory = new TestMoveFactory();
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
         Mon memory mon = _createMon(Type.Fire);
         mon.stats.stamina = 5;
@@ -576,7 +576,7 @@ contract CPUTest is Test {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
         IMoveSet[] memory moves = new IMoveSet[](2);
-        TestMoveFactory moveFactory = new TestMoveFactory(engine);
+        TestMoveFactory moveFactory = new TestMoveFactory();
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
         moves[1] = moveFactory.createMove(MoveClass.Self, Type.Fire, 1, 0);
         Mon memory mon = _createMon(Type.Fire);
@@ -632,7 +632,7 @@ contract CPUTest is Test {
         // Both teams have 3 moves, one Attack that costs 0 stamina, one Self that costs 1 stamina, and one Other that costs 1 stamina
         Mon[] memory team = new Mon[](1);
         IMoveSet[] memory moves = new IMoveSet[](3);
-        TestMoveFactory moveFactory = new TestMoveFactory(engine);
+        TestMoveFactory moveFactory = new TestMoveFactory();
         moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
         moves[1] = moveFactory.createMove(MoveClass.Special, Type.Fire, 0, 0);
         moves[2] = moveFactory.createMove(MoveClass.Other, Type.Fire, 1, 0);
@@ -689,7 +689,7 @@ contract CPUTest is Test {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
         IMoveSet[] memory moves = new IMoveSet[](2);
-        TestMoveFactory moveFactory = new TestMoveFactory(engine);
+        TestMoveFactory moveFactory = new TestMoveFactory();
         moves[0] = moveFactory.createMove(MoveClass.Self, Type.Fire, 0, 0); 
         moves[1] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1);
         Mon memory mon = _createMon(Type.Fire);

@@ -17,14 +17,12 @@ contract GlobalEffectAttack is IMoveSet {
         uint32 PRIORITY;
     }
 
-    IEngine immutable ENGINE;
     IEffect immutable EFFECT;
     Type immutable TYPE;
     uint32 immutable STAMINA_COST;
     uint32 immutable PRIORITY;
 
-    constructor(IEngine _ENGINE, IEffect _EFFECT, Args memory args) {
-        ENGINE = _ENGINE;
+    constructor(IEffect _EFFECT, Args memory args) {
         EFFECT = _EFFECT;
         TYPE = args.TYPE;
         STAMINA_COST = args.STAMINA_COST;
@@ -35,27 +33,27 @@ contract GlobalEffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(bytes32, uint256, uint256, uint256, uint240, uint256) external {
-        ENGINE.addEffect(2, 0, EFFECT, bytes32(0));
+    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint240, uint256) external {
+        engine.addEffect(2, 0, EFFECT, bytes32(0));
     }
 
-    function priority(bytes32, uint256) external view returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external view returns (uint32) {
         return PRIORITY;
     }
 
-    function stamina(bytes32, uint256, uint256) external view returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external view returns (uint32) {
         return STAMINA_COST;
     }
 
-    function moveType(bytes32) external view returns (Type) {
+    function moveType(IEngine, bytes32) external view returns (Type) {
         return TYPE;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 

@@ -60,10 +60,10 @@ contract VolthareTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        overclock = new Overclock(IEngine(address(engine)), statBoost);
-        preemptiveShock = new PreemptiveShock(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoost = new StatBoosts();
+        overclock = new Overclock(statBoost);
+        preemptiveShock = new PreemptiveShock(ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -146,9 +146,8 @@ contract VolthareTest is Test, BattleHelper {
     function test_megaStarBlast() public {
         // Create moves: one to apply Overclock, one is MegaStarBlast
         DummyStatus zapStatus = new DummyStatus();
-        MegaStarBlast msb = new MegaStarBlast(engine, typeCalc, zapStatus, overclock);
+        MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
-            engine,
             overclock,
             GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
@@ -254,8 +253,8 @@ contract VolthareTest is Test, BattleHelper {
     function test_dualShock() public {
         // Create a team with a mon that knows Dual Shock
         IMoveSet[] memory moves = new IMoveSet[](1);
-        ZapStatus zapStatus = new ZapStatus(engine);
-        DualShock dualShock = new DualShock(engine, typeCalc, zapStatus, overclock);
+        ZapStatus zapStatus = new ZapStatus();
+        DualShock dualShock = new DualShock(typeCalc, zapStatus, overclock);
         moves[0] = IMoveSet(address(dualShock));
 
         // Create a mon with nice round stats

@@ -116,6 +116,7 @@ contract DefaultValidator is IValidator {
             ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
 
         return ValidatorLogic.validateSpecificMoveSelection(
+            ENGINE,
             battleKey,
             moveSet,
             playerIndex,
@@ -203,6 +204,7 @@ contract DefaultValidator is IValidator {
         IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
 
         return ValidatorLogic.validateSpecificMoveSelection(
+            ENGINE,
             battleKey,
             moveSet,
             playerIndex,

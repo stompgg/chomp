@@ -39,12 +39,12 @@ contract TeamsTest is Test {
     }
 
     function test_monRegistryFlow() public {
-        IAbility ability = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility ability = new EffectAbility(IEffect(address(0)));
         IAbility[] memory abilities = new IAbility[](1);
         abilities[0] = ability;
 
         IMoveSet move = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = move;
@@ -92,12 +92,12 @@ contract TeamsTest is Test {
         });
 
         IMoveSet newMove = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 2, PRIORITY: 2})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 2, PRIORITY: 2})
         );
         IMoveSet[] memory newMoves = new IMoveSet[](1);
         newMoves[0] = newMove;
 
-        IAbility newAbility = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility newAbility = new EffectAbility(IEffect(address(0)));
         IAbility[] memory newAbilities = new IAbility[](1);
         newAbilities[0] = newAbility;
 
@@ -135,16 +135,16 @@ contract TeamsTest is Test {
     }
 
     function test_teamRegistryFlow() public {
-        IAbility ability = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility ability = new EffectAbility(IEffect(address(0)));
         IAbility[] memory abilities = new IAbility[](1);
         abilities[0] = ability;
 
         IMoveSet move1 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
 
         IMoveSet move2 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
 
         IMoveSet[] memory moves = new IMoveSet[](2);
@@ -190,14 +190,14 @@ contract TeamsTest is Test {
 
     function test_realTeamFlow() public {
         // Make the same mon 6 times
-        IAbility ability = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility ability = new EffectAbility(IEffect(address(0)));
         IAbility[] memory abilities = new IAbility[](1);
         abilities[0] = ability;
         IMoveSet move1 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet move2 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet[] memory moves = new IMoveSet[](2);
         moves[0] = move1;
@@ -284,14 +284,14 @@ contract TeamsTest is Test {
 
     function test_duplicateTeamFails() public {
         // Make the same mon 6 times
-        IAbility ability = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility ability = new EffectAbility(IEffect(address(0)));
         IAbility[] memory abilities = new IAbility[](1);
         abilities[0] = ability;
         IMoveSet move1 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet move2 = new EffectAttack(
-            IEngine(address(0)), IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            IEffect(address(0)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet[] memory moves = new IMoveSet[](2);
         moves[0] = move1;
@@ -330,12 +330,12 @@ contract TeamsTest is Test {
     }
 
     function test_createUniqueTeam() public {
-        IAbility ability = new EffectAbility(IEngine(address(0)), IEffect(address(0)));
+        IAbility ability = new EffectAbility(IEffect(address(0)));
         IAbility[] memory abilities = new IAbility[](1);
         abilities[0] = ability;
 
         StandardAttackFactory attackFactory =
-            new StandardAttackFactory(IEngine(address(0)), ITypeCalculator(address(0)));
+            new StandardAttackFactory(ITypeCalculator(address(0)));
 
         IMoveSet[] memory moves0 = new IMoveSet[](4);
 

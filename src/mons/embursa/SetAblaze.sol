@@ -14,10 +14,9 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
 
 contract SetAblaze is StandardAttack {
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR, IEffect BURN_STATUS)
+    constructor(ITypeCalculator TYPE_CALCULATOR, IEffect BURN_STATUS)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Set Ablaze",
@@ -36,6 +35,7 @@ contract SetAblaze is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -43,14 +43,14 @@ contract SetAblaze is StandardAttack {
         uint240 args,
         uint256 rng
     ) public override {
-        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, args, rng);
+        super.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, args, rng);
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {
-            HeatBeaconLib._clearPriorityBoost(ENGINE, attackerPlayerIndex);
+        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+            HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
 
-    function priority(bytes32, uint256 attackerPlayerIndex) public view override returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view override returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
 }

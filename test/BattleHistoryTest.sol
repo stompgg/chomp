@@ -52,7 +52,7 @@ contract BattleHistoryTest is Test, BattleHelper {
 
         // Create a simple attack that deals 1 damage (enough to KO a mon with 1 HP)
         simpleAttack = new CustomAttack(
-            engine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
 
         // Setup matchmakers for all players

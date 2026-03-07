@@ -133,23 +133,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new EternalGrudge(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[0] = address(new EternalGrudge(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
             deployedContracts[0] = DeployData({name: "Eternal Grudge", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new InfernalFlame(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS"))));
+            addrs[1] = address(new InfernalFlame(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS"))));
             deployedContracts[1] = DeployData({name: "Infernal Flame", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new WitherAway(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
+            addrs[2] = address(new WitherAway(ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
             deployedContracts[2] = DeployData({name: "Wither Away", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Osteoporosis(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new Osteoporosis(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Osteoporosis", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new RiseFromTheGrave(IEngine(engine)));
+            addrs[4] = address(new RiseFromTheGrave());
             deployedContracts[4] = DeployData({name: "Rise From The Grave", contractAddress: addrs[4]});
         }
 
@@ -193,23 +193,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new ChainExpansion(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[0] = address(new ChainExpansion(ITypeCalculator(typecalculator)));
             deployedContracts[0] = DeployData({name: "Chain Expansion", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new Initialize(IEngine(engine), StatBoosts(statboosts)));
+            addrs[1] = address(new Initialize(StatBoosts(statboosts)));
             deployedContracts[1] = DeployData({name: "Initialize", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new BigBite(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[2] = address(new BigBite(ITypeCalculator(typecalculator)));
             deployedContracts[2] = DeployData({name: "Big Bite", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new HitAndDip(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new HitAndDip(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Hit And Dip", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Interweaving(IEngine(engine), StatBoosts(statboosts)));
+            addrs[4] = address(new Interweaving(StatBoosts(statboosts)));
             deployedContracts[4] = DeployData({name: "Interweaving", contractAddress: addrs[4]});
         }
 
@@ -253,23 +253,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new TripleThink(IEngine(engine), StatBoosts(statboosts)));
+            addrs[0] = address(new TripleThink(StatBoosts(statboosts)));
             deployedContracts[0] = DeployData({name: "Triple Think", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new FederalInvestigation(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new FederalInvestigation(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Federal Investigation", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new NegativeThoughts(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
+            addrs[2] = address(new NegativeThoughts(ITypeCalculator(typecalculator), IEffect(vm.envAddress("PANIC_STATUS"))));
             deployedContracts[2] = DeployData({name: "Negative Thoughts", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new InfiniteLove(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("SLEEP_STATUS"))));
+            addrs[3] = address(new InfiniteLove(ITypeCalculator(typecalculator), IEffect(vm.envAddress("SLEEP_STATUS"))));
             deployedContracts[3] = DeployData({name: "Infinite Love", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new ActusReus(IEngine(engine), StatBoosts(statboosts)));
+            addrs[4] = address(new ActusReus(StatBoosts(statboosts)));
             deployedContracts[4] = DeployData({name: "Actus Reus", contractAddress: addrs[4]});
         }
 
@@ -313,23 +313,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new Baselight(IEngine(engine)));
+            addrs[0] = address(new Baselight());
             deployedContracts[0] = DeployData({name: "Baselight", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new UnboundedStrike(IEngine(engine), ITypeCalculator(typecalculator), Baselight(addrs[0])));
+            addrs[1] = address(new UnboundedStrike(ITypeCalculator(typecalculator), Baselight(addrs[0])));
             deployedContracts[1] = DeployData({name: "Unbounded Strike", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new Loop(IEngine(engine), Baselight(addrs[0]), StatBoosts(statboosts)));
+            addrs[2] = address(new Loop(Baselight(addrs[0]), StatBoosts(statboosts)));
             deployedContracts[2] = DeployData({name: "Loop", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Brightback(IEngine(engine), ITypeCalculator(typecalculator), Baselight(addrs[0])));
+            addrs[3] = address(new Brightback(ITypeCalculator(typecalculator), Baselight(addrs[0])));
             deployedContracts[3] = DeployData({name: "Brightback", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Renormalize(IEngine(engine), Baselight(addrs[0]), StatBoosts(statboosts), Loop(addrs[2])));
+            addrs[4] = address(new Renormalize(Baselight(addrs[0]), StatBoosts(statboosts), Loop(addrs[2])));
             deployedContracts[4] = DeployData({name: "Renormalize", contractAddress: addrs[4]});
         }
 
@@ -372,23 +372,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new RockPull(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[0] = address(new RockPull(ITypeCalculator(typecalculator)));
             deployedContracts[0] = DeployData({name: "Rock Pull", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new PoundGround(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new PoundGround(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Pound Ground", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new Blow(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[2] = address(new Blow(ITypeCalculator(typecalculator)));
             deployedContracts[2] = DeployData({name: "Blow", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new ThrowPebble(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new ThrowPebble(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Throw Pebble", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Angery(IEngine(engine)));
+            addrs[4] = address(new Angery());
             deployedContracts[4] = DeployData({name: "Angery", contractAddress: addrs[4]});
         }
 
@@ -431,23 +431,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new Gachachacha(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[0] = address(new Gachachacha(ITypeCalculator(typecalculator)));
             deployedContracts[0] = DeployData({name: "Gachachacha", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new GuestFeature(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new GuestFeature(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Guest Feature", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new UnexpectedCarrot(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[2] = address(new UnexpectedCarrot(ITypeCalculator(typecalculator)));
             deployedContracts[2] = DeployData({name: "Unexpected Carrot", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new SnackBreak(IEngine(engine)));
+            addrs[3] = address(new SnackBreak());
             deployedContracts[3] = DeployData({name: "Snack Break", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new CarrotHarvest(IEngine(engine)));
+            addrs[4] = address(new CarrotHarvest());
             deployedContracts[4] = DeployData({name: "Carrot Harvest", contractAddress: addrs[4]});
         }
 
@@ -491,23 +491,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new ChillOut(IEngine(engine), ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
+            addrs[0] = address(new ChillOut(ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
             deployedContracts[0] = DeployData({name: "Chill Out", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new Deadlift(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[1] = address(new Deadlift(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
             deployedContracts[1] = DeployData({name: "Deadlift", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new DeepFreeze(IEngine(engine), ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
+            addrs[2] = address(new DeepFreeze(ITypeCalculator(typecalculator), IEffect(frostbitestatus)));
             deployedContracts[2] = DeployData({name: "Deep Freeze", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new PistolSquat(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new PistolSquat(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Pistol Squat", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new PostWorkout(IEngine(engine)));
+            addrs[4] = address(new PostWorkout());
             deployedContracts[4] = DeployData({name: "Post-Workout", contractAddress: addrs[4]});
         }
 
@@ -552,23 +552,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new HoneyBribe(IEngine(engine), StatBoosts(statboosts)));
+            addrs[0] = address(new HoneyBribe(StatBoosts(statboosts)));
             deployedContracts[0] = DeployData({name: "Honey Bribe", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new SetAblaze(IEngine(engine), ITypeCalculator(typecalculator), IEffect(burnstatus)));
+            addrs[1] = address(new SetAblaze(ITypeCalculator(typecalculator), IEffect(burnstatus)));
             deployedContracts[1] = DeployData({name: "Set Ablaze", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new HeatBeacon(IEngine(engine), IEffect(burnstatus)));
+            addrs[2] = address(new HeatBeacon(IEffect(burnstatus)));
             deployedContracts[2] = DeployData({name: "Heat Beacon", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Q5(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new Q5(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Q5", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Tinderclaws(IEngine(engine), IEffect(burnstatus), StatBoosts(statboosts)));
+            addrs[4] = address(new Tinderclaws(IEffect(burnstatus), StatBoosts(statboosts)));
             deployedContracts[4] = DeployData({name: "Tinderclaws", contractAddress: addrs[4]});
         }
 
@@ -612,23 +612,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new Electrocute(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus)));
+            addrs[0] = address(new Electrocute(ITypeCalculator(typecalculator), IEffect(zapstatus)));
             deployedContracts[0] = DeployData({name: "Electrocute", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new RoundTrip(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new RoundTrip(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Round Trip", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new MegaStarBlast(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus), IEffect(vm.envAddress("OVERCLOCK"))));
+            addrs[2] = address(new MegaStarBlast(ITypeCalculator(typecalculator), IEffect(zapstatus), IEffect(vm.envAddress("OVERCLOCK"))));
             deployedContracts[2] = DeployData({name: "Mega Star Blast", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new DualShock(IEngine(engine), ITypeCalculator(typecalculator), IEffect(zapstatus), Overclock(vm.envAddress("OVERCLOCK"))));
+            addrs[3] = address(new DualShock(ITypeCalculator(typecalculator), IEffect(zapstatus), Overclock(vm.envAddress("OVERCLOCK"))));
             deployedContracts[3] = DeployData({name: "Dual Shock", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new PreemptiveShock(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[4] = address(new PreemptiveShock(ITypeCalculator(typecalculator)));
             deployedContracts[4] = DeployData({name: "Preemptive Shock", contractAddress: addrs[4]});
         }
 
@@ -671,23 +671,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new VolatilePunch(IEngine(engine), ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
+            addrs[0] = address(new VolatilePunch(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
             deployedContracts[0] = DeployData({name: "Volatile Punch", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new GildedRecovery(IEngine(engine)));
+            addrs[1] = address(new GildedRecovery());
             deployedContracts[1] = DeployData({name: "Gilded Recovery", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new IronWall(IEngine(engine)));
+            addrs[2] = address(new IronWall());
             deployedContracts[2] = DeployData({name: "Iron Wall", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new BullRush(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new BullRush(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Bull Rush", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new UpOnly(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[4] = address(new UpOnly(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
             deployedContracts[4] = DeployData({name: "Up Only", contractAddress: addrs[4]});
         }
 
@@ -731,23 +731,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new ContagiousSlumber(IEngine(engine), IEffect(sleepstatus)));
+            addrs[0] = address(new ContagiousSlumber(IEffect(sleepstatus)));
             deployedContracts[0] = DeployData({name: "Contagious Slumber", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new VitalSiphon(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new VitalSiphon(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Vital Siphon", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new Somniphobia(IEngine(engine)));
+            addrs[2] = address(new Somniphobia());
             deployedContracts[2] = DeployData({name: "Somniphobia", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new NightTerrors(IEngine(engine), ITypeCalculator(typecalculator), IEffect(sleepstatus)));
+            addrs[3] = address(new NightTerrors(ITypeCalculator(typecalculator), IEffect(sleepstatus)));
             deployedContracts[3] = DeployData({name: "Night Terrors", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Dreamcatcher(IEngine(engine)));
+            addrs[4] = address(new Dreamcatcher());
             deployedContracts[4] = DeployData({name: "Dreamcatcher", contractAddress: addrs[4]});
         }
 
@@ -790,23 +790,23 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new BubbleBop(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[0] = address(new BubbleBop(ITypeCalculator(typecalculator)));
             deployedContracts[0] = DeployData({name: "Bubble Bop", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new SneakAttack(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[1] = address(new SneakAttack(ITypeCalculator(typecalculator)));
             deployedContracts[1] = DeployData({name: "Sneak Attack", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new NineNineNine(IEngine(engine)));
+            addrs[2] = address(new NineNineNine());
             deployedContracts[2] = DeployData({name: "Nine Nine Nine", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Overflow(IEngine(engine), ITypeCalculator(typecalculator)));
+            addrs[3] = address(new Overflow(ITypeCalculator(typecalculator)));
             deployedContracts[3] = DeployData({name: "Overflow", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new SaviorComplex(IEngine(engine), StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[4] = address(new SaviorComplex(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
             deployedContracts[4] = DeployData({name: "Savior Complex", contractAddress: addrs[4]});
         }
 

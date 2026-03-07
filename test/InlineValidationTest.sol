@@ -45,7 +45,7 @@ contract InlineValidationTest is Test, BattleHelper {
         engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
         commitManager = new DefaultCommitManager(engine);
         matchmaker = new DefaultMatchmaker(engine);
-        moveFactory = new TestMoveFactory(IEngine(address(engine)));
+        moveFactory = new TestMoveFactory();
 
         _setupTeams();
     }

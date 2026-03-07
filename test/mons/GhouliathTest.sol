@@ -58,14 +58,14 @@ contract GhouliathTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        riseFromTheGrave = new RiseFromTheGrave(IEngine(address(engine)));
-        osteoporosis = new Osteoporosis(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        panicStatus = new PanicStatus(IEngine(address(engine)));
+        riseFromTheGrave = new RiseFromTheGrave();
+        osteoporosis = new Osteoporosis(ITypeCalculator(address(typeCalc)));
+        panicStatus = new PanicStatus();
         witherAway =
-            new WitherAway(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
-        standardAttackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
-        eternalGrudge = new EternalGrudge(IEngine(address(engine)), statBoosts);
+            new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
+        standardAttackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
+        statBoosts = new StatBoosts();
+        eternalGrudge = new EternalGrudge(statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }
 

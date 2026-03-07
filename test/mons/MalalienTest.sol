@@ -48,9 +48,9 @@ contract MalalienTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(engine);
-        actusReus = new ActusReus(IEngine(address(engine)), statBoosts);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoosts = new StatBoosts();
+        actusReus = new ActusReus(statBoosts);
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -182,7 +182,7 @@ contract MalalienTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         IMoveSet[] memory moves = new IMoveSet[](1);
-        TripleThink tripleThink = new TripleThink(engine, statBoosts);
+        TripleThink tripleThink = new TripleThink(statBoosts);
         moves[0] = tripleThink;
         Mon memory mon = Mon({
             stats: MonStats({

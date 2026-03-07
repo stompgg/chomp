@@ -12,11 +12,9 @@ import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract Interweaving is IAbility, BasicEffect {
     uint8 constant DECREASE_PERCENTAGE = 10;
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOST;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOST = _STAT_BOOSTS;
     }
 
@@ -24,21 +22,21 @@ contract Interweaving is IAbility, BasicEffect {
         return "Interweaving";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Lower opposing mon Attack stat
         uint256 otherPlayerIndex = (playerIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex =
-            ENGINE.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
+            engine.getActiveMonIndexForBattleState(battleKey)[otherPlayerIndex];
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.Attack,
             boostPercent: DECREASE_PERCENTAGE,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOST.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -46,15 +44,15 @@ contract Interweaving is IAbility, BasicEffect {
         }
         // Otherwise, add this effect to the mon when it switches in
         // This way we can trigger on switch out
-        ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: OnApply, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x21;
+        return 0x8021;
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
+    function onMonSwitchOut(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -67,7 +65,7 @@ contract Interweaving is IAbility, BasicEffect {
             boostPercent: DECREASE_PERCENTAGE,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOST.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
         return (bytes32(0), false);
     }
 }

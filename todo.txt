@@ -1,5 +1,8 @@
 # TODO
 
+Xmon:
+- Somniphobia should be a 0 (1?0 cost, last for longer (6 turns? 7 turns?).
+
 Volthare:
 - change dual shock to not inflict zap on self, but instead also damage self?
 - change mega star blast to inflict zap on self unless overclocked, buff default accuracy a bit more?
@@ -9,17 +12,32 @@ Inutia:
 
 Aurox:
 - Give another damaging move that can complement bull rush
+- Inspire Greed:
+    - If the opponent is using a self/other move, instead replace it with:
+        - deal 10% of max hp to opponent (for X turns)
 
 Sofabbi
 - Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
 
 Nirvamma ideas:
+
+some strong 4 stamina move?
+
+Rebirth/enlightenment/paths/dreams
+Inflict sleep on self, increase defenses by 50%
+When awakens, convert defense buff to attack buff
+
+Chrono Crush:
+- When first used, track the current turn.
+- When used again, deal damage that scales with how many turns have passed
+
+Meta Bolt
 - Ice -> Fire -> Lightning cycling move, can only choose one that hasn't been chosen yet, resets on switch out
     - separate into different layers, and then hide the resulting layer when chosen (20% chance to inflict Burn, Frostbite, Zap)
     - once all have been chosen, something happens
 
-- Ability: Track
-Any time Nirvamma takes take, track the source (if it exists). Any subsequent damage from that source is reduced by 25% (this stacks).
+- Ability: Comprehension
+Any time Nirvamma takes take, track the source (if it exists). Any subsequent damage from that type is reduced by 25% (this stacks), resets on switch in, up to a cap of -50% damage.
 
 -----------------------------------------------------
 Implement https://docs.bungee.exchange/bungee-api/integration-guides/additional-guides/destination-payload to handle bridge + calls

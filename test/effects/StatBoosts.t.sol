@@ -56,8 +56,8 @@ contract StatBoostsTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Create the StatBoosts effect and move
-        statBoosts = new StatBoosts(IEngine(address(engine)));
-        statBoostMove = new StatBoostsMove(IEngine(address(engine)), statBoosts);
+        statBoosts = new StatBoosts();
+        statBoostMove = new StatBoostsMove(statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -352,8 +352,8 @@ contract StatBoostsTest is Test, BattleHelper {
     }
     
     function test_permanentTempStatBoostInteraction() public {
-        StandardAttackFactory attackFactory = new StandardAttackFactory(engine, typeCalc);
-        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(engine, statBoosts);
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
+        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(statBoosts);
 
         // Create teams with two mons each
         IMoveSet[] memory moves = new IMoveSet[](2);

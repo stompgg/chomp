@@ -5,18 +5,15 @@ pragma solidity ^0.8.0;
 import "../../Constants.sol";
 import "../../Enums.sol";
 
-import {IEngine} from "../../IEngine.sol";
-
 import {IEffect} from "../../effects/IEffect.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract InfiniteLove is StandardAttack {
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, IEffect _SLEEP_STATUS)
+    constructor(ITypeCalculator _TYPE_CALCULATOR, IEffect _SLEEP_STATUS)
         StandardAttack(
             address(msg.sender),
-            _ENGINE,
             _TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Infinite Love",

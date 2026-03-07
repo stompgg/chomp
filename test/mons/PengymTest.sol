@@ -60,11 +60,11 @@ contract PengymTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        postWorkout = new PostWorkout(IEngine(address(engine)));
-        panicStatus = new PanicStatus(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoost);
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
+        postWorkout = new PostWorkout();
+        panicStatus = new PanicStatus();
+        statBoost = new StatBoosts();
+        frostbiteStatus = new FrostbiteStatus(statBoost);
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -435,8 +435,8 @@ contract PengymTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
 
-        ChillOut chillOut = new ChillOut(engine, typeCalc, frostbiteStatus);
-        DeepFreeze deepFreeze = new DeepFreeze(engine, typeCalc, frostbiteStatus);
+        ChillOut chillOut = new ChillOut(typeCalc, frostbiteStatus);
+        DeepFreeze deepFreeze = new DeepFreeze(typeCalc, frostbiteStatus);
 
         IMoveSet[] memory moves = new IMoveSet[](2);
         moves[0] = chillOut;
@@ -505,7 +505,7 @@ contract PengymTest is Test, BattleHelper {
         DefaultValidator validatorToUse = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
-        PistolSquat ps = new PistolSquat(engine, typeCalc);
+        PistolSquat ps = new PistolSquat(typeCalc);
         IMoveSet[] memory moves = new IMoveSet[](2);
         moves[0] = ps;
         moves[1] = attackFactory.createAttack(

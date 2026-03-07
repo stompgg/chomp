@@ -76,7 +76,6 @@ contract EngineTest is Test, BattleHelper {
         );
         typeCalc = new TestTypeCalculator();
         dummyAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 0, ACCURACY: 0, STAMINA_COST: 0, PRIORITY: 0})
         );
@@ -138,7 +137,6 @@ contract EngineTest is Test, BattleHelper {
     function test_fasterSpeedKOsGameOver() public {
         // Initialize mons
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -209,12 +207,10 @@ contract EngineTest is Test, BattleHelper {
     function test_fasterPriorityKOsGameOver() public {
         // Initialize fast and slow mons
         IMoveSet slowAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         IMoveSet fastAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -286,12 +282,10 @@ contract EngineTest is Test, BattleHelper {
     function _setup2v2FasterPriorityBattleAndForceSwitch() internal returns (bytes32) {
         // Initialize fast and slow mons
         IMoveSet slowAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         IMoveSet fastAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -445,7 +439,6 @@ contract EngineTest is Test, BattleHelper {
 
     function test_nonKOSubsequentMoves() public {
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -502,7 +495,6 @@ contract EngineTest is Test, BattleHelper {
     function test_switchPriorityIsFasterThanMove() public {
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -556,7 +548,6 @@ contract EngineTest is Test, BattleHelper {
     function test_switchPriorityIsSlowerThanSuperfastMove() public {
         // Initialize mons and moves
         IMoveSet superFastAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -610,7 +601,6 @@ contract EngineTest is Test, BattleHelper {
     function test_switchPriorityIsSlowerThanSuperfastMoveWithKO() public {
         // Initialize mons and moves
         IMoveSet superFastAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -664,7 +654,6 @@ contract EngineTest is Test, BattleHelper {
     function test_defaultStaminaRegenEffect() public {
         // Initialize mons and moves
         IMoveSet superFastAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -695,7 +684,7 @@ contract EngineTest is Test, BattleHelper {
         DefaultValidator twoMonValidator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
         );
-        StaminaRegen regen = new StaminaRegen(engine);
+        StaminaRegen regen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = regen;
         DefaultRuleset rules = new DefaultRuleset(engine, effects);
@@ -727,12 +716,10 @@ contract EngineTest is Test, BattleHelper {
 
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         IMoveSet inaccurateAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 1, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -805,14 +792,12 @@ contract EngineTest is Test, BattleHelper {
     function test_invalidMoveIfStaminaCostTooHigh() public {
         // Initialize mons and moves
         IMoveSet highStaminaAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: 0})
         );
         IMoveSet[] memory highStaminaMoves = new IMoveSet[](1);
         highStaminaMoves[0] = highStaminaAttack;
         IMoveSet normalStaminaAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -900,7 +885,6 @@ contract EngineTest is Test, BattleHelper {
     function test_effectAppliedByAttackCanKOForGameEnd() public {
         // Initialize mons and moves
         IMoveSet normalStaminaAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -922,9 +906,9 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = new InstantDeathEffect();
         IMoveSet instantDeathAttack =
-            new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
         deathMoves[0] = instantDeathAttack;
         Mon memory instantDeathMon = Mon({
@@ -976,7 +960,6 @@ contract EngineTest is Test, BattleHelper {
     function test_effectAppliedByAttackCanKOAndForceSwitch() public {
         // Initialize mons and moves
         IMoveSet normalStaminaAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -998,9 +981,9 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = new InstantDeathEffect();
         IMoveSet instantDeathAttack =
-            new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
         deathMoves[0] = instantDeathAttack;
         Mon memory instantDeathMon = Mon({
@@ -1061,12 +1044,12 @@ contract EngineTest is Test, BattleHelper {
 
     function test_effectAppliedByAttackCorrectlyAppliesToTargetedMonEvenAfterSwitch() public {
         // Mon that has a temporary stat boost effect
-        IEffect statBoost = new OneTurnStatBoost(engine);
+        IEffect statBoost = new OneTurnStatBoost();
         IMoveSet[] memory moves = new IMoveSet[](1);
 
         // Create new effect attack that applies the temporary stat boost effect
         IMoveSet effectAttack =
-            new EffectAttack(engine, statBoost, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(statBoost, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         moves[0] = effectAttack;
         Mon memory mon = Mon({
             stats: MonStats({
@@ -1114,7 +1097,6 @@ contract EngineTest is Test, BattleHelper {
     function test_moveKOSupersedesRoundEndEffectKOForGameEnd() public {
         // Initialize mons and moves
         IMoveSet lethalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
@@ -1136,9 +1118,9 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = new InstantDeathEffect();
         IMoveSet instantDeathAttack =
-            new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
         deathMoves[0] = instantDeathAttack;
         Mon memory instantDeathMon = Mon({
@@ -1191,7 +1173,6 @@ contract EngineTest is Test, BattleHelper {
     function test_moveKOAndEffectKOLeadToDualSwapOtherMoveRevertsForAlice() public {
         // Initialize mons and moves
         IMoveSet lethalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -1213,9 +1194,9 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = new InstantDeathEffect();
         IMoveSet instantDeathAttack =
-            new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
         deathMoves[0] = instantDeathAttack;
         Mon memory instantDeathMon = Mon({
@@ -1285,7 +1266,6 @@ contract EngineTest is Test, BattleHelper {
     function test_moveKOAndEffectKOLeadToDualSwapAndSwapSucceeds() public {
         // Initialize mons and moves
         IMoveSet lethalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -1307,9 +1287,9 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         // Instant death attack
-        IEffect instantDeath = new InstantDeathEffect(engine);
+        IEffect instantDeath = new InstantDeathEffect();
         IMoveSet instantDeathAttack =
-            new EffectAttack(engine, instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(instantDeath, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory deathMoves = new IMoveSet[](1);
         deathMoves[0] = instantDeathAttack;
         Mon memory instantDeathMon = Mon({
@@ -1368,7 +1348,6 @@ contract EngineTest is Test, BattleHelper {
     function test_shouldSkipTurnFlagWorks() public {
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 6})
         );
@@ -1391,7 +1370,7 @@ contract EngineTest is Test, BattleHelper {
         });
         // Skip Turn attack to skip move
         IMoveSet skipAttack =
-            new SkipTurnMove(engine, SkipTurnMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 7}));
+            new SkipTurnMove(SkipTurnMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 7}));
         IMoveSet[] memory skipMoves = new IMoveSet[](1);
         skipMoves[0] = skipAttack;
         Mon memory skipMon = Mon({
@@ -1444,7 +1423,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         // Attack to force a switch (should be lower priority than the other move)
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 0}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 0}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -1468,7 +1447,6 @@ contract EngineTest is Test, BattleHelper {
 
         Mon[] memory otherTeam = new Mon[](2);
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -1524,7 +1502,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         // Attack to force a switch for user (should be higher priority than the other move)
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -1543,7 +1521,6 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -1604,7 +1581,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         // Attack to force a switch for user (should be higher priority than the other move)
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -1623,7 +1600,6 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -1697,7 +1673,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         // Attack to force a switch for user (should be higher priority than the other move)
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -1716,7 +1692,6 @@ contract EngineTest is Test, BattleHelper {
             ability: IAbility(address(0))
         });
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -1790,7 +1765,7 @@ contract EngineTest is Test, BattleHelper {
         // Initialize mons and moves
         // Attack to force a switch for user (should be higher priority than the other move)
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -1810,11 +1785,11 @@ contract EngineTest is Test, BattleHelper {
         });
 
         // Create a new GlobalEffectAttack that applies InstantDeathOnSwitchIn
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect();
 
         // Move should be higher priority than the switch attack
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
-            engine, instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2})
+            instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2})
         );
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = instantDeathOnSwitchInAttack;
@@ -1877,10 +1852,10 @@ contract EngineTest is Test, BattleHelper {
     function test_effectOnSwitchInFromSwitchMoveForOtherPlayerKOsAndForcesSwitch() public {
         // Initialize mons and moves
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect();
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
-            engine, instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2})
+            instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2})
         );
 
         IMoveSet[] memory moves = new IMoveSet[](2);
@@ -1946,11 +1921,11 @@ contract EngineTest is Test, BattleHelper {
     // environmental effect kills mon after switch in move (not as a side effect from move)
     function test_effectOnSwitchInFromDirectSwitchMoveKOsAndForcesSwitch() public {
         // Initialize mons and moves
-        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect(engine);
+        IEffect instantDeathOnSwitchIn = new InstantDeathOnSwitchInEffect();
 
         // Set priority to be higher than switch
         IMoveSet instantDeathOnSwitchInAttack = new GlobalEffectAttack(
-            engine, instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 10})
+            instantDeathOnSwitchIn, GlobalEffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 10})
         );
 
         IMoveSet[] memory moves = new IMoveSet[](1);
@@ -2015,8 +1990,8 @@ contract EngineTest is Test, BattleHelper {
     function test_abilityOnSwitchInKOsAndLeadsToGameOver() public {
         // Initialize mons and moves
         IMoveSet[] memory moves = new IMoveSet[](0);
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
-        IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
+        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect();
+        IAbility suicideAbility = new EffectAbility(instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
                 hp: 1,
@@ -2082,7 +2057,7 @@ contract EngineTest is Test, BattleHelper {
     // ability triggers effect leading to death on self after being switched in from self move
     function test_abilityOnSwitchInFromSwitchInMoveKOsAndLeadsToGameOver() public {
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -2100,8 +2075,8 @@ contract EngineTest is Test, BattleHelper {
             moves: switchMoves,
             ability: IAbility(address(0))
         });
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
-        IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
+        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect();
+        IAbility suicideAbility = new EffectAbility(instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
                 hp: 1,
@@ -2120,7 +2095,6 @@ contract EngineTest is Test, BattleHelper {
 
         // A normal mon with a damaging move
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -2183,7 +2157,7 @@ contract EngineTest is Test, BattleHelper {
     // ability triggers effect from a manual switch
     function test_abilityOnSwitchInFromManualSwitchKOsAndLeadsToGameOver() public {
         IMoveSet switchAttack =
-            new ForceSwitchMove(engine, ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
+            new ForceSwitchMove(ForceSwitchMove.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 2}));
         IMoveSet[] memory switchMoves = new IMoveSet[](1);
         switchMoves[0] = switchAttack;
         Mon memory switchMon = Mon({
@@ -2201,8 +2175,8 @@ contract EngineTest is Test, BattleHelper {
             moves: switchMoves,
             ability: IAbility(address(0))
         });
-        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect(engine);
-        IAbility suicideAbility = new EffectAbility(engine, instantDeathAtEndOfTurn);
+        IEffect instantDeathAtEndOfTurn = new InstantDeathEffect();
+        IAbility suicideAbility = new EffectAbility(instantDeathAtEndOfTurn);
         Mon memory suicideMon = Mon({
             stats: MonStats({
                 hp: 1,
@@ -2221,7 +2195,6 @@ contract EngineTest is Test, BattleHelper {
 
         // A normal mon with a damaging move
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
@@ -2284,9 +2257,9 @@ contract EngineTest is Test, BattleHelper {
     // attack that applies effect can only apply once (checks using an effect that writes to global KV)
     function test_attackThatAppliesEffectCanOnlyApplyOnce() public {
         // Single instance effect
-        IEffect singleInstanceEffect = new SingleInstanceEffect(engine);
+        IEffect singleInstanceEffect = new SingleInstanceEffect();
         IMoveSet effectAttack = new EffectAttack(
-            engine, singleInstanceEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            singleInstanceEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = effectAttack;
@@ -2341,7 +2314,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_moveSpecificInvalidFlagsAreCheckedDuringReveal() public {
         IMoveSet[] memory moves = new IMoveSet[](1);
-        IMoveSet invalidMove = new InvalidMove(engine);
+        IMoveSet invalidMove = new InvalidMove();
         moves[0] = invalidMove;
         Mon memory mon = Mon({
             stats: MonStats({
@@ -2386,12 +2359,12 @@ contract EngineTest is Test, BattleHelper {
 
     function test_onMonSwitchOutHookWorksWithTempStatBoost() public {
         // Mon that has a temporary stat boost effect
-        IEffect temporaryStatBoostEffect = new TempStatBoostEffect(engine);
+        IEffect temporaryStatBoostEffect = new TempStatBoostEffect();
         IMoveSet[] memory moves = new IMoveSet[](1);
 
         // Create new effect attack that applies the temporary stat boost effect
         IMoveSet effectAttack = new EffectAttack(
-            engine, temporaryStatBoostEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+            temporaryStatBoostEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
         moves[0] = effectAttack;
         Mon memory mon = Mon({
@@ -2447,13 +2420,12 @@ contract EngineTest is Test, BattleHelper {
 
     function test_afterDamageHookRuns() public {
         // Create an attack that adds the rebound effect to the caller
-        IEffect reboundEffect = new AfterDamageReboundEffect(engine);
+        IEffect reboundEffect = new AfterDamageReboundEffect();
         IMoveSet[] memory moves = new IMoveSet[](2);
         IMoveSet reboundAttack =
-            new EffectAttack(engine, reboundEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+            new EffectAttack(reboundEffect, EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         moves[0] = reboundAttack;
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -2983,7 +2955,6 @@ contract EngineTest is Test, BattleHelper {
     function test_timeoutScceedsRevealPlayerSwitchFlag() public {
         // Initialize fast and slow mons
         IMoveSet normalAttack = new CustomAttack(
-            engine,
             typeCalc,
             CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
@@ -3065,7 +3036,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_swapPlusDamageCorrectlySetsSwitchForTurnFlagAndSkipsKOMove() public {
         IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = new SelfSwitchAndDamageMove(engine, 1);
+        moves[0] = new SelfSwitchAndDamageMove(1);
         Mon memory mon = _createMon();
         mon.moves = moves;
         Mon[] memory team = new Mon[](2);
@@ -3091,9 +3062,9 @@ contract EngineTest is Test, BattleHelper {
     }
 
     function test_editEffect() public {
-        EditEffectAttack editEffectAttack = new EditEffectAttack(engine);
+        EditEffectAttack editEffectAttack = new EditEffectAttack();
         DummyStatus d = new DummyStatus();
-        EffectAbility effectAbility = new EffectAbility(engine, d);
+        EffectAbility effectAbility = new EffectAbility(d);
         Mon memory mon = _createMon();
         mon.ability = effectAbility;
         mon.moves = new IMoveSet[](1);

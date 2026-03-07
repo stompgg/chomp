@@ -13,10 +13,9 @@ import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract HitAndDip is StandardAttack {
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR)
+    constructor(ITypeCalculator TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Hit And Dip",
@@ -35,6 +34,7 @@ contract HitAndDip is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -43,12 +43,12 @@ contract HitAndDip is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
 
         if (damage > 0) {
             // extraData contains the swap index as raw uint240
             uint256 swapIndex = uint256(extraData);
-            ENGINE.switchActiveMon(attackerPlayerIndex, swapIndex);
+            engine.switchActiveMon(attackerPlayerIndex, swapIndex);
         }
     }
 

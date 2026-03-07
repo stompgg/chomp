@@ -129,11 +129,11 @@ contract InlineEngineGasTest is Test, BattleHelper {
         mon.stats.specialAttack = 10;
 
         mon.moves = new IMoveSet[](4);
-        StatBoosts statBoosts = new StatBoosts(engine);
-        IMoveSet burnMove = new EffectAttack(engine, new BurnStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(engine, new FrostbiteStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet statBoostMove = new StatBoostsMove(engine, statBoosts);
-        IMoveSet damageMove = new CustomAttack(engine, ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
+        StatBoosts statBoosts = new StatBoosts();
+        IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
+        IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
         mon.moves[0] = burnMove;
         mon.moves[1] = frostbiteMove;
         mon.moves[2] = statBoostMove;
@@ -146,7 +146,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
@@ -297,7 +297,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         });
 
         // Use inlineEngine for moves so they reference the correct engine
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(inlineEngine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
         mon.moves[0] = damageMove;
         mon.moves[1] = damageMove;
         mon.moves[2] = damageMove;
@@ -366,13 +366,12 @@ contract InlineEngineGasTest is Test, BattleHelper {
         DefaultCommitManager inlineCommitManager = new DefaultCommitManager(inlineEngine);
         DefaultMatchmaker inlineMatchmaker = new DefaultMatchmaker(inlineEngine);
 
-        StatBoosts statBoosts = new StatBoosts(inlineEngine);
+        StatBoosts statBoosts = new StatBoosts();
         IMoveSet effectMove = new EffectAttack(
-            inlineEngine,
-            new SingleInstanceEffect(inlineEngine),
+            new SingleInstanceEffect(),
             EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(inlineEngine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
         mon.moves[0] = effectMove;
         mon.moves[1] = damageMove;
         mon.moves[2] = damageMove;
@@ -384,7 +383,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        StaminaRegen staminaRegen = new StaminaRegen(inlineEngine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         IRuleset rulesetWithEffect = IRuleset(address(new DefaultRuleset(inlineEngine, effects)));

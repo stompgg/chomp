@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../Enums.sol";
+import "../IEngine.sol";
 import "../Structs.sol";
 
 interface IEffect {
@@ -13,11 +14,14 @@ interface IEffect {
     function getStepsBitmap() external view returns (uint16);
 
     // Whether or not to add the effect if some condition is met
-    function shouldApply(bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex) external returns (bool);
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32 extraData, uint256 targetIndex, uint256 monIndex)
+        external
+        returns (bool);
 
     // Lifecycle hooks during normal battle flow
     // p0ActiveMonIndex and p1ActiveMonIndex are passed to avoid external calls back to Engine
     function onRoundStart(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -28,6 +32,7 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onRoundEnd(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -38,6 +43,7 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onMonSwitchIn(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -48,6 +54,7 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onMonSwitchOut(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -59,6 +66,7 @@ interface IEffect {
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     function onAfterDamage(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -70,6 +78,7 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onAfterMove(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -83,6 +92,7 @@ interface IEffect {
     // WARNING: Avoid chaining this effect to prevent recursive calls
     // (e.g., an effect that mutates state triggering another effect that mutates state)
     function onUpdateMonState(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -96,6 +106,7 @@ interface IEffect {
 
     // Lifecycle hooks when being applied or removed
     function onApply(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -106,6 +117,7 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onRemove(
+        IEngine engine,
         bytes32 battleKey,
         bytes32 extraData,
         uint256 targetIndex,

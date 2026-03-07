@@ -17,10 +17,9 @@ contract VolatilePunch is StandardAttack {
     IEffect immutable BURN_STATUS;
     IEffect immutable FROSTBITE_STATUS;
 
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR, IEffect _BURN_STATUS, IEffect _FROSTBITE_STATUS)
+    constructor(ITypeCalculator TYPE_CALCULATOR, IEffect _BURN_STATUS, IEffect _FROSTBITE_STATUS)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Volatile Punch",
@@ -42,6 +41,7 @@ contract VolatilePunch is StandardAttack {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -50,7 +50,7 @@ contract VolatilePunch is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage to opponent
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
 
         // Apply status effects if damage was dealt
         if (damage > 0) {
@@ -63,9 +63,9 @@ contract VolatilePunch is StandardAttack {
             if ((statusRng % 100) < STATUS_EFFECT_CHANCE) {
                 uint256 statusSelectorRng = uint256(keccak256(abi.encode(rng, "STATUS_SELECTOR")));
                 if (statusSelectorRng % 2 == 0) {
-                    ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
+                    engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
                 } else {
-                    ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, FROSTBITE_STATUS, "");
+                    engine.addEffect(defenderPlayerIndex, defenderMonIndex, FROSTBITE_STATUS, "");
                 }
             }
         }

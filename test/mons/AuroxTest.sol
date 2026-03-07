@@ -63,16 +63,16 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function testBullRush() public {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        BullRush bullRush = new BullRush(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        BullRush bullRush = new BullRush(ITypeCalculator(address(typeCalc)));
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = bullRush;
 
@@ -98,8 +98,8 @@ contract AuroxTest is Test, BattleHelper {
     }
 
     function test_gildedRecoveryHealsWithStatus() public {
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
-        GildedRecovery gildedRecovery = new GildedRecovery(IEngine(address(engine)));
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        GildedRecovery gildedRecovery = new GildedRecovery();
 
         uint32 maxHp = 100;
 
@@ -250,7 +250,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallHealsDamage() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -339,7 +339,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallSkipsIfKO() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp,
@@ -406,7 +406,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallProvidesInitialHeal() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -481,7 +481,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallDoesNothingIfAlreadyActive() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -574,7 +574,7 @@ contract AuroxTest is Test, BattleHelper {
         uint32 maxAtk = 100;
         uint32 maxDef = 100;
 
-        UpOnly upOnly = new UpOnly(IEngine(address(engine)), statBoosts);
+        UpOnly upOnly = new UpOnly(statBoosts);
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -635,10 +635,10 @@ contract AuroxTest is Test, BattleHelper {
     function test_volatilePunchDealsDamageAndTriggersStatusEffects() public {
         uint32 maxHp = 100;
 
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
         VolatilePunch volatilePunch = new VolatilePunch(
-            IEngine(address(engine)), typeCalc, burnStatus, frostbiteStatus
+            typeCalc, burnStatus, frostbiteStatus
         );
         IMoveSet[] memory moves = new IMoveSet[](1);
         moves[0] = volatilePunch;

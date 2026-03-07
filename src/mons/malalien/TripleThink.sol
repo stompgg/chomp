@@ -13,11 +13,9 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 contract TripleThink is IMoveSet {
     uint8 public constant SP_ATTACK_BUFF_PERCENT = 75;
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -26,6 +24,7 @@ contract TripleThink is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -40,26 +39,26 @@ contract TripleThink is IMoveSet {
             boostPercent: SP_ATTACK_BUFF_PERCENT,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Math;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

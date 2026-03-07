@@ -16,13 +16,11 @@ contract SkipTurnMove is IMoveSet {
         uint32 PRIORITY;
     }
 
-    IEngine immutable ENGINE;
     Type immutable TYPE;
     uint32 immutable STAMINA_COST;
     uint32 immutable PRIORITY;
 
-    constructor(IEngine _ENGINE, Args memory args) {
-        ENGINE = _ENGINE;
+    constructor(Args memory args) {
         TYPE = args.TYPE;
         STAMINA_COST = args.STAMINA_COST;
         PRIORITY = args.PRIORITY;
@@ -32,28 +30,28 @@ contract SkipTurnMove is IMoveSet {
         return "Skip Turn";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
-        ENGINE.updateMonState(targetIndex, defenderMonIndex, MonStateIndexName.ShouldSkipTurn, 1);
+        engine.updateMonState(targetIndex, defenderMonIndex, MonStateIndexName.ShouldSkipTurn, 1);
     }
 
-    function priority(bytes32, uint256) external view returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external view returns (uint32) {
         return PRIORITY;
     }
 
-    function stamina(bytes32, uint256, uint256) external view returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external view returns (uint32) {
         return STAMINA_COST;
     }
 
-    function moveType(bytes32) external view returns (Type) {
+    function moveType(IEngine, bytes32) external view returns (Type) {
         return TYPE;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
