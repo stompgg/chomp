@@ -72,7 +72,7 @@ contract Q5 is IMoveSet, BasicEffect {
     // Effect implementation
     // Steps: RoundStart
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x02;
+        return 0x8002;
     }
 
     function onRoundStart(

@@ -106,7 +106,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
     // Steps: RoundEnd, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x24;
+        return 0x8024;
     }
 
     function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)

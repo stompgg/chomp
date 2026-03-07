@@ -37,7 +37,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     // IEffect implementation
     // Steps: RoundEnd, AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x44;
+        return 0x8044;
     }
 
     function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)

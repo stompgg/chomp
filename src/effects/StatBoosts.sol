@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT} from "../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../Enums.sol";
 import {EffectInstance, MonStats, StatBoostToApply} from "../Structs.sol";
 
@@ -37,7 +36,7 @@ contract StatBoosts is BasicEffect {
 
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x20 | ALWAYS_APPLIES_BIT;
+        return 0x8020;
     }
 
     // Removes all temporary boosts on mon switch out

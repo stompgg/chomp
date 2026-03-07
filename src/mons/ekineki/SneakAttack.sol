@@ -120,7 +120,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
     // IEffect implementation — local effect that cleans up on switch-out
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x20;
+        return 0x8020;
     }
 
     function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)

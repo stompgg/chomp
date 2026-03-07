@@ -40,7 +40,7 @@ contract Tinderclaws is IAbility, BasicEffect {
 
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x84;
+        return 0x8084;
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied

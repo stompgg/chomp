@@ -29,7 +29,7 @@ contract PostWorkout is IAbility, BasicEffect {
 
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x20;
+        return 0x8020;
     }
 
     function onMonSwitchOut(IEngine engine, bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)

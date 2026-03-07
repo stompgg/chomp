@@ -75,7 +75,7 @@ contract Baselight is IAbility, BasicEffect {
 
     // Steps: RoundEnd
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x04;
+        return 0x8004;
     }
 
     function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)

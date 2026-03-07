@@ -49,7 +49,7 @@ contract Interweaving is IAbility, BasicEffect {
 
     // Steps: OnApply, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x21;
+        return 0x8021;
     }
 
     function onMonSwitchOut(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)

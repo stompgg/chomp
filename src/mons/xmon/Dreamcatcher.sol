@@ -30,7 +30,7 @@ contract Dreamcatcher is IAbility, BasicEffect {
 
     // Steps: OnUpdateMonState
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x100;
+        return 0x8100;
     }
 
     function onUpdateMonState(

@@ -38,7 +38,7 @@ contract ActusReus is IAbility, BasicEffect {
 
     // Steps: AfterDamage, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0xC0;
+        return 0x80C0;
     }
 
     function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)

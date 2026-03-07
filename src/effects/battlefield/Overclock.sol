@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT} from "../../Constants.sol";
 import "../../Enums.sol";
 import "../../Structs.sol";
 
@@ -28,7 +27,7 @@ contract Overclock is BasicEffect {
 
     // Steps: OnApply, RoundEnd, OnRemove, OnMonSwitchIn
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x1D | ALWAYS_APPLIES_BIT;
+        return 0x801D;
     }
 
     function _effectKey(uint256 playerIndex) internal pure returns (bytes32) {

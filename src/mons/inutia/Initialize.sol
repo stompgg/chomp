@@ -92,7 +92,7 @@ contract Initialize is IMoveSet, BasicEffect {
      */
     // Steps: OnMonSwitchIn, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x30;
+        return 0x8030;
     }
 
     function _encodeState(uint256 playerIndex, uint256 monIndex) internal pure returns (bytes32) {

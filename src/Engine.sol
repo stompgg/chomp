@@ -255,7 +255,7 @@ contract Engine is IEngine, MappingAllocator {
                     config.globalEffects[i].effect = effects[i];
                     if (address(effects[i]) == address(0)) {
                         // Inline StaminaRegen: RoundEnd (bit 2) + AfterMove (bit 7) + ALWAYS_APPLIES
-                        config.globalEffects[i].stepsBitmap = 0x84 | ALWAYS_APPLIES_BIT;
+                        config.globalEffects[i].stepsBitmap = 0x8084;
                     } else {
                         config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
                     }

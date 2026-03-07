@@ -55,7 +55,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x84;
+        return 0x8084;
     }
 
     function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)

@@ -79,7 +79,7 @@ contract IronWall is IMoveSet, BasicEffect {
     // IEffect implementation
     // Steps: OnMonSwitchOut, AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x60;
+        return 0x8060;
     }
 
     function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt)

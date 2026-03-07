@@ -34,7 +34,7 @@ contract CarrotHarvest is IAbility, BasicEffect {
 
     // Steps: RoundEnd
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x04;
+        return 0x8004;
     }
 
     // Regain stamina on round end, this can overheal stamina
