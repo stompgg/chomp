@@ -35,6 +35,7 @@ contract Engine is IEngine, MappingAllocator {
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient currentStep; // Used to bubble up step data for events
     address private transient upstreamCaller; // Used to bubble up caller data for events
+    uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
 
     // Errors
     error NoWriteAllowed();
@@ -768,6 +769,7 @@ contract Engine is IEngine, MappingAllocator {
             // Update KO bitmap if state changed
             if (newKOState && !wasKOed) {
                 _setMonKO(config, playerIndex, monIndex);
+                koOccurredFlag = 1;
             } else if (!newKOState && wasKOed) {
                 _clearMonKO(config, playerIndex, monIndex);
             }
@@ -1021,6 +1023,7 @@ contract Engine is IEngine, MappingAllocator {
             monState.isKnockedOut = true;
             // Set KO bit for this mon
             _setMonKO(config, playerIndex, monIndex);
+            koOccurredFlag = 1;
         }
         emit DamageDeal(battleKey, playerIndex, monIndex, damage, _getUpstreamCallerAndResetValue(), currentStep);
         _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, abi.encode(damage));
@@ -1306,8 +1309,11 @@ contract Engine is IEngine, MappingAllocator {
             moveSet.move(IEngine(address(this)), battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
         }
 
-        // Set Game Over if true, and calculate and return switch for turn flag
-        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+        // Only check for Game Over / KO if a KO occurred during the move
+        if (koOccurredFlag != 0) {
+            koOccurredFlag = 0;
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+        }
         return playerSwitchForTurnFlag;
     }
 
@@ -1581,8 +1587,11 @@ contract Engine is IEngine, MappingAllocator {
             _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
         }
 
-        // Always check for Game Over / KO (effects from prior actions may have caused KOs)
-        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+        // Only check for Game Over / KO if a KO actually occurred since last check
+        if (koOccurredFlag != 0) {
+            koOccurredFlag = 0;
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+        }
         return playerSwitchForTurnFlag;
     }
 

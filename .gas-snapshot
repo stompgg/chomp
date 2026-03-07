@@ -1,8 +1,0 @@
-EngineGasTest:test_consecutiveBattleGas() (gas: 20881587)
-EngineGasTest:test_identicalBattlesGas() (gas: 6076394)
-EngineGasTest:test_identicalBattlesWithEffectsGas() (gas: 8042704)
-EngineGasTest:test_inlineRNGMatchesDefaultOracle() (gas: 18859816)
-EngineGasTest:test_inlineVsExternalValidationGas() (gas: 17920639)
-InlineEngineGasTest:test_consecutiveBattleGas() (gas: 18143115)
-InlineEngineGasTest:test_identicalBattlesGas() (gas: 16132459)
-InlineEngineGasTest:test_identicalBattlesWithEffectsGas() (gas: 20163385)
