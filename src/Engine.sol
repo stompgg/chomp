@@ -221,7 +221,8 @@ contract Engine is IEngine, MappingAllocator {
             prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
             activeMonIndex: 0, // Defaults to 0 (both players start with mon index 0)
-            turnId: 0
+            turnId: 0,
+            lastExecuteTimestamp: 0 // Fresh battleKey per battle, starts at 0
         });
 
         // Set the team for p0 and p1 in the reusable config storage
@@ -626,7 +627,7 @@ contract Engine is IEngine, MappingAllocator {
         battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
         config.p0Move.packedMoveIndex = 0;
         config.p1Move.packedMoveIndex = 0;
-        config.lastExecuteTimestamp = uint48(block.timestamp);
+        battle.lastExecuteTimestamp = uint48(block.timestamp);
 
         // Emits switch for turn flag for the next turn, but the priority index for this current turn
         emit EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex);
@@ -688,7 +689,7 @@ contract Engine is IEngine, MappingAllocator {
             turnId: data.turnId,
             playerSwitchForTurnFlag: data.playerSwitchForTurnFlag,
             playerIndexToCheck: playerIndexToCheck,
-            lastTurnTimestamp: data.turnId == 0 ? config.startTimestamp : config.lastExecuteTimestamp,
+            lastTurnTimestamp: data.turnId == 0 ? config.startTimestamp : data.lastExecuteTimestamp,
             timeoutDuration: DEFAULT_TIMEOUT_DURATION,
             prevTurnMultiplier: PREV_TURN_MULTIPLIER,
             playerMoveHash: playerMoveHash,
@@ -2223,7 +2224,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
-        return battleConfig[_resolveStorageKey(battleKey)].lastExecuteTimestamp;
+        return battleData[battleKey].lastExecuteTimestamp;
     }
 
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
