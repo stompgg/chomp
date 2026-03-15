@@ -36,39 +36,7 @@ import * as Enums from '../ts-output/Enums';
 // Runtime
 import { globalEventStream } from '../ts-output/runtime';
 
-// =============================================================================
-// TEST UTILITIES
-// =============================================================================
-
-let addressCounter = 1;
-function generateAddress(): string {
-  return `0x${(addressCounter++).toString(16).padStart(40, '0')}`;
-}
-
-function setAddress(instance: any): string {
-  const addr = generateAddress();
-  instance._contractAddress = addr;
-  return addr;
-}
-
-/**
- * Mock RNG Oracle that returns deterministic values
- */
-class MockRNGOracle {
-  _contractAddress: string;
-  private seed: bigint;
-
-  constructor(seed: bigint = 12345n) {
-    this._contractAddress = generateAddress();
-    this.seed = seed;
-  }
-
-  getRNG(_p0Salt: string, _p1Salt: string): bigint {
-    // Deterministic RNG for reproducible tests
-    this.seed = (this.seed * 1103515245n + 12345n) % (2n ** 256n);
-    return this.seed;
-  }
-}
+import { resetAddressCounter, generateAddress, setAddress, MockRNGOracle } from './fixtures/mocks';
 
 /**
  * Mock Mon Registry for ITeamRegistry.getMonRegistry()
@@ -285,8 +253,7 @@ interface TestContext {
 }
 
 function createTestContext(): TestContext {
-  // Reset address counter
-  addressCounter = 1;
+  resetAddressCounter();
 
   // Create core contracts
   const engine = new Engine();

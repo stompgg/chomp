@@ -469,7 +469,6 @@ export { ECDSA } from './ECDSA';
 
 export {
   BattleHarness,
-  createBattleHarness,
   type MonConfig,
   type TeamConfig,
   type AddressConfig,
@@ -478,7 +477,4 @@ export {
   type TurnInput,
   type MonState,
   type BattleState,
-  type ContainerSetupFn,
-  // NOTE: SWITCH_MOVE_INDEX and NO_OP_MOVE_INDEX should be imported from
-  // transpiled Constants.ts (from src/Constants.sol), not from the runtime.
 } from './battle-harness';

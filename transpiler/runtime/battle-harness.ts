@@ -250,23 +250,6 @@ export class BattleHarness {
   }
 
   /**
-   * Auto-generate deterministic addresses for all contracts in the container
-   * that don't already have one. Called automatically during startBattle().
-   * The _contractAddress setter auto-registers each in Contract._addressRegistry.
-   */
-  private ensureAddresses(): void {
-    let counter = 1;
-    for (const name of this.container.getRegisteredNames()) {
-      const instance = this.container.tryResolve(name);
-      if (instance && typeof instance === 'object' && '_contractAddress' in instance) {
-        if ((instance as any)._contractAddress === ADDRESS_ZERO) {
-          (instance as any)._contractAddress = `0x${(counter++).toString(16).padStart(40, '0')}`;
-        }
-      }
-    }
-  }
-
-  /**
    * Start a new battle
    *
    * This sets up the battle configuration in the Engine and returns a battleKey.
@@ -277,8 +260,6 @@ export class BattleHarness {
     if (config.addresses) {
       this.setAddresses(config.addresses);
     }
-    this.ensureAddresses();
-
     // Build teams with resolved contract references
     const teams = config.teams.map((teamConfig) =>
       teamConfig.mons.map((monConfig) => this.buildMon(monConfig))

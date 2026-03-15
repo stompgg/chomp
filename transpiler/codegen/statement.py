@@ -252,7 +252,7 @@ class StatementGenerator(BaseGenerator):
                 init_expr = self._convert_bytes32_string_literal(decl.type_name, stmt.initial_value, init_expr)
                 init = f' = {init_expr}'
             else:
-                default_val = self._get_ts_default_value(ts_type, decl.type_name) or self._type_converter.default_value(ts_type)
+                default_val = self._type_converter.default_value(ts_type, decl.type_name)
                 init = f' = {default_val}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
@@ -329,13 +329,7 @@ class StatementGenerator(BaseGenerator):
         if needs_number_key and not key_expr.startswith('Number('):
             key_expr = f'Number({key_expr})'
 
-        default_value = self._get_ts_default_value(ts_type, decl.type_name)
-        if not default_value:
-            struct_name = ts_type.replace('Structs.', '') if ts_type.startswith('Structs.') else ts_type
-            if struct_name in self._ctx.current_local_structs:
-                default_value = f'createDefault{struct_name}()'
-            else:
-                default_value = f'Structs.createDefault{struct_name}()'
+        default_value = self._type_converter.default_value(ts_type, decl.type_name)
 
         lines = []
         lines.append(f'{self.indent()}{mapping_expr}[{key_expr}] ??= {default_value};')
@@ -382,8 +376,8 @@ class StatementGenerator(BaseGenerator):
         if not is_mapping_read:
             return generated_expr
 
-        default_value = self._get_ts_default_value(ts_type, solidity_type)
-        if default_value:
+        default_value = self._type_converter.default_value(ts_type, solidity_type)
+        if default_value and default_value != 'undefined as any':
             return f'({generated_expr} ?? {default_value})'
         return generated_expr
 
@@ -405,42 +399,7 @@ class StatementGenerator(BaseGenerator):
             return f'"0x{hex_bytes}"'
         return init_expr
 
-    def _get_ts_default_value(self, ts_type: str, solidity_type: Optional[TypeName] = None) -> Optional[str]:
-        """Get the default value for a TypeScript type (matching Solidity semantics)."""
-        # Fixed-size arrays: Solidity zero-initializes all elements
-        if (solidity_type and getattr(solidity_type, 'is_array', False)
-                and getattr(solidity_type, 'array_size', None)):
-            size_expr = solidity_type.array_size
-            if isinstance(size_expr, Literal) and size_expr.kind == 'number':
-                size = int(size_expr.value)
-                # Get the element type's default value
-                element_ts_type = ts_type.rstrip('[]')
-                element_default = self._get_ts_default_value(element_ts_type) or '0n'
-                return f'new Array({size}).fill({element_default})'
-        if ts_type == 'bigint':
-            return '0n'
-        elif ts_type == 'boolean':
-            return 'false'
-        elif ts_type == 'string':
-            if solidity_type and solidity_type.name:
-                sol_type_name = solidity_type.name.lower()
-                if 'bytes32' in sol_type_name or sol_type_name == 'bytes32':
-                    return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
-                elif 'address' in sol_type_name or sol_type_name == 'address':
-                    return '"0x0000000000000000000000000000000000000000"'
-            return '""'
-        elif ts_type == 'number':
-            return '0'
-        elif ts_type == 'AddressSet':
-            return 'new AddressSet()'
-        elif ts_type == 'Uint256Set':
-            return 'new Uint256Set()'
-        elif ts_type.startswith('Structs.'):
-            struct_name = ts_type[8:]
-            return f'Structs.createDefault{struct_name}()'
-        elif ts_type in self._ctx.current_local_structs:
-            return f'createDefault{ts_type}()'
-        return None
+    # _get_ts_default_value removed — consolidated into type_converter.default_value()
 
     def _get_small_int_conversions_from_decode(self, stmt: VariableDeclarationStatement) -> List[str]:
         """Get list of variable names that need BigInt conversion from abi.decode.

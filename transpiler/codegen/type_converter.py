@@ -124,39 +124,123 @@ class TypeConverter(BaseGenerator):
 
         return ts_type
 
-    def default_value(self, ts_type: str, solidity_type: str = '') -> str:
-        """Get default value for TypeScript type.
+    # =========================================================================
+    # CONSTANTS
+    # =========================================================================
+
+    BYTES32_ZERO = '"0x0000000000000000000000000000000000000000000000000000000000000000"'
+    ADDRESS_ZERO = '"0x0000000000000000000000000000000000000000"'
+
+    # =========================================================================
+    # DEFAULT VALUE GENERATION
+    # =========================================================================
+
+    def default_value(self, ts_type: str, solidity_type_name: Optional[TypeName] = None) -> str:
+        """Get the zero-initialized default value for a TypeScript type.
+
+        This is the single source of truth for default values, matching Solidity's
+        zero-initialization semantics. Used by state variables, struct fields,
+        local variable declarations, and mapping access defaults.
 
         Args:
-            ts_type: The TypeScript type string
-            solidity_type: The original Solidity type name (optional, for disambiguation)
+            ts_type: The TypeScript type string (e.g., 'bigint', 'string', 'Structs.Mon')
+            solidity_type_name: Optional Solidity TypeName AST node for disambiguation
+                (e.g., distinguishing bytes32 from string, fixed-size arrays)
 
         Returns:
-            The default value expression as a string
+            The default value expression as a TypeScript string
         """
+        sol_name = ''
+        if solidity_type_name and hasattr(solidity_type_name, 'name') and solidity_type_name.name:
+            sol_name = solidity_type_name.name
+
+        # Fixed-size arrays: Solidity zero-initializes all elements
+        if (solidity_type_name and getattr(solidity_type_name, 'is_array', False)
+                and getattr(solidity_type_name, 'array_size', None)):
+            size_expr = solidity_type_name.array_size
+            if isinstance(size_expr, Literal) and size_expr.kind == 'number':
+                size = int(size_expr.value)
+                element_ts_type = ts_type.rstrip('[]')
+                # Build a TypeName for the element type (strip array info)
+                element_sol_type = TypeName(name=sol_name, is_mapping=False) if sol_name else None
+                element_default = self.default_value(element_ts_type, element_sol_type)
+                return f'new Array({size}).fill({element_default})'
+
+        # Primitives
         if ts_type == 'bigint':
             return '0n'
         elif ts_type == 'boolean':
             return 'false'
-        elif ts_type == 'string':
-            # bytes32 maps to string in TS but should default to zero sentinel, not ""
-            if solidity_type.startswith('bytes'):
-                return '"0x' + '0' * 64 + '"'
-            return '""'
         elif ts_type == 'number':
             return '0'
-        elif ts_type.endswith('[]'):
+        elif ts_type == 'string':
+            # bytes types map to string in TS but default to zero hex, not ""
+            if sol_name.startswith('bytes'):
+                return self.BYTES32_ZERO
+            elif sol_name == 'address':
+                return self.ADDRESS_ZERO
+            return '""'
+
+        # Dynamic arrays
+        if ts_type.endswith('[]'):
             return '[]'
-        elif ts_type.startswith('Map<') or ts_type.startswith('Record<'):
+
+        # Set types
+        if ts_type == 'AddressSet':
+            return 'new AddressSet()'
+        elif ts_type == 'Uint256Set':
+            return 'new Uint256Set()'
+
+        # Record types (mapping simulation)
+        if ts_type.startswith('Record<'):
+            return self._record_default(ts_type)
+        if ts_type.startswith('Map<'):
             return '{}'
-        elif ts_type.startswith('Structs.') or ts_type.startswith('Enums.'):
-            # Struct types should be initialized as empty objects
-            return f'{{}} as {ts_type}'
-        elif ts_type in self._ctx.known_structs:
-            return f'{{}} as {ts_type}'
-        elif ts_type in self._ctx.known_interfaces or ts_type in self._ctx.known_contracts:
-            return '{ _contractAddress: "0x0000000000000000000000000000000000000000" } as any'
+
+        # Struct types
+        if ts_type.startswith('Structs.'):
+            struct_name = ts_type[8:]
+            return f'Structs.createDefault{struct_name}()'
+        if ts_type in self._ctx.known_structs:
+            return f'createDefault{ts_type}()'
+
+        # Enum types
+        if ts_type.startswith('Enums.'):
+            return '0'
+
+        # Contract/interface types
+        if ts_type in self._ctx.known_interfaces or ts_type in self._ctx.known_contracts:
+            return f'{{ _contractAddress: {self.ADDRESS_ZERO} }} as any'
+
         return 'undefined as any'
+
+    def _record_default(self, ts_type: str) -> str:
+        """Get default value for a Record<K, V> type.
+
+        For struct value types, returns an auto-initializing Proxy that creates
+        default struct instances for missing keys (matching Solidity's zero-initialized
+        storage semantics). For primitive value types, returns a plain {}.
+        """
+        inner = ts_type[7:-1]  # Remove 'Record<' and '>'
+        parts = inner.split(', ', 1)
+        if len(parts) == 2:
+            value_type = parts[1]
+            # Check if the value type has a createDefault factory
+            struct_name = None
+            if value_type.startswith('Structs.'):
+                struct_name = value_type[8:]
+            elif value_type in self._ctx.known_structs:
+                struct_name = value_type
+            if struct_name:
+                return (
+                    f'new Proxy({{}} as {ts_type}, '
+                    f'{{ get: (t, k) => {{ '
+                    f'if (typeof k === "string" && !(k in t)) '
+                    f't[k] = createDefault{struct_name}(); '
+                    f'return t[k as any]; '
+                    f'}} }})'
+                )
+        return '{}'
 
     # =========================================================================
     # TYPE CAST GENERATION
@@ -250,6 +334,7 @@ class TypeConverter(BaseGenerator):
         # Solidity truncates on cast; BigInt does not, so we must mask explicitly.
         if type_name.startswith('uint') or type_name.startswith('int'):
             expr = generate_expression_fn(inner_expr)
+            bigint_expr = self._ensure_bigint(expr)
             # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
             width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
             if width_str.isdigit():
@@ -259,13 +344,30 @@ class TypeConverter(BaseGenerator):
                         # Signed: mask then sign-extend (two's complement)
                         half = 1 << (width - 1)
                         full = 1 << width
-                        return f'((v => v >= {half}n ? v - {full}n : v)(BigInt({expr}) & ((1n << {width}n) - 1n)))'
+                        return f'((v => v >= {half}n ? v - {full}n : v)({bigint_expr} & ((1n << {width}n) - 1n)))'
                     else:
-                        return f'(BigInt({expr}) & ((1n << {width}n) - 1n))'
-            return f'BigInt({expr})'
+                        return f'({bigint_expr} & ((1n << {width}n) - 1n))'
+            return bigint_expr
 
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
+
+    @staticmethod
+    def _ensure_bigint(expr: str) -> str:
+        """Wrap expression in BigInt() only if it's not already a bigint expression.
+
+        Avoids redundant BigInt(BigInt(x)) patterns in generated code.
+        """
+        # Already a BigInt() call
+        if expr.startswith('BigInt('):
+            return expr
+        # Already a bigint literal (e.g., 0n, 123n)
+        if expr.endswith('n') and (expr[:-1].isdigit() or expr.startswith('0x')):
+            return expr
+        # Already a bigint expression (mask, shift, or other bitwise op)
+        if expr.startswith('(') and ('n)' in expr or '1n' in expr):
+            return expr
+        return f'BigInt({expr})'
 
     def get_mapping_value_type(self, type_name: TypeName) -> Optional[str]:
         """Get the value type of a mapping, recursively handling nested mappings."""

@@ -395,7 +395,7 @@ class ContractGenerator(BaseGenerator):
         default_val = (
             self._expr.generate(var.initial_value)
             if var.initial_value
-            else self._type_converter.default_value(ts_type, var.type_name.name if var.type_name else '')
+            else self._type_converter.default_value(ts_type, var.type_name)
         )
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
 

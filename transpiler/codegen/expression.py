@@ -547,14 +547,11 @@ class ExpressionGenerator(BaseGenerator):
     def _handle_type_cast_call(self, call: FunctionCall, name: str, args: str) -> Optional[str]:
         """Handle type cast function calls (uint256(x), address(x), etc.)."""
         if name.startswith('uint') or name.startswith('int'):
-            # Skip redundant BigInt wrapping
-            if args.startswith('BigInt(') or args.endswith('n'):
-                return args
             if call.arguments and isinstance(call.arguments[0], Identifier):
                 return args
             if args.isdigit():
                 return f'{args}n'
-            return f'BigInt({args})'
+            return self._type_converter._ensure_bigint(args)
         elif name == 'address':
             if call.arguments:
                 arg = call.arguments[0]
@@ -821,118 +818,7 @@ class ExpressionGenerator(BaseGenerator):
         """Infer packed ABI types from value expressions (for abi.encodePacked)."""
         return self._get_abi_inferer().infer_packed_types(args)
 
-    def _infer_expression_type(self, arg: Expression) -> tuple:
-        """Infer the Solidity type from an expression.
-
-        Returns:
-            A tuple of (type_name: str, is_array: bool)
-        """
-        if isinstance(arg, Identifier):
-            name = arg.name
-            if name in self._ctx.var_types:
-                type_info = self._ctx.var_types[name]
-                if type_info.name:
-                    is_array = getattr(type_info, 'is_array', False)
-                    if type_info.name in self._ctx.known_enums:
-                        return ('uint8', is_array)
-                    return (type_info.name, is_array)
-            if name in self._ctx.known_enums:
-                return ('uint8', False)
-            return ('uint256', False)
-
-        if isinstance(arg, Literal):
-            kind_to_type = {'string': 'string', 'bool': 'bool'}
-            return (kind_to_type.get(arg.kind, 'uint256'), False)
-
-        if isinstance(arg, MemberAccess):
-            if arg.member == '_contractAddress':
-                return ('address', False)
-            if isinstance(arg.expression, Identifier):
-                if arg.expression.name == 'Enums':
-                    return ('uint8', False)
-                if arg.expression.name in ('this', 'msg', 'tx'):
-                    if arg.member in ('sender', 'origin', '_contractAddress'):
-                        return ('address', False)
-                var_name = arg.expression.name
-                if var_name in self._ctx.var_types:
-                    type_info = self._ctx.var_types[var_name]
-                    if type_info.name and type_info.name in self._ctx.known_struct_fields:
-                        struct_fields = self._ctx.known_struct_fields[type_info.name]
-                        if arg.member in struct_fields:
-                            field_info = struct_fields[arg.member]
-                            if isinstance(field_info, tuple):
-                                return field_info
-                            return (field_info, False)
-
-        if isinstance(arg, FunctionCall):
-            if isinstance(arg.function, Identifier):
-                func_name = arg.function.name
-                if func_name == 'address':
-                    return ('address', False)
-                if func_name.startswith('uint') or func_name.startswith('int'):
-                    return (func_name, False)
-                if func_name.startswith('bytes'):
-                    return (func_name, False)
-                if func_name in ('keccak256', 'blockhash', 'sha256'):
-                    return ('bytes32', False)
-                if func_name == 'name':
-                    return ('string', False)
-                # Check method return types from current contract
-                if func_name in self._ctx.current_method_return_types:
-                    return (self._ctx.current_method_return_types[func_name], False)
-            elif isinstance(arg.function, MemberAccess):
-                if arg.function.member == 'name':
-                    return ('string', False)
-                if isinstance(arg.function.expression, Identifier):
-                    if arg.function.expression.name == 'this':
-                        method_name = arg.function.member
-                        if method_name in self._ctx.current_method_return_types:
-                            return (self._ctx.current_method_return_types[method_name], False)
-
-        if isinstance(arg, TypeCast):
-            type_name = arg.type_name.name
-            return (type_name, False)
-
-        return ('uint256', False)
-
-    def _infer_single_abi_type(self, arg: Expression) -> str:
-        """Infer ABI type from a single value expression."""
-        type_name, is_array = self._infer_expression_type(arg)
-        return self._solidity_type_to_abi_type(type_name, is_array)
-
-    def _infer_single_packed_type(self, arg: Expression) -> str:
-        """Infer packed ABI type from a single value expression."""
-        type_name, is_array = self._infer_expression_type(arg)
-        return self._get_packed_type(type_name, is_array)
-
-    def _resolve_abi_base_type(self, type_name: str) -> str:
-        """Resolve a Solidity type to its base ABI type string.
-
-        Maps enums to uint8, contracts/interfaces to address, preserves primitives.
-        """
-        if type_name in ('string', 'address', 'bool'):
-            return type_name
-        if type_name.startswith('uint') or type_name.startswith('int'):
-            return type_name
-        if type_name.startswith('bytes'):
-            return type_name
-        if type_name in self._ctx.known_enums:
-            return 'uint8'
-        if type_name in self._ctx.known_contracts or type_name in self._ctx.known_interfaces:
-            return 'address'
-        return 'uint256'
-
-    def _solidity_type_to_abi_type(self, type_name: str, is_array: bool = False) -> str:
-        """Convert a Solidity type name to ABI type format ({type: '...'})."""
-        base_type = self._resolve_abi_base_type(type_name)
-        array_suffix = '[]' if is_array else ''
-        return f"{{type: '{base_type}{array_suffix}'}}"
-
-    def _get_packed_type(self, type_name: str, is_array: bool = False) -> str:
-        """Get packed type string for a Solidity type (plain string)."""
-        base_type = self._resolve_abi_base_type(type_name)
-        array_suffix = '[]' if is_array else ''
-        return f'{base_type}{array_suffix}'
+    # ABI type inference is handled by abi.py (AbiTypeInferer class)
 
     def _convert_abi_value(self, arg: Expression) -> str:
         """Convert value for ABI encoding, ensuring proper types."""
