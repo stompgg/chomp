@@ -150,7 +150,7 @@ struct MonStats {
 
 struct Mon {
     MonStats stats;
-    IAbility ability;
+    uint256 ability; // Lower 160 bits = address for external abilities, or packed inline data if upper bits set
     uint256[] moves; // Lower 160 bits = address for external moves, or packed inline data if upper bits set
 }
 

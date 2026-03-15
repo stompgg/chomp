@@ -65,8 +65,8 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(MOVE_ADDRESS));
 
-        IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(ABILITY_ADDRESS);
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = uint160(ABILITY_ADDRESS);
 
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
@@ -107,7 +107,7 @@ contract GachaTeamRegistryTest is Test {
         for (uint256 i; i < MONS_PER_TEAM; i++) {
             uint256[] memory moves = team[i].moves;
             assertEq(address(uint160(moves[0])), MOVE_ADDRESS);
-            assertEq(address(team[i].ability), ABILITY_ADDRESS);
+            assertEq(address(uint160(team[i].ability)), ABILITY_ADDRESS);
         }
     }
 

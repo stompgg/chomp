@@ -89,7 +89,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(preemptiveShock))
+            ability: uint160(address(preemptiveShock))
         });
 
         // Create a regular mon with no ability
@@ -106,7 +106,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams for Alice and Bob
@@ -170,7 +170,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a regular mon with lots of HP
@@ -187,7 +187,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams for Alice and Bob
@@ -271,7 +271,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -286,7 +286,7 @@ contract VolthareTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams for Alice and Bob

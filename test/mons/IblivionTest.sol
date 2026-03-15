@@ -96,7 +96,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -142,7 +142,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -196,7 +196,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -212,7 +212,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -281,7 +281,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0)) // No Baselight ability, so no stacks
+            ability: 0 // No Baselight ability, so no stacks
         });
 
         Mon[] memory team = new Mon[](2);
@@ -339,7 +339,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -355,7 +355,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -410,7 +410,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -426,7 +426,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -489,7 +489,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -544,7 +544,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -600,7 +600,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -655,7 +655,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -703,7 +703,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -756,7 +756,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -816,7 +816,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory slowMon = Mon({
@@ -832,7 +832,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -913,7 +913,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: iblivionMoves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory opponentMon = Mon({
@@ -929,7 +929,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: opponentMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

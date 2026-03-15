@@ -95,7 +95,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -155,7 +155,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -170,7 +170,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory fastTeam = new Mon[](1);
@@ -231,7 +231,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: slowMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -246,7 +246,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: fastMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory fastTeam = new Mon[](1);
@@ -306,7 +306,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: slowMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -321,7 +321,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: fastMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory fastTeam = new Mon[](2);
@@ -457,7 +457,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](1);
@@ -514,7 +514,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -567,7 +567,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -620,7 +620,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -673,7 +673,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -741,7 +741,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: normalMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory inaccurateMon = Mon({
             stats: MonStats({
@@ -757,7 +757,7 @@ contract EngineTest is Test, BattleHelper {
             }),
             // need to have enough stamina for 2 moves
             moves: inaccurateMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory normalTeam = new Mon[](1);
@@ -816,7 +816,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: highStaminaMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory normalStaminaMon = Mon({
             stats: MonStats({
@@ -831,7 +831,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: normalStaminaMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory highStaminaTeam = new Mon[](1);
@@ -903,7 +903,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Instant death attack
         IEffect instantDeath = new InstantDeathEffect();
@@ -924,7 +924,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: deathMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](1);
@@ -978,7 +978,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Instant death attack
         IEffect instantDeath = new InstantDeathEffect();
@@ -999,7 +999,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: deathMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -1064,7 +1064,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = mon;
@@ -1115,7 +1115,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Instant death attack
         IEffect instantDeath = new InstantDeathEffect();
@@ -1136,7 +1136,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: deathMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](1);
@@ -1191,7 +1191,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Instant death attack
         IEffect instantDeath = new InstantDeathEffect();
@@ -1212,7 +1212,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: deathMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -1284,7 +1284,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Instant death attack
         IEffect instantDeath = new InstantDeathEffect();
@@ -1305,7 +1305,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: deathMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](2);
@@ -1366,7 +1366,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         // Skip Turn attack to skip move
         IMoveSet skipAttack =
@@ -1386,7 +1386,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: skipMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[][] memory teams = new Mon[][](2);
         Mon[] memory team = new Mon[](1);
@@ -1439,7 +1439,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = switchMon;
@@ -1465,7 +1465,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         otherTeam[0] = normalMon;
         otherTeam[1] = normalMon;
@@ -1518,7 +1518,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
             typeCalc,
@@ -1539,7 +1539,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -1597,7 +1597,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
             typeCalc,
@@ -1618,7 +1618,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -1689,7 +1689,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
             typeCalc,
@@ -1710,7 +1710,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -1781,7 +1781,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a new GlobalEffectAttack that applies InstantDeathOnSwitchIn
@@ -1806,7 +1806,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -1875,7 +1875,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -1944,7 +1944,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -2005,7 +2005,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: suicideAbility
+            ability: uint160(address(suicideAbility))
         });
         Mon memory normalMon = Mon({
             stats: MonStats({
@@ -2020,7 +2020,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory suicideTeam = new Mon[](1);
         suicideTeam[0] = suicideMon;
@@ -2073,7 +2073,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         IEffect instantDeathAtEndOfTurn = new InstantDeathEffect();
         IAbility suicideAbility = new EffectAbility(instantDeathAtEndOfTurn);
@@ -2090,7 +2090,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: suicideAbility
+            ability: uint160(address(suicideAbility))
         });
 
         // A normal mon with a damaging move
@@ -2113,7 +2113,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory suicideTeam = new Mon[](2);
@@ -2173,7 +2173,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         IEffect instantDeathAtEndOfTurn = new InstantDeathEffect();
         IAbility suicideAbility = new EffectAbility(instantDeathAtEndOfTurn);
@@ -2190,7 +2190,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: switchMoves,
-            ability: suicideAbility
+            ability: uint160(address(suicideAbility))
         });
 
         // A normal mon with a damaging move
@@ -2213,7 +2213,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory suicideTeam = new Mon[](2);
@@ -2276,7 +2276,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -2329,7 +2329,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -2380,7 +2380,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = mon;
@@ -2444,7 +2444,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create both teams (teams of length 1)
@@ -2494,7 +2494,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create both teams (teams of length 1)
@@ -2556,7 +2556,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: empty,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -2606,7 +2606,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: empty,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -2643,7 +2643,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory dummyTeam = new Mon[](2);
@@ -2714,7 +2714,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Register teams
@@ -2973,7 +2973,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -2988,7 +2988,7 @@ contract EngineTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory fastTeam = new Mon[](2);
         fastTeam[0] = fastMon;
@@ -3066,7 +3066,7 @@ contract EngineTest is Test, BattleHelper {
         DummyStatus d = new DummyStatus();
         EffectAbility effectAbility = new EffectAbility(d);
         Mon memory mon = _createMon();
-        mon.ability = effectAbility;
+        mon.ability = uint160(address(effectAbility));
         mon.moves = new uint256[](1);
         mon.moves[0] = uint256(uint160(address(editEffectAttack)));
         Mon[] memory team = new Mon[](1);

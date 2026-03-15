@@ -112,7 +112,7 @@ export interface MonConfig {
   type1: number;  // Enum value
   type2: number;  // Enum value (0 for none)
   moves: (string | bigint)[];  // Move contract names (e.g., ['BigBite']) or packed inline bigints
-  ability: string;  // Ability contract name
+  ability: string | bigint;  // Ability contract name or packed inline bigint
 }
 
 /**
@@ -326,7 +326,17 @@ export class BattleHarness {
       const contract = this.container.resolve(move);
       return addressToUint(contract._contractAddress);
     });
-    const ability = config.ability ? this.container.resolve(config.ability) : null;
+    // Store ability as bigint (matching Solidity uint256 storage)
+    // String names are resolved to contract addresses; bigints are packed inline values
+    let ability: bigint = 0n;
+    if (config.ability) {
+      if (typeof config.ability === 'bigint') {
+        ability = config.ability;
+      } else {
+        const contract = this.container.resolve(config.ability);
+        ability = addressToUint(contract._contractAddress);
+      }
+    }
 
     // MonStats includes type1/type2, so merge them with the stats
     const stats: Structs.MonStats = {

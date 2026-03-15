@@ -231,7 +231,7 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](0),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Register the alternative team at index 5 for p1

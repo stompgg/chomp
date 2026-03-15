@@ -595,7 +595,7 @@ contract AuroxTest is Test, BattleHelper {
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = upOnly;
+        mon.ability = uint160(address(upOnly));
         mon.stats.hp = maxHp;
         mon.stats.attack = maxAtk;
         mon.stats.defense = maxDef;

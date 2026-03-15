@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @inline-ability: singleton-local
+
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";

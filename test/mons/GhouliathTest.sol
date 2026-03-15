@@ -113,7 +113,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(riseFromTheGrave))
+            ability: uint160(address(riseFromTheGrave))
         });
 
         // Create a regular mon for the opponent
@@ -130,7 +130,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -237,7 +237,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(riseFromTheGrave))
+            ability: uint160(address(riseFromTheGrave))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -308,7 +308,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a regular mon for the opponent
@@ -325,7 +325,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -410,7 +410,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a regular mon for the opponent with known defense
@@ -427,7 +427,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -480,7 +480,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

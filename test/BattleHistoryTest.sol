@@ -87,7 +87,7 @@ contract BattleHistoryTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
     }
 

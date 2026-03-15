@@ -174,7 +174,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = saviorComplex;
+        mon.ability = uint160(address(saviorComplex));
         mon.stats.hp = maxHp;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
@@ -221,7 +221,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = saviorComplex;
+        mon.ability = uint160(address(saviorComplex));
         mon.stats.hp = maxHp;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
@@ -273,7 +273,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = saviorComplex;
+        mon.ability = uint160(address(saviorComplex));
         mon.stats.hp = maxHp;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
@@ -343,7 +343,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = saviorComplex;
+        mon.ability = uint160(address(saviorComplex));
         mon.stats.hp = maxHp;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
@@ -419,7 +419,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory aliceMonWithAbility = _createMon();
         aliceMonWithAbility.moves = moves;
-        aliceMonWithAbility.ability = saviorComplex;
+        aliceMonWithAbility.ability = uint160(address(saviorComplex));
         aliceMonWithAbility.stats.hp = maxHp;
         aliceMonWithAbility.stats.attack = 100;
         aliceMonWithAbility.stats.defense = 100;
@@ -519,7 +519,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory aliceMonWithAbility = _createMon();
         aliceMonWithAbility.moves = moves;
-        aliceMonWithAbility.ability = saviorComplex;
+        aliceMonWithAbility.ability = uint160(address(saviorComplex));
         aliceMonWithAbility.stats.hp = maxHp;
         aliceMonWithAbility.stats.attack = 100;
         aliceMonWithAbility.stats.defense = 100;
@@ -622,7 +622,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         Mon memory monWithAbility = _createMon();
         monWithAbility.moves = moves;
-        monWithAbility.ability = saviorComplex;
+        monWithAbility.ability = uint160(address(saviorComplex));
         monWithAbility.stats.hp = maxHp;
         monWithAbility.stats.attack = 100;
         monWithAbility.stats.defense = 100;

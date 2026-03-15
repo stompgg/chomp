@@ -69,7 +69,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(interweaving))
+            ability: uint160(address(interweaving))
         });
 
         // Create a regular mon without the ability
@@ -86,7 +86,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams with two mons each
@@ -165,7 +165,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](2);
@@ -278,7 +278,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // 1/16 damage
@@ -295,7 +295,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // 1/4 damage
@@ -312,7 +312,7 @@ contract InutiaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](3);

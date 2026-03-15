@@ -134,7 +134,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -220,7 +220,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = mon;
@@ -362,7 +362,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon memory slowMon = Mon({
@@ -378,7 +378,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory fastTeam = new Mon[](1);
         fastTeam[0] = fastMon;
@@ -464,7 +464,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -591,7 +591,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
@@ -606,7 +606,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory fastTeam = new Mon[](2);
@@ -714,7 +714,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -768,7 +768,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a mon with the heal effect ability for Bob
@@ -788,7 +788,7 @@ contract EffectTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: bobMoves,
-            ability: healAbility // Bob has the heal effect
+            ability: uint160(address(healAbility)) // Bob has the heal effect
         });
 
         Mon[] memory aliceTeam = new Mon[](1);

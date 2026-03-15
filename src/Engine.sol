@@ -524,13 +524,25 @@ contract Engine is IEngine, MappingAllocator {
             if (turnId == 0) {
                 uint256 priorityMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
                 Mon memory priorityMon = _getTeamMon(config, priorityPlayerIndex, priorityMonIndex);
-                if (address(priorityMon.ability) != address(0)) {
-                    priorityMon.ability.activateOnSwitch(IEngine(address(this)), battleKey, priorityPlayerIndex, priorityMonIndex);
+                if (priorityMon.ability != 0) {
+                    if (priorityMon.ability >> 160 != 0) {
+                        _inlineAbilityActivation(config, priorityMon.ability, priorityPlayerIndex, priorityMonIndex);
+                    } else {
+                        IAbility(address(uint160(priorityMon.ability))).activateOnSwitch(
+                            IEngine(address(this)), battleKey, priorityPlayerIndex, priorityMonIndex
+                        );
+                    }
                 }
                 uint256 otherMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
                 Mon memory otherMon = _getTeamMon(config, otherPlayerIndex, otherMonIndex);
-                if (address(otherMon.ability) != address(0)) {
-                    otherMon.ability.activateOnSwitch(IEngine(address(this)), battleKey, otherPlayerIndex, otherMonIndex);
+                if (otherMon.ability != 0) {
+                    if (otherMon.ability >> 160 != 0) {
+                        _inlineAbilityActivation(config, otherMon.ability, otherPlayerIndex, otherMonIndex);
+                    } else {
+                        IAbility(address(uint160(otherMon.ability))).activateOnSwitch(
+                            IEngine(address(this)), battleKey, otherPlayerIndex, otherMonIndex
+                        );
+                    }
                 }
             }
 
@@ -809,6 +821,47 @@ contract Engine is IEngine, MappingAllocator {
             revert NoWriteAllowed();
         }
         _updateMonStateInternal(playerIndex, monIndex, stateVarIndex, valueToAdd);
+    }
+
+    function _isEffectRegistered(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex,
+        address effectAddr
+    ) internal view returns (bool) {
+        uint256 effectCount;
+        if (playerIndex == 0) {
+            effectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+            for (uint256 i; i < effectCount; i++) {
+                uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
+                if (address(config.p0Effects[slotIndex].effect) == effectAddr) return true;
+            }
+        } else {
+            effectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+            for (uint256 i; i < effectCount; i++) {
+                uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
+                if (address(config.p1Effects[slotIndex].effect) == effectAddr) return true;
+            }
+        }
+        return false;
+    }
+
+    function _inlineAbilityActivation(
+        BattleConfig storage config,
+        uint256 rawAbilitySlot,
+        uint256 playerIndex,
+        uint256 monIndex
+    ) internal {
+        uint8 abilityTypeId = uint8(rawAbilitySlot >> 248);
+        address effectAddr = address(uint160(rawAbilitySlot));
+
+        if (abilityTypeId == 1) {
+            // Singleton self-register, mon-local:
+            // Idempotency check + addEffect(playerIndex, monIndex, effectAddr, bytes32(0))
+            if (!_isEffectRegistered(config, playerIndex, monIndex, effectAddr)) {
+                _addEffectInternal(playerIndex, monIndex, IEffect(effectAddr), bytes32(0));
+            }
+        }
     }
 
     function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) internal {
@@ -1388,10 +1441,16 @@ contract Engine is IEngine, MappingAllocator {
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
         Mon memory mon = _getTeamMon(config, playerIndex, monToSwitchIndex);
         if (
-            address(mon.ability) != address(0) && battle.turnId != 0
+            mon.ability != 0 && battle.turnId != 0
                 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut
         ) {
-            mon.ability.activateOnSwitch(IEngine(address(this)), battleKey, playerIndex, monToSwitchIndex);
+            if (mon.ability >> 160 != 0) {
+                _inlineAbilityActivation(config, mon.ability, playerIndex, monToSwitchIndex);
+            } else {
+                IAbility(address(uint160(mon.ability))).activateOnSwitch(
+                    IEngine(address(this)), battleKey, playerIndex, monToSwitchIndex
+                );
+            }
         }
     }
 

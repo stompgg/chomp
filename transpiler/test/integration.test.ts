@@ -223,11 +223,7 @@ function createMon(
 
   return {
     stats,
-    ability: {
-      _contractAddress: '0x0000000000000000000000000000000000000000',
-      name: () => 'MockAbility',
-      activateOnSwitch: (_battleKey: string, _playerIndex: bigint, _monIndex: bigint) => {},
-    },
+    ability: 0n,
     moves: moves.slice(0, 4), // Max 4 moves
   };
 }

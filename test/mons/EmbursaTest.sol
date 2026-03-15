@@ -77,7 +77,7 @@ contract EmbursaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -177,7 +177,7 @@ contract EmbursaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // 5. Create Bob's mon with higher speed
@@ -201,7 +201,7 @@ contract EmbursaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: bobMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory aliceTeam = new Mon[](1);
         aliceTeam[0] = aliceMon;
@@ -341,7 +341,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
-        aliceMon.ability = IAbility(address(tinderclaws));
+        aliceMon.ability = uint160(address(tinderclaws));
         aliceMon.stats.hp = 100;
         aliceMon.stats.attack = 10;
         aliceMon.stats.specialAttack = 10;
@@ -431,7 +431,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
-        aliceMon.ability = IAbility(address(tinderclaws));
+        aliceMon.ability = uint160(address(tinderclaws));
         aliceMon.stats.hp = 100;
         aliceMon.stats.attack = 10;
         aliceMon.stats.specialAttack = 10;

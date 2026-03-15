@@ -134,6 +134,53 @@ def pack_all_moves(src_path: str, effect_addresses: Optional[Dict[str, int]] = N
     return result
 
 
+ABILITY_TYPE_MAP = {
+    "singleton-local": 1,
+    "singleton-global": 2,
+}
+
+
+def detect_inline_ability(sol_path: str) -> Optional[int]:
+    """Check if a .sol file has an @inline-ability magic comment.
+
+    Returns:
+        The ability type ID (1 for singleton-local, 2 for singleton-global),
+        or None if not an inline ability.
+    """
+    import re
+    try:
+        with open(sol_path, "r", encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r'//\s*@inline-ability:\s*(\S+)', line)
+                if m:
+                    ability_type = m.group(1)
+                    if ability_type not in ABILITY_TYPE_MAP:
+                        raise ValueError(f"Unknown inline ability type '{ability_type}' in {sol_path}")
+                    return ABILITY_TYPE_MAP[ability_type]
+    except FileNotFoundError:
+        pass
+    return None
+
+
+def pack_ability(ability_type_id: int, effect_address: int) -> int:
+    """Pack an inline ability into a uint256 value.
+
+    Format: [abilityTypeId:8 | unused:88 | effectAddr:160]
+
+    Args:
+        ability_type_id: The ability type (1 = singleton-local, 2 = singleton-global)
+        effect_address: Deployed address of the ability contract (same contract that
+                       implements IEffect lifecycle hooks).
+
+    Returns:
+        Packed uint256 value with inline ability data.
+    """
+    assert 1 <= ability_type_id <= 255, f"ability_type_id {ability_type_id} out of range [1, 255]"
+    assert 0 <= effect_address < (1 << 160), f"effect address out of range"
+
+    return (ability_type_id << 248) | effect_address
+
+
 def main():
     """CLI: pack all JSON moves and print results."""
     import sys

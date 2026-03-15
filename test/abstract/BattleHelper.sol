@@ -145,7 +145,7 @@ abstract contract BattleHelper is Test {
                 type2: Type.None
             }),
             moves: new uint256[](0),
-            ability: IAbility(address(0))
+            ability: 0
         });
     }
 }

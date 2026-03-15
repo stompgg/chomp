@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @inline-ability: singleton-local
+
 import {MonStateIndexName} from "../../Enums.sol";
 import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";

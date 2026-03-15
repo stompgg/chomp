@@ -306,14 +306,14 @@ contract XmonTest is Test, BattleHelper {
 
         Mon memory fastMon = _createMon();
         fastMon.moves = moves;
-        fastMon.ability = dreamcatcher;
+        fastMon.ability = uint160(address(dreamcatcher));
         fastMon.stats.hp = maxHp;
         fastMon.stats.stamina = 10;
         fastMon.stats.speed = 2;
 
         Mon memory slowMon = _createMon();
         slowMon.moves = moves;
-        slowMon.ability = dreamcatcher;
+        slowMon.ability = uint160(address(dreamcatcher));
         slowMon.stats.hp = maxHp;
         slowMon.stats.stamina = 10;
         slowMon.stats.speed = 1;

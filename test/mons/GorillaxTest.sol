@@ -85,7 +85,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(angery))
+            ability: uint160(address(angery))
         });
 
         Mon[] memory team = new Mon[](1);
@@ -135,7 +135,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon memory otherMon = Mon({
@@ -151,7 +151,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

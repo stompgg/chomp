@@ -112,7 +112,7 @@ contract CPUTest is Test {
                 type2: Type.None
             }),
             moves: boringMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory mon2 = Mon({
             stats: MonStats({
@@ -127,7 +127,7 @@ contract CPUTest is Test {
                 type2: Type.None
             }),
             moves: boringMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory mon3 = Mon({
             stats: MonStats({
@@ -142,7 +142,7 @@ contract CPUTest is Test {
                 type2: Type.None
             }),
             moves: boringMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         uint256[] memory movesWithEffects = new uint256[](2);
         movesWithEffects[0] = uint256(uint160(address(roundTrip)));
@@ -160,7 +160,7 @@ contract CPUTest is Test {
                 type2: Type.None
             }),
             moves: movesWithEffects,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](4);
@@ -403,7 +403,7 @@ contract CPUTest is Test {
                 type2: Type.None
             }),
             moves: new uint256[](0),
-            ability: IAbility(address(0))
+            ability: 0
         });
         return mon;
     }

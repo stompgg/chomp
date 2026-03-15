@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @inline-ability: singleton-local
+
 import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";

@@ -75,7 +75,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(effectMove)));
 
@@ -126,7 +126,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(effectMove)));
 
@@ -188,7 +188,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 
@@ -247,7 +247,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 
@@ -310,7 +310,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(cheapAttack)));
 
@@ -367,7 +367,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 type1: Type.Fire, type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 

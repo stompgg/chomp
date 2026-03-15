@@ -61,7 +61,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a special attacker mon
@@ -78,7 +78,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](1),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams

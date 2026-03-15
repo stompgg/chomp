@@ -79,7 +79,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon memory mon2 = Mon({
@@ -95,7 +95,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -253,7 +253,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon memory mon2 = Mon({
@@ -269,7 +269,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

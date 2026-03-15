@@ -89,7 +89,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(actusReus))
+            ability: uint160(address(actusReus))
         });
 
         // Create a regular mon
@@ -106,7 +106,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams with 3 mons each
@@ -197,7 +197,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = mon;

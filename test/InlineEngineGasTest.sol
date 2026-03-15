@@ -293,7 +293,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Use inlineEngine for moves so they reference the correct engine
@@ -358,7 +358,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 100, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Recreate engine with correct team size

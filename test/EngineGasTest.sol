@@ -346,7 +346,7 @@ contract EngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Simple high-damage move to end battle quickly (200 power, 100% accuracy, 0 stamina cost)
@@ -418,7 +418,7 @@ contract EngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 100, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Move that applies a status effect to opponent (no damage)
@@ -533,7 +533,7 @@ contract EngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
         mon.moves[0] = uint256(uint160(address(damageMove)));
@@ -627,7 +627,7 @@ contract EngineGasTest is Test, BattleHelper {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 50, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 30, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0}))));

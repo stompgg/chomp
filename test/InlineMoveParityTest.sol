@@ -179,7 +179,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = inlineMove;
         mon.moves[1] = inlineMove;
@@ -222,7 +222,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = inlineMove;
         mon.moves[1] = inlineMove;
@@ -264,7 +264,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = inlineMove;
         mon.moves[1] = inlineMove;
@@ -315,7 +315,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = chillOutPacked;
         mon.moves[1] = dummyMove;
@@ -365,7 +365,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: new uint256[](4),
-            ability: IAbility(address(0))
+            ability: 0
         });
         mon.moves[0] = inlineMove;
         mon.moves[1] = inlineMove;

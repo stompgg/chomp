@@ -8,7 +8,7 @@ import argparse
 from typing import Dict, List, Tuple, Optional
 import numpy as np
 
-from packMoves import pack_move, find_json_moves
+from packMoves import pack_move, find_json_moves, detect_inline_ability, pack_ability
 
 
 class MonData:
@@ -490,16 +490,25 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
         else:
             lines.append("        uint256[] memory moves = new uint256[](0);")
 
-        # Generate abilities array using addrs indices
+        # Generate abilities array using addrs indices (packed for inline abilities)
         if mon.abilities:
-            lines.append(f"        IAbility[] memory abilities = new IAbility[]({len(mon.abilities)});")
+            lines.append(f"        uint256[] memory abilities = new uint256[]({len(mon.abilities)});")
             for i, ability_name in enumerate(mon.abilities):
                 contract_name = contract_name_from_move_or_ability(ability_name)
                 if contract_name in deployed_indices:
                     idx = deployed_indices[contract_name]
-                    lines.append(f"        abilities[{i}] = IAbility(addrs[{idx}]);")
+                    # Check if this ability has @inline-ability magic comment
+                    mon_dir = get_mon_directory_name(mon.name)
+                    sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
+                    ability_type_id = detect_inline_ability(sol_path)
+                    if ability_type_id is not None:
+                        # Pack: (typeId << 248) | address
+                        lines.append(f"        abilities[{i}] = (uint256({ability_type_id}) << 248) | uint256(uint160(addrs[{idx}]));")
+                    else:
+                        # External: store raw address as uint256
+                        lines.append(f"        abilities[{i}] = uint256(uint160(addrs[{idx}]));")
         else:
-            lines.append("        IAbility[] memory abilities = new IAbility[](0);")
+            lines.append("        uint256[] memory abilities = new uint256[](0);")
 
         # Generate metadata arrays with sprite and palette data (if color flag is enabled)
         if include_color:
@@ -557,7 +566,6 @@ def generate_solidity_script(mons: Dict[str, MonData], contracts: Dict[str, Cont
         "import {DefaultMonRegistry} from \"../src/teams/DefaultMonRegistry.sol\";",
         "import {MonStats} from \"../src/Structs.sol\";",
         "import {Type} from \"../src/Enums.sol\";",
-        "import {IAbility} from \"../src/abilities/IAbility.sol\";",
         ""
     ]
 

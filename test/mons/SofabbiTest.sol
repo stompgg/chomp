@@ -72,7 +72,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(carrotHarvest))
+            ability: uint160(address(carrotHarvest))
         });
 
         // Create a second mon without the ability
@@ -89,7 +89,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams with two mons each
@@ -156,7 +156,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(carrotHarvest))
+            ability: uint160(address(carrotHarvest))
         });
         Mon memory regularMon = Mon({
             stats: MonStats({
@@ -171,7 +171,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams
@@ -238,7 +238,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory iceMon = Mon({
             stats: MonStats({
@@ -253,7 +253,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory earthMon = Mon({
             stats: MonStats({
@@ -268,7 +268,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory natureMon = Mon({
             stats: MonStats({
@@ -283,7 +283,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](4);
@@ -364,7 +364,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -438,7 +438,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})

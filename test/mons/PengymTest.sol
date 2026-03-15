@@ -123,7 +123,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMon1Moves,
-            ability: IAbility(address(postWorkout))
+            ability: uint160(address(postWorkout))
         });
 
         Mon memory regularMon = Mon({
@@ -139,7 +139,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMon2Moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create Bob's team: one mon with PanicStatus attack and one regular mon
@@ -162,7 +162,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: bobMon1Moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams
@@ -298,7 +298,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMon1Moves,
-            ability: IAbility(address(postWorkout))
+            ability: uint160(address(postWorkout))
         });
 
         Mon memory regularMon = Mon({
@@ -314,7 +314,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: aliceMon2Moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create Bob's team: one mon with FrostbiteStatus attack and one regular mon
@@ -337,7 +337,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: bobMon1Moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams
@@ -460,7 +460,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -541,7 +541,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory fastMon = Mon({
             stats: MonStats({
@@ -556,7 +556,7 @@ contract PengymTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory aliceTeam = new Mon[](4);
         aliceTeam[0] = slowMon;
