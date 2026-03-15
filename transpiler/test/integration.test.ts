@@ -21,7 +21,7 @@ import { SleepStatus } from '../ts-output/effects/status/SleepStatus';
 
 // Moves - select a few representative ones for testing
 import { BullRush } from '../ts-output/mons/aurox/BullRush';
-import { BigBite } from '../ts-output/mons/inutia/BigBite';
+import { Tinderclaws } from '../ts-output/mons/embursa/Tinderclaws';
 import { DeepFreeze } from '../ts-output/mons/pengym/DeepFreeze';
 import { RockPull } from '../ts-output/mons/gorillax/RockPull';
 import { UnboundedStrike } from '../ts-output/mons/iblivion/UnboundedStrike';
@@ -36,39 +36,7 @@ import * as Enums from '../ts-output/Enums';
 // Runtime
 import { globalEventStream } from '../ts-output/runtime';
 
-// =============================================================================
-// TEST UTILITIES
-// =============================================================================
-
-let addressCounter = 1;
-function generateAddress(): string {
-  return `0x${(addressCounter++).toString(16).padStart(40, '0')}`;
-}
-
-function setAddress(instance: any): string {
-  const addr = generateAddress();
-  instance._contractAddress = addr;
-  return addr;
-}
-
-/**
- * Mock RNG Oracle that returns deterministic values
- */
-class MockRNGOracle {
-  _contractAddress: string;
-  private seed: bigint;
-
-  constructor(seed: bigint = 12345n) {
-    this._contractAddress = generateAddress();
-    this.seed = seed;
-  }
-
-  getRNG(_p0Salt: string, _p1Salt: string): bigint {
-    // Deterministic RNG for reproducible tests
-    this.seed = (this.seed * 1103515245n + 12345n) % (2n ** 256n);
-    return this.seed;
-  }
-}
+import { resetAddressCounter, generateAddress, setAddress, MockRNGOracle } from './fixtures/mocks';
 
 /**
  * Mock Mon Registry for ITeamRegistry.getMonRegistry()
@@ -285,8 +253,7 @@ interface TestContext {
 }
 
 function createTestContext(): TestContext {
-  // Reset address counter
-  addressCounter = 1;
+  resetAddressCounter();
 
   // Create core contracts
   const engine = new Engine();
@@ -345,13 +312,13 @@ function createBasicMoves(ctx: TestContext): any[] {
   const bullRush = new BullRush(ctx.engine, ctx.typeCalculator);
   setAddress(bullRush);
 
-  const bigBite = new BigBite(ctx.engine, ctx.typeCalculator);
-  setAddress(bigBite);
+  const tinderclaws = new Tinderclaws(ctx.engine, ctx.typeCalculator);
+  setAddress(tinderclaws);
 
   const rockPull = new RockPull(ctx.engine, ctx.typeCalculator);
   setAddress(rockPull);
 
-  return [bullRush, bigBite, rockPull];
+  return [bullRush, tinderclaws, rockPull];
 }
 
 function startBattle(ctx: TestContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): string {

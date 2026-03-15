@@ -5,18 +5,15 @@ pragma solidity ^0.8.0;
 import "../../Constants.sol";
 import "../../Enums.sol";
 
-import {IEngine} from "../../IEngine.sol";
-
 import {IEffect} from "../../effects/IEffect.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract InfernalFlame is StandardAttack {
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR, IEffect BURN_STATUS)
+    constructor(ITypeCalculator TYPE_CALCULATOR, IEffect BURN_STATUS)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Infernal Flame",

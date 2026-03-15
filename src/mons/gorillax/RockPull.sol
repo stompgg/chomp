@@ -15,11 +15,9 @@ contract RockPull is IMoveSet {
     uint32 public constant OPPONENT_BASE_POWER = 80;
     uint32 public constant SELF_DAMAGE_BASE_POWER = 30;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
@@ -27,16 +25,17 @@ contract RockPull is IMoveSet {
         return "Rock Pull";
     }
 
-    function _didOtherPlayerChooseSwitch(bytes32 battleKey, uint256 attackerPlayerIndex) internal view returns (bool) {
+    function _didOtherPlayerChooseSwitch(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) internal view returns (bool) {
         // Check MoveDecision for other player
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        MoveDecision memory otherPlayerMove = ENGINE.getMoveDecisionForBattleState(battleKey, otherPlayerIndex);
+        MoveDecision memory otherPlayerMove = engine.getMoveDecisionForBattleState(battleKey, otherPlayerIndex);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = otherPlayerMove.packedMoveIndex & MOVE_INDEX_MASK;
         return moveIndex == SWITCH_MOVE_INDEX;
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -44,25 +43,25 @@ contract RockPull is IMoveSet {
         uint240,
         uint256 rng
     ) external {
-        if (_didOtherPlayerChooseSwitch(battleKey, attackerPlayerIndex)) {
+        if (_didOtherPlayerChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
             // Deal damage to the opposing mon
             AttackCalculator._calculateDamage(
-                ENGINE,
+                engine,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
                 OPPONENT_BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
-                moveType(battleKey),
-                moveClass(battleKey),
+                moveType(engine, battleKey),
+                moveClass(engine, battleKey),
                 rng,
                 DEFAULT_CRIT_RATE
             );
         } else {
             // Deal damage to ourselves
             (int32 selfDamage,) = AttackCalculator._calculateDamageView(
-                ENGINE,
+                engine,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
@@ -70,36 +69,36 @@ contract RockPull is IMoveSet {
                 SELF_DAMAGE_BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
-                moveType(battleKey),
-                moveClass(battleKey),
+                moveType(engine, battleKey),
+                moveClass(engine, battleKey),
                 rng,
                 DEFAULT_CRIT_RATE
             );
-            ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage);
+            engine.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage);
         }
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32 battleKey, uint256 attackerPlayerIndex) external view returns (uint32) {
-        if (_didOtherPlayerChooseSwitch(battleKey, attackerPlayerIndex)) {
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) external view returns (uint32) {
+        if (_didOtherPlayerChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
             return uint32(SWITCH_PRIORITY) + 1;
         } else {
             return DEFAULT_PRIORITY;
         }
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Earth;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

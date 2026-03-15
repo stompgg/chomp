@@ -12,13 +12,11 @@ import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 
 contract VitalSiphon is StandardAttack {
-
     uint32 public constant STAMINA_STEAL_PERCENT = 50;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
+    constructor(ITypeCalculator _TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
-            _ENGINE,
             _TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Vital Siphon",
@@ -37,6 +35,7 @@ contract VitalSiphon is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -45,25 +44,31 @@ contract VitalSiphon is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // 50% chance to steal stamina
         if (rng % 100 >= STAMINA_STEAL_PERCENT) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
             // Check if opponent has at least 1 stamina
-            int32 defenderStamina = ENGINE.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
-            uint32 defenderBaseStamina = ENGINE.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
+            int32 defenderStamina =
+                engine.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
+            uint32 defenderBaseStamina =
+                engine.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
             int32 totalDefenderStamina = int32(defenderBaseStamina) + defenderStamina;
 
             if (totalDefenderStamina >= 1) {
                 // Steal 1 stamina from opponent
-                ENGINE.updateMonState(defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina, -1);
+                engine.updateMonState(defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina, -1);
 
                 // Give 1 stamina to self
-                ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Stamina, 1);
+                engine.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Stamina, 1);
             }
         }
     }
 }
-

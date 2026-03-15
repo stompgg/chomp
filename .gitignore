@@ -9,7 +9,7 @@ out/
 /broadcast
 
 log.txt
-PLAN.md
+PLAN*.md
 
 # Dotenv file
 .env
@@ -55,3 +55,4 @@ transpiler/ts-output/
 .pytest_cache/
 .venv/
 .claude/
+node_modules/

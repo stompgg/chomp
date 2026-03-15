@@ -5,6 +5,7 @@ import {IEngine} from "../IEngine.sol";
 
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../moves/IMoveSet.sol";
+import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
 import {ICPU} from "./ICPU.sol";
 import {CPUMoveManager} from "./CPUMoveManager.sol";
@@ -94,36 +95,39 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 validMoveIndices = new uint8[](NUM_MOVES);
                 validMoveExtraData = new uint240[](NUM_MOVES);
                 for (uint256 i = 0; i < NUM_MOVES; i++) {
-                    IMoveSet move =
-                        ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
+                    uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
                     uint240 extraDataToUse = 0;
-                    if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
-                        // Skip if there are no valid switches
-                        if (validSwitchCount == 0) {
-                            continue;
-                        }
-                        uint256 randomIndex =
-                            RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
-                        extraDataToUse = uint240(validSwitchIndices[randomIndex]);
-                        validMoveExtraData[validMoveCount] = extraDataToUse;
-                    } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
-                        uint256 opponentIndex = (playerIndex + 1) % 2;
-                        uint256 opponentTeamSize = ENGINE.getTeamSize(battleKey, opponentIndex);
-                        uint256 koBitmap = ENGINE.getKOBitmap(battleKey, opponentIndex);
-                        uint256[] memory validTargets = new uint256[](opponentTeamSize);
-                        uint256 validTargetCount;
-                        for (uint256 j = 0; j < opponentTeamSize; j++) {
-                            if ((koBitmap & (1 << j)) == 0) {
-                                validTargets[validTargetCount++] = j;
+                    // Inline moves always have ExtraDataType.None — skip extraData logic
+                    if (!MoveSlotLib.isInline(rawMoveSlot)) {
+                        IMoveSet move = MoveSlotLib.toIMoveSet(rawMoveSlot);
+                        if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
+                            // Skip if there are no valid switches
+                            if (validSwitchCount == 0) {
+                                continue;
                             }
+                            uint256 randomIndex =
+                                RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
+                            extraDataToUse = uint240(validSwitchIndices[randomIndex]);
+                            validMoveExtraData[validMoveCount] = extraDataToUse;
+                        } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
+                            uint256 opponentIndex = (playerIndex + 1) % 2;
+                            uint256 opponentTeamSize = ENGINE.getTeamSize(battleKey, opponentIndex);
+                            uint256 koBitmap = ENGINE.getKOBitmap(battleKey, opponentIndex);
+                            uint256[] memory validTargets = new uint256[](opponentTeamSize);
+                            uint256 validTargetCount;
+                            for (uint256 j = 0; j < opponentTeamSize; j++) {
+                                if ((koBitmap & (1 << j)) == 0) {
+                                    validTargets[validTargetCount++] = j;
+                                }
+                            }
+                            if (validTargetCount == 0) {
+                                continue;
+                            }
+                            uint256 randomIndex =
+                                RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validTargetCount;
+                            extraDataToUse = uint240(validTargets[randomIndex]);
+                            validMoveExtraData[validMoveCount] = extraDataToUse;
                         }
-                        if (validTargetCount == 0) {
-                            continue;
-                        }
-                        uint256 randomIndex =
-                            RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validTargetCount;
-                        extraDataToUse = uint240(validTargets[randomIndex]);
-                        validMoveExtraData[validMoveCount] = extraDataToUse;
                     }
                     if (ENGINE.validatePlayerMoveForBattle(battleKey, i, playerIndex, extraDataToUse)) {
                         validMoveIndices[validMoveCount++] = uint8(i);

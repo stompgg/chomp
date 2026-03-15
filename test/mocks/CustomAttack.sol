@@ -24,11 +24,10 @@ contract CustomAttack is IMoveSet {
 
     StandardAttack private immutable _standardAttack;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, Args memory args) {
+    constructor(ITypeCalculator _TYPE_CALCULATOR, Args memory args) {
         // Create a StandardAttack with the specified parameters and all other values set to 0
         _standardAttack = new StandardAttack(
             address(this),
-            _ENGINE,
             _TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 BASE_POWER: args.BASE_POWER,
@@ -51,6 +50,7 @@ contract CustomAttack is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -58,27 +58,27 @@ contract CustomAttack is IMoveSet {
         uint240 extraData,
         uint256 rng
     ) external {
-        _standardAttack.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
     }
 
-    function priority(bytes32 battleKey, uint256 playerIndex) external view returns (uint32) {
-        return _standardAttack.priority(battleKey, playerIndex);
+    function priority(IEngine engine, bytes32 battleKey, uint256 playerIndex) external view returns (uint32) {
+        return _standardAttack.priority(engine, battleKey, playerIndex);
     }
 
-    function stamina(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external view returns (uint32) {
-        return _standardAttack.stamina(battleKey, playerIndex, monIndex);
+    function stamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external view returns (uint32) {
+        return _standardAttack.stamina(engine, battleKey, playerIndex, monIndex);
     }
 
-    function moveType(bytes32 battleKey) external view returns (Type) {
-        return _standardAttack.moveType(battleKey);
+    function moveType(IEngine engine, bytes32 battleKey) external view returns (Type) {
+        return _standardAttack.moveType(engine, battleKey);
     }
 
-    function isValidTarget(bytes32 battleKey, uint240 extraData) external view returns (bool) {
-        return _standardAttack.isValidTarget(battleKey, extraData);
+    function isValidTarget(IEngine engine, bytes32 battleKey, uint240 extraData) external view returns (bool) {
+        return _standardAttack.isValidTarget(engine, battleKey, extraData);
     }
 
-    function moveClass(bytes32 battleKey) external view returns (MoveClass) {
-        return _standardAttack.moveClass(battleKey);
+    function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass) {
+        return _standardAttack.moveClass(engine, battleKey);
     }
 
     function basePower(bytes32 battleKey) external view returns (uint32) {

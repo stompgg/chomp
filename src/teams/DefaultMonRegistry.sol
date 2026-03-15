@@ -12,7 +12,7 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
 
     EnumerableSetLib.Uint256Set private monIds;
     mapping(uint256 monId => MonStats) public monStats;
-    mapping(uint256 monId => EnumerableSetLib.AddressSet) private monMoves;
+    mapping(uint256 monId => EnumerableSetLib.Uint256Set) private monMoves;
     mapping(uint256 monId => EnumerableSetLib.AddressSet) private monAbilities;
     mapping(uint256 monId => mapping(bytes32 => bytes32)) private monMetadata;
 
@@ -26,7 +26,7 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
     function createMon(
         uint256 monId,
         MonStats memory _monStats,
-        IMoveSet[] memory allowedMoves,
+        uint256[] memory allowedMoves,
         IAbility[] memory allowedAbilities,
         bytes32[] memory keys,
         bytes32[] memory values
@@ -38,10 +38,10 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         }
         monIds.add(monId);
         monStats[monId] = _monStats;
-        EnumerableSetLib.AddressSet storage moves = monMoves[monId];
+        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
         uint256 numMoves = allowedMoves.length;
         for (uint256 i; i < numMoves; ++i) {
-            moves.add(address(allowedMoves[i]));
+            moves.add(allowedMoves[i]);
         }
         EnumerableSetLib.AddressSet storage abilities = monAbilities[monId];
         uint256 numAbilities = allowedAbilities.length;
@@ -54,8 +54,8 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
     function modifyMon(
         uint256 monId,
         MonStats memory _monStats,
-        IMoveSet[] memory movesToAdd,
-        IMoveSet[] memory movesToRemove,
+        uint256[] memory movesToAdd,
+        uint256[] memory movesToRemove,
         IAbility[] memory abilitiesToAdd,
         IAbility[] memory abilitiesToRemove
     ) external onlyOwner {
@@ -64,17 +64,17 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
             revert MonNotyetCreated();
         }
         monStats[monId] = _monStats;
-        EnumerableSetLib.AddressSet storage moves = monMoves[monId];
+        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
         {
             uint256 numMovesToAdd = movesToAdd.length;
             for (uint256 i; i < numMovesToAdd; ++i) {
-                moves.add(address(movesToAdd[i]));
+                moves.add(movesToAdd[i]);
             }
         }
         {
             uint256 numMovesToRemove = movesToRemove.length;
             for (uint256 i; i < numMovesToRemove; ++i) {
-                moves.remove(address(movesToRemove[i]));
+                moves.remove(movesToRemove[i]);
             }
         }
         EnumerableSetLib.AddressSet storage abilities = monAbilities[monId];
@@ -119,7 +119,7 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         }
         // Check that the mon's moves are valid for the current mon ID
         for (uint256 i; i < m.moves.length; ++i) {
-            if (!monMoves[monId].contains(address(m.moves[i]))) {
+            if (!monMoves[monId].contains(m.moves[i])) {
                 return false;
             }
         }
@@ -146,7 +146,7 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
     function getMonData(uint256 monId)
         external
         view
-        returns (MonStats memory _monStats, address[] memory moves, address[] memory abilities)
+        returns (MonStats memory _monStats, uint256[] memory moves, address[] memory abilities)
     {
         _monStats = monStats[monId];
         moves = monMoves[monId].values();
@@ -156,11 +156,11 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
     function getMonDataBatch(uint256[] calldata ids)
         external
         view
-        returns (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities)
+        returns (MonStats[] memory stats, uint256[][] memory moves, address[][] memory abilities)
     {
         uint256 len = ids.length;
         stats = new MonStats[](len);
-        moves = new address[][](len);
+        moves = new uint256[][](len);
         abilities = new address[][](len);
         for (uint256 i; i < len;) {
             uint256 monId = ids[i];
@@ -192,8 +192,8 @@ contract DefaultMonRegistry is IMonRegistry, Ownable {
         return monStats[monId];
     }
 
-    function isValidMove(uint256 monId, IMoveSet move) external view returns (bool) {
-        return monMoves[monId].contains(address(move));
+    function isValidMove(uint256 monId, uint256 moveSlot) external view returns (bool) {
+        return monMoves[monId].contains(moveSlot);
     }
 
     function isValidAbility(uint256 monId, IAbility ability) external view returns (bool) {

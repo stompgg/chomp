@@ -10,24 +10,22 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract PreemptiveShock is IAbility {
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
     uint32 public constant BASE_POWER = 15;
     uint32 public constant DEFAULT_VOL = 10;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
-    
+
     function name() public pure override returns (string memory) {
         return "Preemptive Shock";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256) external override {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256) external override {
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             playerIndex,
@@ -36,7 +34,7 @@ contract PreemptiveShock is IAbility {
             DEFAULT_VOL,
             Type.Lightning,
             MoveClass.Physical,
-            ENGINE.tempRNG(),
+            engine.tempRNG(),
             0
         );
     }

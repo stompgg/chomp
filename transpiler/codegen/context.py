@@ -67,6 +67,7 @@ class CodeGenerationContext:
     contracts_referenced: Set[str] = field(default_factory=set)
     set_types_used: Set[str] = field(default_factory=set)
     external_structs_used: Dict[str, str] = field(default_factory=dict)
+    viem_imports_used: Set[str] = field(default_factory=set)
 
     # Flags
     _in_base_constructor_args: bool = False
@@ -126,6 +127,7 @@ class CodeGenerationContext:
         self.contracts_referenced = set()
         self.set_types_used = set()
         self.external_structs_used = {}
+        self.viem_imports_used = set()
 
     def reset_for_contract(self) -> None:
         """Reset state for a new contract."""

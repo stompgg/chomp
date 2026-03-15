@@ -395,7 +395,7 @@ class ContractGenerator(BaseGenerator):
         default_val = (
             self._expr.generate(var.initial_value)
             if var.initial_value
-            else self._type_converter.default_value(ts_type)
+            else self._type_converter.default_value(ts_type, var.type_name)
         )
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
 
@@ -424,7 +424,9 @@ class ContractGenerator(BaseGenerator):
             field_modifier = 'private ' if is_public_mapping else modifier
             field_decl = (
                 f'{self.indent()}{field_modifier}{field_name}: '
-                f'Record<string, Record<string, {inner_value}>> = {{}};'
+                f'Record<string, Record<string, {inner_value}>> = '
+                f'new Proxy({{}} as Record<string, Record<string, {inner_value}>>, '
+                f'{{ get: (t, k) => {{ if (typeof k === "string" && !(k in t)) t[k] = {{}}; return t[k as any]; }} }});'
             )
             if is_public_mapping:
                 # Generate getter method for 2-level mappings

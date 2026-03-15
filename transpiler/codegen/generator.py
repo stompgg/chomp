@@ -139,6 +139,13 @@ class TypeScriptCodeGenerator:
         for contract in ast.contracts:
             output.append(self._contract_generator.generate_contract(contract))
 
+        # Scan generated content to determine which viem imports are actually used
+        content = '\n'.join(output)
+        for viem_fn in ('keccak256', 'encodePacked', 'encodeAbiParameters',
+                        'decodeAbiParameters', 'parseAbiParameters', 'stringToHex'):
+            if viem_fn in content:
+                self._ctx.viem_imports_used.add(viem_fn)
+
         # Insert imports at placeholder
         import_lines = self._import_generator.generate(self._ctx.current_file_type)
         output[import_placeholder_index] = import_lines

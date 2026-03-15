@@ -42,6 +42,9 @@ uint256 constant EFFECT_COUNT_MASK = 0x3F; // 6 bits = max count of 63
 
 address constant TOMBSTONE_ADDRESS = address(0xdead);
 
+// Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
+uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
+
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
 bytes32 constant MOVE_MISS_EVENT_TYPE = sha256(abi.encode("MoveMiss"));

@@ -15,12 +15,10 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 contract DeepFreeze is IMoveSet {
     uint32 public constant BASE_POWER = 90;
 
-    IEngine immutable ENGINE;
     IEffect immutable FROSTBITE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, IEffect _FROSTBITE_STATUS) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR, IEffect _FROSTBITE_STATUS) {
         FROSTBITE = _FROSTBITE_STATUS;
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
@@ -29,8 +27,8 @@ contract DeepFreeze is IMoveSet {
         return "Deep Freeze";
     }
 
-    function _frostbiteExists(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal view returns (int32) {
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
+    function _frostbiteExists(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal view returns (int32) {
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
         uint256 numEffects = effects.length;
         for (uint256 i; i < numEffects;) {
             if (address(effects[i].effect) == address(FROSTBITE)) {
@@ -44,6 +42,7 @@ contract DeepFreeze is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -53,45 +52,45 @@ contract DeepFreeze is IMoveSet {
     ) external {
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint32 damageToDeal = BASE_POWER;
-        int32 frostbiteIndex = _frostbiteExists(battleKey, otherPlayerIndex, defenderMonIndex);
+        int32 frostbiteIndex = _frostbiteExists(engine, battleKey, otherPlayerIndex, defenderMonIndex);
         // Remove frostbite if it exists, and double the damage dealt
         if (frostbiteIndex != -1) {
-            ENGINE.removeEffect(otherPlayerIndex, defenderMonIndex, uint256(uint32(frostbiteIndex)));
+            engine.removeEffect(otherPlayerIndex, defenderMonIndex, uint256(uint32(frostbiteIndex)));
             damageToDeal = damageToDeal * 2;
         }
         // Deal damage
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
             damageToDeal,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
-            moveType(battleKey),
-            moveClass(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
             rng,
             DEFAULT_CRIT_RATE
         );
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Ice;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

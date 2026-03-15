@@ -18,11 +18,9 @@ contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
     uint32 public constant STAMINA_COST = 2;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
@@ -31,6 +29,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -39,7 +38,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         uint256 rng
     ) external {
         // Check if already used this switch-in (effect present = already used)
-        (EffectInstance[] memory effects,) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -50,29 +49,29 @@ contract SneakAttack is IMoveSet, BasicEffect {
         uint256 targetMonIndex = uint256(extraData);
 
         // Get effective crit rate (checks 999 buff)
-        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
+        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);
 
         // Build DamageCalcContext manually to target any opponent mon (not just active)
-        MonStats memory attackerStats = ENGINE.getMonStatsForBattle(battleKey, attackerPlayerIndex, attackerMonIndex);
-        MonStats memory defenderStats = ENGINE.getMonStatsForBattle(battleKey, defenderPlayerIndex, targetMonIndex);
+        MonStats memory attackerStats = engine.getMonStatsForBattle(battleKey, attackerPlayerIndex, attackerMonIndex);
+        MonStats memory defenderStats = engine.getMonStatsForBattle(battleKey, defenderPlayerIndex, targetMonIndex);
 
         DamageCalcContext memory ctx = DamageCalcContext({
             attackerMonIndex: uint8(attackerMonIndex),
             defenderMonIndex: uint8(targetMonIndex),
             attackerAttack: attackerStats.attack,
-            attackerAttackDelta: ENGINE.getMonStateForBattle(
+            attackerAttackDelta: engine.getMonStateForBattle(
                 battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Attack
             ),
             attackerSpAtk: attackerStats.specialAttack,
-            attackerSpAtkDelta: ENGINE.getMonStateForBattle(
+            attackerSpAtkDelta: engine.getMonStateForBattle(
                 battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.SpecialAttack
             ),
             defenderDef: defenderStats.defense,
-            defenderDefDelta: ENGINE.getMonStateForBattle(
+            defenderDefDelta: engine.getMonStateForBattle(
                 battleKey, defenderPlayerIndex, targetMonIndex, MonStateIndexName.Defense
             ),
             defenderSpDef: defenderStats.specialDefense,
-            defenderSpDefDelta: ENGINE.getMonStateForBattle(
+            defenderSpDefDelta: engine.getMonStateForBattle(
                 battleKey, defenderPlayerIndex, targetMonIndex, MonStateIndexName.SpecialDefense
             ),
             defenderType1: defenderStats.type1,
@@ -84,33 +83,33 @@ contract SneakAttack is IMoveSet, BasicEffect {
         );
 
         if (damage != 0) {
-            ENGINE.dealDamage(defenderPlayerIndex, targetMonIndex, damage);
+            engine.dealDamage(defenderPlayerIndex, targetMonIndex, damage);
         }
         if (eventType != bytes32(0)) {
-            ENGINE.emitEngineEvent(eventType, "");
+            engine.emitEngineEvent(eventType, "");
         }
 
         // Mark as used by adding local effect on the attacker's mon
-        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return STAMINA_COST;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) external pure returns (Type) {
         return Type.Liquid;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -121,10 +120,10 @@ contract SneakAttack is IMoveSet, BasicEffect {
     // IEffect implementation — local effect that cleans up on switch-out
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x20;
+        return 0x8020;
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
         external
         pure
         override

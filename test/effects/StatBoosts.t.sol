@@ -56,15 +56,15 @@ contract StatBoostsTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Create the StatBoosts effect and move
-        statBoosts = new StatBoosts(IEngine(address(engine)));
-        statBoostMove = new StatBoostsMove(IEngine(address(engine)), statBoosts);
+        statBoosts = new StatBoosts();
+        statBoostMove = new StatBoostsMove(statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_statBoostMove() public {
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = statBoostMove; // Stat boost move (we'll pass different params when using it)
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(statBoostMove))); // Stat boost move (we'll pass different params when using it)
 
         Mon memory mon1 = Mon({
             stats: MonStats({
@@ -237,8 +237,8 @@ contract StatBoostsTest is Test, BattleHelper {
 
     function test_allStatBoosts() public {
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = statBoostMove; // Stat boost move (we'll pass different params when using it)
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(statBoostMove))); // Stat boost move (we'll pass different params when using it)
 
         Mon memory mon1 = Mon({
             stats: MonStats({
@@ -352,13 +352,13 @@ contract StatBoostsTest is Test, BattleHelper {
     }
     
     function test_permanentTempStatBoostInteraction() public {
-        StandardAttackFactory attackFactory = new StandardAttackFactory(engine, typeCalc);
-        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(engine, statBoosts);
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
+        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(statBoosts);
 
         // Create teams with two mons each
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = statBoostMove;
-        moves[1] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(statBoostMove)));
+        moves[1] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
                 STAMINA_COST: 0,
@@ -372,7 +372,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 NAME: "SpAtkDebuffHit",
                 EFFECT: IEffect(address(spAtkDebuff))
             })
-        );
+        ))));
         uint32 maxSpAtk = 100;
         Mon memory mon = _createMon();
         mon.stats.specialAttack = maxSpAtk;

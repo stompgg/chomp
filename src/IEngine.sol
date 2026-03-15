@@ -5,6 +5,7 @@ import "./Enums.sol";
 
 import "./IValidator.sol";
 import "./Structs.sol";
+import "./effects/IEffect.sol";
 import "./moves/IMoveSet.sol";
 
 interface IEngine {
@@ -22,6 +23,19 @@ interface IEngine {
     function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(bytes32 key, uint192 value) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
+    function dispatchStandardAttack(
+        uint256 attackerPlayerIndex,
+        uint256 defenderMonIndex,
+        uint32 basePower,
+        uint32 accuracy,
+        uint32 volatility,
+        Type moveType,
+        MoveClass moveClass,
+        uint256 critRate,
+        uint8 effectAccuracy,
+        IEffect effect,
+        uint256 rng
+    ) external returns (int32 damage, bytes32 eventType);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
     function execute(bytes32 battleKey) external;
@@ -68,7 +82,7 @@ interface IEngine {
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view
-        returns (IMoveSet);
+        returns (uint256);
     function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)
         external
         view

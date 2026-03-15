@@ -15,11 +15,9 @@ contract ActusReus is IAbility, BasicEffect {
     uint8 public constant SPEED_DEBUFF_PERCENT = 50;
     bytes32 public constant INDICTMENT = bytes32("INDICTMENT");
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -27,23 +25,23 @@ contract ActusReus is IAbility, BasicEffect {
         return "Actus Reus";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
         }
-        ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: AfterDamage, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0xC0;
+        return 0x80C0;
     }
 
-    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
+    function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         view
@@ -53,7 +51,7 @@ contract ActusReus is IAbility, BasicEffect {
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
         uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
         bool isOtherMonKOed =
-            ENGINE.getMonStateForBattle(
+            engine.getMonStateForBattle(
                 battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
             ) == 1;
         if (isOtherMonKOed) {
@@ -62,7 +60,7 @@ contract ActusReus is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32)
         external
         override
         returns (bytes32, bool)
@@ -71,7 +69,7 @@ contract ActusReus is IAbility, BasicEffect {
         if (uint256(extraData) == 1) {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed
             bool isKOed =
-                ENGINE.getMonStateForBattle(
+                engine.getMonStateForBattle(
                     battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                 ) == 1;
             if (isKOed) {
@@ -83,7 +81,7 @@ contract ActusReus is IAbility, BasicEffect {
                     boostPercent: SPEED_DEBUFF_PERCENT,
                     boostType: StatBoostType.Divide
                 });
-                STAT_BOOSTS.addStatBoosts(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+                STAT_BOOSTS.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
                 return (bytes32(0), false);
             }
         }

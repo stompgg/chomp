@@ -14,10 +14,9 @@ import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract Overflow is StandardAttack {
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR)
+    constructor(ITypeCalculator _TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
-            _ENGINE,
             _TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Overflow",
@@ -36,26 +35,20 @@ contract Overflow is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256,
+        uint256 defenderMonIndex,
         uint240,
         uint256 rng
     ) public override {
-        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(ENGINE, battleKey, attackerPlayerIndex);
-        AttackCalculator._calculateDamage(
-            ENGINE,
-            TYPE_CALCULATOR,
-            battleKey,
-            attackerPlayerIndex,
-            basePower(battleKey),
-            accuracy(battleKey),
-            volatility(battleKey),
-            moveType(battleKey),
-            moveClass(battleKey),
-            rng,
-            effectiveCritRate
+        uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            effectiveCritRate, 0, IEffect(address(0)), rng
         );
     }
 }

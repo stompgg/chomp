@@ -18,12 +18,10 @@ contract NightTerrors is IMoveSet, BasicEffect {
     uint32 public constant BASE_DAMAGE_PER_STACK = 20;
     uint32 public constant ASLEEP_DAMAGE_PER_STACK = 30;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
     IEffect immutable SLEEP_STATUS;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, IEffect _SLEEP_STATUS) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR, IEffect _SLEEP_STATUS) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
         SLEEP_STATUS = _SLEEP_STATUS;
     }
@@ -33,6 +31,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -43,7 +42,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         // Check if the effect is already applied to the attacker
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
         bool found = false;
         uint256 effectIndex = 0;
         uint64 currentTerrorCount = 0;
@@ -65,10 +64,10 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
         if (found) {
             // Edit existing effect
-            ENGINE.editEffect(attackerPlayerIndex, attackerMonIndex, effectIndex, newExtraData);
+            engine.editEffect(attackerPlayerIndex, attackerMonIndex, effectIndex, newExtraData);
         } else {
             // Add new effect
-            ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, this, newExtraData);
+            engine.addEffect(attackerPlayerIndex, attackerMonIndex, this, newExtraData);
         }
     }
 
@@ -81,23 +80,23 @@ contract NightTerrors is IMoveSet, BasicEffect {
         terrorCount = uint64(uint256(data) & type(uint64).max);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Cosmic;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Special;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -107,10 +106,10 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
     // Steps: RoundEnd, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x24;
+        return 0x8024;
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         returns (bytes32, bool)
@@ -120,8 +119,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
         (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
 
         // Check current stamina of the attacker (who has the effect)
-        int32 staminaDelta = ENGINE.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
-        int32 staminaLeft = int32(ENGINE.getMonStatsForBattle(battleKey, targetIndex, monIndex).stamina) + staminaDelta;
+        int32 staminaDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+        int32 staminaLeft = int32(engine.getMonStatsForBattle(battleKey, targetIndex, monIndex).stamina) + staminaDelta;
 
         // If not enough stamina to pay for all stacks, nothing happens
         if (staminaLeft < int32(uint32(terrorCount))) {
@@ -129,13 +128,13 @@ contract NightTerrors is IMoveSet, BasicEffect {
         }
 
         // Pay stamina cost from the attacker
-        ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -int32(uint32(terrorCount)));
+        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -int32(uint32(terrorCount)));
 
         // Get the defender's active mon index
         uint256 defenderMonIndex = defenderPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
 
         // Check if opponent (defender) is asleep by iterating through their effects
-        (EffectInstance[] memory defenderEffects, ) = ENGINE.getEffects(battleKey, defenderPlayerIndex, defenderMonIndex);
+        (EffectInstance[] memory defenderEffects, ) = engine.getEffects(battleKey, defenderPlayerIndex, defenderMonIndex);
         bool isAsleep = false;
         for (uint256 i = 0; i < defenderEffects.length; i++) {
             if (address(defenderEffects[i].effect) == address(SLEEP_STATUS)) {
@@ -152,23 +151,23 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
         // Deal damage using AttackCalculator (attacker damages defender)
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             targetIndex, // attacker player index
             totalBasePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
-            moveType(battleKey),
-            moveClass(battleKey),
-            ENGINE.tempRNG(),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            engine.tempRNG(),
             DEFAULT_CRIT_RATE
         );
 
         return (extraData, false);
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override

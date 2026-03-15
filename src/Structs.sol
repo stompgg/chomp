@@ -65,6 +65,7 @@ struct BattleData {
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
+    uint48 lastExecuteTimestamp; // Written at end of every execute() — packed with flags in slot 1 to avoid extra SSTORE
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
@@ -79,7 +80,6 @@ struct BattleConfig {
     uint8 engineHooksLength;
     uint16 koBitmaps; // Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap (supports up to 8 mons per team)
     uint48 startTimestamp;
-    uint48 lastExecuteTimestamp; // Written at end of every execute() for timeout tracking
     bytes32 p0Salt;
     bytes32 p1Salt;
     MoveDecision p0Move;
@@ -151,7 +151,7 @@ struct MonStats {
 struct Mon {
     MonStats stats;
     IAbility ability;
-    IMoveSet[] moves;
+    uint256[] moves; // Lower 160 bits = address for external moves, or packed inline data if upper bits set
 }
 
 struct MonState {

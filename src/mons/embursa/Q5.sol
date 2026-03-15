@@ -16,11 +16,9 @@ contract Q5 is IMoveSet, BasicEffect {
     uint256 public constant DELAY = 5;
     uint32 public constant BASE_POWER = 150;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
@@ -37,33 +35,33 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
         // Add effect to global effects
-        ENGINE.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
+        engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {
-            HeatBeaconLib._clearPriorityBoost(ENGINE, attackerPlayerIndex);
+        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+            HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Special;
     }
 
@@ -74,27 +72,32 @@ contract Q5 is IMoveSet, BasicEffect {
     // Effect implementation
     // Steps: RoundStart
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x02;
+        return 0x8002;
     }
 
-    function onRoundStart(bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onRoundStart(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256,
+        uint256
+    ) external override returns (bytes32, bool) {
         (uint256 turnCount, uint256 attackerPlayerIndex) = _unpackExtraData(extraData);
         if (turnCount == DELAY) {
             // Deal damage
             AttackCalculator._calculateDamage(
-                ENGINE,
+                engine,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
-                moveType(battleKey),
-                moveClass(battleKey),
+                moveType(engine, battleKey),
+                moveClass(engine, battleKey),
                 rng,
                 DEFAULT_CRIT_RATE
             );

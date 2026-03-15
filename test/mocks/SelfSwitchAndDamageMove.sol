@@ -11,11 +11,9 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract SelfSwitchAndDamageMove is IMoveSet {
 
-    IEngine immutable ENGINE;
     int32 immutable DAMAGE;
 
-    constructor(IEngine _ENGINE, int32 power) {
-        ENGINE = _ENGINE;
+    constructor(int32 power) {
         DAMAGE = power;
     }
 
@@ -23,34 +21,34 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return "Self Switch And Damage Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240 extraData, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240 extraData, uint256) external {
         uint256 monToSwitchIndex = uint256(extraData);
 
         // Deal damage first to opponent
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        ENGINE.dealDamage(otherPlayerIndex, defenderMonIndex, DAMAGE);
+        engine.dealDamage(otherPlayerIndex, defenderMonIndex, DAMAGE);
 
         // Use the new switchActiveMon function
-        ENGINE.switchActiveMon(attackerPlayerIndex, monToSwitchIndex);
+        engine.switchActiveMon(attackerPlayerIndex, monToSwitchIndex);
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function moveType(bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) external pure returns (Type) {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 

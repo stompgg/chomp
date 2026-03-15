@@ -1,0 +1,9 @@
+{
+  "name": "Blow",
+  "basePower": 70,
+  "staminaCost": 2,
+  "moveType": "Air",
+  "moveClass": "Physical",
+  "effectAccuracy": 0,
+  "effect": null
+}

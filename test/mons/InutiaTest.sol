@@ -46,15 +46,15 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        interweaving = new Interweaving(IEngine(address(engine)), statBoost);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoost = new StatBoosts();
+        interweaving = new Interweaving(statBoost);
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_interweaving() public {
         // Create a team with a mon that has Interweaving ability
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
         // Create a mon with Interweaving ability
         Mon memory interweavingMon = Mon({
             stats: MonStats({
@@ -141,15 +141,15 @@ contract InutiaTest is Test, BattleHelper {
     }
 
     function test_initialize() public {
-        Initialize initialize = new Initialize(engine, statBoost);
+        Initialize initialize = new Initialize(statBoost);
 
         // Create a validator with 2 mons and 1 move per mon
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = initialize;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(initialize)));
 
         // Create mon with initialize
         Mon memory initializeMon = Mon({
@@ -241,14 +241,14 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_chainExpansion() public {
         TypeCalculator tc = new TypeCalculator();
-        ChainExpansion ce = new ChainExpansion(engine, tc);
+        ChainExpansion ce = new ChainExpansion(tc);
         DefaultValidator v = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ce;
-        moves[1] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ce)));
+        moves[1] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 64,
                 STAMINA_COST: 0,
@@ -262,7 +262,7 @@ contract InutiaTest is Test, BattleHelper {
                 NAME: "Damage Attack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         // 1/8 damage
         Mon memory m1 = Mon({

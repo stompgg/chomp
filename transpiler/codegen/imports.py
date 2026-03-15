@@ -47,11 +47,12 @@ class ImportGenerator:
 
         lines = []
 
-        # viem imports
-        lines.append(
-            "import { keccak256, encodePacked, encodeAbiParameters, "
-            "decodeAbiParameters, parseAbiParameters, stringToHex } from 'viem';"
-        )
+        # viem imports (only what's actually used)
+        if self._ctx.viem_imports_used:
+            viem_imports = sorted(self._ctx.viem_imports_used)
+            lines.append(
+                f"import {{ {', '.join(viem_imports)} }} from 'viem';"
+            )
 
         # Runtime imports
         runtime_imports = self._build_runtime_imports()

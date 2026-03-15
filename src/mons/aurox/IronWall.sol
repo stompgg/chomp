@@ -15,17 +15,12 @@ contract IronWall is IMoveSet, BasicEffect {
     int32 public constant HEAL_PERCENT = 50;
     int32 public constant INITIAL_HEAL_PERCENT = 20;
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Iron Wall";
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -34,7 +29,7 @@ contract IronWall is IMoveSet, BasicEffect {
         uint256
     ) external {
         // Check to see if the effect is already active
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -42,38 +37,38 @@ contract IronWall is IMoveSet, BasicEffect {
         }
 
         // The effect will last until Aurox switches out
-        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
 
         // Also, heal for INITIAL_HEAL_PERCENT
         int32 maxHp =
-            int32(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp));
+            int32(engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp));
         int32 healAmount = (maxHp * INITIAL_HEAL_PERCENT) / 100;
         // Prevent overhealing
         int32 currentHpDelta =
-            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentHpDelta + healAmount > 0) {
             healAmount = -currentHpDelta;
         }
-        ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
+        engine.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Metal;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -84,10 +79,10 @@ contract IronWall is IMoveSet, BasicEffect {
     // IEffect implementation
     // Steps: OnMonSwitchOut, AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x60;
+        return 0x8060;
     }
 
-    function onAfterDamage(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -97,16 +92,16 @@ contract IronWall is IMoveSet, BasicEffect {
         // Heal only if not KO'ed
         if (
             healAmount > 0
-                && ENGINE.getMonStateForBattle(
+                && engine.getMonStateForBattle(
                         battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
                     ) == 0
         ) {
-            ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
+            engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
         }
         return (extraData, false);
     }
 
-    function onMonSwitchOut(bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
         external
         pure
         override

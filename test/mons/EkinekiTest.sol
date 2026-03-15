@@ -60,15 +60,15 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function test_bubbleBopHitsTwice() public {
         uint32 maxHp = 200;
 
-        BubbleBop bubbleBop = new BubbleBop(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        BubbleBop bubbleBop = new BubbleBop(ITypeCalculator(address(typeCalc)));
 
         // Create a single-hit reference attack with same params (0 vol, 0 crit for predictable damage)
         StandardAttack singleHit = attackFactory.createAttack(
@@ -88,8 +88,8 @@ contract EkinekiTest is Test, BattleHelper {
         );
 
         // Set up team with BubbleBop
-        IMoveSet[] memory bubbleBopMoves = new IMoveSet[](1);
-        bubbleBopMoves[0] = bubbleBop;
+        uint256[] memory bubbleBopMoves = new uint256[](1);
+        bubbleBopMoves[0] = uint256(uint160(address(bubbleBop)));
         Mon memory bubbleBopMon = _createMon();
         bubbleBopMon.moves = bubbleBopMoves;
         bubbleBopMon.stats.hp = maxHp;
@@ -99,8 +99,8 @@ contract EkinekiTest is Test, BattleHelper {
         aliceTeam[0] = bubbleBopMon;
 
         // Set up team with single hit for Bob (so bob takes damage, not deals it)
-        IMoveSet[] memory singleMoves = new IMoveSet[](1);
-        singleMoves[0] = singleHit;
+        uint256[] memory singleMoves = new uint256[](1);
+        singleMoves[0] = uint256(uint160(address(singleHit)));
         Mon memory singleMon = _createMon();
         singleMon.moves = singleMoves;
         singleMon.stats.hp = maxHp;
@@ -166,11 +166,11 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackHitsNonActiveMon() public {
         uint32 maxHp = 100;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = sneakAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(sneakAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -213,11 +213,11 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackOncePerSwitchIn() public {
         uint32 maxHp = 100;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = sneakAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(sneakAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -265,11 +265,11 @@ contract EkinekiTest is Test, BattleHelper {
     function test_sneakAttackResetsOnSwitchIn() public {
         uint32 maxHp = 200;
 
-        SneakAttack sneakAttack = new SneakAttack(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = sneakAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(sneakAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -316,8 +316,8 @@ contract EkinekiTest is Test, BattleHelper {
     function test_nineNineNineBoostsCritRate() public {
         uint32 maxHp = 200;
 
-        NineNineNine nineNineNine = new NineNineNine(IEngine(address(engine)));
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        NineNineNine nineNineNine = new NineNineNine();
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         // Create a predictable attack (0 vol, 0 default crit) to isolate crit boost
         StandardAttack testAttack = attackFactory.createAttack(
@@ -337,9 +337,9 @@ contract EkinekiTest is Test, BattleHelper {
         );
 
         // Team with 999 + test attack
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = nineNineNine;
-        moves[1] = testAttack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(nineNineNine)));
+        moves[1] = uint256(uint160(address(testAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -386,7 +386,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexBoostsOnKO() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         // Create a strong attack that will KO in one hit
         StandardAttack koAttack = attackFactory.createAttack(
@@ -405,8 +405,8 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = koAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(koAttack)));
 
         // Alice's team: 3 mons, one with savior complex
         Mon memory aliceMon = _createMon();
@@ -488,7 +488,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexTriggersOncePerGame() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -506,8 +506,8 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = koAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(koAttack)));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
@@ -599,7 +599,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexNoBoostWithZeroKOs() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(IEngine(address(engine)), statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -617,8 +617,8 @@ contract EkinekiTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = koAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(koAttack)));
 
         Mon memory monWithAbility = _createMon();
         monWithAbility.moves = moves;
@@ -696,10 +696,10 @@ contract EkinekiTest is Test, BattleHelper {
     function test_overflowDealsDamage() public {
         uint32 maxHp = 200;
 
-        Overflow overflow = new Overflow(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        Overflow overflow = new Overflow(ITypeCalculator(address(typeCalc)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = overflow;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(overflow)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;

@@ -3,11 +3,11 @@ pragma solidity ^0.8.0;
 
 import "./Constants.sol";
 import "./Structs.sol";
-import "./moves/IMoveSet.sol";
 
 import {IEngine} from "./IEngine.sol";
 import {IValidator} from "./IValidator.sol";
 import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
+import {MoveSlotLib} from "./moves/MoveSlotLib.sol";
 
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {IMonRegistry} from "./teams/IMonRegistry.sol";
@@ -109,15 +109,16 @@ contract DefaultValidator is IValidator {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         uint256 activeMonIndex = (playerIndex == 0) ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
 
-        IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+        uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
         int32 staminaDelta =
             ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
         uint32 baseStamina =
             ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
 
         return ValidatorLogic.validateSpecificMoveSelection(
+            ENGINE,
             battleKey,
-            moveSet,
+            rawMoveSlot,
             playerIndex,
             activeMonIndex,
             extraData,
@@ -200,11 +201,12 @@ contract DefaultValidator is IValidator {
         int32 staminaDelta = (playerIndex == 0) ? vctx.p0ActiveMonStaminaDelta : vctx.p1ActiveMonStaminaDelta;
 
         // Still need external call to get the move (can't batch all moves)
-        IMoveSet moveSet = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+        uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
 
         return ValidatorLogic.validateSpecificMoveSelection(
+            ENGINE,
             battleKey,
-            moveSet,
+            rawMoveSlot,
             playerIndex,
             activeMonIndex,
             extraData,

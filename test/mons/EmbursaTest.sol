@@ -56,13 +56,13 @@ contract EmbursaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_q5() public {
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = new Q5(engine, typeCalc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(new Q5(typeCalc))));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -135,11 +135,11 @@ contract EmbursaTest is Test, BattleHelper {
 
     function test_heatBeacon() public {
         DummyStatus dummyStatus = new DummyStatus();
-        HeatBeacon heatBeacon = new HeatBeacon(IEngine(address(engine)), IEffect(address(dummyStatus)));
-        Q5 q5 = new Q5(engine, typeCalc);
-        SetAblaze setAblaze = new SetAblaze(engine, typeCalc, IEffect(address(dummyStatus)));
-        StatBoosts statBoosts = new StatBoosts(engine);
-        HoneyBribe honeyBribe = new HoneyBribe(engine, statBoosts);
+        HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(dummyStatus)));
+        Q5 q5 = new Q5(typeCalc);
+        SetAblaze setAblaze = new SetAblaze(typeCalc, IEffect(address(dummyStatus)));
+        StatBoosts statBoosts = new StatBoosts();
+        HoneyBribe honeyBribe = new HoneyBribe(statBoosts);
 
         IMoveSet koMove = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -157,12 +157,12 @@ contract EmbursaTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](5);
-        aliceMoves[0] = heatBeacon;
-        aliceMoves[1] = q5;
-        aliceMoves[2] = setAblaze;
-        aliceMoves[3] = honeyBribe;
-        aliceMoves[4] = koMove;
+        uint256[] memory aliceMoves = new uint256[](5);
+        aliceMoves[0] = uint256(uint160(address(heatBeacon)));
+        aliceMoves[1] = uint256(uint160(address(q5)));
+        aliceMoves[2] = uint256(uint160(address(setAblaze)));
+        aliceMoves[3] = uint256(uint160(address(honeyBribe)));
+        aliceMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -173,7 +173,7 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: aliceMoves,
@@ -181,12 +181,12 @@ contract EmbursaTest is Test, BattleHelper {
         });
 
         // 5. Create Bob's mon with higher speed
-        IMoveSet[] memory bobMoves = new IMoveSet[](5);
-        bobMoves[0] = heatBeacon;
-        bobMoves[1] = q5;
-        bobMoves[2] = setAblaze;
-        bobMoves[3] = honeyBribe;
-        bobMoves[4] = koMove;
+        uint256[] memory bobMoves = new uint256[](5);
+        bobMoves[0] = uint256(uint160(address(heatBeacon)));
+        bobMoves[1] = uint256(uint160(address(q5)));
+        bobMoves[2] = uint256(uint160(address(setAblaze)));
+        bobMoves[3] = uint256(uint160(address(honeyBribe)));
+        bobMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory bobMon = Mon({
             stats: MonStats({
@@ -197,7 +197,7 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: bobMoves,
@@ -233,10 +233,10 @@ contract EmbursaTest is Test, BattleHelper {
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 1, "Bob's mon should have 1 effect (Dummy status)");
         assertEq(address(effects[0].effect), address(dummyStatus), "Bob's mon should have Dummy status");
-        assertEq(heatBeacon.priority(battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
+        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
         mockOracle.setRNG(2); // Magic number to cancel out volatility
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 4, 0, 0);
-        assertEq(heatBeacon.priority(battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
+        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
         assertEq(
             engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
             1,
@@ -318,12 +318,12 @@ contract EmbursaTest is Test, BattleHelper {
      * - If burn is applied externally, SpATK boost is still granted at end of round
      */
     function test_tinderclaws_selfBurnOnMove() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = new StatBoosts();
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 10,
                 STAMINA_COST: 1,
@@ -337,7 +337,7 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "TestAttack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
@@ -408,12 +408,12 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_tinderclaws_restingRemovesBurn() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = new StatBoosts();
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
                 STAMINA_COST: 1,
@@ -427,7 +427,7 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "BurnAttack",
                 EFFECT: IEffect(address(burnStatus))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;

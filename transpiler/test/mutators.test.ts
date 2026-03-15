@@ -21,89 +21,7 @@ import { globalEventStream, ContractContainer } from '../ts-output/runtime';
 import { BattleHarness } from '../ts-output/runtime/battle-harness';
 import { setupContainer } from '../ts-output/factories';
 
-// =============================================================================
-// TEST UTILITIES
-// =============================================================================
-
-let addressCounter = 1;
-function generateAddress(): string {
-  return `0x${(addressCounter++).toString(16).padStart(40, '0')}`;
-}
-
-function setAddress(instance: any): string {
-  const addr = generateAddress();
-  instance._contractAddress = addr;
-  return addr;
-}
-
-// =============================================================================
-// MOCK CONTRACTS (for contracts with value type dependencies)
-// =============================================================================
-
-/**
- * Mock Validator that always passes
- */
-class MockValidator {
-  _contractAddress: string;
-
-  constructor() {
-    this._contractAddress = generateAddress();
-  }
-
-  validateGameStart(): boolean {
-    return true;
-  }
-
-  validateTeamSize(): bigint[] {
-    return [1n, 6n];
-  }
-
-  validateSwitch(_battleKey: string, _playerIndex: bigint, _monToSwitchIndex: bigint): boolean {
-    return true;
-  }
-
-  validateSpecificMoveSelection(_battleKey: string, _moveIndex: bigint, _playerIndex: bigint, _extraData: bigint): boolean {
-    return true;
-  }
-
-  validateTimeout(_battleKey: string, _presumedAFKPlayerIndex: bigint): string {
-    // Return zero address = no timeout winner
-    return '0x0000000000000000000000000000000000000000';
-  }
-}
-
-/**
- * Mock Ruleset
- */
-class MockRuleset {
-  _contractAddress: string;
-
-  constructor() {
-    this._contractAddress = '0x0000000000000000000000000000000000000000';
-  }
-
-  getInitialGlobalEffects(): [any[], string[]] {
-    return [[], []];
-  }
-}
-
-/**
- * Mock RNG Oracle
- */
-class MockRNGOracle {
-  _contractAddress: string;
-  private seed: bigint;
-
-  constructor(seed: bigint = 12345n) {
-    this._contractAddress = generateAddress();
-    this.seed = seed;
-  }
-
-  getRNG(): bigint {
-    this.seed = (this.seed * 1103515245n + 12345n) % (2n ** 256n);
-    return this.seed;
-  }
-}
+import { resetAddressCounter, generateAddress, setAddress, MockValidator, MockRuleset, MockRNGOracle } from './fixtures/mocks';
 
 /**
  * Create a container with mocks registered for contracts with value type dependencies
@@ -137,7 +55,7 @@ describe('__mutate* methods', () => {
   let engine: Engine;
 
   beforeEach(() => {
-    addressCounter = 1;
+    resetAddressCounter();
     engine = new Engine();
     setAddress(engine);
     globalEventStream.clear();
@@ -200,7 +118,7 @@ describe('BattleHarness integration with mutators', () => {
   let harness: BattleHarness;
 
   beforeEach(() => {
-    addressCounter = 1;
+    resetAddressCounter();
     globalEventStream.clear();
     const container = createTestContainer();
     harness = new BattleHarness(container);
@@ -228,7 +146,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Fire,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],
@@ -247,7 +165,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Liquid,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],
@@ -282,7 +200,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Fire,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],
@@ -301,7 +219,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Liquid,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],
@@ -343,7 +261,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Fire,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],
@@ -362,7 +280,7 @@ describe('BattleHarness integration with mutators', () => {
               },
               type1: Enums.Type.Liquid,
               type2: Enums.Type.None,
-              moves: ['BigBite'],
+              moves: ['BullRush'],
               ability: 'Angery',
             },
           ],

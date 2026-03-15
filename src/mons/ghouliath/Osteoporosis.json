@@ -1,0 +1,9 @@
+{
+  "name": "Osteoporosis",
+  "basePower": 90,
+  "staminaCost": 2,
+  "moveType": "Yin",
+  "moveClass": "Physical",
+  "effectAccuracy": 100,
+  "effect": null
+}

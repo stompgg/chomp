@@ -1,0 +1,9 @@
+{
+  "name": "Pound Ground",
+  "basePower": 95,
+  "staminaCost": 3,
+  "moveType": "Earth",
+  "moveClass": "Physical",
+  "effectAccuracy": 0,
+  "effect": null
+}

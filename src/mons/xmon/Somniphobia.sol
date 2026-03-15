@@ -14,44 +14,38 @@ contract Somniphobia is IMoveSet, BasicEffect {
     uint256 public constant DURATION = 6;
     int32 public constant DAMAGE_DENOM = 16;
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Somniphobia";
     }
 
-    function move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
         // Add effect globally for 6 turns (only if it's not already in global effects)
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, 2, 2);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
         }
-        ENGINE.addEffect(2, attackerPlayerIndex, this, bytes32(DURATION));
+        engine.addEffect(2, attackerPlayerIndex, this, bytes32(DURATION));
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Cosmic;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -61,33 +55,33 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x84;
+        return 0x8084;
     }
 
-    function onAfterMove(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32, bool)
     {
-        MoveDecision memory moveDecision = ENGINE.getMoveDecisionForBattleState(battleKey, targetIndex);
+        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
 
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
 
         // If this player rested (NO_OP), deal damage
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+            uint32 maxHp = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
             int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM;
 
             if (damage > 0) {
-                ENGINE.dealDamage(targetIndex, monIndex, damage);
+                engine.dealDamage(targetIndex, monIndex, damage);
             }
         }
 
         return (extraData, false);
     }
 
-    function onRoundEnd(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override
