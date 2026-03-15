@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
 Meta-script to orchestrate the full deployment pipeline:
-1. Run EngineAndPeriphery.s.sol -> parse output -> update .env
-2. Run SetupMons.s.sol -> parse output -> update .env
-3. Run SetupCPU.s.sol
-4. Run createAddressAndABIs.py and generateMonsTypescript.py
+1. Validate move contracts against CSV data
+2. Generate Solidity deployment script (SetupMons.s.sol)
+3. Run EngineAndPeriphery.s.sol -> parse output -> update .env
+4. Run SetupMons.s.sol -> parse output -> update .env
+5. Run SetupCPU.s.sol
+6. Run createAddressAndABIs.py and generateMonsTypescript.py
 
 Usage:
     python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet
 """
 
 import argparse
+import csv
 import getpass
+import json
+import os
 import re
 import subprocess
 import sys
@@ -120,6 +125,38 @@ def run_forge_script(
     return result.stdout + result.stderr
 
 
+def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
+    """Find all JSON inline moves, pack them, and return as (move_display_name, hex_value) tuples.
+
+    Uses CSV move names (e.g. "Pound Ground") so the Address keys match what
+    generateMonsTypeScript.py expects.
+    """
+    import csv
+    sys.path.insert(0, str(chomp_dir / "processing"))
+    from packMoves import pack_move
+
+    src_dir = chomp_dir / "src"
+    moves_csv = chomp_dir / "drool" / "moves.csv"
+
+    results = []
+    with open(moves_csv, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            move_name = row["Name"].strip()
+            mon_name = row["Mon"].strip()
+            # Derive JSON path the same way generateSolidity.py does
+            contract_name = re.sub(r'\W+', '', move_name.replace(" ", ""))
+            json_path = src_dir / "mons" / mon_name.lower() / f"{contract_name}.json"
+            if not json_path.exists():
+                continue
+            with open(json_path, "r", encoding="utf-8") as jf:
+                move_data = json.load(jf)
+            # Pack with effect_address=0 — the client only needs the move params
+            packed = pack_move(move_data, effect_address=0)
+            results.append((move_name, f"0x{packed:064x}"))
+
+    return results
+
+
 def run_typescript_scripts(
     network: str,
     chomp_dir: Path,
@@ -128,6 +165,12 @@ def run_typescript_scripts(
 ):
     """Run createAddressAndABIs.py and generateMonsTypescript.py."""
     processing_dir = chomp_dir / "processing"
+
+    # Add packed inline move values to the address list
+    inline_moves = collect_inline_move_addresses(chomp_dir)
+    if inline_moves:
+        print(f"Adding {len(inline_moves)} inline move packed values to addresses")
+        all_addresses = list(all_addresses) + inline_moves
 
     # Run createAddressAndABIs.py
     print(f"\n{'='*60}")
@@ -196,6 +239,11 @@ def main():
         action='store_true',
         help='Skip forge scripts, only run TypeScript generation'
     )
+    parser.add_argument(
+        '--skip-build',
+        action='store_true',
+        help='Skip validation and Solidity generation (assume already up to date)'
+    )
 
     args = parser.parse_args()
     network = "mainnet" if args.mainnet else "testnet"
@@ -217,6 +265,28 @@ def main():
     password = None
     if not args.skip_forge and not args.dry_run:
         password = getpass.getpass("Enter keystore password: ")
+
+    # Run validation and Solidity generation
+    if not args.skip_build:
+        # Ensure imports resolve from the processing directory
+        sys.path.insert(0, str(chomp_dir / "processing"))
+        os.chdir(chomp_dir)
+
+        print(f"\n{'='*60}")
+        print("Validating move contracts against CSV data")
+        print(f"{'='*60}")
+        from validateMoves import run as run_validate
+        if not run_validate():
+            print("ERROR: Move validation failed. Fix issues before deploying.")
+            sys.exit(1)
+
+        print(f"\n{'='*60}")
+        print("Generating Solidity deployment script (SetupMons.s.sol)")
+        print(f"{'='*60}")
+        from generateSolidity import run as run_solidity
+        if not run_solidity():
+            print("ERROR: Solidity generation failed.")
+            sys.exit(1)
 
     # Collect all addresses across forge scripts
     all_addresses: list[tuple[str, str]] = []
