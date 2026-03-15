@@ -27,6 +27,9 @@ Aurox:
 Sofabbi
 - Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
 
+
+
+
 Nirvamma ideas:
 
 some strong 4 stamina move?
@@ -44,7 +47,7 @@ Meta Bolt
     - separate into different layers, and then hide the resulting layer when chosen (20% chance to inflict Burn, Frostbite, Zap)
     - once all have been chosen, something happens
 
-- Ability: Comprehension
+- Ability: Acclimation
 Any time Nirvamma takes take, track the source (if it exists). Any subsequent damage from that type is reduced by 25% (this stacks), resets on switch in, up to a cap of -50% damage.
 
 -----------------------------------------------------

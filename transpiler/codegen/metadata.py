@@ -208,40 +208,7 @@ class FactoryGenerator:
 
     def _generate_registration(self, name: str, meta: ContractMetadata) -> str:
         """Generate container registration for a contract."""
-        # Determine dependencies from constructor params
-        # List of (param_name, type_name, resolved_name, is_self)
-        deps = []
-        for idx, (param_name, param_type) in enumerate(meta.constructor_params):
-            # Check if param type is a contract/interface
-            is_interface = param_type in self.metadata.interfaces
-            is_contract = param_type in self.metadata.contracts
-
-            if is_contract or is_interface:
-                resolved_name = param_type  # Default to type name
-                is_self = False  # Whether this is a self-referential dependency
-
-                # Use resolver if available and it's an interface
-                if self.resolver and is_interface:
-                    resolved_dep = self.resolver.resolve(
-                        contract_name=name,
-                        param_name=param_name,
-                        type_name=param_type,
-                        is_interface=True,
-                        is_value_type=False,
-                        param_index=idx,
-                    )
-                    if resolved_dep.resolved_as:
-                        # Handle @self marker for self-referential dependencies
-                        if resolved_dep.resolved_as == "@self":
-                            is_self = True
-                            resolved_name = None
-                        # Handle both single values and arrays
-                        elif isinstance(resolved_dep.resolved_as, list):
-                            resolved_name = resolved_dep.resolved_as[0] if resolved_dep.resolved_as else param_type
-                        else:
-                            resolved_name = resolved_dep.resolved_as
-
-                deps.append((param_name, param_type, resolved_name, is_self))
+        deps = self._get_resolved_deps(name, meta)
 
         if not deps:
             # No dependencies - simple registration
@@ -263,33 +230,6 @@ class FactoryGenerator:
             f"  container.registerLazySingleton('{name}', [{deps_str}], "
             f"({params_str}) => new {name}({args}));"
         )
-
-    def _generate_args(
-        self, meta: ContractMetadata, deps: List[str]
-    ) -> str:
-        """Generate constructor argument mapping (legacy, for type-only deps)."""
-        args = []
-        dep_idx = 0
-        for param_name, param_type in meta.constructor_params:
-            if param_type in deps:
-                args.append(f"{param_name}: d{dep_idx}")
-                dep_idx += 1
-            # Skip non-contract params (they need to be provided separately)
-        return ', '.join(args)
-
-    def _generate_args_resolved(
-        self, meta: ContractMetadata, deps: List[Tuple[str, str, str]]
-    ) -> str:
-        """Generate constructor argument mapping with resolved deps."""
-        args = []
-        dep_names = {param_name for param_name, _, _ in deps}
-        dep_idx = 0
-        for param_name, _ in meta.constructor_params:
-            if param_name in dep_names:
-                args.append(f"{param_name}: d{dep_idx}")
-                dep_idx += 1
-            # Skip non-contract params (they need to be provided separately)
-        return ', '.join(args)
 
     def _generate_positional_args(
         self, meta: ContractMetadata, deps: List[Tuple[str, str, str, bool]]
