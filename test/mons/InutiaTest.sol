@@ -54,7 +54,7 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_interweaving() public {
         // Create a team with a mon that has Interweaving ability
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
         // Create a mon with Interweaving ability
         Mon memory interweavingMon = Mon({
             stats: MonStats({
@@ -148,8 +148,8 @@ contract InutiaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = initialize;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(initialize)));
 
         // Create mon with initialize
         Mon memory initializeMon = Mon({
@@ -246,9 +246,9 @@ contract InutiaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ce;
-        moves[1] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ce)));
+        moves[1] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 64,
                 STAMINA_COST: 0,
@@ -262,7 +262,7 @@ contract InutiaTest is Test, BattleHelper {
                 NAME: "Damage Attack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         // 1/8 damage
         Mon memory m1 = Mon({

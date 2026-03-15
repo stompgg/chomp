@@ -96,9 +96,9 @@ contract CPUTest is Test {
         IMoveSet roundTrip = new RoundTrip(typeCalc);
         IMoveSet guestFeature = new GuestFeature(typeCalc);
 
-        IMoveSet[] memory boringMoves = new IMoveSet[](2);
-        boringMoves[0] = move1;
-        boringMoves[1] = move2;
+        uint256[] memory boringMoves = new uint256[](2);
+        boringMoves[0] = uint256(uint160(address(move1)));
+        boringMoves[1] = uint256(uint160(address(move2)));
         Mon memory mon1 = Mon({
             stats: MonStats({
                 hp: 1,
@@ -144,9 +144,9 @@ contract CPUTest is Test {
             moves: boringMoves,
             ability: IAbility(address(0))
         });
-        IMoveSet[] memory movesWithEffects = new IMoveSet[](2);
-        movesWithEffects[0] = roundTrip;
-        movesWithEffects[1] = guestFeature;
+        uint256[] memory movesWithEffects = new uint256[](2);
+        movesWithEffects[0] = uint256(uint160(address(roundTrip)));
+        movesWithEffects[1] = uint256(uint160(address(guestFeature)));
         Mon memory mon4 = Mon({
             stats: MonStats({
                 hp: 1,
@@ -402,7 +402,7 @@ contract CPUTest is Test {
                 type1: t,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
+            moves: new uint256[](0),
             ability: IAbility(address(0))
         });
         return mon;
@@ -465,9 +465,9 @@ contract CPUTest is Test {
 
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        uint256[] memory moves = new uint256[](1);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0))));
         Mon memory mon = _createMon(Type.Fire);
         mon.moves = moves;
         team[0] = mon;
@@ -516,9 +516,9 @@ contract CPUTest is Test {
 
         // Both teams have just one mon with a TestMove that costs 3 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        uint256[] memory moves = new uint256[](1);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0))));
         Mon memory mon = _createMon(Type.Fire);
         mon.stats.stamina = 5;
         mon.moves = moves;
@@ -575,10 +575,10 @@ contract CPUTest is Test {
     function test_okayCPUSelectsSelfMoveAtFullHealth() public {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        uint256[] memory moves = new uint256[](2);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
-        moves[1] = moveFactory.createMove(MoveClass.Self, Type.Fire, 1, 0);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Fire, 1, 0))));
         Mon memory mon = _createMon(Type.Fire);
         mon.moves = moves;
         team[0] = mon;
@@ -631,11 +631,11 @@ contract CPUTest is Test {
     function test_okayCPUSelectsOtherMoveAtFullHealth() public {
         // Both teams have 3 moves, one Attack that costs 0 stamina, one Self that costs 1 stamina, and one Other that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](3);
+        uint256[] memory moves = new uint256[](3);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0);
-        moves[1] = moveFactory.createMove(MoveClass.Special, Type.Fire, 0, 0);
-        moves[2] = moveFactory.createMove(MoveClass.Other, Type.Fire, 1, 0);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Special, Type.Fire, 0, 0))));
+        moves[2] = uint256(uint160(address(moveFactory.createMove(MoveClass.Other, Type.Fire, 1, 0))));
         Mon memory mon = _createMon(Type.Fire);
         mon.moves = moves;
         team[0] = mon;
@@ -688,10 +688,10 @@ contract CPUTest is Test {
     function test_okayCPUSelectsAttackMoveAtNonFullHealth() public {
         // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
         Mon[] memory team = new Mon[](1);
-        IMoveSet[] memory moves = new IMoveSet[](2);
+        uint256[] memory moves = new uint256[](2);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = moveFactory.createMove(MoveClass.Self, Type.Fire, 0, 0); 
-        moves[1] = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Fire, 0, 0)))); 
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1))));
         Mon memory mon = _createMon(Type.Fire);
         mon.stats.hp = 10;
         mon.moves = moves;

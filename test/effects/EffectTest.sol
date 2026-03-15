@@ -119,8 +119,8 @@ contract EffectTest is Test, BattleHelper {
         // Verify the name matches
         assertEq(frostbiteAttack.name(), "FrostbiteHit");
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = frostbiteAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(frostbiteAttack)));
         Mon memory mon = Mon({
             stats: MonStats({
                 hp: 20,
@@ -205,8 +205,8 @@ contract EffectTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = frostbiteAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(frostbiteAttack)));
         Mon memory mon = Mon({
             stats: MonStats({
                 hp: 20,
@@ -266,8 +266,8 @@ contract EffectTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = sleepAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(sleepAttack)));
 
         Mon memory fastMon = _createMon();
         fastMon.moves = moves;
@@ -346,8 +346,8 @@ contract EffectTest is Test, BattleHelper {
                 EFFECT: panicStatus
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = panicAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(panicAttack)));
 
         Mon memory fastMon = Mon({
             stats: MonStats({
@@ -447,8 +447,8 @@ contract EffectTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = burnAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(burnAttack)));
 
         // Create mons with HP = 256 for easy division by 16 (burn damage denominator)
         Mon memory mon = Mon({
@@ -573,9 +573,9 @@ contract EffectTest is Test, BattleHelper {
                 EFFECT: zapStatus
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = fasterThanSwapZap;
-        moves[1] = normalZap;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(fasterThanSwapZap)));
+        moves[1] = uint256(uint160(address(normalZap)));
 
         // Create mons with HP = 256 for easy division by 16 (burn damage denominator)
         Mon memory fastMon = Mon({
@@ -699,8 +699,8 @@ contract EffectTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = noDamageAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(noDamageAttack)));
         Mon memory mon = Mon({
             stats: MonStats({
                 hp: 20,
@@ -753,8 +753,8 @@ contract EffectTest is Test, BattleHelper {
         ReduceSpAtkMove reduceSpAtkMove = new ReduceSpAtkMove();
 
         // Create a mon with the ReduceSpAtkMove for Alice
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = reduceSpAtkMove;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(reduceSpAtkMove)));
         Mon memory aliceMon = Mon({
             stats: MonStats({
                 hp: 20,
@@ -773,8 +773,8 @@ contract EffectTest is Test, BattleHelper {
 
         // Create a mon with the heal effect ability for Bob
         // This mon should heal when its SpecialAttack is reduced
-        IMoveSet[] memory bobMoves = new IMoveSet[](1);
-        bobMoves[0] = IMoveSet(address(0)); // Bob won't attack
+        uint256[] memory bobMoves = new uint256[](1);
+        bobMoves[0] = uint256(uint160(address(0))); // Bob won't attack
         Mon memory bobMon = Mon({
             stats: MonStats({
                 hp: 20,

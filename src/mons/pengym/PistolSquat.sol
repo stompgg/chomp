@@ -64,7 +64,12 @@ contract PistolSquat is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        super.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Deal damage and then force a switch if the opposing mon is not KO'ed
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;

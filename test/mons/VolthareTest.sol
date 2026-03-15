@@ -73,7 +73,7 @@ contract VolthareTest is Test, BattleHelper {
      *   Lightning Physical damage to the opponent's active mon
      */
     function test_preemptiveShockDealsDamage() public {
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
 
         // Create a mon with PreemptiveShock ability
         Mon memory preemptiveShockMon = Mon({
@@ -152,9 +152,9 @@ contract VolthareTest is Test, BattleHelper {
             GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = IMoveSet(address(overclockMove));
-        moves[1] = IMoveSet(address(msb));
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(overclockMove)));
+        moves[1] = uint256(uint160(address(msb)));
 
         // Create a mon with no ability
         Mon memory aliceMon = Mon({
@@ -252,10 +252,10 @@ contract VolthareTest is Test, BattleHelper {
 
     function test_dualShock() public {
         // Create a team with a mon that knows Dual Shock
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        uint256[] memory moves = new uint256[](1);
         ZapStatus zapStatus = new ZapStatus();
         DualShock dualShock = new DualShock(typeCalc, zapStatus, overclock);
-        moves[0] = IMoveSet(address(dualShock));
+        moves[0] = uint256(uint160(address(dualShock)));
 
         // Create a mon with nice round stats
         Mon memory fastMon = Mon({

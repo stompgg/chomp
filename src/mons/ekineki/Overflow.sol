@@ -39,23 +39,16 @@ contract Overflow is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256,
+        uint256 defenderMonIndex,
         uint240,
         uint256 rng
     ) public override {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);
-        AttackCalculator._calculateDamage(
-            engine,
-            TYPE_CALCULATOR,
-            battleKey,
-            attackerPlayerIndex,
-            basePower(battleKey),
-            accuracy(battleKey),
-            volatility(battleKey),
-            moveType(engine, battleKey),
-            moveClass(engine, battleKey),
-            rng,
-            effectiveCritRate
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            effectiveCritRate, 0, IEffect(address(0)), rng
         );
     }
 }

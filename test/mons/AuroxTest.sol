@@ -73,8 +73,8 @@ contract AuroxTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         BullRush bullRush = new BullRush(ITypeCalculator(address(typeCalc)));
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = bullRush;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(bullRush)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -153,11 +153,11 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = frostbiteAttack;
-        moves[1] = attack;
-        moves[2] = gildedRecovery;
-        moves[3] = zeroDamageStaminaAttack;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(frostbiteAttack)));
+        moves[1] = uint256(uint160(address(attack)));
+        moves[2] = uint256(uint160(address(gildedRecovery)));
+        moves[3] = uint256(uint160(address(zeroDamageStaminaAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -267,9 +267,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -356,9 +356,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory fastMon = _createMon();
         fastMon.moves = moves;
@@ -423,9 +423,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -498,9 +498,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -590,8 +590,8 @@ contract AuroxTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -640,8 +640,8 @@ contract AuroxTest is Test, BattleHelper {
         VolatilePunch volatilePunch = new VolatilePunch(
             typeCalc, burnStatus, frostbiteStatus
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = volatilePunch;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(volatilePunch)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;

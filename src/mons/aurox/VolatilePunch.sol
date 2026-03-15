@@ -50,7 +50,12 @@ contract VolatilePunch is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage to opponent
-        (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        (int32 damage,) = engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Apply status effects if damage was dealt
         if (damage > 0) {

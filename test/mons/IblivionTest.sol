@@ -77,11 +77,11 @@ contract IblivionTest is Test, BattleHelper {
 
     function test_baselightStartsAtOneOnFirstSwitchIn() public {
         // Create a mon with Baselight ability
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -123,11 +123,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_baselightGainsOnePerRound() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -177,11 +177,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Brightback Tests ============
 
     function test_brightbackHealsWithStack() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -262,11 +262,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_brightbackNoHealWithoutStack() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -320,11 +320,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Unbounded Strike Tests ============
 
     function test_unboundedStrikeNormalPower() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -391,11 +391,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_unboundedStrikeEmpoweredPower() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -470,11 +470,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Loop Tests ============
 
     function test_loopAppliesStatBoosts() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -525,11 +525,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_loopFailsIfAlreadyActive() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -581,11 +581,11 @@ contract IblivionTest is Test, BattleHelper {
         // Test that Loop gives correct boosts at different Baselight levels
         // Level 1: 15%, Level 2: 30%, Level 3: 40%
 
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -636,11 +636,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Renormalize Tests ============
 
     function test_renormalizeSetsBaselightToThree() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -684,11 +684,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_renormalizeClearsStatBoosts() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -737,11 +737,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_renormalizeClearsLoopActive() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -797,11 +797,11 @@ contract IblivionTest is Test, BattleHelper {
 
     function test_renormalizeHasLowerPriority() public {
         // Renormalize should have -1 priority (DEFAULT_PRIORITY - 1 = 2)
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory fastMon = Mon({
             stats: MonStats({
@@ -886,17 +886,17 @@ contract IblivionTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory iblivionMoves = new IMoveSet[](4);
-        iblivionMoves[0] = brightback;
-        iblivionMoves[1] = unboundedStrike;
-        iblivionMoves[2] = loop;
-        iblivionMoves[3] = renormalize;
+        uint256[] memory iblivionMoves = new uint256[](4);
+        iblivionMoves[0] = uint256(uint160(address(brightback)));
+        iblivionMoves[1] = uint256(uint160(address(unboundedStrike)));
+        iblivionMoves[2] = uint256(uint160(address(loop)));
+        iblivionMoves[3] = uint256(uint160(address(renormalize)));
 
-        IMoveSet[] memory opponentMoves = new IMoveSet[](4);
-        opponentMoves[0] = burnAttack;
-        opponentMoves[1] = effectRemover;
-        opponentMoves[2] = loop;
-        opponentMoves[3] = renormalize;
+        uint256[] memory opponentMoves = new uint256[](4);
+        opponentMoves[0] = uint256(uint160(address(burnAttack)));
+        opponentMoves[1] = uint256(uint160(address(effectRemover)));
+        opponentMoves[2] = uint256(uint160(address(loop)));
+        opponentMoves[3] = uint256(uint160(address(renormalize)));
 
         uint32 baseAttack = 100;
 

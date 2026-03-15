@@ -55,3 +55,4 @@ transpiler/ts-output/
 .pytest_cache/
 .venv/
 .claude/
+node_modules/

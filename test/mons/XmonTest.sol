@@ -69,8 +69,8 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus();
         ContagiousSlumber contagiousSlumber = new ContagiousSlumber(IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = contagiousSlumber;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(contagiousSlumber)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -139,9 +139,9 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = vitalSiphon;
-        moves[1] = nullMove;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(vitalSiphon)));
+        moves[1] = uint256(uint160(address(nullMove)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -199,8 +199,8 @@ contract XmonTest is Test, BattleHelper {
     function test_somniphobiaDamagesMonsWhoRest() public {
         Somniphobia somniphobia = new Somniphobia();
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = somniphobia;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(somniphobia)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -300,9 +300,9 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = attack;
-        moves[1] = staminaBurn;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(attack)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
 
         Mon memory fastMon = _createMon();
         fastMon.moves = moves;
@@ -380,8 +380,8 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus();
         NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = nightTerrors;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(nightTerrors)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -445,8 +445,8 @@ contract XmonTest is Test, BattleHelper {
         SleepStatus sleepStatus = new SleepStatus();
         NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = nightTerrors;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(nightTerrors)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -532,9 +532,9 @@ contract XmonTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = nightTerrors;
-        moves[1] = sleepMove;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(nightTerrors)));
+        moves[1] = uint256(uint160(address(sleepMove)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;

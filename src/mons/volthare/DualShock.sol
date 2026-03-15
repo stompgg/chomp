@@ -49,7 +49,12 @@ contract DualShock is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        super.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Apply Zap to self
         engine.addEffect(attackerPlayerIndex, attackerMonIndex, ZAP_STATUS, "");

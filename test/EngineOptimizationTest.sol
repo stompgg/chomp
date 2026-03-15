@@ -74,10 +74,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = effectMove;
+        mon.moves[0] = uint256(uint160(address(effectMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -125,10 +125,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = effectMove;
+        mon.moves[0] = uint256(uint160(address(effectMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -187,10 +187,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = noDamageAttack;
+        mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -246,10 +246,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = noDamageAttack;
+        mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -309,10 +309,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = cheapAttack;
+        mon.moves[0] = uint256(uint160(address(cheapAttack)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -366,10 +366,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
                 attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
                 type1: Type.Fire, type2: Type.None
             }),
-            moves: new IMoveSet[](1),
+            moves: new uint256[](1),
             ability: IAbility(address(0))
         });
-        mon.moves[0] = noDamageAttack;
+        mon.moves[0] = uint256(uint160(address(noDamageAttack)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;

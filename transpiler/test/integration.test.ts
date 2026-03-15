@@ -21,7 +21,7 @@ import { SleepStatus } from '../ts-output/effects/status/SleepStatus';
 
 // Moves - select a few representative ones for testing
 import { BullRush } from '../ts-output/mons/aurox/BullRush';
-import { BigBite } from '../ts-output/mons/inutia/BigBite';
+import { Tinderclaws } from '../ts-output/mons/embursa/Tinderclaws';
 import { DeepFreeze } from '../ts-output/mons/pengym/DeepFreeze';
 import { RockPull } from '../ts-output/mons/gorillax/RockPull';
 import { UnboundedStrike } from '../ts-output/mons/iblivion/UnboundedStrike';
@@ -345,13 +345,13 @@ function createBasicMoves(ctx: TestContext): any[] {
   const bullRush = new BullRush(ctx.engine, ctx.typeCalculator);
   setAddress(bullRush);
 
-  const bigBite = new BigBite(ctx.engine, ctx.typeCalculator);
-  setAddress(bigBite);
+  const tinderclaws = new Tinderclaws(ctx.engine, ctx.typeCalculator);
+  setAddress(tinderclaws);
 
   const rockPull = new RockPull(ctx.engine, ctx.typeCalculator);
   setAddress(rockPull);
 
-  return [bullRush, bigBite, rockPull];
+  return [bullRush, tinderclaws, rockPull];
 }
 
 function startBattle(ctx: TestContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): string {

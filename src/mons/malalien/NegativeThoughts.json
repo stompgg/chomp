@@ -1,0 +1,9 @@
+{
+  "name": "Negative Thoughts",
+  "basePower": 80,
+  "staminaCost": 3,
+  "moveType": "Math",
+  "moveClass": "Special",
+  "effectAccuracy": 10,
+  "effect": "PanicStatus"
+}

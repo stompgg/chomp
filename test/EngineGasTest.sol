@@ -95,16 +95,16 @@ contract EngineGasTest is Test, BattleHelper {
         mon.stats.attack = 10;
         mon.stats.specialAttack = 10;
 
-        mon.moves = new IMoveSet[](4);
+        mon.moves = new uint256[](4);
         StatBoosts statBoosts = new StatBoosts();
         IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
         IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
-        mon.moves[0] = burnMove;
-        mon.moves[1] = frostbiteMove;
-        mon.moves[2] = statBoostMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](4);
         for (uint256 i = 0; i < team.length; i++) {
@@ -178,10 +178,10 @@ contract EngineGasTest is Test, BattleHelper {
 
         vm.startSnapshotGas("Intermediary stuff");
         // Rearrange order of moves for battle 2
-        mon.moves[1] = burnMove;
-        mon.moves[2] = frostbiteMove;
-        mon.moves[3] = statBoostMove;
-        mon.moves[0] = damageMove;
+        mon.moves[1] = uint256(uint160(address(burnMove)));
+        mon.moves[2] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[3] = uint256(uint160(address(statBoostMove)));
+        mon.moves[0] = uint256(uint160(address(damageMove)));
         for (uint256 i = 0; i < team.length; i++) {
             team[i] = mon;
         }
@@ -257,10 +257,10 @@ contract EngineGasTest is Test, BattleHelper {
 
         // Battle 3: Repeat exact sequence of Battle 1 to test warm storage slots
         // Restore original move order (same as battle 1)
-        mon.moves[0] = burnMove;
-        mon.moves[1] = frostbiteMove;
-        mon.moves[2] = statBoostMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
         for (uint256 i = 0; i < team.length; i++) {
             team[i] = mon;
         }
@@ -345,16 +345,16 @@ contract EngineGasTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: new uint256[](4),
             ability: IAbility(address(0))
         });
 
         // Simple high-damage move to end battle quickly (200 power, 100% accuracy, 0 stamina cost)
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
-        mon.moves[0] = damageMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(damageMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -417,7 +417,7 @@ contract EngineGasTest is Test, BattleHelper {
     function test_identicalBattlesWithEffectsGas() public {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 100, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: new uint256[](4),
             ability: IAbility(address(0))
         });
 
@@ -428,10 +428,10 @@ contract EngineGasTest is Test, BattleHelper {
         // Damage move - high power to guarantee KO
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 500, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
 
-        mon.moves[0] = effectMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(effectMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -532,14 +532,14 @@ contract EngineGasTest is Test, BattleHelper {
         // Create a simple mon with one high-damage move
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: new uint256[](4),
             ability: IAbility(address(0))
         });
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
-        mon.moves[0] = damageMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(damageMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -626,15 +626,15 @@ contract EngineGasTest is Test, BattleHelper {
         // Create a mon with a damage move (outcome depends on RNG for volatility/crit)
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 50, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
+            moves: new uint256[](4),
             ability: IAbility(address(0))
         });
 
         IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 30, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0}))));
-        mon.moves[0] = damageMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(damageMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;

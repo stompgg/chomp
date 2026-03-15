@@ -71,8 +71,8 @@ contract BattleHistoryTest is Test, BattleHelper {
 
     /// @notice Helper to create a mon with specific speed
     function _createMon(uint32 speed, uint32 hp) internal view returns (Mon memory) {
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = simpleAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(simpleAttack)));
 
         return Mon({
             stats: MonStats({

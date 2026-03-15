@@ -61,8 +61,8 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_q5() public {
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = new Q5(typeCalc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(new Q5(typeCalc))));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -157,12 +157,12 @@ contract EmbursaTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](5);
-        aliceMoves[0] = heatBeacon;
-        aliceMoves[1] = q5;
-        aliceMoves[2] = setAblaze;
-        aliceMoves[3] = honeyBribe;
-        aliceMoves[4] = koMove;
+        uint256[] memory aliceMoves = new uint256[](5);
+        aliceMoves[0] = uint256(uint160(address(heatBeacon)));
+        aliceMoves[1] = uint256(uint160(address(q5)));
+        aliceMoves[2] = uint256(uint160(address(setAblaze)));
+        aliceMoves[3] = uint256(uint160(address(honeyBribe)));
+        aliceMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -173,7 +173,7 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: aliceMoves,
@@ -181,12 +181,12 @@ contract EmbursaTest is Test, BattleHelper {
         });
 
         // 5. Create Bob's mon with higher speed
-        IMoveSet[] memory bobMoves = new IMoveSet[](5);
-        bobMoves[0] = heatBeacon;
-        bobMoves[1] = q5;
-        bobMoves[2] = setAblaze;
-        bobMoves[3] = honeyBribe;
-        bobMoves[4] = koMove;
+        uint256[] memory bobMoves = new uint256[](5);
+        bobMoves[0] = uint256(uint160(address(heatBeacon)));
+        bobMoves[1] = uint256(uint160(address(q5)));
+        bobMoves[2] = uint256(uint160(address(setAblaze)));
+        bobMoves[3] = uint256(uint160(address(honeyBribe)));
+        bobMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory bobMon = Mon({
             stats: MonStats({
@@ -197,7 +197,7 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: bobMoves,
@@ -322,8 +322,8 @@ contract EmbursaTest is Test, BattleHelper {
         BurnStatus burnStatus = new BurnStatus(statBoosts);
         Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 10,
                 STAMINA_COST: 1,
@@ -337,7 +337,7 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "TestAttack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
@@ -412,8 +412,8 @@ contract EmbursaTest is Test, BattleHelper {
         BurnStatus burnStatus = new BurnStatus(statBoosts);
         Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
                 STAMINA_COST: 1,
@@ -427,7 +427,7 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "BurnAttack",
                 EFFECT: IEffect(address(burnStatus))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;

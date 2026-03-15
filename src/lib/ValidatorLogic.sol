@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "../Constants.sol";
 import {IEngine} from "../IEngine.sol";
 import "../moves/IMoveSet.sol";
+import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 
 /// @dev Parameters for timeout validation (allows pure function)
 struct TimeoutCheckParams {
@@ -29,7 +30,7 @@ struct TimeoutCheckParams {
 library ValidatorLogic {
     /// @notice Validates a specific move selection (stamina + move's own validation)
     /// @param battleKey The battle identifier
-    /// @param moveSet The move being used
+    /// @param rawMoveSlot Raw move slot (inline packed data or external address)
     /// @param playerIndex The player using the move
     /// @param activeMonIndex The active mon index for this player
     /// @param extraData Extra data for the move
@@ -39,7 +40,7 @@ library ValidatorLogic {
     function validateSpecificMoveSelection(
         IEngine engine,
         bytes32 battleKey,
-        IMoveSet moveSet,
+        uint256 rawMoveSlot,
         uint256 playerIndex,
         uint256 activeMonIndex,
         uint240 extraData,
@@ -51,13 +52,15 @@ library ValidatorLogic {
         uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
 
         // Check stamina cost
-        if (moveSet.stamina(engine, battleKey, playerIndex, activeMonIndex) > currentStamina) {
+        if (MoveSlotLib.stamina(rawMoveSlot, engine, battleKey, playerIndex, activeMonIndex) > currentStamina) {
             return false;
         }
 
-        // Check move's own validation
-        if (!moveSet.isValidTarget(engine, battleKey, extraData)) {
-            return false;
+        // Inline moves have no target validation (always valid)
+        if (!MoveSlotLib.isInline(rawMoveSlot)) {
+            if (!MoveSlotLib.toIMoveSet(rawMoveSlot).isValidTarget(engine, battleKey, extraData)) {
+                return false;
+            }
         }
 
         return true;

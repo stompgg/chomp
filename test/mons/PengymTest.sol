@@ -33,7 +33,7 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
-import {ChillOut} from "../../src/mons/pengym/ChillOut.sol";
+
 import {DeepFreeze} from "../../src/mons/pengym/DeepFreeze.sol";
 import {PistolSquat} from "../../src/mons/pengym/PistolSquat.sol";
 
@@ -104,11 +104,11 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Create Alice's team: one mon with PostWorkout ability and one regular mon
-        IMoveSet[] memory aliceMon1Moves = new IMoveSet[](1);
-        aliceMon1Moves[0] = standardAttack;
+        uint256[] memory aliceMon1Moves = new uint256[](1);
+        aliceMon1Moves[0] = uint256(uint160(address(standardAttack)));
 
-        IMoveSet[] memory aliceMon2Moves = new IMoveSet[](1);
-        aliceMon2Moves[0] = standardAttack;
+        uint256[] memory aliceMon2Moves = new uint256[](1);
+        aliceMon2Moves[0] = uint256(uint160(address(standardAttack)));
 
         Mon memory postWorkoutMon = Mon({
             stats: MonStats({
@@ -143,11 +143,11 @@ contract PengymTest is Test, BattleHelper {
         });
 
         // Create Bob's team: one mon with PanicStatus attack and one regular mon
-        IMoveSet[] memory bobMon1Moves = new IMoveSet[](1);
-        bobMon1Moves[0] = panicAttack;
+        uint256[] memory bobMon1Moves = new uint256[](1);
+        bobMon1Moves[0] = uint256(uint160(address(panicAttack)));
 
-        IMoveSet[] memory bobMon2Moves = new IMoveSet[](1);
-        bobMon2Moves[0] = standardAttack;
+        uint256[] memory bobMon2Moves = new uint256[](1);
+        bobMon2Moves[0] = uint256(uint160(address(standardAttack)));
 
         Mon memory bobPanicMon = Mon({
             stats: MonStats({
@@ -279,11 +279,11 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Create Alice's team: one mon with PostWorkout ability and one regular mon
-        IMoveSet[] memory aliceMon1Moves = new IMoveSet[](1);
-        aliceMon1Moves[0] = standardAttack;
+        uint256[] memory aliceMon1Moves = new uint256[](1);
+        aliceMon1Moves[0] = uint256(uint160(address(standardAttack)));
 
-        IMoveSet[] memory aliceMon2Moves = new IMoveSet[](1);
-        aliceMon2Moves[0] = standardAttack;
+        uint256[] memory aliceMon2Moves = new uint256[](1);
+        aliceMon2Moves[0] = uint256(uint160(address(standardAttack)));
 
         Mon memory postWorkoutMon = Mon({
             stats: MonStats({
@@ -318,11 +318,11 @@ contract PengymTest is Test, BattleHelper {
         });
 
         // Create Bob's team: one mon with FrostbiteStatus attack and one regular mon
-        IMoveSet[] memory bobMon1Moves = new IMoveSet[](1);
-        bobMon1Moves[0] = frostbiteAttack;
+        uint256[] memory bobMon1Moves = new uint256[](1);
+        bobMon1Moves[0] = uint256(uint160(address(frostbiteAttack)));
 
-        IMoveSet[] memory bobMon2Moves = new IMoveSet[](1);
-        bobMon2Moves[0] = standardAttack;
+        uint256[] memory bobMon2Moves = new uint256[](1);
+        bobMon2Moves[0] = uint256(uint160(address(standardAttack)));
 
         Mon memory bobFrostbiteMon = Mon({
             stats: MonStats({
@@ -435,12 +435,17 @@ contract PengymTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
 
-        ChillOut chillOut = new ChillOut(typeCalc, frostbiteStatus);
+        StandardAttack chillOut = attackFactory.createAttack(ATTACK_PARAMS({
+            BASE_POWER: 0, STAMINA_COST: 0, ACCURACY: 100,
+            PRIORITY: 3, MOVE_TYPE: Type.Ice, EFFECT_ACCURACY: 100,
+            MOVE_CLASS: MoveClass.Other, CRIT_RATE: 5, VOLATILITY: 10,
+            NAME: "Chill Out", EFFECT: IEffect(address(frostbiteStatus))
+        }));
         DeepFreeze deepFreeze = new DeepFreeze(typeCalc, frostbiteStatus);
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = chillOut;
-        moves[1] = deepFreeze;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(chillOut)));
+        moves[1] = uint256(uint160(address(deepFreeze)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -506,9 +511,9 @@ contract PengymTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
         PistolSquat ps = new PistolSquat(typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ps;
-        moves[1] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ps)));
+        moves[1] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 100, // designed to auto KO
                 STAMINA_COST: 1,
@@ -522,7 +527,7 @@ contract PengymTest is Test, BattleHelper {
                 NAME: "test",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
         Mon memory slowMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -532,7 +537,7 @@ contract PengymTest is Test, BattleHelper {
                 defense: 10,
                 specialAttack: 10,
                 specialDefense: 10,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: moves,
@@ -547,7 +552,7 @@ contract PengymTest is Test, BattleHelper {
                 defense: 10,
                 specialAttack: 10,
                 specialDefense: 10,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: moves,

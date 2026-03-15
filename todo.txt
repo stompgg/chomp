@@ -1,5 +1,13 @@
 # TODO
 
+Content updates:
+- Random CPU mode
+- Basic achievements
+- Add Nirvamma
+- Better multiplayer
+
+Balance Patch 3:
+
 Xmon:
 - Somniphobia should be a 0 (1?0 cost, last for longer (6 turns? 7 turns?).
 
