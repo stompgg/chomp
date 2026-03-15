@@ -3,7 +3,15 @@
  *
  * This file is separate from index.ts to avoid circular dependencies
  * with runtime replacement modules like Ownable, ECDSA, etc.
+ *
+ * ALL contract classes must extend this Contract — there is only one.
+ * index.ts re-exports it; it does NOT define a second Contract class.
+ *
+ * Storage, EventStream, globalEventStream, and ADDRESS_ZERO also live here
+ * as the single source of truth. index.ts re-exports them.
  */
+
+import { keccak256, encodePacked, toHex, hexToBigInt } from 'viem';
 
 // =============================================================================
 // CONSTANTS
@@ -71,22 +79,23 @@ export class Storage {
   }
 
   /**
-   * Compute a mapping slot for a key.
-   * In Solidity: keccak256(abi.encode(key, slot))
+   * Compute a mapping slot key
    */
-  mappingSlot(key: bigint | string, baseSlot: bigint): string {
-    // Simplified: just concatenate key and slot as strings
-    // In real EVM, this would be keccak256(abi.encode(key, slot))
-    return `${baseSlot.toString()}_${key.toString()}`;
+  mappingSlot(baseSlot: bigint, key: bigint | string): bigint {
+    const keyBytes = typeof key === 'string' ? key : toHex(key, { size: 32 });
+    const slotBytes = toHex(baseSlot, { size: 32 });
+    return hexToBigInt(keccak256(encodePacked(['bytes32', 'bytes32'], [keyBytes as `0x${string}`, slotBytes as `0x${string}`])));
   }
 
   /**
-   * Compute a nested mapping slot.
-   * In Solidity: keccak256(abi.encode(key2, keccak256(abi.encode(key1, slot))))
+   * Compute a nested mapping slot key
    */
-  nestedMappingSlot(key1: bigint | string, key2: bigint | string, baseSlot: bigint): string {
-    const innerSlot = this.mappingSlot(key1, baseSlot);
-    return `${innerSlot}_${key2.toString()}`;
+  nestedMappingSlot(baseSlot: bigint, ...keys: Array<bigint | string>): bigint {
+    let slot = baseSlot;
+    for (const key of keys) {
+      slot = this.mappingSlot(slot, key);
+    }
+    return slot;
   }
 
   /**
@@ -109,38 +118,38 @@ export class Storage {
 // EVENT STREAM
 // =============================================================================
 
-export interface EmittedEvent {
+export interface EventLog {
   name: string;
   args: Record<string, any>;
-  emitter: string; // Contract address that emitted
-  data?: any;      // Raw event data
+  timestamp: number;
+  emitter?: string;
+  data?: any[];
 }
 
 /**
- * Captures events emitted during contract execution.
- * Unlike on-chain events, these are stored in memory for testing.
+ * Virtual event stream that stores all emitted events for inspection/testing
  */
 export class EventStream {
-  private events: EmittedEvent[] = [];
+  private events: EventLog[] = [];
 
-  emit(name: string, args: Record<string, any>, emitter: string = '', data?: any): void {
-    this.events.push({ name, args, emitter, data });
+  emit(name: string, args: Record<string, any> = {}, emitter?: string, data?: any[]): void {
+    this.events.push({ name, args, timestamp: Date.now(), emitter, data });
   }
 
-  getAll(): EmittedEvent[] {
+  getAll(): EventLog[] {
     return [...this.events];
   }
 
-  getByName(name: string): EmittedEvent[] {
+  getByName(name: string): EventLog[] {
     return this.events.filter(e => e.name === name);
   }
 
-  getLast(name?: string): EmittedEvent | undefined {
-    if (name) {
-      const filtered = this.getByName(name);
-      return filtered[filtered.length - 1];
-    }
-    return this.events[this.events.length - 1];
+  getLast(n: number = 1): EventLog[] {
+    return this.events.slice(-n);
+  }
+
+  filter(predicate: (event: EventLog) => boolean): EventLog[] {
+    return this.events.filter(predicate);
   }
 
   clear(): void {
@@ -149,6 +158,14 @@ export class EventStream {
 
   get length(): number {
     return this.events.length;
+  }
+
+  has(name: string): boolean {
+    return this.events.some(e => e.name === name);
+  }
+
+  get latest(): EventLog | undefined {
+    return this.events[this.events.length - 1];
   }
 }
 
@@ -233,22 +250,90 @@ export const contractAddresses = new ContractAddressRegistry();
 export const globalEventStream = new EventStream();
 
 // =============================================================================
+// ADDRESS CONVERSION (inlined to avoid circular deps with index.ts)
+// =============================================================================
+
+function uint160(value: bigint): bigint {
+  return value & ((1n << 160n) - 1n);
+}
+
+function bigintToAddress(value: bigint): string {
+  return '0x' + uint160(value).toString(16).padStart(40, '0');
+}
+
+// =============================================================================
 // BASE CONTRACT CLASS
 // =============================================================================
 
 /**
  * Base class for all transpiled Solidity contracts.
- * Provides storage simulation, event emission, and context (msg, block, tx).
+ * Provides storage simulation, event emission, context (msg, block, tx),
+ * address registry for Contract.at() lookups, and YUL assembly helpers.
  */
 export abstract class Contract {
+  /** Static registry: address → contract instance, for Contract.at() lookups */
+  private static _addressRegistry: Map<string, Contract> = new Map();
+
+  /**
+   * Resolve a value to a contract instance.
+   * - If value is already a contract object, return it directly.
+   * - If value is a bigint (uint256 address), look up by address in the registry.
+   * - If value is a string address, look up directly.
+   * Returns a stub with only _contractAddress for unregistered addresses
+   * (e.g. sentinels/tombstones that are only used for identity comparisons).
+   */
+  static at(value: any): any {
+    if (value && typeof value === 'object' && '_contractAddress' in value) {
+      return value;
+    }
+    let address: string;
+    if (typeof value === 'bigint') {
+      address = bigintToAddress(value);
+    } else if (typeof value === 'string') {
+      address = value;
+    } else {
+      throw new Error(`Contract.at: cannot resolve ${typeof value}`);
+    }
+    const normalized = address.toLowerCase();
+    const instance = Contract._addressRegistry.get(normalized);
+    if (instance) {
+      return instance;
+    }
+    // Return a lightweight stub for unregistered addresses (e.g. sentinel/tombstone).
+    // Only _contractAddress is set — calling methods on it will fail, which is correct
+    // since these addresses are only used for identity comparisons.
+    return { _contractAddress: normalized };
+  }
+
+  /**
+   * Clear the address registry (useful between tests)
+   */
+  static clearRegistry(): void {
+    Contract._addressRegistry.clear();
+  }
+
   // Storage for this contract instance
   protected _storage: Storage = new Storage();
 
   // Event stream - shared across all contracts for a transaction
   protected _eventStream: EventStream = globalEventStream;
 
-  // Contract's own address
-  public _contractAddress: string;
+  /**
+   * Contract address for address(this) pattern.
+   * Setting this auto-registers the instance in the static address registry.
+   */
+  private _address: string = ADDRESS_ZERO;
+
+  get _contractAddress(): string {
+    return this._address;
+  }
+
+  set _contractAddress(addr: string) {
+    this._address = addr;
+    if (addr !== ADDRESS_ZERO) {
+      Contract._addressRegistry.set(addr.toLowerCase(), this);
+    }
+  }
 
   // Message context (msg.sender, msg.value, msg.data)
   public _msg: {
@@ -277,69 +362,95 @@ export abstract class Contract {
     origin: ADDRESS_ZERO,
   };
 
-  constructor(address?: string) {
-    // Use provided address or auto-generate from class name
+  constructor(...args: any[]) {
+    // If the first arg is a string, use it as the address; otherwise auto-generate.
+    // Transpiled constructors may pass non-address args (e.g. dependencies) which
+    // propagate up the chain — we ignore non-string first args.
+    const address = typeof args[0] === 'string' ? args[0] : undefined;
     this._contractAddress = address ?? contractAddresses.getAddress(this.constructor.name);
   }
 
-  /**
-   * Set the message context for this call
-   */
+  // =========================================================================
+  // CONTEXT SETTERS
+  // =========================================================================
+
+  setMsgSender(sender: string): void {
+    this._msg.sender = sender;
+  }
+
   setMsgContext(sender: string, value: bigint = 0n, data: `0x${string}` = '0x'): void {
     this._msg = { sender, value, data };
   }
 
-  /**
-   * Set the block context
-   */
+  setBlockTimestamp(timestamp: bigint): void {
+    this._block.timestamp = timestamp;
+  }
+
   setBlockContext(timestamp: bigint, number: bigint): void {
     this._block = { timestamp, number };
   }
 
-  /**
-   * Set the transaction context
-   */
   setTxContext(origin: string): void {
     this._tx = { origin };
   }
 
-  /**
-   * Emit an event
-   */
-  protected _emitEvent(name: string, ...args: any[]): void {
-    // Convert args array to a more structured format
-    const argsObj: Record<string, any> = {};
-    args.forEach((arg, i) => {
-      argsObj[`arg${i}`] = arg;
-    });
-    this._eventStream.emit(name, argsObj, this._contractAddress);
+  // =========================================================================
+  // EVENT STREAM
+  // =========================================================================
+
+  setEventStream(stream: EventStream): void {
+    this._eventStream = stream;
   }
 
-  /**
-   * Get storage slot value
-   */
+  getEventStream(): EventStream {
+    return this._eventStream;
+  }
+
+  protected _emitEvent(name: string, ...args: any[]): void {
+    const argsObj: Record<string, any> = {};
+    args.forEach((arg, i) => {
+      if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+        Object.assign(argsObj, arg);
+      } else {
+        argsObj[`arg${i}`] = arg;
+      }
+    });
+    this._eventStream.emit(name, argsObj, this._contractAddress, args);
+  }
+
+  // =========================================================================
+  // STORAGE HELPERS
+  // =========================================================================
+
   protected _sload(slot: bigint | string): bigint {
     return this._storage.sload(slot);
   }
 
-  /**
-   * Set storage slot value
-   */
   protected _sstore(slot: bigint | string, value: bigint): void {
     this._storage.sstore(slot, value);
   }
 
-  /**
-   * Get transient storage slot value
-   */
   protected _tload(slot: bigint | string): bigint {
     return this._storage.tload(slot);
   }
 
-  /**
-   * Set transient storage slot value
-   */
   protected _tstore(slot: bigint | string, value: bigint): void {
     this._storage.tstore(slot, value);
+  }
+
+  // =========================================================================
+  // YUL/ASSEMBLY HELPERS (used by transpiled inline assembly)
+  // =========================================================================
+
+  protected _yulStorageKey(key: any): string {
+    return typeof key === 'string' ? key : JSON.stringify(key);
+  }
+
+  protected _storageRead(key: any): bigint {
+    return this._storage.sload(this._yulStorageKey(key));
+  }
+
+  protected _storageWrite(key: any, value: bigint): void {
+    this._storage.sstore(this._yulStorageKey(key), value);
   }
 }

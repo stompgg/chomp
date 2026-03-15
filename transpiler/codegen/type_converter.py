@@ -124,11 +124,12 @@ class TypeConverter(BaseGenerator):
 
         return ts_type
 
-    def default_value(self, ts_type: str) -> str:
+    def default_value(self, ts_type: str, solidity_type: str = '') -> str:
         """Get default value for TypeScript type.
 
         Args:
             ts_type: The TypeScript type string
+            solidity_type: The original Solidity type name (optional, for disambiguation)
 
         Returns:
             The default value expression as a string
@@ -138,6 +139,9 @@ class TypeConverter(BaseGenerator):
         elif ts_type == 'boolean':
             return 'false'
         elif ts_type == 'string':
+            # bytes32 maps to string in TS but should default to zero sentinel, not ""
+            if solidity_type.startswith('bytes'):
+                return '"0x' + '0' * 64 + '"'
             return '""'
         elif ts_type == 'number':
             return '0'
@@ -242,11 +246,22 @@ class TypeConverter(BaseGenerator):
             expr = generate_expression_fn(inner_expr)
             return f'`0x${{({expr}).toString(16).padStart({byte_size * 2}, "0")}}`'
 
-        # For numeric types (uint256, int128, etc.), just generate the inner expression
-        # TypeScript's bigint handles the underlying value
+        # For numeric types (uint160, int128, etc.), mask to the correct bit width.
+        # Solidity truncates on cast; BigInt does not, so we must mask explicitly.
         if type_name.startswith('uint') or type_name.startswith('int'):
             expr = generate_expression_fn(inner_expr)
-            # Wrap in BigInt() if needed for type conversion
+            # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
+            width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
+            if width_str.isdigit():
+                width = int(width_str)
+                if width < 256:
+                    if type_name.startswith('int'):
+                        # Signed: mask then sign-extend (two's complement)
+                        half = 1 << (width - 1)
+                        full = 1 << width
+                        return f'((v => v >= {half}n ? v - {full}n : v)(BigInt({expr}) & ((1n << {width}n) - 1n)))'
+                    else:
+                        return f'(BigInt({expr}) & ((1n << {width}n) - 1n))'
             return f'BigInt({expr})'
 
         # Default: generate the inner expression

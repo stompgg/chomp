@@ -154,6 +154,22 @@ class DefinitionGenerator(BaseGenerator):
         elif ts_type.endswith('[]'):
             return '[]'
         elif ts_type.startswith('Record<'):
+            # Extract value type from Record<K, V>
+            # For struct value types, use an auto-initializing proxy so that
+            # accessing missing keys returns a default struct (matching Solidity
+            # storage semantics where uninitialized mapping slots are zero-initialized).
+            # Only auto-init for numeric string keys (not symbols, 'length', etc.)
+            inner = ts_type[7:-1]  # Remove 'Record<' and '>'
+            parts = inner.split(', ', 1)
+            if len(parts) == 2:
+                value_type = parts[1]
+                if value_type.startswith('Structs.'):
+                    struct_name = value_type[8:]
+                    return (f'new Proxy({{}} as Record<string, {value_type}>, {{ get: (t, k) => '
+                            f'{{ if (typeof k === "string" && /^\\d+$/.test(k) && !(k in t)) t[k] = createDefault{struct_name}(); return t[k as any]; }} }})')
+                elif value_type in self._ctx.known_structs:
+                    return (f'new Proxy({{}} as Record<string, {value_type}>, {{ get: (t, k) => '
+                            f'{{ if (typeof k === "string" && /^\\d+$/.test(k) && !(k in t)) t[k] = createDefault{value_type}(); return t[k as any]; }} }})')
             return '{}'
         elif ts_type.startswith('Structs.'):
             # Nested struct with Structs. prefix - call its factory function

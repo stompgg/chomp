@@ -607,7 +607,11 @@ class ExpressionGenerator(BaseGenerator):
         return None
 
     def _handle_interface_cast(self, call: FunctionCall, args: str) -> str:
-        """Handle interface type cast like IEffect(address(x))."""
+        """Handle interface type cast like IEffect(address(x)).
+
+        Generates Contract.at(expr) for runtime address-to-instance resolution,
+        except for 'this' which is always the current contract instance.
+        """
         if call.arguments and len(call.arguments) == 1:
             arg = call.arguments[0]
             # Check for IEffect(address(x)) pattern
@@ -618,16 +622,16 @@ class ExpressionGenerator(BaseGenerator):
                         if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
                             return '(this as any)'
                         inner_expr = self.generate(inner_arg)
-                        return f'({inner_expr} as any)'
+                        return f'Contract.at({inner_expr})'
             # Check for TypeCast address(x) pattern
             if isinstance(arg, TypeCast) and arg.type_name.name == 'address':
                 inner_arg = arg.expression
                 if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
                     return '(this as any)'
                 inner_expr = self.generate(inner_arg)
-                return f'({inner_expr} as any)'
+                return f'Contract.at({inner_expr})'
         if args:
-            return f'({args} as any)'
+            return f'Contract.at({args})'
         return '{}'
 
     # =========================================================================

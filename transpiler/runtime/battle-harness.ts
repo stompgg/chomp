@@ -8,7 +8,7 @@
  * logic to the Engine rather than reimplementing it.
  */
 
-import { ContractContainer, globalEventStream } from './index';
+import { ContractContainer, globalEventStream, ADDRESS_ZERO, addressToUint } from './index';
 import * as Structs from '../ts-output/Structs';
 
 // =============================================================================
@@ -111,7 +111,7 @@ export interface MonConfig {
   };
   type1: number;  // Enum value
   type2: number;  // Enum value (0 for none)
-  moves: string[];  // Move contract names (e.g., ['BigBite', 'Recover'])
+  moves: (string | bigint)[];  // Move contract names (e.g., ['BigBite']) or packed inline bigints
   ability: string;  // Ability contract name
 }
 
@@ -236,7 +236,9 @@ export class BattleHarness {
   }
 
   /**
-   * Configure contract addresses
+   * Configure contract addresses from an external mapping (e.g. on-chain addresses).
+   * Each name is resolved from the container and assigned the given address.
+   * The _contractAddress setter auto-registers in Contract._addressRegistry.
    */
   setAddresses(addresses: AddressConfig): void {
     for (const [name, address] of Object.entries(addresses)) {
@@ -248,16 +250,34 @@ export class BattleHarness {
   }
 
   /**
+   * Auto-generate deterministic addresses for all contracts in the container
+   * that don't already have one. Called automatically during startBattle().
+   * The _contractAddress setter auto-registers each in Contract._addressRegistry.
+   */
+  private ensureAddresses(): void {
+    let counter = 1;
+    for (const name of this.container.getRegisteredNames()) {
+      const instance = this.container.tryResolve(name);
+      if (instance && typeof instance === 'object' && '_contractAddress' in instance) {
+        if ((instance as any)._contractAddress === ADDRESS_ZERO) {
+          (instance as any)._contractAddress = `0x${(counter++).toString(16).padStart(40, '0')}`;
+        }
+      }
+    }
+  }
+
+  /**
    * Start a new battle
    *
    * This sets up the battle configuration in the Engine and returns a battleKey.
    * Uses mutators to bypass authorization checks for testing.
    */
   startBattle(config: BattleConfig): string {
-    // Set addresses if provided
+    // Set addresses if provided, then ensure all contracts have addresses
     if (config.addresses) {
       this.setAddresses(config.addresses);
     }
+    this.ensureAddresses();
 
     // Build teams with resolved contract references
     const teams = config.teams.map((teamConfig) =>
@@ -316,7 +336,15 @@ export class BattleHarness {
    * Returns a Structs.Mon compatible object
    */
   private buildMon(config: MonConfig): Structs.Mon {
-    const moves = config.moves.map(moveName => this.container.resolve(moveName));
+    // Store moves as bigint values (matching Solidity uint256 storage)
+    // String names are resolved to contract addresses; bigints are packed inline values
+    const moves = config.moves.map(move => {
+      if (typeof move === 'bigint') {
+        return move;  // Already a packed inline move
+      }
+      const contract = this.container.resolve(move);
+      return addressToUint(contract._contractAddress);
+    });
     const ability = config.ability ? this.container.resolve(config.ability) : null;
 
     // MonStats includes type1/type2, so merge them with the stats
