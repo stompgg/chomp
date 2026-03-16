@@ -2776,7 +2776,8 @@ contract EngineTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(0),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
         bytes32 battleKey = matchmaker.proposeBattle(proposal);
         vm.startPrank(BOB);

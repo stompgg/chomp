@@ -105,7 +105,8 @@ contract InlineValidationTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(commitManager),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(p0);
@@ -379,7 +380,8 @@ contract InlineValidationTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(commitManager),
-            matchmaker: matchmaker
+            matchmaker: matchmaker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(p0);
@@ -470,7 +472,8 @@ contract InlineValidationTest is Test, BattleHelper {
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
             moveManager: address(cpu),
-            matchmaker: cpu
+            matchmaker: cpu,
+            gameMode: GameMode.Singles
         });
 
         // Start battle via CPU

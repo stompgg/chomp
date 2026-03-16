@@ -156,7 +156,8 @@ contract BetterCPUTest is Test {
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
             moveManager: address(cpu),
-            matchmaker: cpu
+            matchmaker: cpu,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);

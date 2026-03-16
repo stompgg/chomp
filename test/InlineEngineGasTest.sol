@@ -106,7 +106,8 @@ contract InlineEngineGasTest is Test, BattleHelper {
             ruleset: ruleset,
             engineHooks: hooks,
             moveManager: moveManager,
-            matchmaker: maker
+            matchmaker: maker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);
@@ -487,7 +488,8 @@ contract InlineEngineGasTest is Test, BattleHelper {
             ruleset: ruleset,
             engineHooks: hooks,
             moveManager: moveManager,
-            matchmaker: maker
+            matchmaker: maker,
+            gameMode: GameMode.Singles
         });
 
         vm.startPrank(ALICE);

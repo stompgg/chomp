@@ -23,7 +23,9 @@ interface IEngine {
     function setGlobalKV(bytes32 key, uint192 value) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
+    function switchActiveMonForSlot(uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
+    function setMoveForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
     function execute(bytes32 battleKey) external;
     function executeWithMoves(
         bytes32 battleKey,
@@ -33,6 +35,19 @@ interface IEngine {
         uint8 p1MoveIndex,
         bytes32 p1Salt,
         uint240 p1ExtraData
+    ) external;
+    function executeWithMovesForDoubles(
+        bytes32 battleKey,
+        uint8 p0MoveIndex0,
+        uint240 p0ExtraData0,
+        uint8 p0MoveIndex1,
+        uint240 p0ExtraData1,
+        bytes32 p0Salt,
+        uint8 p1MoveIndex0,
+        uint240 p1ExtraData0,
+        uint8 p1MoveIndex1,
+        uint240 p1ExtraData1,
+        bytes32 p1Salt
     ) external;
     function emitEngineEvent(bytes32 eventType, bytes memory extraData) external;
     function setUpstreamCaller(address caller) external;
@@ -100,10 +115,25 @@ interface IEngine {
     function getCommitAuthForDualSigned(bytes32 battleKey)
         external
         view
-        returns (address committer, address revealer, uint64 turnId);
+        returns (address committer, address revealer, uint64 turnId, GameMode gameMode);
     function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
         external
         view
         returns (DamageCalcContext memory);
+    // Slot-aware overload for doubles - uses explicit slot indices to get correct mon
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerSlotIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderSlotIndex
+    ) external view returns (DamageCalcContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
+
+    // Doubles-specific
+    function getGameMode(bytes32 battleKey) external view returns (GameMode);
+    function getActiveMonIndexForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (uint256);
 }
