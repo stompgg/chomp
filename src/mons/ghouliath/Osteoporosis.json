@@ -4,6 +4,6 @@
   "staminaCost": 2,
   "moveType": "Yin",
   "moveClass": "Physical",
-  "effectAccuracy": 100,
+  "effectAccuracy": 0,
   "effect": null
 }
