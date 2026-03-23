@@ -9,14 +9,11 @@ Content updates:
 Balance Patch 3:
 
 Xmon:
-- Somniphobia should be a 0 (1?0 cost, last for longer (6 turns? 7 turns?).
+- Somniphobia damage buffed [x].
 
 Volthare:
 - change dual shock to not inflict zap on self, but instead also damage self?
 - change mega star blast to inflict zap on self unless overclocked, buff default accuracy a bit more?
-
-Inutia:
-- Make Chain Expansion even cheaper, basically not used rn
 
 Aurox:
 - Give another damaging move that can complement bull rush

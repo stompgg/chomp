@@ -22,6 +22,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Add processing directory to path for local imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from packMoves import detect_inline_ability, pack_ability, pack_move
+from generateSolidity import contract_name_from_move_or_ability, get_mon_directory_name
+
 
 # Constants
 SENDER = "0x4206957609f2936D166aF8E5d0870a11496302AD"
@@ -131,10 +137,6 @@ def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
     Uses CSV move names (e.g. "Pound Ground") so the Address keys match what
     generateMonsTypeScript.py expects.
     """
-    import csv
-    sys.path.insert(0, str(chomp_dir / "processing"))
-    from packMoves import pack_move
-
     src_dir = chomp_dir / "src"
     moves_csv = chomp_dir / "drool" / "moves.csv"
 
@@ -143,9 +145,8 @@ def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
         for row in csv.DictReader(f):
             move_name = row["Name"].strip()
             mon_name = row["Mon"].strip()
-            # Derive JSON path the same way generateSolidity.py does
-            contract_name = re.sub(r'\W+', '', move_name.replace(" ", ""))
-            json_path = src_dir / "mons" / mon_name.lower() / f"{contract_name}.json"
+            contract_name = contract_name_from_move_or_ability(move_name)
+            json_path = src_dir / "mons" / get_mon_directory_name(mon_name) / f"{contract_name}.json"
             if not json_path.exists():
                 continue
             with open(json_path, "r", encoding="utf-8") as jf:
@@ -153,6 +154,71 @@ def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
             # Pack with effect_address=0 — the client only needs the move params
             packed = pack_move(move_data, effect_address=0)
             results.append((move_name, f"0x{packed:064x}"))
+
+    return results
+
+
+def find_ability_sol_path(ability_name: str, chomp_dir: Path) -> Path | None:
+    """Find the .sol file for an ability by searching src/mons/*/.
+
+    Args:
+        ability_name: The ability name (e.g., "Rise From The Grave")
+        chomp_dir: Path to the chomp directory
+
+    Returns:
+        Path to the .sol file, or None if not found
+    """
+    contract_name = contract_name_from_move_or_ability(ability_name)
+
+    mons_dir = chomp_dir / "src" / "mons"
+    if not mons_dir.exists():
+        return None
+
+    for mon_dir in mons_dir.iterdir():
+        if mon_dir.is_dir():
+            sol_path = mon_dir / f"{contract_name}.sol"
+            if sol_path.exists():
+                return sol_path
+    return None
+
+
+def pack_inline_ability_addresses(
+    deployed_addresses: list[tuple[str, str]],
+    chomp_dir: Path
+) -> list[tuple[str, str]]:
+    """For each deployed ability, check if inline and pack if needed.
+
+    Uses the @inline-ability magic comment in .sol files to detect inline abilities.
+    For inline abilities, packs as (type_id << 248) | address.
+    For external abilities, returns the raw address.
+
+    Args:
+        deployed_addresses: List of (name, address) tuples from forge output
+        chomp_dir: Path to the chomp directory
+
+    Returns:
+        List of (name, hex_value) tuples with packed values for inline abilities
+    """
+    results = []
+    packed_count = 0
+
+    for name, address in deployed_addresses:
+        sol_path = find_ability_sol_path(name, chomp_dir)
+        if sol_path:
+            ability_type_id = detect_inline_ability(str(sol_path))
+            if ability_type_id is not None:
+                addr_int = int(address, 16)
+                packed = pack_ability(ability_type_id, addr_int)
+                results.append((name, f"0x{packed:064x}"))
+                packed_count += 1
+                continue
+
+        # Not inline or not found - use raw address (padded to 64 hex chars for consistency)
+        addr_int = int(address, 16)
+        results.append((name, f"0x{addr_int:064x}"))
+
+    if packed_count > 0:
+        print(f"Packed {packed_count} inline abilities")
 
     return results
 
@@ -165,6 +231,9 @@ def run_typescript_scripts(
 ):
     """Run createAddressAndABIs.py and generateMonsTypescript.py."""
     processing_dir = chomp_dir / "processing"
+
+    # Pack inline ability addresses (must happen before adding inline moves)
+    all_addresses = pack_inline_ability_addresses(list(all_addresses), chomp_dir)
 
     # Add packed inline move values to the address list
     inline_moves = collect_inline_move_addresses(chomp_dir)
@@ -268,8 +337,6 @@ def main():
 
     # Run validation and Solidity generation
     if not args.skip_build:
-        # Ensure imports resolve from the processing directory
-        sys.path.insert(0, str(chomp_dir / "processing"))
         os.chdir(chomp_dir)
 
         print(f"\n{'='*60}")
