@@ -111,8 +111,13 @@ class ContractGenerator(BaseGenerator):
         # Add _contractAddress property - needed when checking address(interface) != address(0)
         lines.append(f'{self.indent()}_contractAddress: string;')
 
+        # Check if this interface has property declarations from interface-properties.json
+        property_names = self._ctx.interface_properties.get(contract.name, set())
+
         for func in contract.functions:
-            sig = self._func.generate_function_signature(func, for_interface=True)
+            sig = self._func.generate_function_signature(
+                func, for_interface=True, interface_property_names=property_names
+            )
             lines.append(f'{self.indent()}{sig};')
 
         self.indent_level -= 1

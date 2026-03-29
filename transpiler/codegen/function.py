@@ -5,7 +5,7 @@ This module handles the generation of TypeScript code from Solidity function
 definitions, including constructors, methods, and overloaded functions.
 """
 
-from typing import List, Set, Dict, TYPE_CHECKING
+from typing import List, Optional, Set, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
@@ -342,21 +342,28 @@ class FunctionGenerator(BaseGenerator):
     # FUNCTION SIGNATURES
     # =========================================================================
 
-    def generate_function_signature(self, func: FunctionDefinition, for_interface: bool = False) -> str:
+    def generate_function_signature(
+        self,
+        func: FunctionDefinition,
+        for_interface: bool = False,
+        interface_property_names: Optional[Set[str]] = None,
+    ) -> str:
         """Generate function signature for interface or method declaration.
 
         Args:
             func: The function definition
-            for_interface: If True, may generate property syntax for known state variable getters
+            for_interface: If True, may generate property syntax for declared state variable getters
+            interface_property_names: Set of function names that should be generated as properties
+                (from interface-properties.json). Only used when for_interface=True.
         """
-        # For interfaces, convert parameterless view/pure functions to property syntax.
-        # In Solidity, these typically correspond to auto-generated getters for public
-        # state variables. Property syntax is more permissive in TypeScript (classes can
-        # satisfy it with either a property or a getter).
+        # For interfaces, declared property names generate property syntax instead of methods.
+        # This handles the Solidity ambiguity where auto-generated getters for public state
+        # variables look identical to hand-written functions in interface declarations.
         if (for_interface and
+            interface_property_names and
+            func.name in interface_property_names and
             not func.parameters and
-            len(func.return_parameters) == 1 and
-            func.mutability in ('view', 'pure', '')):
+            len(func.return_parameters) == 1):
             return_type = self._type_converter.solidity_type_to_ts(func.return_parameters[0].type_name)
             return f'{func.name}: {return_type}'
 

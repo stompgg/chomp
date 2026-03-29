@@ -1,0 +1,8 @@
+{
+  "$comment": "Declares which parameterless view/pure functions in Solidity interfaces correspond to public state variables in the implementing contract. These are generated as TypeScript properties instead of methods. This is needed because Solidity interfaces are ambiguous — auto-generated getters for `uint256 public foo` look identical to hand-written `function foo() external view returns (uint256)`, but TypeScript requires the distinction.",
+  "interfaces": {
+    "IEngine": {
+      "properties": ["battleKeyForWrite", "tempRNG"]
+    }
+  }
+}

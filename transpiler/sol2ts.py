@@ -71,6 +71,10 @@ class SolidityToTypeScriptTranspiler:
         self.runtime_replacement_methods: Dict[str, Set[str]] = {}
         self._load_runtime_replacements()
 
+        # Load interface property declarations
+        self.interface_properties: Dict[str, Set[str]] = {}
+        self._load_interface_properties()
+
         # Run type discovery on specified directories
         if discovery_dirs:
             for dir_path in discovery_dirs:
@@ -102,6 +106,20 @@ class SolidityToTypeScriptTranspiler:
                             self.runtime_replacement_methods[class_name] = method_names
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Warning: Failed to load runtime-replacements.json: {e}")
+
+    def _load_interface_properties(self) -> None:
+        """Load interface-properties.json which declares which interface methods are state variable getters."""
+        config_file = Path(__file__).parent / 'interface-properties.json'
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                for iface_name, iface_config in config.get('interfaces', {}).items():
+                    props = iface_config.get('properties', [])
+                    if props:
+                        self.interface_properties[iface_name] = set(props)
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Failed to load interface-properties.json: {e}")
 
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
@@ -166,7 +184,8 @@ class SolidityToTypeScriptTranspiler:
             current_file_path=current_file_path,
             runtime_replacement_classes=self.runtime_replacement_classes,
             runtime_replacement_mixins=self.runtime_replacement_mixins,
-            runtime_replacement_methods=self.runtime_replacement_methods
+            runtime_replacement_methods=self.runtime_replacement_methods,
+            interface_properties=self.interface_properties,
         )
         return generator.generate(ast)
 

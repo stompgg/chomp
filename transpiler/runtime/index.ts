@@ -163,7 +163,9 @@ export function unpackBits(packed: bigint, widths: number[]): bigint[] {
 // RE-EXPORTS FROM BASE (single source of truth)
 // =============================================================================
 
-export { Storage, EventStream, EventLog, ADDRESS_ZERO, globalEventStream, contractAddresses } from './base';
+export { Storage, EventStream, ADDRESS_ZERO, globalEventStream, contractAddresses } from './base';
+export type { EventLog } from './base';
+import { ADDRESS_ZERO } from './base';
 
 // =============================================================================
 // TYPE HELPERS
