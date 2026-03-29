@@ -707,11 +707,18 @@ def run(include_color: bool = False, base_path: str = ".") -> bool:
 
         # Print summary
         print("\nSummary:")
+        total_inline = 0
+        total_deployed = 0
         for mon in sorted(mons.values(), key=lambda m: m.mon_id):
+            inline_moves = sum(1 for m in mon.moves if is_json_move(mon.name, m, base_path))
+            deployed_moves = len(mon.moves) - inline_moves
+            total_inline += inline_moves
+            total_deployed += deployed_moves
             color_info = ""
             if include_color and (mon.sprite_data or mon.palette_data):
                 color_info = f" (sprite: {len(mon.sprite_data)} uint256, palette: {len(mon.palette_data)} uint256)"
-            print(f"  {mon.name}: {len(mon.moves)} moves, {len(mon.abilities)} abilities{color_info}")
+            print(f"  {mon.name}: {len(mon.moves)} moves ({inline_moves} inline, {deployed_moves} deployed), {len(mon.abilities)} abilities{color_info}")
+        print(f"\nTotal moves: {total_inline + total_deployed} ({total_inline} inline, {total_deployed} deployed)")
 
         return True
     except Exception as e:

@@ -7,6 +7,7 @@ Meta-script to orchestrate the full deployment pipeline:
 4. Run SetupMons.s.sol -> parse output -> update .env
 5. Run SetupCPU.s.sol
 6. Run createAddressAndABIs.py and generateMonsTypescript.py
+7. Run transpiler (sol2ts.py) to generate TypeScript from Solidity
 
 Usage:
     python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet
@@ -96,7 +97,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
-        "-g", 105,
+        "-g", "105",
         "--password", password,
     ]
 
@@ -213,9 +214,8 @@ def pack_inline_ability_addresses(
                 packed_count += 1
                 continue
 
-        # Not inline or not found - use raw address (padded to 64 hex chars for consistency)
-        addr_int = int(address, 16)
-        results.append((name, f"0x{addr_int:064x}"))
+        # Not inline or not found - use raw address as-is
+        results.append((name, address))
 
     if packed_count > 0:
         print(f"Packed {packed_count} inline abilities")
@@ -274,6 +274,31 @@ def run_typescript_scripts(
         result = subprocess.run(cmd, cwd=chomp_dir)
         if result.returncode != 0:
             print("ERROR: generateMonsTypescript.py failed")
+            sys.exit(1)
+
+
+def run_transpiler(chomp_dir: Path, dry_run: bool = False):
+    """Run the Solidity to TypeScript transpiler."""
+    print(f"\n{'='*60}")
+    print("Running transpiler (sol2ts.py)")
+    print(f"{'='*60}")
+
+    # Run as module to support relative imports
+    cmd = [
+        sys.executable,
+        "-m", "transpiler.sol2ts",
+        "src",
+        "-o", "transpiler/ts-output",
+        "-d", "src",
+        "--emit-metadata",
+    ]
+
+    if dry_run:
+        print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+    else:
+        result = subprocess.run(cmd, cwd=chomp_dir)
+        if result.returncode != 0:
+            print("ERROR: Transpiler failed")
             sys.exit(1)
 
 
@@ -383,6 +408,9 @@ def main():
 
     # Run TypeScript generation scripts
     run_typescript_scripts(network, chomp_dir, all_addresses, dry_run=args.dry_run)
+
+    # Run transpiler to generate TypeScript from Solidity
+    run_transpiler(chomp_dir, dry_run=args.dry_run)
 
     print(f"\n{'='*60}")
     print("DEPLOYMENT COMPLETE!")

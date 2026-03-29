@@ -155,7 +155,7 @@ contract SetupMons is Script {
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
         moves[2] = uint256(uint160(addrs[2]));
-        moves[3] = 0x5a00264000000000000000000000000000000000000000000000000000000000;
+        moves[3] = 0x5a00200000000000000000000000000000000000000000000000000000000000;
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[3]));
         bytes32[] memory keys = new bytes32[](0);
