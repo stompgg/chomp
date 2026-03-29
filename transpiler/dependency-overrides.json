@@ -15,6 +15,13 @@
     "DefaultTeamRegistry",
     "LookupTeamRegistry"
   ],
+  "skipFiles": [
+    "lib/Multicall3.sol",
+    "lib/CreateX.sol",
+    "hooks/SimplePM.sol",
+    "commit-manager/SignedCommitManager.sol",
+    "commit-manager/SignedCommitLib.sol"
+  ],
   "$documentation": {
     "$comment": "The following interfaces are handled automatically by the resolver:",
     "selfReferential": {

@@ -75,6 +75,10 @@ class SolidityToTypeScriptTranspiler:
         self.interface_properties: Dict[str, Set[str]] = {}
         self._load_interface_properties()
 
+        # Load skip files list from dependency-overrides.json
+        self.skip_files: Set[str] = set()
+        self._load_skip_files()
+
         # Run type discovery on specified directories
         if discovery_dirs:
             for dir_path in discovery_dirs:
@@ -120,6 +124,18 @@ class SolidityToTypeScriptTranspiler:
                         self.interface_properties[iface_name] = set(props)
             except (json.JSONDecodeError, KeyError) as e:
                 print(f"Warning: Failed to load interface-properties.json: {e}")
+
+    def _load_skip_files(self) -> None:
+        """Load skipFiles from dependency-overrides.json."""
+        overrides_file = Path(__file__).parent / 'dependency-overrides.json'
+        if overrides_file.exists():
+            try:
+                with open(overrides_file, 'r') as f:
+                    config = json.load(f)
+                for path in config.get('skipFiles', []):
+                    self.skip_files.add(path)
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Failed to load skipFiles from dependency-overrides.json: {e}")
 
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
@@ -248,6 +264,10 @@ class SolidityToTypeScriptTranspiler:
         """Transpile all Solidity files matching the pattern."""
         results = {}
         for sol_file in self.source_dir.glob(pattern):
+            # Check if file should be skipped
+            rel = sol_file.relative_to(self.source_dir)
+            if str(rel) in self.skip_files:
+                continue
             try:
                 ts_code = self.transpile_file(str(sol_file))
                 rel_path = sol_file.relative_to(self.source_dir)
