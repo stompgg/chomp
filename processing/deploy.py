@@ -286,7 +286,7 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
     # Run as module to support relative imports
     cmd = [
         sys.executable,
-        "-m", "transpiler.sol2ts",
+        "-m", "transpiler",
         "src",
         "-o", "transpiler/ts-output",
         "-d", "src",
