@@ -92,6 +92,10 @@ class ContractGenerator(BaseGenerator):
             lines.append(self.generate_interface(contract))
         else:
             lines.append(self.generate_class(contract))
+            # Libraries get a module-level singleton for call-site access
+            if contract.kind == 'library':
+                singleton_name = contract.name[0].lower() + contract.name[1:]
+                lines.append(f'export const {singleton_name} = new {contract.name}();\n')
 
         return '\n'.join(lines)
 
@@ -111,8 +115,10 @@ class ContractGenerator(BaseGenerator):
         # Add _contractAddress property - needed when checking address(interface) != address(0)
         lines.append(f'{self.indent()}_contractAddress: string;')
 
-        # Check if this interface has property declarations from interface-properties.json
-        property_names = self._ctx.interface_properties.get(contract.name, set())
+        # Auto-detect which methods are state variable getters in implementing contracts
+        property_names: set = set()
+        if self._registry:
+            property_names = self._registry.get_interface_property_names(contract.name)
 
         for func in contract.functions:
             sig = self._func.generate_function_signature(

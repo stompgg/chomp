@@ -117,11 +117,16 @@ class DependencyResolver:
         self.name_inferrer = NameInferrer(self.known_classes)
 
     def _load_overrides(self, path: str) -> None:
-        """Load manual overrides and skip list from JSON file."""
+        """Load manual overrides and skip list from JSON file.
+
+        Supports both consolidated transpiler-config.json format
+        (dependencyOverrides/skipContracts) and legacy dependency-overrides.json
+        format (overrides/skipContracts).
+        """
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
-                self.overrides = data.get('overrides', {})
+                self.overrides = data.get('dependencyOverrides', data.get('overrides', {}))
                 self.skip_contracts = set(data.get('skipContracts', []))
         except FileNotFoundError:
             pass  # No overrides file is fine

@@ -169,20 +169,14 @@ class ExpressionGenerator(BaseGenerator):
         if name == 'msg':
             if self._ctx._in_base_constructor_args:
                 return '{ sender: ADDRESS_ZERO, value: 0n, data: "0x" as `0x${string}` }'
-            if self._ctx.current_contract_kind == 'library':
-                return 'Contract._msg'
             return 'this._msg'
         elif name == 'block':
             if self._ctx._in_base_constructor_args:
                 return '{ timestamp: 0n, number: 0n }'
-            if self._ctx.current_contract_kind == 'library':
-                return 'Contract._block'
             return 'this._block'
         elif name == 'tx':
             if self._ctx._in_base_constructor_args:
                 return '{ origin: ADDRESS_ZERO }'
-            if self._ctx.current_contract_kind == 'library':
-                return 'Contract._tx'
             return 'this._tx'
         elif name == 'this':
             return 'this'
@@ -657,11 +651,15 @@ class ExpressionGenerator(BaseGenerator):
                     return 'decodeAbiParameters'
             elif access.expression.name == 'type':
                 return f'/* type().{member} */'
-            elif access.expression.name in self._ctx.known_libraries or access.expression.name in self._ctx.runtime_replacement_classes:
+            elif access.expression.name in self._ctx.runtime_replacement_classes:
+                # Runtime replacements keep static call syntax (e.g. ECDSA.recover)
                 self._ctx.libraries_referenced.add(access.expression.name)
-                # Rename reserved JS methods when accessing them on libraries
-                if member in RESERVED_JS_METHODS:
-                    member = RESERVED_JS_METHODS[member]
+            elif access.expression.name in self._ctx.known_libraries:
+                self._ctx.libraries_referenced.add(access.expression.name)
+                # Use the module-level singleton instance for library calls
+                lib_name = access.expression.name
+                singleton_name = lib_name[0].lower() + lib_name[1:]
+                return f'{singleton_name}.{member}'
 
         # Handle type(TypeName).max/min
         if isinstance(access.expression, FunctionCall):

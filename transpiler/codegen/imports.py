@@ -143,7 +143,8 @@ class ImportGenerator:
                 # Will be handled by extending runtime imports
                 continue
             import_path = self._get_relative_import_path(library)
-            lines.append(f"import {{ {library} }} from '{import_path}';")
+            singleton_name = library[0].lower() + library[1:]
+            lines.append(f"import {{ {singleton_name} }} from '{import_path}';")
         return lines
 
     def _generate_contract_type_imports(

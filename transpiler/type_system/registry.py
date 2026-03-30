@@ -288,6 +288,43 @@ class TypeRegistry:
             inherited.update(self.get_all_inherited_methods(base, exclude_interfaces))
         return inherited
 
+    def get_interface_property_names(self, interface_name: str) -> Set[str]:
+        """
+        Auto-detect which parameterless interface methods are state variable getters.
+
+        Checks all contracts that implement this interface. If any implementing
+        contract has a public state variable matching the method name, the method
+        is treated as a property (not a function) in the TypeScript interface.
+        """
+        iface_methods = self.interface_methods.get(interface_name, [])
+        if not iface_methods:
+            return set()
+
+        # Find all contracts that list this interface in their bases
+        implementors: List[str] = []
+        for contract_name, bases in self.contract_bases.items():
+            if interface_name in bases and contract_name not in self.interfaces:
+                implementors.append(contract_name)
+
+        if not implementors:
+            return set()
+
+        # Collect all state variable names from implementors (including inherited)
+        implementor_vars: Set[str] = set()
+        for impl in implementors:
+            if impl in self.contract_vars:
+                implementor_vars.update(self.contract_vars[impl])
+            implementor_vars.update(self.get_all_inherited_vars(impl))
+
+        # Match: parameterless methods with 1 return value whose name is a state variable
+        property_names: Set[str] = set()
+        for method in iface_methods:
+            if not method['params'] and len(method['returns']) == 1:
+                if method['name'] in implementor_vars:
+                    property_names.add(method['name'])
+
+        return property_names
+
     def build_qualified_name_cache(self, current_file_type: str = '') -> Dict[str, str]:
         """
         Build a cached lookup dictionary for qualified names.

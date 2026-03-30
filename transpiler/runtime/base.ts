@@ -335,8 +335,8 @@ export abstract class Contract {
     }
   }
 
-  // Message context (static for library/static method access, instance delegates to it)
-  static _msg: {
+  // Message context (msg.sender, msg.value, msg.data)
+  public _msg: {
     sender: string;
     value: bigint;
     data: `0x${string}`;
@@ -346,11 +346,8 @@ export abstract class Contract {
     data: '0x' as `0x${string}`,
   };
 
-  get _msg() { return Contract._msg; }
-  set _msg(val) { Contract._msg = val; }
-
-  // Block context (static for library/static method access, instance delegates to it)
-  static _block: {
+  // Block context
+  public _block: {
     timestamp: bigint;
     number: bigint;
   } = {
@@ -358,18 +355,12 @@ export abstract class Contract {
     number: 0n,
   };
 
-  get _block() { return Contract._block; }
-  set _block(val) { Contract._block = val; }
-
-  // Transaction context (static for library/static method access, instance delegates to it)
-  static _tx: {
+  // Transaction context
+  public _tx: {
     origin: string;
   } = {
     origin: ADDRESS_ZERO,
   };
-
-  get _tx() { return Contract._tx; }
-  set _tx(val) { Contract._tx = val; }
 
   constructor(...args: any[]) {
     // If the first arg is a string, use it as the address; otherwise auto-generate.

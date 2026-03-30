@@ -80,8 +80,6 @@ class CodeGenerationContext:
     runtime_replacement_mixins: Dict[str, str] = field(default_factory=dict)
     runtime_replacement_methods: Dict[str, Set[str]] = field(default_factory=dict)
 
-    # Interface property declarations (interface name -> set of method names that are state variable getters)
-    interface_properties: Dict[str, Set[str]] = field(default_factory=dict)
 
     # Type knowledge (from registry)
     known_structs: Set[str] = field(default_factory=set)
@@ -156,7 +154,6 @@ class CodeGenerationContext:
         runtime_replacement_classes: Optional[Set[str]] = None,
         runtime_replacement_mixins: Optional[Dict[str, str]] = None,
         runtime_replacement_methods: Optional[Dict[str, Set[str]]] = None,
-        interface_properties: Optional[Dict[str, Set[str]]] = None,
     ) -> 'CodeGenerationContext':
         """
         Create a context from a TypeRegistry.
@@ -168,7 +165,6 @@ class CodeGenerationContext:
             runtime_replacement_classes: Classes to import from runtime
             runtime_replacement_mixins: Mixin code for secondary inheritance
             runtime_replacement_methods: Method names for override detection
-            interface_properties: Methods that should be properties in interfaces
 
         Returns:
             A new CodeGenerationContext instance
@@ -179,7 +175,6 @@ class CodeGenerationContext:
             runtime_replacement_classes=runtime_replacement_classes or set(),
             runtime_replacement_mixins=runtime_replacement_mixins or {},
             runtime_replacement_methods=runtime_replacement_methods or {},
-            interface_properties=interface_properties or {},
             _registry=registry,
         )
 

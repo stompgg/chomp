@@ -48,7 +48,6 @@ class TypeScriptCodeGenerator:
         runtime_replacement_classes: Optional[Set[str]] = None,
         runtime_replacement_mixins: Optional[Dict[str, str]] = None,
         runtime_replacement_methods: Optional[Dict[str, Set[str]]] = None,
-        interface_properties: Optional[Dict[str, Set[str]]] = None,
     ):
         """
         Initialize the code generator.
@@ -60,7 +59,6 @@ class TypeScriptCodeGenerator:
             runtime_replacement_classes: Classes to import from runtime
             runtime_replacement_mixins: Mixin code for secondary inheritance
             runtime_replacement_methods: Method names for override detection
-            interface_properties: Methods that should be properties in interfaces
         """
         # Create context
         self._ctx = CodeGenerationContext.from_registry(
@@ -70,7 +68,6 @@ class TypeScriptCodeGenerator:
             runtime_replacement_classes=runtime_replacement_classes or set(),
             runtime_replacement_mixins=runtime_replacement_mixins or {},
             runtime_replacement_methods=runtime_replacement_methods or {},
-            interface_properties=interface_properties or {},
         )
 
         self._registry = registry

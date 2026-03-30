@@ -278,10 +278,7 @@ class FunctionGenerator(BaseGenerator):
         is_override = any(f.is_override for f in funcs) and main_func.name in self.inherited_methods
         override_prefix = 'override ' if is_override else ''
 
-        # Rename reserved JS methods that conflict with Object.prototype (for static methods in libraries)
         method_name = main_func.name
-        if self._ctx.current_contract_kind == 'library' and method_name in RESERVED_JS_METHODS:
-            method_name = RESERVED_JS_METHODS[method_name]
 
         lines.append(f'{self.indent()}{visibility}{override_prefix}{method_name}({", ".join(param_strs)}): {return_type} {{')
         self.indent_level += 1
@@ -440,5 +437,5 @@ class FunctionGenerator(BaseGenerator):
         return ''
 
     def _get_static_modifier(self) -> str:
-        """Get static modifier if in a library context."""
-        return 'static ' if self._ctx.current_contract_kind == 'library' else ''
+        """Get static modifier. Libraries use instance methods (not static)."""
+        return ''
