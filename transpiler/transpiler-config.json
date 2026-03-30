@@ -110,15 +110,32 @@
     "GachaTeamRegistry",
     "GachaRegistry",
     "DefaultTeamRegistry",
-    "LookupTeamRegistry"
+    "LookupTeamRegistry",
+    "CPU",
+    "BetterCPU",
+    "OkayCPU",
+    "RandomCPU",
+    "PlayerCPU",
+    "CPUMoveManager",
+    "DefaultMatchmaker",
+    "BattleHistory",
+    "DefaultCommitManager",
+    "GachaRegistry",
+    "IOwnableMon"
   ],
   "skipFiles": [
     "lib/Multicall3.sol",
     "lib/CreateX.sol",
     "hooks/SimplePM.sol",
     "commit-manager/SignedCommitManager.sol",
-    "commit-manager/SignedCommitLib.sol",
     "matchmaker/SignedMatchmaker.sol",
-    "matchmaker/BattleOfferLib.sol"
+    "matchmaker/BattleOfferLib.sol",
+    "matchmaker/DefaultMatchmaker.sol",
+    "hooks/BattleHistory.sol",
+    "commit-manager/DefaultCommitManager.sol"
+  ],
+  "skipDirs": [
+    "cpu",
+    "gacha"
   ]
 }

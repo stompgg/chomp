@@ -70,6 +70,7 @@ class SolidityToTypeScriptTranspiler:
         self.runtime_replacement_mixins: Dict[str, str] = {}
         self.runtime_replacement_methods: Dict[str, Set[str]] = {}
         self.skip_files: Set[str] = set()
+        self.skip_dirs: Set[str] = set()
         self._load_config()
 
         # Run type discovery on specified directories
@@ -105,9 +106,11 @@ class SolidityToTypeScriptTranspiler:
                         method_names = set(m.get('name', '') for m in methods if m.get('name'))
                         self.runtime_replacement_methods[class_name] = method_names
 
-            # Skip files
+            # Skip files and directories
             for path in config.get('skipFiles', []):
                 self.skip_files.add(path)
+            for path in config.get('skipDirs', []):
+                self.skip_dirs.add(path)
 
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Warning: Failed to load transpiler-config.json: {e}")
@@ -238,9 +241,11 @@ class SolidityToTypeScriptTranspiler:
         """Transpile all Solidity files matching the pattern."""
         results = {}
         for sol_file in self.source_dir.glob(pattern):
-            # Check if file should be skipped
+            # Check if file or directory should be skipped
             rel = sol_file.relative_to(self.source_dir)
             if str(rel) in self.skip_files:
+                continue
+            if any(str(rel).startswith(d + '/') or str(rel).startswith(d + '\\') for d in self.skip_dirs):
                 continue
             try:
                 ts_code = self.transpile_file(str(sol_file))

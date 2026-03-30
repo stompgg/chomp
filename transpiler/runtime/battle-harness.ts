@@ -158,19 +158,9 @@ export interface TurnInput {
 }
 
 /**
- * Mon state snapshot (matches Solidity MonState struct)
+ * Mon state snapshot — re-exported from transpiled Structs for consistency.
  */
-export interface MonState {
-  hpDelta: bigint;
-  staminaDelta: bigint;
-  speedDelta: bigint;
-  attackDelta: bigint;
-  defenseDelta: bigint;
-  specialAttackDelta: bigint;
-  specialDefenseDelta: bigint;
-  isKnockedOut: boolean;
-  shouldSkipTurn: boolean;
-}
+export type MonState = Structs.MonState;
 
 /**
  * Battle state snapshot
