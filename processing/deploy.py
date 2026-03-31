@@ -301,7 +301,7 @@ def run_typescript_scripts(
 
 
 def run_transpiler(chomp_dir: Path, dry_run: bool = False):
-    """Run the Solidity to TypeScript transpiler."""
+    """Run the Solidity to TypeScript transpiler and sync output to munch."""
     print(f"\n{'='*60}")
     print("Running transpiler (sol2ts.py)")
     print(f"{'='*60}")
@@ -323,6 +323,26 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
         if result.returncode != 0:
             print("ERROR: Transpiler failed")
             sys.exit(1)
+
+    # Sync transpiled output to munch (excluding runtime/ which has munch-specific paths)
+    munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "ts-output"
+    chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
+
+    if munch_ts_output.exists():
+        print(f"\nSyncing transpiled output to {munch_ts_output}")
+        if dry_run:
+            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ (excluding runtime/)")
+        else:
+            result = subprocess.run(
+                ["rsync", "-a", "--delete", "--exclude=runtime/",
+                 f"{chomp_ts_output}/", f"{munch_ts_output}/"],
+            )
+            if result.returncode != 0:
+                print("WARNING: Failed to sync transpiled output to munch")
+            else:
+                print("Synced transpiled output to munch")
+    else:
+        print(f"Skipping munch sync: {munch_ts_output} does not exist")
 
 
 def main():
