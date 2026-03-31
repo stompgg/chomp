@@ -11,6 +11,7 @@
 import { ContractContainer, globalEventStream, ADDRESS_ZERO, addressToUint } from './index';
 import { Contract } from './base';
 import * as Structs from '../ts-output/Structs';
+import * as Constants from '../ts-output/Constants';
 
 // =============================================================================
 // HARNESS CONSTANTS
@@ -443,9 +444,21 @@ export class BattleHarness {
       Number(activeIndices[1])
     ];
 
-    // Mon states are included in the config view (monStates[0] = p0, monStates[1] = p1)
-    const p0States: MonState[] = configView.monStates[0] || [];
-    const p1States: MonState[] = configView.monStates[1] || [];
+    // Mon states — normalize CLEARED_MON_STATE_SENTINEL to 0 (matches Solidity semantics)
+    const normDelta = (v: bigint) => v === Constants.CLEARED_MON_STATE_SENTINEL ? 0n : v;
+    const normState = (s: MonState): MonState => ({
+      hpDelta: normDelta(s.hpDelta),
+      staminaDelta: normDelta(s.staminaDelta),
+      speedDelta: normDelta(s.speedDelta),
+      attackDelta: normDelta(s.attackDelta),
+      defenceDelta: normDelta(s.defenceDelta),
+      specialAttackDelta: normDelta(s.specialAttackDelta),
+      specialDefenceDelta: normDelta(s.specialDefenceDelta),
+      isKnockedOut: s.isKnockedOut,
+      shouldSkipTurn: s.shouldSkipTurn,
+    });
+    const p0States: MonState[] = (configView.monStates[0] || []).map(normState);
+    const p1States: MonState[] = (configView.monStates[1] || []).map(normState);
 
     return {
       turnId: battleData.turnId,

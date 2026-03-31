@@ -24,7 +24,7 @@ contract NineNineNine is IMoveSet {
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
-        return 2;
+        return 1;
     }
 
     function priority(IEngine, bytes32, uint256) external pure returns (uint32) {

@@ -44,15 +44,15 @@ contract VitalSiphon is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        engine.dispatchStandardAttack(
+        (int32 damage, ) = engine.dispatchStandardAttack(
             attackerPlayerIndex, defenderMonIndex,
             basePower(battleKey), accuracy(battleKey), volatility(battleKey),
             moveType(engine, battleKey), moveClass(engine, battleKey),
             critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
         );
 
-        // 50% chance to steal stamina
-        if (rng % 100 >= STAMINA_STEAL_PERCENT) {
+        // 50% chance to steal stamina (assuming move dealt damage)
+        if (damage > 0 && rng % 100 >= STAMINA_STEAL_PERCENT) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
             // Check if opponent has at least 1 stamina

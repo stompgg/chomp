@@ -1089,6 +1089,10 @@ contract Engine is IEngine, MappingAllocator {
     {
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
 
+        if (monState.isKnockedOut) {
+            return;
+        }
+
         // If sentinel, replace with -damage; otherwise subtract damage
         monState.hpDelta = (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? -damage : monState.hpDelta - damage;
 

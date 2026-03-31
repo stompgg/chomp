@@ -19,6 +19,7 @@ import getpass
 import json
 import os
 import re
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -132,14 +133,26 @@ def run_forge_script(
     return result.stdout + result.stderr
 
 
-def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
+def collect_inline_move_addresses(
+    chomp_dir: Path,
+    deployed_addresses: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
     """Find all JSON inline moves, pack them, and return as (move_display_name, hex_value) tuples.
 
     Uses CSV move names (e.g. "Pound Ground") so the Address keys match what
     generateMonsTypeScript.py expects.
+
+    Resolves effect contract addresses from deployed_addresses so the packed
+    values match on-chain (where SetupMons.s.sol OR's the effect address in).
     """
     src_dir = chomp_dir / "src"
     moves_csv = chomp_dir / "drool" / "moves.csv"
+
+    # Build lookup from contract name (SCREAMING_SNAKE) to address
+    addr_lookup = {}
+    for name, address in deployed_addresses:
+        key = name.upper().replace(" ", "_").replace("-", "_")
+        addr_lookup[key] = address
 
     results = []
     with open(moves_csv, "r", encoding="utf-8") as f:
@@ -152,8 +165,18 @@ def collect_inline_move_addresses(chomp_dir: Path) -> list[tuple[str, str]]:
                 continue
             with open(json_path, "r", encoding="utf-8") as jf:
                 move_data = json.load(jf)
-            # Pack with effect_address=0 — the client only needs the move params
-            packed = pack_move(move_data, effect_address=0)
+
+            # Resolve the effect contract address if the move has one
+            effect_address = 0
+            effect_name = move_data.get("effect", "")
+            if effect_name:
+                # Convert PascalCase to SCREAMING_SNAKE_CASE for lookup
+                snake = re.sub(r'(?<!^)(?=[A-Z])', '_', effect_name).upper()
+                addr_str = addr_lookup.get(snake, "")
+                if addr_str:
+                    effect_address = int(addr_str, 16)
+
+            packed = pack_move(move_data, effect_address=effect_address)
             results.append((move_name, f"0x{packed:064x}"))
 
     return results
@@ -236,7 +259,7 @@ def run_typescript_scripts(
     all_addresses = pack_inline_ability_addresses(list(all_addresses), chomp_dir)
 
     # Add packed inline move values to the address list
-    inline_moves = collect_inline_move_addresses(chomp_dir)
+    inline_moves = collect_inline_move_addresses(chomp_dir, all_addresses)
     if inline_moves:
         print(f"Adding {len(inline_moves)} inline move packed values to addresses")
         all_addresses = list(all_addresses) + inline_moves

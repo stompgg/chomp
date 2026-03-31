@@ -56,6 +56,7 @@ contract SleepStatus is StatusEffect {
         uint256,
         uint256
     ) external override returns (bytes32, bool) {
+        rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex)));
         bool wakeEarly = rng % 3 == 0;
         if (!wakeEarly) {
             _applySleep(engine, battleKey, targetIndex, monIndex);
