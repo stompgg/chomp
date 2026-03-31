@@ -52,6 +52,7 @@ class CodeGenerationContext:
     # Variable tracking
     current_state_vars: Set[str] = field(default_factory=set)
     current_static_vars: Set[str] = field(default_factory=set)
+    current_transient_vars: Dict[str, str] = field(default_factory=dict)  # name → default value expression
     current_methods: Set[str] = field(default_factory=set)
     current_local_vars: Set[str] = field(default_factory=set)
     var_types: Dict[str, TypeName] = field(default_factory=dict)
@@ -134,6 +135,7 @@ class CodeGenerationContext:
         """Reset state for a new contract."""
         self.current_state_vars = set()
         self.current_static_vars = set()
+        self.current_transient_vars = {}
         self.current_methods = set()
         self.current_local_vars = set()
         self.var_types = {}

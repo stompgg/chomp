@@ -217,6 +217,14 @@ class ContractGenerator(BaseGenerator):
             var.name for var in contract.state_variables
             if var.mutability == 'constant'
         }
+        # Track transient variables — these must be reset at the start of each
+        # public/external entry point (matching Solidity's per-transaction semantics)
+        self._ctx.current_transient_vars = {}
+        for var in contract.state_variables:
+            if var.mutability == 'transient':
+                ts_type = self._type_converter.solidity_type_to_ts(var.type_name)
+                default_val = self._type_converter.default_value(ts_type, var.type_name)
+                self._ctx.current_transient_vars[var.name] = default_val
         self._ctx.current_methods = {func.name for func in contract.functions}
 
         # Add runtime base class methods
