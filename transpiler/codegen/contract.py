@@ -154,7 +154,7 @@ class ContractGenerator(BaseGenerator):
         for var in contract.state_variables:
             lines.append(self.generate_state_variable(var))
 
-        # Transient variable reset method (called by harness at transaction boundary)
+        # Transient variable reset method (auto-called by Contract proxy at transaction boundaries)
         if self._ctx.current_transient_vars:
             lines.append(f'{self.indent()}_resetTransient(): void {{')
             self.indent_level += 1

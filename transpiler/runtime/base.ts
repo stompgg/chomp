@@ -281,6 +281,30 @@ export abstract class Contract {
   static _currentCaller: string = ADDRESS_ZERO;
 
   /**
+   * Tracks nesting depth of external contract calls.
+   * Used to detect transaction boundaries for transient storage reset.
+   * Depth 0→1 = new transaction = reset all transient storage.
+   */
+  static _callDepth: number = 0;
+
+  /**
+   * Raw (unwrapped) instances of contracts that have transient storage.
+   * Populated in the constructor when _resetTransient exists on the prototype.
+   */
+  private static _transientInstances: any[] = [];
+
+  /**
+   * Reset transient storage on all registered contracts.
+   * Called automatically at transaction boundaries (when _callDepth goes 0→1).
+   * This matches Solidity semantics where transient storage is cleared per transaction.
+   */
+  static _resetAllTransient(): void {
+    for (const instance of Contract._transientInstances) {
+      instance._resetTransient();
+    }
+  }
+
+  /**
    * Resolve a value to a contract instance.
    * - If value is already a contract object, return it directly.
    * - If value is a bigint (uint256 address), look up by address in the registry.
@@ -312,10 +336,12 @@ export abstract class Contract {
   }
 
   /**
-   * Clear the address registry (useful between tests)
+   * Clear the address registry and transient instance tracking (useful between tests)
    */
   static clearRegistry(): void {
     Contract._addressRegistry.clear();
+    Contract._transientInstances = [];
+    Contract._callDepth = 0;
   }
 
   // Storage for this contract instance
@@ -379,9 +405,18 @@ export abstract class Contract {
     const address = typeof args[0] === 'string' ? args[0] : undefined;
     this._contractAddress = address ?? contractAddresses.getAddress(this.constructor.name);
 
+    // Register for transient reset if this contract has transient vars.
+    // Done here (before proxy wrapping) so we store the raw instance,
+    // allowing _resetAllTransient to call _resetTransient without going through the proxy.
+    if (typeof (this as any)._resetTransient === 'function') {
+      Contract._transientInstances.push(this);
+    }
+
     // Wrap instance in a Proxy that propagates msg.sender on cross-contract calls.
     // In Solidity, when contract A calls contract B, msg.sender in B = A's address.
     // Internal calls (same contract) don't change msg.sender.
+    // The proxy also tracks call depth to auto-reset transient storage at transaction
+    // boundaries (depth 0→1), matching Solidity's per-transaction semantics.
     const self = this;
     const proxy = new Proxy(this, {
       get(target, prop, receiver) {
@@ -389,7 +424,7 @@ export abstract class Contract {
         if (typeof value !== 'function' || typeof prop === 'symbol') return value;
         // Skip private/internal helpers and property accessors
         const propStr = prop as string;
-        if (propStr.startsWith('_') && propStr !== '_resetTransient') return value;
+        if (propStr.startsWith('_')) return value;
 
         return function (this: any, ...callArgs: any[]) {
           // Internal call: same contract is already executing, don't change msg.sender
@@ -397,6 +432,12 @@ export abstract class Contract {
             return value.apply(target, callArgs);
           }
           // External call: propagate msg.sender
+          // Reset transient storage at transaction boundary (first external entry)
+          const isTopLevel = Contract._callDepth === 0;
+          Contract._callDepth++;
+          if (isTopLevel) {
+            Contract._resetAllTransient();
+          }
           const prevSender = target._msg.sender;
           const prevCaller = Contract._currentCaller;
           target._msg.sender = Contract._currentCaller;
@@ -406,6 +447,7 @@ export abstract class Contract {
           } finally {
             target._msg.sender = prevSender;
             Contract._currentCaller = prevCaller;
+            Contract._callDepth--;
           }
         };
       },

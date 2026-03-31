@@ -309,6 +309,105 @@ contract EmbursaTest is Test, BattleHelper {
         */
     }
 
+    // Verifies that when Q5 fires on RoundStart and KOs Bob's active mon (in a 2v2),
+    // Bob's pending attack does NOT execute (Alice takes no damage)
+    function test_q5_ko_prevents_attack() public {
+        Q5 q5 = new Q5(typeCalc);
+
+        uint256[] memory q5Moves = new uint256[](1);
+        q5Moves[0] = uint256(uint160(address(q5)));
+
+        IMoveSet bobAttack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 50,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: 0,
+                MOVE_TYPE: Type.Fire,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "TestAttack",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory attackMoves = new uint256[](1);
+        attackMoves[0] = uint256(uint160(address(bobAttack)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = q5Moves;
+        aliceMon.stats.hp = 1000;
+        aliceMon.stats.specialAttack = 5;
+        aliceMon.stats.defense = 5;
+        aliceMon.stats.stamina = 10;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = attackMoves;
+        bobMon.stats.hp = 100;
+        bobMon.stats.attack = 5;
+        bobMon.stats.specialDefense = 5;
+        bobMon.stats.stamina = 10;
+
+        // 2v2: each side has a second mon (identical to first)
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        IValidator validatorToUse = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Both switch in
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Alice uses Q5, Bob does nothing
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Wait 4 turns (Q5 counter ticks from 1 to 5)
+        for (uint256 i = 0; i < 4; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            );
+        }
+
+        // On the firing turn: Alice does nothing, Bob tries to attack
+        // Q5 fires during RoundStart and should KO Bob's active mon before Bob's move executes
+        mockOracle.setRNG(2);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        // Q5 should have KO'd Bob's active mon
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut),
+            1,
+            "Bob's mon should be KO'd by Q5"
+        );
+
+        // Alice should have taken NO damage (Bob's attack should not have executed)
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            0,
+            "Alice should not have taken damage"
+        );
+
+        // Game is NOT over — Bob still has a second mon
+        assertEq(engine.getWinner(battleKey), address(0), "Game should not be over yet");
+    }
+
     /**
      * Tinderclaws ability tests:
      * - After using a move (not NO_OP or SWITCH), Embursa has a 1/3 chance to self-burn

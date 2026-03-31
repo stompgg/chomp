@@ -1389,6 +1389,18 @@ contract Engine is IEngine, MappingAllocator {
             // Always set default switch to be 2 (allow both players to make a move)
             playerSwitchForTurnFlag = 2;
 
+            // Global effect context (priorityPlayerIndex == 2): _unpackActiveMonIndex and KO bitmap
+            // lookups are invalid for playerIndex >= 2, so check both players explicitly
+            if (priorityPlayerIndex >= 2) {
+                uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+                uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+                bool isP0KO = (p0KOBitmap & (1 << p0ActiveMonIndex)) != 0;
+                bool isP1KO = (p1KOBitmap & (1 << p1ActiveMonIndex)) != 0;
+                if (isP0KO && !isP1KO) playerSwitchForTurnFlag = 0;
+                else if (!isP0KO && isP1KO) playerSwitchForTurnFlag = 1;
+                return (playerSwitchForTurnFlag, false);
+            }
+
             // Use already-loaded KO bitmaps to check active mon KO status (avoids SLOAD)
             uint256 priorityActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
             uint256 otherActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);

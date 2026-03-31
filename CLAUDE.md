@@ -6,7 +6,6 @@
 
 **License:** AGPL-3.0
 **Solidity version:** 0.8.34
-**Target chain:** MegaETH (mainnet and testnet)
 
 ## Quick Start
 

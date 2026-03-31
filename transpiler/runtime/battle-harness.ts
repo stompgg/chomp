@@ -418,8 +418,8 @@ export class BattleHarness {
     // In real blockchain, execute() would be in a later block than startBattle()
     engine._block.timestamp = engine._block.timestamp + 1n;
 
-    // Reset transient storage (Solidity resets per transaction)
-    if (engine._resetTransient) engine._resetTransient();
+    // Transient storage is auto-reset by the Contract proxy at transaction boundaries
+    // (when _callDepth goes 0→1), matching Solidity's per-transaction semantics.
 
     // Execute the turn - Engine handles all logic
     engine.execute(battleKey);
