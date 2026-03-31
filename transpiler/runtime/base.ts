@@ -275,6 +275,12 @@ export abstract class Contract {
   private static _addressRegistry: Map<string, Contract> = new Map();
 
   /**
+   * Tracks the address of the currently executing contract.
+   * Used to propagate msg.sender on cross-contract calls (matching Solidity semantics).
+   */
+  static _currentCaller: string = ADDRESS_ZERO;
+
+  /**
    * Resolve a value to a contract instance.
    * - If value is already a contract object, return it directly.
    * - If value is a bigint (uint256 address), look up by address in the registry.
@@ -323,6 +329,8 @@ export abstract class Contract {
    * Setting this auto-registers the instance in the static address registry.
    */
   private _address: string = ADDRESS_ZERO;
+  /** Reference to the Proxy wrapping this instance (set by constructor) */
+  private _proxy: any = null;
 
   get _contractAddress(): string {
     return this._address;
@@ -331,7 +339,9 @@ export abstract class Contract {
   set _contractAddress(addr: string) {
     this._address = addr;
     if (addr !== ADDRESS_ZERO) {
-      Contract._addressRegistry.set(addr.toLowerCase(), this);
+      // Register the Proxy (not the raw instance) so Contract.at() returns
+      // the msg.sender-propagating wrapper
+      Contract._addressRegistry.set(addr.toLowerCase(), this._proxy ?? this);
     }
   }
 
@@ -368,6 +378,40 @@ export abstract class Contract {
     // propagate up the chain — we ignore non-string first args.
     const address = typeof args[0] === 'string' ? args[0] : undefined;
     this._contractAddress = address ?? contractAddresses.getAddress(this.constructor.name);
+
+    // Wrap instance in a Proxy that propagates msg.sender on cross-contract calls.
+    // In Solidity, when contract A calls contract B, msg.sender in B = A's address.
+    // Internal calls (same contract) don't change msg.sender.
+    const self = this;
+    const proxy = new Proxy(this, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function' || typeof prop === 'symbol') return value;
+        // Skip private/internal helpers and property accessors
+        const propStr = prop as string;
+        if (propStr.startsWith('_') && propStr !== '_resetTransient') return value;
+
+        return function (this: any, ...callArgs: any[]) {
+          // Internal call: same contract is already executing, don't change msg.sender
+          if (Contract._currentCaller === self._contractAddress) {
+            return value.apply(target, callArgs);
+          }
+          // External call: propagate msg.sender
+          const prevSender = target._msg.sender;
+          const prevCaller = Contract._currentCaller;
+          target._msg.sender = Contract._currentCaller;
+          Contract._currentCaller = self._contractAddress;
+          try {
+            return value.apply(target, callArgs);
+          } finally {
+            target._msg.sender = prevSender;
+            Contract._currentCaller = prevCaller;
+          }
+        };
+      },
+    });
+    this._proxy = proxy;
+    return proxy as this;
   }
 
   // =========================================================================

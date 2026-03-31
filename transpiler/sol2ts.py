@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-Solidity to TypeScript Transpiler (Refactored)
-
 This transpiler converts Solidity contracts to TypeScript for local simulation.
 It's specifically designed for the Chomp game engine but can be extended for general use.
 

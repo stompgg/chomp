@@ -154,6 +154,16 @@ class ContractGenerator(BaseGenerator):
         for var in contract.state_variables:
             lines.append(self.generate_state_variable(var))
 
+        # Transient variable reset method (called by harness at transaction boundary)
+        if self._ctx.current_transient_vars:
+            lines.append(f'{self.indent()}_resetTransient(): void {{')
+            self.indent_level += 1
+            for var_name, default_val in self._ctx.current_transient_vars.items():
+                lines.append(f'{self.indent()}this.{var_name} = {default_val};')
+            self.indent_level -= 1
+            lines.append(f'{self.indent()}}}')
+            lines.append('')
+
         # Mutator methods for testing
         for var in contract.state_variables:
             mutators = self.generate_mutator_methods(var)

@@ -9,6 +9,7 @@
  */
 
 import { ContractContainer, globalEventStream, ADDRESS_ZERO, addressToUint } from './index';
+import { Contract } from './base';
 import * as Structs from '../ts-output/Structs';
 
 // =============================================================================
@@ -292,7 +293,7 @@ export class BattleHarness {
     };
 
     // Set msg.sender to matchmaker (who calls startBattle in real flow)
-    engine._msg.sender = this.matchmaker._contractAddress;
+    Contract._currentCaller = this.matchmaker._contractAddress;
     engine.startBattle(battle);
 
     // Initialize mon states with defaults (fixes Solidity vs TypeScript storage semantics)
@@ -391,11 +392,9 @@ export class BattleHarness {
 
     const engine = this.container.resolve('Engine') as any;
 
-    // Set msg.sender to moveManager for ALL setMove calls
-    // This bypasses the validation that normally requires either:
-    // 1. Being the moveManager, or
-    // 2. Being in the middle of execute() (isForCurrentBattle check)
-    engine._msg.sender = HARNESS_MOVE_MANAGER;
+    // Set the caller to moveManager for setMove/execute calls.
+    // This propagates as msg.sender via the Contract proxy.
+    Contract._currentCaller = HARNESS_MOVE_MANAGER;
 
     // Set moves for both players via Engine
     engine.setMove(
@@ -417,6 +416,9 @@ export class BattleHarness {
     // Advance block timestamp to avoid GameStartsAndEndsSameBlock error
     // In real blockchain, execute() would be in a later block than startBattle()
     engine._block.timestamp = engine._block.timestamp + 1n;
+
+    // Reset transient storage (Solidity resets per transaction)
+    if (engine._resetTransient) engine._resetTransient();
 
     // Execute the turn - Engine handles all logic
     engine.execute(battleKey);

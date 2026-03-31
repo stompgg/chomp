@@ -176,13 +176,6 @@ class FunctionGenerator(BaseGenerator):
         lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{method_name}({params}): {return_type} {{')
         self.indent_level += 1
 
-        # Reset transient variables at the start of public/external entry points
-        # (Solidity transient storage resets to zero at the end of each transaction)
-        if (self._ctx.current_transient_vars and
-            func.visibility in ('public', 'external') and
-            self._ctx.current_contract_kind != 'library'):
-            for var_name, default_val in self._ctx.current_transient_vars.items():
-                lines.append(f'{self.indent()}this.{var_name} = {default_val};')
 
         # Declare named return parameters at start of function
         named_return_vars = []
