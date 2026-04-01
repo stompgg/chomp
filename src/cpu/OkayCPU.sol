@@ -7,7 +7,7 @@ import {CPU} from "./CPU.sol";
 import {MoveDecision, RevealedMove} from "../Structs.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";
 import {MonStateIndexName, Type, MoveClass} from "../Enums.sol";
-import {IMoveSet} from "../moves/IMoveSet.sol";
+import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
 
 contract OkayCPU is CPU {
@@ -156,7 +156,7 @@ contract OkayCPU is CPU {
         uint256 validCount = 0;
         uint256 movesLen = moves.length;
         for (uint256 i = 0; i < movesLen; i++) {
-            MoveClass currentMoveClass = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex).moveClass(battleKey);
+            MoveClass currentMoveClass = MoveSlotLib.moveClass(ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moves[i].moveIndex), ENGINE, battleKey);
             if (currentMoveClass == class1 || currentMoveClass == class2) {
                 validIndices[validCount++] = uint128(i);
             }
@@ -182,8 +182,7 @@ contract OkayCPU is CPU {
         uint256 validCount = 0;
         uint256 indicesLen = validAttackIndices.length;
         for (uint256 i = 0; i < indicesLen; i++) {
-            IMoveSet currentMoveSet = ENGINE.getMoveForMonForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, attacks[validAttackIndices[i]].moveIndex);
-            Type moveType = currentMoveSet.moveType(battleKey);
+            Type moveType = MoveSlotLib.moveType(ENGINE.getMoveForMonForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, attacks[validAttackIndices[i]].moveIndex), ENGINE, battleKey);
             uint256 effectiveness = TYPE_CALC.getTypeEffectiveness(moveType, defenderType1, 2);
             if (defenderType2 != Type.None) {
                 effectiveness = effectiveness * TYPE_CALC.getTypeEffectiveness(moveType, defenderType2, 2);

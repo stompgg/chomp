@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-Solidity to TypeScript Transpiler (Refactored)
-
 This transpiler converts Solidity contracts to TypeScript for local simulation.
 It's specifically designed for the Chomp game engine but can be extended for general use.
 
@@ -64,44 +62,56 @@ class SolidityToTypeScriptTranspiler:
         # Diagnostics collector
         self.diagnostics = TranspilerDiagnostics()
 
-        # Load runtime replacements configuration
+        # Load consolidated transpiler configuration
         self.runtime_replacements: Dict[str, dict] = {}
         self.runtime_replacement_classes: Set[str] = set()
         self.runtime_replacement_mixins: Dict[str, str] = {}
         self.runtime_replacement_methods: Dict[str, Set[str]] = {}
-        self._load_runtime_replacements()
+        self.skip_files: Set[str] = set()
+        self.skip_dirs: Set[str] = set()
+        self._load_config()
 
         # Run type discovery on specified directories
         if discovery_dirs:
             for dir_path in discovery_dirs:
                 self.registry.discover_from_directory(dir_path)
 
-    def _load_runtime_replacements(self) -> None:
-        """Load the runtime-replacements.json configuration file."""
-        script_dir = Path(__file__).parent
-        replacements_file = script_dir / 'runtime-replacements.json'
+    def _load_config(self) -> None:
+        """Load transpiler-config.json (consolidated configuration)."""
+        config_file = Path(__file__).parent / 'transpiler-config.json'
+        if not config_file.exists():
+            print(f"Warning: transpiler-config.json not found at {config_file}")
+            return
 
-        if replacements_file.exists():
-            try:
-                with open(replacements_file, 'r') as f:
-                    config = json.load(f)
-                for replacement in config.get('replacements', []):
-                    source_path = replacement.get('source', '')
-                    if source_path:
-                        self.runtime_replacements[source_path] = replacement
-                        for export in replacement.get('exports', []):
-                            self.runtime_replacement_classes.add(export)
-                        interface = replacement.get('interface', {})
-                        class_name = interface.get('class', '')
-                        mixin_code = interface.get('mixin', '')
-                        if class_name and mixin_code:
-                            self.runtime_replacement_mixins[class_name] = mixin_code
-                        methods = interface.get('methods', [])
-                        if class_name and methods:
-                            method_names = set(m.get('name', '') for m in methods if m.get('name'))
-                            self.runtime_replacement_methods[class_name] = method_names
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"Warning: Failed to load runtime-replacements.json: {e}")
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+
+            # Runtime replacements
+            for replacement in config.get('runtimeReplacements', []):
+                source_path = replacement.get('source', '')
+                if source_path:
+                    self.runtime_replacements[source_path] = replacement
+                    for export in replacement.get('exports', []):
+                        self.runtime_replacement_classes.add(export)
+                    interface = replacement.get('interface', {})
+                    class_name = interface.get('class', '')
+                    mixin_code = interface.get('mixin', '')
+                    if class_name and mixin_code:
+                        self.runtime_replacement_mixins[class_name] = mixin_code
+                    methods = interface.get('methods', [])
+                    if class_name and methods:
+                        method_names = set(m.get('name', '') for m in methods if m.get('name'))
+                        self.runtime_replacement_methods[class_name] = method_names
+
+            # Skip files and directories
+            for path in config.get('skipFiles', []):
+                self.skip_files.add(path)
+            for path in config.get('skipDirs', []):
+                self.skip_dirs.add(path)
+
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Warning: Failed to load transpiler-config.json: {e}")
 
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
@@ -166,7 +176,7 @@ class SolidityToTypeScriptTranspiler:
             current_file_path=current_file_path,
             runtime_replacement_classes=self.runtime_replacement_classes,
             runtime_replacement_mixins=self.runtime_replacement_mixins,
-            runtime_replacement_methods=self.runtime_replacement_methods
+            runtime_replacement_methods=self.runtime_replacement_methods,
         )
         return generator.generate(ast)
 
@@ -229,6 +239,12 @@ class SolidityToTypeScriptTranspiler:
         """Transpile all Solidity files matching the pattern."""
         results = {}
         for sol_file in self.source_dir.glob(pattern):
+            # Check if file or directory should be skipped
+            rel = sol_file.relative_to(self.source_dir)
+            if str(rel) in self.skip_files:
+                continue
+            if any(str(rel).startswith(d + '/') or str(rel).startswith(d + '\\') for d in self.skip_dirs):
+                continue
             try:
                 ts_code = self.transpile_file(str(sol_file))
                 rel_path = sol_file.relative_to(self.source_dir)
@@ -306,7 +322,7 @@ def main():
     parser.add_argument('--script-dir', metavar='DIR',
                         help='Directory containing deploy scripts for dependency inference')
     parser.add_argument('--overrides', metavar='FILE',
-                        help='Path to dependency-overrides.json for manual mappings')
+                        help='Path to transpiler-config.json for manual dependency mappings')
 
     args = parser.parse_args()
 
@@ -319,9 +335,9 @@ def main():
     script_dir = args.script_dir
     overrides_path = args.overrides
 
-    # Default overrides path to transpiler/dependency-overrides.json if not specified
+    # Default overrides path to transpiler-config.json if not specified
     if not overrides_path:
-        default_overrides = Path(__file__).parent / 'dependency-overrides.json'
+        default_overrides = Path(__file__).parent / 'transpiler-config.json'
         if default_overrides.exists():
             overrides_path = str(default_overrides)
 

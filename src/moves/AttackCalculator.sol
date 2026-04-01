@@ -94,72 +94,70 @@ library AttackCalculator {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
 
-        int32 damage;
-        bytes32 eventType = NONE_EVENT_TYPE;
-        {
-            uint32 attackStat;
-            uint32 defenceStat;
+        // Type effectiveness via external ITypeCalculator (for test compat)
+        uint32 scaledBasePower = TYPE_CALCULATOR.getTypeEffectiveness(attackType, ctx.defenderType1, basePower);
+        if (ctx.defenderType2 != Type.None) {
+            scaledBasePower = TYPE_CALCULATOR.getTypeEffectiveness(attackType, ctx.defenderType2, scaledBasePower);
+        }
 
-            // Grab the right atk/defense stats from pre-fetched context
-            if (attackSupertype == MoveClass.Physical) {
-                attackStat = uint32(int32(ctx.attackerAttack) + ctx.attackerAttackDelta);
-                defenceStat = uint32(int32(ctx.defenderDef) + ctx.defenderDefDelta);
+        return _calculateDamageCore(ctx, scaledBasePower, attackSupertype, volatility, rng, critRate);
+    }
+
+    function _calculateDamageCore(
+        DamageCalcContext memory ctx,
+        uint32 scaledBasePower,
+        MoveClass attackSupertype,
+        uint256 volatility,
+        uint256 rng,
+        uint256 critRate
+    ) internal pure returns (int32, bytes32) {
+        uint32 attackStat;
+        uint32 defenceStat;
+
+        // Grab the right atk/defense stats from pre-fetched context
+        if (attackSupertype == MoveClass.Physical) {
+            attackStat = uint32(int32(ctx.attackerAttack) + ctx.attackerAttackDelta);
+            defenceStat = uint32(int32(ctx.defenderDef) + ctx.defenderDefDelta);
+        } else {
+            attackStat = uint32(int32(ctx.attackerSpAtk) + ctx.attackerSpAtkDelta);
+            defenceStat = uint32(int32(ctx.defenderSpDef) + ctx.defenderSpDefDelta);
+        }
+
+        // Prevent weird stat bugs from messing up the math
+        if (attackStat <= 0) {
+            attackStat = 1;
+        }
+        if (defenceStat <= 0) {
+            defenceStat = 1;
+        }
+
+        // Calculate move volatility
+        uint256 rng2 = uint256(keccak256(abi.encode(rng)));
+        uint32 rngScaling = 100;
+        if (volatility > 0) {
+            if (rng2 % 100 > 50) {
+                rngScaling = 100 + uint32(rng2 % (volatility + 1));
             } else {
-                attackStat = uint32(int32(ctx.attackerSpAtk) + ctx.attackerSpAtkDelta);
-                defenceStat = uint32(int32(ctx.defenderSpDef) + ctx.defenderSpDefDelta);
+                rngScaling = 100 - uint32(rng2 % (volatility + 1));
             }
+        }
 
-            // Prevent weird stat bugs from messing up the math
-            if (attackStat <= 0) {
-                attackStat = 1;
-            }
-            if (defenceStat <= 0) {
-                defenceStat = 1;
-            }
-
-            uint32 scaledBasePower;
-            {
-                // Use pre-fetched defender types
-                scaledBasePower = TYPE_CALCULATOR.getTypeEffectiveness(attackType, ctx.defenderType1, basePower);
-                if (ctx.defenderType2 != Type.None) {
-                    scaledBasePower = TYPE_CALCULATOR.getTypeEffectiveness(attackType, ctx.defenderType2, scaledBasePower);
-                }
-            }
-
-            // Calculate move volatility
-            // Check if rng flag is even or odd
-            // Either way, take half the value use it as the scaling factor
-            uint256 rng2 = uint256(keccak256(abi.encode(rng)));
-            uint32 rngScaling = 100;
-            if (volatility > 0) {
-                // We scale up
-                if (rng2 % 100 > 50) {
-                    rngScaling = 100 + uint32(rng2 % (volatility + 1));
-                }
-                // We scale down
-                else {
-                    rngScaling = 100 - uint32(rng2 % (volatility + 1));
-                }
-            }
-
-            // Calculate crit chance (in order to avoid correlating effect chance w/ crit chance, we use a new rng)
-            // [0... crit rate] [crit rate + 1, ..., 100]
-            // [succeeds      ] [fails                  ]
-            uint256 rng3 = uint256(keccak256(abi.encode(rng2)));
-            uint32 critNum = 1;
-            uint32 critDenom = 1;
-            if ((rng3 % 100) <= critRate) {
-                critNum = CRIT_NUM;
-                critDenom = CRIT_DENOM;
-                eventType = MOVE_CRIT_EVENT_TYPE;
-            }
-            damage = int32(
-                critNum * (scaledBasePower * attackStat * rngScaling) / (defenceStat * RNG_SCALING_DENOM * critDenom)
-            );
-            // Handle the case where the type immunity results in 0 damage
-            if (scaledBasePower == 0) {
-                eventType = MOVE_TYPE_IMMUNITY_EVENT_TYPE;
-            }
+        // Calculate crit chance
+        uint256 rng3 = uint256(keccak256(abi.encode(rng2)));
+        uint32 critNum = 1;
+        uint32 critDenom = 1;
+        bytes32 eventType = NONE_EVENT_TYPE;
+        if ((rng3 % 100) <= critRate) {
+            critNum = CRIT_NUM;
+            critDenom = CRIT_DENOM;
+            eventType = MOVE_CRIT_EVENT_TYPE;
+        }
+        int32 damage = int32(
+            critNum * (scaledBasePower * attackStat * rngScaling) / (defenceStat * RNG_SCALING_DENOM * critDenom)
+        );
+        // Handle the case where the type immunity results in 0 damage
+        if (scaledBasePower == 0) {
+            eventType = MOVE_TYPE_IMMUNITY_EVENT_TYPE;
         }
         return (damage, eventType);
     }

@@ -13,11 +13,9 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 contract GuestFeature is IMoveSet {
     uint32 public constant BASE_POWER = 75;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
@@ -26,6 +24,7 @@ contract GuestFeature is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -35,9 +34,9 @@ contract GuestFeature is IMoveSet {
     ) external {
         uint256 monIndex = uint256(extraData);
         Type guestType =
-            Type(ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Type1));
+            Type(engine.getMonValueForBattle(battleKey, attackerPlayerIndex, monIndex, MonStateIndexName.Type1));
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
@@ -45,29 +44,29 @@ contract GuestFeature is IMoveSet {
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
             guestType,
-            moveClass(battleKey),
+            moveClass(engine, battleKey),
             rng,
             DEFAULT_CRIT_RATE
         );
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Cyber;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

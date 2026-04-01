@@ -56,13 +56,13 @@ contract EmbursaTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_q5() public {
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = new Q5(engine, typeCalc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(new Q5(typeCalc))));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -77,7 +77,7 @@ contract EmbursaTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -135,11 +135,11 @@ contract EmbursaTest is Test, BattleHelper {
 
     function test_heatBeacon() public {
         DummyStatus dummyStatus = new DummyStatus();
-        HeatBeacon heatBeacon = new HeatBeacon(IEngine(address(engine)), IEffect(address(dummyStatus)));
-        Q5 q5 = new Q5(engine, typeCalc);
-        SetAblaze setAblaze = new SetAblaze(engine, typeCalc, IEffect(address(dummyStatus)));
-        StatBoosts statBoosts = new StatBoosts(engine);
-        HoneyBribe honeyBribe = new HoneyBribe(engine, statBoosts);
+        HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(dummyStatus)));
+        Q5 q5 = new Q5(typeCalc);
+        SetAblaze setAblaze = new SetAblaze(typeCalc, IEffect(address(dummyStatus)));
+        StatBoosts statBoosts = new StatBoosts();
+        HoneyBribe honeyBribe = new HoneyBribe(statBoosts);
 
         IMoveSet koMove = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -157,12 +157,12 @@ contract EmbursaTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](5);
-        aliceMoves[0] = heatBeacon;
-        aliceMoves[1] = q5;
-        aliceMoves[2] = setAblaze;
-        aliceMoves[3] = honeyBribe;
-        aliceMoves[4] = koMove;
+        uint256[] memory aliceMoves = new uint256[](5);
+        aliceMoves[0] = uint256(uint160(address(heatBeacon)));
+        aliceMoves[1] = uint256(uint160(address(q5)));
+        aliceMoves[2] = uint256(uint160(address(setAblaze)));
+        aliceMoves[3] = uint256(uint160(address(honeyBribe)));
+        aliceMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -173,20 +173,20 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: aliceMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // 5. Create Bob's mon with higher speed
-        IMoveSet[] memory bobMoves = new IMoveSet[](5);
-        bobMoves[0] = heatBeacon;
-        bobMoves[1] = q5;
-        bobMoves[2] = setAblaze;
-        bobMoves[3] = honeyBribe;
-        bobMoves[4] = koMove;
+        uint256[] memory bobMoves = new uint256[](5);
+        bobMoves[0] = uint256(uint160(address(heatBeacon)));
+        bobMoves[1] = uint256(uint160(address(q5)));
+        bobMoves[2] = uint256(uint160(address(setAblaze)));
+        bobMoves[3] = uint256(uint160(address(honeyBribe)));
+        bobMoves[4] = uint256(uint160(address(koMove)));
 
         Mon memory bobMon = Mon({
             stats: MonStats({
@@ -197,11 +197,11 @@ contract EmbursaTest is Test, BattleHelper {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
             moves: bobMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory aliceTeam = new Mon[](1);
         aliceTeam[0] = aliceMon;
@@ -233,10 +233,10 @@ contract EmbursaTest is Test, BattleHelper {
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 1, "Bob's mon should have 1 effect (Dummy status)");
         assertEq(address(effects[0].effect), address(dummyStatus), "Bob's mon should have Dummy status");
-        assertEq(heatBeacon.priority(battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
+        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
         mockOracle.setRNG(2); // Magic number to cancel out volatility
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 4, 0, 0);
-        assertEq(heatBeacon.priority(battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
+        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
         assertEq(
             engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
             1,
@@ -309,6 +309,105 @@ contract EmbursaTest is Test, BattleHelper {
         */
     }
 
+    // Verifies that when Q5 fires on RoundStart and KOs Bob's active mon (in a 2v2),
+    // Bob's pending attack does NOT execute (Alice takes no damage)
+    function test_q5_ko_prevents_attack() public {
+        Q5 q5 = new Q5(typeCalc);
+
+        uint256[] memory q5Moves = new uint256[](1);
+        q5Moves[0] = uint256(uint160(address(q5)));
+
+        IMoveSet bobAttack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 50,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: 0,
+                MOVE_TYPE: Type.Fire,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "TestAttack",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory attackMoves = new uint256[](1);
+        attackMoves[0] = uint256(uint160(address(bobAttack)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = q5Moves;
+        aliceMon.stats.hp = 1000;
+        aliceMon.stats.specialAttack = 5;
+        aliceMon.stats.defense = 5;
+        aliceMon.stats.stamina = 10;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = attackMoves;
+        bobMon.stats.hp = 100;
+        bobMon.stats.attack = 5;
+        bobMon.stats.specialDefense = 5;
+        bobMon.stats.stamina = 10;
+
+        // 2v2: each side has a second mon (identical to first)
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        IValidator validatorToUse = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Both switch in
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Alice uses Q5, Bob does nothing
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Wait 4 turns (Q5 counter ticks from 1 to 5)
+        for (uint256 i = 0; i < 4; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            );
+        }
+
+        // On the firing turn: Alice does nothing, Bob tries to attack
+        // Q5 fires during RoundStart and should KO Bob's active mon before Bob's move executes
+        mockOracle.setRNG(2);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        // Q5 should have KO'd Bob's active mon
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut),
+            1,
+            "Bob's mon should be KO'd by Q5"
+        );
+
+        // Alice should have taken NO damage (Bob's attack should not have executed)
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            0,
+            "Alice should not have taken damage"
+        );
+
+        // Game is NOT over — Bob still has a second mon
+        assertEq(engine.getWinner(battleKey), address(0), "Game should not be over yet");
+    }
+
     /**
      * Tinderclaws ability tests:
      * - After using a move (not NO_OP or SWITCH), Embursa has a 1/3 chance to self-burn
@@ -318,12 +417,12 @@ contract EmbursaTest is Test, BattleHelper {
      * - If burn is applied externally, SpATK boost is still granted at end of round
      */
     function test_tinderclaws_selfBurnOnMove() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = new StatBoosts();
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 10,
                 STAMINA_COST: 1,
@@ -337,11 +436,11 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "TestAttack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
-        aliceMon.ability = IAbility(address(tinderclaws));
+        aliceMon.ability = uint160(address(tinderclaws));
         aliceMon.stats.hp = 100;
         aliceMon.stats.attack = 10;
         aliceMon.stats.specialAttack = 10;
@@ -408,12 +507,12 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_tinderclaws_restingRemovesBurn() public {
-        StatBoosts statBoosts = new StatBoosts(engine);
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEngine(address(engine)), IEffect(address(burnStatus)), statBoosts);
+        StatBoosts statBoosts = new StatBoosts();
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
                 STAMINA_COST: 1,
@@ -427,11 +526,11 @@ contract EmbursaTest is Test, BattleHelper {
                 NAME: "BurnAttack",
                 EFFECT: IEffect(address(burnStatus))
             })
-        );
+        ))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
-        aliceMon.ability = IAbility(address(tinderclaws));
+        aliceMon.ability = uint160(address(tinderclaws));
         aliceMon.stats.hp = 100;
         aliceMon.stats.attack = 10;
         aliceMon.stats.specialAttack = 10;

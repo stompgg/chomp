@@ -6,7 +6,6 @@
 
 **License:** AGPL-3.0
 **Solidity version:** 0.8.34
-**Target chain:** MegaETH (mainnet and testnet)
 
 ## Quick Start
 
@@ -234,6 +233,14 @@ The CSV files in `drool/` are the source of truth for mon stats, move parameters
 - Per-mon tests in `test/mons/` test specific move interactions
 - Mock contracts in `test/mocks/` for isolated testing
 - Gas benchmarks in `EngineGasTest.sol` and `InlineEngineGasTest.sol` with JSON snapshots
+
+### Development Approach
+
+When implementing new features or refactors, follow a test-first approach:
+1. Write tests that specify the desired behavior
+2. Run to verify the tests fail (confirming they test new behavior)
+3. Implement the changes
+4. Run to verify the tests pass
 
 ### Adding a New Mon
 

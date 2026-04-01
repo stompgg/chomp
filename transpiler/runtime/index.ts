@@ -7,9 +7,9 @@
 
 import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, hexToBigInt, sha256 as viemSha256 } from 'viem';
 
-// Note: Core types (Contract, Storage, EventStream) are defined in this file.
-// Runtime replacement modules (Ownable, ECDSA, etc.) should import Contract from ./base
-// to avoid circular dependencies. The ./base module has a minimal Contract implementation.
+// Note: Contract, Storage, EventStream, and globalEventStream are defined in ./base
+// and re-exported here. Runtime replacement modules (Ownable, ECDSA, etc.) import
+// directly from ./base to avoid circular dependencies.
 
 // =============================================================================
 // HASH FUNCTIONS
@@ -160,83 +160,12 @@ export function unpackBits(packed: bigint, widths: number[]): bigint[] {
 }
 
 // =============================================================================
-// STORAGE SIMULATION
+// RE-EXPORTS FROM BASE (single source of truth)
 // =============================================================================
 
-/**
- * Simulates Solidity storage with mapping support
- */
-export class Storage {
-  private slots: Map<string, bigint> = new Map();
-  private transient: Map<string, bigint> = new Map();
-
-  /**
-   * Read from a storage slot
-   */
-  sload(slot: bigint | string): bigint {
-    const key = typeof slot === 'string' ? slot : slot.toString();
-    return this.slots.get(key) ?? 0n;
-  }
-
-  /**
-   * Write to a storage slot
-   */
-  sstore(slot: bigint | string, value: bigint): void {
-    const key = typeof slot === 'string' ? slot : slot.toString();
-    if (value === 0n) {
-      this.slots.delete(key);
-    } else {
-      this.slots.set(key, value);
-    }
-  }
-
-  /**
-   * Read from transient storage
-   */
-  tload(slot: bigint | string): bigint {
-    const key = typeof slot === 'string' ? slot : slot.toString();
-    return this.transient.get(key) ?? 0n;
-  }
-
-  /**
-   * Write to transient storage
-   */
-  tstore(slot: bigint | string, value: bigint): void {
-    const key = typeof slot === 'string' ? slot : slot.toString();
-    if (value === 0n) {
-      this.transient.delete(key);
-    } else {
-      this.transient.set(key, value);
-    }
-  }
-
-  /**
-   * Clear all transient storage (called at end of transaction)
-   */
-  clearTransient(): void {
-    this.transient.clear();
-  }
-
-  /**
-   * Compute a mapping slot key
-   */
-  mappingSlot(baseSlot: bigint, key: bigint | string): bigint {
-    const keyBytes = typeof key === 'string' ? key : toHex(key, { size: 32 });
-    const slotBytes = toHex(baseSlot, { size: 32 });
-    return hexToBigInt(keccak256(encodePacked(['bytes32', 'bytes32'], [keyBytes as `0x${string}`, slotBytes as `0x${string}`])));
-  }
-
-  /**
-   * Compute a nested mapping slot key
-   */
-  nestedMappingSlot(baseSlot: bigint, ...keys: Array<bigint | string>): bigint {
-    let slot = baseSlot;
-    for (const key of keys) {
-      slot = this.mappingSlot(slot, key);
-    }
-    return slot;
-  }
-}
+export { Storage, EventStream, ADDRESS_ZERO, globalEventStream, contractAddresses } from './base';
+export type { EventLog } from './base';
+import { ADDRESS_ZERO } from './base';
 
 // =============================================================================
 // TYPE HELPERS
@@ -245,7 +174,6 @@ export class Storage {
 /**
  * Address utilities
  */
-export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000';
 export const TOMBSTONE_ADDRESS = '0x000000000000000000000000000000000000dead';
 
 export function isZeroAddress(addr: string): boolean {
@@ -299,205 +227,10 @@ export function abiEncode(types: string[], values: any[]): string {
 }
 
 // =============================================================================
-// EVENT STREAM
+// CONTRACT BASE CLASS (re-exported from base.ts — single Contract class)
 // =============================================================================
 
-/**
- * Represents a single event emitted by a contract
- */
-export interface EventLog {
-  /** Event name/type */
-  name: string;
-  /** Event arguments as key-value pairs */
-  args: Record<string, any>;
-  /** Timestamp when the event was emitted */
-  timestamp: number;
-  /** Contract address that emitted the event (if available) */
-  emitter?: string;
-  /** Additional raw data */
-  data?: any[];
-}
-
-/**
- * Virtual event stream that stores all emitted events for inspection/testing
- */
-export class EventStream {
-  private events: EventLog[] = [];
-
-  /**
-   * Append an event to the stream
-   */
-  emit(name: string, args: Record<string, any> = {}, emitter?: string, data?: any[]): void {
-    this.events.push({
-      name,
-      args,
-      timestamp: Date.now(),
-      emitter,
-      data,
-    });
-  }
-
-  /**
-   * Get all events
-   */
-  getAll(): EventLog[] {
-    return [...this.events];
-  }
-
-  /**
-   * Get events by name
-   */
-  getByName(name: string): EventLog[] {
-    return this.events.filter(e => e.name === name);
-  }
-
-  /**
-   * Get the last N events
-   */
-  getLast(n: number = 1): EventLog[] {
-    return this.events.slice(-n);
-  }
-
-  /**
-   * Get events matching a filter function
-   */
-  filter(predicate: (event: EventLog) => boolean): EventLog[] {
-    return this.events.filter(predicate);
-  }
-
-  /**
-   * Clear all events
-   */
-  clear(): void {
-    this.events = [];
-  }
-
-  /**
-   * Get event count
-   */
-  get length(): number {
-    return this.events.length;
-  }
-
-  /**
-   * Check if any event matches
-   */
-  has(name: string): boolean {
-    return this.events.some(e => e.name === name);
-  }
-
-  /**
-   * Get the most recent event (or undefined if empty)
-   */
-  get latest(): EventLog | undefined {
-    return this.events[this.events.length - 1];
-  }
-}
-
-/**
- * Global event stream instance - all contracts emit to this by default
- */
-export const globalEventStream = new EventStream();
-
-// =============================================================================
-// CONTRACT BASE CLASS
-// =============================================================================
-
-/**
- * Base class for transpiled contracts
- */
-export abstract class Contract {
-  protected _storage: Storage = new Storage();
-  protected _eventStream: EventStream = globalEventStream;
-  public _msg = {
-    sender: ADDRESS_ZERO,
-    value: 0n,
-    data: '0x' as `0x${string}`,
-  };
-  public _block = {
-    timestamp: BigInt(Math.floor(Date.now() / 1000)),
-    number: 0n,
-  };
-  public _tx = {
-    origin: ADDRESS_ZERO,
-  };
-
-  /**
-   * Contract address for address(this) pattern
-   * Can be set during testing to simulate deployed addresses
-   */
-  public _contractAddress: string = ADDRESS_ZERO;
-
-  /**
-   * Set the caller for the next call
-   */
-  setMsgSender(sender: string): void {
-    this._msg.sender = sender;
-  }
-
-  /**
-   * Set the block timestamp
-   */
-  setBlockTimestamp(timestamp: bigint): void {
-    this._block.timestamp = timestamp;
-  }
-
-  /**
-   * Set a custom event stream for this contract
-   */
-  setEventStream(stream: EventStream): void {
-    this._eventStream = stream;
-  }
-
-  /**
-   * Get the event stream for this contract
-   */
-  getEventStream(): EventStream {
-    return this._eventStream;
-  }
-
-  /**
-   * Emit an event to the event stream
-   */
-  protected _emitEvent(name: string, ...args: any[]): void {
-    // Convert args array to a more structured format
-    const argsObj: Record<string, any> = {};
-    args.forEach((arg, i) => {
-      if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
-        // Merge object arguments
-        Object.assign(argsObj, arg);
-      } else {
-        argsObj[`arg${i}`] = arg;
-      }
-    });
-    this._eventStream.emit(name, argsObj, undefined, args);
-  }
-
-  // =========================================================================
-  // YUL/STORAGE HELPERS (for inline assembly simulation)
-  // =========================================================================
-
-  /**
-   * Convert a key to a storage key string
-   */
-  protected _yulStorageKey(key: any): string {
-    return typeof key === 'string' ? key : JSON.stringify(key);
-  }
-
-  /**
-   * Read from raw storage (simulates Yul sload)
-   */
-  protected _storageRead(key: any): bigint {
-    return this._storage.sload(this._yulStorageKey(key));
-  }
-
-  /**
-   * Write to raw storage (simulates Yul sstore)
-   */
-  protected _storageWrite(key: any, value: bigint): void {
-    this._storage.sstore(this._yulStorageKey(key), value);
-  }
-}
+export { Contract } from './base';
 
 // =============================================================================
 // DEPENDENCY INJECTION CONTAINER
@@ -738,7 +471,6 @@ export { ECDSA } from './ECDSA';
 
 export {
   BattleHarness,
-  createBattleHarness,
   type MonConfig,
   type TeamConfig,
   type AddressConfig,
@@ -747,7 +479,4 @@ export {
   type TurnInput,
   type MonState,
   type BattleState,
-  type ContainerSetupFn,
-  // NOTE: SWITCH_MOVE_INDEX and NO_OP_MOVE_INDEX should be imported from
-  // transpiled Constants.ts (from src/Constants.sol), not from the runtime.
 } from './battle-harness';

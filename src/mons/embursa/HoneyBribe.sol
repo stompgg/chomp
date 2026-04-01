@@ -16,11 +16,9 @@ contract HoneyBribe is IMoveSet {
     uint256 public constant MAX_DIVISOR = 3;
     uint8 public constant SP_DEF_PERCENT = 50;
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -28,18 +26,23 @@ contract HoneyBribe is IMoveSet {
         return "Honey Bribe";
     }
 
-    function _getBribeLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal view returns (uint256) {
-        return uint256(ENGINE.getGlobalKV(battleKey, keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _getBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        internal
+        view
+        returns (uint256)
+    {
+        return uint256(engine.getGlobalKV(battleKey, keccak256(abi.encode(playerIndex, monIndex, name()))));
     }
 
-    function _increaseBribeLevel(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
-        uint256 bribeLevel = _getBribeLevel(battleKey, playerIndex, monIndex);
+    function _increaseBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
+        uint256 bribeLevel = _getBribeLevel(engine, battleKey, playerIndex, monIndex);
         if (bribeLevel < MAX_DIVISOR) {
-            ENGINE.setGlobalKV(keccak256(abi.encode(playerIndex, monIndex, name())), uint192(bribeLevel + 1));
+            engine.setGlobalKV(keccak256(abi.encode(playerIndex, monIndex, name())), uint192(bribeLevel + 1));
         }
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -48,25 +51,26 @@ contract HoneyBribe is IMoveSet {
         uint256
     ) external {
         // Heal active mon by max HP / 2**bribeLevel
-        uint256 bribeLevel = _getBribeLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
-        uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        uint256 bribeLevel = _getBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
+        uint32 maxHp =
+            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** bribeLevel))));
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }
-        ENGINE.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
+        engine.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp, healAmount);
 
         // Heal opposing active mon by max HP / 2**(bribeLevel + 1)
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** (bribeLevel + 1)))));
         currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
+            engine.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }
-        ENGINE.updateMonState(defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp, healAmount);
+        engine.updateMonState(defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp, healAmount);
 
         // Reduce opposing mon's SpDEF by 1/2
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -75,34 +79,34 @@ contract HoneyBribe is IMoveSet {
             boostPercent: SP_DEF_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOSTS.addStatBoosts(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // Update the bribe level
-        _increaseBribeLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
+        _increaseBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {
-            HeatBeaconLib._clearPriorityBoost(ENGINE, attackerPlayerIndex);
+        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+            HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Nature;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

@@ -92,6 +92,10 @@ class ContractGenerator(BaseGenerator):
             lines.append(self.generate_interface(contract))
         else:
             lines.append(self.generate_class(contract))
+            # Libraries get a module-level singleton for call-site access
+            if contract.kind == 'library':
+                singleton_name = contract.name[0].lower() + contract.name[1:]
+                lines.append(f'export const {singleton_name} = new {contract.name}();\n')
 
         return '\n'.join(lines)
 
@@ -111,8 +115,15 @@ class ContractGenerator(BaseGenerator):
         # Add _contractAddress property - needed when checking address(interface) != address(0)
         lines.append(f'{self.indent()}_contractAddress: string;')
 
+        # Auto-detect which methods are state variable getters in implementing contracts
+        property_names: set = set()
+        if self._registry:
+            property_names = self._registry.get_interface_property_names(contract.name)
+
         for func in contract.functions:
-            sig = self._func.generate_function_signature(func, for_interface=True)
+            sig = self._func.generate_function_signature(
+                func, for_interface=True, interface_property_names=property_names
+            )
             lines.append(f'{self.indent()}{sig};')
 
         self.indent_level -= 1
@@ -142,6 +153,16 @@ class ContractGenerator(BaseGenerator):
         # State variables
         for var in contract.state_variables:
             lines.append(self.generate_state_variable(var))
+
+        # Transient variable reset method (auto-called by Contract proxy at transaction boundaries)
+        if self._ctx.current_transient_vars:
+            lines.append(f'{self.indent()}_resetTransient(): void {{')
+            self.indent_level += 1
+            for var_name, default_val in self._ctx.current_transient_vars.items():
+                lines.append(f'{self.indent()}this.{var_name} = {default_val};')
+            self.indent_level -= 1
+            lines.append(f'{self.indent()}}}')
+            lines.append('')
 
         # Mutator methods for testing
         for var in contract.state_variables:
@@ -206,6 +227,14 @@ class ContractGenerator(BaseGenerator):
             var.name for var in contract.state_variables
             if var.mutability == 'constant'
         }
+        # Track transient variables — these must be reset at the start of each
+        # public/external entry point (matching Solidity's per-transaction semantics)
+        self._ctx.current_transient_vars = {}
+        for var in contract.state_variables:
+            if var.mutability == 'transient':
+                ts_type = self._type_converter.solidity_type_to_ts(var.type_name)
+                default_val = self._type_converter.default_value(ts_type, var.type_name)
+                self._ctx.current_transient_vars[var.name] = default_val
         self._ctx.current_methods = {func.name for func in contract.functions}
 
         # Add runtime base class methods
@@ -395,7 +424,7 @@ class ContractGenerator(BaseGenerator):
         default_val = (
             self._expr.generate(var.initial_value)
             if var.initial_value
-            else self._type_converter.default_value(ts_type)
+            else self._type_converter.default_value(ts_type, var.type_name)
         )
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
 
@@ -424,7 +453,9 @@ class ContractGenerator(BaseGenerator):
             field_modifier = 'private ' if is_public_mapping else modifier
             field_decl = (
                 f'{self.indent()}{field_modifier}{field_name}: '
-                f'Record<string, Record<string, {inner_value}>> = {{}};'
+                f'Record<string, Record<string, {inner_value}>> = '
+                f'new Proxy({{}} as Record<string, Record<string, {inner_value}>>, '
+                f'{{ get: (t, k) => {{ if (typeof k === "string" && !(k in t)) t[k] = {{}}; return t[k as any]; }} }});'
             )
             if is_public_mapping:
                 # Generate getter method for 2-level mappings

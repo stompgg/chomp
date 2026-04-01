@@ -3,13 +3,48 @@
  *
  * This file is separate from index.ts to avoid circular dependencies
  * with runtime replacement modules like Ownable, ECDSA, etc.
+ *
+ * ALL contract classes must extend this Contract — there is only one.
+ * index.ts re-exports it; it does NOT define a second Contract class.
+ *
+ * Storage, EventStream, globalEventStream, and ADDRESS_ZERO also live here
+ * as the single source of truth. index.ts re-exports them.
  */
+
+import { keccak256, encodePacked, toHex, hexToBigInt } from 'viem';
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000';
+
+// =============================================================================
+// CALL LOG TYPES
+// =============================================================================
+
+/**
+ * A single cross-contract method call captured by the Contract proxy.
+ * Logged for every external call (not internal same-contract calls).
+ */
+export interface CallEntry {
+  /** Address of the calling contract */
+  caller: string;
+  /** Class name of the calling contract */
+  callerName: string;
+  /** Address of the target contract */
+  target: string;
+  /** Class name of the target contract */
+  targetName: string;
+  /** Method name */
+  method: string;
+  /** Method arguments (raw — may contain BigInt, contract references, etc.) */
+  args: any[];
+  /** Return value (raw — carries semantic info like [damage, eventType]) */
+  returnValue?: any;
+  /** Call depth at time of call (1 = top-level external call into the system) */
+  depth: number;
+}
 
 // =============================================================================
 // STORAGE SIMULATION
@@ -71,22 +106,23 @@ export class Storage {
   }
 
   /**
-   * Compute a mapping slot for a key.
-   * In Solidity: keccak256(abi.encode(key, slot))
+   * Compute a mapping slot key
    */
-  mappingSlot(key: bigint | string, baseSlot: bigint): string {
-    // Simplified: just concatenate key and slot as strings
-    // In real EVM, this would be keccak256(abi.encode(key, slot))
-    return `${baseSlot.toString()}_${key.toString()}`;
+  mappingSlot(baseSlot: bigint, key: bigint | string): bigint {
+    const keyBytes = typeof key === 'string' ? key : toHex(key, { size: 32 });
+    const slotBytes = toHex(baseSlot, { size: 32 });
+    return hexToBigInt(keccak256(encodePacked(['bytes32', 'bytes32'], [keyBytes as `0x${string}`, slotBytes as `0x${string}`])));
   }
 
   /**
-   * Compute a nested mapping slot.
-   * In Solidity: keccak256(abi.encode(key2, keccak256(abi.encode(key1, slot))))
+   * Compute a nested mapping slot key
    */
-  nestedMappingSlot(key1: bigint | string, key2: bigint | string, baseSlot: bigint): string {
-    const innerSlot = this.mappingSlot(key1, baseSlot);
-    return `${innerSlot}_${key2.toString()}`;
+  nestedMappingSlot(baseSlot: bigint, ...keys: Array<bigint | string>): bigint {
+    let slot = baseSlot;
+    for (const key of keys) {
+      slot = this.mappingSlot(slot, key);
+    }
+    return slot;
   }
 
   /**
@@ -109,38 +145,38 @@ export class Storage {
 // EVENT STREAM
 // =============================================================================
 
-export interface EmittedEvent {
+export interface EventLog {
   name: string;
   args: Record<string, any>;
-  emitter: string; // Contract address that emitted
-  data?: any;      // Raw event data
+  timestamp: number;
+  emitter?: string;
+  data?: any[];
 }
 
 /**
- * Captures events emitted during contract execution.
- * Unlike on-chain events, these are stored in memory for testing.
+ * Virtual event stream that stores all emitted events for inspection/testing
  */
 export class EventStream {
-  private events: EmittedEvent[] = [];
+  private events: EventLog[] = [];
 
-  emit(name: string, args: Record<string, any>, emitter: string = '', data?: any): void {
-    this.events.push({ name, args, emitter, data });
+  emit(name: string, args: Record<string, any> = {}, emitter?: string, data?: any[]): void {
+    this.events.push({ name, args, timestamp: Date.now(), emitter, data });
   }
 
-  getAll(): EmittedEvent[] {
+  getAll(): EventLog[] {
     return [...this.events];
   }
 
-  getByName(name: string): EmittedEvent[] {
+  getByName(name: string): EventLog[] {
     return this.events.filter(e => e.name === name);
   }
 
-  getLast(name?: string): EmittedEvent | undefined {
-    if (name) {
-      const filtered = this.getByName(name);
-      return filtered[filtered.length - 1];
-    }
-    return this.events[this.events.length - 1];
+  getLast(n: number = 1): EventLog[] {
+    return this.events.slice(-n);
+  }
+
+  filter(predicate: (event: EventLog) => boolean): EventLog[] {
+    return this.events.filter(predicate);
   }
 
   clear(): void {
@@ -149,6 +185,14 @@ export class EventStream {
 
   get length(): number {
     return this.events.length;
+  }
+
+  has(name: string): boolean {
+    return this.events.some(e => e.name === name);
+  }
+
+  get latest(): EventLog | undefined {
+    return this.events[this.events.length - 1];
   }
 }
 
@@ -233,22 +277,137 @@ export const contractAddresses = new ContractAddressRegistry();
 export const globalEventStream = new EventStream();
 
 // =============================================================================
+// ADDRESS CONVERSION (inlined to avoid circular deps with index.ts)
+// =============================================================================
+
+function uint160(value: bigint): bigint {
+  return value & ((1n << 160n) - 1n);
+}
+
+function bigintToAddress(value: bigint): string {
+  return '0x' + uint160(value).toString(16).padStart(40, '0');
+}
+
+// =============================================================================
 // BASE CONTRACT CLASS
 // =============================================================================
 
 /**
  * Base class for all transpiled Solidity contracts.
- * Provides storage simulation, event emission, and context (msg, block, tx).
+ * Provides storage simulation, event emission, context (msg, block, tx),
+ * address registry for Contract.at() lookups, and YUL assembly helpers.
  */
 export abstract class Contract {
+  /** Static registry: address → contract instance, for Contract.at() lookups */
+  private static _addressRegistry: Map<string, Contract> = new Map();
+
+
+  // =========================================================================
+  // CALL LOGGING
+  // =========================================================================
+
+  /**
+   * When non-null, the proxy logs every external cross-contract call.
+   * Set before executeTurn(), read after, cleared between turns.
+   */
+  static _turnCallLog: CallEntry[] | null = null;
+
+  /**
+   * Tracks the address of the currently executing contract.
+   * Used to propagate msg.sender on cross-contract calls (matching Solidity semantics).
+   */
+  static _currentCaller: string = ADDRESS_ZERO;
+
+  /**
+   * Tracks nesting depth of external contract calls.
+   * Used to detect transaction boundaries for transient storage reset.
+   * Depth 0→1 = new transaction = reset all transient storage.
+   */
+  static _callDepth: number = 0;
+
+  /**
+   * Raw (unwrapped) instances of contracts that have transient storage.
+   * Populated in the constructor when _resetTransient exists on the prototype.
+   */
+  private static _transientInstances: any[] = [];
+
+  /**
+   * Reset transient storage on all registered contracts.
+   * Called automatically at transaction boundaries (when _callDepth goes 0→1).
+   * This matches Solidity semantics where transient storage is cleared per transaction.
+   */
+  static _resetAllTransient(): void {
+    for (const instance of Contract._transientInstances) {
+      instance._resetTransient();
+    }
+  }
+
+  /**
+   * Resolve a value to a contract instance.
+   * - If value is already a contract object, return it directly.
+   * - If value is a bigint (uint256 address), look up by address in the registry.
+   * - If value is a string address, look up directly.
+   * Returns a stub with only _contractAddress for unregistered addresses
+   * (e.g. sentinels/tombstones that are only used for identity comparisons).
+   */
+  static at(value: any): any {
+    if (value && typeof value === 'object' && '_contractAddress' in value) {
+      return value;
+    }
+    let address: string;
+    if (typeof value === 'bigint') {
+      address = bigintToAddress(value);
+    } else if (typeof value === 'string') {
+      address = value;
+    } else {
+      throw new Error(`Contract.at: cannot resolve ${typeof value}`);
+    }
+    const normalized = address.toLowerCase();
+    const instance = Contract._addressRegistry.get(normalized);
+    if (instance) {
+      return instance;
+    }
+    // Return a lightweight stub for unregistered addresses (e.g. sentinel/tombstone).
+    // Only _contractAddress is set — calling methods on it will fail, which is correct
+    // since these addresses are only used for identity comparisons.
+    return { _contractAddress: normalized };
+  }
+
+  /**
+   * Clear the address registry and transient instance tracking (useful between tests)
+   */
+  static clearRegistry(): void {
+    Contract._addressRegistry.clear();
+    Contract._transientInstances = [];
+    Contract._callDepth = 0;
+  }
+
   // Storage for this contract instance
   protected _storage: Storage = new Storage();
 
   // Event stream - shared across all contracts for a transaction
   protected _eventStream: EventStream = globalEventStream;
 
-  // Contract's own address
-  public _contractAddress: string;
+  /**
+   * Contract address for address(this) pattern.
+   * Setting this auto-registers the instance in the static address registry.
+   */
+  private _address: string = ADDRESS_ZERO;
+  /** Reference to the Proxy wrapping this instance (set by constructor) */
+  private _proxy: any = null;
+
+  get _contractAddress(): string {
+    return this._address;
+  }
+
+  set _contractAddress(addr: string) {
+    this._address = addr;
+    if (addr !== ADDRESS_ZERO) {
+      // Register the Proxy (not the raw instance) so Contract.at() returns
+      // the msg.sender-propagating wrapper
+      Contract._addressRegistry.set(addr.toLowerCase(), this._proxy ?? this);
+    }
+  }
 
   // Message context (msg.sender, msg.value, msg.data)
   public _msg: {
@@ -277,69 +436,164 @@ export abstract class Contract {
     origin: ADDRESS_ZERO,
   };
 
-  constructor(address?: string) {
-    // Use provided address or auto-generate from class name
+  constructor(...args: any[]) {
+    // If the first arg is a string, use it as the address; otherwise auto-generate.
+    // Transpiled constructors may pass non-address args (e.g. dependencies) which
+    // propagate up the chain — we ignore non-string first args.
+    const address = typeof args[0] === 'string' ? args[0] : undefined;
     this._contractAddress = address ?? contractAddresses.getAddress(this.constructor.name);
+
+    // Register for transient reset if this contract has transient vars.
+    // Done here (before proxy wrapping) so we store the raw instance,
+    // allowing _resetAllTransient to call _resetTransient without going through the proxy.
+    if (typeof (this as any)._resetTransient === 'function') {
+      Contract._transientInstances.push(this);
+    }
+
+    // Wrap instance in a Proxy that propagates msg.sender on cross-contract calls.
+    // In Solidity, when contract A calls contract B, msg.sender in B = A's address.
+    // Internal calls (same contract) don't change msg.sender.
+    // The proxy also tracks call depth to auto-reset transient storage at transaction
+    // boundaries (depth 0→1), matching Solidity's per-transaction semantics.
+    const self = this;
+    const proxy = new Proxy(this, {
+      // Ensure property writes through the proxy go to the target (not the proxy object).
+      // This is critical because external calls use `this = proxy` inside methods,
+      // so `this.field = x` must write to the target's storage.
+      set(target, prop, value, receiver) {
+        return Reflect.set(target, prop, value, target);
+      },
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function' || typeof prop === 'symbol') return value;
+        // Skip private/internal helpers and property accessors
+        const propStr = prop as string;
+        if (propStr.startsWith('_')) return value;
+
+        return function (this: any, ...callArgs: any[]) {
+          // Internal call: same contract is already executing, don't change msg.sender
+          if (Contract._currentCaller === self._contractAddress) {
+            return value.apply(proxy, callArgs);
+          }
+          // External call: propagate msg.sender
+          // Reset transient storage at transaction boundary (first external entry)
+          const isTopLevel = Contract._callDepth === 0;
+          Contract._callDepth++;
+          if (isTopLevel) {
+            Contract._resetAllTransient();
+          }
+          const prevSender = target._msg.sender;
+          const prevCaller = Contract._currentCaller;
+          target._msg.sender = Contract._currentCaller;
+          Contract._currentCaller = self._contractAddress;
+          try {
+            const result = value.apply(proxy, callArgs);
+            if (Contract._turnCallLog) {
+              Contract._turnCallLog.push({
+                caller: prevCaller,
+                callerName: Contract._addressRegistry.get(prevCaller.toLowerCase())?.constructor.name ?? 'External',
+                target: self._contractAddress,
+                targetName: self.constructor.name,
+                method: propStr,
+                args: callArgs,
+                returnValue: result,
+                depth: Contract._callDepth,
+              });
+            }
+            return result;
+          } finally {
+            target._msg.sender = prevSender;
+            Contract._currentCaller = prevCaller;
+            Contract._callDepth--;
+          }
+        };
+      },
+    });
+    this._proxy = proxy;
+    return proxy as this;
   }
 
-  /**
-   * Set the message context for this call
-   */
+  // =========================================================================
+  // CONTEXT SETTERS
+  // =========================================================================
+
+  setMsgSender(sender: string): void {
+    this._msg.sender = sender;
+  }
+
   setMsgContext(sender: string, value: bigint = 0n, data: `0x${string}` = '0x'): void {
     this._msg = { sender, value, data };
   }
 
-  /**
-   * Set the block context
-   */
+  setBlockTimestamp(timestamp: bigint): void {
+    this._block.timestamp = timestamp;
+  }
+
   setBlockContext(timestamp: bigint, number: bigint): void {
     this._block = { timestamp, number };
   }
 
-  /**
-   * Set the transaction context
-   */
   setTxContext(origin: string): void {
     this._tx = { origin };
   }
 
-  /**
-   * Emit an event
-   */
-  protected _emitEvent(name: string, ...args: any[]): void {
-    // Convert args array to a more structured format
-    const argsObj: Record<string, any> = {};
-    args.forEach((arg, i) => {
-      argsObj[`arg${i}`] = arg;
-    });
-    this._eventStream.emit(name, argsObj, this._contractAddress);
+  // =========================================================================
+  // EVENT STREAM
+  // =========================================================================
+
+  setEventStream(stream: EventStream): void {
+    this._eventStream = stream;
   }
 
-  /**
-   * Get storage slot value
-   */
+  getEventStream(): EventStream {
+    return this._eventStream;
+  }
+
+  protected _emitEvent(name: string, ...args: any[]): void {
+    const argsObj: Record<string, any> = {};
+    args.forEach((arg, i) => {
+      if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+        Object.assign(argsObj, arg);
+      } else {
+        argsObj[`arg${i}`] = arg;
+      }
+    });
+    this._eventStream.emit(name, argsObj, this._contractAddress, args);
+  }
+
+  // =========================================================================
+  // STORAGE HELPERS
+  // =========================================================================
+
   protected _sload(slot: bigint | string): bigint {
     return this._storage.sload(slot);
   }
 
-  /**
-   * Set storage slot value
-   */
   protected _sstore(slot: bigint | string, value: bigint): void {
     this._storage.sstore(slot, value);
   }
 
-  /**
-   * Get transient storage slot value
-   */
   protected _tload(slot: bigint | string): bigint {
     return this._storage.tload(slot);
   }
 
-  /**
-   * Set transient storage slot value
-   */
   protected _tstore(slot: bigint | string, value: bigint): void {
     this._storage.tstore(slot, value);
+  }
+
+  // =========================================================================
+  // YUL/ASSEMBLY HELPERS (used by transpiled inline assembly)
+  // =========================================================================
+
+  protected _yulStorageKey(key: any): string {
+    return typeof key === 'string' ? key : JSON.stringify(key);
+  }
+
+  protected _storageRead(key: any): bigint {
+    return this._storage.sload(this._yulStorageKey(key));
+  }
+
+  protected _storageWrite(key: any, value: bigint): void {
+    this._storage.sstore(this._yulStorageKey(key), value);
   }
 }

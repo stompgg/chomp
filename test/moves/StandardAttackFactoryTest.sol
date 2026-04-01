@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Engine} from "../../src/Engine.sol";
 import {MoveClass, Type} from "../../src/Enums.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
+import {IEngine} from "../../src/IEngine.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
@@ -15,11 +16,12 @@ contract StandardAttackFactoryTest is Test {
     Engine public engine;
     TypeCalculator public typeCalc;
     bytes32 constant TEST_BATTLE_KEY = bytes32(uint256(1));
+    IEngine constant DUMMY_ENGINE = IEngine(address(0));
 
     function setUp() public {
         engine = new Engine(0, 0, 0);
         typeCalc = new TypeCalculator();
-        factory = new StandardAttackFactory(engine, typeCalc);
+        factory = new StandardAttackFactory(typeCalc);
     }
 
     function test_CreateAttackWithAllParameters() public {
@@ -55,12 +57,12 @@ contract StandardAttackFactoryTest is Test {
 
         // Verify all parameters were set correctly using the actual function names
         assertEq(attack.basePower(TEST_BATTLE_KEY), basePower, "Base power mismatch");
-        assertEq(attack.stamina(TEST_BATTLE_KEY, 0, 0), staminaCost, "Stamina cost mismatch");
+        assertEq(attack.stamina(DUMMY_ENGINE, TEST_BATTLE_KEY, 0, 0), staminaCost, "Stamina cost mismatch");
         assertEq(attack.accuracy(TEST_BATTLE_KEY), accuracy, "Crit rate mismatch");
-        assertEq(attack.priority(TEST_BATTLE_KEY, 0), priority, "Priority mismatch");
-        assertEq(uint32(attack.moveType(TEST_BATTLE_KEY)), uint32(moveType), "Move type mismatch");
+        assertEq(attack.priority(DUMMY_ENGINE, TEST_BATTLE_KEY, 0), priority, "Priority mismatch");
+        assertEq(uint32(attack.moveType(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(moveType), "Move type mismatch");
         assertEq(attack.effectAccuracy(TEST_BATTLE_KEY), effectAccuracy, "Effect accuracy mismatch");
-        assertEq(uint32(attack.moveClass(TEST_BATTLE_KEY)), uint32(moveClass), "Move class mismatch");
+        assertEq(uint32(attack.moveClass(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(moveClass), "Move class mismatch");
         assertEq(attack.critRate(TEST_BATTLE_KEY), critRate, "Crit rate mismatch");
         assertEq(attack.volatility(TEST_BATTLE_KEY), volatility, "Volatility mismatch");
         assertEq(sha256(bytes(attack.name())), sha256(bytes(name)), "Name mismatch");
@@ -130,20 +132,17 @@ contract StandardAttackFactoryTest is Test {
         assertFalse(address(attack1) == address(attack2), "Attacks should have different addresses");
         assertEq(attack1.basePower(TEST_BATTLE_KEY), 80, "Attack1 base power mismatch");
         assertEq(attack2.basePower(TEST_BATTLE_KEY), 60, "Attack2 base power mismatch");
-        assertEq(uint32(attack1.moveType(TEST_BATTLE_KEY)), uint32(Type.Fire), "Attack1 type mismatch");
-        assertEq(uint32(attack2.moveType(TEST_BATTLE_KEY)), uint32(Type.Liquid), "Attack2 type mismatch");
+        assertEq(uint32(attack1.moveType(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(Type.Fire), "Attack1 type mismatch");
+        assertEq(uint32(attack2.moveType(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(Type.Liquid), "Attack2 type mismatch");
     }
 
-    function test_onlyOwnerCanSetEngineAndCalcOnFactory() public {
+    function test_onlyOwnerCanSetCalcOnFactory() public {
         vm.startPrank(address(0x123));
-        vm.expectRevert();
-        factory.setEngine(Engine(address(0)));
         vm.expectRevert();
         factory.setTypeCalculator(TypeCalculator(address(0)));
 
         // Now set the owner to the current caller (calls should succeed)
         vm.startPrank(address(this));
-        factory.setEngine(Engine(address(0)));
         factory.setTypeCalculator(TypeCalculator(address(0)));
     }
 
@@ -173,17 +172,17 @@ contract StandardAttackFactoryTest is Test {
         attack.changeVar(0, 100); // Change base power
         assertEq(attack.basePower(TEST_BATTLE_KEY), 100, "Base power mismatch");
         attack.changeVar(1, 2); // Change stamina cost
-        assertEq(attack.stamina(TEST_BATTLE_KEY, 0, 0), 2, "Stamina cost mismatch");
+        assertEq(attack.stamina(DUMMY_ENGINE, TEST_BATTLE_KEY, 0, 0), 2, "Stamina cost mismatch");
         attack.changeVar(2, 90); // Change accuracy
         assertEq(attack.accuracy(TEST_BATTLE_KEY), 90, "Accuracy mismatch");
         attack.changeVar(3, 4); // Change priority
-        assertEq(attack.priority(TEST_BATTLE_KEY, 0), 4, "Priority mismatch");
+        assertEq(attack.priority(DUMMY_ENGINE, TEST_BATTLE_KEY, 0), 4, "Priority mismatch");
         attack.changeVar(4, uint256(Type.Liquid)); // Change move type
-        assertEq(uint32(attack.moveType(TEST_BATTLE_KEY)), uint32(Type.Liquid), "Move type mismatch");
+        assertEq(uint32(attack.moveType(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(Type.Liquid), "Move type mismatch");
         attack.changeVar(5, 90); // Change effect accuracy
         assertEq(attack.effectAccuracy(TEST_BATTLE_KEY), 90, "Effect accuracy mismatch");
         attack.changeVar(6, uint256(MoveClass.Special)); // Change move class
-        assertEq(uint32(attack.moveClass(TEST_BATTLE_KEY)), uint32(MoveClass.Special), "Move class mismatch");
+        assertEq(uint32(attack.moveClass(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(MoveClass.Special), "Move class mismatch");
         attack.changeVar(7, 15); // Change crit rate
         assertEq(attack.critRate(TEST_BATTLE_KEY), 15, "Crit rate mismatch");
         attack.changeVar(8, 3); // Change volatility

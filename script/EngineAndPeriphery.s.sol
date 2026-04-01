@@ -94,7 +94,7 @@ contract EngineAndPeriphery is Script {
     }
 
     function deployGameFundamentals(Engine engine) public {
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
 
         IEffect[] memory effects = new IEffect[](1);
@@ -106,25 +106,25 @@ contract EngineAndPeriphery is Script {
             new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: NUM_MONS, MOVES_PER_MON: NUM_MOVES, TIMEOUT_DURATION: TIMEOUT_DURATION}));
         deployedContracts.push(DeployData({name: "DEFAULT VALIDATOR", contractAddress: address(validator)}));
 
-        StatBoosts statBoosts = new StatBoosts(engine);
+        StatBoosts statBoosts = new StatBoosts();
         deployedContracts.push(DeployData({name: "STAT BOOSTS", contractAddress: address(statBoosts)}));
 
-        Overclock overclock = new Overclock(engine, statBoosts);
+        Overclock overclock = new Overclock(statBoosts);
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
 
-        SleepStatus sleepStatus = new SleepStatus(engine);
+        SleepStatus sleepStatus = new SleepStatus();
         deployedContracts.push(DeployData({name: "SLEEP STATUS", contractAddress: address(sleepStatus)}));
 
-        PanicStatus panicStatus = new PanicStatus(engine);
+        PanicStatus panicStatus = new PanicStatus();
         deployedContracts.push(DeployData({name: "PANIC STATUS", contractAddress: address(panicStatus)}));
 
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(engine, statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
         deployedContracts.push(DeployData({name: "FROSTBITE STATUS", contractAddress: address(frostbiteStatus)}));
 
-        BurnStatus burnStatus = new BurnStatus(engine, statBoosts);
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
         deployedContracts.push(DeployData({name: "BURN STATUS", contractAddress: address(burnStatus)}));
 
-        ZapStatus zapStatus = new ZapStatus(engine);
+        ZapStatus zapStatus = new ZapStatus();
         deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
     }
 }

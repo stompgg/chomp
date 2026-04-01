@@ -27,12 +27,10 @@ contract Loop is IMoveSet {
     uint8 public constant BOOST_PERCENT_LEVEL_2 = 30;
     uint8 public constant BOOST_PERCENT_LEVEL_3 = 40;
 
-    IEngine immutable ENGINE;
     Baselight immutable BASELIGHT;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, Baselight _BASELIGHT, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(Baselight _BASELIGHT, StatBoosts _STAT_BOOSTS) {
         BASELIGHT = _BASELIGHT;
         STAT_BOOSTS = _STAT_BOOSTS;
     }
@@ -45,12 +43,12 @@ contract Loop is IMoveSet {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function isLoopActive(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (bool) {
-        return ENGINE.getGlobalKV(battleKey, _loopActiveKey(playerIndex, monIndex)) != 0;
+    function isLoopActive(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (bool) {
+        return engine.getGlobalKV(battleKey, _loopActiveKey(playerIndex, monIndex)) != 0;
     }
 
-    function clearLoopActive(uint256 playerIndex, uint256 monIndex) external {
-        ENGINE.setGlobalKV(_loopActiveKey(playerIndex, monIndex), 0);
+    function clearLoopActive(IEngine engine, uint256 playerIndex, uint256 monIndex) external {
+        engine.setGlobalKV(_loopActiveKey(playerIndex, monIndex), 0);
     }
 
     function _getBoostPercent(uint256 baselightLevel) internal pure returns (uint8) {
@@ -66,6 +64,7 @@ contract Loop is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -74,12 +73,12 @@ contract Loop is IMoveSet {
         uint256
     ) external {
         // Check if Loop is already active
-        if (isLoopActive(battleKey, attackerPlayerIndex, attackerMonIndex)) {
+        if (isLoopActive(engine, battleKey, attackerPlayerIndex, attackerMonIndex)) {
             // Fail - Loop is already active
             return;
         }
 
-        uint256 baselightLevel = BASELIGHT.getBaselightLevel(battleKey, attackerPlayerIndex, attackerMonIndex);
+        uint256 baselightLevel = BASELIGHT.getBaselightLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
         uint8 boostPercent = _getBoostPercent(baselightLevel);
 
         // If baselight level is 0, no boost to apply
@@ -88,7 +87,7 @@ contract Loop is IMoveSet {
         }
 
         // Mark Loop as active
-        ENGINE.setGlobalKV(_loopActiveKey(attackerPlayerIndex, attackerMonIndex), 1);
+        engine.setGlobalKV(_loopActiveKey(attackerPlayerIndex, attackerMonIndex), 1);
 
         // Apply stat boosts to all 5 stats (Attack, Defense, SpecialAttack, SpecialDefense, Speed)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](5);
@@ -119,26 +118,26 @@ contract Loop is IMoveSet {
         });
 
         // Use Temp flag so boosts are removed on switch out
-        STAT_BOOSTS.addStatBoosts(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Yang;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 

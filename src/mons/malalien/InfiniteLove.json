@@ -1,0 +1,9 @@
+{
+  "name": "Infinite Love",
+  "basePower": 90,
+  "staminaCost": 3,
+  "moveType": "Cosmic",
+  "moveClass": "Special",
+  "effectAccuracy": 10,
+  "effect": "SleepStatus"
+}

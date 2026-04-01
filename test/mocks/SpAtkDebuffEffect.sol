@@ -13,7 +13,7 @@ contract SpAtkDebuffEffect is StatusEffect {
 
     StatBoosts immutable STAT_BOOST;
 
-    constructor(IEngine engine, StatBoosts _STAT_BOOSTS) StatusEffect(engine) {
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOST = _STAT_BOOSTS;
     }
 
@@ -27,6 +27,7 @@ contract SpAtkDebuffEffect is StatusEffect {
     }
 
     function onApply(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
@@ -40,7 +41,7 @@ contract SpAtkDebuffEffect is StatusEffect {
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
         // Call parent to set status flag
-        super.onApply(battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -49,13 +50,14 @@ contract SpAtkDebuffEffect is StatusEffect {
             boostPercent: SP_ATTACK_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+        STAT_BOOST.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
         // Do not update data
         return (extraData, false);
     }
 
     function onRemove(
+        IEngine engine,
         bytes32 battleKey,
         bytes32 data,
         uint256 targetIndex,
@@ -63,9 +65,9 @@ contract SpAtkDebuffEffect is StatusEffect {
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) public override {
-        super.onRemove(battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the special attack reduction
-        STAT_BOOST.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
+        STAT_BOOST.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
     }
 }

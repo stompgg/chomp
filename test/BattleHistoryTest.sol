@@ -52,7 +52,7 @@ contract BattleHistoryTest is Test, BattleHelper {
 
         // Create a simple attack that deals 1 damage (enough to KO a mon with 1 HP)
         simpleAttack = new CustomAttack(
-            engine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
 
         // Setup matchmakers for all players
@@ -71,8 +71,8 @@ contract BattleHistoryTest is Test, BattleHelper {
 
     /// @notice Helper to create a mon with specific speed
     function _createMon(uint32 speed, uint32 hp) internal view returns (Mon memory) {
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = simpleAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(simpleAttack)));
 
         return Mon({
             stats: MonStats({
@@ -87,7 +87,7 @@ contract BattleHistoryTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
     }
 

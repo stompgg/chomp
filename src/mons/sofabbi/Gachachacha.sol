@@ -24,11 +24,9 @@ contract Gachachacha is IMoveSet {
     // uint256 constant public OPP_KO_THRESHOLD_L = SELF_KO_THRESHOLD_R;
     uint256 public constant OPP_KO_THRESHOLD_R = SELF_KO_THRESHOLD_R + OPP_KO_CHANCE;
 
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
-    constructor(IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR) {
-        ENGINE = _ENGINE;
+    constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
@@ -37,6 +35,7 @@ contract Gachachacha is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -51,47 +50,47 @@ contract Gachachacha is IMoveSet {
         if (chance <= SELF_KO_THRESHOLD_L) {
             basePower = uint32(chance);
         } else if (chance > SELF_KO_THRESHOLD_L && chance <= SELF_KO_THRESHOLD_R) {
-            basePower = ENGINE.getMonValueForBattle(
+            basePower = engine.getMonValueForBattle(
                 battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp
             );
             playerForCalculator = defenderPlayerIndex;
         } else {
-            basePower = ENGINE.getMonValueForBattle(
+            basePower = engine.getMonValueForBattle(
                 battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp
             );
         }
         AttackCalculator._calculateDamage(
-            ENGINE,
+            engine,
             TYPE_CALCULATOR,
             battleKey,
             playerForCalculator,
             basePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
-            moveType(battleKey),
-            moveClass(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
             rng,
             DEFAULT_CRIT_RATE
         );
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 3;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Cyber;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 

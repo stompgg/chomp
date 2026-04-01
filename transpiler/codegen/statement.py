@@ -36,6 +36,7 @@ from ..parser.ast_nodes import (
     MemberAccess,
     Identifier,
     FunctionCall,
+    Literal,
     VariableDeclaration,
     TypeName,
 )
@@ -247,9 +248,11 @@ class StatementGenerator(BaseGenerator):
 
                 init_expr = self._expr.generate(stmt.initial_value)
                 init_expr = self._add_mapping_default(stmt.initial_value, ts_type, init_expr, decl.type_name)
+                # bytes32 initialized with string literal: convert to hex-padded bytes32
+                init_expr = self._convert_bytes32_string_literal(decl.type_name, stmt.initial_value, init_expr)
                 init = f' = {init_expr}'
             else:
-                default_val = self._get_ts_default_value(ts_type, decl.type_name) or self._type_converter.default_value(ts_type)
+                default_val = self._type_converter.default_value(ts_type, decl.type_name)
                 init = f' = {default_val}'
             return f'{self.indent()}let {decl.name}: {ts_type}{init};'
         else:
@@ -326,13 +329,7 @@ class StatementGenerator(BaseGenerator):
         if needs_number_key and not key_expr.startswith('Number('):
             key_expr = f'Number({key_expr})'
 
-        default_value = self._get_ts_default_value(ts_type, decl.type_name)
-        if not default_value:
-            struct_name = ts_type.replace('Structs.', '') if ts_type.startswith('Structs.') else ts_type
-            if struct_name in self._ctx.current_local_structs:
-                default_value = f'createDefault{struct_name}()'
-            else:
-                default_value = f'Structs.createDefault{struct_name}()'
+        default_value = self._type_converter.default_value(ts_type, decl.type_name)
 
         lines = []
         lines.append(f'{self.indent()}{mapping_expr}[{key_expr}] ??= {default_value};')
@@ -379,37 +376,30 @@ class StatementGenerator(BaseGenerator):
         if not is_mapping_read:
             return generated_expr
 
-        default_value = self._get_ts_default_value(ts_type, solidity_type)
-        if default_value:
+        default_value = self._type_converter.default_value(ts_type, solidity_type)
+        if default_value and default_value != 'undefined as any':
             return f'({generated_expr} ?? {default_value})'
         return generated_expr
 
-    def _get_ts_default_value(self, ts_type: str, solidity_type: Optional[TypeName] = None) -> Optional[str]:
-        """Get the default value for a TypeScript type (matching Solidity semantics)."""
-        if ts_type == 'bigint':
-            return '0n'
-        elif ts_type == 'boolean':
-            return 'false'
-        elif ts_type == 'string':
-            if solidity_type and solidity_type.name:
-                sol_type_name = solidity_type.name.lower()
-                if 'bytes32' in sol_type_name or sol_type_name == 'bytes32':
-                    return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
-                elif 'address' in sol_type_name or sol_type_name == 'address':
-                    return '"0x0000000000000000000000000000000000000000"'
-            return '""'
-        elif ts_type == 'number':
-            return '0'
-        elif ts_type == 'AddressSet':
-            return 'new AddressSet()'
-        elif ts_type == 'Uint256Set':
-            return 'new Uint256Set()'
-        elif ts_type.startswith('Structs.'):
-            struct_name = ts_type[8:]
-            return f'Structs.createDefault{struct_name}()'
-        elif ts_type in self._ctx.current_local_structs:
-            return f'createDefault{ts_type}()'
-        return None
+    def _convert_bytes32_string_literal(self, type_name, initial_value, init_expr: str) -> str:
+        """Convert a string literal to hex-padded bytes32 when assigned to a bytes32 variable.
+
+        In Solidity, `bytes32 x = "STATUS_EFFECT"` right-pads the UTF-8 bytes with zeros
+        to fill 32 bytes. The transpiler must produce the equivalent hex string.
+        """
+        if (type_name and hasattr(type_name, 'name') and type_name.name
+                and type_name.name.startswith('bytes')
+                and isinstance(initial_value, Literal) and initial_value.kind == 'string'):
+            string_val = initial_value.value.strip('"\'')
+            hex_bytes = string_val.encode('utf-8').hex()
+            # Determine byte size (bytes32 = 32, bytes16 = 16, etc.)
+            size_str = type_name.name[5:]
+            byte_size = int(size_str) if size_str.isdigit() else 32
+            hex_bytes = hex_bytes[:byte_size * 2].ljust(byte_size * 2, '0')
+            return f'"0x{hex_bytes}"'
+        return init_expr
+
+    # _get_ts_default_value removed — consolidated into type_converter.default_value()
 
     def _get_small_int_conversions_from_decode(self, stmt: VariableDeclarationStatement) -> List[str]:
         """Get list of variable names that need BigInt conversion from abi.decode.

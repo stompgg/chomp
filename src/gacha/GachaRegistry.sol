@@ -194,7 +194,7 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     function getMonData(uint256 monId)
         external
         view
-        returns (MonStats memory mon, address[] memory moves, address[] memory abilities)
+        returns (MonStats memory mon, uint256[] memory moves, uint256[] memory abilities)
     {
         return MON_REGISTRY.getMonData(monId);
     }
@@ -202,7 +202,7 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     function getMonDataBatch(uint256[] calldata monIds)
         external
         view
-        returns (MonStats[] memory stats, address[][] memory moves, address[][] memory abilities)
+        returns (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities)
     {
         return MON_REGISTRY.getMonDataBatch(monIds);
     }
@@ -223,11 +223,11 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         return MON_REGISTRY.getMonIds(start, end);
     }
 
-    function isValidMove(uint256 monId, IMoveSet move) external view returns (bool) {
-        return MON_REGISTRY.isValidMove(monId, move);
+    function isValidMove(uint256 monId, uint256 moveSlot) external view returns (bool) {
+        return MON_REGISTRY.isValidMove(monId, moveSlot);
     }
 
-    function isValidAbility(uint256 monId, IAbility ability) external view returns (bool) {
+    function isValidAbility(uint256 monId, uint256 ability) external view returns (bool) {
         return MON_REGISTRY.isValidAbility(monId, ability);
     }
 

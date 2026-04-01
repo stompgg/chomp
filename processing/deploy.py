@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
 """
 Meta-script to orchestrate the full deployment pipeline:
-1. Run EngineAndPeriphery.s.sol -> parse output -> update .env
-2. Run SetupMons.s.sol -> parse output -> update .env
-3. Run SetupCPU.s.sol
-4. Run createAddressAndABIs.py and generateMonsTypescript.py
+1. Validate move contracts against CSV data
+2. Generate Solidity deployment script (SetupMons.s.sol)
+3. Run EngineAndPeriphery.s.sol -> parse output -> update .env
+4. Run SetupMons.s.sol -> parse output -> update .env
+5. Run SetupCPU.s.sol
+6. Run createAddressAndABIs.py and generateMonsTypescript.py
+7. Run transpiler (sol2ts.py) to generate TypeScript from Solidity
 
 Usage:
     python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet
 """
 
 import argparse
+import csv
 import getpass
+import json
+import os
+import re
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+# Add processing directory to path for local imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from packMoves import detect_inline_ability, pack_ability, pack_move
+from generateSolidity import contract_name_from_move_or_ability, get_mon_directory_name
 
 
 # Constants
@@ -85,7 +98,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
-        "-g", 105,
+        "-g", "105",
         "--password", password,
     ]
 
@@ -120,6 +133,119 @@ def run_forge_script(
     return result.stdout + result.stderr
 
 
+def collect_inline_move_addresses(
+    chomp_dir: Path,
+    deployed_addresses: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """Find all JSON inline moves, pack them, and return as (move_display_name, hex_value) tuples.
+
+    Uses CSV move names (e.g. "Pound Ground") so the Address keys match what
+    generateMonsTypeScript.py expects.
+
+    Resolves effect contract addresses from deployed_addresses so the packed
+    values match on-chain (where SetupMons.s.sol OR's the effect address in).
+    """
+    src_dir = chomp_dir / "src"
+    moves_csv = chomp_dir / "drool" / "moves.csv"
+
+    # Build lookup from contract name (SCREAMING_SNAKE) to address
+    addr_lookup = {}
+    for name, address in deployed_addresses:
+        key = name.upper().replace(" ", "_").replace("-", "_")
+        addr_lookup[key] = address
+
+    results = []
+    with open(moves_csv, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            move_name = row["Name"].strip()
+            mon_name = row["Mon"].strip()
+            contract_name = contract_name_from_move_or_ability(move_name)
+            json_path = src_dir / "mons" / get_mon_directory_name(mon_name) / f"{contract_name}.json"
+            if not json_path.exists():
+                continue
+            with open(json_path, "r", encoding="utf-8") as jf:
+                move_data = json.load(jf)
+
+            # Resolve the effect contract address if the move has one
+            effect_address = 0
+            effect_name = move_data.get("effect", "")
+            if effect_name:
+                # Convert PascalCase to SCREAMING_SNAKE_CASE for lookup
+                snake = re.sub(r'(?<!^)(?=[A-Z])', '_', effect_name).upper()
+                addr_str = addr_lookup.get(snake, "")
+                if addr_str:
+                    effect_address = int(addr_str, 16)
+
+            packed = pack_move(move_data, effect_address=effect_address)
+            results.append((move_name, f"0x{packed:064x}"))
+
+    return results
+
+
+def find_ability_sol_path(ability_name: str, chomp_dir: Path) -> Path | None:
+    """Find the .sol file for an ability by searching src/mons/*/.
+
+    Args:
+        ability_name: The ability name (e.g., "Rise From The Grave")
+        chomp_dir: Path to the chomp directory
+
+    Returns:
+        Path to the .sol file, or None if not found
+    """
+    contract_name = contract_name_from_move_or_ability(ability_name)
+
+    mons_dir = chomp_dir / "src" / "mons"
+    if not mons_dir.exists():
+        return None
+
+    for mon_dir in mons_dir.iterdir():
+        if mon_dir.is_dir():
+            sol_path = mon_dir / f"{contract_name}.sol"
+            if sol_path.exists():
+                return sol_path
+    return None
+
+
+def pack_inline_ability_addresses(
+    deployed_addresses: list[tuple[str, str]],
+    chomp_dir: Path
+) -> list[tuple[str, str]]:
+    """For each deployed ability, check if inline and pack if needed.
+
+    Uses the @inline-ability magic comment in .sol files to detect inline abilities.
+    For inline abilities, packs as (type_id << 248) | address.
+    For external abilities, returns the raw address.
+
+    Args:
+        deployed_addresses: List of (name, address) tuples from forge output
+        chomp_dir: Path to the chomp directory
+
+    Returns:
+        List of (name, hex_value) tuples with packed values for inline abilities
+    """
+    results = []
+    packed_count = 0
+
+    for name, address in deployed_addresses:
+        sol_path = find_ability_sol_path(name, chomp_dir)
+        if sol_path:
+            ability_type_id = detect_inline_ability(str(sol_path))
+            if ability_type_id is not None:
+                addr_int = int(address, 16)
+                packed = pack_ability(ability_type_id, addr_int)
+                results.append((name, f"0x{packed:064x}"))
+                packed_count += 1
+                continue
+
+        # Not inline or not found - use raw address as-is
+        results.append((name, address))
+
+    if packed_count > 0:
+        print(f"Packed {packed_count} inline abilities")
+
+    return results
+
+
 def run_typescript_scripts(
     network: str,
     chomp_dir: Path,
@@ -128,6 +254,15 @@ def run_typescript_scripts(
 ):
     """Run createAddressAndABIs.py and generateMonsTypescript.py."""
     processing_dir = chomp_dir / "processing"
+
+    # Pack inline ability addresses (must happen before adding inline moves)
+    all_addresses = pack_inline_ability_addresses(list(all_addresses), chomp_dir)
+
+    # Add packed inline move values to the address list
+    inline_moves = collect_inline_move_addresses(chomp_dir, all_addresses)
+    if inline_moves:
+        print(f"Adding {len(inline_moves)} inline move packed values to addresses")
+        all_addresses = list(all_addresses) + inline_moves
 
     # Run createAddressAndABIs.py
     print(f"\n{'='*60}")
@@ -165,6 +300,200 @@ def run_typescript_scripts(
             sys.exit(1)
 
 
+def run_transpiler(chomp_dir: Path, dry_run: bool = False):
+    """Run the Solidity to TypeScript transpiler and sync output to munch."""
+    print(f"\n{'='*60}")
+    print("Running transpiler (sol2ts.py)")
+    print(f"{'='*60}")
+
+    # Run as module to support relative imports
+    cmd = [
+        sys.executable,
+        "-m", "transpiler",
+        "src",
+        "-o", "transpiler/ts-output",
+        "-d", "src",
+        "--emit-metadata",
+    ]
+
+    if dry_run:
+        print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+    else:
+        result = subprocess.run(cmd, cwd=chomp_dir)
+        if result.returncode != 0:
+            print("ERROR: Transpiler failed")
+            sys.exit(1)
+
+    # Sync transpiled output to munch (excluding runtime/ which has munch-specific paths)
+    munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "ts-output"
+    chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
+
+    if munch_ts_output.exists():
+        print(f"\nSyncing transpiled output to {munch_ts_output}")
+        if dry_run:
+            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ (excluding runtime/)")
+        else:
+            result = subprocess.run(
+                ["rsync", "-a", "--delete", "--exclude=runtime/",
+                 f"{chomp_ts_output}/", f"{munch_ts_output}/"],
+            )
+            if result.returncode != 0:
+                print("WARNING: Failed to sync transpiled output to munch")
+            else:
+                print("Synced transpiled output to munch")
+    else:
+        print(f"Skipping munch sync: {munch_ts_output} does not exist")
+
+
+def run_incremental_deploy(
+    network: str,
+    rpc_url: str,
+    password: str,
+    chomp_dir: Path,
+    env_path: Path,
+    dry_run: bool = False,
+    force_mons: list[str] | None = None,
+):
+    """Run an incremental deploy: only deploy changed mon contracts."""
+    from dep_graph import (
+        ChangeStatus,
+        build_manifest_from_state,
+        classify_changes,
+        get_current_commit,
+        get_dirty_mons,
+        load_env_addresses,
+        load_manifest,
+        load_mons,
+        save_manifest,
+        scan_current_state,
+        update_manifest_after_incremental,
+    )
+    from generate_incremental import generate_incremental_script, _collect_mon_changes
+    from generateSolidity import get_mon_directory_name
+
+    deploys_dir = chomp_dir / ".deploys"
+    manifest = load_manifest(str(deploys_dir), network)
+
+    if not manifest:
+        print(f"No manifest found at {deploys_dir}/{network}.json")
+        print("Run a full deploy first to create the manifest.")
+        sys.exit(1)
+
+    mons = load_mons(str(chomp_dir))
+    current_state = scan_current_state(mons, str(chomp_dir))
+    changes = classify_changes(manifest, current_state)
+
+    # Force-dirty specified mons
+    if force_mons:
+        for mon_name in force_mons:
+            mon_dir = get_mon_directory_name(mon_name.strip())
+            for key, (status, data) in list(changes.items()):
+                if key.startswith(f"{mon_dir}/") and status == ChangeStatus.CLEAN:
+                    changes[key] = (ChangeStatus.DIRTY, data)
+            print(f"Forcing redeploy of {mon_name}")
+
+    dirty = get_dirty_mons(changes)
+    if not dirty:
+        print("\nAll contracts are up to date. Nothing to deploy.")
+        return
+
+    # Print change summary
+    print(f"\n{'='*60}")
+    print("Incremental deploy — changed contracts:")
+    print(f"{'='*60}")
+    for mon_dir, contract_changes in sorted(dirty.items()):
+        print(f"  {mon_dir}/")
+        for status, data in contract_changes:
+            name = data.get("contract_name", "?")
+            reason = ""
+            if status == ChangeStatus.DIRTY:
+                prev = manifest.get("contracts", {}).get(f"{mon_dir}/{name}", {})
+                if data.get("source_hash") != prev.get("source_hash"):
+                    reason = " (source changed)"
+                elif data.get("deps_hash") != prev.get("deps_hash"):
+                    reason = " (dependency changed)"
+            print(f"    {status.value:>7}  {name}{reason}")
+
+    clean_count = sum(1 for _, (s, _) in changes.items() if s == ChangeStatus.CLEAN)
+    dirty_count = len(changes) - clean_count
+    print(f"\n  {dirty_count} contracts to deploy, {clean_count} unchanged")
+
+    # Generate IncrementalSetupMons.s.sol
+    sol_source = generate_incremental_script(mons, changes, str(chomp_dir))
+    output_path = chomp_dir / "script" / "IncrementalSetupMons.s.sol"
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(sol_source)
+    print(f"\nGenerated {output_path}")
+
+    # Run the forge script
+    all_addresses: list[tuple[str, str]] = []
+    if not dry_run:
+        output = run_forge_script(
+            "script/IncrementalSetupMons.s.sol",
+            rpc_url,
+            password,
+            chomp_dir,
+        )
+        matches = parse_deploy_data(output)
+        if matches:
+            print(f"\nParsed {len(matches)} new contract addresses")
+            all_addresses.extend(matches)
+            update_env_file(matches, env_path)
+            print(f"Updated .env with {len(matches)} addresses")
+    else:
+        print(f"\n[DRY RUN] Would run: forge script script/IncrementalSetupMons.s.sol")
+
+    # Update manifest
+    new_addr_dict = {
+        name.upper().replace(" ", "_").replace("-", "_"): addr
+        for name, addr in all_addresses
+    }
+    commit_hash = get_current_commit(str(chomp_dir))
+    updated_manifest = update_manifest_after_incremental(
+        manifest, current_state, changes, new_addr_dict, commit_hash,
+    )
+    if not dry_run:
+        save_manifest(str(deploys_dir), network, updated_manifest)
+
+    # Run TypeScript generation and transpiler
+    # For incremental, we need ALL addresses (existing + new) for TS generation
+    env_addresses = load_env_addresses(str(env_path))
+    all_addresses_for_ts = [(k, v) for k, v in env_addresses.items()]
+    run_typescript_scripts(network, chomp_dir, all_addresses_for_ts, dry_run=dry_run)
+    run_transpiler(chomp_dir, dry_run=dry_run)
+
+    # Clean up generated script
+    if output_path.exists() and not dry_run:
+        output_path.unlink()
+        print("Cleaned up IncrementalSetupMons.s.sol")
+
+
+def seed_manifest_after_full_deploy(
+    network: str,
+    chomp_dir: Path,
+):
+    """Create/overwrite the manifest after a full deploy using current .env as address source."""
+    from dep_graph import (
+        build_manifest_from_state,
+        get_current_commit,
+        load_env_addresses,
+        load_mons,
+        save_manifest,
+        scan_current_state,
+    )
+
+    deploys_dir = chomp_dir / ".deploys"
+    env_path = chomp_dir / ".env"
+
+    mons = load_mons(str(chomp_dir))
+    current_state = scan_current_state(mons, str(chomp_dir))
+    env_addresses = load_env_addresses(str(env_path))
+    commit_hash = get_current_commit(str(chomp_dir))
+
+    manifest = build_manifest_from_state(current_state, env_addresses, commit_hash)
+    save_manifest(str(deploys_dir), network, manifest)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Orchestrate full deployment pipeline'
@@ -196,6 +525,22 @@ def main():
         action='store_true',
         help='Skip forge scripts, only run TypeScript generation'
     )
+    parser.add_argument(
+        '--skip-build',
+        action='store_true',
+        help='Skip validation and Solidity generation (assume already up to date)'
+    )
+    parser.add_argument(
+        '--incremental',
+        action='store_true',
+        help='Only deploy contracts that changed since last deploy (requires existing manifest)'
+    )
+    parser.add_argument(
+        '--force-mons',
+        type=str,
+        default=None,
+        help='Comma-separated list of mon names to force-redeploy even if clean (e.g. aurox,pengym)'
+    )
 
     args = parser.parse_args()
     network = "mainnet" if args.mainnet else "testnet"
@@ -217,6 +562,40 @@ def main():
     password = None
     if not args.skip_forge and not args.dry_run:
         password = getpass.getpass("Enter keystore password: ")
+
+    # Incremental deploy path
+    if args.incremental:
+        os.chdir(chomp_dir)
+        force_mons = args.force_mons.split(",") if args.force_mons else None
+        run_incremental_deploy(
+            network, rpc_url, password, chomp_dir, env_path,
+            dry_run=args.dry_run, force_mons=force_mons,
+        )
+        print(f"\n{'='*60}")
+        print("INCREMENTAL DEPLOYMENT COMPLETE!")
+        print(f"{'='*60}")
+        return
+
+    # Full deploy path
+    # Run validation and Solidity generation
+    if not args.skip_build:
+        os.chdir(chomp_dir)
+
+        print(f"\n{'='*60}")
+        print("Validating move contracts against CSV data")
+        print(f"{'='*60}")
+        from validateMoves import run as run_validate
+        if not run_validate():
+            print("ERROR: Move validation failed. Fix issues before deploying.")
+            sys.exit(1)
+
+        print(f"\n{'='*60}")
+        print("Generating Solidity deployment script (SetupMons.s.sol)")
+        print(f"{'='*60}")
+        from generateSolidity import run as run_solidity
+        if not run_solidity():
+            print("ERROR: Solidity generation failed.")
+            sys.exit(1)
 
     # Collect all addresses across forge scripts
     all_addresses: list[tuple[str, str]] = []
@@ -246,6 +625,16 @@ def main():
 
     # Run TypeScript generation scripts
     run_typescript_scripts(network, chomp_dir, all_addresses, dry_run=args.dry_run)
+
+    # Run transpiler to generate TypeScript from Solidity
+    run_transpiler(chomp_dir, dry_run=args.dry_run)
+
+    # Seed/update manifest after full deploy
+    if not args.dry_run:
+        print(f"\n{'='*60}")
+        print("Updating deploy manifest")
+        print(f"{'='*60}")
+        seed_manifest_after_full_deploy(network, chomp_dir)
 
     print(f"\n{'='*60}")
     print("DEPLOYMENT COMPLETE!")

@@ -56,8 +56,8 @@ contract GachaTest is Test, BattleHelper {
                     type1: Type.Fire,
                     type2: Type.None
                 }),
-                new IMoveSet[](0),
-                new IAbility[](0),
+                new uint256[](0),
+                new uint256[](0),
                 new bytes32[](0),
                 new bytes32[](0)
             );
@@ -91,8 +91,8 @@ contract GachaTest is Test, BattleHelper {
                     type1: Type.Fire,
                     type2: Type.None
                 }),
-                new IMoveSet[](0),
-                new IAbility[](0),
+                new uint256[](0),
+                new uint256[](0),
                 new bytes32[](0),
                 new bytes32[](0)
             );
@@ -112,8 +112,8 @@ contract GachaTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
-            ability: IAbility(address(0))
+            moves: new uint256[](0),
+            ability: 0
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
@@ -159,8 +159,8 @@ contract GachaTest is Test, BattleHelper {
                     type1: Type.Fire,
                     type2: Type.None
                 }),
-                new IMoveSet[](0),
-                new IAbility[](0),
+                new uint256[](0),
+                new uint256[](0),
                 new bytes32[](0),
                 new bytes32[](0)
             );
@@ -180,8 +180,8 @@ contract GachaTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
-            ability: IAbility(address(0))
+            moves: new uint256[](0),
+            ability: 0
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
@@ -229,8 +229,8 @@ contract GachaTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            new IMoveSet[](0),
-            new IAbility[](0),
+            new uint256[](0),
+            new uint256[](0),
             new bytes32[](0),
             new bytes32[](0)
         );
@@ -260,8 +260,8 @@ contract GachaTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
-            ability: IAbility(address(0))
+            moves: new uint256[](0),
+            ability: 0
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);

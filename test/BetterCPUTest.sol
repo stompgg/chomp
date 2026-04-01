@@ -54,7 +54,7 @@ contract BetterCPUTest is Test {
         );
         teamRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(engine, typeCalc);
+        attackFactory = new StandardAttackFactory(typeCalc);
     }
 
     function _createMon(Type t, uint32 hp, uint32 attack, uint32 defense) internal pure returns (Mon memory) {
@@ -70,8 +70,8 @@ contract BetterCPUTest is Test {
                 type1: t,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
-            ability: IAbility(address(0))
+            moves: new uint256[](0),
+            ability: 0
         });
     }
 
@@ -175,9 +175,9 @@ contract BetterCPUTest is Test {
         IMoveSet highPowerAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet lowPowerAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = lowPowerAttack; // Move index 0: weak
-        cpuMoves[1] = highPowerAttack; // Move index 1: strong (should KO)
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(lowPowerAttack))); // Move index 0: weak
+        cpuMoves[1] = uint256(uint160(address(highPowerAttack))); // Move index 1: strong (should KO)
 
         // CPU mon with high attack
         Mon memory cpuMon = _createMon(Type.Fire, 100, 50, 10);
@@ -220,8 +220,8 @@ contract BetterCPUTest is Test {
         // Alice selects Fire, CPU should select Liquid (resists Fire)
 
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = basicAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](4);
         cpuTeam[0] = _createMon(Type.Fire, 100, 10, 10);
@@ -261,11 +261,11 @@ contract BetterCPUTest is Test {
         IMoveSet killerAttack = _createAttack(200, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = killerAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(killerAttack)));
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = basicAttack;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(basicAttack)));
 
         // Alice: High attack Fire mon with killer attack (2 mons to match CPU)
         Mon memory aliceMon = _createMon(Type.Fire, 100, 100, 10);
@@ -339,8 +339,8 @@ contract BetterCPUTest is Test {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = expensiveAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(expensiveAttack)));
 
         // High HP mons so no kill threat after first attack
         Mon memory mon = _createMon(Type.Fire, 200, 10, 10);
@@ -395,9 +395,9 @@ contract BetterCPUTest is Test {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = attackMove;
-        moves[1] = setupMove;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(attackMove)));
+        moves[1] = uint256(uint160(address(setupMove)));
 
         Mon memory mon = _createMon(Type.Fire, 100, 10, 10);
         mon.moves = moves;
@@ -430,10 +430,10 @@ contract BetterCPUTest is Test {
         IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet mediumAttack = _createAttack(50, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](3);
-        moves[0] = weakAttack;
-        moves[1] = mediumAttack;
-        moves[2] = strongAttack;
+        uint256[] memory moves = new uint256[](3);
+        moves[0] = uint256(uint160(address(weakAttack)));
+        moves[1] = uint256(uint160(address(mediumAttack)));
+        moves[2] = uint256(uint160(address(strongAttack)));
 
         Mon memory mon = _createMon(Type.Fire, 100, 50, 10);
         mon.moves = moves;
@@ -469,8 +469,8 @@ contract BetterCPUTest is Test {
         // CPU team: [Fire, Liquid, Nature, Air]. Alice: Fire/Nature dual-type.
         // Fire→Liquid = 0.5x, Nature→Liquid = 0.5x → Liquid resists both types
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = basicAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](4);
         cpuTeam[0] = _createMon(Type.Fire, 100, 10, 10);
@@ -503,8 +503,8 @@ contract BetterCPUTest is Test {
         // CPU team: [Fire, Liquid, Nature, Air]. Alice: Nature.
         // Fire→Nature = 2x → Fire has offensive advantage
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = basicAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](4);
         cpuTeam[0] = _createMon(Type.Fire, 100, 10, 10);
@@ -531,8 +531,8 @@ contract BetterCPUTest is Test {
     function test_leadSelection_fallbackRandom() public {
         // All Fire mons, no type overrides. All scores equal → first candidate wins.
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = basicAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](4);
         for (uint256 i = 0; i < 4; i++) {
@@ -575,13 +575,13 @@ contract BetterCPUTest is Test {
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack2 = _createAttack(10, Type.Liquid, MoveClass.Physical);
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = fireKiller;
-        aliceMoves[1] = liquidKiller;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(fireKiller)));
+        aliceMoves[1] = uint256(uint160(address(liquidKiller)));
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = basicAttack;
-        cpuMoves[1] = basicAttack2;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(basicAttack)));
+        cpuMoves[1] = uint256(uint160(address(basicAttack2)));
 
         Mon[] memory cpuTeam = new Mon[](3);
         cpuTeam[0] = _createMon(Type.Fire, 100, 10, 10);
@@ -629,10 +629,10 @@ contract BetterCPUTest is Test {
         IMoveSet cpuKiller = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = cpuKiller;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = aliceWeak;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(cpuKiller)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 100, 10);
@@ -664,8 +664,8 @@ contract BetterCPUTest is Test {
         // Both can KO each other. CPU speed=20, Alice speed=10. CPU goes first.
         IMoveSet killer = _createAttack(200, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = killer;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(killer)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 20);
@@ -698,8 +698,8 @@ contract BetterCPUTest is Test {
         // CPU has a Liquid backup that resists Fire.
         IMoveSet killer = _createAttack(200, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = killer;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(killer)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 10);
@@ -732,15 +732,15 @@ contract BetterCPUTest is Test {
         IMoveSet expensive = _createAttackWithCost(100, 3, Type.Fire, MoveClass.Physical);
         IMoveSet cheap = _createAttackWithCost(200, 1, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = expensive;
-        cpuMoves[1] = cheap;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(expensive)));
+        cpuMoves[1] = uint256(uint160(address(cheap)));
 
         IMoveSet aliceWeak = _createAttack(10, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -772,10 +772,10 @@ contract BetterCPUTest is Test {
         IMoveSet fireAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = fireAttack;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = basicAttack;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(fireAttack)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -814,12 +814,12 @@ contract BetterCPUTest is Test {
         IMoveSet liquidAttack = _createAttack(50, Type.Liquid, MoveClass.Physical);
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = fireAttack;
-        cpuMoves[1] = liquidAttack;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = basicAttack;
-        aliceMoves[1] = basicAttack;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(fireAttack)));
+        cpuMoves[1] = uint256(uint160(address(liquidAttack)));
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(basicAttack)));
+        aliceMoves[1] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -853,11 +853,11 @@ contract BetterCPUTest is Test {
         // CPU should rest (no-op).
         IMoveSet expensiveAttack = _createAttackWithCost(50, 3, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = expensiveAttack;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(expensiveAttack)));
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = basicAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -892,14 +892,14 @@ contract BetterCPUTest is Test {
         IMoveSet weakAttack = _createAttack(20, Type.Fire, MoveClass.Physical);
         IMoveSet strongAttack = _createAttack(80, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = weakAttack;
-        cpuMoves[1] = strongAttack;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(weakAttack)));
+        cpuMoves[1] = uint256(uint160(address(strongAttack)));
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack2 = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = basicAttack;
-        aliceMoves[1] = basicAttack2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(basicAttack)));
+        aliceMoves[1] = uint256(uint160(address(basicAttack2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -928,11 +928,11 @@ contract BetterCPUTest is Test {
         // CPU: stamina=2, move cost=3. Alice rests. Both rest.
         IMoveSet expensiveAttack = _createAttackWithCost(50, 3, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = expensiveAttack;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(expensiveAttack)));
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = basicAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -970,10 +970,10 @@ contract BetterCPUTest is Test {
         IMoveSet fireAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = fireAttack;
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = basicAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(fireAttack)));
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Metal, 100, 10, 10);
@@ -1009,8 +1009,8 @@ contract BetterCPUTest is Test {
         // CPU: hp=200, def=50. Alice: bp=10, atk=10. Damage = 10*10/50 = 2. 1% HP → below 30%.
         IMoveSet weakAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = weakAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(weakAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 200, 50, 50);
@@ -1051,8 +1051,8 @@ contract BetterCPUTest is Test {
         // bestSurvives=false. 500 >= 500+30? No. Materiality fails → stays.
         IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = strongAttack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(strongAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1087,10 +1087,10 @@ contract BetterCPUTest is Test {
         IMoveSet fireAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = fireAttack;
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = basicAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(fireAttack)));
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Metal, 100, 10, 10);
@@ -1128,10 +1128,10 @@ contract BetterCPUTest is Test {
         IMoveSet selfMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
         IMoveSet basicAttack = _createAttack(50, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = selfMove;
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = basicAttack;
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(selfMove)));
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(basicAttack)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1167,18 +1167,18 @@ contract BetterCPUTest is Test {
         IMoveSet strong = _createAttack(80, Type.Fire, MoveClass.Physical);
         IMoveSet medium = _createAttack(50, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](3);
-        cpuMoves[0] = weak;
-        cpuMoves[1] = strong;
-        cpuMoves[2] = medium;
+        uint256[] memory cpuMoves = new uint256[](3);
+        cpuMoves[0] = uint256(uint160(address(weak)));
+        cpuMoves[1] = uint256(uint160(address(strong)));
+        cpuMoves[2] = uint256(uint160(address(medium)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak3 = _createAttack(2, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](3);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
-        aliceMoves[2] = aliceWeak3;
+        uint256[] memory aliceMoves = new uint256[](3);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
+        aliceMoves[2] = uint256(uint160(address(aliceWeak3)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1211,15 +1211,15 @@ contract BetterCPUTest is Test {
         IMoveSet expensive = _createAttackWithCost(100, 3, Type.Fire, MoveClass.Physical);
         IMoveSet cheap = _createAttackWithCost(90, 1, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = expensive;
-        cpuMoves[1] = cheap;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(expensive)));
+        cpuMoves[1] = uint256(uint160(address(cheap)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1252,15 +1252,15 @@ contract BetterCPUTest is Test {
         IMoveSet expensive = _createAttackWithCost(100, 3, Type.Fire, MoveClass.Physical);
         IMoveSet cheap = _createAttackWithCost(50, 1, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = expensive;
-        cpuMoves[1] = cheap;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(expensive)));
+        cpuMoves[1] = uint256(uint160(address(cheap)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1291,10 +1291,10 @@ contract BetterCPUTest is Test {
         IMoveSet expensiveAttack = _createAttackWithCost(50, 2, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = expensiveAttack;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = aliceWeak;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(expensiveAttack)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
@@ -1327,10 +1327,10 @@ contract BetterCPUTest is Test {
         IMoveSet expensiveAttack = _createAttackWithCost(50, 2, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = expensiveAttack;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = aliceWeak;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(expensiveAttack)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
@@ -1366,15 +1366,15 @@ contract BetterCPUTest is Test {
         IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet preferredAttack = _createAttack(90, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = strongAttack;
-        cpuMoves[1] = preferredAttack;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(strongAttack)));
+        cpuMoves[1] = uint256(uint160(address(preferredAttack)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1411,15 +1411,15 @@ contract BetterCPUTest is Test {
         IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
         IMoveSet weakPreferred = _createAttack(50, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = strongAttack;
-        cpuMoves[1] = weakPreferred;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(strongAttack)));
+        cpuMoves[1] = uint256(uint160(address(weakPreferred)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
@@ -1456,15 +1456,15 @@ contract BetterCPUTest is Test {
         IMoveSet attackMove = _createAttack(50, Type.Fire, MoveClass.Physical);
         IMoveSet selfMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = attackMove;
-        cpuMoves[1] = selfMove;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(attackMove)));
+        cpuMoves[1] = uint256(uint160(address(selfMove)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
@@ -1508,15 +1508,15 @@ contract BetterCPUTest is Test {
         IMoveSet attackMove = _createAttack(50, Type.Fire, MoveClass.Physical);
         IMoveSet selfMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](2);
-        cpuMoves[0] = attackMove;
-        cpuMoves[1] = selfMove;
+        uint256[] memory cpuMoves = new uint256[](2);
+        cpuMoves[0] = uint256(uint160(address(attackMove)));
+        cpuMoves[1] = uint256(uint160(address(selfMove)));
 
         IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
         IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet[] memory aliceMoves = new IMoveSet[](2);
-        aliceMoves[0] = aliceWeak;
-        aliceMoves[1] = aliceWeak2;
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceWeak)));
+        aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
@@ -1568,8 +1568,8 @@ contract BetterCPUTest is Test {
         // Both speed=15, both can KO. _weGoFirst returns false on speed tie → CPU switches.
         IMoveSet killer = _createAttack(200, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = killer;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(killer)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 15);
@@ -1602,10 +1602,10 @@ contract BetterCPUTest is Test {
         IMoveSet cpuHighPriKiller = _createAttackFull(200, 1, Type.Fire, MoveClass.Physical, 5);
         IMoveSet aliceLowPriKiller = _createAttackFull(200, 1, Type.Fire, MoveClass.Physical, 1);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = cpuHighPriKiller;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = aliceLowPriKiller;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(cpuHighPriKiller)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceLowPriKiller)));
 
         Mon[] memory cpuTeam = new Mon[](2);
         cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 5);
@@ -1638,10 +1638,10 @@ contract BetterCPUTest is Test {
         IMoveSet expensiveAttack = _createAttackWithCost(50, 3, Type.Fire, MoveClass.Physical);
         IMoveSet aliceAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
 
-        IMoveSet[] memory cpuMoves = new IMoveSet[](1);
-        cpuMoves[0] = expensiveAttack;
-        IMoveSet[] memory aliceMoves = new IMoveSet[](1);
-        aliceMoves[0] = aliceAttack;
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(expensiveAttack)));
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceAttack)));
 
         // Use only 1 valid switch (other mon also exhausted) so CPU can't switch either
         Mon[] memory cpuTeam = new Mon[](2);

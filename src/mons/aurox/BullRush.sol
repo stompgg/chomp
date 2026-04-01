@@ -14,10 +14,9 @@ import {IEffect} from "../../effects/IEffect.sol";
 contract BullRush is StandardAttack {
     int32 public constant SELF_DAMAGE_PERCENT = 20;
 
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR)
+    constructor(ITypeCalculator TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Bull Rush",
@@ -36,6 +35,7 @@ contract BullRush is StandardAttack {
     {}
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -44,16 +44,21 @@ contract BullRush is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage to opponent
-        (int32 damage,) = _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        (int32 damage,) = engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Deal self-damage
         if (damage > 0) {
             int32 maxHp = int32(
-                ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
+                engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
             );
             int32 selfDamage = (maxHp * SELF_DAMAGE_PERCENT) / 100;
 
-            ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage);
+            engine.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage);
         }
     }
 }

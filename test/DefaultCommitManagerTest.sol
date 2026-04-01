@@ -49,7 +49,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         engine.updateMatchmakers(makersToAdd, makersToRemove);
         vm.startPrank(BOB);
         engine.updateMatchmakers(makersToAdd, makersToRemove);
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
         Mon memory dummyMon = Mon({
             stats: MonStats({
                 hp: 1,
@@ -63,7 +63,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory dummyTeam = new Mon[](1);
         dummyTeam[0] = dummyMon;

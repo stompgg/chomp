@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @inline-ability: singleton-local
+
 import {MonStateIndexName} from "../../Enums.sol";
 import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
@@ -14,35 +16,29 @@ contract Angery is IAbility, BasicEffect {
     uint256 public constant CHARGE_COUNT = 3; // After 3 charges, consume all charges to heal
     int32 public constant MAX_HP_DENOM = 6; // Heal for 1/6 of HP
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     // IAbility implementation
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Angery";
     }
 
-    function activateOnSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = ENGINE.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
             }
         }
-        ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // IEffect implementation
     // Steps: RoundEnd, AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x44;
+        return 0x8044;
     }
 
-    function onRoundEnd(bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -52,9 +48,9 @@ contract Angery is IAbility, BasicEffect {
             // Heal
             int32 healAmount =
                 int32(
-                    ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
+                    engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
                 ) / MAX_HP_DENOM;
-            ENGINE.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
+            engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
             // Reset the charges
             return (bytes32(numCharges - CHARGE_COUNT), false);
         } else {
@@ -62,7 +58,7 @@ contract Angery is IAbility, BasicEffect {
         }
     }
 
-    function onAfterDamage(bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32)
         external
         pure
         override

@@ -7,47 +7,44 @@ import {MoveClass, Type, ExtraDataType} from "../../src/Enums.sol";
 
 contract TestMove is IMoveSet {
 
-    IEngine immutable ENGINE;
-
     MoveClass private _moveClass;
     Type private _moveType;
     uint32 private _staminaCost;
     int32 private _damage;
 
-    constructor(MoveClass moveClassToUse, Type moveTypeToUse, uint32 staminaCost, int32 damage, IEngine _ENGINE) {
+    constructor(MoveClass moveClassToUse, Type moveTypeToUse, uint32 staminaCost, int32 damage) {
         _moveClass = moveClassToUse;
         _moveType = moveTypeToUse;
         _staminaCost = staminaCost;
         _damage = damage;
-        ENGINE = _ENGINE;
     }
 
     function name() external pure returns (string memory) {
         return "Test Move";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         uint256 opponentIndex = (attackerPlayerIndex + 1) % 2;
-        ENGINE.dealDamage(opponentIndex, defenderMonIndex, _damage);
+        engine.dealDamage(opponentIndex, defenderMonIndex, _damage);
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function stamina(bytes32, uint256, uint256) external view returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external view returns (uint32) {
         return _staminaCost;
     }
 
-    function moveType(bytes32) external view returns (Type) {
+    function moveType(IEngine, bytes32) external view returns (Type) {
         return _moveType;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external view returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external view returns (MoveClass) {
         return _moveClass;
     }
 
@@ -58,13 +55,7 @@ contract TestMove is IMoveSet {
 
 contract TestMoveFactory {
 
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
-
     function createMove(MoveClass moveClassToUse, Type moveTypeToUse, uint32 staminaCost, int32 damage) external returns (IMoveSet) {
-        return new TestMove(moveClassToUse, moveTypeToUse, staminaCost, damage, ENGINE);
+        return new TestMove(moveClassToUse, moveTypeToUse, staminaCost, damage);
     }
 }

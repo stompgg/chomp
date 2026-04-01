@@ -1,0 +1,9 @@
+{
+  "name": "Unexpected Carrot",
+  "basePower": 120,
+  "staminaCost": 4,
+  "moveType": "Nature",
+  "moveClass": "Physical",
+  "effectAccuracy": 0,
+  "effect": null
+}

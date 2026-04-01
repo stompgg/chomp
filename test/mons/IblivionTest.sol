@@ -61,27 +61,27 @@ contract IblivionTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoost = new StatBoosts();
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
 
         // Deploy Iblivion contracts
-        baselight = new Baselight(IEngine(address(engine)));
-        brightback = new Brightback(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), baselight);
-        unboundedStrike = new UnboundedStrike(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), baselight);
-        loop = new Loop(IEngine(address(engine)), baselight, statBoost);
-        renormalize = new Renormalize(IEngine(address(engine)), baselight, statBoost, loop);
+        baselight = new Baselight();
+        brightback = new Brightback(ITypeCalculator(address(typeCalc)), baselight);
+        unboundedStrike = new UnboundedStrike(ITypeCalculator(address(typeCalc)), baselight);
+        loop = new Loop(baselight, statBoost);
+        renormalize = new Renormalize(baselight, statBoost, loop);
     }
 
     // ============ Baselight Ability Tests ============
 
     function test_baselightStartsAtOneOnFirstSwitchIn() public {
         // Create a mon with Baselight ability
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -96,7 +96,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -118,16 +118,16 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Check that Baselight level is 2 (1 from switch-in + 1 from round end)
-        uint256 baselightLevel = baselight.getBaselightLevel(battleKey, 0, 0);
+        uint256 baselightLevel = baselight.getBaselightLevel(engine, battleKey, 0, 0);
         assertEq(baselightLevel, 2, "Baselight should be 2 after first switch in (1 initial + 1 from round end)");
     }
 
     function test_baselightGainsOnePerRound() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -142,7 +142,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -159,29 +159,29 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Baselight starts at 2 (1 from switch + 1 from round end)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 2, "Should start at 2 after switch-in round");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start at 2 after switch-in round");
 
         // After one more round, should be 3 (max)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
         );
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Should be 3 (max) after one more round");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after one more round");
 
         // After another round, should still be 3 (capped at max)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
         );
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Should stay at 3 (max)");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should stay at 3 (max)");
     }
 
     // ============ Brightback Tests ============
 
     function test_brightbackHealsWithStack() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -196,7 +196,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -212,7 +212,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -233,7 +233,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Alice starts with 2 Baselight stacks (1 from switch + 1 from round end)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 2, "Should start with 2 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start with 2 stacks");
 
         // Bob damages Alice first
         _commitRevealExecuteForAliceAndBob(
@@ -245,7 +245,7 @@ contract IblivionTest is Test, BattleHelper {
         assertTrue(aliceHpBefore < 0, "Alice should have taken damage");
 
         // After round, Baselight is now 3 (max)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Should be 3 (max) after round");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after round");
 
         // Alice uses Brightback - should consume 1 stack and heal
         _commitRevealExecuteForAliceAndBob(
@@ -253,7 +253,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Check Baselight decreased by 1 (3 - 1 = 2, then +1 at round end = 3 max)
-        uint256 afterBrightback = baselight.getBaselightLevel(battleKey, 0, 0);
+        uint256 afterBrightback = baselight.getBaselightLevel(engine, battleKey, 0, 0);
         assertEq(afterBrightback, 3, "Baselight should be 3 (consumed 1 from 3, gained 1 at round end, capped at 3)");
 
         // Check Alice healed
@@ -262,11 +262,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_brightbackNoHealWithoutStack() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -281,7 +281,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0)) // No Baselight ability, so no stacks
+            ability: 0 // No Baselight ability, so no stacks
         });
 
         Mon[] memory team = new Mon[](2);
@@ -298,7 +298,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // No Baselight stacks
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 0, "Should have 0 stacks without ability");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 0, "Should have 0 stacks without ability");
 
         // Bob damages Alice
         _commitRevealExecuteForAliceAndBob(
@@ -320,11 +320,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Unbounded Strike Tests ============
 
     function test_unboundedStrikeNormalPower() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -339,7 +339,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -355,7 +355,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -376,7 +376,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Alice has 2 stacks (not 3), so normal power (80)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 2, "Should have 2 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
 
         // Alice uses Unbounded Strike
         _commitRevealExecuteForAliceAndBob(
@@ -387,15 +387,15 @@ contract IblivionTest is Test, BattleHelper {
         assertTrue(bobHpDelta < 0, "Bob should have taken damage");
 
         // Stacks should NOT be consumed (still 2, but round end adds 1 = 3 max)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Stacks should not be consumed at < 3, capped at 3 after round end");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Stacks should not be consumed at < 3, capped at 3 after round end");
     }
 
     function test_unboundedStrikeEmpoweredPower() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -410,7 +410,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory bobMon = Mon({
@@ -426,7 +426,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -449,7 +449,7 @@ contract IblivionTest is Test, BattleHelper {
         // Wait for 3 stacks (start at 2, need 1 more round)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Should have 3 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should have 3 stacks");
 
         // Get Bob's HP before
         int32 bobHpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -464,17 +464,17 @@ contract IblivionTest is Test, BattleHelper {
         assertTrue(damageDealt > 0, "Bob should have taken damage");
 
         // All stacks consumed (but round end adds 1, so should be 1)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 1, "Stacks should be consumed to 0 then gain 1 at round end");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Stacks should be consumed to 0 then gain 1 at round end");
     }
 
     // ============ Loop Tests ============
 
     function test_loopAppliesStatBoosts() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -489,7 +489,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -506,7 +506,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // At Baselight 2, Loop should give 30% boost
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 2, "Should have 2 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
 
         // Get stats before Loop
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
@@ -521,15 +521,15 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(attackAfter - attackBefore, 30, "Attack should be boosted by 30%");
 
         // Loop should be marked as active
-        assertTrue(loop.isLoopActive(battleKey, 0, 0), "Loop should be active");
+        assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
     }
 
     function test_loopFailsIfAlreadyActive() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -544,7 +544,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -566,7 +566,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         int32 attackAfterFirst = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
-        assertTrue(loop.isLoopActive(battleKey, 0, 0), "Loop should be active");
+        assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
 
         // Alice uses Loop second time - should fail
         _commitRevealExecuteForAliceAndBob(
@@ -581,11 +581,11 @@ contract IblivionTest is Test, BattleHelper {
         // Test that Loop gives correct boosts at different Baselight levels
         // Level 1: 15%, Level 2: 30%, Level 3: 40%
 
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -600,7 +600,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -619,7 +619,7 @@ contract IblivionTest is Test, BattleHelper {
         // Wait for 3 stacks (start at 2, need 1 more round)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Should have 3 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should have 3 stacks");
 
         // Get stats before Loop
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
@@ -636,11 +636,11 @@ contract IblivionTest is Test, BattleHelper {
     // ============ Renormalize Tests ============
 
     function test_renormalizeSetsBaselightToThree() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -655,7 +655,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -672,7 +672,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Start at 2 stacks (1 initial + 1 from round end)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 2, "Should have 2 stacks");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
 
         // Alice uses Renormalize
         _commitRevealExecuteForAliceAndBob(
@@ -680,15 +680,15 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Should be at 3 stacks (set to 3, then capped at max even with round end)
-        assertEq(baselight.getBaselightLevel(battleKey, 0, 0), 3, "Baselight should be set to 3");
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Baselight should be set to 3");
     }
 
     function test_renormalizeClearsStatBoosts() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -703,7 +703,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -737,11 +737,11 @@ contract IblivionTest is Test, BattleHelper {
     }
 
     function test_renormalizeClearsLoopActive() public {
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory mon = Mon({
             stats: MonStats({
@@ -756,7 +756,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory team = new Mon[](2);
@@ -777,14 +777,14 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
         );
 
-        assertTrue(loop.isLoopActive(battleKey, 0, 0), "Loop should be active");
+        assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
 
         // Alice uses Renormalize
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0
         );
 
-        assertFalse(loop.isLoopActive(battleKey, 0, 0), "Loop should no longer be active");
+        assertFalse(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should no longer be active");
 
         // Alice can use Loop again
         _commitRevealExecuteForAliceAndBob(
@@ -797,11 +797,11 @@ contract IblivionTest is Test, BattleHelper {
 
     function test_renormalizeHasLowerPriority() public {
         // Renormalize should have -1 priority (DEFAULT_PRIORITY - 1 = 2)
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = brightback;
-        moves[1] = unboundedStrike;
-        moves[2] = loop;
-        moves[3] = renormalize;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
 
         Mon memory fastMon = Mon({
             stats: MonStats({
@@ -816,7 +816,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory slowMon = Mon({
@@ -832,7 +832,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -853,7 +853,7 @@ contract IblivionTest is Test, BattleHelper {
         );
 
         // Check priority
-        uint32 renomalPriority = renormalize.priority(battleKey, 0);
+        uint32 renomalPriority = renormalize.priority(IEngine(address(engine)), battleKey, 0);
         assertEq(renomalPriority, DEFAULT_PRIORITY - 1, "Renormalize should have -1 priority");
     }
 
@@ -866,8 +866,8 @@ contract IblivionTest is Test, BattleHelper {
      * 5. Verify: stats remain at base values (no change from the failed removal attempt)
      */
     function test_renormalizeClearsStatusEffectStatBoosts() public {
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoost);
-        MockEffectRemover effectRemover = new MockEffectRemover(IEngine(address(engine)));
+        BurnStatus burnStatus = new BurnStatus(statBoost);
+        MockEffectRemover effectRemover = new MockEffectRemover();
 
         // Create a 0-damage attack that inflicts burn with 100% accuracy
         StandardAttack burnAttack = attackFactory.createAttack(
@@ -886,17 +886,17 @@ contract IblivionTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory iblivionMoves = new IMoveSet[](4);
-        iblivionMoves[0] = brightback;
-        iblivionMoves[1] = unboundedStrike;
-        iblivionMoves[2] = loop;
-        iblivionMoves[3] = renormalize;
+        uint256[] memory iblivionMoves = new uint256[](4);
+        iblivionMoves[0] = uint256(uint160(address(brightback)));
+        iblivionMoves[1] = uint256(uint160(address(unboundedStrike)));
+        iblivionMoves[2] = uint256(uint160(address(loop)));
+        iblivionMoves[3] = uint256(uint160(address(renormalize)));
 
-        IMoveSet[] memory opponentMoves = new IMoveSet[](4);
-        opponentMoves[0] = burnAttack;
-        opponentMoves[1] = effectRemover;
-        opponentMoves[2] = loop;
-        opponentMoves[3] = renormalize;
+        uint256[] memory opponentMoves = new uint256[](4);
+        opponentMoves[0] = uint256(uint160(address(burnAttack)));
+        opponentMoves[1] = uint256(uint160(address(effectRemover)));
+        opponentMoves[2] = uint256(uint160(address(loop)));
+        opponentMoves[3] = uint256(uint160(address(renormalize)));
 
         uint32 baseAttack = 100;
 
@@ -913,7 +913,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: iblivionMoves,
-            ability: IAbility(address(baselight))
+            ability: uint160(address(baselight))
         });
 
         Mon memory opponentMon = Mon({
@@ -929,7 +929,7 @@ contract IblivionTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: opponentMoves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

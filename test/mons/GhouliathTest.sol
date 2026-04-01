@@ -29,7 +29,7 @@ import {BattleHelper} from "../abstract/BattleHelper.sol";
 import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {EternalGrudge} from "../../src/mons/ghouliath/EternalGrudge.sol";
-import {Osteoporosis} from "../../src/mons/ghouliath/Osteoporosis.sol";
+
 import {RiseFromTheGrave} from "../../src/mons/ghouliath/RiseFromTheGrave.sol";
 import {WitherAway} from "../../src/mons/ghouliath/WitherAway.sol";
 
@@ -41,7 +41,7 @@ contract GhouliathTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     DefaultValidator validator;
     RiseFromTheGrave riseFromTheGrave;
-    Osteoporosis osteoporosis;
+    IMoveSet osteoporosis;
     WitherAway witherAway;
     PanicStatus panicStatus;
     StatBoosts statBoosts;
@@ -58,14 +58,19 @@ contract GhouliathTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        riseFromTheGrave = new RiseFromTheGrave(IEngine(address(engine)));
-        osteoporosis = new Osteoporosis(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        panicStatus = new PanicStatus(IEngine(address(engine)));
+        standardAttackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
+        riseFromTheGrave = new RiseFromTheGrave();
+        osteoporosis = standardAttackFactory.createAttack(ATTACK_PARAMS({
+            BASE_POWER: 90, STAMINA_COST: 2, ACCURACY: 100,
+            PRIORITY: 3, MOVE_TYPE: Type.Yin, EFFECT_ACCURACY: 100,
+            MOVE_CLASS: MoveClass.Physical, CRIT_RATE: 5, VOLATILITY: 10,
+            NAME: "Osteoporosis", EFFECT: IEffect(address(0))
+        }));
+        panicStatus = new PanicStatus();
         witherAway =
-            new WitherAway(IEngine(address(engine)), ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
-        standardAttackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
-        eternalGrudge = new EternalGrudge(IEngine(address(engine)), statBoosts);
+            new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
+        statBoosts = new StatBoosts();
+        eternalGrudge = new EternalGrudge(statBoosts);
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -79,8 +84,8 @@ contract GhouliathTest is Test, BattleHelper {
     */
     function testRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = standardAttackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(standardAttackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 100,
                 STAMINA_COST: 1,
@@ -94,7 +99,7 @@ contract GhouliathTest is Test, BattleHelper {
                 CRIT_RATE: 0,
                 VOLATILITY: 0
             })
-        );
+        ))));
         Mon memory ghouliathMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -108,7 +113,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(riseFromTheGrave))
+            ability: uint160(address(riseFromTheGrave))
         });
 
         // Create a regular mon for the opponent
@@ -125,7 +130,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -203,8 +208,8 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testDoubleRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = standardAttackFactory.createAttack(
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(standardAttackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 100,
                 STAMINA_COST: 1,
@@ -218,7 +223,7 @@ contract GhouliathTest is Test, BattleHelper {
                 CRIT_RATE: 0,
                 VOLATILITY: 0
             })
-        );
+        ))));
         Mon memory ghouliathMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -232,7 +237,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(riseFromTheGrave))
+            ability: uint160(address(riseFromTheGrave))
         });
 
         Mon[] memory aliceTeam = new Mon[](2);
@@ -286,8 +291,8 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testWitherAway() public {
         // Create a team with a mon that has WitherAway move
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = witherAway;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(witherAway)));
 
         // Create a mon with specific stats
         Mon memory attackerMon = Mon({
@@ -303,7 +308,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a regular mon for the opponent
@@ -320,7 +325,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -388,8 +393,8 @@ contract GhouliathTest is Test, BattleHelper {
 
     function testOsteoporosis() public {
         // Create a team with a mon that has Osteoporosis move
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = osteoporosis;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(osteoporosis)));
 
         // Create a mon with specific stats to make damage calculation predictable
         Mon memory attackerMon = Mon({
@@ -405,7 +410,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create a regular mon for the opponent with known defense
@@ -422,7 +427,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams
@@ -453,13 +458,13 @@ contract GhouliathTest is Test, BattleHelper {
         uint32 damageTaken = uint32(-1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp));
 
         // Assert it's at least base power / 2
-        assertGe(damageTaken, osteoporosis.basePower(battleKey) / 2, "Damage taken should be at least base power / 2");
+        assertGe(damageTaken, 90 / 2, "Damage taken should be at least base power / 2");
     }
 
     function testEternalGrudge() public {
         // Create a team with a mon that has EternalGrudge move
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = eternalGrudge;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(eternalGrudge)));
 
         // Create a mon with specific stats to make damage calculation predictable
         Mon memory attackerMon = Mon({
@@ -475,7 +480,7 @@ contract GhouliathTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

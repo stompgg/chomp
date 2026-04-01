@@ -15,7 +15,6 @@ import {IMoveSet} from "./IMoveSet.sol";
 import {ATTACK_PARAMS} from "./StandardAttackStructs.sol";
 
 contract StandardAttack is IMoveSet, Ownable {
-    IEngine immutable ENGINE;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
     uint32 private _basePower;
@@ -30,8 +29,7 @@ contract StandardAttack is IMoveSet, Ownable {
     IEffect private _effect;
     string private _name;
 
-    constructor(address owner, IEngine _ENGINE, ITypeCalculator _TYPE_CALCULATOR, ATTACK_PARAMS memory params) {
-        ENGINE = _ENGINE;
+    constructor(address owner, ITypeCalculator _TYPE_CALCULATOR, ATTACK_PARAMS memory params) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
         _basePower = params.BASE_POWER;
         _stamina = params.STAMINA_COST;
@@ -48,6 +46,7 @@ contract StandardAttack is IMoveSet, Ownable {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -55,10 +54,10 @@ contract StandardAttack is IMoveSet, Ownable {
         uint240,
         uint256 rng
     ) public virtual {
-        _move(battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
     }
 
-    function _move(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderMonIndex, uint256 rng)
+    function _move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderMonIndex, uint256 rng)
         internal
         virtual
         returns (int32, bytes32)
@@ -67,15 +66,15 @@ contract StandardAttack is IMoveSet, Ownable {
         bytes32 eventType = bytes32(0);
         if (basePower(battleKey) > 0) {
             (damage, eventType) = AttackCalculator._calculateDamage(
-                ENGINE,
+                engine,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
                 basePower(battleKey),
                 accuracy(battleKey),
                 volatility(battleKey),
-                moveType(battleKey),
-                moveClass(battleKey),
+                moveType(engine, battleKey),
+                moveClass(engine, battleKey),
                 rng,
                 critRate(battleKey)
             );
@@ -86,30 +85,30 @@ contract StandardAttack is IMoveSet, Ownable {
         if (rng % 100 < _effectAccuracy) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
             if (address(_effect) != address(0)) {
-                ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
+                engine.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
             }
         }
 
         return (damage, eventType);
     }
 
-    function isValidTarget(bytes32, uint240) public pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) public pure returns (bool) {
         return true;
     }
 
-    function priority(bytes32, uint256) public view virtual returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public view virtual returns (uint32) {
         return _priority;
     }
 
-    function stamina(bytes32, uint256, uint256) public view returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public view returns (uint32) {
         return _stamina;
     }
 
-    function moveType(bytes32) public view returns (Type) {
+    function moveType(IEngine, bytes32) public view returns (Type) {
         return _moveType;
     }
 
-    function moveClass(bytes32) public view returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public view returns (MoveClass) {
         return _moveClass;
     }
 

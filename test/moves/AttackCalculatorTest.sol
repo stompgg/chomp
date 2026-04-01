@@ -60,8 +60,8 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type1: Type.Fire,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](1),
-            ability: IAbility(address(0))
+            moves: new uint256[](1),
+            ability: 0
         });
 
         // Create a special attacker mon
@@ -77,8 +77,8 @@ contract AttackCalculatorTest is Test, BattleHelper {
                 type1: Type.Liquid,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](1),
-            ability: IAbility(address(0))
+            moves: new uint256[](1),
+            ability: 0
         });
 
         // Set up teams

@@ -1,0 +1,9 @@
+{
+  "name": "Federal Investigation",
+  "basePower": 100,
+  "staminaCost": 3,
+  "moveType": "Cyber",
+  "moveClass": "Special",
+  "effectAccuracy": 0,
+  "effect": null
+}

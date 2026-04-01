@@ -8,8 +8,10 @@
  * logic to the Engine rather than reimplementing it.
  */
 
-import { ContractContainer, globalEventStream } from './index';
+import { ContractContainer, globalEventStream, ADDRESS_ZERO, addressToUint } from './index';
+import { Contract } from './base';
 import * as Structs from '../ts-output/Structs';
+import * as Constants from '../ts-output/Constants';
 
 // =============================================================================
 // HARNESS CONSTANTS
@@ -111,8 +113,8 @@ export interface MonConfig {
   };
   type1: number;  // Enum value
   type2: number;  // Enum value (0 for none)
-  moves: string[];  // Move contract names (e.g., ['BigBite', 'Recover'])
-  ability: string;  // Ability contract name
+  moves: (string | bigint)[];  // Move contract names (e.g., ['BigBite']) or packed inline bigints
+  ability: string | bigint;  // Ability contract name or packed inline bigint
 }
 
 /**
@@ -158,19 +160,9 @@ export interface TurnInput {
 }
 
 /**
- * Mon state snapshot (matches Solidity MonState struct)
+ * Mon state snapshot — re-exported from transpiled Structs for consistency.
  */
-export interface MonState {
-  hpDelta: bigint;
-  staminaDelta: bigint;
-  speedDelta: bigint;
-  attackDelta: bigint;
-  defenseDelta: bigint;
-  specialAttackDelta: bigint;
-  specialDefenseDelta: bigint;
-  isKnockedOut: boolean;
-  shouldSkipTurn: boolean;
-}
+export type MonState = Structs.MonState;
 
 /**
  * Battle state snapshot
@@ -236,7 +228,9 @@ export class BattleHarness {
   }
 
   /**
-   * Configure contract addresses
+   * Configure contract addresses from an external mapping (e.g. on-chain addresses).
+   * Each name is resolved from the container and assigned the given address.
+   * The _contractAddress setter auto-registers in Contract._addressRegistry.
    */
   setAddresses(addresses: AddressConfig): void {
     for (const [name, address] of Object.entries(addresses)) {
@@ -254,11 +248,10 @@ export class BattleHarness {
    * Uses mutators to bypass authorization checks for testing.
    */
   startBattle(config: BattleConfig): string {
-    // Set addresses if provided
+    // Set addresses if provided, then ensure all contracts have addresses
     if (config.addresses) {
       this.setAddresses(config.addresses);
     }
-
     // Build teams with resolved contract references
     const teams = config.teams.map((teamConfig) =>
       teamConfig.mons.map((monConfig) => this.buildMon(monConfig))
@@ -301,7 +294,7 @@ export class BattleHarness {
     };
 
     // Set msg.sender to matchmaker (who calls startBattle in real flow)
-    engine._msg.sender = this.matchmaker._contractAddress;
+    Contract._currentCaller = this.matchmaker._contractAddress;
     engine.startBattle(battle);
 
     // Initialize mon states with defaults (fixes Solidity vs TypeScript storage semantics)
@@ -316,8 +309,26 @@ export class BattleHarness {
    * Returns a Structs.Mon compatible object
    */
   private buildMon(config: MonConfig): Structs.Mon {
-    const moves = config.moves.map(moveName => this.container.resolve(moveName));
-    const ability = config.ability ? this.container.resolve(config.ability) : null;
+    // Store moves as bigint values (matching Solidity uint256 storage)
+    // String names are resolved to contract addresses; bigints are packed inline values
+    const moves = config.moves.map(move => {
+      if (typeof move === 'bigint') {
+        return move;  // Already a packed inline move
+      }
+      const contract = this.container.resolve(move);
+      return addressToUint(contract._contractAddress);
+    });
+    // Store ability as bigint (matching Solidity uint256 storage)
+    // String names are resolved to contract addresses; bigints are packed inline values
+    let ability: bigint = 0n;
+    if (config.ability) {
+      if (typeof config.ability === 'bigint') {
+        ability = config.ability;
+      } else {
+        const contract = this.container.resolve(config.ability);
+        ability = addressToUint(contract._contractAddress);
+      }
+    }
 
     // MonStats includes type1/type2, so merge them with the stats
     const stats: Structs.MonStats = {
@@ -382,11 +393,9 @@ export class BattleHarness {
 
     const engine = this.container.resolve('Engine') as any;
 
-    // Set msg.sender to moveManager for ALL setMove calls
-    // This bypasses the validation that normally requires either:
-    // 1. Being the moveManager, or
-    // 2. Being in the middle of execute() (isForCurrentBattle check)
-    engine._msg.sender = HARNESS_MOVE_MANAGER;
+    // Set the caller to moveManager for setMove/execute calls.
+    // This propagates as msg.sender via the Contract proxy.
+    Contract._currentCaller = HARNESS_MOVE_MANAGER;
 
     // Set moves for both players via Engine
     engine.setMove(
@@ -408,6 +417,9 @@ export class BattleHarness {
     // Advance block timestamp to avoid GameStartsAndEndsSameBlock error
     // In real blockchain, execute() would be in a later block than startBattle()
     engine._block.timestamp = engine._block.timestamp + 1n;
+
+    // Transient storage is auto-reset by the Contract proxy at transaction boundaries
+    // (when _callDepth goes 0→1), matching Solidity's per-transaction semantics.
 
     // Execute the turn - Engine handles all logic
     engine.execute(battleKey);
@@ -432,9 +444,21 @@ export class BattleHarness {
       Number(activeIndices[1])
     ];
 
-    // Mon states are included in the config view (monStates[0] = p0, monStates[1] = p1)
-    const p0States: MonState[] = configView.monStates[0] || [];
-    const p1States: MonState[] = configView.monStates[1] || [];
+    // Mon states — normalize CLEARED_MON_STATE_SENTINEL to 0 (matches Solidity semantics)
+    const normDelta = (v: bigint) => v === Constants.CLEARED_MON_STATE_SENTINEL ? 0n : v;
+    const normState = (s: MonState): MonState => ({
+      hpDelta: normDelta(s.hpDelta),
+      staminaDelta: normDelta(s.staminaDelta),
+      speedDelta: normDelta(s.speedDelta),
+      attackDelta: normDelta(s.attackDelta),
+      defenceDelta: normDelta(s.defenceDelta),
+      specialAttackDelta: normDelta(s.specialAttackDelta),
+      specialDefenceDelta: normDelta(s.specialDefenceDelta),
+      isKnockedOut: s.isKnockedOut,
+      shouldSkipTurn: s.shouldSkipTurn,
+    });
+    const p0States: MonState[] = (configView.monStates[0] || []).map(normState);
+    const p1States: MonState[] = (configView.monStates[1] || []).map(normState);
 
     return {
       turnId: battleData.turnId,

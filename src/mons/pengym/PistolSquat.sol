@@ -13,10 +13,9 @@ import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract PistolSquat is StandardAttack {
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR)
+    constructor(ITypeCalculator TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Pistol Squat",
@@ -34,19 +33,19 @@ contract PistolSquat is StandardAttack {
         )
     {}
 
-    function _findRandomNonKOedMon(uint256 playerIndex, uint256 currentMonIndex, uint256 rng)
+    function _findRandomNonKOedMon(IEngine engine, uint256 playerIndex, uint256 currentMonIndex, uint256 rng)
         internal
         view
         returns (int32)
     {
-        bytes32 battleKey = ENGINE.battleKeyForWrite();
-        uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
+        bytes32 battleKey = engine.battleKeyForWrite();
+        uint256 teamSize = engine.getTeamSize(battleKey, playerIndex);
         for (uint256 i; i < teamSize; ++i) {
             uint256 monIndex = (i + rng) % teamSize;
             // Only look at other mons
             if (monIndex != currentMonIndex) {
                 bool isKOed =
-                    ENGINE.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
+                    engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
                 if (!isKOed) {
                     return int32(int256(monIndex));
                 }
@@ -56,6 +55,7 @@ contract PistolSquat is StandardAttack {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -64,18 +64,22 @@ contract PistolSquat is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Deal damage and then force a switch if the opposing mon is not KO'ed
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         bool isKOed =
-            ENGINE.getMonStateForBattle(
-                battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
-            ) == 1;
+            engine.getMonStateForBattle(battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut)
+                == 1;
         if (!isKOed) {
-            int32 possibleSwitchTarget = _findRandomNonKOedMon(otherPlayerIndex, defenderMonIndex, rng);
+            int32 possibleSwitchTarget = _findRandomNonKOedMon(engine, otherPlayerIndex, defenderMonIndex, rng);
             if (possibleSwitchTarget != -1) {
-                ENGINE.switchActiveMon(otherPlayerIndex, uint256(uint32(possibleSwitchTarget)));
+                engine.switchActiveMon(otherPlayerIndex, uint256(uint32(possibleSwitchTarget)));
             }
         }
     }

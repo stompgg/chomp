@@ -5,6 +5,7 @@ Checks that contract implementations match the expected values from moves.csv.
 """
 
 import csv
+import json
 import os
 import re
 from pathlib import Path
@@ -131,21 +132,45 @@ class MoveValidator:
                     move_type=row['Type'],
                     move_class=row['Class'],
                     description=row['DevDescription'], # Change to UserDescription later
-                    extra_data=row['ExtraData']
+                    extra_data=row.get('InputType', '')
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
                 self.moves_data[normalized_name] = move_data
     
-    def find_contract_file(self, move_name: str) -> Optional[str]:
-        """Find the contract file for a given move name"""
-        contract_name = f"{move_name}.sol"
-        
-        # Search recursively through src directory
+    def find_move_file(self, move_name: str) -> Optional[str]:
+        """Find the move file (.json or .sol) for a given move name"""
+        json_name = f"{move_name}.json"
+        sol_name = f"{move_name}.sol"
+
+        # Search recursively through src directory, preferring .json
         for root, dirs, files in os.walk(self.src_path):
-            if contract_name in files:
-                return os.path.join(root, contract_name)
-        
+            if json_name in files:
+                return os.path.join(root, json_name)
+        for root, dirs, files in os.walk(self.src_path):
+            if sol_name in files:
+                return os.path.join(root, sol_name)
+
         return None
+
+    def parse_json_move(self, file_path: str) -> ContractData:
+        """Parse a JSON inline move definition"""
+        contract_data = ContractData(file_path=file_path)
+        contract_data.is_standard_attack = True  # JSON moves are inline StandardAttacks
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        contract_data.power = data.get('basePower')
+        contract_data.stamina = data.get('staminaCost')
+        contract_data.accuracy = 100  # JSON moves always use DEFAULT_ACCURACY
+        contract_data.move_type = data.get('moveType')
+        contract_data.move_class = data.get('moveClass')
+
+        # Priority: JSON stores offset from DEFAULT_PRIORITY, convert to absolute
+        # (JSON has no priority field = offset 0 = DEFAULT_PRIORITY)
+        contract_data.priority = self.DEFAULT_PRIORITY
+
+        return contract_data
 
     def parse_contract_file(self, file_path: str, mon_name: str = None) -> ContractData:
         """Parse a Solidity contract file to extract move data"""
@@ -381,16 +406,19 @@ class MoveValidator:
         missing_contracts = []
 
         for move_name, move_data in self.moves_data.items():
-            contract_file = self.find_contract_file(move_name)
+            move_file = self.find_move_file(move_name)
 
-            if contract_file is None:
+            if move_file is None:
                 missing_contracts.append((move_name, move_data.name))
                 continue
 
             found_contracts += 1
 
-            # Parse and validate the contract
-            contract_data = self.parse_contract_file(contract_file, move_data.mon)
+            # Parse and validate the move (JSON or Solidity)
+            if move_file.endswith('.json'):
+                contract_data = self.parse_json_move(move_file)
+            else:
+                contract_data = self.parse_contract_file(move_file, move_data.mon)
             validation_result = self.validate_move(move_name, move_data, contract_data)
             self.validation_results.append(validation_result)
 
