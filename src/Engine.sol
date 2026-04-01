@@ -519,27 +519,9 @@ contract Engine is IEngine, MappingAllocator {
             // Happens immediately after both mons are sent in, before any other effects
             if (turnId == 0) {
                 uint256 priorityMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
-                Mon memory priorityMon = _getTeamMon(config, priorityPlayerIndex, priorityMonIndex);
-                if (priorityMon.ability != 0) {
-                    if (priorityMon.ability >> 160 != 0) {
-                        _inlineAbilityActivation(config, priorityMon.ability, priorityPlayerIndex, priorityMonIndex);
-                    } else {
-                        IAbility(address(uint160(priorityMon.ability))).activateOnSwitch(
-                            IEngine(address(this)), battleKey, priorityPlayerIndex, priorityMonIndex
-                        );
-                    }
-                }
+                _activateAbility(config, battleKey, _getTeamMon(config, priorityPlayerIndex, priorityMonIndex).ability, priorityPlayerIndex, priorityMonIndex);
                 uint256 otherMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
-                Mon memory otherMon = _getTeamMon(config, otherPlayerIndex, otherMonIndex);
-                if (otherMon.ability != 0) {
-                    if (otherMon.ability >> 160 != 0) {
-                        _inlineAbilityActivation(config, otherMon.ability, otherPlayerIndex, otherMonIndex);
-                    } else {
-                        IAbility(address(uint160(otherMon.ability))).activateOnSwitch(
-                            IEngine(address(this)), battleKey, otherPlayerIndex, otherMonIndex
-                        );
-                    }
-                }
+                _activateAbility(config, battleKey, _getTeamMon(config, otherPlayerIndex, otherMonIndex).ability, otherPlayerIndex, otherMonIndex);
             }
 
             // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s)
@@ -860,6 +842,23 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
+    function _activateAbility(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 rawAbility,
+        uint256 playerIndex,
+        uint256 monIndex
+    ) internal {
+        if (rawAbility == 0) return;
+        if (rawAbility >> 160 != 0) {
+            _inlineAbilityActivation(config, rawAbility, playerIndex, monIndex);
+        } else {
+            IAbility(address(uint160(rawAbility))).activateOnSwitch(
+                IEngine(address(this)), battleKey, playerIndex, monIndex
+            );
+        }
+    }
+
     function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) internal {
         bytes32 battleKey = battleKeyForWrite;
         // Fetch steps bitmap once (reused for storage and ALWAYS_APPLIES check)
@@ -989,83 +988,37 @@ contract Engine is IEngine, MappingAllocator {
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
-
-        BattleConfig storage config = battleConfig[storageKeyForWrite];
-
-        if (targetIndex == 2) {
-            // Global effects use simple sequential indexing
-            _removeGlobalEffect(config, battleKey, monIndex, indexToRemove);
-        } else {
-            // Player effects use per-mon indexing
-            _removePlayerEffect(config, battleKey, targetIndex, monIndex, indexToRemove);
-        }
+        _removeEffectAtSlot(battleConfig[storageKeyForWrite], battleKey, targetIndex, monIndex, indexToRemove);
     }
 
-    function _removeGlobalEffect(
-        BattleConfig storage config,
-        bytes32 battleKey,
-        uint256 monIndex,
-        uint256 indexToRemove
-    ) private {
-        EffectInstance storage effectToRemove = config.globalEffects[indexToRemove];
-        IEffect effect = effectToRemove.effect;
-        uint16 stepsBitmap = effectToRemove.stepsBitmap;
-        bytes32 data = effectToRemove.data;
-
-        // Skip if already tombstoned
-        if (address(effect) == TOMBSTONE_ADDRESS) {
-            return;
-        }
-
-        // Use stored bitmap instead of external call to shouldRunAtStep()
-        if ((stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
-            // Get active mon indices for both players
-            BattleData storage battle = battleData[battleKey];
-            uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-            uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-            effect.onRemove(IEngine(address(this)), battleKey, data, 2, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
-        }
-
-        // Tombstone the effect (indices are stable, no need to re-find)
-        effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
-
-        emit EffectRemove(battleKey, 2, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep);
-    }
-
-    function _removePlayerEffect(
+    function _removeEffectAtSlot(
         BattleConfig storage config,
         bytes32 battleKey,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 indexToRemove
+        uint256 slotIndex
     ) private {
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-
-        EffectInstance storage effectToRemove = effects[indexToRemove];
-        IEffect effect = effectToRemove.effect;
-        uint16 stepsBitmap = effectToRemove.stepsBitmap;
-        bytes32 data = effectToRemove.data;
-
-        // Skip if already tombstoned
-        if (address(effect) == TOMBSTONE_ADDRESS) {
-            return;
+        EffectInstance storage eff;
+        if (targetIndex == 2) {
+            eff = config.globalEffects[slotIndex];
+        } else if (targetIndex == 0) {
+            eff = config.p0Effects[slotIndex];
+        } else {
+            eff = config.p1Effects[slotIndex];
         }
 
-        // Use stored bitmap instead of external call to shouldRunAtStep()
-        if ((stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
-            // Get active mon indices for both players
+        IEffect effect = eff.effect;
+        if (address(effect) == TOMBSTONE_ADDRESS) return;
+
+        if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             BattleData storage battle = battleData[battleKey];
-            uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-            uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-            effect.onRemove(IEngine(address(this)), battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            uint256 p0Active = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+            uint256 p1Active = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+            effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, p0Active, p1Active);
         }
 
-        // Tombstone the effect (indices are stable, no need to re-find)
-        effectToRemove.effect = IEffect(TOMBSTONE_ADDRESS);
-
-        emit EffectRemove(
-            battleKey, targetIndex, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep
-        );
+        eff.effect = IEffect(TOMBSTONE_ADDRESS);
+        emit EffectRemove(battleKey, targetIndex, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep);
     }
 
     function setGlobalKV(bytes32 key, uint192 value) external {
@@ -1094,7 +1047,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Set KO flag if the total hpDelta is greater than the original mon HP
         uint32 baseHp = _getTeamMon(config, playerIndex, monIndex).stats.hp;
-        if (monState.hpDelta + int32(baseHp) <= 0 && !monState.isKnockedOut) {
+        if (monState.hpDelta + int32(baseHp) <= 0) {
             monState.isKnockedOut = true;
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
@@ -1448,18 +1401,11 @@ contract Engine is IEngine, MappingAllocator {
         _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
-        Mon memory mon = _getTeamMon(config, playerIndex, monToSwitchIndex);
         if (
-            mon.ability != 0 && battle.turnId != 0
+            battle.turnId != 0
                 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut
         ) {
-            if (mon.ability >> 160 != 0) {
-                _inlineAbilityActivation(config, mon.ability, playerIndex, monToSwitchIndex);
-            } else {
-                IAbility(address(uint160(mon.ability))).activateOnSwitch(
-                    IEngine(address(this)), battleKey, playerIndex, monToSwitchIndex
-                );
-            }
+            _activateAbility(config, battleKey, _getTeamMon(config, playerIndex, monToSwitchIndex).ability, playerIndex, monToSwitchIndex);
         }
     }
 
@@ -1497,106 +1443,88 @@ contract Engine is IEngine, MappingAllocator {
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Handle the switch (extraData contains the mon index to switch to as raw uint240)
             _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
-        } else if (moveIndex == NO_OP_MOVE_INDEX) {
-            // Emit event and do nothing (e.g. just recover stamina)
+        } else {
+            // Emit MonMove event for no-op and regular moves (switch emits its own event via _handleSwitch)
             emit MonMove(
                 battleKey,
                 (playerIndex << 8) | activeMonIndex,
                 uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
                 (playerIndex == 0) ? config.p0Salt : config.p1Salt
             );
-        }
-        // Execute the move and then set updated state, active mons, and effects/data
-        else {
-            // Read raw 256-bit slot for this move
-            uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
-            if (rawMoveSlot >> 160 != 0) {
-                // === INLINE PATH ===
-                // Stamina from packed params
-                uint8 staminaVal = uint8((rawMoveSlot >> 236) & 0xF);
-                staminaCost = int32(uint32(staminaVal));
+            if (moveIndex != NO_OP_MOVE_INDEX) {
+                // Read raw 256-bit slot for this move
+                uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
-                // Validate stamina
-                uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
-                int32 staminaDelta = currentMonState.staminaDelta;
-                int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
-                    ? int32(baseStamina)
-                    : int32(baseStamina) + staminaDelta;
-                if (currentStamina < staminaCost) {
-                    return playerSwitchForTurnFlag;
-                }
+                if (rawMoveSlot >> 160 != 0) {
+                    // === INLINE PATH ===
+                    // Stamina from packed params
+                    uint8 staminaVal = uint8((rawMoveSlot >> 236) & 0xF);
+                    staminaCost = int32(uint32(staminaVal));
 
-                // Deduct stamina
-                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
-                    ? -staminaCost
-                    : currentMonState.staminaDelta - staminaCost;
-
-                // Emit event and execute inline
-                emit MonMove(
-                    battleKey,
-                    (playerIndex << 8) | activeMonIndex,
-                    uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
-                    (playerIndex == 0) ? config.p0Salt : config.p1Salt
-                );
-                uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
-                _inlineStandardAttack(
-                    config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
-                );
-            } else {
-                // === EXTERNAL PATH ===
-                IMoveSet moveSet = IMoveSet(address(uint160(rawMoveSlot)));
-
-                // Call validateSpecificMoveSelection again to ensure it is still valid to execute
-                bool isValid;
-                if (address(config.validator) == address(0)) {
+                    // Validate stamina
                     uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
                     int32 staminaDelta = currentMonState.staminaDelta;
-                    isValid = ValidatorLogic.validateSpecificMoveSelection(
-                        IEngine(address(this)),
-                        battleKey,
-                        rawMoveSlot,
-                        playerIndex,
-                        activeMonIndex,
-                        move.extraData,
-                        baseStamina,
-                        staminaDelta
+                    int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                        ? int32(baseStamina)
+                        : int32(baseStamina) + staminaDelta;
+                    if (currentStamina < staminaCost) {
+                        return playerSwitchForTurnFlag;
+                    }
+
+                    // Deduct stamina
+                    _deductStamina(currentMonState, staminaCost);
+
+                    uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
+                    _inlineStandardAttack(
+                        config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
                     );
                 } else {
-                    isValid = config.validator.validateSpecificMoveSelection(
-                        battleKey, moveIndex, playerIndex, move.extraData
+                    // === EXTERNAL PATH ===
+                    IEngine self = IEngine(address(this));
+                    IMoveSet moveSet = IMoveSet(address(uint160(rawMoveSlot)));
+
+                    // Call validateSpecificMoveSelection again to ensure it is still valid to execute
+                    bool isValid;
+                    if (address(config.validator) == address(0)) {
+                        uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
+                        int32 staminaDelta = currentMonState.staminaDelta;
+                        isValid = ValidatorLogic.validateSpecificMoveSelection(
+                            self,
+                            battleKey,
+                            rawMoveSlot,
+                            playerIndex,
+                            activeMonIndex,
+                            move.extraData,
+                            baseStamina,
+                            staminaDelta
+                        );
+                    } else {
+                        isValid = config.validator.validateSpecificMoveSelection(
+                            battleKey, moveIndex, playerIndex, move.extraData
+                        );
+                    }
+                    if (!isValid) {
+                        return playerSwitchForTurnFlag;
+                    }
+
+                    // Update the mon state directly to account for the stamina cost of the move
+                    staminaCost =
+                        int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
+                    _deductStamina(currentMonState, staminaCost);
+
+                    // Run the move with both active mon indices to avoid external lookups
+                    uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
+                    moveSet.move(
+                        self,
+                        battleKey,
+                        playerIndex,
+                        activeMonIndex,
+                        defenderMonIndex,
+                        move.extraData,
+                        tempRNG
                     );
                 }
-                if (!isValid) {
-                    return playerSwitchForTurnFlag;
-                }
-
-                // Update the mon state directly to account for the stamina cost of the move
-                staminaCost =
-                    int32(moveSet.stamina(IEngine(address(this)), battleKey, playerIndex, activeMonIndex));
-                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
-                    ? -staminaCost
-                    : currentMonState.staminaDelta - staminaCost;
-
-                // Emit event and then run the move
-                emit MonMove(
-                    battleKey,
-                    (playerIndex << 8) | activeMonIndex,
-                    uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
-                    (playerIndex == 0) ? config.p0Salt : config.p1Salt
-                );
-
-                // Run the move with both active mon indices to avoid external lookups
-                uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
-                moveSet.move(
-                    IEngine(address(this)),
-                    battleKey,
-                    playerIndex,
-                    activeMonIndex,
-                    defenderMonIndex,
-                    move.extraData,
-                    tempRNG
-                );
             }
         }
 
@@ -1627,63 +1555,37 @@ contract Engine is IEngine, MappingAllocator {
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
 
-        uint256 monIndex;
-        // Determine the mon index for the target
-        if (effectIndex == 2) {
-            // Global effects - monIndex doesn't matter for filtering
-            monIndex = 0;
-        } else {
-            monIndex = _unpackActiveMonIndex(battle.activeMonIndex, effectIndex);
-        }
+        uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
-        // Grab the active mon (global effect won't know which player index to get, so we set it here)
-        if (playerIndex != 2) {
-            monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-        }
-
-        // Iterate directly over storage, skipping tombstones
-        // With tombstones, indices are stable so no snapshot needed
-        uint256 baseSlot;
-        if (effectIndex == 0) {
-            baseSlot = _getEffectSlotIndex(monIndex, 0);
-        } else if (effectIndex == 1) {
-            baseSlot = _getEffectSlotIndex(monIndex, 0);
-        }
-
-        // Compute the dirty bit for this effect/mon combination
+        // Pre-compute loop metadata once (baseSlot, dirtyBit, effectsCount)
         // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
+        uint256 baseSlot;
         uint256 dirtyBit;
-        if (effectIndex == 2) {
-            dirtyBit = 1;
-        } else if (effectIndex == 0) {
-            dirtyBit = 1 << (1 + monIndex);
-        } else {
-            dirtyBit = 1 << (9 + monIndex);
-        }
-
-        // Cache the initial effect count (only re-read if dirty bit is set)
         uint256 effectsCount;
         if (effectIndex == 2) {
+            dirtyBit = 1;
             effectsCount = config.globalEffectsLength;
         } else if (effectIndex == 0) {
+            baseSlot = _getEffectSlotIndex(monIndex, 0);
+            dirtyBit = 1 << (1 + monIndex);
             effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
         } else {
+            baseSlot = _getEffectSlotIndex(monIndex, 0);
+            dirtyBit = 1 << (9 + monIndex);
             effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
         }
 
+        // Iterate directly over storage, skipping tombstones
         uint256 i = 0;
         while (i < effectsCount) {
-            // Read effect directly from storage
+            // Read effect directly from storage (mapping ref can't be pre-resolved across branches)
             EffectInstance storage eff;
-            uint256 slotIndex;
+            uint256 slotIndex = (effectIndex == 2) ? i : baseSlot + i;
             if (effectIndex == 2) {
-                eff = config.globalEffects[i];
-                slotIndex = i;
+                eff = config.globalEffects[slotIndex];
             } else if (effectIndex == 0) {
-                slotIndex = baseSlot + i;
                 eff = config.p0Effects[slotIndex];
             } else {
-                slotIndex = baseSlot + i;
                 eff = config.p1Effects[slotIndex];
             }
 
@@ -1705,16 +1607,9 @@ contract Engine is IEngine, MappingAllocator {
                     p1ActiveMonIndex
                 );
 
-                // Check if this effect added new effects (dirty bit set)
-                // Only re-read count if dirty, then clear the bit
+                // Re-read count if a new effect was added during this iteration
                 if (effectsDirtyBitmap & dirtyBit != 0) {
-                    if (effectIndex == 2) {
-                        effectsCount = config.globalEffectsLength;
-                    } else if (effectIndex == 0) {
-                        effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-                    } else {
-                        effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-                    }
+                    effectsCount = _loadEffectsCount(config, effectIndex, monIndex);
                     effectsDirtyBitmap &= ~dirtyBit;
                 }
             }
@@ -1903,32 +1798,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 p1Priority;
 
         // Call the move for its priority, unless it's the switch or no op move index
-        {
-            if (p0MoveIndex == SWITCH_MOVE_INDEX || p0MoveIndex == NO_OP_MOVE_INDEX) {
-                p0Priority = SWITCH_PRIORITY;
-            } else {
-                uint256 p0RawSlot = _getTeamMon(config, 0, p0ActiveMonIndex).moves[p0MoveIndex];
-                if (p0RawSlot >> 160 != 0) {
-                    // Inline: decode priority offset from packed slot
-                    p0Priority = DEFAULT_PRIORITY + ((p0RawSlot >> 244) & 0x3);
-                } else {
-                    IMoveSet p0MoveSet = IMoveSet(address(uint160(p0RawSlot)));
-                    p0Priority = p0MoveSet.priority(IEngine(address(this)), battleKey, 0);
-                }
-            }
-
-            if (p1MoveIndex == SWITCH_MOVE_INDEX || p1MoveIndex == NO_OP_MOVE_INDEX) {
-                p1Priority = SWITCH_PRIORITY;
-            } else {
-                uint256 p1RawSlot = _getTeamMon(config, 1, p1ActiveMonIndex).moves[p1MoveIndex];
-                if (p1RawSlot >> 160 != 0) {
-                    p1Priority = DEFAULT_PRIORITY + ((p1RawSlot >> 244) & 0x3);
-                } else {
-                    IMoveSet p1MoveSet = IMoveSet(address(uint160(p1RawSlot)));
-                    p1Priority = p1MoveSet.priority(IEngine(address(this)), battleKey, 1);
-                }
-            }
-        }
+        p0Priority = _getMovePriority(config, battleKey, 0, p0MoveIndex, p0ActiveMonIndex);
+        p1Priority = _getMovePriority(config, battleKey, 1, p1MoveIndex, p1ActiveMonIndex);
 
         // Determine priority based on (in descending order of importance):
         // - the higher priority tier
@@ -1967,6 +1838,23 @@ contract Engine is IEngine, MappingAllocator {
             source = msg.sender;
         }
         return source;
+    }
+
+    function _getMovePriority(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 moveIndex,
+        uint256 activeMonIndex
+    ) private view returns (uint256) {
+        if (moveIndex == SWITCH_MOVE_INDEX || moveIndex == NO_OP_MOVE_INDEX) {
+            return SWITCH_PRIORITY;
+        }
+        uint256 raw = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
+        if (raw >> 160 != 0) {
+            return DEFAULT_PRIORITY + ((raw >> 244) & 0x3);
+        }
+        return IMoveSet(address(uint160(raw))).priority(IEngine(address(this)), battleKey, playerIndex);
     }
 
     /// @dev Resolves the storage key for a battle, using the cached transient value during execution
@@ -2045,6 +1933,12 @@ contract Engine is IEngine, MappingAllocator {
         return playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
     }
 
+    function _deductStamina(MonState storage state, int32 cost) private {
+        state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL)
+            ? -cost
+            : state.staminaDelta - cost;
+    }
+
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)
     function _getKOBitmap(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
         return playerIndex == 0 ? (config.koBitmaps & 0xFF) : (config.koBitmaps >> 8);
@@ -2066,6 +1960,16 @@ contract Engine is IEngine, MappingAllocator {
         } else {
             config.koBitmaps = config.koBitmaps & uint16(~(bit << 8));
         }
+    }
+
+    function _loadEffectsCount(BattleConfig storage config, uint256 effectIndex, uint256 monIndex)
+        private
+        view
+        returns (uint256)
+    {
+        if (effectIndex == 2) return config.globalEffectsLength;
+        if (effectIndex == 0) return _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+        return _getMonEffectCount(config.packedP1EffectsCount, monIndex);
     }
 
     /**
@@ -2410,8 +2314,25 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleConfig storage config = battleConfig[storageKey];
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
+    }
+
+    function getMonStateForStorageKey(
+        bytes32 storageKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonStateIndexName stateVarIndex
+    ) external view returns (int32) {
+        return _readMonStateDelta(battleConfig[storageKey], playerIndex, monIndex, stateVarIndex);
+    }
+
+    function _readMonStateDelta(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonStateIndexName stateVarIndex
+    ) private view returns (int32) {
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
         int32 value;
 
@@ -2439,38 +2360,6 @@ contract Engine is IEngine, MappingAllocator {
 
         // Return 0 if sentinel value is encountered
         return (value == CLEARED_MON_STATE_SENTINEL) ? int32(0) : value;
-    }
-
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32) {
-        BattleConfig storage config = battleConfig[storageKey];
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
-
-        if (stateVarIndex == MonStateIndexName.Hp) {
-            return monState.hpDelta;
-        } else if (stateVarIndex == MonStateIndexName.Stamina) {
-            return monState.staminaDelta;
-        } else if (stateVarIndex == MonStateIndexName.Speed) {
-            return monState.speedDelta;
-        } else if (stateVarIndex == MonStateIndexName.Attack) {
-            return monState.attackDelta;
-        } else if (stateVarIndex == MonStateIndexName.Defense) {
-            return monState.defenceDelta;
-        } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
-            return monState.specialAttackDelta;
-        } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
-            return monState.specialDefenceDelta;
-        } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
-            return monState.isKnockedOut ? int32(1) : int32(0);
-        } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
-            return monState.shouldSkipTurn ? int32(1) : int32(0);
-        } else {
-            return int32(0);
-        }
     }
 
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256) {
