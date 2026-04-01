@@ -345,6 +345,155 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
         print(f"Skipping munch sync: {munch_ts_output} does not exist")
 
 
+def run_incremental_deploy(
+    network: str,
+    rpc_url: str,
+    password: str,
+    chomp_dir: Path,
+    env_path: Path,
+    dry_run: bool = False,
+    force_mons: list[str] | None = None,
+):
+    """Run an incremental deploy: only deploy changed mon contracts."""
+    from dep_graph import (
+        ChangeStatus,
+        build_manifest_from_state,
+        classify_changes,
+        get_current_commit,
+        get_dirty_mons,
+        load_env_addresses,
+        load_manifest,
+        load_mons,
+        save_manifest,
+        scan_current_state,
+        update_manifest_after_incremental,
+    )
+    from generate_incremental import generate_incremental_script, _collect_mon_changes
+    from generateSolidity import get_mon_directory_name
+
+    deploys_dir = chomp_dir / ".deploys"
+    manifest = load_manifest(str(deploys_dir), network)
+
+    if not manifest:
+        print(f"No manifest found at {deploys_dir}/{network}.json")
+        print("Run a full deploy first to create the manifest.")
+        sys.exit(1)
+
+    mons = load_mons(str(chomp_dir))
+    current_state = scan_current_state(mons, str(chomp_dir))
+    changes = classify_changes(manifest, current_state)
+
+    # Force-dirty specified mons
+    if force_mons:
+        for mon_name in force_mons:
+            mon_dir = get_mon_directory_name(mon_name.strip())
+            for key, (status, data) in list(changes.items()):
+                if key.startswith(f"{mon_dir}/") and status == ChangeStatus.CLEAN:
+                    changes[key] = (ChangeStatus.DIRTY, data)
+            print(f"Forcing redeploy of {mon_name}")
+
+    dirty = get_dirty_mons(changes)
+    if not dirty:
+        print("\nAll contracts are up to date. Nothing to deploy.")
+        return
+
+    # Print change summary
+    print(f"\n{'='*60}")
+    print("Incremental deploy — changed contracts:")
+    print(f"{'='*60}")
+    for mon_dir, contract_changes in sorted(dirty.items()):
+        print(f"  {mon_dir}/")
+        for status, data in contract_changes:
+            name = data.get("contract_name", "?")
+            reason = ""
+            if status == ChangeStatus.DIRTY:
+                prev = manifest.get("contracts", {}).get(f"{mon_dir}/{name}", {})
+                if data.get("source_hash") != prev.get("source_hash"):
+                    reason = " (source changed)"
+                elif data.get("deps_hash") != prev.get("deps_hash"):
+                    reason = " (dependency changed)"
+            print(f"    {status.value:>7}  {name}{reason}")
+
+    clean_count = sum(1 for _, (s, _) in changes.items() if s == ChangeStatus.CLEAN)
+    dirty_count = len(changes) - clean_count
+    print(f"\n  {dirty_count} contracts to deploy, {clean_count} unchanged")
+
+    # Generate IncrementalSetupMons.s.sol
+    sol_source = generate_incremental_script(mons, changes, str(chomp_dir))
+    output_path = chomp_dir / "script" / "IncrementalSetupMons.s.sol"
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(sol_source)
+    print(f"\nGenerated {output_path}")
+
+    # Run the forge script
+    all_addresses: list[tuple[str, str]] = []
+    if not dry_run:
+        output = run_forge_script(
+            "script/IncrementalSetupMons.s.sol",
+            rpc_url,
+            password,
+            chomp_dir,
+        )
+        matches = parse_deploy_data(output)
+        if matches:
+            print(f"\nParsed {len(matches)} new contract addresses")
+            all_addresses.extend(matches)
+            update_env_file(matches, env_path)
+            print(f"Updated .env with {len(matches)} addresses")
+    else:
+        print(f"\n[DRY RUN] Would run: forge script script/IncrementalSetupMons.s.sol")
+
+    # Update manifest
+    new_addr_dict = {
+        name.upper().replace(" ", "_").replace("-", "_"): addr
+        for name, addr in all_addresses
+    }
+    commit_hash = get_current_commit(str(chomp_dir))
+    updated_manifest = update_manifest_after_incremental(
+        manifest, current_state, changes, new_addr_dict, commit_hash,
+    )
+    if not dry_run:
+        save_manifest(str(deploys_dir), network, updated_manifest)
+
+    # Run TypeScript generation and transpiler
+    # For incremental, we need ALL addresses (existing + new) for TS generation
+    env_addresses = load_env_addresses(str(env_path))
+    all_addresses_for_ts = [(k, v) for k, v in env_addresses.items()]
+    run_typescript_scripts(network, chomp_dir, all_addresses_for_ts, dry_run=dry_run)
+    run_transpiler(chomp_dir, dry_run=dry_run)
+
+    # Clean up generated script
+    if output_path.exists() and not dry_run:
+        output_path.unlink()
+        print("Cleaned up IncrementalSetupMons.s.sol")
+
+
+def seed_manifest_after_full_deploy(
+    network: str,
+    chomp_dir: Path,
+):
+    """Create/overwrite the manifest after a full deploy using current .env as address source."""
+    from dep_graph import (
+        build_manifest_from_state,
+        get_current_commit,
+        load_env_addresses,
+        load_mons,
+        save_manifest,
+        scan_current_state,
+    )
+
+    deploys_dir = chomp_dir / ".deploys"
+    env_path = chomp_dir / ".env"
+
+    mons = load_mons(str(chomp_dir))
+    current_state = scan_current_state(mons, str(chomp_dir))
+    env_addresses = load_env_addresses(str(env_path))
+    commit_hash = get_current_commit(str(chomp_dir))
+
+    manifest = build_manifest_from_state(current_state, env_addresses, commit_hash)
+    save_manifest(str(deploys_dir), network, manifest)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Orchestrate full deployment pipeline'
@@ -381,6 +530,17 @@ def main():
         action='store_true',
         help='Skip validation and Solidity generation (assume already up to date)'
     )
+    parser.add_argument(
+        '--incremental',
+        action='store_true',
+        help='Only deploy contracts that changed since last deploy (requires existing manifest)'
+    )
+    parser.add_argument(
+        '--force-mons',
+        type=str,
+        default=None,
+        help='Comma-separated list of mon names to force-redeploy even if clean (e.g. aurox,pengym)'
+    )
 
     args = parser.parse_args()
     network = "mainnet" if args.mainnet else "testnet"
@@ -403,6 +563,20 @@ def main():
     if not args.skip_forge and not args.dry_run:
         password = getpass.getpass("Enter keystore password: ")
 
+    # Incremental deploy path
+    if args.incremental:
+        os.chdir(chomp_dir)
+        force_mons = args.force_mons.split(",") if args.force_mons else None
+        run_incremental_deploy(
+            network, rpc_url, password, chomp_dir, env_path,
+            dry_run=args.dry_run, force_mons=force_mons,
+        )
+        print(f"\n{'='*60}")
+        print("INCREMENTAL DEPLOYMENT COMPLETE!")
+        print(f"{'='*60}")
+        return
+
+    # Full deploy path
     # Run validation and Solidity generation
     if not args.skip_build:
         os.chdir(chomp_dir)
@@ -454,6 +628,13 @@ def main():
 
     # Run transpiler to generate TypeScript from Solidity
     run_transpiler(chomp_dir, dry_run=args.dry_run)
+
+    # Seed/update manifest after full deploy
+    if not args.dry_run:
+        print(f"\n{'='*60}")
+        print("Updating deploy manifest")
+        print(f"{'='*60}")
+        seed_manifest_after_full_deploy(network, chomp_dir)
 
     print(f"\n{'='*60}")
     print("DEPLOYMENT COMPLETE!")

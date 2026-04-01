@@ -20,6 +20,33 @@ import { keccak256, encodePacked, toHex, hexToBigInt } from 'viem';
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000';
 
 // =============================================================================
+// CALL LOG TYPES
+// =============================================================================
+
+/**
+ * A single cross-contract method call captured by the Contract proxy.
+ * Logged for every external call (not internal same-contract calls).
+ */
+export interface CallEntry {
+  /** Address of the calling contract */
+  caller: string;
+  /** Class name of the calling contract */
+  callerName: string;
+  /** Address of the target contract */
+  target: string;
+  /** Class name of the target contract */
+  targetName: string;
+  /** Method name */
+  method: string;
+  /** Method arguments (raw — may contain BigInt, contract references, etc.) */
+  args: any[];
+  /** Return value (raw — carries semantic info like [damage, eventType]) */
+  returnValue?: any;
+  /** Call depth at time of call (1 = top-level external call into the system) */
+  depth: number;
+}
+
+// =============================================================================
 // STORAGE SIMULATION
 // =============================================================================
 
@@ -275,6 +302,16 @@ export abstract class Contract {
   private static _addressRegistry: Map<string, Contract> = new Map();
 
 
+  // =========================================================================
+  // CALL LOGGING
+  // =========================================================================
+
+  /**
+   * When non-null, the proxy logs every external cross-contract call.
+   * Set before executeTurn(), read after, cleared between turns.
+   */
+  static _turnCallLog: CallEntry[] | null = null;
+
   /**
    * Tracks the address of the currently executing contract.
    * Used to propagate msg.sender on cross-contract calls (matching Solidity semantics).
@@ -450,7 +487,20 @@ export abstract class Contract {
           target._msg.sender = Contract._currentCaller;
           Contract._currentCaller = self._contractAddress;
           try {
-            return value.apply(proxy, callArgs);
+            const result = value.apply(proxy, callArgs);
+            if (Contract._turnCallLog) {
+              Contract._turnCallLog.push({
+                caller: prevCaller,
+                callerName: Contract._addressRegistry.get(prevCaller.toLowerCase())?.constructor.name ?? 'External',
+                target: self._contractAddress,
+                targetName: self.constructor.name,
+                method: propStr,
+                args: callArgs,
+                returnValue: result,
+                depth: Contract._callDepth,
+              });
+            }
+            return result;
           } finally {
             target._msg.sender = prevSender;
             Contract._currentCaller = prevCaller;

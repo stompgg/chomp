@@ -56,3 +56,5 @@ transpiler/ts-output/
 .venv/
 .claude/
 node_modules/
+
+.deploys/

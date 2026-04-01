@@ -68,14 +68,10 @@ contract Engine is IEngine, MappingAllocator {
     );
     event MonMove(
         bytes32 indexed battleKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        uint256 moveIndex,
-        uint240 extraData,
-        int32 staminaCost
+        uint256 packedPlayerIndexMonIndex,
+        uint256 packedMoveIndexExtraData, 
+        bytes32 salt
     );
-    event P0MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData, bytes32 salt);
-    event P1MoveSet(bytes32 indexed battleKey, uint256 packedMoveIndexExtraData, bytes32 salt);
     event DamageDeal(
         bytes32 indexed battleKey,
         uint256 playerIndex,
@@ -361,8 +357,8 @@ contract Engine is IEngine, MappingAllocator {
             revert WrongCaller();
         }
 
-        _setMoveInternal(config, battleKey, 0, p0MoveIndex, p0Salt, p0ExtraData);
-        _setMoveInternal(config, battleKey, 1, p1MoveIndex, p1Salt, p1ExtraData);
+        _setMoveInternal(config, 0, p0MoveIndex, p0Salt, p0ExtraData);
+        _setMoveInternal(config, 1, p1MoveIndex, p1Salt, p1ExtraData);
 
         _executeInternal(battleKey, storageKey);
     }
@@ -1291,7 +1287,6 @@ contract Engine is IEngine, MappingAllocator {
     /// @dev Shared by setMove() and executeWithMoves() to avoid duplication
     function _setMoveInternal(
         BattleConfig storage config,
-        bytes32 battleKey,
         uint256 playerIndex,
         uint8 moveIndex,
         bytes32 salt,
@@ -1308,11 +1303,9 @@ contract Engine is IEngine, MappingAllocator {
         if (playerIndex == 0) {
             config.p0Move = newMove;
             config.p0Salt = salt;
-            emit P0MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
         } else {
             config.p1Move = newMove;
             config.p1Salt = salt;
-            emit P1MoveSet(battleKey, uint256(moveIndex) | (uint256(extraData) << 8), salt);
         }
     }
 
@@ -1330,7 +1323,7 @@ contract Engine is IEngine, MappingAllocator {
             revert NoWriteAllowed();
         }
 
-        _setMoveInternal(config, battleKey, playerIndex, moveIndex, salt, extraData);
+        _setMoveInternal(config, playerIndex, moveIndex, salt, extraData);
     }
 
     function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
@@ -1506,7 +1499,12 @@ contract Engine is IEngine, MappingAllocator {
             _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // Emit event and do nothing (e.g. just recover stamina)
-            emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
+            emit MonMove(
+                battleKey,
+                (playerIndex << 8) | activeMonIndex,
+                uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
+                (playerIndex == 0) ? config.p0Salt : config.p1Salt
+            );
         }
         // Execute the move and then set updated state, active mons, and effects/data
         else {
@@ -1535,7 +1533,12 @@ contract Engine is IEngine, MappingAllocator {
                     : currentMonState.staminaDelta - staminaCost;
 
                 // Emit event and execute inline
-                emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
+                emit MonMove(
+                    battleKey,
+                    (playerIndex << 8) | activeMonIndex,
+                    uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
+                    (playerIndex == 0) ? config.p0Salt : config.p1Salt
+                );
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
                 _inlineStandardAttack(
                     config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
@@ -1576,7 +1579,12 @@ contract Engine is IEngine, MappingAllocator {
                     : currentMonState.staminaDelta - staminaCost;
 
                 // Emit event and then run the move
-                emit MonMove(battleKey, playerIndex, activeMonIndex, moveIndex, move.extraData, staminaCost);
+                emit MonMove(
+                    battleKey,
+                    (playerIndex << 8) | activeMonIndex,
+                    uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
+                    (playerIndex == 0) ? config.p0Salt : config.p1Salt
+                );
 
                 // Run the move with both active mon indices to avoid external lookups
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
