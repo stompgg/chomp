@@ -275,6 +275,70 @@ export abstract class Contract {
   private static _addressRegistry: Map<string, Contract> = new Map();
 
   /**
+   * Temporary debug: trace specific proxy-intercepted method calls.
+   * Set to an array of method names to trace (e.g., ['removeStatBoosts', 'addStatBoosts']).
+   * Logs msg.sender, args, and events emitted during the call.
+   */
+  static _debugTraceMethods: Set<string> | null = null;
+  static _debugLog: any[] = [];
+
+  /**
+   * Temporary debug: wrap methods on a contract's PROTOTYPE so both proxy and
+   * raw-instance calls are intercepted. Call _disableRawTracing to restore.
+   */
+  private static _tracedOriginals: Map<string, Function> = new Map();
+
+  static _enableRawTracing(instance: any, methodNames: string[]): void {
+    const proto = Object.getPrototypeOf(instance);
+    const safe = (v: any, depth = 0): any => {
+      if (v === null || v === undefined) return v;
+      if (typeof v === 'bigint') return v.toString();
+      if (typeof v === 'function') return undefined;
+      if (typeof v !== 'object') return v;
+      if ('_contractAddress' in v) return `[${v.constructor?.name} ${v._contractAddress}]`;
+      if (depth > 2) return '[deep]';
+      if (Array.isArray(v)) return v.map(i => safe(i, depth + 1));
+      const o: Record<string, any> = {};
+      for (const k of Object.keys(v)) {
+        if (k.startsWith('_')) continue;
+        o[k] = safe(v[k], depth + 1);
+      }
+      return o;
+    };
+    for (const name of methodNames) {
+      const original = proto[name];
+      if (typeof original !== 'function') continue;
+      Contract._tracedOriginals.set(`${proto.constructor.name}.${name}`, original);
+      proto[name] = function (this: any, ...args: any[]) {
+        if (Contract._debugTraceMethods) {
+          Contract._debugLog.push({ call: name, on: this.constructor.name, args: safe(args) });
+        }
+        const result = original.apply(this, args);
+        if (Contract._debugTraceMethods && result !== undefined) {
+          try {
+            Contract._debugLog.push({ ret: name, value: safe(result) });
+          } catch { Contract._debugLog.push({ ret: name, value: '[err]' }); }
+        }
+        return result;
+      };
+    }
+  }
+
+  static _disableRawTracing(): void {
+    for (const [key, original] of Contract._tracedOriginals) {
+      const [className, methodName] = key.split('.');
+      // Find the prototype via the registry
+      for (const instance of Contract._addressRegistry.values()) {
+        if (instance.constructor.name === className) {
+          Object.getPrototypeOf(instance)[methodName] = original;
+          break;
+        }
+      }
+    }
+    Contract._tracedOriginals.clear();
+  }
+
+  /**
    * Tracks the address of the currently executing contract.
    * Used to propagate msg.sender on cross-contract calls (matching Solidity semantics).
    */
@@ -419,6 +483,12 @@ export abstract class Contract {
     // boundaries (depth 0→1), matching Solidity's per-transaction semantics.
     const self = this;
     const proxy = new Proxy(this, {
+      // Ensure property writes through the proxy go to the target (not the proxy object).
+      // This is critical because external calls use `this = proxy` inside methods,
+      // so `this.field = x` must write to the target's storage.
+      set(target, prop, value, receiver) {
+        return Reflect.set(target, prop, value, target);
+      },
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
         if (typeof value !== 'function' || typeof prop === 'symbol') return value;
@@ -429,7 +499,7 @@ export abstract class Contract {
         return function (this: any, ...callArgs: any[]) {
           // Internal call: same contract is already executing, don't change msg.sender
           if (Contract._currentCaller === self._contractAddress) {
-            return value.apply(target, callArgs);
+            return value.apply(proxy, callArgs);
           }
           // External call: propagate msg.sender
           // Reset transient storage at transaction boundary (first external entry)
@@ -442,8 +512,38 @@ export abstract class Contract {
           const prevCaller = Contract._currentCaller;
           target._msg.sender = Contract._currentCaller;
           Contract._currentCaller = self._contractAddress;
+
+          // Debug tracing: capture state when entering a traced method
+          const tracing = Contract._debugTraceMethods?.has(propStr);
+          if (tracing) {
+            const eventsBefore = globalEventStream.length;
+            Contract._debugLog.push({
+              enter: propStr,
+              contract: self.constructor.name,
+              address: self._contractAddress,
+              msgSender: target._msg.sender,
+              currentCaller: Contract._currentCaller,
+              callDepth: Contract._callDepth,
+              args: callArgs.map(a => typeof a === 'bigint' ? a.toString() : typeof a === 'object' && a?._contractAddress ? `[${a.constructor?.name} ${a._contractAddress}]` : a),
+            });
+            try {
+              const result = value.apply(proxy, callArgs);
+              const eventsAfter = globalEventStream.length;
+              Contract._debugLog.push({
+                exit: propStr,
+                eventsEmitted: eventsAfter - eventsBefore,
+                newEvents: globalEventStream.getAll().slice(eventsBefore).map(e => ({ name: e.name, data: e.data })),
+              });
+              return result;
+            } finally {
+              target._msg.sender = prevSender;
+              Contract._currentCaller = prevCaller;
+              Contract._callDepth--;
+            }
+          }
+
           try {
-            return value.apply(target, callArgs);
+            return value.apply(proxy, callArgs);
           } finally {
             target._msg.sender = prevSender;
             Contract._currentCaller = prevCaller;
