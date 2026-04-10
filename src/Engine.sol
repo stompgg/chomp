@@ -1438,93 +1438,87 @@ contract Engine is IEngine, MappingAllocator {
             return playerSwitchForTurnFlag;
         }
 
-        // Handle a switch or a no-op
-        // otherwise, execute the moveset
+        // Handle a switch, no-op, or regular move
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Handle the switch (extraData contains the mon index to switch to as raw uint240)
+            _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
             _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
+        } else if (moveIndex == NO_OP_MOVE_INDEX) {
+            // No-op: emit event and do nothing (e.g. just recover stamina)
+            _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
         } else {
-            // Emit MonMove event for no-op and regular moves (switch emits its own event via _handleSwitch)
-            emit MonMove(
-                battleKey,
-                (playerIndex << 8) | activeMonIndex,
-                uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
-                (playerIndex == 0) ? config.p0Salt : config.p1Salt
-            );
+            // Read raw 256-bit slot for this move
+            uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
-            if (moveIndex != NO_OP_MOVE_INDEX) {
-                // Read raw 256-bit slot for this move
-                uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
+            if (rawMoveSlot >> 160 != 0) {
+                // === INLINE PATH ===
+                // Stamina from packed params
+                uint8 staminaVal = uint8((rawMoveSlot >> 236) & 0xF);
+                staminaCost = int32(uint32(staminaVal));
 
-                if (rawMoveSlot >> 160 != 0) {
-                    // === INLINE PATH ===
-                    // Stamina from packed params
-                    uint8 staminaVal = uint8((rawMoveSlot >> 236) & 0xF);
-                    staminaCost = int32(uint32(staminaVal));
+                // Validate stamina
+                uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
+                int32 staminaDelta = currentMonState.staminaDelta;
+                int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                    ? int32(baseStamina)
+                    : int32(baseStamina) + staminaDelta;
+                if (currentStamina < staminaCost) {
+                    return playerSwitchForTurnFlag;
+                }
 
-                    // Validate stamina
+                // Deduct stamina, emit event, execute
+                _deductStamina(currentMonState, staminaCost);
+                _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
+
+                uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
+                _inlineStandardAttack(
+                    config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
+                );
+            } else {
+                // === EXTERNAL PATH ===
+                IEngine self = IEngine(address(this));
+                IMoveSet moveSet = IMoveSet(address(uint160(rawMoveSlot)));
+
+                // Call validateSpecificMoveSelection again to ensure it is still valid to execute
+                bool isValid;
+                if (address(config.validator) == address(0)) {
                     uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
                     int32 staminaDelta = currentMonState.staminaDelta;
-                    int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
-                        ? int32(baseStamina)
-                        : int32(baseStamina) + staminaDelta;
-                    if (currentStamina < staminaCost) {
-                        return playerSwitchForTurnFlag;
-                    }
-
-                    // Deduct stamina
-                    _deductStamina(currentMonState, staminaCost);
-
-                    uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
-                    _inlineStandardAttack(
-                        config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
-                    );
-                } else {
-                    // === EXTERNAL PATH ===
-                    IEngine self = IEngine(address(this));
-                    IMoveSet moveSet = IMoveSet(address(uint160(rawMoveSlot)));
-
-                    // Call validateSpecificMoveSelection again to ensure it is still valid to execute
-                    bool isValid;
-                    if (address(config.validator) == address(0)) {
-                        uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
-                        int32 staminaDelta = currentMonState.staminaDelta;
-                        isValid = ValidatorLogic.validateSpecificMoveSelection(
-                            self,
-                            battleKey,
-                            rawMoveSlot,
-                            playerIndex,
-                            activeMonIndex,
-                            move.extraData,
-                            baseStamina,
-                            staminaDelta
-                        );
-                    } else {
-                        isValid = config.validator.validateSpecificMoveSelection(
-                            battleKey, moveIndex, playerIndex, move.extraData
-                        );
-                    }
-                    if (!isValid) {
-                        return playerSwitchForTurnFlag;
-                    }
-
-                    // Update the mon state directly to account for the stamina cost of the move
-                    staminaCost =
-                        int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
-                    _deductStamina(currentMonState, staminaCost);
-
-                    // Run the move with both active mon indices to avoid external lookups
-                    uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
-                    moveSet.move(
+                    isValid = ValidatorLogic.validateSpecificMoveSelection(
                         self,
                         battleKey,
+                        rawMoveSlot,
                         playerIndex,
                         activeMonIndex,
-                        defenderMonIndex,
                         move.extraData,
-                        tempRNG
+                        baseStamina,
+                        staminaDelta
+                    );
+                } else {
+                    isValid = config.validator.validateSpecificMoveSelection(
+                        battleKey, moveIndex, playerIndex, move.extraData
                     );
                 }
+                if (!isValid) {
+                    return playerSwitchForTurnFlag;
+                }
+
+                // Deduct stamina, emit event, execute
+                staminaCost =
+                    int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
+                _deductStamina(currentMonState, staminaCost);
+                _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
+
+                uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
+                moveSet.move(
+                    self,
+                    battleKey,
+                    playerIndex,
+                    activeMonIndex,
+                    defenderMonIndex,
+                    move.extraData,
+                    tempRNG
+                );
             }
         }
 
@@ -1937,6 +1931,21 @@ contract Engine is IEngine, MappingAllocator {
         state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL)
             ? -cost
             : state.staminaDelta - cost;
+    }
+
+    function _emitMonMove(
+        bytes32 battleKey,
+        BattleConfig storage config,
+        MoveDecision memory move,
+        uint256 playerIndex,
+        uint256 activeMonIndex
+    ) private {
+        emit MonMove(
+            battleKey,
+            (playerIndex << 8) | activeMonIndex,
+            uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
+            (playerIndex == 0) ? config.p0Salt : config.p1Salt
+        );
     }
 
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)

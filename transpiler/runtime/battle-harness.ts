@@ -10,8 +10,8 @@
 
 import { ContractContainer, globalEventStream, ADDRESS_ZERO, addressToUint } from './index';
 import { Contract } from './base';
-import * as Structs from '../ts-output/Structs';
-import * as Constants from '../ts-output/Constants';
+import * as Structs from '../Structs';
+import * as Constants from '../Constants';
 
 // =============================================================================
 // HARNESS CONSTANTS

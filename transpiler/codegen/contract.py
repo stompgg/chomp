@@ -154,6 +154,17 @@ class ContractGenerator(BaseGenerator):
         for var in contract.state_variables:
             lines.append(self.generate_state_variable(var))
 
+        # __stateVars annotation: lists mutable storage variables for runtime
+        # state-change tracking. Excludes constants (static) and immutables (set once).
+        # Always emitted (even if empty) so subclasses can safely override.
+        mutable_state_vars = [
+            var.name for var in contract.state_variables
+            if var.mutability not in ('constant', 'immutable')
+        ]
+        var_list = ', '.join(f"'{v}'" for v in mutable_state_vars)
+        lines.append(f"{self.indent()}static override readonly __stateVars = new Set([{var_list}]);")
+        lines.append('')
+
         # Transient variable reset method (auto-called by Contract proxy at transaction boundaries)
         if self._ctx.current_transient_vars:
             lines.append(f'{self.indent()}_resetTransient(): void {{')
