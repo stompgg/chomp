@@ -85,9 +85,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         if (damage != 0) {
             engine.dealDamage(defenderPlayerIndex, targetMonIndex, damage);
         }
-        if (eventType != bytes32(0)) {
-            engine.emitEngineEvent(eventType, "");
-        }
 
         // Mark as used by adding local effect on the attacker's mon
         engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));

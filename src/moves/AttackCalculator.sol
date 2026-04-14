@@ -41,9 +41,6 @@ library AttackCalculator {
         if (damage != 0) {
             ENGINE.dealDamage(defenderPlayerIndex, ctx.defenderMonIndex, damage);
         }
-        if (eventType != bytes32(0)) {
-            ENGINE.emitEngineEvent(eventType, "");
-        }
         return (damage, eventType);
     }
 

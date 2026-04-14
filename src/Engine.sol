@@ -53,70 +53,16 @@ contract Engine is IEngine, MappingAllocator {
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
-    event EngineExecute(
-        bytes32 indexed battleKey, uint256 turnId, uint256 playerSwitchForTurnFlag, uint256 priorityPlayerIndex
-    );
-    event MonSwitch(bytes32 indexed battleKey, uint256 playerIndex, uint256 newMonIndex, address source);
-    event MonStateUpdate(
-        bytes32 indexed battleKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        uint256 stateVarIndex,
-        int32 valueDelta,
-        address source,
-        uint256 step
-    );
     event MonMove(
         bytes32 indexed battleKey,
         uint256 packedPlayerIndexMonIndex,
         uint256 packedMoveIndexExtraData, 
         bytes32 salt
     );
-    event DamageDeal(
-        bytes32 indexed battleKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        int32 damageDealt,
-        address source,
-        uint256 step
-    );
-    event EffectAdd(
-        bytes32 indexed battleKey,
-        uint256 effectIndex,
-        uint256 monIndex,
-        address effectAddress,
-        bytes32 extraData,
-        address source,
-        uint256 step
-    );
-    event EffectRun(
-        bytes32 indexed battleKey,
-        uint256 effectIndex,
-        uint256 monIndex,
-        address effectAddress,
-        bytes32 extraData,
-        address source,
-        uint256 step
-    );
-    event EffectEdit(
-        bytes32 indexed battleKey,
-        uint256 effectIndex,
-        uint256 monIndex,
-        address effectAddress,
-        bytes32 extraData,
-        address source,
-        uint256 step
-    );
-    event EffectRemove(
-        bytes32 indexed battleKey,
-        uint256 effectIndex,
-        uint256 monIndex,
-        address effectAddress,
-        address source,
-        uint256 step
+    event EngineExecute(
+        bytes32 indexed battleKey, uint256 turnId, uint256 playerSwitchForTurnFlag, uint256 priorityPlayerIndex
     );
     event BattleComplete(bytes32 indexed battleKey, address winner);
-    event EngineEvent(bytes32 indexed battleKey, bytes32 eventType, bytes eventData, address source, uint256 step);
 
     /// @notice Constructor to set default validator config for inline validation
     /// @dev When a battle's validator is address(0), Engine uses inline validation logic with these params
@@ -770,17 +716,6 @@ contract Engine is IEngine, MappingAllocator {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
 
-        // Grab state update source if it's set and use it, otherwise default to caller
-        emit MonStateUpdate(
-            battleKey,
-            playerIndex,
-            monIndex,
-            uint256(stateVarIndex),
-            valueToAdd,
-            _getUpstreamCallerAndResetValue(),
-            currentStep
-        );
-
         // Trigger OnUpdateMonState lifecycle hook
         _runEffects(
             battleKey,
@@ -876,17 +811,6 @@ contract Engine is IEngine, MappingAllocator {
             bytes32 extraDataToUse = extraData;
             bool removeAfterRun = false;
 
-            // Emit event first, then handle side effects
-            emit EffectAdd(
-                battleKey,
-                targetIndex,
-                monIndex,
-                address(effect),
-                extraData,
-                _getUpstreamCallerAndResetValue(),
-                uint256(EffectStep.OnApply)
-            );
-
             // Check if we have to run an onApply state update (use bitmap instead of external call)
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
                 // Get active mon indices for both players
@@ -972,15 +896,6 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         effectInstance.data = newExtraData;
-        emit EffectEdit(
-            battleKey,
-            targetIndex,
-            monIndex,
-            address(effectInstance.effect),
-            newExtraData,
-            _getUpstreamCallerAndResetValue(),
-            currentStep
-        );
     }
 
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 indexToRemove) public {
@@ -1018,7 +933,6 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
-        emit EffectRemove(battleKey, targetIndex, monIndex, address(effect), _getUpstreamCallerAndResetValue(), currentStep);
     }
 
     function setGlobalKV(bytes32 key, uint192 value) external {
@@ -1052,9 +966,6 @@ contract Engine is IEngine, MappingAllocator {
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
         }
-        emit DamageDeal(
-            battleKeyForWrite, playerIndex, monIndex, damage, _getUpstreamCallerAndResetValue(), currentStep
-        );
         _runEffects(battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, abi.encode(damage));
     }
 
@@ -1085,7 +996,6 @@ contract Engine is IEngine, MappingAllocator {
     ) internal returns (int32 damage, bytes32 eventType) {
         // Accuracy check
         if (accuracy < 100 && (rng % 100) >= accuracy) {
-            emit EngineEvent(battleKeyForWrite, MOVE_MISS_EVENT_TYPE, "", _getUpstreamCallerAndResetValue(), currentStep);
             return (0, MOVE_MISS_EVENT_TYPE);
         }
 
@@ -1111,10 +1021,6 @@ contract Engine is IEngine, MappingAllocator {
             if (damage > 0 && scaledBasePower > 0) {
                 _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage);
             }
-        }
-
-        if (eventType != bytes32(0)) {
-            emit EngineEvent(battleKeyForWrite, eventType, "", _getUpstreamCallerAndResetValue(), currentStep);
         }
 
         // Apply effect if effectAccuracy check passes
@@ -1279,11 +1185,6 @@ contract Engine is IEngine, MappingAllocator {
         _setMoveInternal(config, playerIndex, moveIndex, salt, extraData);
     }
 
-    function emitEngineEvent(bytes32 eventType, bytes memory eventData) external {
-        bytes32 battleKey = battleKeyForWrite;
-        emit EngineEvent(battleKey, eventType, eventData, _getUpstreamCallerAndResetValue(), currentStep);
-    }
-
     function setUpstreamCaller(address caller) external {
         upstreamCaller = caller;
     }
@@ -1377,9 +1278,6 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint256 currentActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
         MonState storage currentMonState = _getMonState(config, playerIndex, currentActiveMonIndex);
-
-        // Emit event first, then run effects
-        emit MonSwitch(battleKey, playerIndex, monToSwitchIndex, source);
 
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
@@ -1639,17 +1537,6 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         currentStep = uint256(round);
-
-        // Emit event first, then handle side effects (use transient battleKeyForWrite)
-        emit EffectRun(
-            battleKeyForWrite,
-            effectIndex,
-            monIndex,
-            address(effect),
-            data,
-            _getUpstreamCallerAndResetValue(),
-            currentStep
-        );
 
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) =

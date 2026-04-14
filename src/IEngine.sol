@@ -48,7 +48,6 @@ interface IEngine {
         bytes32 p1Salt,
         uint240 p1ExtraData
     ) external;
-    function emitEngineEvent(bytes32 eventType, bytes memory extraData) external;
     function setUpstreamCaller(address caller) external;
 
     // Getters
