@@ -163,6 +163,7 @@ class ContractGenerator(BaseGenerator):
         ]
         var_list = ', '.join(f"'{v}'" for v in mutable_state_vars)
         lines.append(f"{self.indent()}static override readonly __stateVars = new Set([{var_list}]);")
+
         lines.append('')
 
         # Transient variable reset method (auto-called by Contract proxy at transaction boundaries)
@@ -202,6 +203,18 @@ class ContractGenerator(BaseGenerator):
 
         self.indent_level -= 1
         lines.append('}\n')
+
+        # Standalone method names tuple — exported OUTSIDE the class to avoid
+        # inheritance issues with as const literal types. Enables compile-time
+        # validation: typeof ENGINE_METHODS[number] gives the union of method names.
+        method_names = [func.name for func in contract.functions if func.name]
+        if method_names:
+            upper_name = ''.join(f'_{c}' if c.isupper() else c for c in contract.name).lstrip('_').upper()
+            method_list = ', '.join(f"'{m}'" for m in method_names)
+            lines.append(f'export const {upper_name}_METHODS = [{method_list}] as const;')
+            lines.append(f'export type {contract.name}Method = typeof {upper_name}_METHODS[number];')
+            lines.append('')
+
         return '\n'.join(lines)
 
     # =========================================================================

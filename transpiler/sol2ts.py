@@ -44,7 +44,6 @@ class SolidityToTypeScriptTranspiler:
         discovery_dirs: Optional[List[str]] = None,
         stubbed_contracts: Optional[List[str]] = None,
         emit_metadata: bool = False,
-        script_dir: Optional[str] = None,
         overrides_path: Optional[str] = None,
     ):
         self.source_dir = Path(source_dir)
@@ -53,7 +52,6 @@ class SolidityToTypeScriptTranspiler:
         self.registry = TypeRegistry()
         self.stubbed_contracts = set(stubbed_contracts or [])
         self.emit_metadata = emit_metadata
-        self.script_dir = script_dir
         self.overrides_path = overrides_path
 
         # Metadata extraction for factory generation
@@ -279,7 +277,6 @@ class SolidityToTypeScriptTranspiler:
         known_classes = set(self.metadata_extractor.contracts.keys())
         resolver = DependencyResolver(
             overrides_path=self.overrides_path,
-            script_dir=self.script_dir,
             known_classes=known_classes,
         )
 
@@ -319,8 +316,6 @@ def main():
                         help='Emit dependency manifest and factory functions')
     parser.add_argument('--metadata-only', action='store_true',
                         help='Only emit metadata, skip TypeScript generation')
-    parser.add_argument('--script-dir', metavar='DIR',
-                        help='Directory containing deploy scripts for dependency inference')
     parser.add_argument('--overrides', metavar='FILE',
                         help='Path to transpiler-config.json for manual dependency mappings')
 
@@ -331,8 +326,6 @@ def main():
     stubbed_contracts = args.stub or []
     emit_metadata = args.emit_metadata or args.metadata_only
 
-    # Determine script dir and overrides path with defaults
-    script_dir = args.script_dir
     overrides_path = args.overrides
 
     # Default overrides path to transpiler-config.json if not specified
@@ -350,7 +343,6 @@ def main():
             discovery_dirs=discovery_dirs,
             stubbed_contracts=stubbed_contracts,
             emit_metadata=emit_metadata,
-            script_dir=script_dir,
             overrides_path=overrides_path,
         )
 
@@ -371,7 +363,6 @@ def main():
         transpiler = SolidityToTypeScriptTranspiler(
             str(input_path), args.output, discovery_dirs, stubbed_contracts,
             emit_metadata=emit_metadata,
-            script_dir=script_dir,
             overrides_path=overrides_path,
         )
         transpiler.discover_types(str(input_path))
