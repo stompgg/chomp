@@ -101,7 +101,7 @@ contract EngineAndPeriphery is Script {
         deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
 
         DefaultValidator validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, GAME_TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));
+            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));
         deployedContracts.push(DeployData({name: "DEFAULT VALIDATOR", contractAddress: address(validator)}));
 
         StatBoosts statBoosts = new StatBoosts();

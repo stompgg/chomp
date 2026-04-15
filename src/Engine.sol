@@ -59,9 +59,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 packedMoveIndexExtraData, 
         bytes32 salt
     );
-    event EngineExecute(
-        bytes32 indexed battleKey, uint256 turnId, uint256 playerSwitchForTurnFlag, uint256 priorityPlayerIndex
-    );
+    event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
 
     /// @notice Constructor to set default validator config for inline validation
@@ -552,7 +550,7 @@ contract Engine is IEngine, MappingAllocator {
             _handleGameOver(battleKey, winner);
 
             // Still emit execute event
-            emit EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex);
+            emit EngineExecute(battleKey);
             return;
         }
 
@@ -567,8 +565,7 @@ contract Engine is IEngine, MappingAllocator {
         config.p1Move.packedMoveIndex = 0;
         battle.lastExecuteTimestamp = uint48(block.timestamp);
 
-        // Emits switch for turn flag for the next turn, but the priority index for this current turn
-        emit EngineExecute(battleKey, turnId, playerSwitchForTurnFlag, priorityPlayerIndex);
+        emit EngineExecute(battleKey);
     }
 
     function end(bytes32 battleKey) external {
