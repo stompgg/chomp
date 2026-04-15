@@ -54,7 +54,7 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
         );
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
-        moveFactory = new TestMoveFactory(IEngine(address(engine)));
+        moveFactory = new TestMoveFactory();
 
         _setupTeams();
     }
@@ -71,8 +71,8 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
         mon.stats.defense = 100;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
-        mon.moves = new IMoveSet[](1);
-        mon.moves[0] = testMove;
+        mon.moves = new uint256[](1);
+        mon.moves[0] = uint256(uint160(address(testMove)));
 
         Mon[] memory team = new Mon[](2);
         team[0] = mon;

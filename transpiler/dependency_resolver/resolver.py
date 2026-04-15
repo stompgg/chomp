@@ -2,10 +2,9 @@
 Main dependency resolver that orchestrates all resolution strategies.
 
 Resolution order:
-1. Manual overrides from dependency-overrides.json
-2. Deploy script scanning for vm.envAddress patterns
-3. Parameter name inference (_FROSTBITE_STATUS -> FrostbiteStatus)
-4. Interface aliases (IEngine -> Engine)
+1. Manual overrides from transpiler-config.json
+2. Parameter name inference (_FROSTBITE_STATUS -> FrostbiteStatus)
+3. Interface aliases (IEngine -> Engine)
 
 Unresolved dependencies are tracked and can be exported for user action.
 """
@@ -15,7 +14,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
 
-from .script_scanner import DeployScriptScanner
 from .name_inferrer import NameInferrer
 
 
@@ -55,10 +53,9 @@ class DependencyResolver:
     Resolves interface dependencies to concrete implementations.
 
     Uses multiple strategies in order:
-    1. Manual overrides (dependency-overrides.json)
-    2. Deploy script analysis
-    3. Parameter name inference
-    4. Interface aliases
+    1. Manual overrides (transpiler-config.json)
+    2. Parameter name inference
+    3. Interface aliases
     """
 
     # Standard interface -> implementation aliases
@@ -85,15 +82,13 @@ class DependencyResolver:
     def __init__(
         self,
         overrides_path: Optional[str] = None,
-        script_dir: Optional[str] = None,
         known_classes: Optional[Set[str]] = None,
     ):
         """
         Initialize the resolver.
 
         Args:
-            overrides_path: Path to dependency-overrides.json
-            script_dir: Path to deploy scripts directory (e.g., "script/")
+            overrides_path: Path to transpiler-config.json
             known_classes: Set of known concrete class names
         """
         self.overrides: Dict[str, Dict[str, Union[str, List[str]]]] = {}
@@ -101,27 +96,22 @@ class DependencyResolver:
         self.known_classes = known_classes or set()
         self.unresolved: List[UnresolvedDependency] = []
 
-        # Load manual overrides and skip list
         if overrides_path:
             self._load_overrides(overrides_path)
 
-        # Initialize script scanner
-        self.script_scanner: Optional[DeployScriptScanner] = None
-        if script_dir:
-            self.script_scanner = DeployScriptScanner(script_dir)
-            self.script_scanner.scan()
-            # Add discovered concrete classes to known set
-            self.known_classes.update(self.script_scanner.known_concretes)
-
-        # Initialize name inferrer with known classes
         self.name_inferrer = NameInferrer(self.known_classes)
 
     def _load_overrides(self, path: str) -> None:
-        """Load manual overrides and skip list from JSON file."""
+        """Load manual overrides and skip list from JSON file.
+
+        Supports both consolidated transpiler-config.json format
+        (dependencyOverrides/skipContracts) and legacy dependency-overrides.json
+        format (overrides/skipContracts).
+        """
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
-                self.overrides = data.get('overrides', {})
+                self.overrides = data.get('dependencyOverrides', data.get('overrides', {}))
                 self.skip_contracts = set(data.get('skipContracts', []))
         except FileNotFoundError:
             pass  # No overrides file is fine
@@ -211,20 +201,12 @@ class DependencyResolver:
                 override = self.overrides[contract_name][param_name]
                 return override
 
-        # 2. Check deploy script mappings
-        if self.script_scanner:
-            concrete = self.script_scanner.get_concrete_for_constructor(
-                contract_name, param_index
-            )
-            if concrete:
-                return [concrete] if is_array else concrete
-
-        # 3. Try name inference (e.g., _FROSTBITE_STATUS -> FrostbiteStatus)
+        # 2. Try name inference (e.g., _FROSTBITE_STATUS -> FrostbiteStatus)
         inferred = self.name_inferrer.infer(param_name, validate=True)
         if inferred:
             return [inferred] if is_array else inferred
 
-        # 4. Check default interface aliases
+        # 3. Check default interface aliases
         if base_type in self.DEFAULT_ALIASES:
             alias = self.DEFAULT_ALIASES[base_type]
             if alias is None:
@@ -232,7 +214,7 @@ class DependencyResolver:
                 return "@self"
             return [alias] if is_array else alias
 
-        # 5. Try stripping 'I' prefix (IEffect -> Effect)
+        # 4. Try stripping 'I' prefix (IEffect -> Effect)
         if base_type.startswith('I') and len(base_type) > 1:
             stripped = base_type[1:]
             if stripped in self.known_classes:

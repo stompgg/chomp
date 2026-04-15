@@ -45,7 +45,7 @@ contract InlineValidationTest is Test, BattleHelper {
         engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
         commitManager = new DefaultCommitManager(engine);
         matchmaker = new DefaultMatchmaker(engine);
-        moveFactory = new TestMoveFactory(IEngine(address(engine)));
+        moveFactory = new TestMoveFactory();
 
         _setupTeams();
     }
@@ -61,8 +61,8 @@ contract InlineValidationTest is Test, BattleHelper {
         mon.stats.defense = 100;
         mon.stats.specialAttack = 100;
         mon.stats.specialDefense = 100;
-        mon.moves = new IMoveSet[](MOVES_PER_MON);
-        mon.moves[0] = testMove;
+        mon.moves = new uint256[](MOVES_PER_MON);
+        mon.moves[0] = uint256(uint160(address(testMove)));
 
         Mon[] memory team = new Mon[](MONS_PER_TEAM);
         team[0] = mon;

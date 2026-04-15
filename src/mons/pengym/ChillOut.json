@@ -1,0 +1,9 @@
+{
+  "name": "Chill Out",
+  "basePower": 0,
+  "staminaCost": 0,
+  "moveType": "Ice",
+  "moveClass": "Other",
+  "effectAccuracy": 100,
+  "effect": "FrostbiteStatus"
+}

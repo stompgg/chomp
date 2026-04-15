@@ -63,18 +63,18 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(IEngine(address(engine)));
+        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function testBullRush() public {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        BullRush bullRush = new BullRush(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = bullRush;
+        BullRush bullRush = new BullRush(ITypeCalculator(address(typeCalc)));
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(bullRush)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -98,8 +98,8 @@ contract AuroxTest is Test, BattleHelper {
     }
 
     function test_gildedRecoveryHealsWithStatus() public {
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
-        GildedRecovery gildedRecovery = new GildedRecovery(IEngine(address(engine)));
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        GildedRecovery gildedRecovery = new GildedRecovery();
 
         uint32 maxHp = 100;
 
@@ -153,11 +153,11 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](4);
-        moves[0] = frostbiteAttack;
-        moves[1] = attack;
-        moves[2] = gildedRecovery;
-        moves[3] = zeroDamageStaminaAttack;
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(frostbiteAttack)));
+        moves[1] = uint256(uint160(address(attack)));
+        moves[2] = uint256(uint160(address(gildedRecovery)));
+        moves[3] = uint256(uint160(address(zeroDamageStaminaAttack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -250,7 +250,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallHealsDamage() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -267,9 +267,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -339,7 +339,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallSkipsIfKO() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp,
@@ -356,9 +356,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory fastMon = _createMon();
         fastMon.moves = moves;
@@ -406,7 +406,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallProvidesInitialHeal() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -423,9 +423,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -481,7 +481,7 @@ contract AuroxTest is Test, BattleHelper {
     function test_ironWallDoesNothingIfAlreadyActive() public {
         uint32 maxHp = 100;
 
-        IronWall ironWall = new IronWall(IEngine(address(engine)));
+        IronWall ironWall = new IronWall();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -498,9 +498,9 @@ contract AuroxTest is Test, BattleHelper {
             })
         );
 
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = ironWall;
-        moves[1] = attack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(ironWall)));
+        moves[1] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
@@ -574,7 +574,7 @@ contract AuroxTest is Test, BattleHelper {
         uint32 maxAtk = 100;
         uint32 maxDef = 100;
 
-        UpOnly upOnly = new UpOnly(IEngine(address(engine)), statBoosts);
+        UpOnly upOnly = new UpOnly(statBoosts);
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -590,12 +590,12 @@ contract AuroxTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = attack;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attack)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.ability = upOnly;
+        mon.ability = uint160(address(upOnly));
         mon.stats.hp = maxHp;
         mon.stats.attack = maxAtk;
         mon.stats.defense = maxDef;
@@ -635,13 +635,13 @@ contract AuroxTest is Test, BattleHelper {
     function test_volatilePunchDealsDamageAndTriggersStatusEffects() public {
         uint32 maxHp = 100;
 
-        BurnStatus burnStatus = new BurnStatus(IEngine(address(engine)), statBoosts);
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(IEngine(address(engine)), statBoosts);
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
         VolatilePunch volatilePunch = new VolatilePunch(
-            IEngine(address(engine)), typeCalc, burnStatus, frostbiteStatus
+            typeCalc, burnStatus, frostbiteStatus
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = volatilePunch;
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(volatilePunch)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;

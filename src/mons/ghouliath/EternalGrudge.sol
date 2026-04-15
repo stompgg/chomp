@@ -14,11 +14,9 @@ contract EternalGrudge is IMoveSet {
     uint8 public constant ATTACK_DEBUFF_PERCENT = 50;
     uint8 public constant SP_ATTACK_DEBUFF_PERCENT = 50;
 
-    IEngine immutable ENGINE;
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine _ENGINE, StatBoosts _STAT_BOOSTS) {
-        ENGINE = _ENGINE;
+    constructor(StatBoosts _STAT_BOOSTS) {
         STAT_BOOSTS = _STAT_BOOSTS;
     }
 
@@ -27,6 +25,7 @@ contract EternalGrudge is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -47,34 +46,34 @@ contract EternalGrudge is IMoveSet {
             boostPercent: SP_ATTACK_DEBUFF_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOSTS.addStatBoosts(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
+        STAT_BOOSTS.addStatBoosts(engine, defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // KO self by dealing just enough damage
         int32 currentDamage =
-            ENGINE.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         uint32 maxHp =
-            ENGINE.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         int32 damageNeededToKOSelf = int32(maxHp) + currentDamage;
-        ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, damageNeededToKOSelf);
+        engine.dealDamage(attackerPlayerIndex, attackerMonIndex, damageNeededToKOSelf);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY + 1;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Yin;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 

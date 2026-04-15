@@ -10,9 +10,12 @@ import "../src/Structs.sol";
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
+import {EIP712} from "../src/lib/EIP712.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
@@ -37,7 +40,9 @@ import {IEngineHook} from "../src/IEngineHook.sol";
 import {SingleInstanceEffect} from "./mocks/SingleInstanceEffect.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
+import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
+import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
@@ -128,16 +133,16 @@ contract InlineEngineGasTest is Test, BattleHelper {
         mon.stats.attack = 10;
         mon.stats.specialAttack = 10;
 
-        mon.moves = new IMoveSet[](4);
-        StatBoosts statBoosts = new StatBoosts(engine);
-        IMoveSet burnMove = new EffectAttack(engine, new BurnStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(engine, new FrostbiteStatus(engine, statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet statBoostMove = new StatBoostsMove(engine, statBoosts);
-        IMoveSet damageMove = new CustomAttack(engine, ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
-        mon.moves[0] = burnMove;
-        mon.moves[1] = frostbiteMove;
-        mon.moves[2] = statBoostMove;
-        mon.moves[3] = damageMove;
+        mon.moves = new uint256[](4);
+        StatBoosts statBoosts = new StatBoosts();
+        IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
+        IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](4);
         for (uint256 i = 0; i < team.length; i++) {
@@ -146,7 +151,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
@@ -179,10 +184,10 @@ contract InlineEngineGasTest is Test, BattleHelper {
         uint256 firstBattleGas = vm.stopSnapshotGas("FirstBattle");
 
         // Rearrange order of moves for battle 2
-        mon.moves[1] = burnMove;
-        mon.moves[2] = frostbiteMove;
-        mon.moves[3] = statBoostMove;
-        mon.moves[0] = damageMove;
+        mon.moves[1] = uint256(uint160(address(burnMove)));
+        mon.moves[2] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[3] = uint256(uint160(address(statBoostMove)));
+        mon.moves[0] = uint256(uint160(address(damageMove)));
         for (uint256 i = 0; i < team.length; i++) {
             team[i] = mon;
         }
@@ -223,10 +228,10 @@ contract InlineEngineGasTest is Test, BattleHelper {
         uint256 secondBattleGas = vm.stopSnapshotGas("SecondBattle");
 
         // Battle 3: Repeat exact sequence of Battle 1
-        mon.moves[0] = burnMove;
-        mon.moves[1] = frostbiteMove;
-        mon.moves[2] = statBoostMove;
-        mon.moves[3] = damageMove;
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
         for (uint256 i = 0; i < team.length; i++) {
             team[i] = mon;
         }
@@ -292,16 +297,16 @@ contract InlineEngineGasTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
-            ability: IAbility(address(0))
+            moves: new uint256[](4),
+            ability: 0
         });
 
         // Use inlineEngine for moves so they reference the correct engine
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(inlineEngine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
-        mon.moves[0] = damageMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        mon.moves[0] = uint256(uint160(address(damageMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -357,8 +362,8 @@ contract InlineEngineGasTest is Test, BattleHelper {
     function test_identicalBattlesWithEffectsGas() public {
         Mon memory mon = Mon({
             stats: MonStats({hp: 100, stamina: 100, speed: 10, attack: 100, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None}),
-            moves: new IMoveSet[](4),
-            ability: IAbility(address(0))
+            moves: new uint256[](4),
+            ability: 0
         });
 
         // Recreate engine with correct team size
@@ -366,17 +371,16 @@ contract InlineEngineGasTest is Test, BattleHelper {
         DefaultCommitManager inlineCommitManager = new DefaultCommitManager(inlineEngine);
         DefaultMatchmaker inlineMatchmaker = new DefaultMatchmaker(inlineEngine);
 
-        StatBoosts statBoosts = new StatBoosts(inlineEngine);
+        StatBoosts statBoosts = new StatBoosts();
         IMoveSet effectMove = new EffectAttack(
-            inlineEngine,
-            new SingleInstanceEffect(inlineEngine),
+            new SingleInstanceEffect(),
             EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
         );
-        IMoveSet damageMove = IMoveSet(address(new CustomAttack(inlineEngine, typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
-        mon.moves[0] = effectMove;
-        mon.moves[1] = damageMove;
-        mon.moves[2] = damageMove;
-        mon.moves[3] = damageMove;
+        IMoveSet damageMove = IMoveSet(address(new CustomAttack(typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 200, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 0}))));
+        mon.moves[0] = uint256(uint160(address(effectMove)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
 
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
@@ -384,7 +388,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        StaminaRegen staminaRegen = new StaminaRegen(inlineEngine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         IRuleset rulesetWithEffect = IRuleset(address(new DefaultRuleset(inlineEngine, effects)));
@@ -532,5 +536,325 @@ contract InlineEngineGasTest is Test, BattleHelper {
             vm.startPrank(BOB);
             cm.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
         }
+    }
+}
+
+/// @title Fully Optimized Inline Gas Test
+/// @notice Mirrors the battle sequences from InlineEngineGasTest but stacks every
+///         available optimization: inline validation (address(0) validator),
+///         SignedMatchmaker (no propose/accept/confirm storage), and
+///         SignedCommitManager::executeWithDualSignedMoves (1 TX per two-player turn).
+/// @dev Forced single-player switches after KOs still use the inherited revealMove
+///      since those turns don't need commit-reveal.
+contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
+
+    uint256 constant MONS_PER_TEAM = 4;
+    uint256 constant MOVES_PER_MON = 4;
+
+    uint256 constant P0_PK = 0xA11CE;
+    uint256 constant P1_PK = 0xB0B;
+    address p0;
+    address p1;
+
+    Engine engine;
+    SignedCommitManager signedCommitManager;
+    SignedMatchmaker signedMatchmaker;
+    ITypeCalculator typeCalc;
+    DefaultRandomnessOracle defaultOracle;
+    TestTeamRegistry defaultRegistry;
+
+    // Storage used by _analyzeSteps to track warm/cold SLOAD/SSTORE access
+    // across one pass. Cleared between passes.
+    mapping(bytes32 => bool) private _seenSlot;
+    bytes32[] private _seenKeys;
+
+    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
+        return ("SignedCommitManager", "1");
+    }
+
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
+        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
+    }
+
+    function setUp() public {
+        p0 = vm.addr(P0_PK);
+        p1 = vm.addr(P1_PK);
+
+        defaultOracle = new DefaultRandomnessOracle();
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
+        signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
+        signedMatchmaker = new SignedMatchmaker(engine);
+        typeCalc = new TestTypeCalculator();
+        defaultRegistry = new TestTeamRegistry();
+    }
+
+    /// @dev Starts a battle via SignedMatchmaker::startGame (1 TX instead of 3).
+    ///      Also authorizes the matchmaker each call to mirror _startBattleInline.
+    function _startBattleFullyOptimized(IRuleset ruleset) internal returns (bytes32) {
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(signedMatchmaker);
+        address[] memory makersToRemove = new address[](0);
+        vm.prank(p0);
+        engine.updateMatchmakers(makersToAdd, makersToRemove);
+        vm.prank(p1);
+        engine.updateMatchmakers(makersToAdd, makersToRemove);
+
+        (bytes32 battleKey, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
+        uint256 nonce = engine.pairHashNonces(pairHash);
+
+        BattleOffer memory offer = BattleOffer({
+            battle: Battle({
+                p0: p0,
+                p0TeamIndex: 0,
+                p1: p1,
+                p1TeamIndex: 0,
+                teamRegistry: defaultRegistry,
+                validator: IValidator(address(0)),
+                rngOracle: defaultOracle,
+                ruleset: ruleset,
+                moveManager: address(signedCommitManager),
+                matchmaker: signedMatchmaker,
+                engineHooks: new IEngineHook[](0)
+            }),
+            pairHashNonce: nonce
+        });
+
+        bytes32 structHash = BattleOfferLib.hashBattleOffer(offer);
+        bytes32 digest = signedMatchmaker.hashTypedData(structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.prank(p1);
+        signedMatchmaker.startGame(offer, signature);
+
+        return battleKey;
+    }
+
+    function _signDualReveal(
+        uint256 privateKey,
+        bytes32 battleKey,
+        uint64 turnId,
+        bytes32 committerMoveHash,
+        uint8 revealerMoveIndex,
+        bytes32 revealerSalt,
+        uint240 revealerExtraData
+    ) internal view returns (bytes memory) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                _DOMAIN_TYPEHASH,
+                keccak256("SignedCommitManager"),
+                keccak256("1"),
+                block.chainid,
+                address(signedCommitManager)
+            )
+        );
+        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
+            SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: revealerMoveIndex,
+                revealerSalt: revealerSalt,
+                revealerExtraData: revealerExtraData
+            })
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev Executes a two-player turn in 1 TX via executeWithDualSignedMoves.
+    ///      p0Move/p1Move semantics match _commitRevealExecuteForAliceAndBob so the
+    ///      battle scripts can be transcribed directly from the non-optimized test.
+    function _fastTurn(
+        bytes32 battleKey,
+        uint8 p0MoveIndex,
+        uint8 p1MoveIndex,
+        uint240 p0ExtraData,
+        uint240 p1ExtraData
+    ) internal {
+        uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
+        bytes32 committerSalt = keccak256(abi.encode("committer", battleKey, turnId));
+        bytes32 revealerSalt = keccak256(abi.encode("revealer", battleKey, turnId));
+
+        uint8 committerMoveIndex;
+        uint240 committerExtraData;
+        uint8 revealerMoveIndex;
+        uint240 revealerExtraData;
+        uint256 revealerPk;
+        address committer;
+
+        if (turnId % 2 == 0) {
+            committerMoveIndex = p0MoveIndex;
+            committerExtraData = p0ExtraData;
+            revealerMoveIndex = p1MoveIndex;
+            revealerExtraData = p1ExtraData;
+            revealerPk = P1_PK;
+            committer = p0;
+        } else {
+            committerMoveIndex = p1MoveIndex;
+            committerExtraData = p1ExtraData;
+            revealerMoveIndex = p0MoveIndex;
+            revealerExtraData = p0ExtraData;
+            revealerPk = P0_PK;
+            committer = p1;
+        }
+
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        bytes memory revealerSig = _signDualReveal(
+            revealerPk, battleKey, turnId, committerMoveHash,
+            revealerMoveIndex, revealerSalt, revealerExtraData
+        );
+
+        vm.prank(committer);
+        signedCommitManager.executeWithDualSignedMoves(
+            battleKey,
+            committerMoveIndex, committerSalt, committerExtraData,
+            revealerMoveIndex, revealerSalt, revealerExtraData,
+            revealerSig
+        );
+    }
+
+    /// @dev Single-player forced switch after a KO. Falls back to the inherited
+    ///      revealMove path since there is no commit-reveal for one-sided turns.
+    function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint240 extraData) internal {
+        vm.prank(isP0 ? p0 : p1);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, extraData, true);
+    }
+
+    /// @notice Mirrors InlineEngineGasTest::test_consecutiveBattleGas move-for-move,
+    ///         but every TX goes through the dual-signed fast path.
+    function test_consecutiveBattleGas() public {
+        Mon memory mon = _createMon();
+        mon.stats.stamina = 5;
+        mon.stats.attack = 10;
+        mon.stats.specialAttack = 10;
+
+        mon.moves = new uint256[](4);
+        StatBoosts statBoosts = new StatBoosts();
+        IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
+        IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
+
+        Mon[] memory team = new Mon[](4);
+        for (uint256 i = 0; i < team.length; i++) {
+            team[i] = mon;
+        }
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        StaminaRegen staminaRegen = new StaminaRegen();
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+
+        vm.startSnapshotGas("Fast_Setup_1");
+        bytes32 battleKey = _startBattleFullyOptimized(IRuleset(address(ruleset)));
+        uint256 setup1Gas = vm.stopSnapshotGas("Fast_Setup_1");
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startSnapshotGas("Fast_Battle1");
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey, 0, 1, 0, 0);
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastSwitchReveal(battleKey, true, uint240(0));
+        _fastTurn(battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastTurn(battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
+        _fastSwitchReveal(battleKey, false, uint240(1));
+        _fastTurn(battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
+        _fastSwitchReveal(battleKey, true, uint240(2));
+        _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
+        _fastSwitchReveal(battleKey, true, uint240(3));
+        _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
+        uint256 firstBattleGas = vm.stopSnapshotGas("Fast_Battle1");
+
+        // Rearrange moves for battle 2 (same as InlineEngineGasTest)
+        mon.moves[1] = uint256(uint160(address(burnMove)));
+        mon.moves[2] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[3] = uint256(uint160(address(statBoostMove)));
+        mon.moves[0] = uint256(uint160(address(damageMove)));
+        for (uint256 i = 0; i < team.length; i++) {
+            team[i] = mon;
+        }
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        vm.startSnapshotGas("Fast_Setup_2");
+        bytes32 battleKey2 = _startBattleFullyOptimized(IRuleset(address(ruleset)));
+        uint256 setup2Gas = vm.stopSnapshotGas("Fast_Setup_2");
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startSnapshotGas("Fast_Battle2");
+        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey2, 3, 1, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
+        _fastSwitchReveal(battleKey2, false, uint240(1));
+        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
+        _fastTurn(battleKey2, 3, NO_OP_MOVE_INDEX, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
+        _fastSwitchReveal(battleKey2, false, uint240(2));
+        _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
+        _fastSwitchReveal(battleKey2, true, uint240(2));
+        _fastTurn(battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
+        _fastSwitchReveal(battleKey2, false, uint240(3));
+        _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
+        uint256 secondBattleGas = vm.stopSnapshotGas("Fast_Battle2");
+
+        // Battle 3: Repeat exact sequence of Battle 1
+        mon.moves[0] = uint256(uint160(address(burnMove)));
+        mon.moves[1] = uint256(uint160(address(frostbiteMove)));
+        mon.moves[2] = uint256(uint160(address(statBoostMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
+        for (uint256 i = 0; i < team.length; i++) {
+            team[i] = mon;
+        }
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        vm.startSnapshotGas("Fast_Setup_3");
+        bytes32 battleKey3 = _startBattleFullyOptimized(IRuleset(address(ruleset)));
+        uint256 setup3Gas = vm.stopSnapshotGas("Fast_Setup_3");
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startSnapshotGas("Fast_Battle3");
+        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey3, 0, 1, 0, 0);
+        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey3, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastSwitchReveal(battleKey3, true, uint240(0));
+        _fastTurn(battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
+        _fastTurn(battleKey3, 3, NO_OP_MOVE_INDEX, 0, 0);
+        _fastSwitchReveal(battleKey3, false, uint240(1));
+        _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
+        _fastSwitchReveal(battleKey3, true, uint240(2));
+        _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
+        _fastSwitchReveal(battleKey3, true, uint240(3));
+        _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
+        uint256 thirdBattleGas = vm.stopSnapshotGas("Fast_Battle3");
+
+        console.log("=== FULLY OPTIMIZED Gas Results ===");
+        console.log("Setup 1 Gas:", setup1Gas);
+        console.log("Setup 2 Gas:", setup2Gas);
+        console.log("Setup 3 Gas:", setup3Gas);
+        console.log("Battle 1 Gas:", firstBattleGas);
+        console.log("Battle 2 Gas:", secondBattleGas);
+        console.log("Battle 3 Gas:", thirdBattleGas);
+
+        assertLt(setup2Gas, setup1Gas, "Setup 2 should be cheaper (storage reuse)");
+        assertLt(setup3Gas, setup1Gas, "Setup 3 should be cheaper (storage reuse)");
     }
 }

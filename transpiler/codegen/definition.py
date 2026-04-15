@@ -119,60 +119,13 @@ class DefinitionGenerator(BaseGenerator):
         lines.append('  return {')
         for member in struct.members:
             ts_type = self._type_converter.solidity_type_to_ts(member.type_name)
-            default_val = self._get_struct_field_default(ts_type, member.type_name)
+            default_val = self._type_converter.default_value(ts_type, member.type_name)
             lines.append(f'    {member.name}: {default_val},')
         lines.append('  };')
         lines.append('}\n')
 
         return '\n'.join(lines)
 
-    def _get_struct_field_default(self, ts_type: str, solidity_type: Optional[TypeName] = None) -> str:
-        """Get the default value for a struct field based on its TypeScript type.
-
-        Args:
-            ts_type: The TypeScript type string
-            solidity_type: Optional Solidity TypeName for more context
-
-        Returns:
-            The default value expression as a string
-        """
-        if ts_type == 'bigint':
-            return '0n'
-        elif ts_type == 'boolean':
-            return 'false'
-        elif ts_type == 'string':
-            # Check if this is a bytes32 or address type
-            if solidity_type and solidity_type.name:
-                sol_type_name = solidity_type.name.lower()
-                if 'bytes32' in sol_type_name or sol_type_name == 'bytes32':
-                    return '"0x0000000000000000000000000000000000000000000000000000000000000000"'
-                elif 'address' in sol_type_name or sol_type_name == 'address':
-                    return '"0x0000000000000000000000000000000000000000"'
-            return '""'
-        elif ts_type == 'number':
-            return '0'
-        elif ts_type.endswith('[]'):
-            return '[]'
-        elif ts_type.startswith('Record<'):
-            return '{}'
-        elif ts_type.startswith('Structs.'):
-            # Nested struct with Structs. prefix - call its factory function
-            struct_name = ts_type[8:]  # Remove 'Structs.' prefix
-            return f'createDefault{struct_name}()'
-        elif ts_type.startswith('Enums.'):
-            # Enum - default to 0
-            return '0'
-        elif ts_type == 'any':
-            return 'undefined as any'
-        elif ts_type in self._ctx.known_structs:
-            # Unqualified struct name (used when inside Structs file)
-            return f'createDefault{ts_type}()'
-        elif ts_type in self._ctx.known_interfaces or ts_type in self._ctx.known_contracts:
-            # Contract/interface types need a stub with _contractAddress so property access doesn't crash
-            return '{ _contractAddress: "0x0000000000000000000000000000000000000000" } as any'
-        else:
-            # Unknown type
-            return 'undefined as any'
 
     # =========================================================================
     # COMBINED

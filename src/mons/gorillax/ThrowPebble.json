@@ -1,0 +1,9 @@
+{
+  "name": "Throw Pebble",
+  "basePower": 40,
+  "staminaCost": 1,
+  "moveType": "Earth",
+  "moveClass": "Physical",
+  "effectAccuracy": 0,
+  "effect": null
+}

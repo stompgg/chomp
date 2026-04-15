@@ -841,6 +841,15 @@ class YulTranspiler:
             slot = self._generate_expression(slot_expr, slot_vars)
             return f'{prefix}this._storageWrite({slot}, {value});'
         elif func == 'mstore':
+            # mstore(ptr, value) — in Solidity, this is used to resize memory arrays
+            # by writing the new length to the array's memory pointer.
+            # Detect mstore(arrayVar, countVar) and generate arrayVar.length = Number(countVar)
+            if (len(call.arguments) == 2 and
+                isinstance(call.arguments[0], YulIdentifier) and
+                isinstance(call.arguments[1], YulIdentifier)):
+                arr = call.arguments[0].name
+                count = call.arguments[1].name
+                return f'{prefix}{arr}.length = Number({count});'
             return f'{prefix}// mstore (no-op for simulation)'
         elif func == 'mstore8':
             return f'{prefix}// mstore8 (no-op for simulation)'

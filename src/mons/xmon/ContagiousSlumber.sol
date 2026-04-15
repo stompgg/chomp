@@ -10,11 +10,9 @@ import {IEffect} from "../../effects/IEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract ContagiousSlumber is IMoveSet {
-    IEngine immutable ENGINE;
     IEffect immutable SLEEP_STATUS;
 
-    constructor(IEngine _ENGINE, IEffect _SLEEP_STATUS) {
-        ENGINE = _ENGINE;
+    constructor(IEffect _SLEEP_STATUS) {
         SLEEP_STATUS = _SLEEP_STATUS;
     }
 
@@ -23,6 +21,7 @@ contract ContagiousSlumber is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -31,30 +30,30 @@ contract ContagiousSlumber is IMoveSet {
         uint256
     ) external {
         // Apply sleep to self
-        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, SLEEP_STATUS, "");
+        engine.addEffect(attackerPlayerIndex, attackerMonIndex, SLEEP_STATUS, "");
 
         // Apply sleep to opponent
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, SLEEP_STATUS, "");
+        engine.addEffect(defenderPlayerIndex, defenderMonIndex, SLEEP_STATUS, "");
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Cosmic;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -62,4 +61,3 @@ contract ContagiousSlumber is IMoveSet {
         return ExtraDataType.None;
     }
 }
-

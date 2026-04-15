@@ -47,11 +47,12 @@ class ImportGenerator:
 
         lines = []
 
-        # viem imports
-        lines.append(
-            "import { keccak256, encodePacked, encodeAbiParameters, "
-            "decodeAbiParameters, parseAbiParameters, stringToHex } from 'viem';"
-        )
+        # viem imports (only what's actually used)
+        if self._ctx.viem_imports_used:
+            viem_imports = sorted(self._ctx.viem_imports_used)
+            lines.append(
+                f"import {{ {', '.join(viem_imports)} }} from 'viem';"
+            )
 
         # Runtime imports
         runtime_imports = self._build_runtime_imports()
@@ -142,7 +143,8 @@ class ImportGenerator:
                 # Will be handled by extending runtime imports
                 continue
             import_path = self._get_relative_import_path(library)
-            lines.append(f"import {{ {library} }} from '{import_path}';")
+            singleton_name = library[0].lower() + library[1:]
+            lines.append(f"import {{ {singleton_name} }} from '{import_path}';")
         return lines
 
     def _generate_contract_type_imports(

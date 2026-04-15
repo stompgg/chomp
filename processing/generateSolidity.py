@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
 import csv
+import json
 import os
 import re
 import argparse
-from typing import Dict, List, Tuple
-import numpy as np
+from typing import Dict, List, Tuple, Optional
+
+from packMoves import pack_move, detect_inline_ability
 
 
 class MonData:
@@ -256,13 +258,44 @@ def analyze_intra_mon_dependencies(mon_contracts: Dict[str, ContractInfo]) -> Tu
     return deployment_order, intra_dependencies
 
 
+def is_json_move(mon_name: str, move_name: str, base_path: str) -> bool:
+    """Check if a move has a JSON definition (inline) instead of a .sol contract."""
+    mon_dir = get_mon_directory_name(mon_name)
+    contract_name = contract_name_from_move_or_ability(move_name)
+    json_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.json")
+    return os.path.exists(json_path)
+
+
+def load_json_move(mon_name: str, move_name: str, base_path: str) -> Optional[dict]:
+    """Load a JSON move definition if it exists."""
+    mon_dir = get_mon_directory_name(mon_name)
+    contract_name = contract_name_from_move_or_ability(move_name)
+    json_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.json")
+    if os.path.exists(json_path):
+        with open(json_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+def effect_name_to_env_var(effect_name: str) -> str:
+    """Convert CamelCase effect name to SCREAMING_SNAKE_CASE env var.
+    e.g. 'ZapStatus' -> 'ZAP_STATUS'
+    """
+    # Insert underscores before uppercase letters, then uppercase everything
+    result = re.sub(r'(?<!^)(?=[A-Z])', '_', effect_name).upper()
+    return result
+
+
 def get_contracts_for_mon(mon: MonData, base_path: str) -> Dict[str, ContractInfo]:
-    """Get all contracts needed for a specific mon"""
+    """Get all contracts needed for a specific mon (excludes JSON inline moves)"""
     contracts = {}
     mon_dir = get_mon_directory_name(mon.name)
 
-    # Collect move contracts
+    # Collect move contracts (skip JSON inline moves)
     for move_name in mon.moves:
+        if is_json_move(mon.name, move_name, base_path):
+            continue  # JSON moves don't need contract deployment
+
         contract_name = contract_name_from_move_or_ability(move_name)
         contract_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
 
@@ -432,27 +465,49 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
             "        });"
         ])
 
-        # Generate moves array using addrs indices
+        # Generate moves array using addrs indices or packed inline values
         if mon.moves:
-            lines.append(f"        IMoveSet[] memory moves = new IMoveSet[]({len(mon.moves)});")
+            lines.append(f"        uint256[] memory moves = new uint256[]({len(mon.moves)});")
             for i, move_name in enumerate(mon.moves):
-                contract_name = contract_name_from_move_or_ability(move_name)
-                if contract_name in deployed_indices:
-                    idx = deployed_indices[contract_name]
-                    lines.append(f"        moves[{i}] = IMoveSet(addrs[{idx}]);")
+                json_data = load_json_move(mon.name, move_name, base_path)
+                if json_data is not None:
+                    # Inline move: pack params into uint256
+                    packed = pack_move(json_data, effect_address=0)
+                    effect_name = json_data.get("effect")
+                    if effect_name:
+                        # Effect address is resolved at deploy time via env var
+                        env_var = effect_name_to_env_var(effect_name)
+                        lines.append(f"        moves[{i}] = 0x{packed:064x} | uint256(uint160(vm.envAddress(\"{env_var}\")));")
+                    else:
+                        lines.append(f"        moves[{i}] = 0x{packed:064x};")
+                else:
+                    # External move contract: use deployed address
+                    contract_name = contract_name_from_move_or_ability(move_name)
+                    if contract_name in deployed_indices:
+                        idx = deployed_indices[contract_name]
+                        lines.append(f"        moves[{i}] = uint256(uint160(addrs[{idx}]));")
         else:
-            lines.append("        IMoveSet[] memory moves = new IMoveSet[](0);")
+            lines.append("        uint256[] memory moves = new uint256[](0);")
 
-        # Generate abilities array using addrs indices
+        # Generate abilities array using addrs indices (packed for inline abilities)
         if mon.abilities:
-            lines.append(f"        IAbility[] memory abilities = new IAbility[]({len(mon.abilities)});")
+            lines.append(f"        uint256[] memory abilities = new uint256[]({len(mon.abilities)});")
             for i, ability_name in enumerate(mon.abilities):
                 contract_name = contract_name_from_move_or_ability(ability_name)
                 if contract_name in deployed_indices:
                     idx = deployed_indices[contract_name]
-                    lines.append(f"        abilities[{i}] = IAbility(addrs[{idx}]);")
+                    # Check if this ability has @inline-ability magic comment
+                    mon_dir = get_mon_directory_name(mon.name)
+                    sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
+                    ability_type_id = detect_inline_ability(sol_path)
+                    if ability_type_id is not None:
+                        # Pack: (typeId << 248) | address
+                        lines.append(f"        abilities[{i}] = (uint256({ability_type_id}) << 248) | uint256(uint160(addrs[{idx}]));")
+                    else:
+                        # External: store raw address as uint256
+                        lines.append(f"        abilities[{i}] = uint256(uint160(addrs[{idx}]));")
         else:
-            lines.append("        IAbility[] memory abilities = new IAbility[](0);")
+            lines.append("        uint256[] memory abilities = new uint256[](0);")
 
         # Generate metadata arrays with sprite and palette data (if color flag is enabled)
         if include_color:
@@ -510,8 +565,6 @@ def generate_solidity_script(mons: Dict[str, MonData], contracts: Dict[str, Cont
         "import {DefaultMonRegistry} from \"../src/teams/DefaultMonRegistry.sol\";",
         "import {MonStats} from \"../src/Structs.sol\";",
         "import {Type} from \"../src/Enums.sol\";",
-        "import {IMoveSet} from \"../src/moves/IMoveSet.sol\";",
-        "import {IAbility} from \"../src/abilities/IAbility.sol\";",
         ""
     ]
 
@@ -654,11 +707,18 @@ def run(include_color: bool = False, base_path: str = ".") -> bool:
 
         # Print summary
         print("\nSummary:")
+        total_inline = 0
+        total_deployed = 0
         for mon in sorted(mons.values(), key=lambda m: m.mon_id):
+            inline_moves = sum(1 for m in mon.moves if is_json_move(mon.name, m, base_path))
+            deployed_moves = len(mon.moves) - inline_moves
+            total_inline += inline_moves
+            total_deployed += deployed_moves
             color_info = ""
             if include_color and (mon.sprite_data or mon.palette_data):
                 color_info = f" (sprite: {len(mon.sprite_data)} uint256, palette: {len(mon.palette_data)} uint256)"
-            print(f"  {mon.name}: {len(mon.moves)} moves, {len(mon.abilities)} abilities{color_info}")
+            print(f"  {mon.name}: {len(mon.moves)} moves ({inline_moves} inline, {deployed_moves} deployed), {len(mon.abilities)} abilities{color_info}")
+        print(f"\nTotal moves: {total_inline + total_deployed} ({total_inline} inline, {total_deployed} deployed)")
 
         return True
     except Exception as e:

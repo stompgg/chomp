@@ -48,18 +48,18 @@ contract MalalienTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts(engine);
-        actusReus = new ActusReus(IEngine(address(engine)), statBoosts);
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        statBoosts = new StatBoosts();
+        actusReus = new ActusReus(statBoosts);
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_actusReusIndictment() public {
         // Create a StandardAttack that can KO a mon in one hit
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        uint256[] memory moves = new uint256[](1);
         uint256 hpScale = 100;
 
-        moves[0] = attackFactory.createAttack(
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: uint32(hpScale),
                 STAMINA_COST: 1,
@@ -73,7 +73,7 @@ contract MalalienTest is Test, BattleHelper {
                 NAME: "KO Attack",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
 
         // Create a mon with ActusReus ability
         Mon memory actusReusMon = Mon({
@@ -89,7 +89,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(actusReus))
+            ability: uint160(address(actusReus))
         });
 
         // Create a regular mon
@@ -106,7 +106,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams with 3 mons each
@@ -181,9 +181,9 @@ contract MalalienTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        TripleThink tripleThink = new TripleThink(engine, statBoosts);
-        moves[0] = tripleThink;
+        uint256[] memory moves = new uint256[](1);
+        TripleThink tripleThink = new TripleThink(statBoosts);
+        moves[0] = uint256(uint160(address(tripleThink)));
         Mon memory mon = Mon({
             stats: MonStats({
                 hp: 1,
@@ -197,7 +197,7 @@ contract MalalienTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon[] memory team = new Mon[](2);
         team[0] = mon;

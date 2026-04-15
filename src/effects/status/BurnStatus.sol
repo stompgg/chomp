@@ -21,7 +21,7 @@ contract BurnStatus is StatusEffect {
 
     StatBoosts immutable STAT_BOOSTS;
 
-    constructor(IEngine engine, StatBoosts statBoosts) StatusEffect(engine) {
+    constructor(StatBoosts statBoosts) {
         STAT_BOOSTS = statBoosts;
     }
 
@@ -34,11 +34,11 @@ contract BurnStatus is StatusEffect {
         return 0x0F;
     }
 
-    function shouldApply(bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
         bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
-        // Get value from ENGINE KV
-        uint192 monStatusFlag = ENGINE.getGlobalKV(battleKey, keyForMon);
+        // Get value from engine KV
+        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
 
         // Check if a status already exists for the mon (or if it's already burned)
         bool noStatus = monStatusFlag == 0;
@@ -51,6 +51,7 @@ contract BurnStatus is StatusEffect {
     }
 
     function onApply(
+        IEngine engine,
         bytes32 battleKey,
         uint256 rng,
         bytes32,
@@ -66,12 +67,12 @@ contract BurnStatus is StatusEffect {
         bool hasBurnAlready;
         {
             bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-            uint192 monStatusFlag = ENGINE.getGlobalKV(battleKey, keyForMon);
+            uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
             hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
         }
 
         // Set burn flag
-        super.onApply(battleKey, rng, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Set stat debuff or increase burn degree
         if (!hasBurnAlready) {
@@ -82,9 +83,9 @@ contract BurnStatus is StatusEffect {
                 boostPercent: ATTACK_PERCENT,
                 boostType: StatBoostType.Divide
             });
-            STAT_BOOSTS.addStatBoosts(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+            STAT_BOOSTS.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
         } else {
-            (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetIndex, monIndex);
+            (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
             uint256 indexOfBurnEffect;
             uint256 burnDegree;
             bytes32 newExtraData;
@@ -98,13 +99,14 @@ contract BurnStatus is StatusEffect {
             if (burnDegree < MAX_BURN_DEGREE) {
                 newExtraData = bytes32(burnDegree + 1);
             }
-            ENGINE.editEffect(targetIndex, monIndex, indexOfBurnEffect, newExtraData);
+            engine.editEffect(targetIndex, monIndex, indexOfBurnEffect, newExtraData);
         }
 
         return (bytes32(uint256(1)), hasBurnAlready);
     }
 
     function onRemove(
+        IEngine engine,
         bytes32 battleKey,
         bytes32,
         uint256 targetIndex,
@@ -113,17 +115,18 @@ contract BurnStatus is StatusEffect {
         uint256 p1ActiveMonIndex
     ) public override {
         // Remove the base status flag
-        super.onRemove(battleKey, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the attack reduction
-        STAT_BOOSTS.removeStatBoosts(targetIndex, monIndex, StatBoostFlag.Perm);
+        STAT_BOOSTS.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
 
         // Reset the burn degree
-        ENGINE.setGlobalKV(getKeyForMonIndex(targetIndex, monIndex), 0);
+        engine.setGlobalKV(getKeyForMonIndex(targetIndex, monIndex), 0);
     }
 
     // Deal damage over time
     function onRoundEnd(
+        IEngine engine,
         bytes32 battleKey,
         uint256,
         bytes32 extraData,
@@ -145,9 +148,9 @@ contract BurnStatus is StatusEffect {
             damageDenom = DEG3_DAMAGE_DENOM;
         }
         int32 damage =
-            int32(ENGINE.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp))
+            int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp))
             / damageDenom;
-        ENGINE.dealDamage(targetIndex, monIndex, damage);
+        engine.dealDamage(targetIndex, monIndex, damage);
         return (extraData, false);
     }
 }

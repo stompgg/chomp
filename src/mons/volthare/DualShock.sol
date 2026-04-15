@@ -13,14 +13,12 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {Overclock} from "../../effects/battlefield/Overclock.sol";
 
 contract DualShock is StandardAttack {
-
     IEffect immutable ZAP_STATUS;
     Overclock immutable OVERCLOCK;
 
-    constructor(IEngine ENGINE, ITypeCalculator TYPE_CALCULATOR, IEffect _ZAP_STATUS, Overclock _OVERCLOCK)
+    constructor(ITypeCalculator TYPE_CALCULATOR, IEffect _ZAP_STATUS, Overclock _OVERCLOCK)
         StandardAttack(
             address(msg.sender),
-            ENGINE,
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Dual Shock",
@@ -42,6 +40,7 @@ contract DualShock is StandardAttack {
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -50,12 +49,17 @@ contract DualShock is StandardAttack {
         uint256 rng
     ) public override {
         // Deal the damage
-        super.move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex, defenderMonIndex,
+            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
+            moveType(engine, battleKey), moveClass(engine, battleKey),
+            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        );
 
         // Apply Zap to self
-        ENGINE.addEffect(attackerPlayerIndex, attackerMonIndex, ZAP_STATUS, "");
+        engine.addEffect(attackerPlayerIndex, attackerMonIndex, ZAP_STATUS, "");
 
         // Apply Overclock to team
-        OVERCLOCK.applyOverclock(battleKey, attackerPlayerIndex);
+        OVERCLOCK.applyOverclock(engine, battleKey, attackerPlayerIndex);
     }
 }

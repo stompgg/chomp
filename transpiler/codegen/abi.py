@@ -105,12 +105,7 @@ class AbiTypeInferer:
     def _type_expr_to_abi_param(self, type_expr: Expression) -> str:
         """Convert a type expression to ABI parameter object."""
         if isinstance(type_expr, Identifier):
-            name = type_expr.name
-            if name.startswith(('uint', 'int')) or name in ('address', 'bool') or name.startswith('bytes'):
-                return f"{{type: '{name}'}}"
-            if name in self.known_enums:
-                return "{type: 'uint8'}"
-            return "{type: 'bytes'}"
+            return self._solidity_type_to_abi(type_expr.name)
         return "{type: 'bytes'}"
 
     def _infer_single_type(self, arg: Expression) -> str:
@@ -133,7 +128,7 @@ class AbiTypeInferer:
         if name in self.var_types:
             type_info = self.var_types[name]
             if type_info.name:
-                return self._type_name_to_abi_type(type_info.name)
+                return self._solidity_type_to_abi(type_info.name)
         if name in self.known_enums:
             return "{type: 'uint8'}"
         return "{type: 'uint256'}"
@@ -200,39 +195,17 @@ class AbiTypeInferer:
 
     def _infer_type_cast_type(self, arg: TypeCast) -> str:
         """Infer ABI type from a type cast expression."""
-        type_name = arg.type_name.name
-        if type_name == 'address':
-            return "{type: 'address'}"
-        if type_name.startswith(('uint', 'int')):
-            return f"{{type: '{type_name}'}}"
-        if type_name == 'bytes32' or type_name.startswith('bytes'):
-            return f"{{type: '{type_name}'}}"
-        return "{type: 'uint256'}"
-
-    def _type_name_to_abi_type(self, type_name: str) -> str:
-        """Convert a Solidity type name to ABI type format."""
-        if type_name == 'address':
-            return "{type: 'address'}"
-        if type_name == 'string':
-            return "{type: 'string'}"
-        if type_name.startswith(('uint', 'int')) or type_name == 'bool' or type_name.startswith('bytes'):
-            return f"{{type: '{type_name}'}}"
-        if type_name in self.known_enums:
-            return "{type: 'uint8'}"
-        return "{type: 'uint256'}"
+        return self._solidity_type_to_abi(arg.type_name.name) if arg.type_name and arg.type_name.name else "{type: 'uint256'}"
 
     def _solidity_type_to_abi(self, type_name: str, is_array: bool = False) -> str:
-        """Convert a Solidity type to ABI type format with optional array suffix."""
+        """Convert a Solidity type name to ABI type format.
+
+        Single source of truth for Solidity→ABI type mapping.
+        """
         array_suffix = '[]' if is_array else ''
-        if type_name == 'string':
-            return f"{{type: 'string{array_suffix}'}}"
-        if type_name == 'address':
-            return f"{{type: 'address{array_suffix}'}}"
-        if type_name == 'bool':
-            return f"{{type: 'bool{array_suffix}'}}"
-        if type_name.startswith(('uint', 'int')):
+        if type_name in ('address', 'string', 'bool'):
             return f"{{type: '{type_name}{array_suffix}'}}"
-        if type_name.startswith('bytes'):
+        if type_name.startswith(('uint', 'int', 'bytes')):
             return f"{{type: '{type_name}{array_suffix}'}}"
         if type_name in self.known_enums:
             return f"{{type: 'uint8{array_suffix}'}}"

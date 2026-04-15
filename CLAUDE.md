@@ -1,12 +1,19 @@
 # CLAUDE.md
 
+## How to Work
+
+**Constraints first, then design.** Before proposing any solution, identify the hard constraints (language semantics, type system, inheritance, runtime behavior). If the approach conflicts with a constraint, don't propose it. Zero band-aid attempts — if it doesn't fit cleanly, the design is wrong. Redesign, don't force.
+
+**Measure before deducing.** When debugging, add one targeted diagnostic and look at the data. Don't build chains of reasoning from assumptions about what the code "should" do. If the first theory doesn't match observations, measure — don't generate more theories from the same unverified premises.
+
+**Fix at the right layer.** Don't patch symptoms. If a fix requires callers to know implementation details, it's at the wrong layer. If the same pattern needs 3+ special cases, the abstraction is wrong.
+
 ## Project Overview
 
 **C.H.O.M.P.** (Credibly Hackable On-chain Monster PvP) is an on-chain turn-based PvP battling game inspired by Pokemon Showdown and M.U.G.E.N. Built on Solidity using the Foundry framework, it features an extensible battle engine where users can create custom moves, monsters ("mons"), effects, abilities, and hooks.
 
 **License:** AGPL-3.0
 **Solidity version:** 0.8.34
-**Target chain:** MegaETH (mainnet and testnet)
 
 ## Quick Start
 
@@ -234,6 +241,14 @@ The CSV files in `drool/` are the source of truth for mon stats, move parameters
 - Per-mon tests in `test/mons/` test specific move interactions
 - Mock contracts in `test/mocks/` for isolated testing
 - Gas benchmarks in `EngineGasTest.sol` and `InlineEngineGasTest.sol` with JSON snapshots
+
+### Development Approach
+
+When implementing new features or refactors, follow a test-first approach:
+1. Write tests that specify the desired behavior
+2. Run to verify the tests fail (confirming they test new behavior)
+3. Implement the changes
+4. Run to verify the tests pass
 
 ### Adding a New Mon
 

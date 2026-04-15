@@ -14,17 +14,13 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  * Targets the opponent's active mon.
  */
 contract MockEffectRemover is IMoveSet {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
 
     function name() public pure override returns (string memory) {
         return "Mock Effect Remover";
     }
 
     function move(
+        IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
@@ -39,32 +35,32 @@ contract MockEffectRemover is IMoveSet {
         uint256 targetPlayerIndex = 1 - attackerPlayerIndex;
 
         // Find and remove the effect (removeEffect in Engine handles calling onRemove with proper params)
-        (EffectInstance[] memory effects, uint256[] memory indices) = ENGINE.getEffects(battleKey, targetPlayerIndex, defenderMonIndex);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetPlayerIndex, defenderMonIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == effectToRemove) {
-                ENGINE.removeEffect(targetPlayerIndex, defenderMonIndex, indices[i]);
+                engine.removeEffect(targetPlayerIndex, defenderMonIndex, indices[i]);
                 break;
             }
         }
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.None;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
@@ -72,4 +68,3 @@ contract MockEffectRemover is IMoveSet {
         return ExtraDataType.None;
     }
 }
-

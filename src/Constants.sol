@@ -42,9 +42,19 @@ uint256 constant EFFECT_COUNT_MASK = 0x3F; // 6 bits = max count of 63
 
 address constant TOMBSTONE_ADDRESS = address(0xdead);
 
+// Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
+uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
+
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
 bytes32 constant MOVE_MISS_EVENT_TYPE = sha256(abi.encode("MoveMiss"));
 bytes32 constant MOVE_CRIT_EVENT_TYPE = sha256(abi.encode("MoveCrit"));
 bytes32 constant MOVE_TYPE_IMMUNITY_EVENT_TYPE = sha256(abi.encode("MoveTypeImmunity"));
 bytes32 constant NONE_EVENT_TYPE = bytes32(0);
+
+// Game configuration — shared between deploy scripts and transpiled frontend.
+// These are passed as constructor args to Engine and DefaultValidator at deploy time.
+// Prefixed with GAME_ to avoid shadowing Engine's immutable fields of the same name.
+uint256 constant GAME_MONS_PER_TEAM = 4;
+uint256 constant GAME_MOVES_PER_MON = 4;
+uint256 constant GAME_TIMEOUT_DURATION = 30; // seconds

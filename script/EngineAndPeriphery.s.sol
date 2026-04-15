@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
+import "../src/Constants.sol";
 
 // Fundamental entities
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
@@ -40,9 +41,6 @@ struct DeployData {
 
 contract EngineAndPeriphery is Script {
 
-    uint256 constant NUM_MONS = 4;
-    uint256 constant NUM_MOVES = 4;
-    uint256 constant TIMEOUT_DURATION = 30; // 30 seconds
     
     DeployData[] deployedContracts;
 
@@ -52,7 +50,7 @@ contract EngineAndPeriphery is Script {
         TypeCalculator typeCalc = new TypeCalculator();
         deployedContracts.push(DeployData({name: "TYPE CALCULATOR", contractAddress: address(typeCalc)}));
 
-        Engine engine = new Engine(NUM_MONS, NUM_MOVES, TIMEOUT_DURATION);
+        Engine engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, GAME_TIMEOUT_DURATION);
         deployedContracts.push(DeployData({name: "ENGINE", contractAddress: address(engine)}));
 
         SignedCommitManager commitManager = new SignedCommitManager(engine);
@@ -65,17 +63,17 @@ contract EngineAndPeriphery is Script {
         deployedContracts.push(DeployData({name: "GACHA REGISTRY", contractAddress: address(gachaRegistry)}));
 
         GachaTeamRegistry gachaTeamRegistry = new GachaTeamRegistry(
-            LookupTeamRegistry.Args({REGISTRY: gachaRegistry, MONS_PER_TEAM: NUM_MONS, MOVES_PER_MON: NUM_MOVES}), gachaRegistry
+            LookupTeamRegistry.Args({REGISTRY: gachaRegistry, MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON}), gachaRegistry
         );
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
 
         DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
         deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
 
-        OkayCPU okayCPU = new OkayCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
+        OkayCPU okayCPU = new OkayCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "OKAY CPU", contractAddress: address(okayCPU)}));
 
-        BetterCPU betterCPU = new BetterCPU(NUM_MOVES, engine, ICPURNG(address(0)), typeCalc);
+        BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
@@ -94,7 +92,7 @@ contract EngineAndPeriphery is Script {
     }
 
     function deployGameFundamentals(Engine engine) public {
-        StaminaRegen staminaRegen = new StaminaRegen(engine);
+        StaminaRegen staminaRegen = new StaminaRegen();
         deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
 
         IEffect[] memory effects = new IEffect[](1);
@@ -103,28 +101,28 @@ contract EngineAndPeriphery is Script {
         deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
 
         DefaultValidator validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: NUM_MONS, MOVES_PER_MON: NUM_MOVES, TIMEOUT_DURATION: TIMEOUT_DURATION}));
+            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));
         deployedContracts.push(DeployData({name: "DEFAULT VALIDATOR", contractAddress: address(validator)}));
 
-        StatBoosts statBoosts = new StatBoosts(engine);
+        StatBoosts statBoosts = new StatBoosts();
         deployedContracts.push(DeployData({name: "STAT BOOSTS", contractAddress: address(statBoosts)}));
 
-        Overclock overclock = new Overclock(engine, statBoosts);
+        Overclock overclock = new Overclock(statBoosts);
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
 
-        SleepStatus sleepStatus = new SleepStatus(engine);
+        SleepStatus sleepStatus = new SleepStatus();
         deployedContracts.push(DeployData({name: "SLEEP STATUS", contractAddress: address(sleepStatus)}));
 
-        PanicStatus panicStatus = new PanicStatus(engine);
+        PanicStatus panicStatus = new PanicStatus();
         deployedContracts.push(DeployData({name: "PANIC STATUS", contractAddress: address(panicStatus)}));
 
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(engine, statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
         deployedContracts.push(DeployData({name: "FROSTBITE STATUS", contractAddress: address(frostbiteStatus)}));
 
-        BurnStatus burnStatus = new BurnStatus(engine, statBoosts);
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
         deployedContracts.push(DeployData({name: "BURN STATUS", contractAddress: address(burnStatus)}));
 
-        ZapStatus zapStatus = new ZapStatus(engine);
+        ZapStatus zapStatus = new ZapStatus();
         deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
     }
 }

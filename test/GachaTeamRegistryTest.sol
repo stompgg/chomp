@@ -62,11 +62,11 @@ contract GachaTeamRegistryTest is Test {
             type2: Type.None
         });
 
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = IMoveSet(MOVE_ADDRESS);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(MOVE_ADDRESS));
 
-        IAbility[] memory abilities = new IAbility[](1);
-        abilities[0] = IAbility(ABILITY_ADDRESS);
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = uint160(ABILITY_ADDRESS);
 
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
@@ -105,9 +105,9 @@ contract GachaTeamRegistryTest is Test {
         assertEq(gachaTeamRegistry.getTeamCount(ALICE), 1);
         Mon[] memory team = gachaTeamRegistry.getTeam(ALICE, 0);
         for (uint256 i; i < MONS_PER_TEAM; i++) {
-            IMoveSet[] memory moves = team[i].moves;
-            assertEq(address(moves[0]), MOVE_ADDRESS);
-            assertEq(address(team[i].ability), ABILITY_ADDRESS);
+            uint256[] memory moves = team[i].moves;
+            assertEq(address(uint160(moves[0])), MOVE_ADDRESS);
+            assertEq(address(uint160(team[i].ability)), ABILITY_ADDRESS);
         }
     }
 

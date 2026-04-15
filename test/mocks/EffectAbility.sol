@@ -7,11 +7,9 @@ import {IAbility} from "../../src/abilities/IAbility.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
 contract EffectAbility is IAbility {
-    IEngine immutable ENGINE;
     IEffect immutable EFFECT;
 
-    constructor(IEngine _ENGINE, IEffect _EFFECT) {
-        ENGINE = _ENGINE;
+    constructor(IEffect _EFFECT) {
         EFFECT = _EFFECT;
     }
 
@@ -19,7 +17,7 @@ contract EffectAbility is IAbility {
         return "";
     }
 
-    function activateOnSwitch(bytes32, uint256 playerIndex, uint256 monIndex) external {
-        ENGINE.addEffect(playerIndex, monIndex, EFFECT, "");
+    function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external {
+        engine.addEffect(playerIndex, monIndex, EFFECT, "");
     }
 }

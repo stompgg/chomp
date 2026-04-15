@@ -15,41 +15,36 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  * @dev Used to test the OnUpdateMonState lifecycle hook
  */
 contract ReduceSpAtkMove is IMoveSet {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
 
     function name() external pure returns (string memory) {
         return "Reduce SpAtk";
     }
 
-    function move(bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
         // Get the opposing player's index
         uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         // Reduce the opposing mon's SpecialAttack by 1
-        ENGINE.updateMonState(opposingPlayerIndex, defenderMonIndex, MonStateIndexName.SpecialAttack, -1);
+        engine.updateMonState(opposingPlayerIndex, defenderMonIndex, MonStateIndexName.SpecialAttack, -1);
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 0;
     }
 
-    function moveType(bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) external pure returns (Type) {
         return Type.Math;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Other;
     }
 

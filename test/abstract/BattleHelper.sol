@@ -141,11 +141,11 @@ abstract contract BattleHelper is Test {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Yin,
                 type2: Type.None
             }),
-            moves: new IMoveSet[](0),
-            ability: IAbility(address(0))
+            moves: new uint256[](0),
+            ability: 0
         });
     }
 }

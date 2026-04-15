@@ -52,6 +52,7 @@ class CodeGenerationContext:
     # Variable tracking
     current_state_vars: Set[str] = field(default_factory=set)
     current_static_vars: Set[str] = field(default_factory=set)
+    current_transient_vars: Dict[str, str] = field(default_factory=dict)  # name → default value expression
     current_methods: Set[str] = field(default_factory=set)
     current_local_vars: Set[str] = field(default_factory=set)
     var_types: Dict[str, TypeName] = field(default_factory=dict)
@@ -67,6 +68,7 @@ class CodeGenerationContext:
     contracts_referenced: Set[str] = field(default_factory=set)
     set_types_used: Set[str] = field(default_factory=set)
     external_structs_used: Dict[str, str] = field(default_factory=dict)
+    viem_imports_used: Set[str] = field(default_factory=set)
 
     # Flags
     _in_base_constructor_args: bool = False
@@ -78,6 +80,7 @@ class CodeGenerationContext:
     runtime_replacement_classes: Set[str] = field(default_factory=set)
     runtime_replacement_mixins: Dict[str, str] = field(default_factory=dict)
     runtime_replacement_methods: Dict[str, Set[str]] = field(default_factory=dict)
+
 
     # Type knowledge (from registry)
     known_structs: Set[str] = field(default_factory=set)
@@ -126,11 +129,13 @@ class CodeGenerationContext:
         self.contracts_referenced = set()
         self.set_types_used = set()
         self.external_structs_used = {}
+        self.viem_imports_used = set()
 
     def reset_for_contract(self) -> None:
         """Reset state for a new contract."""
         self.current_state_vars = set()
         self.current_static_vars = set()
+        self.current_transient_vars = {}
         self.current_methods = set()
         self.current_local_vars = set()
         self.var_types = {}

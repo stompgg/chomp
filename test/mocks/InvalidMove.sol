@@ -10,37 +10,32 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract InvalidMove is IMoveSet {
-    IEngine immutable ENGINE;
-
-    constructor(IEngine _ENGINE) {
-        ENGINE = _ENGINE;
-    }
 
     function name() external pure returns (string memory) {
         return "Effect Attack";
     }
 
-    function move(bytes32, uint256, uint256, uint256, uint240, uint256) external pure {
+    function move(IEngine, bytes32, uint256, uint256, uint256, uint240, uint256) external pure {
         // No-op
     }
 
-    function priority(bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 1;
     }
 
-    function moveType(bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) external pure returns (Type) {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return false;
     }
 
-    function moveClass(bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
         return MoveClass.Physical;
     }
 

@@ -42,7 +42,7 @@ contract GorillaxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        attackFactory = new StandardAttackFactory(IEngine(address(engine)), ITypeCalculator(address(typeCalc)));
+        attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -50,14 +50,14 @@ contract GorillaxTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        Angery angery = new Angery(IEngine(address(engine)));
+        Angery angery = new Angery();
 
         // Create a team with a mon that has Angery ability
-        IMoveSet[] memory moves = new IMoveSet[](1);
+        uint256[] memory moves = new uint256[](1);
         uint256 hpScale = 100;
 
         // Strong attack is exactly max hp / threshold
-        moves[0] = attackFactory.createAttack(
+        moves[0] = uint256(uint160(address(attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: uint32(hpScale),
                 STAMINA_COST: 1,
@@ -71,7 +71,7 @@ contract GorillaxTest is Test, BattleHelper {
                 NAME: "Strong",
                 EFFECT: IEffect(address(0))
             })
-        );
+        ))));
         Mon memory angeryMon = Mon({
             stats: MonStats({
                 hp: uint32(int32(angery.MAX_HP_DENOM()) * int32(uint32(hpScale))),
@@ -85,7 +85,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(angery))
+            ability: uint160(address(angery))
         });
 
         Mon[] memory team = new Mon[](1);
@@ -118,9 +118,9 @@ contract GorillaxTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
-        RockPull rockPull = new RockPull(engine, typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = rockPull;
+        RockPull rockPull = new RockPull(typeCalc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(rockPull)));
 
         Mon memory gorillax = Mon({
             stats: MonStats({
@@ -135,7 +135,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon memory otherMon = Mon({
@@ -151,7 +151,7 @@ contract GorillaxTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory aliceTeam = new Mon[](2);

@@ -47,7 +47,7 @@ contract SofabbiTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Initialize the CarrotHarvest ability
-        carrotHarvest = new CarrotHarvest(IEngine(address(engine)));
+        carrotHarvest = new CarrotHarvest();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -56,7 +56,7 @@ contract SofabbiTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
         );
         // Create move arrays
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
 
         // Create a mon with CarrotHarvest ability
         Mon memory sofabbiMon = Mon({
@@ -72,7 +72,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(carrotHarvest))
+            ability: uint160(address(carrotHarvest))
         });
 
         // Create a second mon without the ability
@@ -89,7 +89,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Create teams with two mons each
@@ -140,7 +140,7 @@ contract SofabbiTest is Test, BattleHelper {
         );
 
         // Create move arrays
-        IMoveSet[] memory moves = new IMoveSet[](0);
+        uint256[] memory moves = new uint256[](0);
 
         // Create a mon with CarrotHarvest ability
         Mon memory sofabbiMon = Mon({
@@ -156,7 +156,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(carrotHarvest))
+            ability: uint160(address(carrotHarvest))
         });
         Mon memory regularMon = Mon({
             stats: MonStats({
@@ -171,7 +171,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         // Set up teams
@@ -214,9 +214,9 @@ contract SofabbiTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
 
-        GuestFeature gf = new GuestFeature(engine, calc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = gf;
+        GuestFeature gf = new GuestFeature(calc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(gf)));
 
         /**
          *     Air (defender)
@@ -238,7 +238,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory iceMon = Mon({
             stats: MonStats({
@@ -253,7 +253,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory earthMon = Mon({
             stats: MonStats({
@@ -268,7 +268,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         Mon memory natureMon = Mon({
             stats: MonStats({
@@ -283,7 +283,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](4);
@@ -331,8 +331,8 @@ contract SofabbiTest is Test, BattleHelper {
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
-        StandardAttackFactory attackFactory = new StandardAttackFactory(IEngine(address(engine)), typeCalc);
-        SnackBreak sb = new SnackBreak(engine);
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
+        SnackBreak sb = new SnackBreak();
         StandardAttack bigAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 127,
@@ -348,9 +348,9 @@ contract SofabbiTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
-        IMoveSet[] memory moves = new IMoveSet[](2);
-        moves[0] = sb;
-        moves[1] = bigAttack;
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(sb)));
+        moves[1] = uint256(uint160(address(bigAttack)));
         Mon memory chunkyMon = Mon({
             stats: MonStats({
                 hp: 128,
@@ -364,7 +364,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
 
         Mon[] memory team = new Mon[](1);
@@ -422,9 +422,9 @@ contract SofabbiTest is Test, BattleHelper {
     }
 
     function test_gachachacha() public {
-        Gachachacha gacha = new Gachachacha(engine, typeCalc);
-        IMoveSet[] memory moves = new IMoveSet[](1);
-        moves[0] = gacha;
+        Gachachacha gacha = new Gachachacha(typeCalc);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(gacha)));
         Mon memory mon = Mon({
             stats: MonStats({
                 hp: 1024,
@@ -438,7 +438,7 @@ contract SofabbiTest is Test, BattleHelper {
                 type2: Type.None
             }),
             moves: moves,
-            ability: IAbility(address(0))
+            ability: 0
         });
         DefaultValidator validator = new DefaultValidator(
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})

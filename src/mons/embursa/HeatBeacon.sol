@@ -11,11 +11,9 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
 
 contract HeatBeacon is IMoveSet {
-    IEngine immutable ENGINE;
     IEffect immutable BURN_STATUS;
 
-    constructor(IEngine _ENGINE, IEffect _BURN_STATUS) {
-        ENGINE = _ENGINE;
+    constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
     }
 
@@ -24,6 +22,7 @@ contract HeatBeacon is IMoveSet {
     }
 
     function move(
+        IEngine engine,
         bytes32,
         uint256 attackerPlayerIndex,
         uint256,
@@ -33,34 +32,34 @@ contract HeatBeacon is IMoveSet {
     ) external {
         // Apply burn to opposing mon
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        ENGINE.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
+        engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
 
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex) == 1) {
-            HeatBeaconLib._clearPriorityBoost(ENGINE, attackerPlayerIndex);
+        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+            HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
 
         // Set a new priority boost
-        HeatBeaconLib._setPriorityBoost(ENGINE, attackerPlayerIndex);
+        HeatBeaconLib._setPriorityBoost(engine, attackerPlayerIndex);
     }
 
-    function stamina(bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
         return 2;
     }
 
-    function priority(bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(ENGINE, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
 
-    function moveType(bytes32) public pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Fire;
     }
 
-    function isValidTarget(bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
         return true;
     }
 
-    function moveClass(bytes32) public pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
