@@ -33,8 +33,8 @@ contract GlobalEffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint240, uint256) external {
-        engine.addEffect(2, 0, EFFECT, bytes32(0));
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
+        engine.addEffect(2, 0, EFFECT, bytes32(attackerPlayerIndex));
     }
 
     function priority(IEngine, bytes32, uint256) external view returns (uint32) {

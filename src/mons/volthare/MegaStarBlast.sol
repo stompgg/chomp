@@ -32,12 +32,15 @@ contract MegaStarBlast is IMoveSet {
         return "Mega Star Blast";
     }
 
-    function _checkForOverclock(IEngine engine, bytes32 battleKey) internal view returns (int32) {
-        // Check all global effects to see if Overclock is active
+    function _checkForOverclock(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) internal view returns (int32) {
+        // Check all global effects to see if Overclock is active and the player index matches
         (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i; i < effects.length; i++) {
             if (address(effects[i].effect) == address(OVERCLOCK)) {
-                return int32(int256(indices[i]));
+                bytes32 effectData = effects[i].data;
+                if (effectData == bytes32(attackerPlayerIndex)) {
+                    return int32(int256(indices[i]));
+                }
             }
         }
         return -1;
@@ -54,7 +57,7 @@ contract MegaStarBlast is IMoveSet {
     ) external {
         // Check if Overclock is active
         uint32 acc = BASE_ACCURACY;
-        int32 overclockIndex = _checkForOverclock(engine, battleKey);
+        int32 overclockIndex = _checkForOverclock(engine, battleKey, attackerPlayerIndex);
         if (overclockIndex >= 0) {
             // Remove Overclock
             engine.removeEffect(2, 2, uint256(uint32(overclockIndex)));

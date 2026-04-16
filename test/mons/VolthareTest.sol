@@ -248,6 +248,91 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(bobHpDelta2, bobHpDelta, "Bob's mon should not take more damage");
     }
 
+    /**
+     * Test: MegaStarBlast should not clear Overclock set by the opposing team
+     * - Bob applies Overclock (stored with player index 1)
+     * - Alice (player 0) uses MegaStarBlast
+     * - Overclock should remain active (since Alice didn't set it)
+     * - Alice's accuracy should be BASE_ACCURACY (not upgraded to 100)
+     */
+    function test_megaStarBlastDoesNotClearOpponentOverclock() public {
+        DummyStatus zapStatus = new DummyStatus();
+        MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
+        GlobalEffectAttack overclockMove = new GlobalEffectAttack(
+            overclock,
+            GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
+        );
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(overclockMove)));
+        moves[1] = uint256(uint160(address(msb)));
+
+        Mon memory aliceMon = Mon({
+            stats: MonStats({
+                hp: 100, stamina: 10, speed: 100,
+                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
+                type1: Type.Lightning, type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+
+        Mon memory bobMon = Mon({
+            stats: MonStats({
+                hp: 1000, stamina: 10, speed: 1,
+                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
+                type1: Type.Lightning, type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        IValidator validatorToUse = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        // Both players send in their mons
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Bob applies Overclock (stored with player index 1). Alice does nothing.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        // Verify Overclock is applied and tagged with Bob's player index
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
+        assertEq(effects.length, 1, "Overclock should be applied");
+        assertEq(address(effects[0].effect), address(overclock), "Overclock should be applied");
+        assertEq(effects[0].data, bytes32(uint256(1)), "Overclock should be tagged with Bob's index");
+
+        // Set RNG high enough that base accuracy (60) fails — so Alice's MSB will miss,
+        // confirming Overclock did NOT upgrade accuracy to 100.
+        mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
+
+        // Alice uses MegaStarBlast. Bob does nothing.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), 0);
+
+        // Overclock should still be present (Alice cannot clear Bob's Overclock)
+        (effects,) = engine.getEffects(battleKey, 2, 0);
+        assertEq(effects.length, 1, "Overclock should still be active");
+        assertEq(address(effects[0].effect), address(overclock), "Overclock should still be Bob's");
+        assertEq(effects[0].data, bytes32(uint256(1)), "Overclock should still be tagged with Bob's index");
+
+        // Alice's MSB should have missed (accuracy stayed at BASE_ACCURACY, RNG was above it)
+        int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        assertEq(bobHpDelta, 0, "Bob's mon should take no damage (MSB missed at base accuracy)");
+    }
+
     function test_dualShock() public {
         // Create a team with a mon that knows Dual Shock
         uint256[] memory moves = new uint256[](1);
