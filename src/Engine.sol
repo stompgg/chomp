@@ -192,14 +192,16 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Set the global effects and data to start the game if any
-        if (address(battle.ruleset) != address(0)) {
+        if (address(battle.ruleset) == INLINE_STAMINA_REGEN_RULESET) {
+            config.hasInlineStaminaRegen = true;
+            config.globalEffectsLength = 0;
+        } else if (address(battle.ruleset) != address(0)) {
             (IEffect[] memory effects, bytes32[] memory data) = battle.ruleset.getInitialGlobalEffects();
             uint256 numEffects = effects.length;
             if (numEffects > 0) {
                 for (uint256 i = 0; i < numEffects;) {
                     config.globalEffects[i].effect = effects[i];
                     if (address(effects[i]) == address(0)) {
-                        // Inline StaminaRegen: RoundEnd (bit 2) + AfterMove (bit 7) + ALWAYS_APPLIES
                         config.globalEffects[i].stepsBitmap = 0x8084;
                     } else {
                         config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
@@ -457,6 +459,10 @@ contract Engine is IEngine, MappingAllocator {
                 playerSwitchForTurnFlag
             );
 
+            if (config.hasInlineStaminaRegen) {
+                _inlineStaminaRegen(EffectStep.AfterMove, priorityPlayerIndex, _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex), 0, 0);
+            }
+
             // Run the non priority player's move
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
@@ -494,6 +500,10 @@ contract Engine is IEngine, MappingAllocator {
                 EffectRunCondition.SkipIfGameOver,
                 playerSwitchForTurnFlag
             );
+
+            if (config.hasInlineStaminaRegen) {
+                _inlineStaminaRegen(EffectStep.AfterMove, otherPlayerIndex, _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex), 0, 0);
+            }
 
             // Always run global effects at the end of the round
             playerSwitchForTurnFlag = _handleEffects(
@@ -533,6 +543,12 @@ contract Engine is IEngine, MappingAllocator {
                 EffectRunCondition.SkipIfGameOverOrMonKO,
                 playerSwitchForTurnFlag
             );
+
+            if (config.hasInlineStaminaRegen) {
+                uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+                uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+                _inlineStaminaRegen(EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
+            }
         }
 
         // Run the round end hooks

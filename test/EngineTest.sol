@@ -709,6 +709,58 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0);
     }
 
+    function test_staminaRegenWorksWithZeroRuleset() public {
+        // Same setup as test_defaultStaminaRegenEffect but with ruleset = address(0)
+        IMoveSet superFastAttack = new CustomAttack(
+            typeCalc,
+            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+        );
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(superFastAttack)));
+        Mon memory normalMon = Mon({
+            stats: MonStats({
+                hp: 10,
+                stamina: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None,
+                speed: 2
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon[][] memory teams = new Mon[][](2);
+        Mon[] memory team = new Mon[](2);
+        team[0] = normalMon;
+        team[1] = normalMon;
+        teams[0] = team;
+        teams[1] = team;
+        DefaultValidator twoMonValidator = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
+        );
+        defaultRegistry.setTeam(ALICE, teams[0]);
+        defaultRegistry.setTeam(BOB, teams[1]);
+
+        // Start battle with inline stamina regen sentinel
+        bytes32 battleKey = _startBattle(
+            twoMonValidator, engine, defaultOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(INLINE_STAMINA_REGEN_RULESET), address(commitManager)
+        );
+
+        // Select mons
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Both attack (costs 1 stamina each)
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
+
+        // Stamina should have been consumed (-1) then regenerated (+1) = 0 net
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0);
+    }
+
     function test_accuracyWorksAsExpectedWithRNG() public {
         // Deploy a custom RNG oracle that returns a fixed value
         MockRandomnessOracle mockOracle = new MockRandomnessOracle();

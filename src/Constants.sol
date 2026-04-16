@@ -42,6 +42,10 @@ uint256 constant EFFECT_COUNT_MASK = 0x3F; // 6 bits = max count of 63
 
 address constant TOMBSTONE_ADDRESS = address(0xdead);
 
+// Sentinel ruleset address: when passed as battle.ruleset, the Engine adds
+// inline StaminaRegen as a global effect without calling an external contract.
+address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A);  // "STA"mina
+
 // Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
 uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
 
