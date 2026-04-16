@@ -9,11 +9,7 @@ import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
-import {IAbility} from "../src/abilities/IAbility.sol";
-import {IEffect} from "../src/effects/IEffect.sol";
-import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";

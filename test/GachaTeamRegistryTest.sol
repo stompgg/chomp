@@ -15,9 +15,7 @@ import {LookupTeamRegistry} from "../src/teams/LookupTeamRegistry.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 
-import {IAbility} from "../src/abilities/IAbility.sol";
 
-import {IMoveSet} from "../src/moves/IMoveSet.sol";
 
 contract GachaTeamRegistryTest is Test {
     address constant ALICE = address(1);

@@ -8,11 +8,9 @@ import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
-import {IAbility} from "../../src/abilities/IAbility.sol";
 import {AttackCalculator} from "../../src/moves/AttackCalculator.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {TypeCalculator} from "../../src/types/TypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";

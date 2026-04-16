@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import {SimplePM, PMEntry, PMBalance} from "../src/hooks/SimplePM.sol";
+import {SimplePM} from "../src/hooks/SimplePM.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {MockSimplePMEngine} from "./mocks/MockSimplePMEngine.sol";
 

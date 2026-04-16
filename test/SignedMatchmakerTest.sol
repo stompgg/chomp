@@ -6,8 +6,6 @@ import "forge-std/Test.sol";
 import {BattleOffer, Battle, Mon, MonStats, Type, BattleData} from "../src/Structs.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {IAbility} from "../src/abilities/IAbility.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";

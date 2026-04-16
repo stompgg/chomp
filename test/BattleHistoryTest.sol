@@ -19,7 +19,6 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
-import {IAbility} from "../src/abilities/IAbility.sol";
 
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
 

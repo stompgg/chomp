@@ -12,13 +12,11 @@ import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IAbility} from "../../src/abilities/IAbility.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
 import {PostWorkout} from "../../src/mons/pengym/PostWorkout.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";

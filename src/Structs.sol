@@ -5,10 +5,8 @@ import {Type, MonStateIndexName, StatBoostType} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
 import {IValidator} from "./IValidator.sol";
-import {IAbility} from "./abilities/IAbility.sol";
 import {IEffect} from "./effects/IEffect.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
-import {IMoveSet} from "./moves/IMoveSet.sol";
 import {IRandomnessOracle} from "./rng/IRandomnessOracle.sol";
 import {ITeamRegistry} from "./teams/ITeamRegistry.sol";
 

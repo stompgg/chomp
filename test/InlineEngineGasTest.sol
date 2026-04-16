@@ -16,7 +16,6 @@ import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
 import {EIP712} from "../src/lib/EIP712.sol";
-import {IAbility} from "../src/abilities/IAbility.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";

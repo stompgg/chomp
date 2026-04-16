@@ -99,6 +99,7 @@ def run_forge_script(
         "--legacy",
         "--non-interactive",
         "-g", "105",
+        "--slow",
         "--password", password,
     ]
 

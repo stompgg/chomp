@@ -7,7 +7,6 @@ import "./Structs.sol";
 import {IEngine} from "./IEngine.sol";
 import {IValidator} from "./IValidator.sol";
 import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
-import {MoveSlotLib} from "./moves/MoveSlotLib.sol";
 
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {IMonRegistry} from "./teams/IMonRegistry.sol";

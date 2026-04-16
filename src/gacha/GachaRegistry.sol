@@ -9,8 +9,6 @@ import {IEngineHook} from "../IEngineHook.sol";
 import {IGachaRNG} from "../rng/IGachaRNG.sol";
 import {IMonRegistry} from "../teams/IMonRegistry.sol";
 import {IOwnableMon} from "./IOwnableMon.sol";
-import {IAbility} from "../abilities/IAbility.sol";
-import {IMoveSet} from "../moves/IMoveSet.sol";
 
 contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     using EnumerableSetLib for EnumerableSetLib.Uint256Set;

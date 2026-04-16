@@ -13,8 +13,6 @@ import {MonStateIndexName, Type} from "../../src/Enums.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IValidator} from "../../src/IValidator.sol";
-import {IAbility} from "../../src/abilities/IAbility.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";

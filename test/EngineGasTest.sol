@@ -13,7 +13,6 @@ import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.s
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {IAbility} from "../src/abilities/IAbility.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";

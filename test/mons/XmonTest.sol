@@ -19,7 +19,6 @@ import {DefaultRuleset} from "../../src/DefaultRuleset.sol";
 import {SleepStatus} from "../../src/effects/status/SleepStatus.sol";
 import {StaminaRegen} from "../../src/effects/StaminaRegen.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
