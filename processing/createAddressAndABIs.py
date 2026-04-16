@@ -228,14 +228,14 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
                 munch_output = munch_abi_dir / output_filename
                 create_abi_file(abi, abi_const_name, str(munch_output))
                 updated_files.append(f"munch: {munch_output}")
-                print(f"✅ Created {output_filename} in munch repository")
+                print(f"{len(updated_files)} Created {output_filename} in munch repository")
 
             # Create ABI file in belch repository
             if belch_abi_dir.parent.exists():
                 belch_output = belch_abi_dir / output_filename
                 create_abi_file(abi, abi_const_name, str(belch_output))
                 updated_files.append(f"belch: {belch_output}")
-                print(f"✅ Created {output_filename} in belch repository")
+                print(f"{len(updated_files)} Created {output_filename} in belch repository")
 
         except FileNotFoundError as e:
             print(f"⚠️  Error processing {contract_name}: {e}")
@@ -283,7 +283,7 @@ def run_main_logic(addresses: Dict[str, str], network: str):
     if munch_output_file.parent.exists():
         update_address_file(addresses, str(munch_output_file), network, existing_addresses, is_belch=False)
         updated_files.append(f"munch: {munch_output_file}")
-        print(f"✅ Updated address.ts in munch repository")
+        print(f"{len(updated_files)} Updated address.ts in munch repository")
     else:
         print(f"⚠️  Munch repository not found at {munch_output_file.parent}")
 
@@ -291,16 +291,14 @@ def run_main_logic(addresses: Dict[str, str], network: str):
     if belch_output_file.parent.exists():
         update_address_file(addresses, str(belch_output_file), network, existing_addresses, is_belch=True)
         updated_files.append(f"belch: {belch_output_file}")
-        print(f"✅ Updated address.ts in belch repository")
+        print(f"{len(updated_files)} Updated address.ts in belch repository")
     else:
         print(f"⚠️  Belch repository not found at {belch_output_file.parent}")
 
     # Fallback if neither repository was found
     if not updated_files:
         update_address_file(addresses, str(fallback_output_file), network, existing_addresses, is_belch=False)
-        print(f"✅ Updated address.ts (fallback): {fallback_output_file}")
-
-    print(f"\n✅ Address files updated: {len(updated_files)}")
+        print(f"1 Updated address.ts (fallback): {fallback_output_file}")
 
     # Process ABIs
     print("\n" + "=" * 60)
@@ -311,8 +309,7 @@ def run_main_logic(addresses: Dict[str, str], network: str):
         print(f"⚠️  Out directory not found: {out_dir}")
         print("Skipping ABI extraction")
     else:
-        abi_files = process_abis(out_dir, game_dir)
-        print(f"\n✅ ABI files created: {len(abi_files)}")
+        process_abis(out_dir, game_dir)
 
     print("\n" + "=" * 60)
     print("DONE!")
@@ -335,8 +332,7 @@ def run_abi_only():
         print("Skipping ABI extraction")
         return
 
-    abi_files = process_abis(out_dir, game_dir)
-    print(f"\n✅ ABI files created: {len(abi_files)}")
+    process_abis(out_dir, game_dir)
 
     print("\n" + "=" * 60)
     print("DONE!")
