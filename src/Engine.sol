@@ -15,6 +15,7 @@ import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
+import {IAbility} from "./abilities/IAbility.sol";
 
 contract Engine is IEngine, MappingAllocator {
     // Default validator config (immutable, for inline validation when validator is address(0))
