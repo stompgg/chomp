@@ -66,8 +66,8 @@ contract EngineAndPeriphery is Script {
         );
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
 
-        DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
-        deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
+        // DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
+        // deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
 
         OkayCPU okayCPU = new OkayCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "OKAY CPU", contractAddress: address(okayCPU)}));
@@ -91,13 +91,13 @@ contract EngineAndPeriphery is Script {
     }
 
     function deployGameFundamentals(Engine engine) public {
-        StaminaRegen staminaRegen = new StaminaRegen();
-        deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
+        // StaminaRegen staminaRegen = new StaminaRegen();
+        // deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
 
-        IEffect[] memory effects = new IEffect[](1);
-        effects[0] = staminaRegen;
-        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
-        deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
+        // IEffect[] memory effects = new IEffect[](1);
+        // effects[0] = staminaRegen;
+        // DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
+        // deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
 
         DefaultValidator validator =
             new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));
