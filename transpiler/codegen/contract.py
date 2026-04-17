@@ -463,67 +463,51 @@ class ContractGenerator(BaseGenerator):
         For public mappings, generates a private backing field with underscore prefix
         and a public getter method to match interface signatures.
         """
-        value_type = self._type_converter.solidity_type_to_ts(var.type_name.value_type)
         is_public_mapping = var.visibility == 'public' and var.name in self._ctx.known_public_mappings
-
-        # Determine field name (underscore prefix for public mappings)
         field_name = f'_{var.name}' if is_public_mapping else var.name
-
-        if var.type_name.value_type.is_mapping:
-            inner_value = self._type_converter.solidity_type_to_ts(
-                var.type_name.value_type.value_type
-            )
-            # Use private modifier for public mapping backing fields
-            field_modifier = 'private ' if is_public_mapping else modifier
-            # The inner Record needs to default missing keys to the zero value of the
-            # inner type — matching Solidity mapping semantics (unwritten slots read
-            # as zero). Without this, `mapping[a][b]` for unwritten b returns
-            # `undefined` and any downstream `BigInt(...)` / arithmetic throws.
-            inner_default = self._type_converter.default_value(
-                inner_value, var.type_name.value_type.value_type
-            )
-            inner_proxy = (
-                f'new Proxy({{}} as Record<string, {inner_value}>, '
-                f'{{ get: (t, k) => typeof k === "symbol" ? t[k as any] : (t[k as string] ?? {inner_default}) }})'
-            )
-            field_decl = (
-                f'{self.indent()}{field_modifier}{field_name}: '
-                f'Record<string, Record<string, {inner_value}>> = '
-                f'new Proxy({{}} as Record<string, Record<string, {inner_value}>>, '
-                f'{{ get: (t, k) => {{ if (typeof k === "string" && !(k in t)) t[k] = {inner_proxy}; return t[k as any]; }} }});'
-            )
-            if is_public_mapping:
-                # Generate getter method for 2-level mappings
-                key_type = self._type_converter.solidity_type_to_ts(var.type_name.key_type)
-                inner_key_type = self._type_converter.solidity_type_to_ts(var.type_name.value_type.key_type)
-                # Convert bigint keys to string for Record access
-                key1_access = 'String(key1)' if key_type == 'bigint' else 'key1'
-                key2_access = 'String(key2)' if inner_key_type == 'bigint' else 'key2'
-                getter = (
-                    f'{self.indent()}{var.name}(key1: {key_type}, key2: {inner_key_type}): {inner_value} {{\n'
-                    f'{self.indent()}  return this.{field_name}[{key1_access}]?.[{key2_access}] ?? {self._type_converter.default_value(inner_value)};\n'
-                    f'{self.indent()}}}'
-                )
-                return f'{field_decl}\n{getter}'
-            return field_decl
-
-        # Use private modifier for public mapping backing fields
         field_modifier = 'private ' if is_public_mapping else modifier
-        field_decl = f'{self.indent()}{field_modifier}{field_name}: Record<string, {value_type}> = {{}};'
+
+        initializer = self._type_converter.default_value(ts_type, var.type_name)
+        field_decl = f'{self.indent()}{field_modifier}{field_name}: {ts_type} = {initializer};'
 
         if is_public_mapping:
-            # Generate getter method
-            key_type = self._type_converter.solidity_type_to_ts(var.type_name.key_type)
-            # Convert bigint keys to string for Record access
-            key_access = 'String(key)' if key_type == 'bigint' else 'key'
-            getter = (
-                f'{self.indent()}{var.name}(key: {key_type}): {value_type} {{\n'
-                f'{self.indent()}  return this.{field_name}[{key_access}] ?? {self._type_converter.default_value(value_type)};\n'
-                f'{self.indent()}}}'
-            )
+            getter = self._generate_public_mapping_getter(var, field_name)
             return f'{field_decl}\n{getter}'
-
         return field_decl
+
+    def _generate_public_mapping_getter(
+        self,
+        var: StateVariableDeclaration,
+        field_name: str,
+    ) -> str:
+        """Emit a getter method matching Solidity's auto-generated mapping accessor.
+
+        Works for any mapping depth: walks the nested ``mapping(K1 => mapping(K2 => ... => V))``
+        type, declares one parameter per key level, and chains ``?.`` accesses.
+        """
+        keys = []
+        current = var.type_name
+        while current.is_mapping:
+            keys.append(current.key_type)
+            current = current.value_type
+        value_tn = current
+        value_ts = self._type_converter.solidity_type_to_ts(value_tn)
+
+        params = []
+        access = f'this.{field_name}'
+        for i, key_tn in enumerate(keys):
+            key_ts = self._type_converter.solidity_type_to_ts(key_tn)
+            param = f'key{i + 1}' if len(keys) > 1 else 'key'
+            params.append(f'{param}: {key_ts}')
+            indexer = f'String({param})' if key_ts == 'bigint' else param
+            access += f'[{indexer}]' if i == 0 else f'?.[{indexer}]'
+
+        default = self._type_converter.default_value(value_ts, value_tn)
+        return (
+            f'{self.indent()}{var.name}({", ".join(params)}): {value_ts} {{\n'
+            f'{self.indent()}  return {access} ?? {default};\n'
+            f'{self.indent()}}}'
+        )
 
     # =========================================================================
     # MUTATOR METHODS

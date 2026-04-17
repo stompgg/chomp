@@ -102,23 +102,27 @@ class BaseGenerator:
         """Extract the root variable name from an expression.
 
         For nested expressions like a.b.c or a[x][y], returns the root 'a'.
-
-        Special case: `this.X` returns 'X' (the state variable name), not 'this',
-        because `this` itself isn't a useful key in var_types — the state variable
-        lives in var_types under its own name.
+        For `this.X` (state-variable access) returns 'X' — the state variable
+        is keyed by its own name in ``var_types``, not by `this`.
         """
         if isinstance(expr, Identifier):
             return None if expr.name == 'this' else expr.name
         if isinstance(expr, MemberAccess):
-            # For nested access like a.b.c, walk toward the root. If the deepest
-            # identifier is `this` (returns None), fall back to the immediate member
-            # so `this.globalKV` resolves to 'globalKV' rather than vanishing.
-            base = self._get_base_var_name(expr.expression)
-            return base if base is not None else expr.member
+            if self._is_this_access(expr):
+                return expr.member
+            return self._get_base_var_name(expr.expression)
         if isinstance(expr, IndexAccess):
-            # For nested index like a[x][y], get the root 'a'
             return self._get_base_var_name(expr.base)
         return None
+
+    @staticmethod
+    def _is_this_access(expr: Expression) -> bool:
+        """True when ``expr`` is ``this.<member>`` (state-variable access)."""
+        return (
+            isinstance(expr, MemberAccess)
+            and isinstance(expr.expression, Identifier)
+            and expr.expression.name == 'this'
+        )
 
     def _is_bigint_typed_identifier(self, expr: Expression) -> bool:
         """Check if expression is an identifier with uint/int type (bigint in TypeScript)."""
@@ -183,42 +187,78 @@ class BaseGenerator:
                     return True
         return False
 
-    def _resolve_access_type(self, expr: Expression):
+    def _resolve_access_type(self, expr: Expression) -> Optional[TypeName]:
         """Resolve the TypeName at a given expression point.
 
-        For nested mapping/array access like ``this.m[a][b]``, descends through
-        the outer mapping's value_type so the returned TypeName describes the
-        container AT THIS LEVEL — critical for picking the right key_type on
-        the inner-most access.
+        Descends through mapping/array/struct accesses so the returned TypeName
+        describes the container AT THIS LEVEL. Critical for nested access like
+        ``this.m[a][b]`` where the inner access needs the INNER mapping's
+        key_type, not the outer one's.
         """
         if isinstance(expr, Identifier):
-            if expr.name == 'this':
-                return None
-            return self._ctx.var_types.get(expr.name)
+            return None if expr.name == 'this' else self._ctx.var_types.get(expr.name)
         if isinstance(expr, MemberAccess):
-            # this.X → state variable type; other member accesses aren't tracked here.
-            if isinstance(expr.expression, Identifier) and expr.expression.name == 'this':
+            if self._is_this_access(expr):
                 return self._ctx.var_types.get(expr.member)
-            base_type = self._resolve_access_type(expr.expression)
-            return base_type  # best-effort — struct field resolution happens elsewhere
+            return self._resolve_struct_field_type(expr)
         if isinstance(expr, IndexAccess):
-            base_type = self._resolve_access_type(expr.base)
-            if base_type is None:
-                return None
-            if base_type.is_mapping:
-                return base_type.value_type
-            if base_type.is_array:
-                # Array element type — strip one level of array-ness
-                from ..parser.ast_nodes import TypeName as _TypeName
-                return _TypeName(
-                    name=base_type.name,
-                    is_array=False,
-                    is_mapping=False,
-                    key_type=None,
-                    value_type=None,
-                )
-            return None
+            container = self._resolve_access_type(expr.base)
+            return self._step_into_container(container)
         return None
+
+    def _resolve_struct_field_type(self, expr: MemberAccess) -> Optional[TypeName]:
+        """Type of a struct-field access, using ``known_struct_fields``."""
+        parent_type = self._resolve_access_type(expr.expression)
+        if not parent_type or not parent_type.name:
+            return None
+        struct_fields = self._ctx.known_struct_fields.get(parent_type.name)
+        if not struct_fields:
+            return None
+        field_info = struct_fields.get(expr.member)
+        if not field_info:
+            return None
+        field_type, field_is_array = (
+            field_info if isinstance(field_info, tuple) else (field_info, False)
+        )
+        return self._field_info_to_type_name(field_type, field_is_array)
+
+    @staticmethod
+    def _step_into_container(container: Optional[TypeName]) -> Optional[TypeName]:
+        """One indexing step: mapping -> value_type, array -> element type."""
+        if container is None:
+            return None
+        if container.is_mapping:
+            return container.value_type
+        if container.is_array:
+            return TypeName(
+                name=container.name,
+                is_array=False,
+                is_mapping=False,
+                key_type=None,
+                value_type=None,
+            )
+        return None
+
+    @staticmethod
+    def _field_info_to_type_name(field_type: str, field_is_array: bool) -> Optional[TypeName]:
+        """Best-effort TypeName for a struct field entry from ``known_struct_fields``.
+
+        The registry stores field types as strings; full AST TypeNames aren't
+        retained. We reconstruct enough for downstream access-type resolution:
+        mappings get ``is_mapping=True`` with a numeric key (Solidity mappings
+        on struct fields always use primitive keys in this codebase) and arrays
+        get ``is_array=True``.
+        """
+        if not field_type:
+            return None
+        if field_type.startswith('mapping'):
+            return TypeName(
+                name=field_type,
+                is_mapping=True,
+                key_type=TypeName(name='uint256'),
+                value_type=TypeName(name='uint256'),
+            )
+        return TypeName(name=field_type, is_array=field_is_array)
 
     def _is_likely_array_access(self, access: IndexAccess) -> bool:
         """Determine if this is an array access (needs Number index) vs mapping access.

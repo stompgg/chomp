@@ -707,49 +707,27 @@ class ExpressionGenerator(BaseGenerator):
         base = self.generate(access.base)
         index = self.generate(access.index)
 
-        # Determine if this is likely an array access or mapping access
-        is_likely_array = self._is_likely_array_access(access)
+        # Resolve the container at this access depth. For nested access like
+        # `this.m[a][b]` or `config.p0States[j]`, this descends through
+        # mappings, arrays, and struct fields so we always see the type of
+        # the thing actually being indexed.
+        container = self._resolve_access_type(access.base)
+        is_array = bool(container and container.is_array) or self._is_likely_array_access(access)
+        is_numeric_keyed_mapping = bool(
+            container
+            and container.is_mapping
+            and container.key_type
+            and (container.key_type.name or '').startswith(('uint', 'int'))
+        )
 
-        # Resolve the CONTAINER type at this access depth — for nested mappings
-        # like this.m[a][b], the inner access must use the inner mapping's key
-        # type, not the outermost one.
-        container_type = self._resolve_access_type(access.base)
-        is_mapping = bool(container_type and container_type.is_mapping)
+        mapping_access = is_numeric_keyed_mapping
+        needs_conversion = is_array or mapping_access
 
-        mapping_has_numeric_key = False
-        if is_mapping and container_type.key_type:
-            key_type_name = container_type.key_type.name or ''
-            mapping_has_numeric_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
-
-        # Check for struct field access using type registry
-        if isinstance(access.base, MemberAccess):
-            member_name = access.base.member
-            # Try to resolve the struct type of the parent object
-            parent_var = self._get_base_var_name(access.base.expression) if hasattr(access.base, 'expression') else None
-            if parent_var and parent_var in self._ctx.var_types:
-                parent_type = self._ctx.var_types[parent_var]
-                struct_name = parent_type.name if parent_type else ''
-                if struct_name and struct_name in self._ctx.known_struct_fields:
-                    field_info = self._ctx.known_struct_fields[struct_name].get(member_name)
-                    if field_info:
-                        field_type = field_info[0] if isinstance(field_info, tuple) else field_info
-                        field_is_array = field_info[1] if isinstance(field_info, tuple) else False
-                        # Arrays and mappings with numeric keys need Number() conversion
-                        if field_is_array:
-                            is_likely_array = True
-                        elif field_type and (field_type.startswith('mapping')):
-                            is_mapping = True
-                            mapping_has_numeric_key = True
-
-        # Determine if we need key conversion, and whether we're indexing into a
-        # Record-style mapping (string-keyed) vs a real array (number-keyed).
-        mapping_access = is_mapping and mapping_has_numeric_key
-        needs_conversion = is_likely_array or mapping_access
-
-        # Apply index conversion
         index = self._convert_index(access, index, needs_conversion, mapping_access)
-
         return f'{base}[{index}]'
+
+    # Index expressions that can be safely wrapped in Number(...) / String(...).
+    _WRAPPABLE_INDEX = (Identifier, BinaryOperation, UnaryOperation, IndexAccess, MemberAccess)
 
     def _convert_index(
         self,
@@ -758,7 +736,7 @@ class ExpressionGenerator(BaseGenerator):
         needs_conversion: bool,
         mapping_access: bool,
     ) -> str:
-        """Convert index to the right type for the underlying container.
+        """Convert the index expression to match the underlying container's key type.
 
         Mappings transpile to ``Record<string, V>``; their keys must preserve full
         ``bigint`` precision, so we use ``String(idx)`` — ``Number(idx)`` silently
@@ -770,23 +748,26 @@ class ExpressionGenerator(BaseGenerator):
         range in practice).
         """
         wrap = 'String' if mapping_access else 'Number'
-        already_wrapped_prefix = f'{wrap}('
 
+        # BigInt(N) where N is a numeric literal -> drop the wrapper entirely.
         if index.startswith('BigInt('):
             inner = index[7:-1]
             if inner.isdigit():
                 return inner
-            elif needs_conversion:
-                return f'{wrap}({index})'
-        elif isinstance(access.index, Literal) and index.endswith('n'):
+
+        # `5n` -> `5` (numeric literal in bigint form)
+        if isinstance(access.index, Literal) and index.endswith('n'):
             return index[:-1]
-        elif needs_conversion and isinstance(access.index, Identifier):
+
+        # Wrap wrappable index expressions when the container demands it, or
+        # always wrap bigint-typed identifiers (they'd otherwise index a Record
+        # with a `bigint` key, which TS rejects).
+        should_wrap = (
+            (needs_conversion and isinstance(access.index, self._WRAPPABLE_INDEX))
+            or (isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index))
+        )
+        if should_wrap and not index.startswith(f'{wrap}('):
             return f'{wrap}({index})'
-        elif needs_conversion and isinstance(access.index, (BinaryOperation, UnaryOperation, IndexAccess, MemberAccess)):
-            return f'{wrap}({index})'
-        elif isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index):
-            if not index.startswith(already_wrapped_prefix):
-                return f'{wrap}({index})'
 
         return index
 

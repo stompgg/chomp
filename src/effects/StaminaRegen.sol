@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, MOVE_INDEX_MASK} from "../Constants.sol";
-import "../Enums.sol";
-import {MoveDecision} from "../Structs.sol";
-
 import {IEngine} from "../IEngine.sol";
+import {StaminaRegenLogic} from "../lib/StaminaRegenLogic.sol";
 import {BasicEffect} from "./BasicEffect.sol";
 
 contract StaminaRegen is BasicEffect {
@@ -18,16 +15,7 @@ contract StaminaRegen is BasicEffect {
         return 0x8084;
     }
 
-    // No overhealing stamina
-    function _regenStamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
-        int256 currentActiveMonStaminaDelta =
-            engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Stamina);
-        if (currentActiveMonStaminaDelta < 0) {
-            engine.updateMonState(playerIndex, monIndex, MonStateIndexName.Stamina, 1);
-        }
-    }
-
-    // Regen stamina on round end for both active mons
+    // Regen stamina on round end for both active mons (only on 2-player turns)
     function onRoundEnd(
         IEngine engine,
         bytes32 battleKey,
@@ -38,12 +26,7 @@ contract StaminaRegen is BasicEffect {
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) external override returns (bytes32, bool) {
-        uint256 playerSwitchForTurnFlag = engine.getPlayerSwitchForTurnFlagForBattleState(battleKey);
-        // Update stamina for both active mons only if it's a 2 player turn
-        if (playerSwitchForTurnFlag == 2) {
-            _regenStamina(engine, battleKey, 0, p0ActiveMonIndex);
-            _regenStamina(engine, battleKey, 1, p1ActiveMonIndex);
-        }
+        StaminaRegenLogic.onRoundEndExternal(engine, battleKey, p0ActiveMonIndex, p1ActiveMonIndex);
         return (bytes32(0), false);
     }
 
@@ -58,12 +41,7 @@ contract StaminaRegen is BasicEffect {
         uint256,
         uint256
     ) external override returns (bytes32, bool) {
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
-        // Unpack the move index from packedMoveIndex
-        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
-        if (moveIndex == NO_OP_MOVE_INDEX) {
-            _regenStamina(engine, battleKey, targetIndex, monIndex);
-        }
+        StaminaRegenLogic.onAfterMoveExternal(engine, battleKey, targetIndex, monIndex);
         return (bytes32(0), false);
     }
 }

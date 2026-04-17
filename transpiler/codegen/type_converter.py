@@ -193,7 +193,7 @@ class TypeConverter(BaseGenerator):
 
         # Record types (mapping simulation)
         if ts_type.startswith('Record<'):
-            return self._record_default(ts_type)
+            return self._record_default(ts_type, solidity_type_name)
         if ts_type.startswith('Map<'):
             return '{}'
 
@@ -214,33 +214,45 @@ class TypeConverter(BaseGenerator):
 
         return 'undefined as any'
 
-    def _record_default(self, ts_type: str) -> str:
-        """Get default value for a Record<K, V> type.
+    def _record_default(self, ts_type: str, solidity_type_name: Optional[TypeName] = None) -> str:
+        """Initializer for a Record<string, V> (Solidity mapping).
 
-        For struct value types, returns an auto-initializing Proxy that creates
-        default struct instances for missing keys (matching Solidity's zero-initialized
-        storage semantics). For primitive value types, returns a plain {}.
+        When the Solidity TypeName is available, returns a lazy Proxy whose
+        ``get`` materializes the zero value of V for missing keys. This matches
+        Solidity's "unwritten storage reads as zero" semantics and composes
+        naturally for nested mappings: the inner default is computed via
+        :py:meth:`default_value` again, so any depth works with no special case.
+
+        Without a TypeName we fall back to parsing the TS type string, which
+        only recognises the struct-value case (historic behaviour for call
+        sites that predate TypeName threading).
         """
-        inner = ts_type[7:-1]  # Remove 'Record<' and '>'
+        if solidity_type_name and solidity_type_name.is_mapping:
+            value_tn = solidity_type_name.value_type
+            value_ts = self.solidity_type_to_ts(value_tn)
+            inner_default = self.default_value(value_ts, value_tn)
+            return self._lazy_record_proxy(ts_type, inner_default)
+
+        # Fallback: parse "Record<K, V>" string for struct detection only.
+        inner = ts_type[7:-1]
         parts = inner.split(', ', 1)
         if len(parts) == 2:
-            value_type = parts[1]
-            # Check if the value type has a createDefault factory
-            struct_name = None
-            if value_type.startswith('Structs.'):
-                struct_name = value_type[8:]
-            elif value_type in self._ctx.known_structs:
-                struct_name = value_type
-            if struct_name:
-                return (
-                    f'new Proxy({{}} as {ts_type}, '
-                    f'{{ get: (t, k) => {{ '
-                    f'if (typeof k === "string" && !(k in t)) '
-                    f't[k] = createDefault{struct_name}(); '
-                    f'return t[k as any]; '
-                    f'}} }})'
-                )
+            value_ts = parts[1]
+            if value_ts.startswith('Structs.') or value_ts in self._ctx.known_structs:
+                struct_name = value_ts[8:] if value_ts.startswith('Structs.') else value_ts
+                return self._lazy_record_proxy(ts_type, f'createDefault{struct_name}()')
         return '{}'
+
+    @staticmethod
+    def _lazy_record_proxy(ts_type: str, value_default: str) -> str:
+        """Proxy that materializes ``value_default`` on first read of any string key."""
+        return (
+            f'new Proxy({{}} as {ts_type}, '
+            f'{{ get: (t, k) => {{ '
+            f'if (typeof k === "string" && !(k in t)) t[k] = {value_default}; '
+            f'return t[k as any]; '
+            f'}} }})'
+        )
 
     # =========================================================================
     # TYPE CAST GENERATION

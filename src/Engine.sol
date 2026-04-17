@@ -1836,7 +1836,12 @@ contract Engine is IEngine, MappingAllocator {
     ) private {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         if (round == EffectStep.RoundEnd) {
-            StaminaRegenLogic.onRoundEnd(config, p0ActiveMonIndex, p1ActiveMonIndex);
+            StaminaRegenLogic.onRoundEnd(
+                config,
+                battleData[battleKeyForWrite].playerSwitchForTurnFlag,
+                p0ActiveMonIndex,
+                p1ActiveMonIndex
+            );
         } else if (round == EffectStep.AfterMove) {
             StaminaRegenLogic.onAfterMove(config, playerIndex, monIndex);
         }
