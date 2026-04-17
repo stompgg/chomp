@@ -376,7 +376,7 @@ contract EkinekiTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify the 999 KV is set for the next turn
-        bytes32 nineKey = keccak256(abi.encode(uint256(0), "NINE_NINE_NINE"));
+        uint64 nineKey = uint64(uint256(keccak256(abi.encode(uint256(0), "NINE_NINE_NINE"))));
         uint192 storedTurn = engine.getGlobalKV(battleKey, nineKey);
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
         assertEq(uint256(storedTurn), currentTurn, "999 should be set for the current turn (which is now the 'next' turn)");
@@ -687,7 +687,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Mon 1 has no ability, so no savior complex trigger
         // But the savior complex on mon 0 should NOT have been consumed (it didn't trigger)
         // Verify by checking global KV is still 0
-        bytes32 scKey = keccak256(abi.encode(uint256(0), "SAVIOR_COMPLEX"));
+        uint64 scKey = uint64(uint256(keccak256(abi.encode(uint256(0), "SAVIOR_COMPLEX"))));
         uint192 scTriggered = engine.getGlobalKV(battleKey, scKey);
         assertEq(scTriggered, 0, "Savior Complex should not have been consumed with 0 KOs");
     }

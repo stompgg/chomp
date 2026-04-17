@@ -19,8 +19,8 @@ contract SleepStatus is StatusEffect {
         return 0x0F;
     }
 
-    function _globalSleepKey(uint256 targetIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(name(), targetIndex));
+    function _globalSleepKey(uint256 targetIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encodePacked(name(), targetIndex))));
     }
 
     // Whether or not to add the effect if the step condition is met

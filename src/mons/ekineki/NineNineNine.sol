@@ -19,7 +19,7 @@ contract NineNineNine is IMoveSet {
     function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
         // Set crit boost for the next turn
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
-        bytes32 key = NineNineNineLib._getKey(attackerPlayerIndex);
+        uint64 key = NineNineNineLib._getKey(attackerPlayerIndex);
         engine.setGlobalKV(key, uint192(currentTurn + 1));
     }
 

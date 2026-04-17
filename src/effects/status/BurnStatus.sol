@@ -35,7 +35,7 @@ contract BurnStatus is StatusEffect {
     }
 
     function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
-        bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
         // Get value from engine KV
         uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
@@ -46,8 +46,8 @@ contract BurnStatus is StatusEffect {
         return (noStatus || hasBurnAlready);
     }
 
-    function getKeyForMonIndex(uint256 targetIndex, uint256 monIndex) public pure returns (bytes32) {
-        return keccak256(abi.encode(targetIndex, monIndex, name()));
+    function getKeyForMonIndex(uint256 targetIndex, uint256 monIndex) public pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(targetIndex, monIndex, name()))));
     }
 
     function onApply(
@@ -66,7 +66,7 @@ contract BurnStatus is StatusEffect {
     {
         bool hasBurnAlready;
         {
-            bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+            uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
             uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
             hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
         }

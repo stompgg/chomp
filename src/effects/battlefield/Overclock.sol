@@ -30,8 +30,8 @@ contract Overclock is BasicEffect {
         return 0x801D;
     }
 
-    function _effectKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, name()));
+    function _effectKey(uint256 playerIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, name()))));
     }
 
     function applyOverclock(IEngine engine, bytes32 battleKey, uint256 playerIndex) public {

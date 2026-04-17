@@ -8,8 +8,8 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 library HeatBeaconLib {
-    function _getKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, "HEAT_BEACON"));
+    function _getKey(uint256 playerIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, "HEAT_BEACON"))));
     }
 
     function _getPriorityBoost(IEngine engine, uint256 playerIndex) internal view returns (uint32) {

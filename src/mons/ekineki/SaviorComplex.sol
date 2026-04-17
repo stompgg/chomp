@@ -23,8 +23,8 @@ contract SaviorComplex is IAbility {
         return "Savior Complex";
     }
 
-    function _getSaviorComplexKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"));
+    function _getSaviorComplexKey(uint256 playerIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"))));
     }
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {

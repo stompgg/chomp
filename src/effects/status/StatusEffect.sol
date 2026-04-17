@@ -14,7 +14,7 @@ abstract contract StatusEffect is BasicEffect {
         override
         returns (bool)
     {
-        bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
         // Get value from ENGINE KV
         uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
@@ -34,7 +34,7 @@ abstract contract StatusEffect is BasicEffect {
         override
         returns (bytes32 extraData, bool removeAfterRun)
     {
-        bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
         uint192 monValue = engine.getGlobalKV(battleKey, keyForMon);
         if (monValue == 0) {

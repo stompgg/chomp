@@ -39,8 +39,8 @@ contract Loop is IMoveSet {
         return "Loop";
     }
 
-    function _loopActiveKey(uint256 playerIndex, uint256 monIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, monIndex, name()));
+    function _loopActiveKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
     }
 
     function isLoopActive(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (bool) {

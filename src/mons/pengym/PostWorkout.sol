@@ -39,7 +39,7 @@ contract PostWorkout is IAbility, BasicEffect {
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
         uint192 statusAddress = engine.getGlobalKV(battleKey, keyForMon);
 
         // Check if a status exists

@@ -24,13 +24,13 @@ contract SingleInstanceEffect is BasicEffect {
         override
         returns (bytes32, bool removeAfterRun)
     {
-        bytes32 indexHash = keccak256(abi.encode(targetIndex, monIndex));
+        uint64 indexHash = uint64(uint256(keccak256(abi.encode(targetIndex, monIndex))));
         engine.setGlobalKV(indexHash, 1);
         return (bytes32(0), false);
     }
 
     function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) external view override returns (bool) {
-        bytes32 indexHash = keccak256(abi.encode(targetIndex, monIndex));
+        uint64 indexHash = uint64(uint256(keccak256(abi.encode(targetIndex, monIndex))));
         uint192 value = engine.getGlobalKV(battleKey, indexHash);
         return value == 0;
     }

@@ -16,18 +16,22 @@ contract SnackBreak is IMoveSet {
         return "Snack Break";
     }
 
+    function _snackKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    }
+
     function _getSnackLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         internal
         view
         returns (uint256)
     {
-        return uint256(engine.getGlobalKV(battleKey, keccak256(abi.encode(playerIndex, monIndex, name()))));
+        return uint256(engine.getGlobalKV(battleKey, _snackKey(playerIndex, monIndex)));
     }
 
     function _increaseSnackLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
         uint256 snackLevel = _getSnackLevel(engine, battleKey, playerIndex, monIndex);
         if (snackLevel < MAX_DIVISOR) {
-            engine.setGlobalKV(keccak256(abi.encode(playerIndex, monIndex, name())), uint192(snackLevel + 1));
+            engine.setGlobalKV(_snackKey(playerIndex, monIndex), uint192(snackLevel + 1));
         }
     }
 

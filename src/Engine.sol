@@ -34,7 +34,11 @@ contract Engine is IEngine, MappingAllocator {
 
     mapping(bytes32 => BattleData) private battleData; // These contain immutable data and battle state
     mapping(bytes32 => BattleConfig) private battleConfig; // These exist only throughout the lifecycle of a battle, we reuse these storage slots for subsequent battles
-    mapping(bytes32 storageKey => mapping(bytes32 => bytes32)) private globalKV; // Value layout: [64 bits timestamp | 192 bits value]
+    mapping(bytes32 storageKey => mapping(uint64 => bytes32)) private globalKV; // Value layout: [64 bits timestamp | 192 bits value]
+    // Packed key buffer: each slot holds four uint64 keys (lane 0 = bits [0..63], lane 1 = [64..127], etc.).
+    // Paired with BattleConfig.globalKVCount to isolate the current battle's live entries from any leftover
+    // lanes written by prior battles that shared this storageKey.
+    mapping(bytes32 storageKey => mapping(uint256 slotIdx => uint256 packedKeys)) private globalKVKeySlots;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient currentStep; // Used to bubble up step data for events
     address private transient upstreamCaller; // Used to bubble up caller data for events
@@ -155,6 +159,7 @@ contract Engine is IEngine, MappingAllocator {
         config.packedP0EffectsCount = 0;
         config.packedP1EffectsCount = 0;
         config.koBitmaps = 0;
+        config.globalKVCount = 0;
 
         // Store the battle data with initial state
         battleData[battleKey] = BattleData({
@@ -234,7 +239,7 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Set start timestamp
-        config.startTimestamp = uint48(block.timestamp);
+        config.startTimestamp = uint40(block.timestamp);
 
         // Build teams array for validation
         Mon[][] memory teams = new Mon[][](2);
@@ -949,16 +954,33 @@ contract Engine is IEngine, MappingAllocator {
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
     }
 
-    function setGlobalKV(bytes32 key, uint192 value) external {
+    function setGlobalKV(uint64 key, uint192 value) external {
         bytes32 battleKey = battleKeyForWrite;
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
         bytes32 storageKey = storageKeyForWrite;
-        uint64 timestamp = battleConfig[storageKey].startTimestamp;
+        BattleConfig storage config = battleConfig[storageKey];
+        uint40 timestamp = config.startTimestamp;
+
+        // "Never written in THIS battle" ⇔ stored timestamp ≠ current battle's timestamp.
+        // Covers both first-ever write (packed == 0) and first-write after storageKey reuse.
+        uint64 existingTs = uint64(uint256(globalKV[storageKey][key]) >> 192);
+        if (existingTs != uint64(timestamp)) {
+            uint256 idx = config.globalKVCount;
+            uint256 slotIdx = idx >> 2;
+            uint256 shift = (idx & 3) * 64;
+            uint256 slot = globalKVKeySlots[storageKey][slotIdx];
+            // Clear the lane, then write the new key into it.
+            slot = (slot & ~(uint256(type(uint64).max) << shift)) | (uint256(key) << shift);
+            globalKVKeySlots[storageKey][slotIdx] = slot;
+            unchecked {
+                config.globalKVCount = uint8(idx + 1);
+            }
+        }
+
         // Pack timestamp (upper 64 bits) with value (lower 192 bits)
-        bytes32 packed = bytes32((uint256(timestamp) << 192) | uint256(value));
-        globalKV[storageKey][key] = packed;
+        globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
     }
 
     function _dealDamageInternal(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, int32 damage)
@@ -2021,6 +2043,26 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
+        // Build globalKV entries from the packed key buffer, bounded by the per-battle count.
+        uint256 kvCount = config.globalKVCount;
+        GlobalKVEntry[] memory globalKVEntries = new GlobalKVEntry[](kvCount);
+        uint256 slotCount = (kvCount + 3) >> 2;
+        for (uint256 s; s < slotCount;) {
+            uint256 packedSlot = globalKVKeySlots[storageKey][s];
+            uint256 base = s << 2;
+            uint256 remaining = kvCount - base > 4 ? 4 : kvCount - base;
+            for (uint256 j; j < remaining;) {
+                uint64 k = uint64(packedSlot >> (j * 64));
+                globalKVEntries[base + j] = GlobalKVEntry({key: k, value: globalKV[storageKey][k]});
+                unchecked {
+                    ++j;
+                }
+            }
+            unchecked {
+                ++s;
+            }
+        }
+
         BattleConfigView memory configView = BattleConfigView({
             validator: config.validator,
             rngOracle: config.rngOracle,
@@ -2029,6 +2071,7 @@ contract Engine is IEngine, MappingAllocator {
             packedP0EffectsCount: config.packedP0EffectsCount,
             packedP1EffectsCount: config.packedP1EffectsCount,
             teamSizes: config.teamSizes,
+            startTimestamp: config.startTimestamp,
             p0Salt: config.p0Salt,
             p1Salt: config.p1Salt,
             p0Move: config.p0Move,
@@ -2037,7 +2080,8 @@ contract Engine is IEngine, MappingAllocator {
             p0Effects: p0Effects,
             p1Effects: p1Effects,
             teams: teams,
-            monStates: monStates
+            monStates: monStates,
+            globalKVEntries: globalKVEntries
         });
 
         return (configView, data);
@@ -2288,12 +2332,12 @@ contract Engine is IEngine, MappingAllocator {
         return battleData[battleKey].playerSwitchForTurnFlag;
     }
 
-    function getGlobalKV(bytes32 battleKey, bytes32 key) external view returns (uint192) {
+    function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         bytes32 packed = globalKV[storageKey][key];
         // Extract timestamp (upper 64 bits) and value (lower 192 bits)
         uint64 storedTimestamp = uint64(uint256(packed) >> 192);
-        uint64 currentTimestamp = battleConfig[storageKey].startTimestamp;
+        uint64 currentTimestamp = uint64(battleConfig[storageKey].startTimestamp);
         // If timestamps don't match, return 0 (stale value from different battle)
         if (storedTimestamp != currentTimestamp) {
             return 0;

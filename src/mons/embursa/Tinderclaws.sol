@@ -116,7 +116,7 @@ contract Tinderclaws is IAbility, BasicEffect {
         view
         returns (bool)
     {
-        bytes32 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
+        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
         uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
         return monStatusFlag == uint192(uint160(address(BURN_STATUS)));
     }

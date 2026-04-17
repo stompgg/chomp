@@ -25,8 +25,8 @@ contract Initialize is IMoveSet, BasicEffect {
         return "Initialize";
     }
 
-    function _initializeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, monIndex, name()));
+    function _initializeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
     }
 
     function move(

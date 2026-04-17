@@ -72,13 +72,15 @@ struct BattleConfig {
     uint96 packedP0EffectsCount; // 6 (PLAYER_EFFECT_BITS) bits for up to 16 mons for p0
     IRandomnessOracle rngOracle;
     uint96 packedP1EffectsCount;
-    address moveManager; // Privileged role that can set moves for players outside of execute() call
-    uint8 globalEffectsLength;
-    uint8 teamSizes; // Packed: lower 4 bits = p0 team size, upper 4 bits = p1 team size
-    uint8 engineHooksLength;
-    uint16 koBitmaps; // Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap (supports up to 8 mons per team)
-    uint48 startTimestamp;
-    bool hasInlineStaminaRegen;
+    // Slot 2 — 256 bits exactly:
+    address moveManager; // 160 — privileged role that can set moves for players outside of execute() call
+    uint8 globalEffectsLength; //   8
+    uint8 teamSizes; //   8 — Packed: lower 4 bits = p0 team size, upper 4 bits = p1 team size
+    uint8 engineHooksLength; //   8
+    uint16 koBitmaps; //  16 — Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap
+    uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
+    bool hasInlineStaminaRegen; //   8
+    uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
     bytes32 p0Salt;
     bytes32 p1Salt;
     MoveDecision p0Move;
@@ -115,6 +117,7 @@ struct BattleConfigView {
     uint96 packedP0EffectsCount; // 6 bits per mon (up to 16 mons)
     uint96 packedP1EffectsCount;
     uint8 teamSizes;
+    uint40 startTimestamp; // Needed client-side for the getGlobalKV freshness gate
     bytes32 p0Salt;
     bytes32 p1Salt;
     MoveDecision p0Move;
@@ -124,6 +127,13 @@ struct BattleConfigView {
     EffectInstance[][] p1Effects;
     Mon[][] teams;
     MonState[][] monStates;
+    GlobalKVEntry[] globalKVEntries; // Live globalKV entries for the current battle
+}
+
+// Returned in BattleConfigView.globalKVEntries; value is packed [timestamp << 192 | value].
+struct GlobalKVEntry {
+    uint64 key;
+    bytes32 value;
 }
 
 // Stored by the Engine for a battle, tracks mutable battle data

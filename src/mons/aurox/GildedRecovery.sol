@@ -31,7 +31,7 @@ contract GildedRecovery is IMoveSet {
         uint256 targetMonIndex = uint256(extraData);
 
         // Check if the target mon has a status effect
-        bytes32 statusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, targetMonIndex);
+        uint64 statusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, targetMonIndex);
         uint192 statusFlag = engine.getGlobalKV(battleKey, statusKey);
 
         // If the mon has a status effect, remove it and heal

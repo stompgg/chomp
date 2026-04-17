@@ -21,7 +21,7 @@ interface IEngine {
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
     function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external;
-    function setGlobalKV(bytes32 key, uint192 value) external;
+    function setGlobalKV(uint64 key, uint192 value) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
@@ -91,7 +91,7 @@ interface IEngine {
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
     function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
-    function getGlobalKV(bytes32 battleKey, bytes32 key) external view returns (uint192);
+    function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
     function validatePlayerMoveForBattle(
         bytes32 battleKey,

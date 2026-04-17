@@ -9,8 +9,8 @@ import {IEngine} from "../../IEngine.sol";
 library NineNineNineLib {
     uint32 constant NINE_NINE_NINE_CRIT_RATE = 90;
 
-    function _getKey(uint256 playerIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, "NINE_NINE_NINE"));
+    function _getKey(uint256 playerIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, "NINE_NINE_NINE"))));
     }
 
     function _getEffectiveCritRate(IEngine engine, bytes32 battleKey, uint256 playerIndex)

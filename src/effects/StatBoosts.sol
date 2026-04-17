@@ -65,8 +65,8 @@ contract StatBoosts is BasicEffect {
         return uint8(uint256(data) >> PERM_FLAG_OFFSET) != 0;
     }
 
-    function _snapshotKey(uint256 targetIndex, uint256 monIndex) internal view returns (bytes32) {
-        return keccak256(abi.encode(targetIndex, monIndex, address(this)));
+    function _snapshotKey(uint256 targetIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(targetIndex, monIndex, address(this)))));
     }
 
     // Pack boost instance with isPerm flag
@@ -188,7 +188,7 @@ contract StatBoosts is BasicEffect {
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) internal {
-        bytes32 snapshotKey = _snapshotKey(targetIndex, monIndex);
+        uint64 snapshotKey = _snapshotKey(targetIndex, monIndex);
         uint192 prevSnapshot = engine.getGlobalKV(battleKey, snapshotKey);
         uint32[5] memory oldBoostedStats = _unpackBoostSnapshot(prevSnapshot, baseStats);
 
@@ -272,7 +272,7 @@ contract StatBoosts is BasicEffect {
         uint256 monIndex,
         bool excludeTempBoosts
     ) internal {
-        bytes32 snapshotKey = _snapshotKey(targetIndex, monIndex);
+        uint64 snapshotKey = _snapshotKey(targetIndex, monIndex);
         uint192 prevSnapshot = engine.getGlobalKV(battleKey, snapshotKey);
 
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, targetIndex, monIndex);

@@ -26,18 +26,22 @@ contract HoneyBribe is IMoveSet {
         return "Honey Bribe";
     }
 
+    function _bribeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    }
+
     function _getBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         internal
         view
         returns (uint256)
     {
-        return uint256(engine.getGlobalKV(battleKey, keccak256(abi.encode(playerIndex, monIndex, name()))));
+        return uint256(engine.getGlobalKV(battleKey, _bribeKey(playerIndex, monIndex)));
     }
 
     function _increaseBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
         uint256 bribeLevel = _getBribeLevel(engine, battleKey, playerIndex, monIndex);
         if (bribeLevel < MAX_DIVISOR) {
-            engine.setGlobalKV(keccak256(abi.encode(playerIndex, monIndex, name())), uint192(bribeLevel + 1));
+            engine.setGlobalKV(_bribeKey(playerIndex, monIndex), uint192(bribeLevel + 1));
         }
     }
 
