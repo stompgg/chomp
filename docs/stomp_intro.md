@@ -34,17 +34,21 @@ So you're doubly fucked.
 
 That means you have to be kinda crazy to want to continue trying to make this work, and you need to figure out something sustainable. You cannot rely on venture or tokens to bail you out. You have to bail yourself out.
 
-Hi, my name is Owen, and I'm an underwater on ETH.
+Good thing I'm crazy.
 
-(Non) jokes aside, I want to broaden everyone's horizons. Dare we to dream a little again? DeFi has seen incredible adoption and resilience, and we're now seeing broader market structure like prediction markets or futarchy. But the EVM is an incredibly rich programming environment. There is so much you can do! You can just build things. This is my love letter to building.
+DeFi has seen incredible adoption and resilience, and we're now seeing broader market structure like prediction markets or futarchy. But the EVM is an incredibly rich programming environment. There is so much you can do! You can just build things. You can just build a good game.
 
-Crypto has grown up and the suits are here. A lot of the fun has gone, replaced by something sterile. I just want to build something for the four delusionally optimistic of us left. 
+This is my love letter to what drew me into the space: all the composability, technical nitty-gritty, packaged into something you could show your friends.
 
-Yes, this is a niche within a niche within a niche. And I am happy if the best it does is spawn little side events at every ETH conference (if, pray tell, there will even be more conferences in the future). But I do think there is a space for something like Stomp. A game that everyone can play, or understand, or even bet on.
+Crypto has grown up and the suits are here. A lot of the fun has gone, replaced by something sterile. I just want to build something for the optimistic ones left.
+
+Dare we to dream a little again? 
+
+Yes, this is a niche within a niche within a niche. And I am happy if all it does is spawn little side events at every ETH conference. People nerding out, running onchain battles. But I honestly do think there is a space for something like Stomp. A game that everyone can play, or understand, or even bet on.
 
 We haven't had such a unifying cultural force since the last time everyone went apeshit over little black pieces of paper with divine robes written on the chain. (You had to be there.)
 
-This is obviously not going to be anything close to esports or a normal gaming phenomenon. And that's okay, I want to celebrate the little cultural wins that we've had across crypto. In a time where people keep looking to RWAs and finding ways to bring cool IP back onto the chain, I remain wistfully hopeful for the weirdness from web3-native IPs. 
+This is obviously not going to be anything close to esports. And that's okay, I want to celebrate the little cultural wins that we've had across crypto. In a time where people keep looking to RWAs and finding ways to bring cool IP back onto the chain, I remain wistfully hopeful for the weirdness from web3-native IPs. 
 
 Come try the game out if you get a chance; we got your bullas, beras, miladies, hypurrs, llamas, and more coming in the roster.
 
@@ -54,12 +58,14 @@ Come try the game out if you get a chance; we got your bullas, beras, miladies, 
 ![ekineki](../drool/imgs/ekineki_mini.gif)
 ![nirvamma](../drool/imgs/Nirvamma_32x32.gif)
 
+Even if the game can't be on every chain, I want the best of what we've built to find its legacy here in some way. Not exactly a public good, more like a public attraction. I want Stomp to be a game you try out. Even if you don't, I want it to stand as a meaningful example of something full-fledged and robustly onchain, similar to ENS or Uniswap.
+
 Along the way, I hope that some of the ideas built around the game engine can find root in other projects. For the nerds, come check out the codebase! We've got a super wacky solidity to typescript transpiler for full js emulation and a super fast one-step commit-reveal flow for handling matchmaking and turns. Onchain maximalism where it matters, speed everywhere else.
 
-So here's the tldr of what I'm thinking with Stomp: Onchain markets are the most powerful and expressive tools we have for exchanging value, so they seem like a perfect fit for games that use the same substrate. But if that's ALL your game has, then it too quickly devolves into a mere money game (see: every single gamefi project with a down-only inflationary token). You cannot play-to-earn, win-to-earn, risk-to-earn, shit-to-earn, eat-to-earn, etc for a game. That is called having a job.
+So here's the final vision of for Stomp: Onchain markets are the most powerful and expressive tools we have for exchanging value, so they seem like a perfect fit for games that use the same substrate. But if that's ALL your game has, then it too quickly devolves into a mere money game (see: every single gamefi project with a down-only inflationary token). You cannot play-to-earn, win-to-earn, risk-to-earn, shit-to-earn, eat-to-earn, etc for a game. That is called having a job.
 
 Games are labors of love and expression and emotion. We literally have a phrase for doing something for the love of it.
 
-But, BUT. If the game is good, if the base layer is interesting enough that people care about the characters, the progression, the outcome, then we have something interesting. You can let loose all the experimentation we've seen with bonding curves, order books, hyperps, whatever. You have real stakes and real value.
+But, BUT. If the game is good, if the base layer is interesting enough that people care about the characters, the progression, the outcome, then we have something interesting. You can let loose all the experimentation we've seen with bonding curves, order books, hyperps, whatever. You have real stakes and real value. And, most importantly, people will already care before money starts changing hands.
 
 I am not early to these ideas. Nobody reading this is early. But if all of work is going to get automated in the next three months, why not enjoy ourselves a little more?
