@@ -20,6 +20,7 @@ import json
 import os
 import re
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -306,6 +307,24 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
     print(f"\n{'='*60}")
     print("Running transpiler (sol2ts.py)")
     print(f"{'='*60}")
+
+    # Wipe transpiler/ts-output (except hand-maintained runtime/) before regenerating so
+    # renamed/removed/skipped Solidity files don't leave stale .ts files behind. The
+    # subsequent rsync --delete then propagates the clean state to munch.
+    ts_output = chomp_dir / "transpiler" / "ts-output"
+    if ts_output.exists():
+        if dry_run:
+            stale = [p.name for p in ts_output.iterdir() if p.name != "runtime"]
+            print(f"[DRY RUN] Would remove from {ts_output}: {stale}")
+        else:
+            for entry in ts_output.iterdir():
+                if entry.name == "runtime":
+                    continue
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            print(f"Cleaned {ts_output} (preserved runtime/)")
 
     # Run as module to support relative imports
     cmd = [
