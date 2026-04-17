@@ -106,33 +106,22 @@
       "_OVERCLOCK": "Overclock"
     }
   },
-  "skipContracts": [
-    "GachaTeamRegistry",
-    "GachaRegistry",
-    "DefaultTeamRegistry",
-    "LookupTeamRegistry",
-    "CPU",
-    "BetterCPU",
-    "OkayCPU",
-    "RandomCPU",
-    "PlayerCPU",
-    "CPUMoveManager",
-    "DefaultMatchmaker",
-    "BattleHistory",
-    "DefaultCommitManager",
-    "GachaRegistry",
-    "IOwnableMon"
-  ],
   "skipFiles": [
     "lib/Multicall3.sol",
     "lib/CreateX.sol",
+    "lib/Ownable.sol",
+    "lib/EIP712.sol",
     "hooks/SimplePM.sol",
     "commit-manager/SignedCommitManager.sol",
     "matchmaker/SignedMatchmaker.sol",
     "matchmaker/BattleOfferLib.sol",
     "matchmaker/DefaultMatchmaker.sol",
     "hooks/BattleHistory.sol",
-    "commit-manager/DefaultCommitManager.sol"
+    "commit-manager/DefaultCommitManager.sol",
+    "teams/GachaTeamRegistry.sol",
+    "teams/LookupTeamRegistry.sol",
+    "rng/ICPURNG.sol",
+    "rng/IGachaRNG.sol"
   ],
   "skipDirs": [
     "cpu",
