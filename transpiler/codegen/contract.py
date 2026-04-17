@@ -475,11 +475,22 @@ class ContractGenerator(BaseGenerator):
             )
             # Use private modifier for public mapping backing fields
             field_modifier = 'private ' if is_public_mapping else modifier
+            # The inner Record needs to default missing keys to the zero value of the
+            # inner type — matching Solidity mapping semantics (unwritten slots read
+            # as zero). Without this, `mapping[a][b]` for unwritten b returns
+            # `undefined` and any downstream `BigInt(...)` / arithmetic throws.
+            inner_default = self._type_converter.default_value(
+                inner_value, var.type_name.value_type.value_type
+            )
+            inner_proxy = (
+                f'new Proxy({{}} as Record<string, {inner_value}>, '
+                f'{{ get: (t, k) => typeof k === "symbol" ? t[k as any] : (t[k as string] ?? {inner_default}) }})'
+            )
             field_decl = (
                 f'{self.indent()}{field_modifier}{field_name}: '
                 f'Record<string, Record<string, {inner_value}>> = '
                 f'new Proxy({{}} as Record<string, Record<string, {inner_value}>>, '
-                f'{{ get: (t, k) => {{ if (typeof k === "string" && !(k in t)) t[k] = {{}}; return t[k as any]; }} }});'
+                f'{{ get: (t, k) => {{ if (typeof k === "string" && !(k in t)) t[k] = {inner_proxy}; return t[k as any]; }} }});'
             )
             if is_public_mapping:
                 # Generate getter method for 2-level mappings
