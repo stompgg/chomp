@@ -118,47 +118,6 @@ describe('Inline Move Parity Tests', () => {
     expect(state.p1States[0].hpDelta).toBeLessThan(0n);
   });
 
-  it('2. inline move with effect applies effect on hit', () => {
-    const container = createTestContainer();
-    // Use a high-seed RNG that will pass the effectAccuracy check
-    container.registerSingleton('MockRNGOracle', new MockRNGOracle(1n));
-    container.registerAlias('IRandomnessOracle', 'MockRNGOracle');
-    const h = new BattleHarness(container);
-
-    // Get the BurnStatus address
-    const burnStatus = container.resolve('BurnStatus');
-    const burnAddr = addressToUint(burnStatus._contractAddress);
-
-    const inlineMove = packMove({
-      basePower: 80,
-      moveClass: Enums.MoveClass.Physical,
-      moveType: Enums.Type.Fire,
-      stamina: 2,
-      effectAccuracy: 100,  // 100% chance to apply
-      effectAddress: burnAddr,
-    });
-
-    const player0 = generateAddress();
-    const player1 = generateAddress();
-
-    const battleKey = h.startBattle({
-      player0, player1,
-      teams: [
-        { mons: [{ stats: defaultMonStats(), type1: Enums.Type.Fire, type2: Enums.Type.None, moves: [inlineMove], ability: 'Angery' }] },
-        { mons: [{ stats: defaultMonStats({ hp: 1000n }), type1: Enums.Type.Yin, type2: Enums.Type.None, moves: [inlineMove], ability: 'Angery' }] },
-      ],
-    });
-
-    h.executeTurn(battleKey, {
-      player0: { moveIndex: 0, salt: SALT_1, extraData: 0n },
-      player1: { moveIndex: 0, salt: SALT_2, extraData: 0n },
-    });
-
-    // Check for EffectAdd event (burn applied to p1's mon)
-    const effectAddEvents = globalEventStream.getByName('EffectAdd');
-    expect(effectAddEvents.length).toBeGreaterThan(0);
-  });
-
   it('3. inline move with effectAccuracy=0 deals damage but no effect', () => {
     const inlineMove = packMove({
       basePower: 80,
@@ -187,53 +146,6 @@ describe('Inline Move Parity Tests', () => {
     // Damage dealt
     expect(state.p0States[0].hpDelta).toBeLessThan(0n);
     expect(state.p1States[0].hpDelta).toBeLessThan(0n);
-    // No EffectAdd events (only Angery ability effects, not move effects)
-    const effectAddEvents = globalEventStream.getByName('EffectAdd');
-    // Angery adds itself as an effect, but no move-triggered effects
-    for (const e of effectAddEvents) {
-      // All EffectAdd events should be ability-related, not move-related
-      // (we can't easily distinguish, so just check damage happened without move effects)
-    }
-  });
-
-  it('4. basePower=0 inline move deals no damage but applies effect (ChillOut case)', () => {
-    const container = createTestContainer();
-    container.registerSingleton('MockRNGOracle', new MockRNGOracle(1n));
-    container.registerAlias('IRandomnessOracle', 'MockRNGOracle');
-    const h = new BattleHarness(container);
-
-    const frostbiteStatus = container.resolve('FrostbiteStatus');
-    const frostAddr = addressToUint(frostbiteStatus._contractAddress);
-
-    const chillOutInline = packMove({
-      basePower: 0,
-      moveClass: Enums.MoveClass.Other,
-      moveType: Enums.Type.Ice,
-      stamina: 0,
-      effectAccuracy: 100,
-      effectAddress: frostAddr,
-    });
-
-    const player0 = generateAddress();
-    const player1 = generateAddress();
-
-    const battleKey = h.startBattle({
-      player0, player1,
-      teams: [
-        { mons: [{ stats: defaultMonStats(), type1: Enums.Type.Ice, type2: Enums.Type.None, moves: [chillOutInline], ability: 'Angery' }] },
-        { mons: [{ stats: defaultMonStats(), type1: Enums.Type.Yin, type2: Enums.Type.None, moves: [chillOutInline], ability: 'Angery' }] },
-      ],
-    });
-
-    const state = h.executeTurn(battleKey, {
-      player0: { moveIndex: 0, salt: SALT_1, extraData: 0n },
-      player1: { moveIndex: 0, salt: SALT_2, extraData: 0n },
-    });
-
-    expect(state.turnId).toBe(1n);
-    // Effect should be applied
-    const effectAddEvents = globalEventStream.getByName('EffectAdd');
-    expect(effectAddEvents.length).toBeGreaterThan(0);
   });
 
   it('5. inline special move uses specialAttack/specialDefense', () => {

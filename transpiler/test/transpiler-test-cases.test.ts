@@ -46,29 +46,9 @@ describe('Transpiler Output Validation', () => {
     });
   });
 
-  describe('Matchmaker modules compile', () => {
-    it('should import BattleOfferLib without errors', async () => {
-      const { BattleOfferLib } = await import('../ts-output/matchmaker/BattleOfferLib');
-      expect(BattleOfferLib).toBeDefined();
-    });
-
-    it('should import DefaultMatchmaker without errors', async () => {
-      const { DefaultMatchmaker } = await import('../ts-output/matchmaker/DefaultMatchmaker');
-      expect(DefaultMatchmaker).toBeDefined();
-    });
-
-    it('should import SignedMatchmaker without errors', async () => {
-      const { SignedMatchmaker } = await import('../ts-output/matchmaker/SignedMatchmaker');
-      expect(SignedMatchmaker).toBeDefined();
-    });
-  });
-
-  describe('CPU modules compile', () => {
-    it('should import CPUMoveManager without errors', async () => {
-      const { CPUMoveManager } = await import('../ts-output/cpu/CPUMoveManager');
-      expect(CPUMoveManager).toBeDefined();
-    });
-  });
+  // Matchmaker and CPU modules are in skipFiles/skipContracts/skipDirs in
+  // transpiler-config.json (signed flows + CPU move managers carry dependencies
+  // the transpiler isn't configured to follow). No ts-output for them by design.
 
   describe('Teams modules compile', () => {
     it('should import DefaultMonRegistry without errors', async () => {
