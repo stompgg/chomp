@@ -21,6 +21,7 @@ This refactored version uses a modular architecture with separate packages for:
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import Optional, List, Dict, Set
 
@@ -264,9 +265,24 @@ class SolidityToTypeScriptTranspiler:
         # Print diagnostics summary
         self.diagnostics.print_summary()
 
+        # Copy hand-maintained runtime/ into the output so tests and rsync consumers
+        # see a single canonical version. transpiler/runtime/ is the git-tracked
+        # source of truth; ts-output/runtime/ is an ephemeral mirror.
+        self._sync_runtime()
+
         # Generate and write factories.ts if metadata emission is enabled
         if self.emit_metadata and self.metadata_extractor:
             self.write_factories()
+
+    def _sync_runtime(self) -> None:
+        """Mirror transpiler/runtime/ into {output_dir}/runtime/."""
+        src = Path(__file__).parent / 'runtime'
+        if not src.is_dir():
+            return
+        dst = self.output_dir / 'runtime'
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
 
     def write_factories(self) -> None:
         """Generate and write the factories.ts file for dependency injection."""

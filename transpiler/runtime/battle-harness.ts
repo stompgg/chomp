@@ -276,7 +276,11 @@ export class BattleHarness {
     // Resolve dependencies
     const validator = this.container.resolve('IValidator');
     const rngOracle = this.container.resolve('IRandomnessOracle');
-    const ruleset = this.container.resolve('IRuleset');
+
+    // Match on-chain behavior: challenge service passes the inline stamina regen
+    // sentinel as the ruleset. The TS Engine detects this address in startBattle
+    // and sets config.hasInlineStaminaRegen = true.
+    const nullRuleset = { _contractAddress: '0x000000000000000000000000000000000000057a' } as any;
 
     // Build correct Battle struct with all required fields
     const battle = {
@@ -287,7 +291,7 @@ export class BattleHarness {
       teamRegistry: this.teamRegistry,
       validator,
       rngOracle,
-      ruleset,
+      ruleset: nullRuleset,
       moveManager: HARNESS_MOVE_MANAGER,
       matchmaker: this.matchmaker,
       engineHooks: [],
@@ -397,27 +401,13 @@ export class BattleHarness {
     // This propagates as msg.sender via the Contract proxy.
     Contract._currentCaller = HARNESS_MOVE_MANAGER;
 
-    // Set moves via Engine. Pass null to skip a side (switch-only follow-up turn:
-    // non-acting player's config.p{X}Move must stay at packedMoveIndex=0 so the
-    // upfront MonMove emit in execute() doesn't fire a spurious event).
-    if (input.player0) {
-      engine.setMove(
-        battleKey,
-        0n,
-        BigInt(input.player0.moveIndex),
-        input.player0.salt,
-        input.player0.extraData ?? 0n
-      );
-    }
-    if (input.player1) {
-      engine.setMove(
-        battleKey,
-        1n,
-        BigInt(input.player1.moveIndex),
-        input.player1.salt,
-        input.player1.extraData ?? 0n
-      );
-    }
+    // Pass null to skip a side (switch-only turn: non-acting player's
+    // packedMoveIndex must stay 0 so the upfront MonMove emit doesn't fire).
+    const setMove = (pi: 0n | 1n, m: MoveDecision | null) => {
+      if (m) engine.setMove(battleKey, pi, BigInt(m.moveIndex), m.salt, m.extraData ?? 0n);
+    };
+    setMove(0n, input.player0);
+    setMove(1n, input.player1);
 
     // Advance block timestamp to avoid GameStartsAndEndsSameBlock error
     // In real blockchain, execute() would be in a later block than startBattle()

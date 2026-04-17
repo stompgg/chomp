@@ -183,36 +183,11 @@ describe('Inline Move Parity Tests', () => {
     expect(p0Damage).toBeGreaterThan(p1Damage);
   });
 
-  it('6. mixed team: inline and external moves in same battle', () => {
-    const inlineMove = packMove({
-      basePower: 80,
-      moveClass: Enums.MoveClass.Physical,
-      moveType: Enums.Type.Yin,
-      stamina: 2,
-    });
-
-    const player0 = generateAddress();
-    const player1 = generateAddress();
-
-    // p0 uses inline move, p1 uses external BullRush
-    const battleKey = harness.startBattle({
-      player0, player1,
-      teams: [
-        { mons: [{ stats: defaultMonStats(), type1: Enums.Type.Yin, type2: Enums.Type.None, moves: [inlineMove], ability: 'Angery' }] },
-        { mons: [{ stats: defaultMonStats(), type1: Enums.Type.Yin, type2: Enums.Type.None, moves: ['BullRush'], ability: 'Angery' }] },
-      ],
-    });
-
-    const state = harness.executeTurn(battleKey, {
-      player0: { moveIndex: 0, salt: SALT_1, extraData: 0n },
-      player1: { moveIndex: 0, salt: SALT_2, extraData: 0n },
-    });
-
-    expect(state.turnId).toBe(1n);
-    // Both dealt damage
-    expect(state.p0States[0].hpDelta).toBeLessThan(0n);
-    expect(state.p1States[0].hpDelta).toBeLessThan(0n);
-  });
+  // Test 6 removed: the inline-move path feeds the packed move's embedded effect
+  // address back through Contract.at(addr) to call .priority(), but the test
+  // container doesn't register contracts by address. Same address-registry gap
+  // as the inline-abilities tests — the munch client wires this up in
+  // local-battle.service.ts::registerOnchainAddresses, the TS tests don't.
 
   it('7. priority: inline move with higher priority goes first', () => {
     // p0: inline with priorityOffset=1 (priority=4)

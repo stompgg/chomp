@@ -308,23 +308,18 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
     print("Running transpiler (sol2ts.py)")
     print(f"{'='*60}")
 
-    # Wipe transpiler/ts-output (except hand-maintained runtime/) before regenerating so
-    # renamed/removed/skipped Solidity files don't leave stale .ts files behind. The
-    # subsequent rsync --delete then propagates the clean state to munch.
+    # Wipe transpiler/ts-output entirely before regenerating so renamed/removed/skipped
+    # Solidity files don't leave stale .ts files behind. The transpiler re-copies
+    # transpiler/runtime/ into ts-output/runtime/ as part of its run, so nothing
+    # here needs to be preserved. The subsequent rsync --delete propagates the clean
+    # state to munch.
     ts_output = chomp_dir / "transpiler" / "ts-output"
     if ts_output.exists():
         if dry_run:
-            stale = [p.name for p in ts_output.iterdir() if p.name != "runtime"]
-            print(f"[DRY RUN] Would remove from {ts_output}: {stale}")
+            print(f"[DRY RUN] Would remove {ts_output}")
         else:
-            for entry in ts_output.iterdir():
-                if entry.name == "runtime":
-                    continue
-                if entry.is_dir():
-                    shutil.rmtree(entry)
-                else:
-                    entry.unlink()
-            print(f"Cleaned {ts_output} (preserved runtime/)")
+            shutil.rmtree(ts_output)
+            print(f"Cleaned {ts_output}")
 
     # Run as module to support relative imports
     cmd = [
@@ -344,17 +339,20 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
             print("ERROR: Transpiler failed")
             sys.exit(1)
 
-    # Sync transpiled output to munch (excluding runtime/ which has munch-specific paths)
+    # Sync transpiled output to munch. runtime/ is included: chomp's and munch's
+    # runtime/ folders are maintained as byte-identical copies, and chomp is the
+    # source of truth for both (chomp vitest tests consume runtime/ alongside
+    # the transpiled output).
     munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "ts-output"
     chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
 
     if munch_ts_output.exists():
         print(f"\nSyncing transpiled output to {munch_ts_output}")
         if dry_run:
-            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ (excluding runtime/)")
+            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/")
         else:
             result = subprocess.run(
-                ["rsync", "-a", "--delete", "--exclude=runtime/",
+                ["rsync", "-a", "--delete",
                  f"{chomp_ts_output}/", f"{munch_ts_output}/"],
             )
             if result.returncode != 0:
