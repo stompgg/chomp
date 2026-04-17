@@ -348,6 +348,18 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
+        // Emit MonMove upfront for every player that submitted a move this turn.
+        // This guarantees clients always receive each player's move + salt, regardless
+        // of any early returns (mid-turn KO, shouldSkipTurn, stamina/validator failure)
+        // inside _handleMove. packedMoveIndex == 0 means the player did not submit
+        // (e.g. non-acting side on a switch-only follow-up turn).
+        if (config.p0Move.packedMoveIndex != 0) {
+            _emitMonMove(battleKey, config, config.p0Move, 0, _unpackActiveMonIndex(battle.activeMonIndex, 0));
+        }
+        if (config.p1Move.packedMoveIndex != 0) {
+            _emitMonMove(battleKey, config, config.p1Move, 1, _unpackActiveMonIndex(battle.activeMonIndex, 1));
+        }
+
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
         if (battle.playerSwitchForTurnFlag == 0 || battle.playerSwitchForTurnFlag == 1) {
@@ -1372,14 +1384,14 @@ contract Engine is IEngine, MappingAllocator {
             return playerSwitchForTurnFlag;
         }
 
-        // Handle a switch, no-op, or regular move
+        // Handle a switch, no-op, or regular move.
+        // Note: MonMove emission moved to the top of execute() so clients always learn
+        // each player's submitted move + salt, regardless of any early return below.
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Handle the switch (extraData contains the mon index to switch to as raw uint240)
-            _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
             _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
-            // No-op: emit event and do nothing (e.g. just recover stamina)
-            _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
+            // No-op: do nothing (e.g. just recover stamina)
         } else {
             // Read raw 256-bit slot for this move
             uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
@@ -1400,9 +1412,8 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina, emit event, execute
+                // Deduct stamina and execute (MonMove already emitted upfront in execute())
                 _deductStamina(currentMonState, staminaCost);
-                _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
                 _inlineStandardAttack(
@@ -1437,11 +1448,10 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina, emit event, execute
+                // Deduct stamina and execute (MonMove already emitted upfront in execute())
                 staminaCost =
                     int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 _deductStamina(currentMonState, staminaCost);
-                _emitMonMove(battleKey, config, move, playerIndex, activeMonIndex);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
                 moveSet.move(

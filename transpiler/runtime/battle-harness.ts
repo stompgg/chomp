@@ -155,8 +155,8 @@ export interface MoveDecision {
  * Turn input for both players
  */
 export interface TurnInput {
-  player0: MoveDecision;
-  player1: MoveDecision;
+  player0: MoveDecision | null;
+  player1: MoveDecision | null;
 }
 
 /**
@@ -397,22 +397,27 @@ export class BattleHarness {
     // This propagates as msg.sender via the Contract proxy.
     Contract._currentCaller = HARNESS_MOVE_MANAGER;
 
-    // Set moves for both players via Engine
-    engine.setMove(
-      battleKey,
-      0n,  // player 0
-      BigInt(input.player0.moveIndex),
-      input.player0.salt,
-      input.player0.extraData ?? 0n
-    );
-
-    engine.setMove(
-      battleKey,
-      1n,  // player 1
-      BigInt(input.player1.moveIndex),
-      input.player1.salt,
-      input.player1.extraData ?? 0n
-    );
+    // Set moves via Engine. Pass null to skip a side (switch-only follow-up turn:
+    // non-acting player's config.p{X}Move must stay at packedMoveIndex=0 so the
+    // upfront MonMove emit in execute() doesn't fire a spurious event).
+    if (input.player0) {
+      engine.setMove(
+        battleKey,
+        0n,
+        BigInt(input.player0.moveIndex),
+        input.player0.salt,
+        input.player0.extraData ?? 0n
+      );
+    }
+    if (input.player1) {
+      engine.setMove(
+        battleKey,
+        1n,
+        BigInt(input.player1.moveIndex),
+        input.player1.salt,
+        input.player1.extraData ?? 0n
+      );
+    }
 
     // Advance block timestamp to avoid GameStartsAndEndsSameBlock error
     // In real blockchain, execute() would be in a later block than startBattle()
