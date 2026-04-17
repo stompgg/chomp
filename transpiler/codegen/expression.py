@@ -710,20 +710,16 @@ class ExpressionGenerator(BaseGenerator):
         # Determine if this is likely an array access or mapping access
         is_likely_array = self._is_likely_array_access(access)
 
-        # Check if the base is a mapping type
-        base_var_name = self._get_base_var_name(access.base)
-        is_mapping = False
-        if base_var_name and base_var_name in self._ctx.var_types:
-            type_info = self._ctx.var_types[base_var_name]
-            is_mapping = type_info.is_mapping
+        # Resolve the CONTAINER type at this access depth — for nested mappings
+        # like this.m[a][b], the inner access must use the inner mapping's key
+        # type, not the outermost one.
+        container_type = self._resolve_access_type(access.base)
+        is_mapping = bool(container_type and container_type.is_mapping)
 
-        # Check if mapping has a numeric key type
         mapping_has_numeric_key = False
-        if base_var_name and base_var_name in self._ctx.var_types:
-            type_info = self._ctx.var_types[base_var_name]
-            if type_info.is_mapping and type_info.key_type:
-                key_type_name = type_info.key_type.name if type_info.key_type.name else ''
-                mapping_has_numeric_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
+        if is_mapping and container_type.key_type:
+            key_type_name = container_type.key_type.name or ''
+            mapping_has_numeric_key = key_type_name.startswith('uint') or key_type_name.startswith('int')
 
         # Check for struct field access using type registry
         if isinstance(access.base, MemberAccess):
@@ -745,31 +741,52 @@ class ExpressionGenerator(BaseGenerator):
                             is_mapping = True
                             mapping_has_numeric_key = True
 
-        # Determine if we need Number conversion
-        needs_number_conversion = is_likely_array or (is_mapping and mapping_has_numeric_key)
+        # Determine if we need key conversion, and whether we're indexing into a
+        # Record-style mapping (string-keyed) vs a real array (number-keyed).
+        mapping_access = is_mapping and mapping_has_numeric_key
+        needs_conversion = is_likely_array or mapping_access
 
         # Apply index conversion
-        index = self._convert_index(access, index, needs_number_conversion)
+        index = self._convert_index(access, index, needs_conversion, mapping_access)
 
         return f'{base}[{index}]'
 
-    def _convert_index(self, access: IndexAccess, index: str, needs_number: bool) -> str:
-        """Convert index to appropriate type for array/object access."""
+    def _convert_index(
+        self,
+        access: IndexAccess,
+        index: str,
+        needs_conversion: bool,
+        mapping_access: bool,
+    ) -> str:
+        """Convert index to the right type for the underlying container.
+
+        Mappings transpile to ``Record<string, V>``; their keys must preserve full
+        ``bigint`` precision, so we use ``String(idx)`` — ``Number(idx)`` silently
+        collapses distinct ``uint64`` values above 2^53 that happen to round to the
+        same IEEE-754 double, causing collisions.
+
+        Real arrays use ``Number(idx)`` because TS's ``T[]`` index signature expects
+        a number (and bigint-derived indices are always within the safe integer
+        range in practice).
+        """
+        wrap = 'String' if mapping_access else 'Number'
+        already_wrapped_prefix = f'{wrap}('
+
         if index.startswith('BigInt('):
             inner = index[7:-1]
             if inner.isdigit():
                 return inner
-            elif needs_number:
-                return f'Number({index})'
+            elif needs_conversion:
+                return f'{wrap}({index})'
         elif isinstance(access.index, Literal) and index.endswith('n'):
             return index[:-1]
-        elif needs_number and isinstance(access.index, Identifier):
-            return f'Number({index})'
-        elif needs_number and isinstance(access.index, (BinaryOperation, UnaryOperation, IndexAccess, MemberAccess)):
-            return f'Number({index})'
+        elif needs_conversion and isinstance(access.index, Identifier):
+            return f'{wrap}({index})'
+        elif needs_conversion and isinstance(access.index, (BinaryOperation, UnaryOperation, IndexAccess, MemberAccess)):
+            return f'{wrap}({index})'
         elif isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index):
-            if not index.startswith('Number('):
-                return f'Number({index})'
+            if not index.startswith(already_wrapped_prefix):
+                return f'{wrap}({index})'
 
         return index
 

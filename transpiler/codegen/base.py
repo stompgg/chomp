@@ -102,12 +102,19 @@ class BaseGenerator:
         """Extract the root variable name from an expression.
 
         For nested expressions like a.b.c or a[x][y], returns the root 'a'.
+
+        Special case: `this.X` returns 'X' (the state variable name), not 'this',
+        because `this` itself isn't a useful key in var_types — the state variable
+        lives in var_types under its own name.
         """
         if isinstance(expr, Identifier):
-            return expr.name
+            return None if expr.name == 'this' else expr.name
         if isinstance(expr, MemberAccess):
-            # For nested access like a.b.c, get the root 'a'
-            return self._get_base_var_name(expr.expression)
+            # For nested access like a.b.c, walk toward the root. If the deepest
+            # identifier is `this` (returns None), fall back to the immediate member
+            # so `this.globalKV` resolves to 'globalKV' rather than vanishing.
+            base = self._get_base_var_name(expr.expression)
+            return base if base is not None else expr.member
         if isinstance(expr, IndexAccess):
             # For nested index like a[x][y], get the root 'a'
             return self._get_base_var_name(expr.base)
@@ -175,6 +182,43 @@ class BaseGenerator:
                 if func_name.startswith('uint') or func_name.startswith('int'):
                     return True
         return False
+
+    def _resolve_access_type(self, expr: Expression):
+        """Resolve the TypeName at a given expression point.
+
+        For nested mapping/array access like ``this.m[a][b]``, descends through
+        the outer mapping's value_type so the returned TypeName describes the
+        container AT THIS LEVEL — critical for picking the right key_type on
+        the inner-most access.
+        """
+        if isinstance(expr, Identifier):
+            if expr.name == 'this':
+                return None
+            return self._ctx.var_types.get(expr.name)
+        if isinstance(expr, MemberAccess):
+            # this.X → state variable type; other member accesses aren't tracked here.
+            if isinstance(expr.expression, Identifier) and expr.expression.name == 'this':
+                return self._ctx.var_types.get(expr.member)
+            base_type = self._resolve_access_type(expr.expression)
+            return base_type  # best-effort — struct field resolution happens elsewhere
+        if isinstance(expr, IndexAccess):
+            base_type = self._resolve_access_type(expr.base)
+            if base_type is None:
+                return None
+            if base_type.is_mapping:
+                return base_type.value_type
+            if base_type.is_array:
+                # Array element type — strip one level of array-ness
+                from ..parser.ast_nodes import TypeName as _TypeName
+                return _TypeName(
+                    name=base_type.name,
+                    is_array=False,
+                    is_mapping=False,
+                    key_type=None,
+                    value_type=None,
+                )
+            return None
+        return None
 
     def _is_likely_array_access(self, access: IndexAccess) -> bool:
         """Determine if this is an array access (needs Number index) vs mapping access.
