@@ -2,9 +2,9 @@
 
 Stomp is a fully onchain game heavily inspired by monster RPGs like Pokemon and the crossover energy of Smash Bros. It's turn-based and 1v1. You build a team of monsters, and you battle against other people in real time.
 
-It is also three cycles too late.
+It's also a narrative from three cycles ago.
 
-We have collectively as an industry tried to make web3 gaming a "thing" for what seems like forever. Teams have raised $XXX million collectively to fund various games and/or studios, and basically all of them have shut down:
+We have collectively as an industry tried to make web3 gaming a "thing" for forever. Teams have raised $XXX million collectively to fund various games and/or studios, and basically all of them have shut down:
 
 - https://x.com/PirateNation/status/1957529124102357014
 - https://x.com/playchronoforge/status/1998501250464362517
@@ -16,7 +16,7 @@ We have collectively as an industry tried to make web3 gaming a "thing" for what
 
 So why try again?
 
-The naive answer is that "TRUE" onchain gaming has never been tried before.
+Well, obviously, TRUE™ onchain gaming has never been tried before.
 
 But I think there's some merit to this.
 
@@ -58,9 +58,17 @@ Come try the game out if you get a chance; we got your bullas, beras, miladies, 
 ![ekineki](../drool/imgs/ekineki_mini.gif)
 ![nirvamma](../drool/imgs/Nirvamma_32x32.gif)
 
-Even if the game can't be on every chain, I want the best of what we've built to find its legacy here in some way. Not exactly a public good, more like a public attraction. I want Stomp to be a game you try out. Even if you don't, I want it to stand as a meaningful example of something full-fledged and robustly onchain, similar to ENS or Uniswap.
+Even if the game can't be on every chain, I want the best of what we've built to find its legacy here in some way. Stomp is here to celebrate those of us who still want fun onchain experiences. Not exactly a public good, more like a public attraction. I want Stomp to be a game you try out, something you can legitimately show people who know nothing about chains. 
 
-Along the way, I hope that some of the ideas built around the game engine can find root in other projects. For the nerds, come check out the codebase! We've got a super wacky solidity to typescript transpiler for full js emulation and a super fast one-step commit-reveal flow for handling matchmaking and turns. Onchain maximalism where it matters, speed everywhere else.
+And even if you don't, I want it to stand as a meaningful example of an application full-fledged and robustly onchain, similar to ENS or Uniswap.
+
+Under the hood, there are a lot of cool technical pieces that I think even other projects could find useful. Full technical blog post incoming, but a preview for the nerds:
+
+- A hyper-experimental Solidity to Typescript transpiler to emulate the onchain execution in any JS runtime.
+- Matchmaking and turn decisions require only one onchain transaction for a super speedy commit-reveal flow.
+- Reused storage keys and inlining as much as possible, and MegaETH lets us fit a 50kb contract onchain.
+
+Onchain maximalism where it matters, speed everywhere else.
 
 So here's the final vision of for Stomp: Onchain markets are the most powerful and expressive tools we have for exchanging value, so they seem like a perfect fit for games that use the same substrate. But if that's ALL your game has, then it too quickly devolves into a mere money game (see: every single gamefi project with a down-only inflationary token). You cannot play-to-earn, win-to-earn, risk-to-earn, shit-to-earn, eat-to-earn, etc for a game. That is called having a job.
 
