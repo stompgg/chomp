@@ -122,6 +122,18 @@ class CodeGenerationContext:
         """
         return self._qualified_name_cache.get(name, name)
 
+    def is_locally_qualified(self, name: str) -> bool:
+        """True if `name` has been registered as resolving to itself (e.g. a
+        contract-local struct declared in the file currently being emitted).
+        Used by emitters that need to decide "do I need to import this?"."""
+        return self._qualified_name_cache.get(name) == name
+
+    def register_local_type(self, name: str) -> None:
+        """Mark a type name as locally defined — resolves to itself rather
+        than a module-qualified form like `Structs.Foo`. Callers use this
+        to opt contract-local structs out of the default `Structs.` prefix."""
+        self._qualified_name_cache[name] = name
+
     def reset_for_file(self) -> None:
         """Reset state for a new file."""
         self.base_contracts_needed = set()

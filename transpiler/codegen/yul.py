@@ -870,7 +870,11 @@ class YulTranspiler:
             args_str = ', '.join(self._generate_expression(a, slot_vars) for a in call.arguments)
             return f'{prefix}// {func}({args_str})'
         elif func == 'selfdestruct':
-            return f'{prefix}// selfdestruct (no-op for simulation)'
+            recipient = (
+                self._generate_expression(call.arguments[0], slot_vars)
+                if call.arguments else '"0x0000000000000000000000000000000000000000"'
+            )
+            return f'{prefix}selfdestruct(String({recipient}));'
 
         # Generic call statement
         args = ', '.join(self._generate_expression(a, slot_vars) for a in call.arguments)

@@ -49,6 +49,45 @@ export function blockhash(blockNumber: bigint): `0x${string}` {
   return keccak256(encoded);
 }
 
+/**
+ * Solidity `ecrecover(hash, v, r, s)` — not modeled.
+ *
+ * Throws rather than returning a fake "recovered" address. A pseudo-recovery
+ * (e.g. keccak-of-inputs, last-20-bytes) would typecheck, run deterministically,
+ * and look plausible in tests — which is exactly the wrong-but-silent failure
+ * mode the runtime avoids. If you need real recovery, add a runtime
+ * replacement that wraps viem's `recoverAddress` (async) from a harness-level
+ * awaiter, or use `@noble/curves/secp256k1.recoverPublicKey` for sync.
+ */
+export function ecrecover(
+  _hash: `0x${string}` | string,
+  _v: bigint,
+  _r: `0x${string}` | string,
+  _s: `0x${string}` | string,
+): `0x${string}` {
+  throw new Error(
+    'ecrecover called — not modeled in simulation. Real secp256k1 recovery is ' +
+    'not shipped in the runtime; add a runtime replacement for the contract ' +
+    'that calls it, or substitute your own `ecrecover` binding.',
+  );
+}
+
+/**
+ * Solidity `selfdestruct(recipient)` — not modeled.
+ *
+ * Throws loudly rather than silently being a no-op, so code that depends on
+ * destruction semantics (e.g. "redeploy at the same address") fails fast. If
+ * your simulation genuinely needs a zombie contract to stay alive, override
+ * this with a runtime replacement that records the call and continues.
+ */
+export function selfdestruct(_recipient: string): never {
+  throw new Error(
+    'selfdestruct called — not modeled in simulation. The contract would stay ' +
+    'alive in this harness; override the caller via a runtime replacement if ' +
+    'your test depends on the destruction effect.',
+  );
+}
+
 // =============================================================================
 // BIGINT HELPERS
 // =============================================================================

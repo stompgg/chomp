@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-This transpiler converts Solidity contracts to TypeScript for local simulation.
-It's specifically designed for the Chomp game engine but can be extended for general use.
+extruder — source-to-source transpiler from Solidity to TypeScript.
+
+Feed Solidity in one end, get a shaped TypeScript mirror out the other. Produces
+one ES class per contract, a dependency-injection container, and a runtime
+library modelling storage, events, and inter-contract calls — suitable for
+driving client-side simulations, differential testing, and fast unit tests.
 
 Key features:
 - BigInt for 256-bit integer operations
@@ -11,13 +15,15 @@ Key features:
 - Interface and contract inheritance
 
 Usage:
-    python transpiler/sol2ts.py src/
+    python3 extruder/sol2ts.py src/
+    python3 extruder/sol2ts.py --emit-replacement-stub <Name> <file.sol>
 
-This refactored version uses a modular architecture with separate packages for:
+Module layout:
 - lexer: Tokenization (tokens.py, lexer.py)
 - parser: AST nodes and parsing (ast_nodes.py, parser.py)
-- types: Type registry and mappings (registry.py, mappings.py)
+- type_system: Type registry and mappings (registry.py, mappings.py)
 - codegen: Code generation (generator.py + specialized generators)
+- dependency_resolver: Interface → concrete implementation resolution
 """
 
 import json
@@ -43,7 +49,6 @@ class SolidityToTypeScriptTranspiler:
         source_dir: str = '.',
         output_dir: str = './ts-output',
         discovery_dirs: Optional[List[str]] = None,
-        stubbed_contracts: Optional[List[str]] = None,
         emit_metadata: bool = False,
         overrides_path: Optional[str] = None,
     ):
@@ -51,7 +56,6 @@ class SolidityToTypeScriptTranspiler:
         self.output_dir = Path(output_dir)
         self.parsed_files: Dict[str, SourceUnit] = {}
         self.registry = TypeRegistry()
-        self.stubbed_contracts = set(stubbed_contracts or [])
         self.emit_metadata = emit_metadata
         self.overrides_path = overrides_path
 
@@ -314,32 +318,143 @@ class SolidityToTypeScriptTranspiler:
 
 
 # =============================================================================
+# REPLACEMENT STUB EMISSION
+# =============================================================================
+
+def emit_replacement_stub(
+    contract_name: str,
+    source_file: str,
+    output_file: str,
+    discovery_dirs: Optional[List[str]] = None,
+) -> None:
+    """Emit a TypeScript scaffold + JSON config snippet for a runtime replacement.
+
+    The scaffold has every function signature mapped to TypeScript types, bodies
+    that throw `Error('Not implemented')`, and sensible defaults for state
+    variables and constants. Fill in the bodies, then register the file under
+    `transpiler-config.json -> runtimeReplacements` using the snippet printed to
+    stdout.
+    """
+    from .codegen.replacement_stub import ReplacementStubGenerator, format_config_snippet
+
+    source_path = Path(source_file)
+    try:
+        source = source_path.read_text()
+    except FileNotFoundError:
+        print(f"Error: source file not found: {source_file}")
+        raise SystemExit(1)
+
+    registry = TypeRegistry()
+    for d in (discovery_dirs or [str(source_path.parent)]):
+        if Path(d).is_dir():
+            registry.discover_from_directory(d)
+
+    ast = Parser(Lexer(source).tokenize()).parse()
+
+    contract = next((c for c in ast.contracts if c.name == contract_name), None)
+    if contract is None:
+        names = [c.name for c in ast.contracts]
+        print(
+            f"Error: no contract named '{contract_name}' in {source_file}. "
+            f"Found: {names}"
+        )
+        raise SystemExit(1)
+
+    generator = ReplacementStubGenerator(registry)
+    ts_source, config_entry = generator.emit(contract, source_file)
+
+    out_path = Path(output_file)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, 'w') as f:
+        f.write(ts_source)
+    print(f"Written: {out_path}")
+    print()
+    print("Add this entry to your transpiler-config.json `runtimeReplacements` array:")
+    print()
+    print(format_config_snippet(config_entry))
+
+
+# =============================================================================
 # CLI INTERFACE
 # =============================================================================
 
 def main():
     import argparse
+    import sys
 
-    parser = argparse.ArgumentParser(description='Solidity to TypeScript Transpiler (Refactored)')
-    parser.add_argument('input', help='Input Solidity file or directory')
-    parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory')
+    # Fast-path the `init` subcommand. Mixing argparse subparsers with the
+    # top-level positional `input` is awkward (any non-`init` first argument
+    # fails subcommand validation), so we dispatch init manually.
+    if len(sys.argv) > 1 and sys.argv[1] == 'init':
+        init_parser = argparse.ArgumentParser(
+            prog='extruder init',
+            description=(
+                'Scan a Solidity source tree and scaffold a starter '
+                'transpiler-config.json. Classifies each file '
+                '(OK/SKIP/REPLACE/MAYBE), infers interface aliases, and '
+                'emits runtime-replacement stubs for files that need them.'
+            ),
+        )
+        init_parser.add_argument('source_root', help='Solidity source directory to scan')
+        init_parser.add_argument('--yes', action='store_true',
+                                 help='Non-interactive: accept auto-classifications, punt ambiguous decisions')
+        init_parser.add_argument('--stub-output-dir',
+                                 help='Where to write scaffolded stubs (default: ./runtime-replacements)')
+        init_parser.add_argument('--config-path',
+                                 help='Where to write the config (default: ./transpiler-config.json)')
+        init_args = init_parser.parse_args(sys.argv[2:])
+        from .init import run_init
+        run_init(
+            source_root=init_args.source_root,
+            yes=init_args.yes,
+            stub_output_dir=init_args.stub_output_dir,
+            config_path=init_args.config_path,
+        )
+        return
+
+    parser = argparse.ArgumentParser(
+        description='extruder — source-to-source Solidity → TypeScript transpiler',
+        epilog='Subcommands: `extruder init <src>` to scaffold a config for a new project.',
+    )
+    parser.add_argument('input', nargs='?', help='Input Solidity file or directory')
+    parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory (or output file for --emit-replacement-stub)')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
     parser.add_argument('-d', '--discover', action='append', metavar='DIR',
                         help='Directory to scan for type discovery')
-    parser.add_argument('--stub', action='append', metavar='CONTRACT',
-                        help='Contract name to generate as minimal stub')
     parser.add_argument('--emit-metadata', action='store_true',
                         help='Emit dependency manifest and factory functions')
     parser.add_argument('--metadata-only', action='store_true',
                         help='Only emit metadata, skip TypeScript generation')
     parser.add_argument('--overrides', metavar='FILE',
                         help='Path to transpiler-config.json for manual dependency mappings')
+    parser.add_argument('--emit-replacement-stub', nargs=2, metavar=('CONTRACT', 'SOL_FILE'),
+                        help='Emit a TypeScript scaffold for a runtime replacement. '
+                             'Pass the contract name and the .sol path. '
+                             'Use -o to choose the output .ts path.')
 
     args = parser.parse_args()
 
+    # Mode: emit replacement stub
+    if args.emit_replacement_stub:
+        contract_name, sol_file = args.emit_replacement_stub
+        out_path = args.output
+        # If -o was left at the default directory, write into that dir by contract name.
+        if out_path == 'transpiler/ts-output':
+            out_path = f'{contract_name}.ts'
+        emit_replacement_stub(
+            contract_name=contract_name,
+            source_file=sol_file,
+            output_file=out_path,
+            discovery_dirs=args.discover,
+        )
+        return
+
+    # Normal transpilation requires an input.
+    if not args.input:
+        parser.error('input is required unless --emit-replacement-stub is used')
+
     input_path = Path(args.input)
     discovery_dirs = args.discover or ([str(input_path)] if input_path.is_dir() else [str(input_path.parent)])
-    stubbed_contracts = args.stub or []
     emit_metadata = args.emit_metadata or args.metadata_only
 
     overrides_path = args.overrides
@@ -357,7 +472,6 @@ def main():
             source_dir=source_dir,
             output_dir=args.output,
             discovery_dirs=discovery_dirs,
-            stubbed_contracts=stubbed_contracts,
             emit_metadata=emit_metadata,
             overrides_path=overrides_path,
         )
@@ -377,7 +491,7 @@ def main():
 
     elif input_path.is_dir():
         transpiler = SolidityToTypeScriptTranspiler(
-            str(input_path), args.output, discovery_dirs, stubbed_contracts,
+            str(input_path), args.output, discovery_dirs,
             emit_metadata=emit_metadata,
             overrides_path=overrides_path,
         )
@@ -388,7 +502,7 @@ def main():
             transpiler.write_output(results)
     else:
         print(f"Error: {args.input} is not a valid file or directory")
-        exit(1)
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

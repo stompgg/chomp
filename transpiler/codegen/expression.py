@@ -879,14 +879,28 @@ class ExpressionGenerator(BaseGenerator):
 
         if isinstance(arg, FunctionCall):
             func_name = None
+            qualifier_name = None
             if isinstance(arg.function, Identifier):
                 func_name = arg.function.name
             elif isinstance(arg.function, MemberAccess):
                 func_name = arg.function.member
+                if isinstance(arg.function.expression, Identifier):
+                    qualifier_name = arg.function.expression.name
             if func_name:
                 if func_name == 'address':
                     return f'{expr} as `0x${{string}}`'
-                if func_name in ('keccak256', 'sha256', 'blockhash', 'hashBattle', 'hashBattleOffer'):
+                # Solidity built-ins that return bytes32
+                if func_name in ('keccak256', 'sha256', 'blockhash'):
+                    return f'{expr} as `0x${{string}}`'
+                # User-defined functions: resolve return type via TypeRegistry.
+                # Library / contract static call: `Foo.bar(...)`
+                return_type: Optional[str] = None
+                if qualifier_name and qualifier_name in self._ctx.known_method_return_types:
+                    return_type = self._ctx.known_method_return_types[qualifier_name].get(func_name)
+                # Same-contract bare call: `bar(...)` inside the current contract
+                elif qualifier_name is None:
+                    return_type = self._ctx.current_method_return_types.get(func_name)
+                if return_type in ('address', 'bytes32'):
                     return f'{expr} as `0x${{string}}`'
 
         if isinstance(arg, TypeCast):

@@ -278,36 +278,41 @@ class FactoryGenerator:
     def _get_resolved_deps(
         self, contract_name: str, meta: ContractMetadata
     ) -> List[Tuple[str, str, str, bool]]:
-        """Get resolved dependencies for a contract."""
-        deps = []
-        for idx, (param_name, param_type) in enumerate(meta.constructor_params):
-            is_interface = param_type in self.metadata.interfaces
-            is_contract = param_type in self.metadata.contracts
+        """Get resolved dependencies for a contract.
 
-            if is_contract or is_interface:
-                resolved_name = param_type
-                is_self = False
+        Thin wrapper over `DependencyResolver.resolve_constructor_params`:
+        flattens the `ResolvedDependency` into the (name, type, impl, is_self)
+        tuple shape `_generate_registration` expects.
+        """
+        if not self.resolver:
+            # No resolver → fall back to treating every contract-typed param as
+            # its own implementation (matches the old pre-resolver behavior).
+            out: List[Tuple[str, str, str, bool]] = []
+            for param_name, param_type in meta.constructor_params:
+                base = param_type.rstrip('[]')
+                if base in self.metadata.contracts or base in self.metadata.interfaces:
+                    out.append((param_name, param_type, param_type, False))
+            return out
 
-                if self.resolver and is_interface:
-                    resolved_dep = self.resolver.resolve(
-                        contract_name=contract_name,
-                        param_name=param_name,
-                        type_name=param_type,
-                        is_interface=True,
-                        is_value_type=False,
-                        param_index=idx,
-                    )
-                    if resolved_dep.resolved_as:
-                        if resolved_dep.resolved_as == "@self":
-                            is_self = True
-                            resolved_name = None
-                        elif isinstance(resolved_dep.resolved_as, list):
-                            resolved_name = resolved_dep.resolved_as[0] if resolved_dep.resolved_as else param_type
-                        else:
-                            resolved_name = resolved_dep.resolved_as
+        resolved = self.resolver.resolve_constructor_params(
+            contract_name=contract_name,
+            constructor_params=meta.constructor_params,
+            known_interfaces=self.metadata.interfaces,
+            known_contracts=set(self.metadata.contracts.keys()),
+        )
 
-                deps.append((param_name, param_type, resolved_name, is_self))
-
+        deps: List[Tuple[str, str, str, bool]] = []
+        for param_name, param_type, dep in resolved:
+            resolved_name: object = param_type
+            is_self = False
+            if dep.resolved_as == "@self":
+                is_self = True
+                resolved_name = None
+            elif isinstance(dep.resolved_as, list):
+                resolved_name = dep.resolved_as[0] if dep.resolved_as else param_type
+            elif dep.resolved_as is not None:
+                resolved_name = dep.resolved_as
+            deps.append((param_name, param_type, resolved_name, is_self))
         return deps
 
     def _find_implementation(self, interface_name: str) -> Optional[str]:

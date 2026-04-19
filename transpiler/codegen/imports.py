@@ -89,7 +89,8 @@ class ImportGenerator:
         """Build the list of runtime imports."""
         imports = [
             'Contract', 'Storage', 'ADDRESS_ZERO',
-            'sha256', 'sha256String', 'addressToUint', 'blockhash'
+            'sha256', 'sha256String', 'addressToUint', 'blockhash',
+            'ecrecover', 'selfdestruct',
         ]
 
         # Add set types if used

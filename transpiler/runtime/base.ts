@@ -781,7 +781,12 @@ export abstract class Contract {
   // =========================================================================
 
   protected _yulStorageKey(key: any): string {
-    return typeof key === 'string' ? key : JSON.stringify(key);
+    if (typeof key === 'string') return key;
+    // bigint keys (e.g. Solady's magic _OWNER_SLOT constants) would otherwise
+    // crash JSON.stringify. Canonicalize to 0x-prefixed hex so that identical
+    // slot values always produce the same string key regardless of source.
+    if (typeof key === 'bigint') return '0x' + key.toString(16);
+    return JSON.stringify(key);
   }
 
   protected _storageRead(key: any): bigint {

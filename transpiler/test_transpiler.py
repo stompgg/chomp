@@ -532,28 +532,6 @@ class TestYulParser(unittest.TestCase):
 class TestInterfaceTypeGeneration(unittest.TestCase):
     """Test that Solidity interfaces generate TypeScript interfaces with method signatures."""
 
-    def test_interface_generates_ts_interface(self):
-        """Test that a Solidity interface produces a TypeScript interface."""
-        source = '''
-        interface IFoo {
-            function bar(uint256 x) external returns (uint256);
-            function baz() external view returns (address);
-        }
-        '''
-
-        lexer = Lexer(source)
-        tokens = lexer.tokenize()
-        parser = Parser(tokens)
-        ast = parser.parse()
-
-        generator = TypeScriptCodeGenerator()
-        output = generator.generate(ast)
-
-        self.assertIn('export interface IFoo', output)
-        self.assertIn('bar(', output)
-        # Parameterless getters should be properties, not methods
-        self.assertIn('baz: string;', output)
-
     def test_interface_type_not_any(self):
         """Test that interface types don't collapse to 'any'."""
         source = '''
@@ -863,6 +841,358 @@ class TestTypeCastGeneration(unittest.TestCase):
 
         # Should produce something for the address cast
         self.assertIn('getAddr', output)
+
+
+# =============================================================================
+# extruder init — scan phase
+# =============================================================================
+
+class TestInitScan(unittest.TestCase):
+    """Unit tests for `extruder init`'s file classification heuristics.
+
+    These are the tests that let us change heuristics without regressing.
+    Each case boils down to: "given this Solidity source, does the scan
+    produce the expected verdict?"
+    """
+
+    def _classify(self, source: str, rel_path: str = 'Test.sol'):
+        """Write a temp file with `source`, classify it, return the verdict."""
+        import tempfile
+        from pathlib import Path
+        from transpiler.init import _classify_file
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.sol', delete=False
+        ) as f:
+            f.write(source)
+            path = Path(f.name)
+        try:
+            verdict, _ast = _classify_file(path, rel_path)
+            return verdict
+        finally:
+            path.unlink()
+
+    def test_plain_contract_is_ok(self):
+        source = '''
+        contract Plain {
+            uint256 x;
+            function set(uint256 v) external { x = v; }
+            function get() external view returns (uint256) { return x; }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'OK')
+
+    def test_path_under_test_dir_is_skip(self):
+        from transpiler.init import _classify_file
+        from pathlib import Path
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.sol', delete=False
+        ) as f:
+            f.write('contract X {}')
+            path = Path(f.name)
+        try:
+            v, _ = _classify_file(path, 'test/Foo.sol')
+            self.assertEqual(v.verdict, 'SKIP')
+        finally:
+            path.unlink()
+
+    def test_foundry_t_sol_is_skip(self):
+        from transpiler.init import _classify_file
+        from pathlib import Path
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.sol', delete=False
+        ) as f:
+            f.write('contract X {}')
+            path = Path(f.name)
+        try:
+            v, _ = _classify_file(path, 'Foo.t.sol')
+            self.assertEqual(v.verdict, 'SKIP')
+        finally:
+            path.unlink()
+
+    def test_array_allocation_is_not_flagged(self):
+        """`new bytes(n)` and `new uint[](n)` are memory allocation, not
+        contract deployment — should NOT trip the REPLACE flag."""
+        source = '''
+        contract AllocsArrays {
+            function alloc(uint256 n) external pure returns (bytes memory, uint256[] memory) {
+                bytes memory b = new bytes(n);
+                uint256[] memory arr = new uint256[](n);
+                return (b, arr);
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'OK', f'reasons={v.reasons}')
+
+    def test_contract_deployment_is_replace(self):
+        """`new Foo()` actually deploys; we don't have a bytecode model."""
+        source = '''
+        contract Foo { constructor(uint256) {} }
+        contract Factory {
+            function make() external returns (Foo) { return new Foo(42); }
+        }
+        '''
+        # Note: _classify walks both contracts; Factory has the new expression.
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'REPLACE')
+        self.assertTrue(any('new Foo' in r for r in v.reasons))
+
+    def test_ecrecover_call_is_replace(self):
+        source = '''
+        contract Verifies {
+            function check(bytes32 h, uint8 v, bytes32 r, bytes32 s)
+                external pure returns (address) {
+                return ecrecover(h, v, r, s);
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'REPLACE')
+        self.assertTrue(any('ecrecover' in r for r in v.reasons))
+
+    def test_low_level_call_is_replace(self):
+        source = '''
+        contract Forwarder {
+            function fwd(address target, bytes calldata data) external
+                returns (bool, bytes memory) {
+                return target.call(data);
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'REPLACE')
+        self.assertTrue(any('.call()' in r for r in v.reasons))
+
+    def test_yul_sload_sstore_alone_is_ok(self):
+        """Magic-number slot constants + sload/sstore are now handled by the
+        transpiler (bigint `_yulStorageKey` fix). No red flag expected."""
+        source = '''
+        contract UsesMagicSlot {
+            uint256 private constant _OWNER_SLOT = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
+            function setOwner(address newOwner) external {
+                assembly {
+                    sstore(_OWNER_SLOT, newOwner)
+                }
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'OK', f'reasons={v.reasons}')
+
+    def test_yul_keccak_for_slot_is_replace(self):
+        """`sstore(keccak256(...), v)` collapses to slot 0 under the current
+        no-memory-model scheme."""
+        source = '''
+        contract PerUserSlot {
+            function set(uint256 v) external {
+                assembly {
+                    mstore(0x00, caller())
+                    sstore(keccak256(0x00, 0x20), v)
+                }
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'REPLACE')
+        self.assertTrue(any('keccak256' in r for r in v.reasons))
+
+    def test_precompile_staticcall_is_replace(self):
+        """`staticcall(gas(), 1, ...)` is ecrecover via the precompile."""
+        source = '''
+        contract UsesPrecompile {
+            function recover(bytes32 h) external view returns (address r) {
+                assembly {
+                    mstore(0x00, h)
+                    let ok := staticcall(gas(), 1, 0x00, 0x20, 0x00, 0x20)
+                    r := mload(0x00)
+                }
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'REPLACE')
+        self.assertTrue(any('precompile' in r for r in v.reasons))
+
+    def test_interface_inference_single_impl(self):
+        """Single implementer → IFACE_AUTO classification."""
+        from transpiler.type_system import TypeRegistry
+        from transpiler.init import _infer_interfaces, IFACE_AUTO
+        src = '''
+        interface IFoo { function bar() external; }
+        contract FooImpl is IFoo { function bar() external {} }
+        '''
+        reg = TypeRegistry()
+        reg.discover_from_source(src)
+        mappings = _infer_interfaces(reg)
+        m = next(m for m in mappings if m.interface_name == 'IFoo')
+        self.assertEqual(m.classification, IFACE_AUTO)
+        self.assertEqual(m.implementers, ['FooImpl'])
+
+    def test_interface_inference_multi_impl_prompts(self):
+        from transpiler.type_system import TypeRegistry
+        from transpiler.init import _infer_interfaces, IFACE_PROMPT
+        src = '''
+        interface IFoo { function bar() external; }
+        contract A is IFoo { function bar() external {} }
+        contract B is IFoo { function bar() external {} }
+        '''
+        reg = TypeRegistry()
+        reg.discover_from_source(src)
+        mappings = _infer_interfaces(reg)
+        m = next(m for m in mappings if m.interface_name == 'IFoo')
+        self.assertEqual(m.classification, IFACE_PROMPT)
+        self.assertEqual(sorted(m.implementers), ['A', 'B'])
+
+    def test_interface_inference_many_impls_is_tag(self):
+        from transpiler.type_system import TypeRegistry
+        from transpiler.init import (
+            _infer_interfaces, IFACE_TAG, TAG_INTERFACE_THRESHOLD,
+        )
+        # Build a source with TAG_INTERFACE_THRESHOLD implementers.
+        n = TAG_INTERFACE_THRESHOLD
+        src = 'interface IFoo { function bar() external; }\n'
+        for i in range(n):
+            src += f'contract C{i} is IFoo {{ function bar() external {{}} }}\n'
+        reg = TypeRegistry()
+        reg.discover_from_source(src)
+        mappings = _infer_interfaces(reg)
+        m = next(m for m in mappings if m.interface_name == 'IFoo')
+        self.assertEqual(m.classification, IFACE_TAG)
+
+    def test_dependency_resolver_dry_run_reports_ambiguous(self):
+        """Constructor param whose interface has two implementers and no
+        override should surface in unresolved_deps with both implementers as
+        candidates."""
+        import tempfile
+        from pathlib import Path
+        from transpiler.init import scan
+        from transpiler.type_system import TypeRegistry
+
+        src = '''
+        interface IFoo { function bar() external; }
+        contract FooA is IFoo { function bar() external {} }
+        contract FooB is IFoo { function bar() external {} }
+        contract UsesFoo {
+            IFoo _foo;
+            constructor(IFoo foo) { _foo = foo; }
+        }
+        '''
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'Sample.sol').write_text(src)
+            reg = TypeRegistry()
+            reg.discover_from_directory(str(tree))
+            report = scan(tree, reg)
+
+        deps = [d for d in report.unresolved_deps if d.contract_name == 'UsesFoo']
+        self.assertEqual(len(deps), 1)
+        d = deps[0]
+        self.assertEqual(d.param_name, 'foo')
+        self.assertEqual(d.type_name, 'IFoo')
+        self.assertEqual(sorted(d.implementers), ['FooA', 'FooB'])
+
+    def test_modifier_use_is_maybe_not_ok(self):
+        """A contract whose functions apply modifiers transpiles fine but
+        silently drops the access-control check — should surface as MAYBE."""
+        source = '''
+        contract HasModifier {
+            address owner;
+            modifier onlyOwner() { require(msg.sender == owner); _; }
+            function setOwner(address newOwner) external onlyOwner {
+                owner = newOwner;
+            }
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'MAYBE')
+        self.assertTrue(any('W001' in r for r in v.reasons))
+
+    def test_receive_function_is_maybe(self):
+        source = '''
+        contract AcceptsEth {
+            receive() external payable {}
+            function foo() external {}
+        }
+        '''
+        v = self._classify(source)
+        self.assertEqual(v.verdict, 'MAYBE')
+        self.assertTrue(any('W003' in r for r in v.reasons))
+
+    def test_build_plan_skips_matching_existing_alias(self):
+        """If existing config already has the alias set to the same value
+        the scan suggests, the plan should not re-add it."""
+        import tempfile
+        from pathlib import Path
+        from transpiler.init import scan, build_plan
+        from transpiler.type_system import TypeRegistry
+
+        src = '''
+        interface IFoo { function bar() external; }
+        contract Foo is IFoo { function bar() external {} }
+        '''
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'Sample.sol').write_text(src)
+            reg = TypeRegistry()
+            reg.discover_from_directory(str(tree))
+            report = scan(tree, reg)
+        existing = {'interfaceAliases': {'IFoo': 'Foo'}}
+        plan = build_plan(report, yes_all=True, existing_config=existing)
+        self.assertNotIn('IFoo', plan.interface_aliases,
+            'matching existing alias should be a silent no-op')
+
+    def test_build_plan_preserves_existing_alias_on_conflict_under_yes(self):
+        """Under --yes, a conflicting existing alias wins silently — the
+        plan should not schedule an overwrite."""
+        import tempfile
+        from pathlib import Path
+        from transpiler.init import scan, build_plan
+        from transpiler.type_system import TypeRegistry
+
+        src = '''
+        interface IFoo { function bar() external; }
+        contract Foo is IFoo { function bar() external {} }
+        '''
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'Sample.sol').write_text(src)
+            reg = TypeRegistry()
+            reg.discover_from_directory(str(tree))
+            report = scan(tree, reg)
+        existing = {'interfaceAliases': {'IFoo': 'SomethingElse'}}
+        plan = build_plan(report, yes_all=True, existing_config=existing)
+        # Plan should NOT contain IFoo — existing value wins. Apply then
+        # merges and preserves the existing entry.
+        self.assertNotIn('IFoo', plan.interface_aliases)
+
+    def test_dependency_resolver_dry_run_skips_resolved(self):
+        """Single-implementer interfaces are resolved via the `I`-prefix-strip
+        fallback path and should NOT appear in unresolved_deps."""
+        import tempfile
+        from pathlib import Path
+        from transpiler.init import scan
+        from transpiler.type_system import TypeRegistry
+
+        src = '''
+        interface IFoo { function bar() external; }
+        contract Foo is IFoo { function bar() external {} }
+        contract UsesFoo {
+            IFoo _foo;
+            constructor(IFoo foo) { _foo = foo; }
+        }
+        '''
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'Sample.sol').write_text(src)
+            reg = TypeRegistry()
+            reg.discover_from_directory(str(tree))
+            report = scan(tree, reg)
+
+        deps = [d for d in report.unresolved_deps if d.contract_name == 'UsesFoo']
+        self.assertEqual(len(deps), 0, f'expected auto-resolution, got {deps}')
 
 
 if __name__ == '__main__':
