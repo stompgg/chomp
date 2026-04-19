@@ -1,8 +1,7 @@
 # `extruder init` — project bootstrap
 
 `extruder init <src-dir>` walks your Solidity tree, figures out what config you
-need, and writes a starter `transpiler-config.json`. The goal: turn "what do I
-put in the config?" from a research task into a two-minute interactive prompt.
+need, and writes a starter `transpiler-config.json`.
 
 ```bash
 python3 /path/to/extruder/sol2ts.py init src/

@@ -1,6 +1,6 @@
 # Runtime replacements
 
-A runtime replacement is hand-written TypeScript that stands in for a Solidity
+A runtime replacement is TypeScript file that stands in for a Solidity
 file the transpiler can't (or shouldn't) lower automatically. When the
 transpiler encounters an import of the replaced file, it emits a re-export
 stub instead of transpiled output, and your hand-written module is what

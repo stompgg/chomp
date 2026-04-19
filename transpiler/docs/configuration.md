@@ -1,9 +1,5 @@
 # `transpiler-config.json` reference
 
-One config file controls everything the transpiler needs beyond its defaults.
-Location: anywhere on disk, pointed at via `--overrides`. The default is
-`./transpiler-config.json` alongside the extruder CLI.
-
 [`extruder init`](init.md) writes most of what you need. This doc is for
 understanding and editing the fields by hand.
 

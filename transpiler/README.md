@@ -1,39 +1,14 @@
 # extruder
 
-Feed Solidity in one end, get a shaped TypeScript mirror out the other.
-
 **extruder** is a source-to-source transpiler that compiles Solidity contracts
-into TypeScript you can run in Node or the browser. Point it at a Solidity
-tree; get back a TypeScript module with one class per contract, a
-dependency-injection container, and a runtime library that models storage,
-events, and inter-contract calls.
-
-> **Alpha warning.** No package releases yet — clone the repo and pin a git
-> tag. Breaking changes may land between tags; read `MIGRATION.md` before
-> bumping.
-
-## Why
-
-Running contracts under an EVM simulator gives you bytecode fidelity but
-makes stepping through logic, hydrating mid-execution state, and writing
-expressive tests painful. extruder produces plain TypeScript, so you can set
-a breakpoint, patch a storage slot, or drive a turn loop at the speed of
-regular JS — with Solidity semantics preserved where it matters (integer
-types, storage slotting, events, inheritance).
-
-Consumers have used it to build client-side game simulators, fuzz harnesses,
-and differential-testing rigs against the real chain.
+into TypeScript you can run in Node or the browser.
 
 ## Should I use this?
 
 **Good fit** if you want:
 
 - A TypeScript mirror of your contracts you can step through in a debugger,
-  mutate freely, and run thousands of times per second.
-- Expressive tests that read like business logic rather than EVM
-  cheatcodes.
-- Differential testing: compare TS output against an on-chain call and flag
-  drift.
+  mutate freely, etc.
 - A client-side simulator for a game or protocol so users can preview
   outcomes before signing.
 
@@ -44,9 +19,6 @@ and differential-testing rigs against the real chain.
   slots on-chain-compatible).
 - To port complex `delegatecall` or proxy patterns — those don't survive
   translation.
-- Production-grade safety. This is a simulation tool, not an execution
-  environment. If the semantics gaps in [`docs/semantics.md`](docs/semantics.md)
-  make you nervous, use the real EVM.
 
 ## Install
 
@@ -75,7 +47,7 @@ python3 ~/tools/extruder/sol2ts.py src/ -o ts-output -d src --emit-metadata
 
 See [`docs/quickstart.md`](docs/quickstart.md) for the full walkthrough.
 
-## What it is, exactly
+## What it does
 
 - **Parse → AST → emit TS.** Not bytecode, not an EVM.
 - `uint*` / `int*` → `bigint`. `address` / `bytes*` → `string`. Mappings →
@@ -86,7 +58,7 @@ See [`docs/quickstart.md`](docs/quickstart.md) for the full walkthrough.
 - Inter-contract references are plain object references. There's no
   address-based dispatch unless you opt into it.
 
-## What it is not
+## What it does not
 
 extruder does not produce bytecode-compatible output, does not run an EVM,
 and does not preserve all Solidity semantics exactly. The biggest gaps —
@@ -141,18 +113,8 @@ python3 transpiler/test_transpiler.py
 
 Python unit tests cover the lexer, parser, codegen (Yul, type casts,
 diagnostics, ABI encoding, interface generation, mappings), the dependency
-resolver, and the `init` scan. End-to-end verification of transpiled output
-against a specific Solidity project is a consumer-side concern — write it
-against your own `ts-output/` with whatever JS test runner you prefer (vitest
-is a reasonable default; see the [quickstart](docs/quickstart.md)).
+resolver, and the `init` scan.
 
 ## License
 
 AGPL-3.0.
-
-## Origin
-
-extruder started life as the internal tooling for
-[CHOMP](https://github.com/owenshen/chomp), an on-chain battle game. The
-transpiler was general-purpose from the beginning but wasn't extracted until
-the scaffolding stabilized. Contributors: see CONTRIBUTORS (TBD).
