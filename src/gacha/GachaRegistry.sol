@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {EnumerableSetLib} from "../lib/EnumerableSetLib.sol";
 
+import {GACHA_ROLL_COST, GACHA_POINTS_PER_WIN, GACHA_POINTS_PER_LOSS} from "../Constants.sol";
 import {MonStats, Mon} from "../Structs.sol";
 import {IEngine} from "../IEngine.sol";
 import {IEngineHook} from "../IEngineHook.sol";
@@ -17,12 +18,11 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     uint16 public constant STEPS_BITMAP = 0x08;
 
     uint256 public constant INITIAL_ROLLS = 4;
-    uint256 public constant ROLL_COST = 7;
-    uint256 public constant POINTS_PER_WIN = 2;
-    uint256 public constant POINTS_PER_LOSS = 1;
+    uint256 public constant ROLL_COST = GACHA_ROLL_COST;
+    uint256 public constant POINTS_PER_WIN = GACHA_POINTS_PER_WIN;
+    uint256 public constant POINTS_PER_LOSS = GACHA_POINTS_PER_LOSS;
 
     uint256 public immutable BATTLE_COOLDOWN;
-
     IMonRegistry public immutable MON_REGISTRY;
     IEngine public immutable ENGINE;
     IGachaRNG immutable RNG;

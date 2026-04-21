@@ -740,6 +740,8 @@ contract Engine is IEngine, MappingAllocator {
             if (newKOState && !wasKOed) {
                 _setMonKO(config, playerIndex, monIndex);
                 koOccurredFlag = 1;
+                // Lock in winner immediately if this KO ends the game
+                _checkAndSetWinnerIfGameOver(config, playerIndex);
             } else if (!newKOState && wasKOed) {
                 _clearMonKO(config, playerIndex, monIndex);
             }
@@ -995,9 +997,36 @@ contract Engine is IEngine, MappingAllocator {
         globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
     }
 
+    /// @notice Check if the KO'd player's team is fully wiped and lock in the winner immediately
+    /// @dev Called after each KO to ensure winner is determined by order of KOs, not bitmap check order
+    function _checkAndSetWinnerIfGameOver(BattleConfig storage config, uint256 koPlayerIndex) internal {
+        BattleData storage battle = battleData[battleKeyForWrite];
+
+        // If winner already set, don't overwrite
+        if (battle.winnerIndex != 2) {
+            return;
+        }
+
+        // Check if KO'd player's team is fully wiped
+        uint256 koBitmap = _getKOBitmap(config, koPlayerIndex);
+        uint256 teamSize = (koPlayerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+        uint256 fullMask = (1 << teamSize) - 1;
+
+        if (koBitmap == fullMask) {
+            // This player's team is fully wiped, other player wins
+            battle.winnerIndex = uint8((koPlayerIndex + 1) % 2);
+        }
+    }
+
     function _dealDamageInternal(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, int32 damage)
         internal
     {
+        // If game is already over, skip all damage
+        BattleData storage battle = battleData[battleKeyForWrite];
+        if (battle.winnerIndex != 2) {
+            return;
+        }
+
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
 
         if (monState.isKnockedOut) {
@@ -1013,6 +1042,9 @@ contract Engine is IEngine, MappingAllocator {
             monState.isKnockedOut = true;
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
+
+            // Lock in winner immediately if this KO ends the game
+            _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
         _runEffects(battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, abi.encode(damage));
     }
@@ -1246,73 +1278,52 @@ contract Engine is IEngine, MappingAllocator {
         battleKey = keccak256(abi.encode(pairHash, pairHashNonce));
     }
 
+    /// @notice Check for game over and determine which player(s) need to switch next turn
+    /// @dev Game-over detection is now handled immediately at KO time by _checkAndSetWinnerIfGameOver.
+    ///      This function only checks if winner was already set, then handles switch flags for KO'd mons.
     function _checkForGameOverOrKO(BattleConfig storage config, BattleData storage battle, uint256 priorityPlayerIndex)
         internal
+        view
         returns (uint256 playerSwitchForTurnFlag, bool isGameOver)
     {
-        uint256 otherPlayerIndex = (priorityPlayerIndex + 1) % 2;
-        uint8 existingWinnerIndex = battle.winnerIndex;
-
-        // First check if we already calculated a winner
-        if (existingWinnerIndex != 2) {
+        // Winner is set immediately in _dealDamageInternal when a KO results in game over
+        if (battle.winnerIndex != 2) {
             return (playerSwitchForTurnFlag, true);
         }
 
-        // Check for game over using KO bitmaps (O(1) instead of O(n) loop)
-        // A game is over if all of a player's mons are KOed (all bits set up to teamSize)
-        uint256 newWinnerIndex = 2;
-        uint256 p0TeamSize = config.teamSizes & 0x0F;
-        uint256 p1TeamSize = config.teamSizes >> 4;
+        // Not a game over - check for KOs and set the player switch for turn flag
+        playerSwitchForTurnFlag = 2;
+
         uint256 p0KOBitmap = _getKOBitmap(config, 0);
         uint256 p1KOBitmap = _getKOBitmap(config, 1);
-        // Full team mask: (1 << teamSize) - 1, e.g. teamSize=3 -> 0b111
-        uint256 p0FullMask = (1 << p0TeamSize) - 1;
-        uint256 p1FullMask = (1 << p1TeamSize) - 1;
 
-        if (p0KOBitmap == p0FullMask) {
-            newWinnerIndex = 1; // p1 wins
-        } else if (p1KOBitmap == p1FullMask) {
-            newWinnerIndex = 0; // p0 wins
+        // Global effect context (priorityPlayerIndex == 2): check both players explicitly
+        if (priorityPlayerIndex >= 2) {
+            uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+            uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+            bool isP0KO = (p0KOBitmap & (1 << p0ActiveMonIndex)) != 0;
+            bool isP1KO = (p1KOBitmap & (1 << p1ActiveMonIndex)) != 0;
+            if (isP0KO && !isP1KO) playerSwitchForTurnFlag = 0;
+            else if (!isP0KO && isP1KO) playerSwitchForTurnFlag = 1;
+            return (playerSwitchForTurnFlag, false);
         }
-        // If we found a winner, set it on the battle data and return
-        if (newWinnerIndex != 2) {
-            battle.winnerIndex = uint8(newWinnerIndex);
-            return (playerSwitchForTurnFlag, true);
+
+        uint256 otherPlayerIndex = (priorityPlayerIndex + 1) % 2;
+        uint256 priorityActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
+        uint256 otherActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
+        uint256 priorityKOBitmap = priorityPlayerIndex == 0 ? p0KOBitmap : p1KOBitmap;
+        uint256 otherKOBitmap = priorityPlayerIndex == 0 ? p1KOBitmap : p0KOBitmap;
+        bool isPriorityPlayerActiveMonKnockedOut = (priorityKOBitmap & (1 << priorityActiveMonIndex)) != 0;
+        bool isNonPriorityPlayerActiveMonKnockedOut = (otherKOBitmap & (1 << otherActiveMonIndex)) != 0;
+
+        // If the priority player mon is KO'ed (and the other player isn't), next turn is just for that player to switch
+        if (isPriorityPlayerActiveMonKnockedOut && !isNonPriorityPlayerActiveMonKnockedOut) {
+            playerSwitchForTurnFlag = priorityPlayerIndex;
         }
-        // Otherwise if it isn't a game over, we check for KOs and set the player switch for turn flag
-        else {
-            // Always set default switch to be 2 (allow both players to make a move)
-            playerSwitchForTurnFlag = 2;
 
-            // Global effect context (priorityPlayerIndex == 2): _unpackActiveMonIndex and KO bitmap
-            // lookups are invalid for playerIndex >= 2, so check both players explicitly
-            if (priorityPlayerIndex >= 2) {
-                uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-                uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-                bool isP0KO = (p0KOBitmap & (1 << p0ActiveMonIndex)) != 0;
-                bool isP1KO = (p1KOBitmap & (1 << p1ActiveMonIndex)) != 0;
-                if (isP0KO && !isP1KO) playerSwitchForTurnFlag = 0;
-                else if (!isP0KO && isP1KO) playerSwitchForTurnFlag = 1;
-                return (playerSwitchForTurnFlag, false);
-            }
-
-            // Use already-loaded KO bitmaps to check active mon KO status (avoids SLOAD)
-            uint256 priorityActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex);
-            uint256 otherActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex);
-            uint256 priorityKOBitmap = priorityPlayerIndex == 0 ? p0KOBitmap : p1KOBitmap;
-            uint256 otherKOBitmap = priorityPlayerIndex == 0 ? p1KOBitmap : p0KOBitmap;
-            bool isPriorityPlayerActiveMonKnockedOut = (priorityKOBitmap & (1 << priorityActiveMonIndex)) != 0;
-            bool isNonPriorityPlayerActiveMonKnockedOut = (otherKOBitmap & (1 << otherActiveMonIndex)) != 0;
-
-            // If the priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the other player
-            if (isPriorityPlayerActiveMonKnockedOut && !isNonPriorityPlayerActiveMonKnockedOut) {
-                playerSwitchForTurnFlag = priorityPlayerIndex;
-            }
-
-            // If the non priority player mon is KO'ed (and the other player isn't), then next turn we tenatively set it to be just the priority player
-            if (!isPriorityPlayerActiveMonKnockedOut && isNonPriorityPlayerActiveMonKnockedOut) {
-                playerSwitchForTurnFlag = otherPlayerIndex;
-            }
+        // If the non-priority player mon is KO'ed (and the other player isn't), next turn is just for that player to switch
+        if (!isPriorityPlayerActiveMonKnockedOut && isNonPriorityPlayerActiveMonKnockedOut) {
+            playerSwitchForTurnFlag = otherPlayerIndex;
         }
     }
 

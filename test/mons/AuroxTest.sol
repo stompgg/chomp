@@ -631,6 +631,107 @@ contract AuroxTest is Test, BattleHelper {
         assertEq(bobAttackDelta, int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100, "Bob's mon should be boosted");
     }
 
+    /**
+     * When both players have 1 mon left and the attacker uses a recoil move that:
+     * 1. KOs the opponent's last mon
+     * 2. Then KOs the attacker via recoil
+     * The attacker should win because they KO'd the opponent first.
+     *
+     * Before the fix: winner is undefined (depends on player index check order in Engine)
+     * After the fix: attacker wins
+     */
+    function test_bullRushMutualKO_attackerShouldWin() public {
+        BullRush bullRush = new BullRush(ITypeCalculator(address(typeCalc)));
+
+        // Create an attack that deals significant damage
+        StandardAttack attack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 85,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: DEFAULT_PRIORITY,
+                MOVE_TYPE: Type.Fire,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Attack",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(bullRush)));
+        aliceMoves[1] = uint256(uint160(address(attack)));
+
+        uint256[] memory bobMoves = new uint256[](2);
+        bobMoves[0] = uint256(uint160(address(attack)));
+        bobMoves[1] = uint256(uint160(address(attack)));
+
+        uint32 maxHp = 100;
+
+        // Alice's mon: will use BullRush, needs to be faster on the critical turn
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = aliceMoves;
+        aliceMon.stats.hp = maxHp;
+        aliceMon.stats.speed = 100; // Fast
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+
+        // Bob's mon: slower, will be KO'd by BullRush
+        Mon memory bobMon = _createMon();
+        bobMon.moves = bobMoves;
+        bobMon.stats.hp = maxHp;
+        bobMon.stats.speed = 50; // Slower
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        // Turn 0: Both players select their first mon
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        // Turn 1: Alice does nothing, Bob attacks Alice
+        // Bob's 85 base power attack should deal ~85 damage, leaving Alice with ~15 HP
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        // Verify Alice has taken significant damage (should have ~15 HP left)
+        int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        assertTrue(aliceHpDelta <= -80, "Alice should have taken at least 80 damage");
+
+        // Warp time to avoid GameStartsAndEndsSameBlock error
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Turn 2: Alice uses BullRush (goes first due to higher speed), Bob does nothing
+        // BullRush should KO Bob (120 base power >> 100 HP)
+        // After the fix: game ends immediately when Bob is KO'd, self-damage doesn't trigger
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Verify Bob is KO'd
+        int32 bobKO = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut);
+        assertEq(bobKO, 1, "Bob's mon should be KO'd from BullRush");
+
+        // After the fix: Alice should NOT be KO'd because self-damage doesn't trigger once game is over
+        // Before the fix: Alice would be KO'd from recoil, and winner would incorrectly be Bob
+        int32 aliceKO = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
+        assertEq(aliceKO, 0, "Alice's mon should NOT be KO'd - self damage skipped after game over");
+
+        // Alice should win
+        address winner = engine.getWinner(battleKey);
+        assertEq(winner, ALICE, "Alice should win because she KO'd Bob's last mon");
+    }
+
     function test_volatilePunchDealsDamageAndTriggersStatusEffects() public {
         uint32 maxHp = 100;
 

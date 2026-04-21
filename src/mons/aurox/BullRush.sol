@@ -50,8 +50,7 @@ contract BullRush is StandardAttack {
             moveType(engine, battleKey), moveClass(engine, battleKey),
             critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
         );
-
-        // Deal self-damage
+        
         if (damage > 0) {
             int32 maxHp = int32(
                 engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
