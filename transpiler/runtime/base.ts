@@ -2,7 +2,7 @@
  * Base Contract class and core utilities
  *
  * This file is separate from index.ts to avoid circular dependencies
- * with runtime replacement modules like Ownable, ECDSA, etc.
+ * with runtime replacement modules like Ownable, etc.
  *
  * ALL contract classes must extend this Contract — there is only one.
  * index.ts re-exports it; it does NOT define a second Contract class.

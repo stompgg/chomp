@@ -38,9 +38,9 @@ Good thing I'm crazy.
 
 DeFi has seen incredible adoption and resilience, and we're now seeing broader market structure like prediction markets or futarchy. But the EVM is an incredibly rich programming environment. There is so much you can do! You can just build things. You can just build a good game.
 
-This is my love letter to what drew me into the space: all the composability, technical nitty-gritty, packaged into something you could show your friends.
-
 Crypto has grown up and the suits are here. A lot of the fun has gone, replaced by something sterile. I just want to build something for the optimistic ones left.
+
+This is my love letter to what drew me into the space: all the composability, technical nitty-gritty, packaged into something you could show your friends. I want a game people can try easily, a base layer that doesn't rely on playing to win some inflationary tokens. Just, a game, that runs onchain, that's not, like, some insanely complicated RTS like Dark Forest.
 
 Dare we to dream a little again? 
 
@@ -58,7 +58,7 @@ Come try the game out if you get a chance; we got your bullas, beras, miladies, 
 ![ekineki](../drool/imgs/ekineki_mini.gif)
 ![nirvamma](../drool/imgs/Nirvamma_32x32.gif)
 
-Even if the game can't be on every chain, I want the best of what we've built to find its legacy here in some way. Stomp is here to celebrate those of us who still want fun onchain experiences. Not exactly a public good, more like a public attraction. I want Stomp to be a game you try out, something you can legitimately show people who know nothing about chains. 
+Even if the game can't be on every chain, I want the best of what we've built to find its legacy here in some way. Stomp is here to celebrate those of us who still want fun onchain experiences. Not exactly a public good, more like a public attraction. If you want more weird stuff onchain, you should be excited.
 
 And even if you don't, I want it to stand as a meaningful example of an application full-fledged and robustly onchain, similar to ENS or Uniswap.
 

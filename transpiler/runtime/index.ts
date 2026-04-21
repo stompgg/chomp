@@ -8,7 +8,7 @@
 import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, hexToBigInt, sha256 as viemSha256 } from 'viem';
 
 // Note: Contract, Storage, EventStream, and globalEventStream are defined in ./base
-// and re-exported here. Runtime replacement modules (Ownable, ECDSA, etc.) import
+// and re-exported here. Runtime replacement modules (Ownable, etc.) import
 // directly from ./base to avoid circular dependencies.
 
 // =============================================================================
@@ -494,7 +494,6 @@ export const globalContainer = new ContractContainer();
 // See transpiler/runtime-replacements.json for configuration.
 
 export { Ownable } from './Ownable';
-export { EIP712 } from './EIP712';
 export {
   EnumerableSetLib,
   AddressSet,
@@ -502,4 +501,3 @@ export {
   Uint256Set,
   Int256Set,
 } from './EnumerableSetLib';
-export { ECDSA } from './ECDSA';
