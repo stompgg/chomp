@@ -209,7 +209,8 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
         ("SignedCommitManager", "commit.ts", "SignedCommitManagerABI"),
         ("DefaultMatchmaker", "matchmaker.ts", "DefaultMatchmakerABI"),
         ("SignedMatchmaker", "signed-matchmaker.ts", "SignedMatchmakerABI"),
-        ("SimplePM", "simple-pm.ts", "SimplePMABI")
+        ("SimplePM", "simple-pm.ts", "SimplePMABI"),
+        ("GachaRegistry", "gacha.ts", "GachaRegistryABI")
     ]
 
     # Define output paths for both repositories

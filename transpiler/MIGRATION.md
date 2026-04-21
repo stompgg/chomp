@@ -9,7 +9,10 @@ Proposed ordering. Each is a PR-sized chunk.
 - [ ] Strip Chomp-specific `skipFiles`, `skipDirs`, `dependencyOverrides` from the
       library's `transpiler-config.json`. Chomp keeps its own config.
 - [x] ~~Delete `runtime/battle-harness.ts` from the library. (Move to Chomp.)~~
-      Moved to `chomp/simulator/battle-harness.ts`.
+      Lives at `munch/src/app/ts-output/runtime/battle-harness.ts`. Munch
+      owns its own `runtime/`; chomp's deploy rsync excludes `runtime/` so
+      munch-only files aren't clobbered. Chomp's `transpiler/runtime/` no
+      longer re-exports `BattleHarness`.
 - [x] ~~Move Chomp-specific vitest tests out of the transpiler tree.~~ All 30
       Chomp-specific vitest tests + `fixtures/mocks.ts` removed. Extruder
       doesn't ship a JS test suite: `package.json`, `package-lock.json`,

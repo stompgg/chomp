@@ -339,20 +339,20 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
             print("ERROR: Transpiler failed")
             sys.exit(1)
 
-    # Sync transpiled output to munch. runtime/ is included: chomp's and munch's
-    # runtime/ folders are maintained as byte-identical copies, and chomp is the
-    # source of truth for both (chomp vitest tests consume runtime/ alongside
-    # the transpiled output).
+    # Sync transpiled output to munch. runtime/ is excluded: munch owns its own
+    # runtime/ (including the simulator's battle-harness.ts, which chomp no
+    # longer carries). Chomp still copies transpiler/runtime/ into its own
+    # ts-output/runtime/ for vitest, but that copy is not propagated to munch.
     munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "ts-output"
     chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
 
     if munch_ts_output.exists():
         print(f"\nSyncing transpiled output to {munch_ts_output}")
         if dry_run:
-            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/")
+            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ (excluding runtime/)")
         else:
             result = subprocess.run(
-                ["rsync", "-a", "--delete",
+                ["rsync", "-a", "--delete", "--exclude=runtime/",
                  f"{chomp_ts_output}/", f"{munch_ts_output}/"],
             )
             if result.returncode != 0:

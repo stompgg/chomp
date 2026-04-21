@@ -503,19 +503,3 @@ export {
   Int256Set,
 } from './EnumerableSetLib';
 export { ECDSA } from './ECDSA';
-
-// =============================================================================
-// BATTLE HARNESS RE-EXPORT
-// =============================================================================
-
-export {
-  BattleHarness,
-  type MonConfig,
-  type TeamConfig,
-  type AddressConfig,
-  type BattleConfig,
-  type MoveDecision,
-  type TurnInput,
-  type MonState,
-  type BattleState,
-} from './battle-harness';
