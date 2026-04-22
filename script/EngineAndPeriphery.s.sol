@@ -58,7 +58,7 @@ contract EngineAndPeriphery is Script {
         DefaultMonRegistry monRegistry = new DefaultMonRegistry();
         deployedContracts.push(DeployData({name: "DEFAULT MON REGISTRY", contractAddress: address(monRegistry)}));
 
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, IGachaRNG(address(0)), 23 hours);
+        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, IGachaRNG(address(0)));
         deployedContracts.push(DeployData({name: "GACHA REGISTRY", contractAddress: address(gachaRegistry)}));
 
         GachaTeamRegistry gachaTeamRegistry = new GachaTeamRegistry(

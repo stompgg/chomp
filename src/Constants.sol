@@ -66,5 +66,5 @@ uint256 constant GAME_TIMEOUT_DURATION = 30; // seconds
 // Gacha point economy — referenced by GachaRegistry and mirrored in the
 // transpiled frontend so copy/breakdowns can key off these values.
 uint256 constant GACHA_ROLL_COST = 7;
-uint256 constant GACHA_POINTS_PER_WIN = 2;
-uint256 constant GACHA_POINTS_PER_LOSS = 1;
+uint256 constant GACHA_POINTS_PER_WIN = 3;
+uint256 constant GACHA_POINTS_PER_LOSS = 2;

@@ -22,17 +22,15 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     uint256 public constant POINTS_PER_WIN = GACHA_POINTS_PER_WIN;
     uint256 public constant POINTS_PER_LOSS = GACHA_POINTS_PER_LOSS;
 
-    uint256 public immutable BATTLE_COOLDOWN;
     IMonRegistry public immutable MON_REGISTRY;
     IEngine public immutable ENGINE;
     IGachaRNG immutable RNG;
 
     mapping(address => EnumerableSetLib.Uint256Set) private monsOwned;
-    // Packed: bit 255 = firstGameBonusAwarded, bits 128-254 = lastBattleTimestamp, bits 0-127 = pointsBalance
+    // Packed: bit 255 = firstGameBonusAwarded, bits 0-127 = pointsBalance
     mapping(address => uint256) private playerData;
 
     uint256 private constant BONUS_AWARDED_BIT = 1 << 255;
-    uint256 private constant TIMESTAMP_MASK = ((1 << 127) - 1) << 128;
 
     error AlreadyFirstRolled();
     error NoMoreStock();
@@ -42,7 +40,7 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
     event PointsAwarded(address indexed player, uint256 points);
     event PointsSpent(address indexed player, uint256 points);
 
-    constructor(IMonRegistry _MON_REGISTRY, IEngine _ENGINE, IGachaRNG _RNG, uint256 _BATTLE_COOLDOWN) {
+    constructor(IMonRegistry _MON_REGISTRY, IEngine _ENGINE, IGachaRNG _RNG) {
         MON_REGISTRY = _MON_REGISTRY;
         ENGINE = _ENGINE;
         if (address(_RNG) == address(0)) {
@@ -50,15 +48,10 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         } else {
             RNG = _RNG;
         }
-        BATTLE_COOLDOWN = _BATTLE_COOLDOWN;
     }
 
     function pointsBalance(address player) public view returns (uint256) {
         return uint128(playerData[player]);
-    }
-
-    function lastBattleTimestamp(address player) public view returns (uint256) {
-        return (playerData[player] & TIMESTAMP_MASK) >> 128;
     }
 
     function firstRoll() external returns (uint256[] memory monIds) {
@@ -75,7 +68,7 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
             uint256 cost = numRolls * ROLL_COST;
             uint256 data = playerData[msg.sender];
             uint256 currentPoints = uint128(data);
-            playerData[msg.sender] = (data & (type(uint128).max << 128)) | (currentPoints - cost);
+            playerData[msg.sender] = (data & BONUS_AWARDED_BIT) | (currentPoints - cost);
             emit PointsSpent(msg.sender, cost);
         }
         return _roll(numRolls);
@@ -169,23 +162,16 @@ contract GachaRegistry is IMonRegistry, IEngineHook, IOwnableMon, IGachaRNG {
         uint256 data = playerData[player];
         uint256 points = uint128(data);
         bool bonusAwarded = data & BONUS_AWARDED_BIT != 0;
-        uint256 lastTimestamp = (data & TIMESTAMP_MASK) >> 128;
 
-        // Award first-game bonus if not already awarded
         if (!bonusAwarded) {
             points += ROLL_COST;
             emit PointsAwarded(player, ROLL_COST);
         }
 
-        // Award battle points if cooldown has passed
-        if (lastTimestamp + BATTLE_COOLDOWN < block.timestamp) {
-            points += battlePoints;
-            playerData[player] = BONUS_AWARDED_BIT | (block.timestamp << 128) | points;
-            emit PointsAwarded(player, battlePoints);
-        } else if (!bonusAwarded) {
-            // Only first-game bonus was awarded, write it back without updating timestamp
-            playerData[player] = BONUS_AWARDED_BIT | (lastTimestamp << 128) | points;
-        }
+        points += battlePoints;
+        emit PointsAwarded(player, battlePoints);
+
+        playerData[player] = BONUS_AWARDED_BIT | points;
     }
 
     // All IMonRegistry functions are just pass throughs
