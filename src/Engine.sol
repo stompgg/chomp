@@ -1074,12 +1074,16 @@ contract Engine is IEngine, MappingAllocator {
         IEffect effect,
         uint256 rng
     ) internal returns (int32 damage, bytes32 eventType) {
-        // Accuracy check
-        if (accuracy < 100 && (rng % 100) >= accuracy) {
-            return (0, MOVE_MISS_EVENT_TYPE);
-        }
+        // Per-attacker rng mix: mirror mons using the same move against each other must roll differently.
+        // See AttackCalculator.mixRngForAttacker for rationale; matches StandardAttack._move's external path.
+        uint256 rngToUse = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
 
         if (basePower > 0) {
+            // Accuracy check (only for damaging moves; status moves have no accuracy gate, matching the external path)
+            if (accuracy < 100 && (rngToUse % 100) >= accuracy) {
+                return (0, MOVE_MISS_EVENT_TYPE);
+            }
+
             // Build DamageCalcContext from internal storage (no external callback)
             DamageCalcContext memory ctx = _getDamageCalcContextInternal(
                 config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
@@ -1096,15 +1100,17 @@ contract Engine is IEngine, MappingAllocator {
 
             // Shared damage formula (same function the external path uses)
             (damage, eventType) =
-                AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rng, critRate);
+                AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rngToUse, critRate);
 
             if (damage > 0 && scaledBasePower > 0) {
                 _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage);
             }
         }
 
-        // Apply effect if effectAccuracy check passes
-        if (effectAccuracy > 0 && address(effect) != address(0) && rng % 100 < effectAccuracy) {
+        // Effect gate: status move always eligible; damaging move only if it dealt damage.
+        // Uses a rerolled rng so effect trigger is uncorrelated with the accuracy/crit/volatility rolls.
+        if (address(effect) != address(0)
+            && AttackCalculator.shouldApplyEffect(rng, basePower, damage, effectAccuracy)) {
             _addEffectInternal(defenderPlayerIndex, defenderMonIndex, effect, "");
         }
     }
@@ -1395,15 +1401,42 @@ contract Engine is IEngine, MappingAllocator {
             return playerSwitchForTurnFlag;
         }
 
+        // Coerce to a switch when one is required: turn 0 (initial send-in) or active mon KO'd.
+        // If the submitted move is not a switch, force a switch to mon index 0 so the battle can
+        // progress instead of reverting. If mon 0 is itself invalid (KO'd), the switch-target
+        // check below silently no-ops and timeout handles the stuck player.
+        if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
+            moveIndex = SWITCH_MOVE_INDEX;
+            move.extraData = uint240(0);
+        }
+
         // Handle a switch, no-op, or regular move.
         // Note: MonMove emission moved to the top of execute() so clients always learn
         // each player's submitted move + salt, regardless of any early return below.
         if (moveIndex == SWITCH_MOVE_INDEX) {
-            // Handle the switch (extraData contains the mon index to switch to as raw uint240)
-            _handleSwitch(battleKey, playerIndex, uint256(move.extraData), address(0));
+            // Validate switch target before mutating state. Each gate silently no-ops — an invalid
+            // switch leaves the player stuck (same state machine as if they missed the timeout window).
+            uint256 monToSwitchIndex = uint256(move.extraData);
+            uint256 teamSize = (playerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+            if (monToSwitchIndex >= teamSize) {
+                return playerSwitchForTurnFlag;
+            }
+            if (_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+                return playerSwitchForTurnFlag;
+            }
+            // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
+            if (battle.turnId != 0 && monToSwitchIndex == activeMonIndex) {
+                return playerSwitchForTurnFlag;
+            }
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, address(0));
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // No-op: do nothing (e.g. just recover stamina)
         } else {
+            // Bounds-check the move index before the array access, since `moves` is a dynamic array
+            // and an OOB access would revert the whole execute(), not the single move.
+            if (moveIndex >= _getTeamMon(config, playerIndex, activeMonIndex).moves.length) {
+                return playerSwitchForTurnFlag;
+            }
             // Read raw 256-bit slot for this move
             uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
 
@@ -1788,7 +1821,13 @@ contract Engine is IEngine, MappingAllocator {
         if (moveIndex == SWITCH_MOVE_INDEX || moveIndex == NO_OP_MOVE_INDEX) {
             return SWITCH_PRIORITY;
         }
-        uint256 raw = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
+        // Out-of-bounds moveIndex would revert on the `moves[moveIndex]` access; treat as the
+        // same priority as a no-op so _handleMove can silently skip it later.
+        Mon storage attackerMon = _getTeamMon(config, playerIndex, activeMonIndex);
+        if (moveIndex >= attackerMon.moves.length) {
+            return SWITCH_PRIORITY;
+        }
+        uint256 raw = attackerMon.moves[moveIndex];
         if (raw >> 160 != 0) {
             return DEFAULT_PRIORITY + ((raw >> 244) & 0x3);
         }

@@ -383,4 +383,59 @@ contract InlineMoveParityTest is Test, BattleHelper {
         assertEq(aliceStamina, -3, "Alice should have lost 3 stamina");
         assertEq(bobStamina, -3, "Bob should have lost 3 stamina");
     }
+
+    // When two mirror mons use the same inline-packed damaging move against each other with the oracle
+    // feeding a single rng, the per-attacker rng mix inside _dispatchStandardAttackInternal must make the
+    // two damage rolls differ. Without the mix, identical stats + identical raw rng would collapse to
+    // identical damage (the `volatility` in AttackCalculator would roll the same value for both sides).
+    // This is the inline-path counterpart to StandardAttackRngTest.test_sameMoveFromMirrorMonsRollsDifferentDamage.
+    function test_inlinePath_mirrorMonsRollDifferentDamage() public {
+        // basePower=50, Physical(0), default priority, Fire(4), stamina=1, no effect.
+        // Inline path uses DEFAULT_VOL (10) for the volatility roll, so a different rng produces a different
+        // scaled damage.
+        uint256 inlineMove = _packMove(50, 0, 0, 4, 1, 0, address(0));
+        assertTrue(inlineMove >> 160 != 0, "move should be detected as inline");
+
+        Mon memory mon = Mon({
+            stats: MonStats({
+                hp: 1000,
+                stamina: 10,
+                speed: 5,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            moves: new uint256[](4),
+            ability: 0
+        });
+        mon.moves[0] = inlineMove;
+        mon.moves[1] = inlineMove;
+        mon.moves[2] = inlineMove;
+        mon.moves[3] = inlineMove;
+
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+
+        bytes32 battleKey = _startBattleInline(team, team);
+        _doSwitchTurn(battleKey);
+
+        // Oracle returns the same rng for both attackers this turn.
+        mockOracle.setRNG(1);
+
+        // Both players use move 0 simultaneously — Alice attacks Bob with the same move Bob attacks Alice with.
+        _doAttackTurn(battleKey, 0, 0);
+
+        int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+
+        assertLt(aliceHpDelta, 0, "Alice should have taken damage");
+        assertLt(bobHpDelta, 0, "Bob should have taken damage");
+        assertTrue(
+            aliceHpDelta != bobHpDelta,
+            "Inline-path mirror mons using the same move should not roll identical damage"
+        );
+    }
 }

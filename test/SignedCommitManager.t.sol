@@ -853,3 +853,138 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         signedCommitManager.commitWithSignature(battleKey, p0MoveHash, p0CommitSig);
     }
 }
+
+/// @title SignedCommitManagerEngineSafetyTest
+/// @notice Verifies that the Engine correctly handles invalid moves arriving through the
+///         dual-signed flow - the default production stack. Dual-signed skips commit-manager
+///         validation entirely (comment in SignedCommitManager:107 says "engine validates
+///         during execution"), so these scenarios would hit Engine._handleMove directly.
+///         Before the safety checks were added, an OOB regular moveIndex would revert the
+///         entire execute(), an OOB switch target would silently wrap to an unintended mon,
+///         and a non-switch on a forced-switch turn would run against a KO'd/unset mon.
+contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
+    /// @dev Helper: committer submits their move, revealer signs over it + their own move.
+    /// Bypasses signedCommitManager's validatePlayerMove (none exists in the dual-signed flow).
+    function _executeDualSigned(
+        bytes32 battleKey,
+        uint64 turnId,
+        uint8 committerMoveIndex,
+        uint240 committerExtraData,
+        uint8 revealerMoveIndex,
+        uint240 revealerExtraData
+    ) internal {
+        bytes32 committerSalt = bytes32(uint256(turnId + 1));
+        bytes32 revealerSalt = bytes32(uint256(turnId + 2));
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+
+        // Committer is p0 on even turns, p1 on odd turns.
+        (uint256 revealerPk, address committerAddr) = turnId % 2 == 0 ? (P1_PK, p0) : (P0_PK, p1);
+
+        bytes memory revealerSig = _signDualReveal(
+            revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
+        );
+
+        vm.startPrank(committerAddr);
+        signedCommitManager.executeWithDualSignedMoves(
+            battleKey,
+            committerMoveIndex,
+            committerSalt,
+            committerExtraData,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData,
+            revealerSig
+        );
+    }
+
+    /// @notice Turn 0 with a non-switch move must coerce into a switch-to-mon-0, not revert
+    ///         or run an "attack" before any mon has been sent in.
+    function test_engineSafety_turn0NonSwitch_coercesToSwitchToMonZero() public {
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
+
+        // p0 sends a valid switch to mon 1, p1 sends NO_OP (would have been rejected at reveal in
+        // the old flow). Engine must force p1 to switch-to-mon-0.
+        _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, uint240(1), NO_OP_MOVE_INDEX, 0);
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 1, "turn should advance");
+        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(active[0], 1, "p0 should have switched in mon 1 via valid SWITCH");
+        assertEq(active[1], 0, "p1 should have been force-switched to mon 0");
+    }
+
+    /// @notice Turn 0 with a regular (attack) moveIndex must also coerce, not try to run the attack.
+    function test_engineSafety_turn0RegularMove_coercesToSwitchToMonZero() public {
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
+
+        // Both players submit "move 0" on turn 0 - clearly invalid since nothing has been sent in.
+        _executeDualSigned(battleKey, 0, 0, 0, 0, 0);
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 1, "turn should advance");
+        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(active[0], 0, "p0 force-switched to mon 0");
+        assertEq(active[1], 0, "p1 force-switched to mon 0");
+    }
+
+    /// @notice Regular move with an out-of-bounds moveIndex must silently no-op rather than revert
+    ///         on the `moves[moveIndex]` array access.
+    function test_engineSafety_outOfBoundsRegularMove_silentNoOp() public {
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
+
+        // Turn 0: both switch in mon 0.
+        _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 0);
+
+        // Turn 1: p1 is committer. Submit moveIndex=50 - only 1 move is configured, so this is OOB.
+        // p0 submits NO_OP. Before the fix this would have reverted inside _handleMove.
+        // Snapshot pre-turn state so we can confirm nothing changed beyond turnId incrementing.
+        int32 p0HpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 p1HpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+
+        _executeDualSigned(battleKey, 1, 50, 0, NO_OP_MOVE_INDEX, 0);
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance despite bad moveIndex");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            p0HpBefore,
+            "p0 HP unchanged"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
+            p1HpBefore,
+            "p1 HP unchanged"
+        );
+    }
+
+    /// @notice Switch with an out-of-bounds target index must silently no-op, not silently wrap
+    ///         via uint8 truncation and land on an unintended mon.
+    function test_engineSafety_outOfBoundsSwitchTarget_silentNoOp() public {
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
+
+        // Turn 0: both switch in mon 0.
+        _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 0);
+
+        // Turn 1: p1 commits SWITCH with an out-of-bounds target (team size is 2, submit 99).
+        // p0 NO_OPs. p1's active mon should stay at 0 (switch is a no-op), not wrap to 99 & 0xFF.
+        _executeDualSigned(battleKey, 1, SWITCH_MOVE_INDEX, uint240(99), NO_OP_MOVE_INDEX, 0);
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance");
+        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(active[1], 0, "p1 still on mon 0 - OOB switch silently no-oped");
+    }
+
+    /// @notice Switch to the same mon on a non-turn-0 must silently no-op.
+    function test_engineSafety_switchToSameMon_silentNoOp() public {
+        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
+
+        // Turn 0: p0 switches to mon 1, p1 to mon 0.
+        _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, uint240(1), SWITCH_MOVE_INDEX, 0);
+        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+
+        // Turn 1: p1 is committer. p1 tries to switch to their own active mon (0). p0 NO_OP.
+        _executeDualSigned(battleKey, 1, SWITCH_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0);
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance");
+        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(active[1], 0, "p1 still on mon 0 - same-mon switch silent no-op");
+    }
+}

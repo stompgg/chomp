@@ -11,6 +11,30 @@ import {ITypeCalculator} from "../types/ITypeCalculator.sol";
 library AttackCalculator {
     uint32 constant RNG_SCALING_DENOM = 100;
 
+    /// @notice Mix the raw rng with the attacker index so mirror mons using the same move
+    /// against each other don't roll identical accuracy/damage/crit values. Deterministic —
+    /// keyed only by (rng, attackerPlayerIndex) — so the oracle's rng is still the only source.
+    function mixRngForAttacker(uint256 rng, uint256 attackerPlayerIndex) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encode(rng, attackerPlayerIndex)));
+    }
+
+    /// @notice Decide whether a move's post-hit effect should fire.
+    /// Status moves (basePower == 0) have no accuracy check and always "land" — they are
+    /// eligible to apply subject to effectAccuracy. Damaging moves must have dealt nonzero
+    /// damage (didn't miss via accuracy and weren't type-immune).
+    /// The rng is rerolled with an independent keccak so the effect trigger is uncorrelated
+    /// with the accuracy/crit/volatility rolls that already consumed the damage-path rng.
+    function shouldApplyEffect(uint256 rng, uint32 basePower, int32 damage, uint32 effectAccuracy)
+        internal
+        pure
+        returns (bool)
+    {
+        if (effectAccuracy == 0) return false;
+        if (basePower > 0 && damage <= 0) return false;
+        uint256 effectRng = uint256(keccak256(abi.encode(rng)));
+        return effectRng % 100 < effectAccuracy;
+    }
+
     function _calculateDamage(
         IEngine ENGINE,
         ITypeCalculator TYPE_CALCULATOR,

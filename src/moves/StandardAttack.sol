@@ -64,14 +64,15 @@ contract StandardAttack is IMoveSet, Ownable {
     {
         int32 damage = 0;
         bytes32 eventType = bytes32(0);
-        uint256 rngToUse = uint256(keccak256(abi.encode(rng, attackerPlayerIndex)));
-        if (basePower(battleKey) > 0) {
+        uint32 power = basePower(battleKey);
+        uint256 rngToUse = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
+        if (power > 0) {
             (damage, eventType) = AttackCalculator._calculateDamage(
                 engine,
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
-                basePower(battleKey),
+                power,
                 accuracy(battleKey),
                 volatility(battleKey),
                 moveType(engine, battleKey),
@@ -81,15 +82,10 @@ contract StandardAttack is IMoveSet, Ownable {
             );
         }
 
-        // Apply the effect if the move landed: either it's a pure status move (no base power, so no accuracy/immunity check to fail) or it dealt damage.
-        if (basePower(battleKey) == 0 || damage > 0) {
-            uint256 effectRng = uint256(keccak256(abi.encode(rng)));
-            if (effectRng % 100 < _effectAccuracy) {
-                uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-                if (address(_effect) != address(0)) {
-                    engine.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
-                }
-            }
+        if (address(_effect) != address(0)
+            && AttackCalculator.shouldApplyEffect(rng, power, damage, _effectAccuracy)) {
+            uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+            engine.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
         }
 
         return (damage, eventType);
