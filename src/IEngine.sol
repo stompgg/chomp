@@ -49,6 +49,7 @@ interface IEngine {
         uint240 p1ExtraData
     ) external;
     function setUpstreamCaller(address caller) external;
+    function resetCallContext() external;
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);

@@ -137,7 +137,7 @@ contract InlineValidationTest is Test, BattleHelper {
 
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Verify both players have mon 0 active
         uint256 p0ActiveMon = engine.getActiveMonIndexForBattleState(battleKey)[0];
         uint256 p1ActiveMon = engine.getActiveMonIndexForBattleState(battleKey)[1];
@@ -159,7 +159,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Now use move 0 (attack)
         bytes32 p0AttackHash = keccak256(abi.encodePacked(uint8(0), salt, uint240(0)));
 
@@ -169,7 +169,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, 0, salt, 0, false);
         vm.startPrank(p1);
         commitManager.revealMove(battleKey, 0, salt, 0, true);
-
+        engine.resetCallContext();
         // Check that battle advanced (turn should be 2)
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         assertEq(turnId, 2, "Turn should be 2 after switch + attack");
@@ -189,7 +189,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // P1 commits turn 1 - try to switch to mon 0 again (invalid - already active)
         // The inline validation should treat this as invalid and fall through
         bytes32 p1InvalidSwitchHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(0)));
@@ -204,7 +204,7 @@ contract InlineValidationTest is Test, BattleHelper {
         // P1 reveals invalid switch - should still execute but switch is ignored
         vm.startPrank(p1);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // P1's active mon should still be 0 (switch was invalid)
         uint256 p1ActiveMon = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(p1ActiveMon, 0, "P1 should still have mon 0 active (invalid switch)");
@@ -223,7 +223,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Run a few attack rounds to verify inline validation works across multiple turns
         for (uint256 i = 0; i < 5; i++) {
             // Check if battle ended
@@ -242,6 +242,7 @@ contract InlineValidationTest is Test, BattleHelper {
                 commitManager.revealMove(battleKey, 0, salt, 0, false);
                 vm.startPrank(p0);
                 commitManager.revealMove(battleKey, 0, salt, 0, true);
+                engine.resetCallContext();
             } else {
                 vm.startPrank(p1);
                 commitManager.commitMove(battleKey, attackHash);
@@ -249,6 +250,7 @@ contract InlineValidationTest is Test, BattleHelper {
                 commitManager.revealMove(battleKey, 0, salt, 0, false);
                 vm.startPrank(p1);
                 commitManager.revealMove(battleKey, 0, salt, 0, true);
+                engine.resetCallContext();
             }
         }
 
@@ -296,7 +298,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Now on turn 1, regular move should be valid
         bool isValid = engine.validatePlayerMoveForBattle(battleKey, 0, 0, 0);
         assertTrue(isValid, "Regular move on turn 1 should be valid");
@@ -327,7 +329,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Move index >= MOVES_PER_MON (1) should be invalid (except special indices)
         bool isValid = engine.validatePlayerMoveForBattle(battleKey, 1, 0, 0);
         assertFalse(isValid, "Move index 1 should be invalid (only 1 move per mon)");
@@ -425,7 +427,7 @@ contract InlineValidationTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, false);
         vm.startPrank(p0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
-
+        engine.resetCallContext();
         // Now on turn 1, verify engine delegates to validator
         bool engineResult = engine.validatePlayerMoveForBattle(battleKey, 0, 0, 0);
         bool validatorResult = externalValidator.validatePlayerMove(battleKey, 0, 0, 0);

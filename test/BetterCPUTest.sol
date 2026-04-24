@@ -199,13 +199,13 @@ contract BetterCPUTest is Test {
 
         // Turn 0: Both select mon 0
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Deal some damage to Alice's mon so CPU sees it can KO
         // The CPU should select the high power move (index 1) to secure the KO
         // Set RNG to not trigger random selection
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Check that Alice's mon took massive damage (from high power attack)
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         // High power attack should deal significant damage
@@ -244,7 +244,7 @@ contract BetterCPUTest is Test {
 
         // Alice selects mon 0 (Fire type)
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // CPU should have selected Liquid mon (index 1)
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should select Liquid mon to resist Fire");
@@ -299,7 +299,7 @@ contract BetterCPUTest is Test {
         // We force Fire mon to be selected
         mockCPURNG.setRNG(0);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Get active mons - CPU might have selected based on type calcs
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         uint256 cpuStartMon = activeIndex[1];
@@ -355,12 +355,12 @@ contract BetterCPUTest is Test {
 
         // Turn 0: Both select mon 0
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Use the expensive attack (costs 5 stamina)
         // RNG = 1 won't trigger random selection (1 % 10 != 0)
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // Stamina delta should be -5
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -5, "Stamina should be -5 after expensive attack");
@@ -368,7 +368,7 @@ contract BetterCPUTest is Test {
         // Turn 2: Opponent rests (P4 path). New BetterCPU attacks on free turns even at low stamina.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Stamina should be -10 (attacked again with the 5-cost move on the free turn)
         staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -10, "Should attack on free turn even at low stamina");
@@ -410,12 +410,12 @@ contract BetterCPUTest is Test {
 
         // Turn 0: Both select mon 0
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: At full HP, CPU should prefer setup move
         // Set RNG to not trigger random selection
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Check stamina consumed (setup move costs 1)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -1, "CPU should have used setup move (1 stamina)");
@@ -446,7 +446,7 @@ contract BetterCPUTest is Test {
 
         // Turn 0: Both select mon 0
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU is at full HP, so attack first with Alice to damage CPU
         // Then CPU will be at non-full HP and prefer attack moves
         mockCPURNG.setRNG(1);
@@ -456,7 +456,7 @@ contract BetterCPUTest is Test {
         // Turn 2: CPU should select the strongest attack
         mockCPURNG.setRNG(1); // Don't trigger random
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Verify significant damage was dealt (strong attack) - Alice took damage both turns
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertTrue(aliceHpDelta < -20, "CPU should have used strong attack");
@@ -493,7 +493,7 @@ contract BetterCPUTest is Test {
 
         // Alice selects mon 0 (Fire/Nature)
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should select Liquid mon (resists both Fire and Nature)");
     }
@@ -522,7 +522,7 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should select Fire mon (2x offensive vs Nature)");
     }
@@ -547,7 +547,7 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Just verify no crash and valid index
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertTrue(activeIndex[1] < 4, "CPU should select a valid mon index");
@@ -602,6 +602,7 @@ contract BetterCPUTest is Test {
 
         // Turn 0: lead selection. All neutral → picks mon 0 (first).
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should lead with mon 0");
 
@@ -609,12 +610,12 @@ contract BetterCPUTest is Test {
         // P5 materiality fails. CPU stays. Mon0 KO'd.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // Turn 2 (forced switch): Alice signals move 1 (Liquid). CPU evaluates Liquid damage.
         // Mon2(Nature) resists Liquid → takes less damage → picked.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 1, "", 0);
-
+        engine.resetCallContext();
         activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 2, "CPU should switch to Nature (resists Liquid attack)");
     }
@@ -649,11 +650,11 @@ contract BetterCPUTest is Test {
 
         // Turn 0: lead selection
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU should use KO move. Alice attacks weakly.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // Alice's mon should be KO'd
         int32 aliceKO = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
         assertEq(aliceKO, 1, "CPU should KO Alice's mon when safe");
@@ -680,11 +681,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Both attack. CPU outspeeds → KOs Alice first.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 aliceKO = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
         assertEq(aliceKO, 1, "CPU should KO Alice when outspeeding");
         // CPU should survive (Alice's mon was KO'd before attacking)
@@ -716,11 +717,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU outsped and opponent can KO → CPU should switch to Liquid.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should switch to Liquid when outsped in KO race");
     }
@@ -755,11 +756,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU should pick the cheaper KO move (cost=1).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // Stamina delta should be -1 (cheap move used)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -1, "CPU should use cheapest KO move (stamina cost 1)");
@@ -792,11 +793,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice switches to mon 1 (Nature, hp=20). CPU should KO it.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1));
-
+        engine.resetCallContext();
         // Alice's mon 1 should be KO'd
         int32 aliceMon1KO = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.IsKnockedOut);
         assertEq(aliceMon1KO, 1, "CPU should KO incoming Nature mon with Fire attack");
@@ -837,11 +838,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice switches to Nature mon. CPU should use Fire attack (best damage).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1));
-
+        engine.resetCallContext();
         // Alice's Nature mon should take Fire damage (500)
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp);
         assertTrue(aliceHpDelta <= -400, "CPU should deal heavy Fire damage to incoming Nature");
@@ -873,11 +874,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice switches. CPU has no affordable moves → rests.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1));
-
+        engine.resetCallContext();
         // CPU stamina should be unchanged (rested)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, 0, "CPU should rest when no affordable moves during opponent switch");
@@ -914,11 +915,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice rests. No KO possible (hp=500). CPU should use strongest move in P4.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDelta, -400, "CPU should use bp=80 move for 400 damage");
     }
@@ -948,11 +949,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice rests. CPU has no affordable moves → also rests.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, 0, "CPU should rest when no affordable moves");
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -993,13 +994,14 @@ contract BetterCPUTest is Test {
 
         // Lead selection: Alice is Liquid type. Liquid→Metal=1x, Liquid→Liquid=1x. Neutral. Mon0 leads.
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should lead with Mon0 (Metal)");
 
         // Turn 1: Alice uses Fire attack. Lethal to Metal. CPU switches to Liquid.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should switch to Liquid to survive lethal Fire attack");
     }
@@ -1025,11 +1027,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice attacks weakly. CPU stays and attacks back.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should stay when damage is low");
         // Alice should take damage from CPU's attack
@@ -1067,11 +1069,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Both lethal, no material improvement → CPU stays and attacks.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // CPU should have stayed (attacked, not switched)
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertTrue(aliceHpDelta < 0, "CPU should attack when materiality not met");
@@ -1109,14 +1111,14 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should lead with Mon0");
 
         // Turn 1: Alice Fire attack → lethal to Metal, Liquid survives → switch.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should switch to Liquid (materially better)");
     }
@@ -1146,11 +1148,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice uses Self move. CPU skips P5, attacks in P6.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 0, "CPU should stay when opponent uses Self move");
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -1193,11 +1195,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Alice attacks weakly. CPU uses best move in P6.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDelta, -400, "CPU should use bp=80 for 400 damage");
     }
@@ -1234,11 +1236,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU should pick cheaper move (cost=1).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -1, "CPU should pick cheaper move within damage threshold");
     }
@@ -1275,11 +1277,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU should pick bp=100 (cost=3) since bp=50 is outside threshold.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -3, "CPU should pick strongest move when cheap one is outside threshold");
     }
@@ -1311,11 +1313,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU can't afford moves → rests.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, 0, "CPU should rest when no affordable moves");
     }
@@ -1346,11 +1348,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU exhausted, switches to Mon1.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should switch when exhausted and switch available");
     }
@@ -1394,10 +1396,11 @@ contract BetterCPUTest is Test {
 
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
 
+        engine.resetCallContext();
         // Turn 1: CPU should use preferred move (bp=90). Damage = 90*50/10 = 450.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDelta, -450, "CPU should use preferred move (bp=90) within threshold");
     }
@@ -1439,10 +1442,11 @@ contract BetterCPUTest is Test {
 
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
 
+        engine.resetCallContext();
         // Turn 1: Preferred too weak → CPU uses bp=100. Damage = 100*50/10 = 500.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDelta, -500, "CPU should ignore preferred move when too weak");
     }
@@ -1484,17 +1488,18 @@ contract BetterCPUTest is Test {
 
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
 
+        engine.resetCallContext();
         // Turn 1: Alice rests (P4 safe turn). CPU uses switch-in move (Self, bp=0).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDeltaTurn1 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDeltaTurn1, 0, "Turn 1: CPU should use Self switch-in move (no damage)");
 
         // Turn 2: Alice rests again. Switch-in move already used → normal P4 (best damage).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDeltaTurn2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDeltaTurn2, -250, "Turn 2: CPU should use attack move (damage 250)");
     }
@@ -1536,17 +1541,18 @@ contract BetterCPUTest is Test {
 
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
 
+        engine.resetCallContext();
         // Turn 1: Alice rests. CPU uses switch-in Self move.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpDelta, 0, "Turn 1: switch-in Self move fires (no damage)");
 
         // Turn 2: Alice rests. CPU attacks normally (switch-in already used).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Turn 3: Alice switches to mon 1. CPU re-evaluates.
         // On the switch turn, the CPU gets the switch-in move bit cleared for Mon0 when switching.
         // We need to force CPU to switch out and back. Let's have Alice attack with a strong move
@@ -1586,11 +1592,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: Both can KO. Speed tie → _weGoFirst returns false → CPU should switch.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 1, "CPU should switch on speed tie (play it safe)");
     }
@@ -1620,11 +1626,11 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU priority 5 > Alice priority 1 → CPU goes first, KOs Alice.
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 aliceKO = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut);
         assertEq(aliceKO, 1, "CPU should KO Alice with higher priority move");
         int32 cpuKO = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut);
@@ -1659,7 +1665,7 @@ contract BetterCPUTest is Test {
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1: CPU can't afford moves. Has switch option but P5 won't trigger (10 damage = 5%).
         // Falls through to P6: no moves. Switch available → might switch.
         // Actually, P6 bottom: "switches.length > 0" → switches to Mon1.
@@ -1669,7 +1675,7 @@ contract BetterCPUTest is Test {
         // Alternative: test that stamina is unchanged (CPU didn't attack).
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, 0, "CPU stamina should be unchanged (couldn't afford attack)");
     }

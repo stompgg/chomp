@@ -589,7 +589,7 @@ contract PengymTest is Test, BattleHelper {
         // Alice swaps to mon index 1
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
@@ -619,7 +619,7 @@ contract PengymTest is Test, BattleHelper {
         // Bob sends in mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
@@ -629,7 +629,7 @@ contract PengymTest is Test, BattleHelper {
         // Bob sends in mon index 2
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
-
+        engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
@@ -652,7 +652,7 @@ contract PengymTest is Test, BattleHelper {
         // Bob sends in mon index 3
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(3), true);
-
+        engine.resetCallContext();
         // Alice tries to force a switch, but active mon should not change
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)

@@ -218,7 +218,7 @@ contract CPUTest is Test {
         // Alice selects mon 2, CPU selects mon 1
         mockCPURNG.setRNG(1);
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2));
-
+        engine.resetCallContext();
         // Assert active mon index for both p0 and p1 are correct
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 2);
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
@@ -233,7 +233,7 @@ contract CPUTest is Test {
         // Alice KO's the CPU's mon, the CPU chooses no op
         mockCPURNG.setRNG(0); // [no op, move 1, move 2, swap 0, swap 2, swap 3] and we want no op at index 0
         cpu.selectMove(battleKey, 0, "", 0);
-
+        engine.resetCallContext();
         // Check that the CPU now has 3 moves, all of which are switching to mon index 0, 2, or 3
         {
             (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
@@ -251,7 +251,7 @@ contract CPUTest is Test {
 
         // Alice chooses no op (choice is irrelevant here), CPU chooses to switch to mon index 0
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert the CPU now has mon index 0 as the active mon
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
 
@@ -267,7 +267,7 @@ contract CPUTest is Test {
         // (note that the swaps are 0-indexed, and the moves are 1-indexed to refer to the above variable
         // naming convention, sorry D: )
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert that there are now 3 moves, switching to mon index 2, 3, and no op (all stamina has been consumed)
         {
             (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
@@ -278,7 +278,7 @@ contract CPUTest is Test {
         // Alice chooses no op, CPU chooses swapping to mon index 3
         mockCPURNG.setRNG(2); // [no op, swap 2, swap 3] and we want swap 3 at index 2
         cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert the CPU now has mon index 3 as the active mon
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 3);
 
@@ -375,7 +375,7 @@ contract CPUTest is Test {
 
         // Execute the turn
         playerCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1));
-
+        engine.resetCallContext();
         // Second turn: p0 sets move 1 for PlayerCPU (should override previous move)
         playerCPU.setMove(battleKey, 1, uint240(42));
 
@@ -386,6 +386,7 @@ contract CPUTest is Test {
 
         // Execute another turn to verify the flow continues to work
         playerCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
+        engine.resetCallContext();
     }
 
     function _createMon(Type t) internal pure returns (Mon memory) {
@@ -453,7 +454,7 @@ contract CPUTest is Test {
 
         // Player switches in mon index 0 (Fire type)
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Get active index for battle, it should be the resisted mon
         uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeIndex[1], 3);
@@ -504,10 +505,11 @@ contract CPUTest is Test {
 
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1, player rests, CPU should select no op because the move costs too much stamina
         mockCPURNG.setRNG(1);
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
+        engine.resetCallContext();
     }
 
     function test_okayCPURests() public {
@@ -556,17 +558,17 @@ contract CPUTest is Test {
 
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1, player rests, CPU should select move index 0
         mockCPURNG.setRNG(1); // This triggers the OkayCPU to select a move, which should set its stamina delta to be -3
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert the stamina delta for P1's active mon is -3
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
 
         // Turn 2, player rests, CPU should rest as well
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert the stamina delta for P1's active mon is still -3 (it didn't go down more)
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
     }
@@ -618,10 +620,10 @@ contract CPUTest is Test {
 
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1, p0 rests, CPU should select move index 1 (self move)
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert that the stamina delta is -1 for p1's active mon
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -1);
@@ -675,10 +677,10 @@ contract CPUTest is Test {
 
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1, p0 rests, CPU should select move index 1 (self move)
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert that the stamina delta is -1 for p1's active mon
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, -1);
@@ -732,14 +734,14 @@ contract CPUTest is Test {
 
         // Turn 0, both player send in mon index 0
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
-
+        engine.resetCallContext();
         // Turn 1, set RNG to trigger smart random select and pick move index 1
         // RNG needs: (RNG % 6 == 5) to trigger smart random, (RNG % 3 != 0) to not switch, ((RNG >> 8) % 2 == 1) to pick move 1
         // 257 satisfies all: 257 % 6 = 5, 257 % 3 = 2, (257 >> 8) = 1
         // So both mons should take 1 damage, as p0 also selects the damage move
         mockCPURNG.setRNG(257);
         okayCPU.selectMove(battleKey, 1, "", 0);
-
+        engine.resetCallContext();
         // Assert that the hp delta is -1 for p0's active mon and p1's active mon
         int32 hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hpDelta, -1);
@@ -750,7 +752,7 @@ contract CPUTest is Test {
         // CPU should select no-op because no type advantage is currently set
         mockCPURNG.setRNG(0);
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert that the hp delta is still -1 for p0's active mon
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hpDelta, -1);
@@ -760,7 +762,7 @@ contract CPUTest is Test {
 
         // Now the CPU should select the damage move (move index 1) because it has a type advantage
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);
-
+        engine.resetCallContext();
         // Assert that the hp delta is -2 for p0's active mon
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hpDelta, -2);

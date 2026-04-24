@@ -189,6 +189,8 @@ contract BattleHistoryTest is Test, BattleHelper {
             vm.startPrank(p1);
             commitManager.revealMove(battleKey, p1MoveIndex, salt, p1ExtraData, true);
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     /// @notice Helper to complete a battle

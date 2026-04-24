@@ -152,6 +152,7 @@ contract EngineGasTest is Test, BattleHelper {
         // Alice swaps in mon index 0
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        engine.resetCallContext();
         // Alice is now mon index 0, Bob rests
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice KOs Bob
@@ -159,6 +160,7 @@ contract EngineGasTest is Test, BattleHelper {
         // Bob sends in mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         // Alice rests, Bob uses self-stat boost
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice rests, Bob KOs
@@ -166,11 +168,13 @@ contract EngineGasTest is Test, BattleHelper {
         // Alice swaps in mon index 2
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         // Alice rests, Bob KOs
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 3
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         // Alice rests, Bob KOs
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 firstBattleGas = vm.stopSnapshotGas("FirstBattle");
@@ -227,6 +231,7 @@ contract EngineGasTest is Test, BattleHelper {
         // - Bob swaps in mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         // - Alice swaps in mon index 1, Bob sets up Frostbite (move 2)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
         // - Alice sets up self-stat boost (move 3, playerIndex=0, monIndex=1), Bob rests
@@ -236,6 +241,7 @@ contract EngineGasTest is Test, BattleHelper {
         // - Bob sends in mon index 2
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         // - Alice rests, Bob uses self-stat boost (move 3, playerIndex=1, monIndex=2)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         // - Alice rests, Bob KOs (move 0)
@@ -243,6 +249,7 @@ contract EngineGasTest is Test, BattleHelper {
         // - Alice swaps in mon index 2
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         // - Alice uses self-stat boost (move 3, p0 mon2), Bob uses self-stat boost (move 3, p1 mon2)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         // - Alice KOs Bob (move 0)
@@ -250,6 +257,7 @@ contract EngineGasTest is Test, BattleHelper {
         // - Bob sends in mon index 3
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         // - Alice KOs Bob (move 0)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         uint256 secondBattleGas = vm.stopSnapshotGas("SecondBattle");
@@ -285,6 +293,7 @@ contract EngineGasTest is Test, BattleHelper {
         // Alice swaps in mon index 0
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        engine.resetCallContext();
         // Alice is now mon index 0, Bob rests
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         // Alice KOs Bob
@@ -292,6 +301,7 @@ contract EngineGasTest is Test, BattleHelper {
         // Bob sends in mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         // Alice rests, Bob uses self-stat boost
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         // Alice rests, Bob KOs
@@ -299,11 +309,13 @@ contract EngineGasTest is Test, BattleHelper {
         // Alice swaps in mon index 2
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         // Alice rests, Bob KOs
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         // Alice swaps in mon index 3
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         // Alice rests, Bob KOs
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 thirdBattleGas = vm.stopSnapshotGas("ThirdBattle");
@@ -756,15 +768,21 @@ contract EngineGasTest is Test, BattleHelper {
             cm.commitMove(battleKey, aliceMoveHash);
             vm.startPrank(BOB);
             cm.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(ALICE);
             cm.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
         } else {
             vm.startPrank(BOB);
             cm.commitMove(battleKey, bobMoveHash);
             vm.startPrank(ALICE);
             cm.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(BOB);
             cm.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
         }
+        vm.stopPrank();
+        eng.resetCallContext();
     }
 }

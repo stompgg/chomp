@@ -48,14 +48,17 @@ library StaminaRegenLogic {
         regenStamina(config.p1States[p1ActiveMonIndex]);
     }
 
-    /// @notice Handle stamina regen for the AfterMove step (regen if NoOp)
+    /// @notice Handle stamina regen for the AfterMove step (regen if NoOp).
+    /// @dev `packedMoveIndex` is threaded in from the caller rather than read from `config.pXMove`
+    /// directly so that this works when moves are held in Engine's transient storage (the
+    /// executeWithMoves path skips SSTORE-ing config.pXMove to save gas).
     function onAfterMove(
         BattleConfig storage config,
         uint256 playerIndex,
-        uint256 monIndex
+        uint256 monIndex,
+        uint8 packedMoveIndex
     ) internal {
-        MoveDecision storage moveDecision = (playerIndex == 0) ? config.p0Move : config.p1Move;
-        if (!_isRestingMove(moveDecision.packedMoveIndex)) return;
+        if (!_isRestingMove(packedMoveIndex)) return;
         MonState storage monState = playerIndex == 0
             ? config.p0States[monIndex]
             : config.p1States[monIndex];

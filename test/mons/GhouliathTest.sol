@@ -171,7 +171,7 @@ contract GhouliathTest is Test, BattleHelper {
         // Alice swaps in mon index 1
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // We wait for the REVIVAL_DELAY - 1 turns to pass
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(
@@ -194,6 +194,7 @@ contract GhouliathTest is Test, BattleHelper {
         // (First we swap in mon index 1)
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(
                 engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
@@ -264,14 +265,14 @@ contract GhouliathTest is Test, BattleHelper {
         // Alice swaps in mon index 1
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // Alice KOs Bob's mon
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob swaps in mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // We wait for the REVIVAL_DELAY turns to pass
         for (uint256 i = 0; i < riseFromTheGrave.REVIVAL_DELAY() - 1; i++) {
             _commitRevealExecuteForAliceAndBob(

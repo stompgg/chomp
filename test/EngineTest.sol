@@ -376,6 +376,7 @@ contract EngineTest is Test, BattleHelper {
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(""), uint240(1), false);
         engine.execute(battleKey);
+        engine.resetCallContext();
 
         // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
@@ -2734,16 +2735,22 @@ contract EngineTest is Test, BattleHelper {
             commitManager.commitMove(battleKey, aliceMoveHash);
             vm.startPrank(BOB);
             commitManager.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(ALICE);
             commitManager.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
         } else {
             vm.startPrank(BOB);
             commitManager.commitMove(battleKey, bobMoveHash);
             vm.startPrank(ALICE);
             commitManager.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(BOB);
             commitManager.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     function test_anyoneCanFillP1() public {
@@ -2833,7 +2840,7 @@ contract EngineTest is Test, BattleHelper {
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Ensure Bob cannot commit as they only need to reveal
         vm.startPrank(BOB);
         vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
@@ -2842,7 +2849,7 @@ contract EngineTest is Test, BattleHelper {
         // Bob cannot reveal yet as Alice has not committed
         vm.expectRevert(DefaultCommitManager.RevealBeforeOtherCommit.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Ensure Carl cannot commit as they are not in the battle
         vm.startPrank(CARL);
         vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
@@ -2851,7 +2858,7 @@ contract EngineTest is Test, BattleHelper {
         // Carl should also be unable to reveal
         vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Let Alice commit the first move (switching in mon index 0)
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, moveHash);
@@ -2860,14 +2867,14 @@ contract EngineTest is Test, BattleHelper {
         vm.startPrank(BOB);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", BOB));
         commitManager.revealMove(battleKey, 0, salt, extraData, true);
-
+        engine.resetCallContext();
         // Now let Bob reveal a valid move
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Alice reveals her move
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Assert that the game state executed
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         assertEq(turnId, 1);
@@ -2893,15 +2900,15 @@ contract EngineTest is Test, BattleHelper {
         // Let Bob reveal their invalid move index of 0
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Alice reveals her move incorrectly, leading to an error
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, 0, salt, extraData, true);
-
+        engine.resetCallContext();
         // Alice correctly reveals her move, advancing the game state
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // New turn, both players swap to mon index 1
         extraData = uint240(1);
         moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
@@ -2912,7 +2919,7 @@ contract EngineTest is Test, BattleHelper {
         vm.startPrank(BOB);
         vm.expectRevert(DefaultCommitManager.WrongPreimage.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Ensure Alice cannot commit as they only need to reveal
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
@@ -2921,7 +2928,7 @@ contract EngineTest is Test, BattleHelper {
         // Alice cannot reveal yet as Bob has not committed
         vm.expectRevert(DefaultCommitManager.RevealBeforeOtherCommit.selector);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Let Bob commit the first move (switching in mon index 0)
         vm.startPrank(BOB);
         commitManager.commitMove(battleKey, moveHash);
@@ -2931,14 +2938,14 @@ contract EngineTest is Test, BattleHelper {
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
         uint240 invalidExtraData = uint240(0);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, invalidExtraData, true);
-
+        engine.resetCallContext();
         // Now let Alice reveal a valid move
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Bob reveals their move
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Assert that the game state executed
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         assertEq(turnId, 2);
@@ -2993,7 +3000,7 @@ contract EngineTest is Test, BattleHelper {
         // Let Bob reveal to choosing switch as well
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-
+        engine.resetCallContext();
         // Wait for TIMEOUT_DURATION + 1
         vm.warp(TIMEOUT_DURATION + 1);
 

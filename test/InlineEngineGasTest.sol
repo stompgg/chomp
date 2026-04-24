@@ -168,17 +168,21 @@ contract InlineEngineGasTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 firstBattleGas = vm.stopSnapshotGas("FirstBattle");
 
@@ -210,19 +214,23 @@ contract InlineEngineGasTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, NO_OP_MOVE_INDEX, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         uint256 secondBattleGas = vm.stopSnapshotGas("SecondBattle");
 
@@ -250,17 +258,21 @@ contract InlineEngineGasTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 3, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 thirdBattleGas = vm.stopSnapshotGas("ThirdBattle");
 
@@ -525,16 +537,22 @@ contract InlineEngineGasTest is Test, BattleHelper {
             cm.commitMove(battleKey, aliceMoveHash);
             vm.startPrank(BOB);
             cm.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(ALICE);
             cm.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
         } else {
             vm.startPrank(BOB);
             cm.commitMove(battleKey, bobMoveHash);
             vm.startPrank(ALICE);
             cm.revealMove(battleKey, aliceMoveIndex, salt, aliceExtraData, true);
+            engine.resetCallContext();
             vm.startPrank(BOB);
             cm.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
+            engine.resetCallContext();
         }
+        vm.stopPrank();
+        eng.resetCallContext();
     }
 }
 
@@ -713,6 +731,7 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
             revealerMoveIndex, revealerSalt, revealerExtraData,
             revealerSig
         );
+        engine.resetCallContext();
     }
 
     /// @dev Single-player forced switch after a KO. Falls back to the inherited
@@ -720,6 +739,7 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
     function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint240 extraData) internal {
         vm.prank(isP0 ? p0 : p1);
         signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, extraData, true);
+        engine.resetCallContext();
     }
 
     /// @notice Mirrors InlineEngineGasTest::test_consecutiveBattleGas move-for-move,
@@ -748,13 +768,13 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         defaultRegistry.setTeam(p0, team);
         defaultRegistry.setTeam(p1, team);
 
-        StaminaRegen staminaRegen = new StaminaRegen();
-        IEffect[] memory effects = new IEffect[](1);
-        effects[0] = staminaRegen;
-        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+        // Use the INLINE_STAMINA_REGEN_RULESET sentinel so the engine takes its internal stamina-regen
+        // fast path (no external StaminaRegen contract, no onAfterMove/onRoundEnd callbacks). This is
+        // the intended production configuration for the fully-optimized stack.
+        IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
 
         vm.startSnapshotGas("Fast_Setup_1");
-        bytes32 battleKey = _startBattleFullyOptimized(IRuleset(address(ruleset)));
+        bytes32 battleKey = _startBattleFullyOptimized(ruleset);
         uint256 setup1Gas = vm.stopSnapshotGas("Fast_Setup_1");
 
         vm.warp(vm.getBlockTimestamp() + 1);

@@ -129,6 +129,8 @@ contract InlineMoveParityTest is Test, BattleHelper {
             vm.startPrank(BOB);
             commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, 0, true);
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     function _doAttackTurn(bytes32 battleKey, uint8 aliceMove, uint8 bobMove) internal {
@@ -151,6 +153,8 @@ contract InlineMoveParityTest is Test, BattleHelper {
             vm.startPrank(BOB);
             commitManager.revealMove(battleKey, bobMove, salt, 0, true);
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     /// @notice Test that an inline Physical move deals damage correctly

@@ -154,7 +154,7 @@ contract MalalienTest is Test, BattleHelper {
         // Bob switches to mon index 1
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
-
+        engine.resetCallContext();
         // Alice does nothing, Bob attacks and KOs Alice's mon
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 

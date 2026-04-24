@@ -231,6 +231,8 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
             vm.startPrank(p1);
             signedCommitManager.revealMove(battleKey, moveIndex, salt, 0, true);
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     /// @dev Completes a turn using the dual-signed flow (1 TX).
@@ -274,6 +276,8 @@ abstract contract SignedCommitManagerTestBase is Test, BattleHelper, EIP712 {
                 revealerSignature
             );
         }
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 }
 
@@ -896,6 +900,8 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
             revealerExtraData,
             revealerSig
         );
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     /// @notice Turn 0 with a non-switch move must coerce into a switch-to-mon-0, not revert

@@ -48,6 +48,28 @@ abstract contract BattleHelper is Test {
             vm.startPrank(BOB);
             commitManager.revealMove(battleKey, bobMoveIndex, salt, bobExtraData, true);
         }
+        // Foundry runs all calls in a test function within a single EVM tx, so Engine's transient
+        // storage (battleKeyForWrite, _turnPXMoveEncoded, etc.) persists across execute() invocations
+        // unless we explicitly clear it. Production calls each execute in a separate tx, where the
+        // EVM auto-clears transient; this helper keeps tests in sync with that invariant.
+        vm.stopPrank();
+        engine.resetCallContext();
+    }
+
+    /// @notice Wrapper around `commitManager.revealMove(..., autoExecute=true)` that resets the engine's
+    /// call context afterward, so a subsequent turn in the same foundry test function starts with a
+    /// clean transient slate (see note in _commitRevealExecuteForAliceAndBob).
+    function _revealMoveAndReset(
+        Engine engine,
+        DefaultCommitManager commitManager,
+        bytes32 battleKey,
+        uint8 moveIndex,
+        bytes32 salt,
+        uint240 extraData
+    ) internal {
+        commitManager.revealMove(battleKey, moveIndex, salt, extraData, true);
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 
     function _startBattle(

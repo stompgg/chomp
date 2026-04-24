@@ -474,7 +474,7 @@ contract EkinekiTest is Test, BattleHelper {
         // After KO, playerSwitchForTurnFlag = 0 (Alice must switch, no commit needed)
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(2), true);
-
+        engine.resetCallContext();
         // Verify that Alice's mon 2 got a sp atk boost (STAGE_1_BOOST = 15% of 100 = 15)
         int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 2, MonStateIndexName.SpecialAttack);
         assertEq(
@@ -565,7 +565,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Alice forced switch to mon 1 (savior complex triggers with 1 KO)
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
-
+        engine.resetCallContext();
         int32 spAtkDeltaFirstSwitch = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.SpecialAttack);
         assertEq(spAtkDeltaFirstSwitch, 15, "Should get 15 sp atk boost from 1 KO");
 
@@ -584,7 +584,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Alice forced switch back to mon 1 (savior complex should NOT trigger again)
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
-
+        engine.resetCallContext();
         int32 spAtkDeltaSecondSwitch = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.SpecialAttack);
         // Boost is temp so it was cleared when mon 1 switched out, and savior complex
         // should not re-apply it (once per game), so delta should be 0
@@ -683,7 +683,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Alice forced switch to mon 1
         vm.startPrank(ALICE);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
-
+        engine.resetCallContext();
         // Mon 1 has no ability, so no savior complex trigger
         // But the savior complex on mon 0 should NOT have been consumed (it didn't trigger)
         // Verify by checking global KV is still 0

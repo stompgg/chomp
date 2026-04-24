@@ -175,6 +175,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         }
 
         // Dual-signed flow cold (1 TX)
+        // Reset transient first so a stale execute from battleKey1 above doesn't pollute battleKey2's measurement.
+        engine.resetCallContext();
         {
             bytes32 p0Salt = bytes32(uint256(1));
             bytes32 p1Salt = bytes32(uint256(2));
@@ -201,7 +203,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         // === WARM BENCHMARKS ===
 
-        // Complete turn 1 for both battles
+        // Complete turn 1 for both battles (helpers reset transient internally).
+        engine.resetCallContext();
         _completeTurnNormal(battleKey1, 1);
         _completeTurnFast(battleKey2, 1);
 
