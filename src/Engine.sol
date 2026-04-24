@@ -44,9 +44,6 @@ contract Engine is IEngine, MappingAllocator {
     address private transient upstreamCaller; // Used to bubble up caller data for events
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
     // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
-    // through getMoveDecisionForBattleState and computePriorityPlayerIndex. The executeWithMoves entry
-    // point skips SSTORE-ing to config.p0Move/config.p1Move/config.p0Salt/config.p1Salt and instead writes
-    // here so external reads see the current turn's moves.
     // A non-zero `_turnP0MoveEncoded` is the "transient is populated for this call" signal
     uint256 private transient _turnP0MoveEncoded;
     uint256 private transient _turnP1MoveEncoded;
