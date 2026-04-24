@@ -2791,6 +2791,22 @@ contract Engine is IEngine, MappingAllocator {
             p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
     }
 
+    /// @notice Cheap route-only getter for CPUMoveManager.selectMove. Returns just the fields
+    ///         needed to authenticate the caller, detect game-over, and route on the switch flag.
+    ///         One SLOAD (p0/winnerIndex/playerSwitchForTurnFlag all live in the same BattleData
+    ///         slot) — skips the storage-key hash, config pointer, team-sizes/KO-bitmap unpacks,
+    ///         and p1's active-mon + move-slot reads that the full CPUContext performs.
+    function getCPURouteContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag)
+    {
+        BattleData storage data = battleData[battleKey];
+        p0 = data.p0;
+        winnerIndex = data.winnerIndex;
+        playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
+    }
+
     /// @notice Batch getter for the CPU move-selection hot path. Assumes the CPU is p1.
     /// @dev Consolidates everything CPUMoveManager.selectMove and CPU.calculateValidMoves need,
     ///      including p1's active mon move slots, in a single staticcall.

@@ -119,4 +119,8 @@ interface IEngine {
         returns (DamageCalcContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
     function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
+    function getCPURouteContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag);
 }

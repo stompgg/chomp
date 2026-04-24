@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {IEngine} from "../IEngine.sol";
 
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
+import {ValidatorLogic} from "../lib/ValidatorLogic.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../moves/IMoveSet.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
@@ -76,7 +77,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             validSwitchIndices = new uint256[](teamSize);
             for (uint256 i = 0; i < teamSize; i++) {
                 if (i != activeMonIndex) {
-                    if (ENGINE.validatePlayerMoveForBattle(ctx.battleKey, SWITCH_MOVE_INDEX, 1, uint240(i))) {
+                    if (_validateCPUMove(ctx, SWITCH_MOVE_INDEX, uint240(i))) {
                         validSwitchIndices[validSwitchCount++] = i;
                     }
                 }
@@ -132,7 +133,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     validMoveExtraData[validMoveCount] = extraDataToUse;
                 }
             }
-            if (ENGINE.validatePlayerMoveForBattle(ctx.battleKey, i, 1, extraDataToUse)) {
+            if (_validateCPUMove(ctx, uint8(i), extraDataToUse)) {
                 validMoveIndices[validMoveCount++] = uint8(i);
             }
         }
@@ -159,6 +160,62 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             return uint256(seed);
         }
         return RNG.getRNG(seed);
+    }
+
+    /// @notice Validate a candidate CPU move. For the inline validator (ctx.validator == 0) we
+    ///         run ValidatorLogic directly against the data the engine already handed us in the
+    ///         context — skipping the storage re-resolution, config/state SLOADs, and move slot
+    ///         SLOAD that Engine.validatePlayerMoveForBattle would repeat on every call. When an
+    ///         external validator is attached we still round-trip through the engine so the
+    ///         validator's rules remain authoritative.
+    /// @dev NUM_MOVES and ctx.p1TeamSize are used as bounds. In production both match the engine's
+    ///      DEFAULT_MOVES_PER_MON / DEFAULT_MONS_PER_TEAM; the CPU's own iteration already bounds
+    ///      moveIndex below NUM_MOVES and monToSwitchIndex below p1TeamSize, so the basic/switch
+    ///      checks are equivalent to the engine-side versions.
+    function _validateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint240 extraData)
+        internal
+        returns (bool)
+    {
+        if (ctx.validator == address(0)) {
+            return _inlineValidateCPUMove(ctx, moveIndex, extraData);
+        }
+        return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
+    }
+
+    function _inlineValidateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint240 extraData)
+        private
+        view
+        returns (bool)
+    {
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) = ValidatorLogic.validatePlayerMoveBasics(
+            moveIndex, ctx.turnId, ctx.cpuActiveMonKnockedOut, NUM_MOVES
+        );
+        if (!basicValid) {
+            return false;
+        }
+        if (isNoOp) {
+            return true;
+        }
+        if (isSwitch) {
+            uint256 monToSwitchIndex = uint256(extraData);
+            bool isTargetKnockedOut = (ctx.p1KOBitmap & (1 << monToSwitchIndex)) != 0;
+            return ValidatorLogic.validateSwitch(
+                ctx.turnId, ctx.p1ActiveMonIndex, monToSwitchIndex, isTargetKnockedOut, ctx.p1TeamSize
+            );
+        }
+        if (isRegularMove) {
+            return ValidatorLogic.validateSpecificMoveSelection(
+                ENGINE,
+                ctx.battleKey,
+                ctx.cpuActiveMonMoveSlots[moveIndex],
+                1,
+                ctx.p1ActiveMonIndex,
+                extraData,
+                ctx.cpuActiveMonBaseStamina,
+                ctx.cpuActiveMonStaminaDelta
+            );
+        }
+        return true;
     }
 
     function getRNG(bytes32 seed) public pure returns (uint256) {
