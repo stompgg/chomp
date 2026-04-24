@@ -58,3 +58,5 @@ transpiler/ts-output/
 node_modules/
 
 .deploys/
+
+AGENTS.md

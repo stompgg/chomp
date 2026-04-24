@@ -6,7 +6,7 @@ import {IEngine} from "../IEngine.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
 import {CPU} from "./CPU.sol";
 
-import {RevealedMove} from "../Structs.sol";
+import {CPUContext, RevealedMove} from "../Structs.sol";
 
 contract RandomCPU is CPU {
     constructor(uint256 numMoves, IEngine engine, ICPURNG rng) CPU(numMoves, engine, rng) {}
@@ -15,31 +15,26 @@ contract RandomCPU is CPU {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(bytes32 battleKey, uint256 playerIndex, uint8, uint240)
+    function calculateMove(CPUContext memory ctx, uint8, uint240)
         external
         override
         returns (uint128 moveIndex, uint240 extraData)
     {
-        (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) = calculateValidMoves(battleKey, playerIndex);
+        (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
+            _calculateValidMoves(ctx);
 
-        // Merge all three arrays into one
         uint256 totalChoices = noOp.length + moves.length + switches.length;
-        RevealedMove[] memory allChoices = new RevealedMove[](totalChoices);
-
-        uint256 index = 0;
-        for (uint256 i = 0; i < noOp.length; i++) {
-            allChoices[index++] = noOp[i];
-        }
-        for (uint256 i = 0; i < moves.length; i++) {
-            allChoices[index++] = moves[i];
-        }
-        for (uint256 i = 0; i < switches.length; i++) {
-            allChoices[index++] = switches[i];
-        }
-
-        // Select a random move from all choices
         uint256 randomIndex =
-            RNG.getRNG(keccak256(abi.encode(nonceToUse++, battleKey, block.timestamp))) % allChoices.length;
-        return (allChoices[randomIndex].moveIndex, allChoices[randomIndex].extraData);
+            _sampleRNG(keccak256(abi.encode(nonceToUse++, ctx.battleKey, block.timestamp))) % totalChoices;
+
+        if (randomIndex < noOp.length) {
+            return (noOp[randomIndex].moveIndex, noOp[randomIndex].extraData);
+        }
+        randomIndex -= noOp.length;
+        if (randomIndex < moves.length) {
+            return (moves[randomIndex].moveIndex, moves[randomIndex].extraData);
+        }
+        randomIndex -= moves.length;
+        return (switches[randomIndex].moveIndex, switches[randomIndex].extraData);
     }
 }

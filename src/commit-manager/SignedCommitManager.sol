@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {DefaultCommitManager} from "./DefaultCommitManager.sol";
-import {EIP712} from "../lib/EIP712.sol";
-import {ECDSA} from "../lib/ECDSA.sol";
-import {SignedCommitLib} from "./SignedCommitLib.sol";
 import {IEngine} from "../IEngine.sol";
+import {IValidator} from "../IValidator.sol";
 import {CommitContext, PlayerDecisionData} from "../Structs.sol";
+import {ECDSA} from "../lib/ECDSA.sol";
+import {EIP712} from "../lib/EIP712.sol";
+import {DefaultCommitManager} from "./DefaultCommitManager.sol";
+import {SignedCommitLib} from "./SignedCommitLib.sol";
 
 /// @title SignedCommitManager
 /// @notice Extends DefaultCommitManager with optimistic dual-signed commit flow
@@ -41,15 +42,13 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when trying to use dual-signed flow on a single-player turn
     error NotTwoPlayerTurn();
 
+    /// @notice Thrown when trying to use single-player flow on a two-player turn
+    error NotSinglePlayerTurn();
+
     constructor(IEngine engine) DefaultCommitManager(engine) {}
 
     /// @inheritdoc EIP712
-    function _domainNameAndVersion()
-        internal
-        pure
-        override
-        returns (string memory name, string memory version)
-    {
+    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
         name = "SignedCommitManager";
         version = "1";
     }
@@ -74,11 +73,10 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint8 revealerMoveIndex,
         bytes32 revealerSalt,
         uint240 revealerExtraData,
-        bytes memory revealerSignature
+        bytes calldata revealerSignature
     ) external {
         // Use lightweight getter (validates internally, reverts on bad state)
-        (address committer, address revealer, uint64 turnId) =
-            ENGINE.getCommitAuthForDualSigned(battleKey);
+        (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
         // Caller must be the committing player
         if (msg.sender != committer) {
@@ -86,8 +84,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         }
 
         // Compute the committer's move hash
-        bytes32 committerMoveHash =
-            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
         // Verify the revealer's signature over DualSignedReveal
         SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
@@ -100,7 +97,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         });
 
         bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
-        if (ECDSA.recover(digest, revealerSignature) != revealer) {
+        if (ECDSA.recoverCalldata(digest, revealerSignature) != revealer) {
             revert InvalidSignature();
         }
 
@@ -110,17 +107,57 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             // Committer is p0
             ENGINE.executeWithMoves(
                 battleKey,
-                committerMoveIndex, committerSalt, committerExtraData,
-                revealerMoveIndex, revealerSalt, revealerExtraData
+                committerMoveIndex,
+                committerSalt,
+                committerExtraData,
+                revealerMoveIndex,
+                revealerSalt,
+                revealerExtraData
             );
         } else {
             // Committer is p1
             ENGINE.executeWithMoves(
                 battleKey,
-                revealerMoveIndex, revealerSalt, revealerExtraData,
-                committerMoveIndex, committerSalt, committerExtraData
+                revealerMoveIndex,
+                revealerSalt,
+                revealerExtraData,
+                committerMoveIndex,
+                committerSalt,
+                committerExtraData
             );
         }
+    }
+
+    /// @notice Executes a forced single-player move, usually a switch after a KO, in one transaction.
+    /// @dev The acting player is inferred from the engine's switch flag and must be msg.sender.
+    function executeSinglePlayerMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external {
+        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+
+        if (ctx.startTimestamp == 0) {
+            revert BattleNotYetStarted();
+        }
+        if (ctx.winnerIndex != 2) {
+            revert BattleAlreadyComplete();
+        }
+
+        uint8 playerSwitchForTurnFlag = ctx.playerSwitchForTurnFlag;
+        if (playerSwitchForTurnFlag > 1) {
+            revert NotSinglePlayerTurn();
+        }
+
+        uint256 playerIndex = playerSwitchForTurnFlag;
+        address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
+        if (msg.sender != player) {
+            revert PlayerNotAllowed();
+        }
+
+        if (ctx.validator != address(0)) {
+            if (!IValidator(ctx.validator).validatePlayerMove(battleKey, moveIndex, playerIndex, extraData)) {
+                revert InvalidMove(msg.sender);
+            }
+        }
+
+        ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);
     }
 
     /// @notice Allows anyone to publish the committer's signed commitment on-chain
@@ -131,11 +168,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @param moveHash The committer's move hash
     /// @param committerSignature EIP-712 signature from the committer over
     ///        SignedCommit(moveHash, battleKey, turnId)
-    function commitWithSignature(
-        bytes32 battleKey,
-        bytes32 moveHash,
-        bytes memory committerSignature
-    ) external {
+    function commitWithSignature(bytes32 battleKey, bytes32 moveHash, bytes calldata committerSignature) external {
         // Get battle context
         CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
 
@@ -176,15 +209,12 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         }
 
         // Verify the committer's signature
-        SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
-            moveHash: moveHash,
-            battleKey: battleKey,
-            turnId: turnId
-        });
+        SignedCommitLib.SignedCommit memory commit =
+            SignedCommitLib.SignedCommit({moveHash: moveHash, battleKey: battleKey, turnId: turnId});
 
         bytes32 structHash = SignedCommitLib.hashSignedCommit(commit);
         bytes32 digest = _hashTypedData(structHash);
-        address signer = ECDSA.recover(digest, committerSignature);
+        address signer = ECDSA.recoverCalldata(digest, committerSignature);
 
         if (signer != committer) {
             revert InvalidSignature();

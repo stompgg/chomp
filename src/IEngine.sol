@@ -48,6 +48,7 @@ interface IEngine {
         bytes32 p1Salt,
         uint240 p1ExtraData
     ) external;
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
     function setUpstreamCaller(address caller) external;
     function resetCallContext() external;
 
@@ -94,12 +95,9 @@ interface IEngine {
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
-    function validatePlayerMoveForBattle(
-        bytes32 battleKey,
-        uint256 moveIndex,
-        uint256 playerIndex,
-        uint240 extraData
-    ) external returns (bool);
+    function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
+        external
+        returns (bool);
     function getEffects(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
         external
         view
@@ -120,4 +118,5 @@ interface IEngine {
         view
         returns (DamageCalcContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
+    function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
 }

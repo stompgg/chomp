@@ -3,19 +3,19 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 
+import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../moves/IMoveSet.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
-import {ICPU} from "./ICPU.sol";
 import {CPUMoveManager} from "./CPUMoveManager.sol";
-import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
+import {ICPU} from "./ICPU.sol";
 
 import {ExtraDataType} from "../Enums.sol";
-import {Battle, ProposedBattle, RevealedMove} from "../Structs.sol";
+import {Battle, CPUContext, ProposedBattle, RevealedMove} from "../Structs.sol";
 
 abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
-    uint256 private immutable NUM_MOVES;
+    uint256 internal immutable NUM_MOVES;
 
     ICPURNG public immutable RNG;
     uint256 public nonceToUse;
@@ -33,125 +33,132 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(bytes32 battleKey, uint256 playerIndex, uint8 playerMoveIndex, uint240 playerExtraData)
+    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint240 playerExtraData)
         external
         virtual
         returns (uint128 moveIndex, uint240 extraData);
 
     /**
-     *  - If it's a switch needed turn, returns only valid switches
-     *  - If it's a non-switch turn, returns valid moves, valid switches, and no-op separately
+     * Public test-friendly wrapper: fetches context and forwards. playerIndex is ignored
+     * because CPU self-registers as p1 in every battle it hosts.
      */
-    function calculateValidMoves(bytes32 battleKey, uint256 playerIndex)
+    function calculateValidMoves(bytes32 battleKey, uint256)
         public
         returns (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches)
     {
-        uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
+        return _calculateValidMoves(ENGINE.getCPUContext(battleKey));
+    }
+
+    /**
+     *  - If it's a switch needed turn, returns only valid switches
+     *  - If it's a non-switch turn, returns valid moves, valid switches, and no-op separately
+     */
+    function _calculateValidMoves(CPUContext memory ctx)
+        internal
+        returns (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches)
+    {
         uint256 nonce = nonceToUse;
-        if (turnId == 0) {
-            uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
+        if (ctx.turnId == 0) {
+            uint256 teamSize = ctx.p1TeamSize;
             RevealedMove[] memory switchChoices = new RevealedMove[](teamSize);
             for (uint256 i = 0; i < teamSize; i++) {
                 switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(i)});
             }
-            nonceToUse = nonce;
             return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
-        } else {
-            uint256[] memory validSwitchIndices;
-            uint256 validSwitchCount;
-            // Check for valid switches
-            {
-                uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-                uint256 teamSize = ENGINE.getTeamSize(battleKey, playerIndex);
-                validSwitchIndices = new uint256[](teamSize);
-                for (uint256 i = 0; i < teamSize; i++) {
-                    if (i != activeMonIndex[playerIndex]) {
-                        if (ENGINE.validatePlayerMoveForBattle(battleKey, SWITCH_MOVE_INDEX, playerIndex, uint240(i))) {
-                            validSwitchIndices[validSwitchCount++] = i;
-                        }
+        }
+
+        uint256 activeMonIndex = ctx.p1ActiveMonIndex;
+        uint256[] memory validSwitchIndices;
+        uint256 validSwitchCount;
+        // Check for valid switches
+        {
+            uint256 teamSize = ctx.p1TeamSize;
+            validSwitchIndices = new uint256[](teamSize);
+            for (uint256 i = 0; i < teamSize; i++) {
+                if (i != activeMonIndex) {
+                    if (ENGINE.validatePlayerMoveForBattle(ctx.battleKey, SWITCH_MOVE_INDEX, 1, uint240(i))) {
+                        validSwitchIndices[validSwitchCount++] = i;
                     }
                 }
             }
-            // If it's a turn where we need to make a switch, then we should just return valid switches
-            {
-                uint256 playerSwitchForTurnFlag = ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey);
-                if (playerSwitchForTurnFlag == 1) {
-                    RevealedMove[] memory switchChoices = new RevealedMove[](validSwitchCount);
-                    for (uint256 i = 0; i < validSwitchCount; i++) {
-                        switchChoices[i] = RevealedMove({
-                            moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
-                        });
-                    }
-                    nonceToUse = nonce;
-                    return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
-                }
-            }
-            uint8[] memory validMoveIndices;
-            uint240[] memory validMoveExtraData;
-            uint256 validMoveCount;
-            // Check for valid moves
-            {
-                uint256[] memory activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey);
-                validMoveIndices = new uint8[](NUM_MOVES);
-                validMoveExtraData = new uint240[](NUM_MOVES);
-                for (uint256 i = 0; i < NUM_MOVES; i++) {
-                    uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex[playerIndex], i);
-                    uint240 extraDataToUse = 0;
-                    // Inline moves always have ExtraDataType.None — skip extraData logic
-                    if (!MoveSlotLib.isInline(rawMoveSlot)) {
-                        IMoveSet move = MoveSlotLib.toIMoveSet(rawMoveSlot);
-                        if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
-                            // Skip if there are no valid switches
-                            if (validSwitchCount == 0) {
-                                continue;
-                            }
-                            uint256 randomIndex =
-                                RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validSwitchCount;
-                            extraDataToUse = uint240(validSwitchIndices[randomIndex]);
-                            validMoveExtraData[validMoveCount] = extraDataToUse;
-                        } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
-                            uint256 opponentIndex = (playerIndex + 1) % 2;
-                            uint256 opponentTeamSize = ENGINE.getTeamSize(battleKey, opponentIndex);
-                            uint256 koBitmap = ENGINE.getKOBitmap(battleKey, opponentIndex);
-                            uint256[] memory validTargets = new uint256[](opponentTeamSize);
-                            uint256 validTargetCount;
-                            for (uint256 j = 0; j < opponentTeamSize; j++) {
-                                if ((koBitmap & (1 << j)) == 0) {
-                                    validTargets[validTargetCount++] = j;
-                                }
-                            }
-                            if (validTargetCount == 0) {
-                                continue;
-                            }
-                            uint256 randomIndex =
-                                RNG.getRNG(keccak256(abi.encode(nonce++, battleKey, block.timestamp))) % validTargetCount;
-                            extraDataToUse = uint240(validTargets[randomIndex]);
-                            validMoveExtraData[validMoveCount] = extraDataToUse;
-                        }
-                    }
-                    if (ENGINE.validatePlayerMoveForBattle(battleKey, i, playerIndex, extraDataToUse)) {
-                        validMoveIndices[validMoveCount++] = uint8(i);
-                    }
-                }
-            }
-            // Build separate arrays for moves, switches, and noOp
-            RevealedMove[] memory validMovesArray = new RevealedMove[](validMoveCount);
-            for (uint256 i = 0; i < validMoveCount; i++) {
-                validMovesArray[i] =
-                    RevealedMove({moveIndex: validMoveIndices[i], salt: "", extraData: validMoveExtraData[i]});
-            }
-            RevealedMove[] memory validSwitchesArray = new RevealedMove[](validSwitchCount);
+        }
+        // If it's a turn where we need to make a switch, then we should just return valid switches
+        if (ctx.playerSwitchForTurnFlag == 1) {
+            RevealedMove[] memory switchChoices = new RevealedMove[](validSwitchCount);
             for (uint256 i = 0; i < validSwitchCount; i++) {
-                validSwitchesArray[i] = RevealedMove({
-                    moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])
+                switchChoices[i] = RevealedMove({
+                    moveIndex: SWITCH_MOVE_INDEX,
+                    salt: "",
+                    extraData: uint240(validSwitchIndices[i])
                 });
             }
-            RevealedMove[] memory noOpArray = new RevealedMove[](1);
-            noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: 0});
-
-            nonceToUse = nonce;
-            return (noOpArray, validMovesArray, validSwitchesArray);
+            return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
         }
+        uint8[] memory validMoveIndices = new uint8[](NUM_MOVES);
+        uint240[] memory validMoveExtraData = new uint240[](NUM_MOVES);
+        uint256 validMoveCount;
+        // Check for valid moves
+        for (uint256 i = 0; i < NUM_MOVES; i++) {
+            uint256 rawMoveSlot = ctx.cpuActiveMonMoveSlots[i];
+            uint240 extraDataToUse = 0;
+            // Inline moves always have ExtraDataType.None — skip extraData logic
+            if (!MoveSlotLib.isInline(rawMoveSlot)) {
+                IMoveSet move = MoveSlotLib.toIMoveSet(rawMoveSlot);
+                if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
+                    // Skip if there are no valid switches
+                    if (validSwitchCount == 0) {
+                        continue;
+                    }
+                    uint256 randomIndex =
+                        _sampleRNG(keccak256(abi.encode(nonce++, ctx.battleKey, block.timestamp))) % validSwitchCount;
+                    extraDataToUse = uint240(validSwitchIndices[randomIndex]);
+                    validMoveExtraData[validMoveCount] = extraDataToUse;
+                } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
+                    uint256 opponentTeamSize = ctx.p0TeamSize;
+                    uint256 koBitmap = ctx.p0KOBitmap;
+                    uint256[] memory validTargets = new uint256[](opponentTeamSize);
+                    uint256 validTargetCount;
+                    for (uint256 j = 0; j < opponentTeamSize; j++) {
+                        if ((koBitmap & (1 << j)) == 0) {
+                            validTargets[validTargetCount++] = j;
+                        }
+                    }
+                    if (validTargetCount == 0) {
+                        continue;
+                    }
+                    uint256 randomIndex =
+                        _sampleRNG(keccak256(abi.encode(nonce++, ctx.battleKey, block.timestamp))) % validTargetCount;
+                    extraDataToUse = uint240(validTargets[randomIndex]);
+                    validMoveExtraData[validMoveCount] = extraDataToUse;
+                }
+            }
+            if (ENGINE.validatePlayerMoveForBattle(ctx.battleKey, i, 1, extraDataToUse)) {
+                validMoveIndices[validMoveCount++] = uint8(i);
+            }
+        }
+        // Build separate arrays for moves, switches, and noOp
+        RevealedMove[] memory validMovesArray = new RevealedMove[](validMoveCount);
+        for (uint256 i = 0; i < validMoveCount; i++) {
+            validMovesArray[i] =
+                RevealedMove({moveIndex: validMoveIndices[i], salt: "", extraData: validMoveExtraData[i]});
+        }
+        RevealedMove[] memory validSwitchesArray = new RevealedMove[](validSwitchCount);
+        for (uint256 i = 0; i < validSwitchCount; i++) {
+            validSwitchesArray[i] =
+                RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])});
+        }
+        RevealedMove[] memory noOpArray = new RevealedMove[](1);
+        noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: 0});
+
+        nonceToUse = nonce;
+        return (noOpArray, validMovesArray, validSwitchesArray);
+    }
+
+    function _sampleRNG(bytes32 seed) internal view returns (uint256) {
+        if (address(RNG) == address(this)) {
+            return uint256(seed);
+        }
+        return RNG.getRNG(seed);
     }
 
     function getRNG(bytes32 seed) public pure returns (uint256) {

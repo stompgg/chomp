@@ -262,3 +262,25 @@ struct ValidationContext {
     uint32 p1ActiveMonBaseStamina;
     int32 p1ActiveMonStaminaDelta;
 }
+
+// Batch context for CPU move selection. The CPU is always p1 in this codebase,
+// so `cpuActiveMon*` fields mirror p1's active mon state. Returned by Engine.getCPUContext.
+struct CPUContext {
+    bytes32 battleKey;
+    address p0;
+    address p1;
+    address validator;
+    uint8 winnerIndex; // 2 = no winner
+    uint8 playerSwitchForTurnFlag;
+    uint64 turnId;
+    uint8 p0ActiveMonIndex;
+    uint8 p1ActiveMonIndex;
+    uint8 p0TeamSize;
+    uint8 p1TeamSize;
+    uint8 p0KOBitmap;
+    uint8 p1KOBitmap;
+    uint32 cpuActiveMonBaseStamina;
+    int32 cpuActiveMonStaminaDelta;
+    bool cpuActiveMonKnockedOut;
+    uint256[4] cpuActiveMonMoveSlots;
+}

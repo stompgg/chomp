@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {CLEARED_MON_STATE_SENTINEL, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
+import {MonStateIndexName, MoveClass, Type} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
-import {ICPURNG} from "../rng/ICPURNG.sol";
-import {CPU} from "./CPU.sol";
-import {DamageCalcContext, MonStats, RevealedMove} from "../Structs.sol";
-import {ITypeCalculator} from "../types/ITypeCalculator.sol";
-import {MonStateIndexName, Type, MoveClass} from "../Enums.sol";
+import {CPUContext, DamageCalcContext, MonStats, RevealedMove} from "../Structs.sol";
 import {AttackCalculator} from "../moves/AttackCalculator.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
-import {SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, CLEARED_MON_STATE_SENTINEL} from "../Constants.sol";
+import {ICPURNG} from "../rng/ICPURNG.sol";
+import {ITypeCalculator} from "../types/ITypeCalculator.sol";
+import {CPU} from "./CPU.sol";
 
 /// @notice Interface for moves that expose basePower (e.g., StandardAttack)
 interface IAttackMove {
@@ -56,40 +56,34 @@ contract BetterCPU is CPU {
 
     // ============ CORE DECISION TREE ============
 
-    function calculateMove(bytes32 battleKey, uint256 playerIndex, uint8 playerMoveIndex, uint240 playerExtraData)
+    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint240 playerExtraData)
         external
         override
         returns (uint128 moveIndex, uint240 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-            calculateValidMoves(battleKey, playerIndex);
+            _calculateValidMoves(ctx);
 
-        uint256 opponentIndex = playerIndex ^ 1;
-        uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
+        bytes32 battleKey = ctx.battleKey;
 
         // ══════════════════════════════════════════
         // P0: Turn 0 — Lead Selection
         // ══════════════════════════════════════════
-        if (turnId == 0) {
-            (moveIndex, extraData) = _selectLead(battleKey, playerIndex, opponentIndex, playerExtraData, switches);
+        if (ctx.turnId == 0) {
+            (moveIndex, extraData) = _selectLead(battleKey, playerExtraData, switches);
             // Clear switch-in move bit for the mon we're sending in
             switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
             return (moveIndex, extraData);
         }
 
-        // Cache active mon indices
-        uint256[] memory activeMonIndices = ENGINE.getActiveMonIndexForBattleState(battleKey);
-        uint256 activeMonIndex = activeMonIndices[playerIndex];
-        uint256 opponentMonIndex = activeMonIndices[opponentIndex];
+        uint256 activeMonIndex = ctx.p1ActiveMonIndex;
+        uint256 opponentMonIndex = ctx.p0ActiveMonIndex;
 
         // ══════════════════════════════════════════
         // P1: KO'd — Forced Switch
         // ══════════════════════════════════════════
-        int32 isKOed =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut);
-        if (isKOed == 1) {
-            (moveIndex, extraData) =
-                _selectBestSwitch(battleKey, playerIndex, opponentIndex, opponentMonIndex, playerMoveIndex, switches);
+        if (ctx.cpuActiveMonKnockedOut) {
+            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches);
             // Clear switch-in move bit for the mon we're switching to
             switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
             return (moveIndex, extraData);
@@ -101,27 +95,18 @@ contract BetterCPU is CPU {
         }
 
         // Cache damage context (us → opponent) — only valid for active mons
-        DamageCalcContext memory attackCtx = ENGINE.getDamageCalcContext(battleKey, playerIndex, opponentIndex);
+        DamageCalcContext memory attackCtx = ENGINE.getDamageCalcContext(battleKey, 1, 0);
 
         // ══════════════════════════════════════════
         // P2: Can We KO the Opponent?
         // ══════════════════════════════════════════
-        int256 koMoveIdx =
-            _findKOMove(battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, attackCtx, moves);
+        int256 koMoveIdx = _findKOMove(ctx, opponentMonIndex, attackCtx, moves);
         if (koMoveIdx >= 0) {
-            bool opponentCanKOUs = _canOpponentKOUs(
-                battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, playerMoveIndex
-            );
+            bool opponentCanKOUs = _canOpponentKOUs(ctx, activeMonIndex, opponentMonIndex, playerMoveIndex);
             if (
                 !opponentCanKOUs
                     || _weGoFirst(
-                        battleKey,
-                        playerIndex,
-                        activeMonIndex,
-                        opponentIndex,
-                        opponentMonIndex,
-                        moves[uint256(koMoveIdx)].moveIndex,
-                        playerMoveIndex
+                        ctx, activeMonIndex, opponentMonIndex, moves[uint256(koMoveIdx)].moveIndex, playerMoveIndex
                     )
             ) {
                 return (moves[uint256(koMoveIdx)].moveIndex, moves[uint256(koMoveIdx)].extraData);
@@ -134,12 +119,12 @@ contract BetterCPU is CPU {
         // ══════════════════════════════════════════
         if (playerMoveIndex == SWITCH_MOVE_INDEX) {
             // Try switch-in move on this safe turn
-            int256 switchInMove = _trySwitchInMove(battleKey, playerIndex, activeMonIndex, moves);
+            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
             if (moves.length > 0) {
-                int256 bestMove = _findBestDamageMove(battleKey, playerIndex, activeMonIndex, attackCtx, moves);
+                int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
                 if (bestMove >= 0) {
                     return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
                 }
@@ -155,11 +140,11 @@ contract BetterCPU is CPU {
                 return (noOp[0].moveIndex, noOp[0].extraData); // Both rest
             }
             // Try switch-in move on this safe turn
-            int256 switchInMove = _trySwitchInMove(battleKey, playerIndex, activeMonIndex, moves);
+            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
-            int256 bestMove = _findBestDamageMove(battleKey, playerIndex, activeMonIndex, attackCtx, moves);
+            int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -170,9 +155,8 @@ contract BetterCPU is CPU {
         // P5: Opponent Using a Move — Evaluate Defensive Switch
         // ══════════════════════════════════════════
         if (switches.length > 0) {
-            (bool shouldSwitch, uint256 switchIdx) = _evaluateDefensiveSwitch(
-                battleKey, playerIndex, activeMonIndex, opponentIndex, opponentMonIndex, playerMoveIndex, switches
-            );
+            (bool shouldSwitch, uint256 switchIdx) =
+                _evaluateDefensiveSwitch(ctx, activeMonIndex, opponentMonIndex, playerMoveIndex, switches);
             if (shouldSwitch) {
                 // Clear switch-in move bit for the mon we're switching to
                 switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(switches[switchIdx].extraData));
@@ -185,18 +169,18 @@ contract BetterCPU is CPU {
         // ══════════════════════════════════════════
         if (moves.length > 0) {
             // Try switch-in move
-            int256 switchInMove = _trySwitchInMove(battleKey, playerIndex, activeMonIndex, moves);
+            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
 
             // Check preferred move
-            int256 preferredMove = _tryPreferredMove(battleKey, playerIndex, activeMonIndex, attackCtx, moves);
+            int256 preferredMove = _tryPreferredMove(ctx, attackCtx, moves);
             if (preferredMove >= 0) {
                 return (moves[uint256(preferredMove)].moveIndex, moves[uint256(preferredMove)].extraData);
             }
 
-            int256 bestMove = _findBestDamageMove(battleKey, playerIndex, activeMonIndex, attackCtx, moves);
+            int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -204,8 +188,7 @@ contract BetterCPU is CPU {
 
         // No moves left — switch if possible, else rest
         if (switches.length > 0) {
-            (moveIndex, extraData) =
-                _selectBestSwitch(battleKey, playerIndex, opponentIndex, opponentMonIndex, playerMoveIndex, switches);
+            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches);
             switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
             return (moveIndex, extraData);
         }
@@ -284,19 +267,16 @@ contract BetterCPU is CPU {
 
     /// @notice Find a move that can KO the opponent (cheapest stamina among KO moves)
     function _findKOMove(
-        bytes32 battleKey,
-        uint256 attackerIndex,
-        uint256 attackerMonIndex,
-        uint256 defenderIndex,
+        CPUContext memory cpuCtx,
         uint256 defenderMonIndex,
         DamageCalcContext memory ctx,
         RevealedMove[] memory moves
     ) internal view returns (int256) {
+        bytes32 battleKey = cpuCtx.battleKey;
+        uint256 activeMonIndex = cpuCtx.p1ActiveMonIndex;
         // Get defender's remaining HP
-        uint32 defenderBaseHp =
-            ENGINE.getMonValueForBattle(battleKey, defenderIndex, defenderMonIndex, MonStateIndexName.Hp);
-        int32 defenderHpDelta =
-            ENGINE.getMonStateForBattle(battleKey, defenderIndex, defenderMonIndex, MonStateIndexName.Hp);
+        uint32 defenderBaseHp = ENGINE.getMonValueForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
+        int32 defenderHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
         int256 defenderCurrentHp = int256(uint256(defenderBaseHp)) + int256(defenderHpDelta);
         if (defenderCurrentHp <= 0) return -1;
 
@@ -304,34 +284,38 @@ contract BetterCPU is CPU {
         uint32 bestStaminaCost = type(uint32).max;
 
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
+            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
             MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
             if (mc != MoveClass.Physical && mc != MoveClass.Special) {
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
                 continue;
             }
 
             uint256 estimatedDamage = _estimateDamage(ctx, battleKey, rawMoveSlot, mc);
             if (estimatedDamage >= uint256(defenderCurrentHp)) {
-                uint32 staminaCost = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, attackerIndex, attackerMonIndex);
+                uint32 staminaCost = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, 1, activeMonIndex);
                 if (staminaCost < bestStaminaCost) {
                     bestStaminaCost = staminaCost;
                     bestMoveIndex = int256(i);
                 }
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return bestMoveIndex;
     }
 
     /// @notice Find best damaging move with stamina cost tiebreaking
     function _findBestDamageMove(
-        bytes32 battleKey,
-        uint256 attackerIndex,
-        uint256 attackerMonIndex,
+        CPUContext memory cpuCtx,
         DamageCalcContext memory ctx,
         RevealedMove[] memory moves
     ) internal view returns (int256) {
+        bytes32 battleKey = cpuCtx.battleKey;
+        uint256 activeMonIndex = cpuCtx.p1ActiveMonIndex;
         int256 bestMoveIndex = -1;
         uint256 bestDamage = 0;
         uint32 bestStaminaCost = type(uint32).max;
@@ -342,18 +326,20 @@ contract BetterCPU is CPU {
 
         // First pass: compute + cache damage and stamina
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
+            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
             MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
             if (mc == MoveClass.Physical || mc == MoveClass.Special) {
                 damages[i] = _estimateDamage(ctx, battleKey, rawMoveSlot, mc);
-                costs[i] = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, attackerIndex, attackerMonIndex);
+                costs[i] = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, 1, activeMonIndex);
                 if (damages[i] > bestDamage) {
                     bestDamage = damages[i];
                     bestStaminaCost = costs[i];
                     bestMoveIndex = int256(i);
                 }
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (bestDamage == 0) return bestMoveIndex;
@@ -365,7 +351,9 @@ contract BetterCPU is CPU {
                 bestStaminaCost = costs[i];
                 bestMoveIndex = int256(i);
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         return bestMoveIndex;
@@ -374,15 +362,11 @@ contract BetterCPU is CPU {
     // ============ LEAD SELECTION ============
 
     /// @notice Select lead with dual-type scoring (defensive + offensive)
-    function _selectLead(
-        bytes32 battleKey,
-        uint256 playerIndex,
-        uint256 opponentIndex,
-        uint240 opponentMonExtraData,
-        RevealedMove[] memory switches
-    ) internal returns (uint128, uint240) {
-        MonStats memory oppStats =
-            ENGINE.getMonStatsForBattle(battleKey, opponentIndex, uint256(opponentMonExtraData));
+    function _selectLead(bytes32 battleKey, uint240 opponentMonExtraData, RevealedMove[] memory switches)
+        internal
+        returns (uint128, uint240)
+    {
+        MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, uint256(opponentMonExtraData));
         Type oppType1 = oppStats.type1;
         Type oppType2 = oppStats.type2;
 
@@ -390,8 +374,7 @@ contract BetterCPU is CPU {
         uint256 bestIndex = 0;
 
         for (uint256 i; i < switches.length;) {
-            MonStats memory candidateStats =
-                ENGINE.getMonStatsForBattle(battleKey, playerIndex, uint256(switches[i].extraData));
+            MonStats memory candidateStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
             Type candType1 = candidateStats.type1;
             Type candType2 = candidateStats.type2;
 
@@ -428,7 +411,9 @@ contract BetterCPU is CPU {
                 bestScore = score;
                 bestIndex = i;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         return (switches[bestIndex].moveIndex, switches[bestIndex].extraData);
@@ -439,8 +424,6 @@ contract BetterCPU is CPU {
     /// @notice Select switch candidate that takes least damage from opponent's move
     function _selectBestSwitch(
         bytes32 battleKey,
-        uint256 playerIndex,
-        uint256 opponentIndex,
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex,
         RevealedMove[] memory switches
@@ -454,9 +437,7 @@ contract BetterCPU is CPU {
         uint256 oppMoveSlot;
         MoveClass oppMoveClass;
         bool canEstimate = false;
-        try ENGINE.getMoveForMonForBattle(battleKey, opponentIndex, opponentMonIndex, opponentMoveIndex) returns (
-            uint256 msRaw
-        ) {
+        try ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, opponentMoveIndex) returns (uint256 msRaw) {
             oppMoveSlot = msRaw;
             oppMoveClass = MoveSlotLib.moveClass(msRaw, ENGINE, battleKey);
             canEstimate = (oppMoveClass == MoveClass.Physical || oppMoveClass == MoveClass.Special);
@@ -473,14 +454,15 @@ contract BetterCPU is CPU {
 
         for (uint256 i; i < switches.length;) {
             uint256 candidateMonIndex = uint256(switches[i].extraData);
-            DamageCalcContext memory ctx =
-                _buildDamageCalcContext(battleKey, opponentIndex, opponentMonIndex, playerIndex, candidateMonIndex);
+            DamageCalcContext memory ctx = _buildDamageCalcContext(battleKey, 0, opponentMonIndex, 1, candidateMonIndex);
             uint256 dmg = _estimateDamage(ctx, battleKey, oppMoveSlot, oppMoveClass);
             if (dmg < leastDamage) {
                 leastDamage = dmg;
                 bestIdx = i;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         return (switches[bestIdx].moveIndex, switches[bestIdx].extraData);
@@ -490,45 +472,41 @@ contract BetterCPU is CPU {
 
     /// @notice Check if we go first (mirrors Engine.computePriorityPlayerIndex)
     function _weGoFirst(
-        bytes32 battleKey,
-        uint256 playerIndex,
+        CPUContext memory cpuCtx,
         uint256 ourMonIndex,
-        uint256 opponentIndex,
         uint256 opponentMonIndex,
         uint128 ourMoveIndex,
         uint8 opponentMoveIndex
     ) internal view returns (bool) {
+        bytes32 battleKey = cpuCtx.battleKey;
         // Get priorities
         uint32 ourPriority;
         if (ourMoveIndex >= SWITCH_MOVE_INDEX) {
             ourPriority = 6; // SWITCH_PRIORITY
         } else {
-            uint256 rawOurMove = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, ourMonIndex, ourMoveIndex);
-            ourPriority = MoveSlotLib.priority(rawOurMove, ENGINE, battleKey, playerIndex);
+            uint256 rawOurMove = cpuCtx.cpuActiveMonMoveSlots[ourMoveIndex];
+            ourPriority = MoveSlotLib.priority(rawOurMove, ENGINE, battleKey, 1);
         }
 
         uint32 oppPriority;
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) {
             oppPriority = 6;
         } else {
-            uint256 rawOppMove = ENGINE.getMoveForMonForBattle(battleKey, opponentIndex, opponentMonIndex, opponentMoveIndex);
-            oppPriority = MoveSlotLib.priority(rawOppMove, ENGINE, battleKey, opponentIndex);
+            uint256 rawOppMove = ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, opponentMoveIndex);
+            oppPriority = MoveSlotLib.priority(rawOppMove, ENGINE, battleKey, 0);
         }
 
         if (ourPriority > oppPriority) return true;
         if (ourPriority < oppPriority) return false;
 
         // Same priority — compare speeds
-        uint32 ourBaseSpeed = ENGINE.getMonValueForBattle(battleKey, playerIndex, ourMonIndex, MonStateIndexName.Speed);
-        int32 ourSpeedDelta =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, ourMonIndex, MonStateIndexName.Speed);
+        uint32 ourBaseSpeed = ENGINE.getMonValueForBattle(battleKey, 1, ourMonIndex, MonStateIndexName.Speed);
+        int32 ourSpeedDelta = ENGINE.getMonStateForBattle(battleKey, 1, ourMonIndex, MonStateIndexName.Speed);
         if (ourSpeedDelta == CLEARED_MON_STATE_SENTINEL) ourSpeedDelta = 0;
         int256 ourSpeed = int256(uint256(ourBaseSpeed)) + int256(ourSpeedDelta);
 
-        uint32 oppBaseSpeed =
-            ENGINE.getMonValueForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Speed);
-        int32 oppSpeedDelta =
-            ENGINE.getMonStateForBattle(battleKey, opponentIndex, opponentMonIndex, MonStateIndexName.Speed);
+        uint32 oppBaseSpeed = ENGINE.getMonValueForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Speed);
+        int32 oppSpeedDelta = ENGINE.getMonStateForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Speed);
         if (oppSpeedDelta == CLEARED_MON_STATE_SENTINEL) oppSpeedDelta = 0;
         int256 oppSpeed = int256(uint256(oppBaseSpeed)) + int256(oppSpeedDelta);
 
@@ -539,20 +517,17 @@ contract BetterCPU is CPU {
 
     /// @notice Check if opponent's specific chosen move can KO our active mon
     function _canOpponentKOUs(
-        bytes32 battleKey,
-        uint256 playerIndex,
+        CPUContext memory cpuCtx,
         uint256 playerMonIndex,
-        uint256 opponentIndex,
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex
     ) internal view returns (bool) {
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) return false;
 
+        bytes32 battleKey = cpuCtx.battleKey;
         uint256 oppMoveSlot;
         MoveClass oppMoveClass;
-        try ENGINE.getMoveForMonForBattle(battleKey, opponentIndex, opponentMonIndex, opponentMoveIndex) returns (
-            uint256 msRaw
-        ) {
+        try ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, opponentMoveIndex) returns (uint256 msRaw) {
             oppMoveSlot = msRaw;
             oppMoveClass = MoveSlotLib.moveClass(msRaw, ENGINE, battleKey);
         } catch {
@@ -561,11 +536,11 @@ contract BetterCPU is CPU {
 
         if (oppMoveClass != MoveClass.Physical && oppMoveClass != MoveClass.Special) return false;
 
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, opponentIndex, playerIndex);
+        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, 0, 1);
         uint256 estimatedDamage = _estimateDamage(ctx, battleKey, oppMoveSlot, oppMoveClass);
 
-        uint32 ourBaseHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, playerMonIndex, MonStateIndexName.Hp);
-        int32 ourHpDelta = ENGINE.getMonStateForBattle(battleKey, playerIndex, playerMonIndex, MonStateIndexName.Hp);
+        uint32 ourBaseHp = ENGINE.getMonValueForBattle(battleKey, 1, playerMonIndex, MonStateIndexName.Hp);
+        int32 ourHpDelta = ENGINE.getMonStateForBattle(battleKey, 1, playerMonIndex, MonStateIndexName.Hp);
         int256 ourCurrentHp = int256(uint256(ourBaseHp)) + int256(ourHpDelta);
 
         return estimatedDamage >= uint256(ourCurrentHp);
@@ -573,12 +548,14 @@ contract BetterCPU is CPU {
 
     // ============ DEFENSIVE SWITCH EVALUATION ============
 
-    /// @notice Estimate damage % and survival for a candidate switch-in
-    function _evaluateSwitchCandidate(
-        bytes32 battleKey,
-        SwitchEvalParams memory params,
-        uint256 candidateMonIndex
-    ) internal view returns (uint256 damagePct, bool survives) {
+    /// @notice Estimate damage % and survival for a candidate switch-in, packed into one uint256
+    ///         (damagePct in upper 248 bits, survives flag in bit 0). Packing keeps the caller's
+    ///         loop stack footprint within via-IR limits while still returning both values.
+    function _evaluateSwitchCandidate(bytes32 battleKey, SwitchEvalParams memory params, uint256 candidateMonIndex)
+        internal
+        view
+        returns (uint256 packed)
+    {
         DamageCalcContext memory ctx = _buildDamageCalcContext(
             battleKey, params.opponentIndex, params.opponentMonIndex, params.playerIndex, candidateMonIndex
         );
@@ -590,45 +567,47 @@ contract BetterCPU is CPU {
             ENGINE.getMonStateForBattle(battleKey, params.playerIndex, candidateMonIndex, MonStateIndexName.Hp);
         int256 currentHp = int256(uint256(maxHp)) + int256(hpDelta);
 
-        damagePct = maxHp > 0 ? (dmg * 100) / uint256(maxHp) : type(uint256).max;
-        survives = dmg < uint256(currentHp);
+        uint256 damagePct = maxHp > 0 ? (dmg * 100) / uint256(maxHp) : type(uint256).max >> 8;
+        uint256 survivesBit = dmg < uint256(currentHp) ? 1 : 0;
+        packed = (damagePct << 8) | survivesBit;
     }
 
     /// @notice Find the best switch candidate (least damage %)
-    function _findBestSwitchCandidate(
-        bytes32 battleKey,
-        SwitchEvalParams memory params,
-        RevealedMove[] memory switches
-    ) internal view returns (uint256 bestIdx, uint256 bestDamagePct, bool bestSurvives) {
+    function _findBestSwitchCandidate(bytes32 battleKey, SwitchEvalParams memory params, RevealedMove[] memory switches)
+        internal
+        view
+        returns (uint256 bestIdx, uint256 bestDamagePct, bool bestSurvives)
+    {
         bestDamagePct = type(uint256).max;
         for (uint256 i; i < switches.length;) {
-            (uint256 damagePctToCandidate, bool candidateSurvives) =
-                _evaluateSwitchCandidate(battleKey, params, uint256(switches[i].extraData));
-            if (damagePctToCandidate < bestDamagePct) {
-                bestDamagePct = damagePctToCandidate;
+            uint256 packed = _evaluateSwitchCandidate(battleKey, params, uint256(switches[i].extraData));
+            uint256 dmgPct = packed >> 8;
+            if (dmgPct < bestDamagePct) {
+                bestDamagePct = dmgPct;
                 bestIdx = i;
-                bestSurvives = candidateSurvives;
+                bestSurvives = (packed & 1) != 0;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
     /// @notice Evaluate whether switching is materially better than staying
     function _evaluateDefensiveSwitch(
-        bytes32 battleKey,
-        uint256 playerIndex,
+        CPUContext memory cpuCtx,
         uint256 activeMonIndex,
-        uint256 opponentIndex,
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex,
         RevealedMove[] memory switches
     ) internal view returns (bool shouldSwitch, uint256 bestSwitchIdx) {
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) return (false, 0);
 
+        bytes32 battleKey = cpuCtx.battleKey;
         uint256 oppMoveSlot;
         MoveClass oppMoveClass;
         {
-            try ENGINE.getMoveForMonForBattle(battleKey, opponentIndex, opponentMonIndex, opponentMoveIndex) returns (
+            try ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, opponentMoveIndex) returns (
                 uint256 msRaw
             ) {
                 oppMoveSlot = msRaw;
@@ -642,12 +621,11 @@ contract BetterCPU is CPU {
         uint256 damagePctToUs;
         bool lethalToUs;
         {
-            DamageCalcContext memory ctxToUs = ENGINE.getDamageCalcContext(battleKey, opponentIndex, playerIndex);
+            DamageCalcContext memory ctxToUs = ENGINE.getDamageCalcContext(battleKey, 0, 1);
             uint256 damageToUs = _estimateDamage(ctxToUs, battleKey, oppMoveSlot, oppMoveClass);
 
-            uint32 ourMaxHp = ENGINE.getMonValueForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Hp);
-            int32 ourHpDelta =
-                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Hp);
+            uint32 ourMaxHp = ENGINE.getMonValueForBattle(battleKey, 1, activeMonIndex, MonStateIndexName.Hp);
+            int32 ourHpDelta = ENGINE.getMonStateForBattle(battleKey, 1, activeMonIndex, MonStateIndexName.Hp);
             int256 ourCurrentHp = int256(uint256(ourMaxHp)) + int256(ourHpDelta);
 
             damagePctToUs = (damageToUs * 100) / uint256(ourMaxHp);
@@ -661,8 +639,8 @@ contract BetterCPU is CPU {
         (bestSwitchIdx, bestDamagePct, bestSurvives) = _findBestSwitchCandidate(
             battleKey,
             SwitchEvalParams({
-                playerIndex: playerIndex,
-                opponentIndex: opponentIndex,
+                playerIndex: 1,
+                opponentIndex: 0,
                 opponentMonIndex: opponentMonIndex,
                 oppMoveSlot: oppMoveSlot,
                 oppMoveClass: oppMoveClass
@@ -680,12 +658,10 @@ contract BetterCPU is CPU {
     // ============ PER-MON STRATEGY ============
 
     /// @notice Try to use the switch-in move if set and not yet used this switch-in
-    function _trySwitchInMove(
-        bytes32 battleKey,
-        uint256 playerIndex,
-        uint256 activeMonIndex,
-        RevealedMove[] memory moves
-    ) internal returns (int256) {
+    function _trySwitchInMove(bytes32 battleKey, uint256 activeMonIndex, RevealedMove[] memory moves)
+        internal
+        returns (int256)
+    {
         uint256 configValue = monConfig[activeMonIndex][CONFIG_SWITCH_IN_MOVE];
         // Convention: stores (moveIndex + 1), 0 = unset
         if (configValue == 0) return -1;
@@ -701,20 +677,21 @@ contract BetterCPU is CPU {
                 switchInMoveUsedBitmap[battleKey] |= (1 << activeMonIndex);
                 return int256(i);
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return -1;
     }
 
     /// @notice Try to use the preferred move if set and within damage threshold of best
-    function _tryPreferredMove(
-        bytes32 battleKey,
-        uint256 attackerIndex,
-        uint256 attackerMonIndex,
-        DamageCalcContext memory ctx,
-        RevealedMove[] memory moves
-    ) internal view returns (int256) {
-        uint256 configValue = monConfig[attackerMonIndex][CONFIG_PREFERRED_MOVE];
+    function _tryPreferredMove(CPUContext memory cpuCtx, DamageCalcContext memory ctx, RevealedMove[] memory moves)
+        internal
+        view
+        returns (int256)
+    {
+        bytes32 battleKey = cpuCtx.battleKey;
+        uint256 configValue = monConfig[cpuCtx.p1ActiveMonIndex][CONFIG_PREFERRED_MOVE];
         // Convention: store (moveIndex + 1), 0 = unset
         if (configValue == 0) return -1;
         uint256 targetMoveIndex = configValue - 1;
@@ -725,10 +702,12 @@ contract BetterCPU is CPU {
         uint256 bestDamage = 0;
 
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, attackerIndex, attackerMonIndex, moves[i].moveIndex);
+            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
             MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
             if (mc != MoveClass.Physical && mc != MoveClass.Special) {
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
                 continue;
             }
 
@@ -739,7 +718,9 @@ contract BetterCPU is CPU {
                 preferredIdx = int256(i);
                 preferredDamage = dmg;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (preferredIdx < 0) return -1;
@@ -755,6 +736,6 @@ contract BetterCPU is CPU {
     // ============ UTILITY ============
 
     function _getRNG(bytes32 battleKey) internal returns (uint256) {
-        return RNG.getRNG(keccak256(abi.encode(nonceToUse++, battleKey, block.timestamp)));
+        return _sampleRNG(keccak256(abi.encode(nonceToUse++, battleKey, block.timestamp)));
     }
 }

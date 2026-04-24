@@ -369,7 +369,8 @@ contract CPUTest is Test {
         playerCPU.setMove(battleKey, 0, 0);
 
         // Verify that calculateMove returns the correct move
-        (uint128 moveIndex, uint240 extraData) = playerCPU.calculateMove(battleKey, 0, 0, 0);
+        CPUContext memory cpuCtx = engine.getCPUContext(battleKey);
+        (uint128 moveIndex, uint240 extraData) = playerCPU.calculateMove(cpuCtx, 0, 0);
         assertEq(moveIndex, 0);
         assertEq(extraData, 0);
 
@@ -380,7 +381,8 @@ contract CPUTest is Test {
         playerCPU.setMove(battleKey, 1, uint240(42));
 
         // Verify that calculateMove now returns the new move
-        (moveIndex, extraData) = playerCPU.calculateMove(battleKey, 0, 0, 0);
+        cpuCtx = engine.getCPUContext(battleKey);
+        (moveIndex, extraData) = playerCPU.calculateMove(cpuCtx, 0, 0);
         assertEq(moveIndex, 1);
         assertEq(uint256(extraData), 42);
 

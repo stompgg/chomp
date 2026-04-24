@@ -8,24 +8,42 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
+import {Engine} from "../src/Engine.sol";
+import {IEngine} from "../src/IEngine.sol";
+import {IEngineHook} from "../src/IEngineHook.sol";
+import {IValidator} from "../src/IValidator.sol";
+import {IAbility} from "../src/abilities/IAbility.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
+import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
-import {IEngineHook} from "../src/IEngineHook.sol";
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
-import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
+import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
+import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
+import {BattleHelper} from "./abstract/BattleHelper.sol";
+import {AlwaysRejectsEffect} from "./mocks/AlwaysRejectsEffect.sol";
+import {EffectAttack} from "./mocks/EffectAttack.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {NeverAppliesEffect} from "./mocks/NeverAppliesEffect.sol";
+import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
-import {EffectAttack} from "./mocks/EffectAttack.sol";
-import {AlwaysRejectsEffect} from "./mocks/AlwaysRejectsEffect.sol";
-import {NeverAppliesEffect} from "./mocks/NeverAppliesEffect.sol";
-import {BattleHelper} from "./abstract/BattleHelper.sol";
+
+contract KOOpponentOnSwitchAbility is IAbility {
+    function name() external pure returns (string memory) {
+        return "KO Opponent On Switch";
+    }
+
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256) external {
+        uint256 opponentIndex = 1 - playerIndex;
+        uint256[] memory activeMons = engine.getActiveMonIndexForBattleState(battleKey);
+        engine.dealDamage(opponentIndex, activeMons[opponentIndex], 1000);
+    }
+}
 
 contract EngineOptimizationTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -60,15 +78,20 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Create an EffectAttack that applies AlwaysRejectsEffect to the opponent
         IMoveSet effectMove = new EffectAttack(
-            IEffect(address(alwaysRejectsEffect)),
-            EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 1})
+            IEffect(address(alwaysRejectsEffect)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 1})
         );
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 100, stamina: 10, speed: 10,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 100,
+                stamina: 10,
+                speed: 10,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -81,8 +104,14 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(0)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(0)),
+            address(commitManager)
         );
 
         // Switch in mons
@@ -91,9 +120,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
 
         // Alice uses effect move on Bob (Bob does NoOp)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob's mon (player 1, mon 0) should have the effect applied
         // because ALWAYS_APPLIES_BIT bypasses shouldApply()
@@ -111,15 +138,20 @@ contract EngineOptimizationTest is Test, BattleHelper {
         NeverAppliesEffect neverAppliesEffect = new NeverAppliesEffect();
 
         IMoveSet effectMove = new EffectAttack(
-            IEffect(address(neverAppliesEffect)),
-            EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 1})
+            IEffect(address(neverAppliesEffect)), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 0, PRIORITY: 1})
         );
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 100, stamina: 10, speed: 10,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 100,
+                stamina: 10,
+                speed: 10,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -132,17 +164,21 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(0)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(0)),
+            address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
         );
 
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Bob's mon should NOT have the effect (shouldApply returns false, no ALWAYS_APPLIES_BIT)
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
@@ -179,9 +215,15 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 20, stamina: 10, speed: 2,
-                attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 20,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 20,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -194,8 +236,14 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         // Switch in mons
@@ -238,9 +286,15 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 20, stamina: 10, speed: 2,
-                attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 20,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 20,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -253,8 +307,14 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -301,9 +361,15 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 20, stamina: 10, speed: 2,
-                attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 20,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 20,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -316,8 +382,14 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -333,7 +405,200 @@ contract EngineOptimizationTest is Test, BattleHelper {
     }
 
     // ============================================================
-    // 9f. Inline StaminaRegen saves gas vs external
+    // 9f. SignedCommitManager single-player forced switch fast path
+    // ============================================================
+
+    function test_executeSinglePlayerMove_switchesForcedP1() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) =
+            _startSignedInlineSwitchBattle(false);
+
+        _forceP1Switch(testEngine, signedManager, battleKey);
+
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+
+        uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(activeMons[1], 1, "P1 should switch to mon 1");
+        assertEq(
+            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            2,
+            "Battle should return to two-player turns"
+        );
+    }
+
+    function test_executeSinglePlayerMove_revertsWhenNotForcedSwitcher() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) =
+            _startSignedInlineSwitchBattle(false);
+
+        _forceP1Switch(testEngine, signedManager, battleKey);
+
+        vm.startPrank(ALICE);
+        vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        vm.stopPrank();
+    }
+
+    function test_executeSinglePlayerMove_revertsOnTwoPlayerTurn() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) =
+            _startSignedInlineSwitchBattle(false);
+
+        _commitRevealExecuteForAliceAndBob(
+            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        vm.startPrank(BOB);
+        vm.expectRevert(SignedCommitManager.NotSinglePlayerTurn.selector);
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        vm.stopPrank();
+    }
+
+    function test_executeSinglePlayerMove_allowsNormalCommitRevealAfterFastSwitch() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) =
+            _startSignedInlineSwitchBattle(false);
+
+        _forceP1Switch(testEngine, signedManager, battleKey);
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+
+        uint256 turnBefore = testEngine.getTurnIdForBattleState(battleKey);
+        _commitRevealExecuteForAliceAndBob(
+            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        assertEq(testEngine.getTurnIdForBattleState(battleKey), turnBefore + 1, "Normal fallback should execute");
+    }
+
+    function test_revealMove_stillHandlesSinglePlayerForcedSwitch() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) =
+            _startSignedInlineSwitchBattle(false);
+
+        _forceP1Switch(testEngine, signedManager, battleKey);
+
+        vm.prank(BOB);
+        signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1), true);
+        testEngine.resetCallContext();
+
+        uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
+        assertEq(activeMons[1], 1, "P1 should switch through normal reveal fallback");
+        assertEq(
+            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            2,
+            "Battle should return to two-player turns"
+        );
+    }
+
+    function test_executeSinglePlayerMove_allowsNormalCommitRevealAfterBackToBackFastSwitches() public {
+        (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) = _startSignedInlineSwitchBattle(true);
+
+        _forceP1Switch(testEngine, signedManager, battleKey);
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+
+        assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 0, "P0 should be forced to switch");
+
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint240(1));
+        assertEq(
+            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            2,
+            "Battle should return to two-player turns"
+        );
+
+        uint256 turnBefore = testEngine.getTurnIdForBattleState(battleKey);
+        _commitRevealExecuteForAliceAndBob(
+            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        assertEq(
+            testEngine.getTurnIdForBattleState(battleKey),
+            turnBefore + 1,
+            "Normal fallback should execute after consecutive fast switches"
+        );
+    }
+
+    function _forceP1Switch(Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) internal {
+        _commitRevealExecuteForAliceAndBob(
+            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
+        _commitRevealExecuteForAliceAndBob(
+            testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+        );
+
+        assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 1, "P1 should be forced to switch");
+    }
+
+    function _executeSinglePlayerMoveAndReset(
+        Engine testEngine,
+        SignedCommitManager signedManager,
+        bytes32 battleKey,
+        address player,
+        uint240 monIndex
+    ) internal {
+        vm.prank(player);
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), monIndex);
+        testEngine.resetCallContext();
+    }
+
+    function _startSignedInlineSwitchBattle(bool bobSwitchAbility)
+        internal
+        returns (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey)
+    {
+        testEngine = new Engine(3, 1, 100);
+        signedManager = new SignedCommitManager(testEngine);
+        DefaultMatchmaker localMatchmaker = new DefaultMatchmaker(testEngine);
+        TestTeamRegistry registry = new TestTeamRegistry();
+        TestMoveFactory moveFactory = new TestMoveFactory();
+        IMoveSet koMove = moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1000);
+
+        uint256 bobMon1Ability;
+        if (bobSwitchAbility) {
+            bobMon1Ability = uint256(uint160(address(new KOOpponentOnSwitchAbility())));
+        }
+
+        Mon[] memory aliceTeam = new Mon[](3);
+        aliceTeam[0] = _switchBattleMon(koMove, 10, 0);
+        aliceTeam[1] = _switchBattleMon(koMove, 10, 0);
+        aliceTeam[2] = _switchBattleMon(koMove, 10, 0);
+
+        Mon[] memory bobTeam = new Mon[](3);
+        bobTeam[0] = _switchBattleMon(koMove, 1, 0);
+        bobTeam[1] = _switchBattleMon(koMove, 1, bobMon1Ability);
+        bobTeam[2] = _switchBattleMon(koMove, 1, 0);
+
+        registry.setTeam(ALICE, aliceTeam);
+        registry.setTeam(BOB, bobTeam);
+
+        battleKey = _startBattle(
+            IValidator(address(0)),
+            testEngine,
+            IRandomnessOracle(address(0)),
+            registry,
+            localMatchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(0)),
+            address(signedManager)
+        );
+        vm.stopPrank();
+        testEngine.resetCallContext();
+    }
+
+    function _switchBattleMon(IMoveSet move, uint32 speed, uint256 ability) internal pure returns (Mon memory mon) {
+        mon = Mon({
+            stats: MonStats({
+                hp: 20,
+                stamina: 10,
+                speed: speed,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            moves: new uint256[](1),
+            ability: ability
+        });
+        mon.moves[0] = uint256(uint160(address(move)));
+    }
+
+    // ============================================================
+    // 9g. Inline StaminaRegen saves gas vs external
     // ============================================================
 
     /// @notice Inline StaminaRegen (address(0)) should use less gas than external StaminaRegen
@@ -358,9 +623,15 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 20, stamina: 10, speed: 2,
-                attack: 1, defense: 1, specialAttack: 20, specialDefense: 1,
-                type1: Type.Fire, type2: Type.None
+                hp: 20,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 20,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
             }),
             moves: new uint256[](1),
             ability: 0
@@ -383,21 +654,37 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Battle 1: warmup (cold storage hit absorbed here)
         bytes32 warmupKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(externalRuleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(externalRuleset)),
+            address(commitManager)
         );
         vm.warp(vm.getBlockTimestamp() + 1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, warmupKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, 0, 0, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Battle 2: external StaminaRegen (warm storage)
         bytes32 externalKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(externalRuleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(externalRuleset)),
+            address(commitManager)
         );
         vm.warp(vm.getBlockTimestamp() + 1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, externalKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, externalKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
 
         vm.startSnapshotGas("ExternalStaminaRegen");
         _commitRevealExecuteForAliceAndBob(engine, commitManager, externalKey, 0, 0, 0, 0);
@@ -406,11 +693,19 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Battle 3: inline StaminaRegen (warm storage, same engine)
         bytes32 inlineKey = _startBattle(
-            oneMonValidator, engine, mockOracle, defaultRegistry, matchmaker,
-            new IEngineHook[](0), IRuleset(address(inlineRuleset)), address(commitManager)
+            oneMonValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(inlineRuleset)),
+            address(commitManager)
         );
         vm.warp(vm.getBlockTimestamp() + 1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, inlineKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, inlineKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+        );
 
         vm.startSnapshotGas("InlineStaminaRegen");
         _commitRevealExecuteForAliceAndBob(engine, commitManager, inlineKey, 0, 0, 0, 0);

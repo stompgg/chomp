@@ -559,10 +559,10 @@ contract InlineEngineGasTest is Test, BattleHelper {
 /// @title Fully Optimized Inline Gas Test
 /// @notice Mirrors the battle sequences from InlineEngineGasTest but stacks every
 ///         available optimization: inline validation (address(0) validator),
+///         inline RNG (address(0) oracle), inline stamina regen,
 ///         SignedMatchmaker (no propose/accept/confirm storage), and
 ///         SignedCommitManager::executeWithDualSignedMoves (1 TX per two-player turn).
-/// @dev Forced single-player switches after KOs still use the inherited revealMove
-///      since those turns don't need commit-reveal.
+/// @dev Forced single-player switches after KOs use SignedCommitManager::executeSinglePlayerMove.
 contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
 
     uint256 constant MONS_PER_TEAM = 4;
@@ -577,7 +577,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
     SignedCommitManager signedCommitManager;
     SignedMatchmaker signedMatchmaker;
     ITypeCalculator typeCalc;
-    DefaultRandomnessOracle defaultOracle;
     TestTeamRegistry defaultRegistry;
 
     // Storage used by _analyzeSteps to track warm/cold SLOAD/SSTORE access
@@ -597,7 +596,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         p0 = vm.addr(P0_PK);
         p1 = vm.addr(P1_PK);
 
-        defaultOracle = new DefaultRandomnessOracle();
         engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         signedMatchmaker = new SignedMatchmaker(engine);
@@ -627,7 +625,7 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
                 p1TeamIndex: 0,
                 teamRegistry: defaultRegistry,
                 validator: IValidator(address(0)),
-                rngOracle: defaultOracle,
+                rngOracle: IRandomnessOracle(address(0)),
                 ruleset: ruleset,
                 moveManager: address(signedCommitManager),
                 matchmaker: signedMatchmaker,
@@ -734,12 +732,91 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         engine.resetCallContext();
     }
 
-    /// @dev Single-player forced switch after a KO. Falls back to the inherited
-    ///      revealMove path since there is no commit-reveal for one-sided turns.
+    /// @dev Single-player forced switch after a KO. This uses the optimized
+    ///      SignedCommitManager path because there is no hidden opponent move to reveal.
     function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint240 extraData) internal {
         vm.prank(isP0 ? p0 : p1);
-        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, extraData, true);
+        signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), extraData);
         engine.resetCallContext();
+    }
+
+    /// @notice Compares the inherited single-player reveal flow against the dedicated
+    ///         SignedCommitManager single-player fast path.
+    function test_signedCommitManagerOnePlayerActionGasComparison() public {
+        Mon memory mon = _createMon();
+        mon.stats.stamina = 5;
+        mon.stats.attack = 10;
+        mon.stats.specialAttack = 10;
+        mon.moves = new uint256[](4);
+
+        IMoveSet damageMove = new CustomAttack(
+            ITypeCalculator(address(typeCalc)),
+            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 0, PRIORITY: 1})
+        );
+        for (uint256 i; i < mon.moves.length; i++) {
+            mon.moves[i] = uint256(uint160(address(damageMove)));
+        }
+
+        Mon[] memory team = new Mon[](4);
+        for (uint256 i; i < team.length; i++) {
+            team[i] = mon;
+        }
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
+
+        bytes32 oldFlowBattleKey = _startBattleFullyOptimized(ruleset);
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _fastTurn(oldFlowBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
+
+        vm.prank(p1);
+        uint256 gasBefore = gasleft();
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1), true);
+        uint256 oldFlowGas = gasBefore - gasleft();
+        engine.resetCallContext();
+
+        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
+
+        vm.prank(p1);
+        gasBefore = gasleft();
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(2), true);
+        uint256 oldFlowSecondGas = gasBefore - gasleft();
+        engine.resetCallContext();
+
+        bytes32 fastPathBattleKey = _startBattleFullyOptimized(ruleset);
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _fastTurn(fastPathBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
+
+        vm.prank(p1);
+        gasBefore = gasleft();
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        uint256 fastPathGas = gasBefore - gasleft();
+        engine.resetCallContext();
+
+        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
+
+        vm.prank(p1);
+        gasBefore = gasleft();
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(2));
+        uint256 fastPathSecondGas = gasBefore - gasleft();
+        engine.resetCallContext();
+
+        console.log("Old SignedCommitManager first revealMove gas:", oldFlowGas);
+        console.log("New first executeSinglePlayerMove gas:", fastPathGas);
+        console.log("First forced-switch savings:", oldFlowGas - fastPathGas);
+        console.log("Old SignedCommitManager second revealMove gas:", oldFlowSecondGas);
+        console.log("New second executeSinglePlayerMove gas:", fastPathSecondGas);
+        console.log("Second forced-switch savings:", oldFlowSecondGas - fastPathSecondGas);
+
+        assertLt(fastPathGas, oldFlowGas);
+        assertLt(fastPathSecondGas, oldFlowSecondGas);
     }
 
     /// @notice Mirrors InlineEngineGasTest::test_consecutiveBattleGas move-for-move,

@@ -6,7 +6,7 @@ import {IEngine} from "../IEngine.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
 import {CPU} from "./CPU.sol";
 
-import {RevealedMove} from "../Structs.sol";
+import {CPUContext, RevealedMove} from "../Structs.sol";
 
 contract PlayerCPU is CPU {
     mapping(bytes32 battleKey => RevealedMove) private declaredMoveForBattle;
@@ -21,15 +21,14 @@ contract PlayerCPU is CPU {
     }
 
     /**
-     * If it's turn 0, randomly selects a mon index to swap to
-     *     Otherwise, randomly selects a valid move, switch index, or no op
+     * Returns the move that p0 declared for this CPU, ignoring the rest of the context.
      */
-    function calculateMove(bytes32 battleKey, uint256, uint8, uint240)
+    function calculateMove(CPUContext memory ctx, uint8, uint240)
         external
         view
         override
         returns (uint128 moveIndex, uint240 extraData)
     {
-        return (declaredMoveForBattle[battleKey].moveIndex, declaredMoveForBattle[battleKey].extraData);
+        return (declaredMoveForBattle[ctx.battleKey].moveIndex, declaredMoveForBattle[ctx.battleKey].extraData);
     }
 }
