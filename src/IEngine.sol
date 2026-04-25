@@ -49,7 +49,6 @@ interface IEngine {
         uint240 p1ExtraData
     ) external;
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
-    function setUpstreamCaller(address caller) external;
     function resetCallContext() external;
 
     // Getters

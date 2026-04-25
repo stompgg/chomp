@@ -472,7 +472,6 @@ contract StatBoosts is BasicEffect {
         }
 
         // Update effect storage
-        engine.setUpstreamCaller(msg.sender);
         if (found) {
             engine.editEffect(targetIndex, monIndex, foundEffectIndex, newData);
         } else {

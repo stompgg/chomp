@@ -41,8 +41,6 @@ contract Engine is IEngine, MappingAllocator {
     // lanes written by prior battles that shared this storageKey.
     mapping(bytes32 storageKey => mapping(uint256 slotIdx => uint256 packedKeys)) private globalKVKeySlots;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
-    uint256 private transient currentStep; // Used to bubble up step data for events
-    address private transient upstreamCaller; // Used to bubble up caller data for events
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
     // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
     // A non-zero encoded move is the "transient is populated for this call" signal.
@@ -1432,10 +1430,6 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function setUpstreamCaller(address caller) external {
-        upstreamCaller = caller;
-    }
-
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {
         pairHash = keccak256(abi.encode(p0, p1));
         if (uint256(uint160(p0)) > uint256(uint160(p1))) {
@@ -1598,11 +1592,12 @@ contract Engine is IEngine, MappingAllocator {
         } else {
             // Bounds-check the move index before the array access, since `moves` is a dynamic array
             // and an OOB access would revert the whole execute(), not the single move.
-            if (moveIndex >= _getTeamMon(config, playerIndex, activeMonIndex).moves.length) {
+            Mon storage activeMon = _getTeamMon(config, playerIndex, activeMonIndex);
+            if (moveIndex >= activeMon.moves.length) {
                 return playerSwitchForTurnFlag;
             }
             // Read raw 256-bit slot for this move
-            uint256 rawMoveSlot = _getTeamMon(config, playerIndex, activeMonIndex).moves[moveIndex];
+            uint256 rawMoveSlot = activeMon.moves[moveIndex];
 
             if (rawMoveSlot >> 160 != 0) {
                 // === INLINE PATH ===
@@ -1611,7 +1606,7 @@ contract Engine is IEngine, MappingAllocator {
                 staminaCost = int32(uint32(staminaVal));
 
                 // Validate stamina
-                uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
+                uint32 baseStamina = activeMon.stats.stamina;
                 int32 staminaDelta = currentMonState.staminaDelta;
                 int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
                     ? int32(baseStamina)
@@ -1636,7 +1631,7 @@ contract Engine is IEngine, MappingAllocator {
                 bool isValid;
                 bool inlineValidation = address(config.validator) == address(0);
                 if (inlineValidation) {
-                    uint32 baseStamina = _getTeamMon(config, playerIndex, activeMonIndex).stats.stamina;
+                    uint32 baseStamina = activeMon.stats.stamina;
                     int32 staminaDelta = currentMonState.staminaDelta;
                     int256 effectiveDelta =
                         staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
@@ -1781,8 +1776,6 @@ contract Engine is IEngine, MappingAllocator {
             _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
             return;
         }
-
-        currentStep = uint256(round);
 
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
@@ -2006,14 +1999,6 @@ contract Engine is IEngine, MappingAllocator {
             return 1;
         }
         return rng % 2;
-    }
-
-    function _getUpstreamCallerAndResetValue() internal view returns (address) {
-        address source = upstreamCaller;
-        if (source == address(0)) {
-            source = msg.sender;
-        }
-        return source;
     }
 
     function _getMovePriority(
