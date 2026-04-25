@@ -6,6 +6,7 @@ import "../../src/Enums.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
+import {MoveMeta} from "../../src/Structs.sol";
 
 /// @notice Test-only move that writes a single, caller-chosen (key, value) pair to globalKV.
 /// @dev extraData layout: lower 64 bits = key, upper 176 bits = value. A 0-value input
@@ -25,19 +26,19 @@ contract MockKVWriterMove is IMoveSet {
         engine.setGlobalKV(key, value);
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 0;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(IEngine, bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.None;
     }
 
-    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }
 
@@ -45,7 +46,23 @@ contract MockKVWriterMove is IMoveSet {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

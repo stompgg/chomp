@@ -11,6 +11,7 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 contract Q5 is IMoveSet, BasicEffect {
     uint256 public constant DELAY = 5;
@@ -45,11 +46,11 @@ contract Q5 is IMoveSet, BasicEffect {
         }
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 2;
     }
 
-    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) external view returns (uint32) {
+    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view returns (uint32) {
         return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
 
@@ -65,7 +66,7 @@ contract Q5 is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
 
@@ -106,4 +107,20 @@ contract Q5 is IMoveSet, BasicEffect {
             return (_packExtraData(turnCount + 1, attackerPlayerIndex), false);
         }
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

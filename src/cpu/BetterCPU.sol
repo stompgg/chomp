@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {CLEARED_MON_STATE_SENTINEL, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
-import {CPUContext, DamageCalcContext, MonStats, RevealedMove} from "../Structs.sol";
+import {CPUContext, DamageCalcContext, MonStats, MoveMeta, RevealedMove} from "../Structs.sol";
 import {AttackCalculator} from "../moves/AttackCalculator.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
@@ -89,6 +89,15 @@ contract BetterCPU is CPU {
             return (moveIndex, extraData);
         }
 
+        // Decode all four move metas once for reuse across the decision tree below.
+        // Inline slots: pure bit-unpack (~30 gas). External slots: one IMoveSet.getMeta call
+        // each (~3-4k cold). The decision tree (P2-P6) reads metadata across multiple helpers,
+        // so decoding once amortizes across ~8-12 metadata accesses per turn.
+        MoveMeta[4] memory metas;
+        for (uint256 i; i < NUM_MOVES; ++i) {
+            metas[i] = MoveSlotLib.decodeMeta(ctx.cpuActiveMonMoveSlots[i], ENGINE, battleKey, 1, activeMonIndex);
+        }
+
         // Resolve opponent target: if switching, target the incoming mon
         if (playerMoveIndex == SWITCH_MOVE_INDEX) {
             opponentMonIndex = uint256(playerExtraData);
@@ -100,13 +109,14 @@ contract BetterCPU is CPU {
         // ══════════════════════════════════════════
         // P2: Can We KO the Opponent?
         // ══════════════════════════════════════════
-        int256 koMoveIdx = _findKOMove(ctx, opponentMonIndex, attackCtx, moves);
+        int256 koMoveIdx = _findKOMove(battleKey, opponentMonIndex, attackCtx, metas, moves);
         if (koMoveIdx >= 0) {
             bool opponentCanKOUs = _canOpponentKOUs(ctx, activeMonIndex, opponentMonIndex, playerMoveIndex);
             if (
                 !opponentCanKOUs
                     || _weGoFirst(
-                        ctx, activeMonIndex, opponentMonIndex, moves[uint256(koMoveIdx)].moveIndex, playerMoveIndex
+                        ctx, metas, activeMonIndex, opponentMonIndex,
+                        moves[uint256(koMoveIdx)].moveIndex, playerMoveIndex
                     )
             ) {
                 return (moves[uint256(koMoveIdx)].moveIndex, moves[uint256(koMoveIdx)].extraData);
@@ -124,7 +134,7 @@ contract BetterCPU is CPU {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
             if (moves.length > 0) {
-                int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
+                int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
                 if (bestMove >= 0) {
                     return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
                 }
@@ -144,7 +154,7 @@ contract BetterCPU is CPU {
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
-            int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
+            int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -175,12 +185,12 @@ contract BetterCPU is CPU {
             }
 
             // Check preferred move
-            int256 preferredMove = _tryPreferredMove(ctx, attackCtx, moves);
+            int256 preferredMove = _tryPreferredMove(activeMonIndex, attackCtx, metas, moves);
             if (preferredMove >= 0) {
                 return (moves[uint256(preferredMove)].moveIndex, moves[uint256(preferredMove)].extraData);
             }
 
-            int256 bestMove = _findBestDamageMove(ctx, attackCtx, moves);
+            int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -263,17 +273,30 @@ contract BetterCPU is CPU {
         return damage > 0 ? uint256(uint32(damage)) : 0;
     }
 
+    /// @notice Variant of _estimateDamage that reads basePower / moveType / moveClass from a
+    ///         pre-decoded MoveMeta — no metadata external calls in the hot path.
+    function _estimateDamageMeta(DamageCalcContext memory ctx, MoveMeta memory meta)
+        internal
+        view
+        returns (uint256)
+    {
+        if (meta.basePower == 0) return 0;
+        (int32 damage,) = AttackCalculator._calculateDamageFromContext(
+            TYPE_CALC, ctx, meta.basePower, 100, 0, meta.moveType, meta.moveClass, 50, 0
+        );
+        return damage > 0 ? uint256(uint32(damage)) : 0;
+    }
+
     // ============ MOVE SELECTION HELPERS ============
 
     /// @notice Find a move that can KO the opponent (cheapest stamina among KO moves)
     function _findKOMove(
-        CPUContext memory cpuCtx,
+        bytes32 battleKey,
         uint256 defenderMonIndex,
         DamageCalcContext memory ctx,
+        MoveMeta[4] memory metas,
         RevealedMove[] memory moves
     ) internal view returns (int256) {
-        bytes32 battleKey = cpuCtx.battleKey;
-        uint256 activeMonIndex = cpuCtx.p1ActiveMonIndex;
         // Get defender's remaining HP
         uint32 defenderBaseHp = ENGINE.getMonValueForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
         int32 defenderHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
@@ -284,20 +307,18 @@ contract BetterCPU is CPU {
         uint32 bestStaminaCost = type(uint32).max;
 
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
-            MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
-            if (mc != MoveClass.Physical && mc != MoveClass.Special) {
+            MoveMeta memory meta = metas[moves[i].moveIndex];
+            if (meta.moveClass != MoveClass.Physical && meta.moveClass != MoveClass.Special) {
                 unchecked {
                     ++i;
                 }
                 continue;
             }
 
-            uint256 estimatedDamage = _estimateDamage(ctx, battleKey, rawMoveSlot, mc);
+            uint256 estimatedDamage = _estimateDamageMeta(ctx, meta);
             if (estimatedDamage >= uint256(defenderCurrentHp)) {
-                uint32 staminaCost = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, 1, activeMonIndex);
-                if (staminaCost < bestStaminaCost) {
-                    bestStaminaCost = staminaCost;
+                if (meta.stamina < bestStaminaCost) {
+                    bestStaminaCost = meta.stamina;
                     bestMoveIndex = int256(i);
                 }
             }
@@ -310,12 +331,10 @@ contract BetterCPU is CPU {
 
     /// @notice Find best damaging move with stamina cost tiebreaking
     function _findBestDamageMove(
-        CPUContext memory cpuCtx,
         DamageCalcContext memory ctx,
+        MoveMeta[4] memory metas,
         RevealedMove[] memory moves
     ) internal view returns (int256) {
-        bytes32 battleKey = cpuCtx.battleKey;
-        uint256 activeMonIndex = cpuCtx.p1ActiveMonIndex;
         int256 bestMoveIndex = -1;
         uint256 bestDamage = 0;
         uint32 bestStaminaCost = type(uint32).max;
@@ -324,13 +343,12 @@ contract BetterCPU is CPU {
         uint256[] memory damages = new uint256[](moves.length);
         uint32[] memory costs = new uint32[](moves.length);
 
-        // First pass: compute + cache damage and stamina
+        // First pass: compute + cache damage and stamina (metadata pre-decoded by caller)
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
-            MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
-            if (mc == MoveClass.Physical || mc == MoveClass.Special) {
-                damages[i] = _estimateDamage(ctx, battleKey, rawMoveSlot, mc);
-                costs[i] = MoveSlotLib.stamina(rawMoveSlot, ENGINE, battleKey, 1, activeMonIndex);
+            MoveMeta memory meta = metas[moves[i].moveIndex];
+            if (meta.moveClass == MoveClass.Physical || meta.moveClass == MoveClass.Special) {
+                damages[i] = _estimateDamageMeta(ctx, meta);
+                costs[i] = meta.stamina;
                 if (damages[i] > bestDamage) {
                     bestDamage = damages[i];
                     bestStaminaCost = costs[i];
@@ -473,19 +491,19 @@ contract BetterCPU is CPU {
     /// @notice Check if we go first (mirrors Engine.computePriorityPlayerIndex)
     function _weGoFirst(
         CPUContext memory cpuCtx,
+        MoveMeta[4] memory metas,
         uint256 ourMonIndex,
         uint256 opponentMonIndex,
         uint128 ourMoveIndex,
         uint8 opponentMoveIndex
     ) internal view returns (bool) {
         bytes32 battleKey = cpuCtx.battleKey;
-        // Get priorities
+        // Get priorities — our priority comes from the pre-decoded metadata array.
         uint32 ourPriority;
         if (ourMoveIndex >= SWITCH_MOVE_INDEX) {
             ourPriority = 6; // SWITCH_PRIORITY
         } else {
-            uint256 rawOurMove = cpuCtx.cpuActiveMonMoveSlots[ourMoveIndex];
-            ourPriority = MoveSlotLib.priority(rawOurMove, ENGINE, battleKey, 1);
+            ourPriority = metas[ourMoveIndex].priority;
         }
 
         uint32 oppPriority;
@@ -685,13 +703,13 @@ contract BetterCPU is CPU {
     }
 
     /// @notice Try to use the preferred move if set and within damage threshold of best
-    function _tryPreferredMove(CPUContext memory cpuCtx, DamageCalcContext memory ctx, RevealedMove[] memory moves)
-        internal
-        view
-        returns (int256)
-    {
-        bytes32 battleKey = cpuCtx.battleKey;
-        uint256 configValue = monConfig[cpuCtx.p1ActiveMonIndex][CONFIG_PREFERRED_MOVE];
+    function _tryPreferredMove(
+        uint256 activeMonIndex,
+        DamageCalcContext memory ctx,
+        MoveMeta[4] memory metas,
+        RevealedMove[] memory moves
+    ) internal view returns (int256) {
+        uint256 configValue = monConfig[activeMonIndex][CONFIG_PREFERRED_MOVE];
         // Convention: store (moveIndex + 1), 0 = unset
         if (configValue == 0) return -1;
         uint256 targetMoveIndex = configValue - 1;
@@ -702,16 +720,15 @@ contract BetterCPU is CPU {
         uint256 bestDamage = 0;
 
         for (uint256 i; i < moves.length;) {
-            uint256 rawMoveSlot = cpuCtx.cpuActiveMonMoveSlots[moves[i].moveIndex];
-            MoveClass mc = MoveSlotLib.moveClass(rawMoveSlot, ENGINE, battleKey);
-            if (mc != MoveClass.Physical && mc != MoveClass.Special) {
+            MoveMeta memory meta = metas[moves[i].moveIndex];
+            if (meta.moveClass != MoveClass.Physical && meta.moveClass != MoveClass.Special) {
                 unchecked {
                     ++i;
                 }
                 continue;
             }
 
-            uint256 dmg = _estimateDamage(ctx, battleKey, rawMoveSlot, mc);
+            uint256 dmg = _estimateDamageMeta(ctx, meta);
             if (dmg > bestDamage) bestDamage = dmg;
 
             if (moves[i].moveIndex == targetMoveIndex) {

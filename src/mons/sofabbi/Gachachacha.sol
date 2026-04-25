@@ -9,6 +9,7 @@ import {IEngine} from "../../IEngine.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 contract Gachachacha is IMoveSet {
     uint256 public constant MIN_BASE_POWER = 1;
@@ -74,11 +75,11 @@ contract Gachachacha is IMoveSet {
         );
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 3;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
@@ -94,7 +95,23 @@ contract Gachachacha is IMoveSet {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

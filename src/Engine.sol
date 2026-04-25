@@ -15,6 +15,7 @@ import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {TimeoutCheckParams, ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
+import {MoveSlotLib} from "./moves/MoveSlotLib.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
 contract Engine is IEngine, MappingAllocator {

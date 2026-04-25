@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import {StatBoostToApply} from "../../Structs.sol";
+import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -67,11 +67,11 @@ contract Initialize is IMoveSet, BasicEffect {
         STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 2;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
@@ -133,7 +133,23 @@ contract Initialize is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

@@ -159,11 +159,31 @@ contract StandardAttack is IMoveSet, Ownable {
         }
     }
 
-    function extraDataType() external pure virtual returns (ExtraDataType) {
+    function extraDataType() public pure virtual returns (ExtraDataType) {
         return ExtraDataType.None;
     }
 
     function name() external view virtual returns (string memory) {
         return _name;
+    }
+
+    /// @notice Batched metadata read — one staticcall returns all six fields. Calls the existing
+    ///         getters internally (no `this.` — they're public, so this is a JUMP not a staticcall)
+    ///         so subclasses that override individual getters get the override applied
+    ///         automatically without having to re-implement getMeta.
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        virtual
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: basePower(battleKey)
+        });
     }
 }

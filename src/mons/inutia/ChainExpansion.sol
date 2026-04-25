@@ -10,6 +10,7 @@ import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 contract ChainExpansion is IMoveSet, BasicEffect {
     uint128 public constant CHARGES = 4;
@@ -44,11 +45,11 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         engine.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 1;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
@@ -131,7 +132,23 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         }
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

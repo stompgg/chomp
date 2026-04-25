@@ -58,4 +58,6 @@ contract SetAblaze is StandardAttack {
     function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view override returns (uint32) {
         return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
     }
+    // Inherits StandardAttack.getMeta, which delegates to priority() / stamina() / etc. —
+    // including this contract's overridden priority — so no override is needed here.
 }

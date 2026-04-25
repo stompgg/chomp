@@ -61,15 +61,15 @@ contract CustomAttack is IMoveSet {
         _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
     }
 
-    function priority(IEngine engine, bytes32 battleKey, uint256 playerIndex) external view returns (uint32) {
+    function priority(IEngine engine, bytes32 battleKey, uint256 playerIndex) public view returns (uint32) {
         return _standardAttack.priority(engine, battleKey, playerIndex);
     }
 
-    function stamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external view returns (uint32) {
+    function stamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (uint32) {
         return _standardAttack.stamina(engine, battleKey, playerIndex, monIndex);
     }
 
-    function moveType(IEngine engine, bytes32 battleKey) external view returns (Type) {
+    function moveType(IEngine engine, bytes32 battleKey) public view returns (Type) {
         return _standardAttack.moveType(engine, battleKey);
     }
 
@@ -77,7 +77,7 @@ contract CustomAttack is IMoveSet {
         return _standardAttack.isValidTarget(engine, battleKey, extraData);
     }
 
-    function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass) {
+    function moveClass(IEngine engine, bytes32 battleKey) public view returns (MoveClass) {
         return _standardAttack.moveClass(engine, battleKey);
     }
 
@@ -101,7 +101,23 @@ contract CustomAttack is IMoveSet {
         return _standardAttack.effectAccuracy(battleKey);
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

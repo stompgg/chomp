@@ -13,6 +13,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
@@ -90,19 +91,19 @@ contract SneakAttack is IMoveSet, BasicEffect {
         engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return STAMINA_COST;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
-    function moveType(IEngine, bytes32) external pure returns (Type) {
+    function moveType(IEngine, bytes32) public pure returns (Type) {
         return Type.Liquid;
     }
 
-    function moveClass(IEngine, bytes32) external pure returns (MoveClass) {
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Special;
     }
 
@@ -110,7 +111,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.OpponentNonKOTeamIndex;
     }
 
@@ -128,4 +129,20 @@ contract SneakAttack is IMoveSet, BasicEffect {
     {
         return (bytes32(0), true);
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

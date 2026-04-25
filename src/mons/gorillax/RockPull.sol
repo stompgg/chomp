@@ -6,7 +6,7 @@ import {SWITCH_MOVE_INDEX, SWITCH_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAU
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {MoveDecision} from "../../Structs.sol";
+import { MoveDecision, MoveMeta } from "../../Structs.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -78,11 +78,11 @@ contract RockPull is IMoveSet {
         }
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 3;
     }
 
-    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) external view returns (uint32) {
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view returns (uint32) {
         if (_didOtherPlayerChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
             return uint32(SWITCH_PRIORITY) + 1;
         } else {
@@ -102,7 +102,23 @@ contract RockPull is IMoveSet {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

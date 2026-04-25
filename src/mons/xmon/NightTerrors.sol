@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_CRIT_RATE} from "../../Constants.sol";
 import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
+import { EffectInstance, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -80,11 +80,11 @@ contract NightTerrors is IMoveSet, BasicEffect {
         terrorCount = uint64(uint256(data) & type(uint64).max);
     }
 
-    function stamina(IEngine, bytes32, uint256, uint256) external pure returns (uint32) {
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
         return 0;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
@@ -100,7 +100,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
 
@@ -176,4 +176,20 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // Clear effect on switch out
         return (extraData, true);
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

@@ -57,7 +57,9 @@ contract RoundTrip is StandardAttack {
         }
     }
 
-    function extraDataType() external pure override returns (ExtraDataType) {
+    function extraDataType() public pure override returns (ExtraDataType) {
         return ExtraDataType.SelfTeamIndex;
     }
+    // Inherits StandardAttack.getMeta, which calls extraDataType() internally and resolves
+    // to this override.
 }

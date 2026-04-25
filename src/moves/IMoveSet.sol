@@ -25,4 +25,16 @@ interface IMoveSet {
     function isValidTarget(IEngine engine, bytes32 battleKey, uint240 extraData) external view returns (bool);
     function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass);
     function extraDataType() external view returns (ExtraDataType);
+
+    /// @notice Bundled metadata read. Returns moveType / moveClass / priority / stamina /
+    ///         basePower / extraDataType in a single staticcall so callers that need several
+    ///         metadata fields per decision avoid N separate external calls.
+    /// @dev For moves that don't deal damage, return `basePower == 0`. Implementations that
+    ///      don't read engine/battleKey/playerIndex/monIndex may ignore those parameters; they
+    ///      are passed through so dynamic-metadata moves (e.g., basePower that depends on
+    ///      battle state) can use them.
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        returns (MoveMeta memory);
 }

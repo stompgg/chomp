@@ -12,6 +12,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 import {Baselight} from "./Baselight.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 /**
  * Unbounded Strike Move for Iblivion
@@ -74,7 +75,7 @@ contract UnboundedStrike is IMoveSet {
         );
     }
 
-    function stamina(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) external view returns (uint32) {
+    function stamina(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) public view returns (uint32) {
         uint256 baselightLevel = BASELIGHT.getBaselightLevel(engine, battleKey, attackerPlayerIndex, monIndex);
         if (baselightLevel >= REQUIRED_STACKS) {
             return EMPOWERED_STAMINA;
@@ -82,7 +83,7 @@ contract UnboundedStrike is IMoveSet {
         return BASE_STAMINA;
     }
 
-    function priority(IEngine, bytes32, uint256) external pure returns (uint32) {
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
         return DEFAULT_PRIORITY;
     }
 
@@ -98,7 +99,23 @@ contract UnboundedStrike is IMoveSet {
         return true;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
+    function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        view
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            extraDataType: extraDataType(),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {Type, MonStateIndexName, StatBoostType} from "./Enums.sol";
+import {Type, MonStateIndexName, StatBoostType, MoveClass, ExtraDataType} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
 import {IValidator} from "./IValidator.sol";
@@ -263,8 +263,27 @@ struct ValidationContext {
     int32 p1ActiveMonStaminaDelta;
 }
 
+// Bundled move metadata returned by IMoveSet.getMeta. Batches the five separate
+// getters (moveType / moveClass / priority / stamina / basePower) + extraDataType into
+// one staticcall. MoveSlotLib.decodeMeta handles both inline moves (pure bit ops) and
+// external moves (one getMeta call) uniformly.
+struct MoveMeta {
+    Type moveType;
+    MoveClass moveClass;
+    ExtraDataType extraDataType;
+    uint32 priority;
+    uint32 stamina;
+    uint32 basePower; // 0 for moves that don't deal damage
+}
+
 // Batch context for CPU move selection. The CPU is always p1 in this codebase,
 // so `cpuActiveMon*` fields mirror p1's active mon state. Returned by Engine.getCPUContext.
+//
+// MoveMeta is intentionally NOT included here — only BetterCPU needs decoded metadata, and
+// even BetterCPU doesn't need it on turn 0 / flag==0 paths. Putting it in the shared
+// context would impose a ~10k always-paid allocation cost on every CPU turn for data
+// that's only consumed on the flag==2 hot path. BetterCPU calls MoveSlotLib.decodeMeta
+// itself once per turn on the paths that actually need it.
 struct CPUContext {
     bytes32 battleKey;
     address p0;
