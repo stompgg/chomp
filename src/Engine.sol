@@ -567,6 +567,7 @@ contract Engine is IEngine, MappingAllocator {
 
             if (inlineStaminaRegen) {
                 _inlineStaminaRegen(
+                    config,
                     EffectStep.AfterMove,
                     priorityPlayerIndex,
                     _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex),
@@ -627,6 +628,7 @@ contract Engine is IEngine, MappingAllocator {
 
             if (inlineStaminaRegen) {
                 _inlineStaminaRegen(
+                    config,
                     EffectStep.AfterMove,
                     otherPlayerIndex,
                     _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex),
@@ -677,7 +679,7 @@ contract Engine is IEngine, MappingAllocator {
             if (inlineStaminaRegen) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-                _inlineStaminaRegen(EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
+                _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
             }
         }
 
@@ -1776,7 +1778,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Inline execution for address(0) effects (StaminaRegen)
         if (address(effect) == address(0)) {
-            _inlineStaminaRegen(round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
             return;
         }
 
@@ -2090,14 +2092,20 @@ contract Engine is IEngine, MappingAllocator {
         return playerIndex == 0 ? config.p0Team[monIndex] : config.p1Team[monIndex];
     }
 
+    /// @dev Caller passes `config` so each of the 3 call sites per turn doesn't re-resolve
+    ///      the `battleConfig[storageKeyForWrite]` mapping separately. The RoundEnd path
+    ///      additionally reads `battleData[battleKeyForWrite]`, but that's only one of two
+    ///      branches and threading `battle` through `_runSingleEffect` (the other caller)
+    ///      added more bytecode/parameter overhead than it saved on external-effect
+    ///      benchmarks, so we resolve it locally here.
     function _inlineStaminaRegen(
+        BattleConfig storage config,
         EffectStep round,
         uint256 playerIndex,
         uint256 monIndex,
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) private {
-        BattleConfig storage config = battleConfig[storageKeyForWrite];
         if (round == EffectStep.RoundEnd) {
             StaminaRegenLogic.onRoundEnd(
                 config, battleData[battleKeyForWrite].playerSwitchForTurnFlag, p0ActiveMonIndex, p1ActiveMonIndex

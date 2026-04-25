@@ -57,38 +57,30 @@ contract StandardAttack is IMoveSet, Ownable {
         _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
     }
 
+    /// @dev Routes through engine.dispatchStandardAttack which collapses the previous three
+    ///      cross-contract calls (getDamageCalcContext + dealDamage + addEffect) into a
+    ///      single call frame. The engine uses TypeCalcLib internally for type effectiveness;
+    ///      production deploys TYPE_CALCULATOR as TypeCalculator (a thin wrapper around
+    ///      TypeCalcLib), so the chart is the same. The injected TYPE_CALCULATOR is no
+    ///      longer consulted on the attack path — only the engine's internal chart.
     function _move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderMonIndex, uint256 rng)
         internal
         virtual
-        returns (int32, bytes32)
+        returns (int32 damage, bytes32 eventType)
     {
-        int32 damage = 0;
-        bytes32 eventType = bytes32(0);
-        uint32 power = basePower(battleKey);
-        uint256 rngToUse = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
-        if (power > 0) {
-            (damage, eventType) = AttackCalculator._calculateDamage(
-                engine,
-                TYPE_CALCULATOR,
-                battleKey,
-                attackerPlayerIndex,
-                power,
-                accuracy(battleKey),
-                volatility(battleKey),
-                moveType(engine, battleKey),
-                moveClass(engine, battleKey),
-                rngToUse,
-                critRate(battleKey)
-            );
-        }
-
-        if (address(_effect) != address(0)
-            && AttackCalculator.shouldApplyEffect(rng, power, damage, _effectAccuracy)) {
-            uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-            engine.addEffect(defenderPlayerIndex, defenderMonIndex, _effect, "");
-        }
-
-        return (damage, eventType);
+        return engine.dispatchStandardAttack(
+            attackerPlayerIndex,
+            defenderMonIndex,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(_effectAccuracy),
+            _effect,
+            rng
+        );
     }
 
     function isValidTarget(IEngine, bytes32, uint240) public pure returns (bool) {

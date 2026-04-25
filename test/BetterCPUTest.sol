@@ -889,28 +889,29 @@ contract BetterCPUTest is Test {
     function test_opponentResting_attacksWithBestMove() public {
         // CPU: [bp=20, bp=80]. Alice rests.
         // CPU should use bp=80 (highest damage). Damage = 80*50/10 = 400.
-        IMoveSet weakAttack = _createAttack(20, Type.Fire, MoveClass.Physical);
-        IMoveSet strongAttack = _createAttack(80, Type.Fire, MoveClass.Physical);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet weakAttack = _createAttack(20, Type.Liquid, MoveClass.Physical);
+        IMoveSet strongAttack = _createAttack(80, Type.Liquid, MoveClass.Physical);
 
         uint256[] memory cpuMoves = new uint256[](2);
         cpuMoves[0] = uint256(uint160(address(weakAttack)));
         cpuMoves[1] = uint256(uint160(address(strongAttack)));
-        IMoveSet basicAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
-        IMoveSet basicAttack2 = _createAttack(5, Type.Fire, MoveClass.Physical);
+        IMoveSet basicAttack = _createAttack(10, Type.Liquid, MoveClass.Physical);
+        IMoveSet basicAttack2 = _createAttack(5, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(basicAttack)));
         aliceMoves[1] = uint256(uint160(address(basicAttack2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 500, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 500, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 500, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 500, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
@@ -1164,33 +1165,34 @@ contract BetterCPUTest is Test {
     function test_defaultBest_picksHighestDamage() public {
         // CPU: [bp=20, bp=80, bp=50]. Alice: weak attack. No KO possible (high HP).
         // CPU should use bp=80. Damage = 80*50/10 = 400.
-        IMoveSet weak = _createAttack(20, Type.Fire, MoveClass.Physical);
-        IMoveSet strong = _createAttack(80, Type.Fire, MoveClass.Physical);
-        IMoveSet medium = _createAttack(50, Type.Fire, MoveClass.Physical);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet weak = _createAttack(20, Type.Liquid, MoveClass.Physical);
+        IMoveSet strong = _createAttack(80, Type.Liquid, MoveClass.Physical);
+        IMoveSet medium = _createAttack(50, Type.Liquid, MoveClass.Physical);
 
         uint256[] memory cpuMoves = new uint256[](3);
         cpuMoves[0] = uint256(uint160(address(weak)));
         cpuMoves[1] = uint256(uint160(address(strong)));
         cpuMoves[2] = uint256(uint160(address(medium)));
 
-        IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak3 = _createAttack(2, Type.Fire, MoveClass.Physical);
+        IMoveSet aliceWeak = _createAttack(5, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak2 = _createAttack(3, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak3 = _createAttack(2, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](3);
         aliceMoves[0] = uint256(uint160(address(aliceWeak)));
         aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
         aliceMoves[2] = uint256(uint160(address(aliceWeak3)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 500, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 500, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 500, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 500, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
@@ -1364,29 +1366,30 @@ contract BetterCPUTest is Test {
         // CPU: [bp=100 cost=1, bp=90 cost=1]. Alice: hp=600 (no KO).
         // Best damage: 500. Preferred (bp=90): 450. 450*100 >= 500*85 → within threshold.
         // CPU uses preferred move (bp=90). Damage = 450.
-        IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
-        IMoveSet preferredAttack = _createAttack(90, Type.Fire, MoveClass.Physical);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet strongAttack = _createAttack(100, Type.Liquid, MoveClass.Physical);
+        IMoveSet preferredAttack = _createAttack(90, Type.Liquid, MoveClass.Physical);
 
         uint256[] memory cpuMoves = new uint256[](2);
         cpuMoves[0] = uint256(uint160(address(strongAttack)));
         cpuMoves[1] = uint256(uint160(address(preferredAttack)));
 
-        IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
+        IMoveSet aliceWeak = _createAttack(5, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak2 = _createAttack(3, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceWeak)));
         aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
@@ -1410,29 +1413,30 @@ contract BetterCPUTest is Test {
         // CPU: [bp=100, bp=50]. Alice: hp=600 (no KO).
         // Best damage: 500. Preferred (bp=50): 250. 250*100 < 500*85 → outside threshold.
         // CPU uses bp=100 instead.
-        IMoveSet strongAttack = _createAttack(100, Type.Fire, MoveClass.Physical);
-        IMoveSet weakPreferred = _createAttack(50, Type.Fire, MoveClass.Physical);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet strongAttack = _createAttack(100, Type.Liquid, MoveClass.Physical);
+        IMoveSet weakPreferred = _createAttack(50, Type.Liquid, MoveClass.Physical);
 
         uint256[] memory cpuMoves = new uint256[](2);
         cpuMoves[0] = uint256(uint160(address(strongAttack)));
         cpuMoves[1] = uint256(uint160(address(weakPreferred)));
 
-        IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
+        IMoveSet aliceWeak = _createAttack(5, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak2 = _createAttack(3, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceWeak)));
         aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 100, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
@@ -1456,29 +1460,30 @@ contract BetterCPUTest is Test {
         // Move 1 is a Self move (bp=0). Move 0 is an attack (bp=50).
         // Turn 1 (safe/P4 path, Alice rests): CPU uses Self move (switch-in move). Alice takes 0.
         // Turn 2 (Alice rests): CPU uses normal heuristics → bp=50. Alice takes 250.
-        IMoveSet attackMove = _createAttack(50, Type.Fire, MoveClass.Physical);
-        IMoveSet selfMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet attackMove = _createAttack(50, Type.Liquid, MoveClass.Physical);
+        IMoveSet selfMove = _createAttackFull(0, 1, Type.Liquid, MoveClass.Self, 1);
 
         uint256[] memory cpuMoves = new uint256[](2);
         cpuMoves[0] = uint256(uint160(address(attackMove)));
         cpuMoves[1] = uint256(uint160(address(selfMove)));
 
-        IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
+        IMoveSet aliceWeak = _createAttack(5, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak2 = _createAttack(3, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceWeak)));
         aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 200, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 200, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 200, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
@@ -1509,29 +1514,30 @@ contract BetterCPUTest is Test {
         // CPU Mon0: switch-in move = Self (move 1). Mon1: backup.
         // Turn 1: CPU uses Self (switch-in). Turn 2: CPU switches to Mon1.
         // Turn 3: CPU switches back to Mon0. Turn 4: CPU uses Self (switch-in again).
-        IMoveSet attackMove = _createAttack(50, Type.Fire, MoveClass.Physical);
-        IMoveSet selfMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        // Use Type.Liquid (TypeCalcLib: Liquid->Liquid = 1x) — Fire->Fire is 0.5x.
+        IMoveSet attackMove = _createAttack(50, Type.Liquid, MoveClass.Physical);
+        IMoveSet selfMove = _createAttackFull(0, 1, Type.Liquid, MoveClass.Self, 1);
 
         uint256[] memory cpuMoves = new uint256[](2);
         cpuMoves[0] = uint256(uint160(address(attackMove)));
         cpuMoves[1] = uint256(uint160(address(selfMove)));
 
-        IMoveSet aliceWeak = _createAttack(5, Type.Fire, MoveClass.Physical);
-        IMoveSet aliceWeak2 = _createAttack(3, Type.Fire, MoveClass.Physical);
+        IMoveSet aliceWeak = _createAttack(5, Type.Liquid, MoveClass.Physical);
+        IMoveSet aliceWeak2 = _createAttack(3, Type.Liquid, MoveClass.Physical);
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceWeak)));
         aliceMoves[1] = uint256(uint160(address(aliceWeak2)));
 
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 200, 50, 10);
+        cpuTeam[0] = _createMon(Type.Liquid, 200, 50, 10);
         cpuTeam[0].moves = cpuMoves;
-        cpuTeam[1] = _createMon(Type.Fire, 200, 50, 10);
+        cpuTeam[1] = _createMon(Type.Liquid, 200, 50, 10);
         cpuTeam[1].moves = cpuMoves;
 
         Mon[] memory aliceTeam = new Mon[](2);
-        aliceTeam[0] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[0] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[0].moves = aliceMoves;
-        aliceTeam[1] = _createMon(Type.Fire, 600, 10, 10);
+        aliceTeam[1] = _createMon(Type.Liquid, 600, 10, 10);
         aliceTeam[1].moves = aliceMoves;
 
         bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);

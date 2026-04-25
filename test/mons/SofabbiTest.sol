@@ -83,7 +83,7 @@ contract SofabbiTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -165,7 +165,7 @@ contract SofabbiTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -358,7 +358,9 @@ contract SofabbiTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Nature,
+                // Use Type.Liquid so Liquid attacker → 1x effectiveness in TypeCalcLib
+                // (Nature defender would give 0.5x, halving the bigAttack damage).
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,

@@ -61,7 +61,7 @@ contract GorillaxTest is Test, BattleHelper {
                 STAMINA_COST: 1,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                MOVE_TYPE: Type.Liquid,
                 EFFECT_ACCURACY: 0,
                 MOVE_CLASS: MoveClass.Physical,
                 CRIT_RATE: 0,
@@ -79,7 +79,7 @@ contract GorillaxTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -129,7 +129,7 @@ contract GorillaxTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -145,7 +145,7 @@ contract GorillaxTest is Test, BattleHelper {
                 defense: 10, // Same defense here to ensure things work as intended
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,

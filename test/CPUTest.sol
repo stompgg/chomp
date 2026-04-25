@@ -68,7 +68,7 @@ contract CPUTest is Test {
                 STAMINA_COST: 1,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                MOVE_TYPE: Type.Liquid,
                 EFFECT_ACCURACY: 0,
                 MOVE_CLASS: MoveClass.Physical,
                 CRIT_RATE: 0,
@@ -83,7 +83,7 @@ contract CPUTest is Test {
                 STAMINA_COST: 2,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                MOVE_TYPE: Type.Liquid,
                 EFFECT_ACCURACY: 0,
                 MOVE_CLASS: MoveClass.Physical,
                 CRIT_RATE: 0,
@@ -107,7 +107,7 @@ contract CPUTest is Test {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: boringMoves,
@@ -122,7 +122,7 @@ contract CPUTest is Test {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: boringMoves,
@@ -137,7 +137,7 @@ contract CPUTest is Test {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: boringMoves,
@@ -155,7 +155,7 @@ contract CPUTest is Test {
                 defense: 1,
                 specialAttack: 1,
                 specialDefense: 1,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: movesWithEffects,
@@ -415,13 +415,13 @@ contract CPUTest is Test {
 
         // Both teams have Liquid, Nature, Fire, Air
         Mon[] memory team = new Mon[](4);
-        team[0] = _createMon(Type.Fire);
+        team[0] = _createMon(Type.Liquid);
         team[1] = _createMon(Type.Liquid);
         team[2] = _createMon(Type.Nature);
         team[3] = _createMon(Type.Air);
 
         // Set 0.5 effectiveness if Fire hits Air
-        typeCalc.setTypeEffectiveness(Type.Fire, Type.Air, 5);
+        typeCalc.setTypeEffectiveness(Type.Liquid, Type.Air, 5);
 
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
@@ -469,8 +469,8 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         uint256[] memory moves = new uint256[](1);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0))));
-        Mon memory mon = _createMon(Type.Fire);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 3, 0))));
+        Mon memory mon = _createMon(Type.Liquid);
         mon.moves = moves;
         team[0] = mon;
 
@@ -521,8 +521,8 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         uint256[] memory moves = new uint256[](1);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 3, 0))));
-        Mon memory mon = _createMon(Type.Fire);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 3, 0))));
+        Mon memory mon = _createMon(Type.Liquid);
         mon.stats.stamina = 5;
         mon.moves = moves;
         team[0] = mon;
@@ -580,9 +580,9 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         uint256[] memory moves = new uint256[](2);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0))));
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Fire, 1, 0))));
-        Mon memory mon = _createMon(Type.Fire);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 1, 0))));
+        Mon memory mon = _createMon(Type.Liquid);
         mon.moves = moves;
         team[0] = mon;
 
@@ -636,10 +636,10 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         uint256[] memory moves = new uint256[](3);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 0))));
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Special, Type.Fire, 0, 0))));
-        moves[2] = uint256(uint160(address(moveFactory.createMove(MoveClass.Other, Type.Fire, 1, 0))));
-        Mon memory mon = _createMon(Type.Fire);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Special, Type.Liquid, 0, 0))));
+        moves[2] = uint256(uint160(address(moveFactory.createMove(MoveClass.Other, Type.Liquid, 1, 0))));
+        Mon memory mon = _createMon(Type.Liquid);
         mon.moves = moves;
         team[0] = mon;
 
@@ -693,9 +693,9 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         uint256[] memory moves = new uint256[](2);
         TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Fire, 0, 0)))); 
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Fire, 0, 1))));
-        Mon memory mon = _createMon(Type.Fire);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0)))); 
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 1))));
+        Mon memory mon = _createMon(Type.Liquid);
         mon.stats.hp = 10;
         mon.moves = moves;
         team[0] = mon;
@@ -760,7 +760,7 @@ contract CPUTest is Test {
         assertEq(hpDelta, -1);
 
         // Turn 3, set the type advantage to 2 (Fire > Fire)
-        typeCalc.setTypeEffectiveness(Type.Fire, Type.Fire, 2);
+        typeCalc.setTypeEffectiveness(Type.Liquid, Type.Liquid, 2);
 
         // Now the CPU should select the damage move (move index 1) because it has a type advantage
         okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, "", 0);

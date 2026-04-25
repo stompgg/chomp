@@ -90,7 +90,7 @@ contract GhouliathTest is Test, BattleHelper {
                 STAMINA_COST: 1,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                MOVE_TYPE: Type.Liquid,
                 MOVE_CLASS: MoveClass.Physical,
                 NAME: "Attack",
                 EFFECT: IEffect(address(0)),
@@ -108,7 +108,7 @@ contract GhouliathTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -125,7 +125,7 @@ contract GhouliathTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -215,7 +215,7 @@ contract GhouliathTest is Test, BattleHelper {
                 STAMINA_COST: 1,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                MOVE_TYPE: Type.Liquid,
                 MOVE_CLASS: MoveClass.Physical,
                 NAME: "Attack",
                 EFFECT: IEffect(address(0)),
@@ -233,7 +233,7 @@ contract GhouliathTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -321,7 +321,7 @@ contract GhouliathTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -423,7 +423,7 @@ contract GhouliathTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 5,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,

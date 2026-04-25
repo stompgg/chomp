@@ -63,7 +63,7 @@ contract InutiaTest is Test, BattleHelper {
                 defense: 5,
                 specialAttack: 10,
                 specialDefense: 5,
-                type1: Type.Fire,
+                type1: Type.Liquid,
                 type2: Type.None
             }),
             moves: moves,
@@ -252,7 +252,9 @@ contract InutiaTest is Test, BattleHelper {
                 STAMINA_COST: 0,
                 ACCURACY: 100,
                 PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
+                // Use Type.Yang so Yang->Metal = 1x in TypeCalcLib
+                // (Liquid->Metal would be 0.5x, halving Bob's damage to Alice's m1).
+                MOVE_TYPE: Type.Yang,
                 EFFECT_ACCURACY: 0,
                 MOVE_CLASS: MoveClass.Physical,
                 CRIT_RATE: 0,
