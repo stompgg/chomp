@@ -15,10 +15,12 @@ Secondary goal: route `Engine` state access through helpers so the single-turn p
 ### 2.1 Per-turn submission (PvP)
 
 `SignedCommitManager.submitTurnMoves(battleKey, TurnSubmission entry)`:
-- Uniform shape every turn: one revealer EIP-712 signature, committer preimage in calldata. Roles derived from `turnId % 2` (matching `getCommitAuthForDualSigned`).
+- Uniform shape every turn: **two EIP-712 signatures** (committer + revealer), committer preimage in calldata. Roles derived from `turnId % 2` (matching `getCommitAuthForDualSigned`).
 - Switch turns use the same shape. The non-acting player signs a `NO_OP` (move 126); engine ignores their half at batch time using the live `playerSwitchForTurnFlag`.
-- Manager hashes committer preimage, verifies revealer sig over `DualSignedReveal`, writes to `moveBuffer[storageKey][turnId]`. **No execute runs.**
+- Manager hashes committer preimage, verifies committer sig over `SignedCommit{committerMoveHash, …}` and revealer sig over `DualSignedReveal{committerMoveHash, …}`, writes to `moveBuffer[storageKey][turnId]`. **No execute runs.**
 - Updates `lastSubmitTimestamp` for timeout tracking.
+
+**Why two sigs.** Without a committer sig, a malicious revealer could pick any preimage `P*`, sign `DualSignedReveal{committerMoveHash: keccak(P*), …}`, and submit unilaterally — the contract would play `P*` as the committer's move with no committer involvement. Today's `executeWithDualSignedMoves` blocks this only via `msg.sender == committer`, which is fragile and not relayer-friendly. Phase 0 (§9) lifts the same fix into the existing function before any batching ships, so both paths share one security model.
 
 ### 2.2 Per-batch execute
 
@@ -75,7 +77,16 @@ struct TurnSubmission {
     uint8   revealerMoveIndex;
     uint16  revealerExtraData;
     uint104 revealerSalt;
-    bytes   sig; // revealer EIP-712 over DualSignedReveal
+    // Sigs:
+    bytes   committerSig; // EIP-712 over SignedCommit{committerMoveHash, battleKey, turnId}
+    bytes   revealerSig;  // EIP-712 over DualSignedReveal
+}
+
+// Existing SignedCommitLib struct, reused unchanged.
+struct SignedCommit {
+    bytes32 moveHash;
+    bytes32 battleKey;
+    uint64  turnId;
 }
 
 struct DualSignedReveal {
@@ -95,8 +106,9 @@ Manager flow:
 2. `entry.turnId` equals next append position.
 3. Derive `(committer, revealer)` from `turnId % 2`.
 4. `committerMoveHash = keccak(committerMoveIndex, committerSalt, committerExtraData)`.
-5. Recover signer over `DualSignedReveal`; require equality with `revealer`.
-6. Map fields to `(p0, p1)` by parity; SSTORE `PackedTurnEntry`.
+5. Recover `committerSig` over `SignedCommit{committerMoveHash, battleKey, turnId}`; require equality with `committer`.
+6. Recover `revealerSig` over `DualSignedReveal{committerMoveHash, …}`; require equality with `revealer`.
+7. Map fields to `(p0, p1)` by parity; SSTORE `PackedTurnEntry`.
 
 ### 4.2 Batch execute
 
@@ -275,7 +287,19 @@ Validator/legality is unchanged: signature recovery proves player intent (or `ms
 
 ## 9. Phased rollout
 
-**Phase 0 — Instrumentation refresh.** `test/BatchInstrumentationTest.sol` already wires `vm.startStateDiffRecording` for the clean damage-trade case. Add scenarios: effect-heavy turn (status DOT + StatBoosts active), forced-switch turn, multi-mon turn. Lock final batch-size guidance.
+**Phase 0 — Dual-sig security fix (preflight, ships first, independent of batching).** The existing `executeWithDualSignedMoves` relies on `msg.sender == committer` as the committer's binding. Without that check, a malicious revealer could sign `DualSignedReveal{committerMoveHash: keccak(P*), …}` for any preimage `P*` they choose and submit unilaterally — the contract would happily compute `committerMoveHash = keccak(P*)`, recover the revealer's sig, and play `P*` as the committer's move. The check is load-bearing today, but it's also fragile: any future evolution of the flow that drops or weakens it (relayers, batching, alt entry points) silently re-opens the hole.
+
+Fix: require an explicit committer signature over the existing `SignedCommit{moveHash, battleKey, turnId}` struct (already used by `commitWithSignature`).
+
+- Modify `executeWithDualSignedMoves` to take an additional `bytes calldata committerSignature` parameter.
+- Recover `committerSignature` over `SignedCommit{committerMoveHash, battleKey, turnId}`; require equality with `committer`.
+- Drop the `msg.sender == committer` check; the function becomes relayer-friendly (anyone with both sigs + the preimage can submit).
+- Breaking signature change. Update all callers (tests, `BattleHelper`, anything off-chain that calls this function) in the same PR. No deployed callers in production yet.
+- New tests: missing committer sig reverts; wrong committer signer reverts; submission by a third party with both valid sigs succeeds; revealer cannot submit a self-chosen committer preimage (regression).
+
+This phase ships before any batching work. It hardens the existing flow on its own merits and unifies the security model so the batched path in Phase 2 inherits the same shape (§4.1) without surprises.
+
+**Phase 0.1 — Instrumentation refresh.** `test/BatchInstrumentationTest.sol` already wires `vm.startStateDiffRecording` for the clean damage-trade case. Add scenarios: effect-heavy turn (status DOT + StatBoosts active), forced-switch turn, multi-mon turn. Lock final batch-size guidance.
 
 **Phase 0.5 — Helper extraction (no behavior change).** Replace direct `MonState`/`globalKV`/effect-data SLOAD/SSTORE in `Engine.sol` with §5.2 helpers, with `_shadowActive` permanently `false`. Snapshot diff should be roughly flat.
 
@@ -298,7 +322,7 @@ New `BattleHelper` helpers:
 - `_executeBuffered(battleKey, numTurns)` — calls `executeBatch`.
 
 New tests:
-- **Submission validation**: wrong revealer signer (parity), wrong turnId, wrong battleKey, replay, committer preimage hash mismatch.
+- **Submission validation**: wrong committer signer, wrong revealer signer (parity), wrong turnId, wrong battleKey, replay, committer preimage hash mismatch, missing committer sig (regression for unilateral-revealer attack), missing revealer sig.
 - **Buffer ordering**: out-of-order rejected; batch executes in turnId order.
 - **Switch-turn dispatch**: `flag == 0` and `flag == 1` ignore the non-acting half; non-acting player signing a non-NO_OP has no effect.
 - **Equivalence (core gate)**: B turns through legacy path vs `submitTurnMoves × B + executeBatch` produce byte-identical state.
