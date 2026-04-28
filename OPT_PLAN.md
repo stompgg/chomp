@@ -4,7 +4,7 @@
 
 Amortize per-turn cold-storage access in `Engine.execute()` by:
 1. Submitting each turn's signed moves on-chain immediately to a per-turn buffer (no execute).
-2. Executing `N` buffered turns in one tx with engine state held in **transient shadow storage**, flushed to persistent storage once at the end.
+2. Executing **all currently buffered turns** in one tx with engine state held in **transient shadow storage**, flushed to persistent storage once at the end.
 
 Secondary goal: route `Engine` state access through helpers so the single-turn path can also use the shadow layer.
 
@@ -24,10 +24,11 @@ Secondary goal: route `Engine` state access through helpers so the single-turn p
 
 ### 2.2 Per-batch execute
 
-`Engine.executeBatch(battleKey, numTurns)`:
+`Engine.executeBatch(battleKey)`:
 - Anyone can call (sigs were checked at submission).
-- Reads buffered entries `[BattleData.turnId, BattleData.turnId + numTurns)`, runs each in sequence inside transient shadow storage, flushes once at end.
-- `BattleData.turnId` advances inside the loop; next batch starts at the right slot.
+- Reads every currently buffered entry `[startTurn, startTurn + numTurnsBuffered)`, runs each in sequence inside transient shadow storage, flushes once at end.
+- The **transient mirror** of `turnId` advances inside the loop. Persistent `BattleData.turnId` advances only during the final flush.
+- Batch execution always consumes the full pending buffer. There is no partial-batch mode in v1.
 - Processed buffer slots are not cleared — the unbounded mapping leaves them for on-chain replay. Slot reuse across battles comes from `MappingAllocator`.
 
 ### 2.3 Fallback / stalls
@@ -55,6 +56,22 @@ mapping(bytes32 storageKey => mapping(uint64 turnId => PackedTurnEntry)) moveBuf
 ```
 
 Steady-state cost per turn: 1 SSTORE (5k, nonzero→nonzero from prior battle's slot reuse) + 1 SLOAD inside batch (2.1k) = ~7.1k.
+
+Buffer validity is tracked by two packed `uint8` counters:
+- `numTurnsBuffered`: number of currently pending buffered turns.
+- `numTurnsExecuted`: cumulative number of buffered turns consumed for the current battle/storage key.
+
+Submit rule:
+- If `numTurnsBuffered == 0`, the manager first syncs `numTurnsExecuted` to the engine's current `BattleData.turnId`. This keeps the batched buffer compatible with legacy single-turn execution when the battle alternates modes.
+- A new entry must have `entry.turnId == numTurnsExecuted + numTurnsBuffered`.
+- After storing the entry, increment `numTurnsBuffered`.
+
+Execute rule:
+- `executeBatch` requires `numTurnsBuffered > 0`.
+- It attempts the full pending range of `numTurnsBuffered` turns, starting at `numTurnsExecuted`.
+- At flush, persistent `BattleData.turnId` becomes the shadowed turn id, `numTurnsExecuted += executedTurns`, and `numTurnsBuffered = 0`.
+
+This means stale slots from a prior battle or earlier batch cannot be treated as valid pending moves: only the contiguous range described by `(numTurnsExecuted, numTurnsBuffered)` is live.
 
 **Width changes (clean break):**
 - `extraData`: 240 → 16 bits. Audit confirmed all production consumers read ≤8 bits. Narrow `IMoveSet.move()`'s `extraData` param to `uint16`; repack test helpers (`_packStatBoost`, `StatBoostsMove` mock).
@@ -113,13 +130,14 @@ Manager flow:
 ### 4.2 Batch execute
 
 ```solidity
-function executeBatch(bytes32 battleKey, uint64 numTurns) external;
+function executeBatch(bytes32 battleKey) external;
 ```
 
-1. Read `startTurn = BattleData.turnId`; require turns `[startTurn, startTurn+numTurns)` all buffered.
+1. Read `startTurn = numTurnsExecuted`; require `numTurnsBuffered > 0`.
 2. Hydrate shadow.
-3. For each turn: read buffer slot, populate per-turn move/salt transient, run `_executeOneTurn()`, break on game-over.
+3. For each pending buffered turn: read buffer slot, populate per-turn move/salt transient, run `_executeOneTurn()`, break on game-over.
 4. Flush shadow → storage.
+5. Set `numTurnsBuffered = 0` and increment `numTurnsExecuted` by the number of turns actually executed.
 
 ---
 
@@ -132,14 +150,14 @@ function executeBatch(bytes32 battleKey, uint64 numTurns) external;
 | `MonState` (per mon) | Per-`(playerIndex, monIndex)` mirror, lazy-loaded. Dirty bit per slot. |
 | `koBitmaps` (16 bits in `BattleConfig` slot 2) | `uint16` mirror, loaded flag. |
 | `winnerIndex` / `prevPlayerSwitchForTurnFlag` / `playerSwitchForTurnFlag` / `activeMonIndex` / `turnId` / `lastExecuteTimestamp` | Single packed `uint256` mirror. |
-| Effect data slots (`globalEffects[i].data`, `pXEffects[i].data`) | Sparse transient map keyed by slot index, mirrors `data` only. `effect`/`stepsBitmap` read from storage (warm after first hit). |
+| Effect list slots (`globalEffects[i]`, `pXEffects[i]`) | Sparse transient map keyed by list + slot index, mirrors the full `EffectInstance` (`effect`, `stepsBitmap`, `data`). |
 | `packedP0EffectsCount` / `packedP1EffectsCount` / `globalEffectsLength` | Three small mirrors, flushed with effect-list shadow. |
 | `globalKV[storageKey][key]` | Per-`key` mirror, lazy-loaded. |
 | `BattleConfig.p0Move` / `p1Move` / salts | Re-populated per sub-turn from buffer slot. |
 
 Hydrate strategy:
 - **Eager**: `BattleData` slot 1 + `BattleConfig` slot 2 (always touched).
-- **Lazy**: `MonState`, effect data, `globalKV` (sparse — pay only for slots touched).
+- **Lazy**: `MonState`, effect slots/counts, `globalKV` (sparse — pay only for slots touched).
 
 Loaded-flag strategy:
 - **Bitmap** for fixed-shape slots (MonState, effects, slot-2 packed fields).
@@ -154,18 +172,27 @@ function _shadowReadMonState(BattleConfig storage cfg, uint256 playerIndex, uint
 function _shadowWriteMonState(uint256 playerIndex, uint256 monIndex, MonState memory state) internal;
 function _shadowReadKV(bytes32 storageKey, uint64 key) internal returns (uint192);
 function _shadowWriteKV(bytes32 storageKey, uint64 key, uint192 value) internal;
-function _shadowReadEffectData(uint256 effectList, uint256 monIndex, uint256 slotIndex) internal returns (bytes32);
-function _shadowWriteEffectData(uint256 effectList, uint256 monIndex, uint256 slotIndex, bytes32 data) internal;
+function _shadowReadEffectSlot(uint256 effectList, uint256 monIndex, uint256 slotIndex) internal returns (EffectInstance memory);
+function _shadowWriteEffectSlot(uint256 effectList, uint256 monIndex, uint256 slotIndex, EffectInstance memory eff) internal;
+function _shadowReadEffectCount(uint256 effectList, uint256 monIndex) internal returns (uint256);
+function _shadowWriteEffectCount(uint256 effectList, uint256 monIndex, uint256 count) internal;
 ```
 
 When `_shadowActive == false`, helpers SLOAD/SSTORE storage directly. When `true`, they read/write the transient mirror with lazy-load and dirty-bit bookkeeping.
 
 External `IEngine` writers (`updateMonState`, `dealDamage`, `addEffect`, `removeEffect`, `editEffect`, `setGlobalKV`, `switchActiveMon`, `dispatchStandardAttack`, `setMove`) and external readers (`getMonStateForBattle`, `getEffects`, `getGlobalKV`, etc.) all route through these helpers. The `battleKeyForWrite != bytes32(0)` gate stays.
 
+Effect-list shadowing must preserve these same-batch visibility rules:
+- `addEffect` writes a full shadow `EffectInstance` and increments the shadow count, so later effect loops / `getEffects` calls in the same batch see the new effect.
+- `editEffect` updates shadow `data`; later hooks see the edited value.
+- `removeEffect` tombstones the shadow `effect` address and keeps the slot index stable; later loops skip it.
+- `_handleEffects` loads counts and slots from shadow, not storage, and keeps the existing `effectsDirtyBitmap` pattern so effects added while iterating can extend the current loop when today’s logic would.
+- `getEffects` builds its return arrays from shadow while `_shadowActive == true`, so external moves/effects that inspect active effects observe the live batch state.
+
 ### 5.3 Batch loop
 
 ```
-executeBatch(battleKey, numTurns):
+executeBatch(battleKey):
     storageKey = _getStorageKey(battleKey)
     storageKeyForWrite = storageKey
     battleKeyForWrite = battleKey
@@ -174,8 +201,9 @@ executeBatch(battleKey, numTurns):
     _hydrateBattleData(battleKey)
     _hydrateConfigSlot2(storageKey)
 
-    startTurn = BattleData.turnId
-    for t in [startTurn .. startTurn + numTurns):
+    startTurn = numTurnsExecuted
+    turnsToExecute = numTurnsBuffered
+    for t in [startTurn .. startTurn + turnsToExecute):
         bufferEntry = _readMoveBufferSlot(storageKey, t)
         _populateTurnMoveTransient(bufferEntry)
         _executeOneTurn()
@@ -185,8 +213,9 @@ executeBatch(battleKey, numTurns):
     _flushBattleData(battleKey)
     _flushConfigSlot2(storageKey)
     _flushDirtyMonStates(storageKey)
-    _flushDirtyEffectData(storageKey)
+    _flushDirtyEffectSlots(storageKey)
     _flushDirtyGlobalKV(storageKey)
+    _flushBufferCounters(executedTurns)
 
     _shadowActive = false
 ```
@@ -210,7 +239,7 @@ Submission validates only cheap invariants (battle exists, not over at last flus
 
 ### 6.2 Game-over mid-batch
 
-`_executeInternal` already breaks when `winnerIndex != 2`. Same check stops the batch loop. Remaining buffered entries stay untouched.
+`_executeInternal` already breaks when `winnerIndex != 2`. Same check stops the batch loop. Because batch execution consumes the full pending buffer, any unexecuted buffered entries after game-over remain in storage for replay but are no longer live; `numTurnsBuffered` is set to zero at flush.
 
 ### 6.3 Status-induced skip-turn
 
@@ -250,7 +279,7 @@ function selectMoveWithStateHint(
 ) external;
 ```
 
-1. Read current `turnId` from `BattleData`.
+1. Read/sync the next append `turnId` from `numTurnsExecuted + numTurnsBuffered` using the same buffer counter rules as PvP.
 2. Require `msg.sender == alice`.
 3. Route on `projectedState.playerSwitchForTurnFlag` (single-player vs two-player CPU branch).
 4. `ICPU(cpuAddr).calculateMove(projectedState, aliceMoveIndex, aliceExtraData)` → `(cpuMove, cpuExtra)`. CPU reads from calldata only.
@@ -305,7 +334,7 @@ This phase ships before any batching work. It hardens the existing flow on its o
 
 **Phase 1 — Single-turn shadow.** Implement transient mirrors + lazy-load/dirty-flag bookkeeping. Wire helpers to consult `_shadowActive`. Add `executeShadowed(bytes32 battleKey)` that does `execute()`'s work inside the shadow layer (hydrate → run one turn → flush). Existing test suite should pass against it. B=1 will be slightly *worse* than today's `execute()` due to bookkeeping overhead; expected.
 
-**Phase 2 — PvP per-turn submission + batch execute.** Extend `SignedCommitManager` with `submitTurnMoves`. Add per-turn move buffer mapping. Add `Engine.executeBatch` with flag-based dispatch (§6.1). Equivalence tests + gas snapshots.
+**Phase 2 — PvP per-turn submission + batch execute.** Extend `SignedCommitManager` with `submitTurnMoves`. Add per-turn move buffer mapping and `numTurnsBuffered` / `numTurnsExecuted` counters. Add `Engine.executeBatch` with flag-based dispatch (§6.1), requiring execution of all currently buffered turns. Equivalence tests + gas snapshots.
 
 **Phase 2.5 — CPU mode.** Extend `CPUMoveManager` with `selectMoveWithStateHint` (§7.4). Reuse Phase-2 buffer + `executeBatch`. Equivalence test: 24-turn CPU game via legacy `selectMove × 24` vs `selectMoveWithStateHint × 24 + executeBatch × 3` produces identical end state.
 
@@ -319,16 +348,16 @@ This phase ships before any batching work. It hardens the existing flow on its o
 
 New `BattleHelper` helpers:
 - `_submitTurnMoves(battleKey, turnId, p0Move, p1Move)` — synthesizes signatures and calls `submitTurnMoves`.
-- `_executeBuffered(battleKey, numTurns)` — calls `executeBatch`.
+- `_executeBuffered(battleKey)` — calls `executeBatch` for all currently buffered turns.
 
 New tests:
 - **Submission validation**: wrong committer signer, wrong revealer signer (parity), wrong turnId, wrong battleKey, replay, committer preimage hash mismatch, missing committer sig (regression for unilateral-revealer attack), missing revealer sig.
 - **Buffer ordering**: out-of-order rejected; batch executes in turnId order.
 - **Switch-turn dispatch**: `flag == 0` and `flag == 1` ignore the non-acting half; non-acting player signing a non-NO_OP has no effect.
 - **Equivalence (core gate)**: B turns through legacy path vs `submitTurnMoves × B + executeBatch` produce byte-identical state.
-- **Game-over short-circuit** mid-batch.
+- **Game-over short-circuit** mid-batch: remaining stored buffer entries are no longer live after `numTurnsBuffered` resets to zero.
 - **Effect lifecycle parity**: BurnStatus DOT over a 4-turn batch matches per-turn execution.
-- **Multi-batch in one battle**: two batches of 4, then one of 6 — `turnId` advances correctly.
+- **Multi-batch in one battle**: submit 4 then execute, submit 4 then execute, submit 6 then execute — `turnId`, `numTurnsBuffered`, and `numTurnsExecuted` advance correctly.
 - **Shadow flush**: post-batch `getMonStateForBattle` / `getGlobalKV` / `getEffects` match equivalent per-turn execution.
 - **CPU equivalence**: 24-turn CPU game via legacy vs trusted-state batched produces identical end state.
 
