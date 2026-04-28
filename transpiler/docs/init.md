@@ -4,9 +4,10 @@
 need, and writes a starter `transpiler-config.json`.
 
 ```bash
-python3 /path/to/extruder/sol2ts.py init src/
+cd /path/to/extruder
+python3 -m transpiler init /path/to/your/foundry/project/src
 # or non-interactive:
-python3 /path/to/extruder/sol2ts.py init src/ --yes
+python3 -m transpiler init /path/to/your/foundry/project/src --yes
 ```
 
 ## What it produces

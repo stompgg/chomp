@@ -9,7 +9,7 @@ extruder is a source-to-source transpiler, not an EVM. Some things are NOT suppo
   `Storage` class, inheritance as mixins, events).
 - `uint*` / `int*` → `bigint`. `address` / `bytes*` → `string`.
   `mapping(K => V)` → `Record<string, V>` with factory-initialized defaults.
-  Structs → interfaces + factory. Enums → `as const` objects.
+  Structs → interfaces + factory. Enums → TypeScript `enum`s.
 - Contracts become ES classes extending a runtime `Contract` base that carries
   `_contractAddress`, `_storage`, `_msg`, an event emitter, and a
   transient-storage reset hook. Inter-contract references are plain object
@@ -26,9 +26,8 @@ extruder is a source-to-source transpiler, not an EVM. Some things are NOT suppo
 - **Modifiers are stripped, not inlined.** Access control and `require` logic
   inside modifiers disappears. Diagnostic `W001` flags every occurrence so you
   can hand-audit.
-- `try`/`catch` compiles to an empty block (`W002`). `receive`/`fallback` are
-  skipped (`W003`). Function pointers are coerced to `any` (`W004`).
-  User-defined operators are unrecognized.
+- `try`/`catch` compiles to an empty block. `receive`/`fallback` are skipped
+  (`W003`). User-defined operators are unrecognized.
 
 ## EVM semantics it does not preserve
 
@@ -42,10 +41,10 @@ trust a transpiled contract to behave like its on-chain counterpart:
   implicit bounds check after every arithmetic op. If you relied on
   revert-on-overflow as a safety net, add explicit casts or masks.
 - **`require` and `revert` are plain `throw`.** `require(cond, "msg")` becomes
-  `if (!cond) throw new Error("Require failed")`; `revert("msg")` and
-  `revert CustomError(...)` both become `throw new Error("Revert")`. Revert
-  reasons and custom error data are not propagated, and — per the codegen gap
-  above — `try/catch` can't recover from them.
+  `if (!cond) throw new Error("msg")`; bare `require(cond)` throws
+  `"Require failed"`. `revert("msg")` and `revert CustomError(...)` throw
+  generic `Error`s rather than Solidity-encoded revert data, and — per the
+  codegen gap above — `try/catch` can't recover from them.
 - **Division / modulo by zero** throws `RangeError`, not a Solidity panic.
   Still halts, different error type.
 - **Out-of-bounds array access** returns `undefined` rather than reverting.
@@ -68,9 +67,11 @@ trust a transpiled contract to behave like its on-chain counterpart:
   write through automatically; plain TypeScript object references don't.
   Codegen emits `??=` where it detects the pattern, but hand-check anything
   with nested-mapping `storage` locals.
-- **`delete arr[i]` splices**, not zero-writes. `arr.push()` returns
-  `undefined`, not the new length. Both differ from Solidity by enough to
-  bite rarely-tested code paths.
+- **`delete` emits a best-effort default assignment** when the target type is
+  known, so `delete arr[i]` becomes a zero/default write instead of a sparse
+  JavaScript array hole. Unknown delete targets fall back to JavaScript
+  `delete`. `arr.push(value)` returns JavaScript's new array length, and
+  Solidity's storage-reference form `arr.push()` is not modeled.
 - **Addresses are lowercased strings**, not EIP-55 checksummed. String
   equality works, but anything that validates EIP-55 needs explicit
   normalization.

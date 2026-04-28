@@ -15,8 +15,8 @@ Key features:
 - Interface and contract inheritance
 
 Usage:
-    python3 extruder/sol2ts.py src/
-    python3 extruder/sol2ts.py --emit-replacement-stub <Name> <file.sol>
+    python3 -m transpiler src/
+    python3 -m transpiler --emit-replacement-stub <Name> <file.sol>
 
 Module layout:
 - lexer: Tokenization (tokens.py, lexer.py)
@@ -58,6 +58,7 @@ class SolidityToTypeScriptTranspiler:
         self.registry = TypeRegistry()
         self.emit_metadata = emit_metadata
         self.overrides_path = overrides_path
+        self._discovery_roots: List[Path] = []
 
         # Metadata extraction for factory generation
         self.metadata_extractor = MetadataExtractor() if emit_metadata else None
@@ -78,6 +79,7 @@ class SolidityToTypeScriptTranspiler:
         if discovery_dirs:
             for dir_path in discovery_dirs:
                 self.registry.discover_from_directory(dir_path)
+                self._remember_discovery_root(dir_path)
 
     def _load_config(self) -> None:
         """Load transpiler-config.json (consolidated configuration)."""
@@ -119,6 +121,26 @@ class SolidityToTypeScriptTranspiler:
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
         self.registry.discover_from_directory(directory, pattern)
+        self._remember_discovery_root(directory)
+
+    def _remember_discovery_root(self, directory: str) -> None:
+        """Track discovery roots so transpile_file can avoid redundant discovery."""
+        try:
+            root = Path(directory).resolve()
+        except (OSError, RuntimeError):
+            return
+        if root not in self._discovery_roots:
+            self._discovery_roots.append(root)
+
+    def _is_covered_by_discovery(self, filepath: str) -> bool:
+        """Return True if a file lives under a root already type-discovered."""
+        if not self._discovery_roots:
+            return False
+        try:
+            resolved = Path(filepath).resolve()
+        except (OSError, RuntimeError):
+            return False
+        return any(resolved == root or resolved.is_relative_to(root) for root in self._discovery_roots)
 
     def transpile_file(self, filepath: str, use_registry: bool = True) -> str:
         """Transpile a single Solidity file to TypeScript."""
@@ -134,7 +156,8 @@ class SolidityToTypeScriptTranspiler:
         ast = parser.parse()
 
         self.parsed_files[filepath] = ast
-        self.registry.discover_from_ast(ast)
+        if not self._is_covered_by_discovery(filepath):
+            self.registry.discover_from_ast(ast)
 
         # Extract metadata for factory generation
         if self.metadata_extractor:
@@ -387,7 +410,7 @@ def main():
     # fails subcommand validation), so we dispatch init manually.
     if len(sys.argv) > 1 and sys.argv[1] == 'init':
         init_parser = argparse.ArgumentParser(
-            prog='extruder init',
+            prog='python3 -m transpiler init',
             description=(
                 'Scan a Solidity source tree and scaffold a starter '
                 'transpiler-config.json. Classifies each file '
@@ -413,8 +436,9 @@ def main():
         return
 
     parser = argparse.ArgumentParser(
+        prog='python3 -m transpiler',
         description='extruder — source-to-source Solidity → TypeScript transpiler',
-        epilog='Subcommands: `extruder init <src>` to scaffold a config for a new project.',
+        epilog='Subcommands: `python3 -m transpiler init <src>` to scaffold a config for a new project.',
     )
     parser.add_argument('input', nargs='?', help='Input Solidity file or directory')
     parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory (or output file for --emit-replacement-stub)')
@@ -423,8 +447,6 @@ def main():
                         help='Directory to scan for type discovery')
     parser.add_argument('--emit-metadata', action='store_true',
                         help='Emit dependency manifest and factory functions')
-    parser.add_argument('--metadata-only', action='store_true',
-                        help='Only emit metadata, skip TypeScript generation')
     parser.add_argument('--overrides', metavar='FILE',
                         help='Path to transpiler-config.json for manual dependency mappings')
     parser.add_argument('--emit-replacement-stub', nargs=2, metavar=('CONTRACT', 'SOL_FILE'),
@@ -455,7 +477,7 @@ def main():
 
     input_path = Path(args.input)
     discovery_dirs = args.discover or ([str(input_path)] if input_path.is_dir() else [str(input_path.parent)])
-    emit_metadata = args.emit_metadata or args.metadata_only
+    emit_metadata = args.emit_metadata
 
     overrides_path = args.overrides
 
@@ -478,9 +500,7 @@ def main():
 
         ts_code = transpiler.transpile_file(str(input_path))
 
-        if args.metadata_only:
-            pass  # Output metadata only
-        elif args.stdout:
+        if args.stdout:
             print(ts_code)
         else:
             output_path = Path(args.output) / input_path.with_suffix('.ts').name
@@ -495,11 +515,8 @@ def main():
             emit_metadata=emit_metadata,
             overrides_path=overrides_path,
         )
-        transpiler.discover_types(str(input_path))
-
-        if not args.metadata_only:
-            results = transpiler.transpile_directory()
-            transpiler.write_output(results)
+        results = transpiler.transpile_directory()
+        transpiler.write_output(results)
     else:
         print(f"Error: {args.input} is not a valid file or directory")
         raise SystemExit(1)

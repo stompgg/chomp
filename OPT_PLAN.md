@@ -150,7 +150,7 @@ function executeBatch(bytes32 battleKey) external;
 | `MonState` (per mon) | Per-`(playerIndex, monIndex)` mirror, lazy-loaded. Dirty bit per slot. |
 | `koBitmaps` (16 bits in `BattleConfig` slot 2) | `uint16` mirror, loaded flag. |
 | `winnerIndex` / `prevPlayerSwitchForTurnFlag` / `playerSwitchForTurnFlag` / `activeMonIndex` / `turnId` / `lastExecuteTimestamp` | Single packed `uint256` mirror. |
-| Effect list slots (`globalEffects[i]`, `pXEffects[i]`) | Sparse transient map keyed by list + slot index, mirrors the full `EffectInstance` (`effect`, `stepsBitmap`, `data`). |
+| Effect list slots (`globalEffects[i]`, `pXEffects[i]`) | Fixed numeric transient keys, mirrors the full `EffectInstance` (`effect`, `stepsBitmap`, `data`). |
 | `packedP0EffectsCount` / `packedP1EffectsCount` / `globalEffectsLength` | Three small mirrors, flushed with effect-list shadow. |
 | `globalKV[storageKey][key]` | Per-`key` mirror, lazy-loaded. |
 | `BattleConfig.p0Move` / `p1Move` / salts | Re-populated per sub-turn from buffer slot. |
@@ -162,6 +162,79 @@ Hydrate strategy:
 Loaded-flag strategy:
 - **Bitmap** for fixed-shape slots (MonState, effects, slot-2 packed fields).
 - **Per-key transient hash-set** for `globalKV` (dynamic keys).
+
+### 5.1.1 Effect shadow key layout
+
+Effects are bounded and already partitioned, so use numeric transient keys and bitmaps instead of hashed keys.
+
+Assumptions:
+- Up to 8 mons per side.
+- Up to 8 effects per mon.
+- Up to 16 global effects.
+
+Flat effect-slot keys:
+
+```solidity
+uint256 constant EFFECTS_PER_MON = 8;
+uint256 constant MONS_PER_SIDE = 8;
+uint256 constant MAX_GLOBAL_EFFECTS = 16;
+
+uint256 constant EFFECT_P0_OFFSET = 0;    // keys   0..63
+uint256 constant EFFECT_P1_OFFSET = 64;   // keys  64..127
+uint256 constant EFFECT_GLOBAL_OFFSET = 128; // keys 128..143
+
+function _effectShadowKey(uint256 targetIndex, uint256 monIndex, uint256 localEffectIndex)
+    internal
+    pure
+    returns (uint256)
+{
+    if (targetIndex == 2) return EFFECT_GLOBAL_OFFSET + localEffectIndex;
+    uint256 sideOffset = targetIndex == 0 ? EFFECT_P0_OFFSET : EFFECT_P1_OFFSET;
+    return sideOffset + monIndex * EFFECTS_PER_MON + localEffectIndex;
+}
+```
+
+For player effects, `localEffectIndex` is `0..7` and the storage slot remains
+`_getEffectSlotIndex(monIndex, localEffectIndex)`. For global effects, `monIndex` is ignored and
+`localEffectIndex` is the global effect index.
+
+Loaded/dirty bitmaps:
+
+```solidity
+uint256 transient effectSlotLoadedBitmap;
+uint256 transient effectSlotDirtyBitmap;
+
+function _effectBit(uint256 key) internal pure returns (uint256) {
+    return 1 << key;
+}
+```
+
+Shadow values can use numeric transient key regions, one region per `EffectInstance` field:
+
+```solidity
+uint256 constant T_EFFECT_ADDR_BASE  = 0x1000;
+uint256 constant T_EFFECT_STEPS_BASE = 0x2000;
+uint256 constant T_EFFECT_DATA_BASE  = 0x3000;
+
+// tstore(T_EFFECT_ADDR_BASE + key, address(effect))
+// tstore(T_EFFECT_STEPS_BASE + key, stepsBitmap)
+// tstore(T_EFFECT_DATA_BASE + key, data)
+```
+
+Counts use a separate compact key space:
+
+```solidity
+// 0 = globalEffectsLength
+// 1..8 = p0 mon counts
+// 9..16 = p1 mon counts
+function _effectCountKey(uint256 targetIndex, uint256 monIndex) internal pure returns (uint256) {
+    if (targetIndex == 2) return 0;
+    if (targetIndex == 0) return 1 + monIndex;
+    return 9 + monIndex;
+}
+```
+
+Use separate loaded/dirty bitmaps for counts. Flush scans only dirty effect-slot bits in `0..143` and dirty count bits in `0..16`, so flush work is bounded and independent of calldata shape.
 
 ### 5.2 Helper boundary
 
@@ -364,3 +437,36 @@ New tests:
 Existing tests stay untouched — they use the legacy entry points.
 
 Targeted equivalence tests for v1; differential fuzzing as a follow-up.
+
+### 10.1 Effect-shadow correctness tests
+
+Correctness target: for any scripted turn sequence, batched execution produces the same final battle state and the same mid-execution observations as legacy single-turn execution would produce after each turn.
+
+Use a small purpose-built mock effect/move suite instead of relying only on production mons:
+
+- `AddEffectOnRun`: during a hook, calls `engine.addEffect` to append another effect to the same list.
+- `EditSelfOnRun`: calls `engine.editEffect` on its own slot and increments a counter in `data`.
+- `RemoveSelfOnRun`: returns `removeAfterRun = true`.
+- `RemoveOtherOnRun`: calls `engine.removeEffect` for another slot.
+- `InspectEffectsOnRun`: calls `engine.getEffects` during the batch and records/validates the visible list.
+- `SingletonAbilityRegister`: exercises ability-triggered self-registration through `_activateAbility`.
+
+Required cases:
+
+- **Add visibility:** an effect added on sub-turn `T` is visible to `getEffects` and to `_handleEffects` on sub-turn `T+1`.
+- **Add during iteration:** when an effect adds another effect while `_handleEffects` is iterating, the shadow count + `effectsDirtyBitmap` behavior matches legacy storage behavior.
+- **Edit visibility:** data written by `editEffect` or returned from a hook is visible to later hooks in the same batch.
+- **Remove visibility:** a removed effect is tombstoned in shadow, skipped by later `_handleEffects`, and omitted from `getEffects`, with slot indices preserved.
+- **OnRemove callback:** removing an effect with `OnRemove` sees shadowed active mon indices and can perform shadowed writes.
+- **Singleton/idempotency:** ability self-registration checks the shadow list, so repeated activation in one batch does not duplicate an effect.
+- **Global effects:** repeat add/edit/remove/getEffects cases for global effects, including index `15` to cover the `MAX_GLOBAL_EFFECTS = 16` boundary.
+- **Per-player boundaries:** cover p0 mon 0, p0 mon 7, p1 mon 0, and p1 mon 7 to exercise numeric key offsets.
+- **Capacity:** adding a ninth effect to one mon or a seventeenth global effect fails/no-ops according to the chosen production behavior, and never corrupts adjacent shadow keys.
+- **Flush parity:** after batch flush, storage `EffectInstance` slots and counts match the legacy run byte-for-byte, including tombstones.
+
+Test shape:
+
+1. Start two identical battles.
+2. Run the same scripted turns through legacy single-turn execution in battle A.
+3. Submit all turns, execute one full batch in battle B.
+4. Compare `BattleData`, mon states, `globalKV`, `getEffects` for all relevant lists, and any mock-recorded observations.

@@ -568,7 +568,21 @@ class StatementGenerator(BaseGenerator):
     def generate_delete_statement(self, stmt: DeleteStatement) -> str:
         """Generate TypeScript code for a delete statement."""
         expr = self._expr.generate(stmt.expression)
+        default_value = self._get_delete_default(stmt.expression)
+        if default_value is not None:
+            return f'{self.indent()}{expr} = {default_value};'
         return f'{self.indent()}delete {expr};'
+
+    def _get_delete_default(self, expr: Expression) -> Optional[str]:
+        """Return Solidity's zero/default value for a delete target if known."""
+        type_info = self._resolve_access_type(expr)
+        if not type_info:
+            return None
+        ts_type = self._type_converter.solidity_type_to_ts(type_info)
+        default_value = self._type_converter.default_value(ts_type, type_info)
+        if default_value == 'undefined as any':
+            return None
+        return default_value
 
     # =========================================================================
     # EMIT / REVERT

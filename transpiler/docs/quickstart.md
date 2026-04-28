@@ -1,6 +1,8 @@
 # Quickstart
 
-You have a Foundry project with contracts in `src/`. `extruder` can generate files in `ts-output/`, a scaffolded config, and a test file that calls into the transpiled contracts.
+You have a Foundry project with contracts in `src/`. `extruder` can generate
+TypeScript files in `ts-output/`, plus a scaffolded config and runtime
+replacement stubs for Solidity files that need hand-written TypeScript.
 
 ## 1. Install
 
@@ -8,8 +10,13 @@ Clone extruder somewhere
 
 ```bash
 git clone <REPO_URL> ~/tools/extruder
-cd ~/tools/extruder && pip install -r requirements.txt
+cd ~/tools/extruder
+python3 -m transpiler --help
 ```
+
+Run extruder with `python3 -m transpiler` from the directory that contains the
+`transpiler/` package. Running `transpiler/sol2ts.py` directly will fail because
+the package uses relative imports.
 
 Add the JS runtime deps to your own Foundry project:
 
@@ -21,7 +28,8 @@ npm install -D viem vitest
 ## 2. Bootstrap your config with `extruder init`
 
 ```bash
-python3 ~/tools/extruder/sol2ts.py init src/ --yes
+cd ~/tools/extruder
+python3 -m transpiler init /path/to/your/foundry/project/src --yes
 ```
 
 This scans `src/` and writes:
@@ -41,7 +49,7 @@ Drop `--yes` to run interactively.
 For each file under `runtime-replacements/`, replace the
 `throw new Error('Not implemented…')` bodies with real logic. See
 [`runtime-replacements.md`](runtime-replacements.md) for common patterns and
-the ECDSA reference implementation.
+the runtime replacement examples.
 
 You can defer this step if you want to see the transpiler run end-to-end —
 the stubs throw loudly at call time, so missing implementations fail fast
@@ -50,7 +58,10 @@ rather than silently.
 ## 4. Transpile
 
 ```bash
-python3 ~/tools/extruder/sol2ts.py src/ -o ts-output -d src --emit-metadata
+python3 -m transpiler /path/to/your/foundry/project/src \
+  -o /path/to/your/foundry/project/ts-output \
+  -d /path/to/your/foundry/project/src \
+  --emit-metadata
 ```
 
 - `src/` is the input tree.

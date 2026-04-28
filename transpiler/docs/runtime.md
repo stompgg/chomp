@@ -208,8 +208,8 @@ Event plumbing:
 
 ## Runtime replacements
 
-The runtime ships one reference replacement: `ECDSA.ts`. See
-[`runtime-replacements.md`](runtime-replacements.md) for the full authoring
-workflow; the short version is that you scaffold via
+The runtime ships reference replacements such as `Ownable.ts` and
+`EnumerableSetLib.ts`. See [`runtime-replacements.md`](runtime-replacements.md)
+for the full authoring workflow; the short version is that you scaffold via
 `--emit-replacement-stub`, fill in bodies, and register in
 `transpiler-config.json`.

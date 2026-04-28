@@ -22,18 +22,23 @@ finish the job.
 
 ## Anatomy of a replacement
 
-Here's the reference implementation: `runtime/ECDSA.ts`. It stands in for
-Solady's `lib/ECDSA.sol`, which uses the `staticcall` precompile for
-secp256k1 recovery.
+Here's one reference implementation: `runtime/Ownable.ts`. It stands in for
+Solady's `lib/Ownable.sol`, whose storage-slot-heavy Yul is better represented
+by a small hand-written TypeScript class.
 
 ```ts
 import { Contract } from './base';
 
-export class ECDSA extends Contract {
-  static recover(hash: `0x${string}`, signature: `0x${string}`): string {
-    // ... real viem-backed secp256k1 recovery ...
+export abstract class Ownable extends Contract {
+  private _owner: string = '0x0000000000000000000000000000000000000000';
+
+  protected _checkOwner(): void {
+    if (this._msg.sender !== this._owner) throw new Error('Unauthorized');
   }
-  // ... other signature-handling methods ...
+
+  owner(): string {
+    return this._owner;
+  }
 }
 ```
 
@@ -44,18 +49,19 @@ Two things to notice:
    same as transpiled contracts. You can write state if you want; you
    usually don't.
 2. **No explicit registration.** The only thing connecting this file to the
-   transpiler is the `transpiler-config.json` entry below. The generator
-   writes `import { ECDSA } from '../runtime-replacements'` into every
-   generated file that originally imported `ECDSA.sol`.
+   transpiler is the `transpiler-config.json` entry below. The generator emits
+   a re-export stub for the replaced Solidity file, so downstream imports keep
+   working while resolving to your hand-written module.
 
 ## Authoring workflow
 
 ### 1. Scaffold
 
 ```bash
-python3 /path/to/extruder/sol2ts.py \
-  --emit-replacement-stub MyLib src/lib/MyLib.sol \
-  -o runtime-replacements/MyLib.ts
+cd /path/to/extruder
+python3 -m transpiler \
+  --emit-replacement-stub MyLib /path/to/your/foundry/project/src/lib/MyLib.sol \
+  -o /path/to/your/foundry/project/runtime-replacements/MyLib.ts
 ```
 
 This produces a TypeScript class with:
@@ -115,8 +121,8 @@ now routes through your replacement.
   the rest of the contract transpiles fine. If your only concern is
   access control, fix it in the test harness (spoof `msg.sender`), not via
   a replacement.
-- **Diagnostics (W002 / W003 / W004).** Degraded fidelity, but the
-  contract still transpiles. Audit case-by-case; a replacement is
-  overkill for most.
+- **Skipped receive/fallback functions (W003).** Degraded fidelity, but the
+  contract still transpiles. Audit case-by-case; a replacement is overkill for
+  most.
 - **You just don't want this file transpiled.** Use `skipFiles` or
   `skipContracts` in the config; no replacement needed.

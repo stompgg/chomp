@@ -30,6 +30,7 @@ from ..parser.ast_nodes import (
     TupleExpression,
     ArrayLiteral,
     TypeCast,
+    TypeName,
 )
 
 
@@ -546,38 +547,11 @@ class ExpressionGenerator(BaseGenerator):
 
     def _handle_type_cast_call(self, call: FunctionCall, name: str, args: str) -> Optional[str]:
         """Handle type cast function calls (uint256(x), address(x), etc.)."""
-        if name.startswith('uint') or name.startswith('int'):
-            if call.arguments and isinstance(call.arguments[0], Identifier):
+        if self._is_primitive_cast_name(name):
+            if len(call.arguments) != 1:
                 return args
-            if args.isdigit():
-                return f'{args}n'
-            return self._type_converter._ensure_bigint(args)
-        elif name == 'address':
-            if call.arguments:
-                arg = call.arguments[0]
-                if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
-                    return self._to_padded_address(arg.value)
-                if isinstance(arg, Identifier) and arg.name == 'this':
-                    return 'this._contractAddress'
-                if self._is_already_address_type(arg):
-                    return self.generate(arg)
-                if self._is_numeric_type_cast(arg):
-                    inner = self.generate(arg)
-                    return f'`0x${{({inner}).toString(16).padStart(40, "0")}}`'
-                inner = self.generate(arg)
-                if inner != 'this' and not inner.startswith('"') and not inner.startswith("'"):
-                    return f'{inner}._contractAddress'
-            return args
-        elif name == 'bool':
-            return args
-        elif name == 'bytes32':
-            if call.arguments:
-                arg = call.arguments[0]
-                if isinstance(arg, Literal) and arg.kind in ('number', 'hex'):
-                    return self._to_padded_bytes32(arg.value)
-            return args
-        elif name.startswith('bytes'):
-            return args
+            cast = TypeCast(type_name=TypeName(name=name), expression=call.arguments[0])
+            return self._type_converter.generate_type_cast(cast, self.generate)
         elif name.startswith('I') and len(name) > 1 and name[1].isupper():
             # Interface cast
             return self._handle_interface_cast(call, args)
@@ -602,6 +576,15 @@ class ExpressionGenerator(BaseGenerator):
             return f'Number({args}) as {qualified}'
 
         return None
+
+    @staticmethod
+    def _is_primitive_cast_name(name: str) -> bool:
+        return (
+            name in ('address', 'bool', 'bytes', 'bytes32', 'payable', 'string')
+            or name.startswith('uint')
+            or name.startswith('int')
+            or (name.startswith('bytes') and name[5:].isdigit())
+        )
 
     def _handle_interface_cast(self, call: FunctionCall, args: str) -> str:
         """Handle interface type cast like IEffect(address(x)).
