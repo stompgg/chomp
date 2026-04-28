@@ -1078,34 +1078,6 @@ class TestTypeCastGeneration(unittest.TestCase):
         self.assertIn('getAddr', output)
 
 
-class TestLoweringLayer(unittest.TestCase):
-    """Test pre-codegen AST lowering."""
-
-    def test_primitive_cast_call_lowers_to_type_cast_node(self):
-        from transpiler.lowering import lower_ast
-        from transpiler.parser.ast_nodes import ReturnStatement, TypeCast
-
-        source = '''
-        contract TestContract {
-            function cast(int256 x) public pure returns (uint256) {
-                return uint256(x);
-            }
-        }
-        '''
-
-        lexer = Lexer(source)
-        tokens = lexer.tokenize()
-        parser = Parser(tokens)
-        ast = parser.parse()
-
-        lowered = lower_ast(ast)
-        stmt = lowered.contracts[0].functions[0].body.statements[0]
-
-        self.assertIsInstance(stmt, ReturnStatement)
-        self.assertIsInstance(stmt.expression, TypeCast)
-        self.assertEqual(stmt.expression.type_name.name, 'uint256')
-
-
 class TestDeleteGeneration(unittest.TestCase):
     """Test Solidity delete semantics in generated TypeScript."""
 

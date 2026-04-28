@@ -547,12 +547,13 @@ class ExpressionGenerator(BaseGenerator):
         return None
 
     def _handle_type_cast_call(self, call: FunctionCall, name: str, args: str) -> Optional[str]:
-        """Handle non-primitive cast-like calls: interface casts, struct constructors, enum coercions.
-
-        Primitive casts (``uint256(x)``, ``address(x)`` etc.) are normalized to ``TypeCast``
-        nodes by the lowering pass and never reach this handler.
-        """
-        if name.startswith('I') and len(name) > 1 and name[1].isupper():
+        """Handle type cast function calls (uint256(x), address(x), etc.)."""
+        if self._is_primitive_cast_name(name):
+            if len(call.arguments) != 1:
+                return args
+            cast = TypeCast(type_name=TypeName(name=name), expression=call.arguments[0])
+            return self._type_converter.generate_type_cast(cast, self.generate)
+        elif name.startswith('I') and len(name) > 1 and name[1].isupper():
             # Interface cast
             return self._handle_interface_cast(call, args)
         elif name[0].isupper() and call.named_arguments:
@@ -576,6 +577,15 @@ class ExpressionGenerator(BaseGenerator):
             return f'Number({args}) as {qualified}'
 
         return None
+
+    @staticmethod
+    def _is_primitive_cast_name(name: str) -> bool:
+        return (
+            name in ('address', 'bool', 'bytes', 'bytes32', 'payable', 'string')
+            or name.startswith('uint')
+            or name.startswith('int')
+            or (name.startswith('bytes') and name[5:].isdigit())
+        )
 
     def _handle_interface_cast(self, call: FunctionCall, args: str) -> str:
         """Handle interface type cast like IEffect(address(x)).

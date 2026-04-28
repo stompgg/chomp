@@ -16,7 +16,6 @@ from .function import FunctionGenerator
 from .definition import DefinitionGenerator
 from .imports import ImportGenerator
 from .contract import ContractGenerator
-from ..lowering import lower_ast
 
 from ..parser.ast_nodes import SourceUnit
 from ..type_system import TypeRegistry
@@ -104,7 +103,6 @@ class TypeScriptCodeGenerator:
         Returns:
             The generated TypeScript code as a string
         """
-        ast = lower_ast(ast)
         output = []
 
         # Reset context for this file
