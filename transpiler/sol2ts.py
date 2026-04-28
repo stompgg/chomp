@@ -26,7 +26,6 @@ Module layout:
 - dependency_resolver: Interface → concrete implementation resolution
 """
 
-import json
 import shutil
 from pathlib import Path
 from typing import Optional, List, Dict, Set
@@ -37,7 +36,8 @@ from .parser import Parser, SourceUnit
 from .type_system import TypeRegistry
 from .codegen import TypeScriptCodeGenerator
 from .codegen.metadata import MetadataExtractor, FactoryGenerator
-from .codegen.diagnostics import TranspilerDiagnostics
+from .codegen.diagnostics import TranspilerDiagnostics, emit_ast_diagnostics
+from .config import TranspilerConfig, normalize_config_path
 from .dependency_resolver import DependencyResolver
 
 
@@ -55,6 +55,7 @@ class SolidityToTypeScriptTranspiler:
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)
         self.parsed_files: Dict[str, SourceUnit] = {}
+        self._ast_cache: Dict[str, SourceUnit] = {}
         self.registry = TypeRegistry()
         self.emit_metadata = emit_metadata
         self.overrides_path = overrides_path
@@ -67,60 +68,34 @@ class SolidityToTypeScriptTranspiler:
         self.diagnostics = TranspilerDiagnostics()
 
         # Load consolidated transpiler configuration
-        self.runtime_replacements: Dict[str, dict] = {}
-        self.runtime_replacement_classes: Set[str] = set()
-        self.runtime_replacement_mixins: Dict[str, str] = {}
-        self.runtime_replacement_methods: Dict[str, Set[str]] = {}
-        self.skip_files: Set[str] = set()
-        self.skip_dirs: Set[str] = set()
-        self._load_config()
+        config_path = self.overrides_path or TranspilerConfig.default_path()
+        self.config = TranspilerConfig.load(config_path, warn_missing=True)
+        self.runtime_replacements: Dict[str, dict] = self.config.runtime_replacements
+        self.runtime_replacement_classes: Set[str] = self.config.runtime_replacement_classes
+        self.runtime_replacement_mixins: Dict[str, str] = self.config.runtime_replacement_mixins
+        self.runtime_replacement_methods: Dict[str, Set[str]] = self.config.runtime_replacement_methods
+        self.skip_files: Set[str] = self.config.skip_files
+        self.skip_dirs: Set[str] = self.config.skip_dirs
 
         # Run type discovery on specified directories
         if discovery_dirs:
             for dir_path in discovery_dirs:
-                self.registry.discover_from_directory(dir_path)
-                self._remember_discovery_root(dir_path)
-
-    def _load_config(self) -> None:
-        """Load transpiler-config.json (consolidated configuration)."""
-        config_file = Path(__file__).parent / 'transpiler-config.json'
-        if not config_file.exists():
-            print(f"Warning: transpiler-config.json not found at {config_file}")
-            return
-
-        try:
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-
-            # Runtime replacements
-            for replacement in config.get('runtimeReplacements', []):
-                source_path = replacement.get('source', '')
-                if source_path:
-                    self.runtime_replacements[source_path] = replacement
-                    for export in replacement.get('exports', []):
-                        self.runtime_replacement_classes.add(export)
-                    interface = replacement.get('interface', {})
-                    class_name = interface.get('class', '')
-                    mixin_code = interface.get('mixin', '')
-                    if class_name and mixin_code:
-                        self.runtime_replacement_mixins[class_name] = mixin_code
-                    methods = interface.get('methods', [])
-                    if class_name and methods:
-                        method_names = set(m.get('name', '') for m in methods if m.get('name'))
-                        self.runtime_replacement_methods[class_name] = method_names
-
-            # Skip files and directories
-            for path in config.get('skipFiles', []):
-                self.skip_files.add(path)
-            for path in config.get('skipDirs', []):
-                self.skip_dirs.add(path)
-
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Warning: Failed to load transpiler-config.json: {e}")
+                self._discover_from_directory_cached(dir_path)
 
     def discover_types(self, directory: str, pattern: str = '**/*.sol') -> None:
         """Run type discovery on a directory of Solidity files."""
-        self.registry.discover_from_directory(directory, pattern)
+        self._discover_from_directory_cached(directory, pattern)
+
+    def _discover_from_directory_cached(self, directory: str, pattern: str = '**/*.sol') -> None:
+        """Discover types from Solidity files while reusing parsed ASTs."""
+        base_dir = Path(directory)
+        for sol_file in base_dir.glob(pattern):
+            try:
+                rel_path = sol_file.relative_to(base_dir).with_suffix('')
+                ast = self._parse_file_cached(sol_file)
+                self.registry.discover_from_ast(ast, str(rel_path))
+            except Exception as e:
+                print(f"Warning: Could not parse {sol_file} for type discovery: {e}")
         self._remember_discovery_root(directory)
 
     def _remember_discovery_root(self, directory: str) -> None:
@@ -142,40 +117,36 @@ class SolidityToTypeScriptTranspiler:
             return False
         return any(resolved == root or resolved.is_relative_to(root) for root in self._discovery_roots)
 
-    def transpile_file(self, filepath: str, use_registry: bool = True) -> str:
-        """Transpile a single Solidity file to TypeScript."""
-        with open(filepath, 'r') as f:
-            source = f.read()
+    def _cache_key(self, filepath: str | Path) -> str:
+        """Stable key for source/AST caches."""
+        try:
+            return str(Path(filepath).resolve())
+        except (OSError, RuntimeError):
+            return str(Path(filepath))
 
-        # Tokenize using the lexer module
+    def _parse_file_cached(self, filepath: str | Path) -> SourceUnit:
+        """Read, lex, and parse a Solidity file once per transpiler instance."""
+        cache_key = self._cache_key(filepath)
+        if cache_key in self._ast_cache:
+            return self._ast_cache[cache_key]
+
+        source = Path(filepath).read_text()
         lexer = Lexer(source)
         tokens = lexer.tokenize()
-
-        # Parse using the parser module
         parser = Parser(tokens)
         ast = parser.parse()
 
-        self.parsed_files[filepath] = ast
-        if not self._is_covered_by_discovery(filepath):
-            self.registry.discover_from_ast(ast)
+        self._ast_cache[cache_key] = ast
+        self.parsed_files[str(filepath)] = ast
+        return ast
 
-        # Extract metadata for factory generation
-        if self.metadata_extractor:
-            try:
-                resolved_filepath = Path(filepath).resolve()
-                resolved_source_dir = self.source_dir.resolve()
-                if resolved_filepath.is_relative_to(resolved_source_dir):
-                    rel_path = resolved_filepath.relative_to(resolved_source_dir)
-                    file_path_no_ext = str(rel_path.with_suffix(''))
-                else:
-                    file_path_no_ext = Path(filepath).stem
-                self.metadata_extractor.extract_from_ast(ast, file_path_no_ext)
-            except (ValueError, TypeError, AttributeError):
-                pass
-
-        # Calculate file depth for imports
+    def transpile_file(self, filepath: str, use_registry: bool = True) -> str:
+        """Transpile a single Solidity file to TypeScript."""
+        # Calculate file depth for imports before parsing so runtime
+        # replacements can stand in for files the parser cannot handle.
         file_depth = 0
         current_file_path = ''
+        rel_path: Optional[Path] = None
         try:
             resolved_filepath = Path(filepath).resolve()
             resolved_source_dir = self.source_dir.resolve()
@@ -186,14 +157,30 @@ class SolidityToTypeScriptTranspiler:
         except (ValueError, TypeError, AttributeError):
             pass
 
-        # Emit diagnostics for skipped constructs in the AST
-        self._emit_ast_diagnostics(ast, filepath)
-
-        # Check for runtime replacement
         replacement = self._get_runtime_replacement(filepath)
         if replacement:
-            self.diagnostics.info_runtime_replacement(filepath, replacement.get('runtime', ''))
+            runtime_module = replacement.get('runtimeModule', replacement.get('runtime', ''))
+            self.diagnostics.info_runtime_replacement(filepath, runtime_module)
             return self._generate_runtime_reexport(replacement, file_depth)
+
+        ast = self._parse_file_cached(filepath)
+        self.parsed_files[filepath] = ast
+        if not self._is_covered_by_discovery(filepath):
+            self.registry.discover_from_ast(ast)
+
+        # Extract metadata for factory generation
+        if self.metadata_extractor:
+            try:
+                if rel_path is not None:
+                    file_path_no_ext = str(rel_path.with_suffix(''))
+                else:
+                    file_path_no_ext = Path(filepath).stem
+                self.metadata_extractor.extract_from_ast(ast, file_path_no_ext)
+            except (ValueError, TypeError, AttributeError):
+                pass
+
+        # Emit diagnostics for skipped constructs in the AST
+        self._emit_ast_diagnostics(ast, filepath)
 
         # Generate TypeScript using the modular code generator
         generator = TypeScriptCodeGenerator(
@@ -208,36 +195,17 @@ class SolidityToTypeScriptTranspiler:
 
     def _emit_ast_diagnostics(self, ast: SourceUnit, filepath: str) -> None:
         """Scan the AST and emit diagnostics for skipped/unsupported constructs."""
-        for contract in ast.contracts:
-            # Check for modifiers (they are parsed but not inlined)
-            for modifier in contract.modifiers:
-                self.diagnostics.warn_modifier_stripped(
-                    modifier.name,
-                    file_path=filepath,
-                )
-
-            # Check for function modifiers referenced on functions
-            for func in contract.functions:
-                if func.modifiers:
-                    for mod_name in func.modifiers:
-                        name = mod_name if isinstance(mod_name, str) else str(mod_name)
-                        self.diagnostics.warn_modifier_stripped(
-                            name,
-                            file_path=filepath,
-                        )
+        emit_ast_diagnostics(ast, self.diagnostics, filepath)
 
     def _get_runtime_replacement(self, filepath: str) -> Optional[dict]:
         """Check if a file should be replaced with a runtime implementation."""
         try:
             rel_path = Path(filepath).relative_to(self.source_dir)
-            rel_str = str(rel_path).replace('\\', '/')
+            rel_str = normalize_config_path(str(rel_path))
         except ValueError:
-            rel_str = str(Path(filepath)).replace('\\', '/')
+            rel_str = normalize_config_path(str(Path(filepath)))
 
-        for source_pattern, replacement in self.runtime_replacements.items():
-            if rel_str.endswith(source_pattern) or rel_str == source_pattern:
-                return replacement
-        return None
+        return self.config.runtime_replacement_for(rel_str)
 
     def _generate_runtime_reexport(self, replacement: dict, file_depth: int) -> str:
         """Generate a re-export file for a runtime replacement."""
@@ -267,10 +235,13 @@ class SolidityToTypeScriptTranspiler:
         for sol_file in self.source_dir.glob(pattern):
             # Check if file or directory should be skipped
             rel = sol_file.relative_to(self.source_dir)
-            if str(rel) in self.skip_files:
+            rel_str = normalize_config_path(str(rel))
+            has_replacement = self.config.runtime_replacement_for(rel_str) is not None
+            if not has_replacement and self.config.should_skip_file(rel_str):
                 continue
-            if any(str(rel).startswith(d + '/') or str(rel).startswith(d + '\\') for d in self.skip_dirs):
+            if not has_replacement and self.config.should_skip_dir(rel_str):
                 continue
+
             try:
                 ts_code = self.transpile_file(str(sol_file))
                 rel_path = sol_file.relative_to(self.source_dir)

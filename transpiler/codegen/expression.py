@@ -80,6 +80,7 @@ class ExpressionGenerator(BaseGenerator):
             known_interfaces=self._ctx.known_interfaces,
             known_struct_fields=self._ctx.known_struct_fields,
             method_return_types=self._ctx.current_method_return_types,
+            type_converter=self._type_converter,
         )
         return self._abi_inferer
 
@@ -546,13 +547,12 @@ class ExpressionGenerator(BaseGenerator):
         return None
 
     def _handle_type_cast_call(self, call: FunctionCall, name: str, args: str) -> Optional[str]:
-        """Handle type cast function calls (uint256(x), address(x), etc.)."""
-        if self._is_primitive_cast_name(name):
-            if len(call.arguments) != 1:
-                return args
-            cast = TypeCast(type_name=TypeName(name=name), expression=call.arguments[0])
-            return self._type_converter.generate_type_cast(cast, self.generate)
-        elif name.startswith('I') and len(name) > 1 and name[1].isupper():
+        """Handle non-primitive cast-like calls: interface casts, struct constructors, enum coercions.
+
+        Primitive casts (``uint256(x)``, ``address(x)`` etc.) are normalized to ``TypeCast``
+        nodes by the lowering pass and never reach this handler.
+        """
+        if name.startswith('I') and len(name) > 1 and name[1].isupper():
             # Interface cast
             return self._handle_interface_cast(call, args)
         elif name[0].isupper() and call.named_arguments:
@@ -576,15 +576,6 @@ class ExpressionGenerator(BaseGenerator):
             return f'Number({args}) as {qualified}'
 
         return None
-
-    @staticmethod
-    def _is_primitive_cast_name(name: str) -> bool:
-        return (
-            name in ('address', 'bool', 'bytes', 'bytes32', 'payable', 'string')
-            or name.startswith('uint')
-            or name.startswith('int')
-            or (name.startswith('bytes') and name[5:].isdigit())
-        )
 
     def _handle_interface_cast(self, call: FunctionCall, args: str) -> str:
         """Handle interface type cast like IEffect(address(x)).
@@ -663,7 +654,7 @@ class ExpressionGenerator(BaseGenerator):
 
         # Handle .length
         if member == 'length':
-            base_var_name = self._get_base_var_name(access.expression)
+            base_var_name = self._type_converter.base_var_name(access.expression)
             if base_var_name and base_var_name in self._ctx.var_types:
                 type_info = self._ctx.var_types[base_var_name]
                 type_name = type_info.name if type_info else ''
@@ -694,65 +685,17 @@ class ExpressionGenerator(BaseGenerator):
         # `this.m[a][b]` or `config.p0States[j]`, this descends through
         # mappings, arrays, and struct fields so we always see the type of
         # the thing actually being indexed.
-        container = self._resolve_access_type(access.base)
-        is_array = bool(container and container.is_array) or self._is_likely_array_access(access)
-        is_numeric_keyed_mapping = bool(
-            container
-            and container.is_mapping
-            and container.key_type
-            and (container.key_type.name or '').startswith(('uint', 'int'))
-        )
-
+        is_array, is_numeric_keyed_mapping = self._type_converter.index_access_kind(access)
         mapping_access = is_numeric_keyed_mapping
         needs_conversion = is_array or mapping_access
 
-        index = self._convert_index(access, index, needs_conversion, mapping_access)
-        return f'{base}[{index}]'
-
-    # Index expressions that can be safely wrapped in Number(...) / String(...).
-    _WRAPPABLE_INDEX = (Identifier, BinaryOperation, UnaryOperation, IndexAccess, MemberAccess)
-
-    def _convert_index(
-        self,
-        access: IndexAccess,
-        index: str,
-        needs_conversion: bool,
-        mapping_access: bool,
-    ) -> str:
-        """Convert the index expression to match the underlying container's key type.
-
-        Mappings transpile to ``Record<string, V>``; their keys must preserve full
-        ``bigint`` precision, so we use ``String(idx)`` — ``Number(idx)`` silently
-        collapses distinct ``uint64`` values above 2^53 that happen to round to the
-        same IEEE-754 double, causing collisions.
-
-        Real arrays use ``Number(idx)`` because TS's ``T[]`` index signature expects
-        a number (and bigint-derived indices are always within the safe integer
-        range in practice).
-        """
-        wrap = 'String' if mapping_access else 'Number'
-
-        # BigInt(N) where N is a numeric literal -> drop the wrapper entirely.
-        if index.startswith('BigInt('):
-            inner = index[7:-1]
-            if inner.isdigit():
-                return inner
-
-        # `5n` -> `5` (numeric literal in bigint form)
-        if isinstance(access.index, Literal) and index.endswith('n'):
-            return index[:-1]
-
-        # Wrap wrappable index expressions when the container demands it, or
-        # always wrap bigint-typed identifiers (they'd otherwise index a Record
-        # with a `bigint` key, which TS rejects).
-        should_wrap = (
-            (needs_conversion and isinstance(access.index, self._WRAPPABLE_INDEX))
-            or (isinstance(access.index, Identifier) and self._is_bigint_typed_identifier(access.index))
+        index = self._type_converter.convert_index(
+            access,
+            index,
+            needs_conversion,
+            mapping_access,
         )
-        if should_wrap and not index.startswith(f'{wrap}('):
-            return f'{wrap}({index})'
-
-        return index
+        return f'{base}[{index}]'
 
     # =========================================================================
     # NEW EXPRESSIONS

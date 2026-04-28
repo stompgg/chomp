@@ -26,12 +26,21 @@ into TypeScript you can run in Node or the browser.
 git clone <REPO_URL> ~/tools/extruder
 cd ~/tools/extruder
 
+# Optional: install the standalone CLI in editable mode.
+python3 -m pip install -e ./transpiler
+
 # In your own Foundry project:
 npm install -D viem vitest
 ```
 
-Run extruder as a Python module from the directory that contains the
-`transpiler/` package:
+If installed, run:
+
+```bash
+extruder --help
+```
+
+From a source checkout, you can also run extruder as a Python module from
+the directory that contains the `transpiler/` package:
 
 ```bash
 cd ~/tools/extruder
@@ -47,13 +56,13 @@ command:
 
 ```bash
 cd ~/tools/extruder
-python3 -m transpiler init /path/to/your/foundry/project/src --yes
+extruder init /path/to/your/foundry/project/src --yes
 ```
 
 Then transpile:
 
 ```bash
-python3 -m transpiler /path/to/your/foundry/project/src \
+extruder /path/to/your/foundry/project/src \
   -o /path/to/your/foundry/project/ts-output \
   -d /path/to/your/foundry/project/src \
   --emit-metadata
@@ -84,10 +93,12 @@ counterpart.
 ## CLI
 
 ```
-python3 -m transpiler [input] [options]
-python3 -m transpiler init <src-dir> [--yes] [--stub-output-dir DIR] [--config-path PATH]
-python3 -m transpiler --emit-replacement-stub CONTRACT SOL_FILE [-o OUTPUT]
+extruder [input] [options]
+extruder init <src-dir> [--yes] [--stub-output-dir DIR] [--config-path PATH]
+extruder --emit-replacement-stub CONTRACT SOL_FILE [-o OUTPUT]
 ```
+
+`python3 -m transpiler ...` supports the same commands from a source checkout.
 
 | Flag | Purpose |
 |---|---|

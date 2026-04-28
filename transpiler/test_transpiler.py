@@ -671,6 +671,241 @@ class TestDiagnostics(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertEqual(len(infos), 1)
 
+    def test_ast_diagnostics_visitor_collects_modifier_warnings(self):
+        from transpiler.codegen.diagnostics import TranspilerDiagnostics, emit_ast_diagnostics
+
+        source = '''
+        contract TestContract {
+            modifier onlyOwner() { _; }
+
+            function guarded() public onlyOwner {
+            }
+        }
+        '''
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        diag = TranspilerDiagnostics()
+        emit_ast_diagnostics(ast, diag, 'TestContract.sol')
+
+        self.assertEqual(len(diag.warnings), 2)
+        self.assertTrue(all(w.code == 'W001' for w in diag.warnings))
+
+
+class TestAstVisitor(unittest.TestCase):
+    """Test generic AST visitor traversal."""
+
+    def test_visitor_reaches_nested_statements_and_expressions(self):
+        from transpiler.parser.visitor import ASTVisitor
+        from transpiler.parser.ast_nodes import BinaryOperation, FunctionCall, Identifier
+
+        source = '''
+        contract TestContract {
+            function run(uint256 x) public {
+                if (x > 0) {
+                    ping(x + 1);
+                }
+            }
+        }
+        '''
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        class RecordingVisitor(ASTVisitor):
+            def __init__(self):
+                self.binary_ops = []
+                self.calls = []
+
+            def visit_BinaryOperation(self, node: BinaryOperation):
+                self.binary_ops.append(node.operator)
+                return self.generic_visit(node)
+
+            def visit_FunctionCall(self, node: FunctionCall):
+                if isinstance(node.function, Identifier):
+                    self.calls.append(node.function.name)
+                return self.generic_visit(node)
+
+        visitor = RecordingVisitor()
+        visitor.visit(ast)
+
+        self.assertIn('>', visitor.binary_ops)
+        self.assertIn('+', visitor.binary_ops)
+        self.assertIn('ping', visitor.calls)
+
+
+class TestTranspilerConfig(unittest.TestCase):
+    """Test the shared transpiler-config loader."""
+
+    def test_config_loader_normalizes_runtime_and_dependency_fields(self):
+        from transpiler.config import TranspilerConfig
+
+        cfg = TranspilerConfig.from_dict({
+            'runtimeReplacements': [{
+                'source': 'lib\\Ownable.sol',
+                'exports': ['Ownable'],
+                'interface': {
+                    'class': 'Ownable',
+                    'methods': [{'name': 'owner'}],
+                    'mixin': 'mixin code',
+                },
+            }],
+            'skipFiles': ['test\\Fixture.sol'],
+            'skipDirs': ['script\\deploy'],
+            'dependencyOverrides': {'UsesFoo': {'_foo': 'Foo'}},
+            'interfaceAliases': {'IFoo': 'Foo'},
+        })
+
+        self.assertTrue(cfg.runtime_replacement_for('src/lib/Ownable.sol'))
+        self.assertTrue(cfg.should_skip_file('test/Fixture.sol'))
+        self.assertTrue(cfg.should_skip_dir('script/deploy/Deploy.sol'))
+        self.assertEqual(cfg.dependency_overrides['UsesFoo']['_foo'], 'Foo')
+        self.assertEqual(cfg.interface_aliases['IFoo'], 'Foo')
+        self.assertIn('Ownable', cfg.runtime_replacement_classes)
+        self.assertEqual(cfg.runtime_replacement_methods['Ownable'], {'owner'})
+        self.assertEqual(cfg.runtime_replacement_mixins['Ownable'], 'mixin code')
+
+    def test_merge_config_preserves_existing_conflicts_and_adds_new_entries(self):
+        from transpiler.config import merge_config_updates
+
+        merged = merge_config_updates(
+            {
+                'skipFiles': ['legacy\\A.sol'],
+                'interfaceAliases': {'IFoo': 'Foo'},
+                'dependencyOverrides': {'UsesFoo': {'_foo': 'OldFoo'}},
+                'runtimeReplacements': [{
+                    'source': 'legacy\\Replacement.sol',
+                    'exports': ['OldReplacement'],
+                }],
+            },
+            skip_files=['new\\B.sol', 'legacy/A.sol'],
+            interface_aliases={'IFoo': 'NewFoo', 'IBar': 'Bar'},
+            dependency_overrides={
+                'UsesFoo': {'_foo': 'NewFoo', '_bar': 'Bar'},
+                'UsesBaz': {'_baz': ['Baz']},
+            },
+            runtime_replacements=[
+                {'source': 'legacy/Replacement.sol', 'exports': ['Duplicate']},
+                {'source': 'new/Replacement.sol', 'exports': ['NewReplacement']},
+            ],
+        )
+
+        self.assertEqual(merged['skipFiles'], ['legacy/A.sol', 'new/B.sol'])
+        self.assertEqual(merged['interfaceAliases']['IFoo'], 'Foo')
+        self.assertEqual(merged['interfaceAliases']['IBar'], 'Bar')
+        self.assertEqual(merged['dependencyOverrides']['UsesFoo']['_foo'], 'OldFoo')
+        self.assertEqual(merged['dependencyOverrides']['UsesFoo']['_bar'], 'Bar')
+        self.assertEqual(merged['dependencyOverrides']['UsesBaz']['_baz'], ['Baz'])
+        self.assertEqual(len(merged['runtimeReplacements']), 2)
+        self.assertEqual(
+            merged['runtimeReplacements'][1]['source'],
+            'new/Replacement.sol',
+        )
+
+    def test_dependency_resolver_uses_shared_config_loader(self):
+        import tempfile
+        from pathlib import Path
+        from transpiler.dependency_resolver import DependencyResolver
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'transpiler-config.json'
+            path.write_text('''{
+              "dependencyOverrides": {"UsesFoo": {"_foo": "Foo"}},
+              "interfaceAliases": {"IBar": "Bar"}
+            }''')
+
+            resolver = DependencyResolver(
+                overrides_path=str(path),
+                known_classes={'Foo', 'Bar'},
+            )
+
+        self.assertEqual(resolver.overrides['UsesFoo']['_foo'], 'Foo')
+        self.assertEqual(resolver.interface_aliases['IBar'], 'Bar')
+
+    def test_transpiler_uses_override_config_for_skip_files(self):
+        import tempfile
+        from pathlib import Path
+        from transpiler.sol2ts import SolidityToTypeScriptTranspiler
+
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'A.sol').write_text('contract A { function a() public {} }')
+            (tree / 'B.sol').write_text('contract B { function b() public {} }')
+            config_path = tree / 'transpiler-config.json'
+            config_path.write_text('{"skipFiles": ["B.sol"]}')
+
+            transpiler = SolidityToTypeScriptTranspiler(
+                source_dir=str(tree),
+                output_dir=str(tree / 'out'),
+                discovery_dirs=[str(tree)],
+                overrides_path=str(config_path),
+            )
+            results = transpiler.transpile_directory()
+
+        self.assertEqual(len(results), 1)
+        self.assertTrue(any(path.endswith('A.ts') for path in results))
+        self.assertFalse(any(path.endswith('B.ts') for path in results))
+
+    def test_runtime_replacement_wins_over_skip_file_and_avoids_parse(self):
+        import tempfile
+        from pathlib import Path
+        from transpiler.sol2ts import SolidityToTypeScriptTranspiler
+
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'Replaced.sol').write_text('contract Replaced {')
+            config_path = tree / 'transpiler-config.json'
+            config_path.write_text('''{
+              "runtimeReplacements": [{
+                "source": "Replaced.sol",
+                "runtimeModule": "../runtime-replacements",
+                "exports": ["Replaced"],
+                "reason": "test replacement"
+              }],
+              "skipFiles": ["Replaced.sol"]
+            }''')
+
+            transpiler = SolidityToTypeScriptTranspiler(
+                source_dir=str(tree),
+                output_dir=str(tree / 'out'),
+                overrides_path=str(config_path),
+            )
+            results = transpiler.transpile_directory()
+
+        self.assertEqual(len(results), 1)
+        output = next(iter(results.values()))
+        self.assertIn("export { Replaced } from '../runtime-replacements';", output)
+
+
+class TestPackaging(unittest.TestCase):
+    """Test standalone package metadata."""
+
+    def test_pyproject_declares_console_script_and_package_data(self):
+        import tomllib
+        from pathlib import Path
+
+        project_root = Path(__file__).parent
+        pyproject = tomllib.loads((project_root / 'pyproject.toml').read_text())
+
+        self.assertEqual(
+            pyproject['project']['scripts']['extruder'],
+            'transpiler.sol2ts:main',
+        )
+
+        package_data = set(pyproject['tool']['setuptools']['package-data']['transpiler'])
+        self.assertIn('runtime/*.ts', package_data)
+        self.assertIn('docs/*.md', package_data)
+        self.assertIn('transpiler-config.json', package_data)
+
+        self.assertTrue((project_root / 'runtime' / 'index.ts').exists())
+        self.assertTrue((project_root / 'docs' / 'quickstart.md').exists())
+        self.assertTrue((project_root / 'transpiler-config.json').exists())
+
 
 class TestStructDefaultValues(unittest.TestCase):
     """Test struct default value generation."""
@@ -841,6 +1076,115 @@ class TestTypeCastGeneration(unittest.TestCase):
 
         # Should produce something for the address cast
         self.assertIn('getAddr', output)
+
+
+class TestLoweringLayer(unittest.TestCase):
+    """Test pre-codegen AST lowering."""
+
+    def test_primitive_cast_call_lowers_to_type_cast_node(self):
+        from transpiler.lowering import lower_ast
+        from transpiler.parser.ast_nodes import ReturnStatement, TypeCast
+
+        source = '''
+        contract TestContract {
+            function cast(int256 x) public pure returns (uint256) {
+                return uint256(x);
+            }
+        }
+        '''
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        lowered = lower_ast(ast)
+        stmt = lowered.contracts[0].functions[0].body.statements[0]
+
+        self.assertIsInstance(stmt, ReturnStatement)
+        self.assertIsInstance(stmt.expression, TypeCast)
+        self.assertEqual(stmt.expression.type_name.name, 'uint256')
+
+
+class TestDeleteGeneration(unittest.TestCase):
+    """Test Solidity delete semantics in generated TypeScript."""
+
+    def test_delete_array_element_zero_writes(self):
+        source = '''
+        contract TestContract {
+            uint256[] values;
+
+            function clear(uint256 index) public {
+                delete values[index];
+            }
+        }
+        '''
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        generator = TypeScriptCodeGenerator()
+        output = generator.generate(ast)
+
+        self.assertIn('this.values[Number(index)] = 0n;', output)
+        self.assertNotIn('delete this.values', output)
+
+    def test_delete_state_variable_zero_writes(self):
+        source = '''
+        contract TestContract {
+            bool enabled;
+
+            function clear() public {
+                delete enabled;
+            }
+        }
+        '''
+
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+
+        generator = TypeScriptCodeGenerator()
+        output = generator.generate(ast)
+
+        self.assertIn('this.enabled = false;', output)
+        self.assertNotIn('delete this.enabled', output)
+
+
+class TestTranspileDirectoryCaching(unittest.TestCase):
+    """Test that directory transpilation reuses parsed ASTs after discovery."""
+
+    def test_directory_transpile_parses_each_file_once(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from transpiler.sol2ts import SolidityToTypeScriptTranspiler, Parser as Sol2TsParser
+
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td)
+            (tree / 'A.sol').write_text('contract A { function a() public {} }')
+            (tree / 'B.sol').write_text('contract B { function b() public {} }')
+
+            parse_count = [0]
+            original_parse = Sol2TsParser.parse
+
+            def counted_parse(parser_self):
+                parse_count[0] += 1
+                return original_parse(parser_self)
+
+            with patch.object(Sol2TsParser, 'parse', counted_parse):
+                transpiler = SolidityToTypeScriptTranspiler(
+                    source_dir=str(tree),
+                    output_dir=str(tree / 'out'),
+                    discovery_dirs=[str(tree)],
+                )
+                results = transpiler.transpile_directory()
+
+        self.assertEqual(parse_count[0], 2)
+        self.assertEqual(len(results), 2)
 
 
 # =============================================================================

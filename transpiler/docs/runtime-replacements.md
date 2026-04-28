@@ -126,3 +126,7 @@ now routes through your replacement.
   most.
 - **You just don't want this file transpiled.** Use `skipFiles` or
   `skipContracts` in the config; no replacement needed.
+
+If a source file appears in both `runtimeReplacements` and `skipFiles` or
+`skipDirs`, the runtime replacement wins. Remove the replacement entry when
+you mean "skip this entirely."

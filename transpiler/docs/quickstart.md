@@ -11,12 +11,14 @@ Clone extruder somewhere
 ```bash
 git clone <REPO_URL> ~/tools/extruder
 cd ~/tools/extruder
-python3 -m transpiler --help
+python3 -m pip install -e ./transpiler
+extruder --help
 ```
 
-Run extruder with `python3 -m transpiler` from the directory that contains the
-`transpiler/` package. Running `transpiler/sol2ts.py` directly will fail because
-the package uses relative imports.
+If you skip installation, run extruder with `python3 -m transpiler` from the
+directory that contains the `transpiler/` package. Running
+`transpiler/sol2ts.py` directly will fail because the package uses relative
+imports.
 
 Add the JS runtime deps to your own Foundry project:
 
@@ -29,7 +31,7 @@ npm install -D viem vitest
 
 ```bash
 cd ~/tools/extruder
-python3 -m transpiler init /path/to/your/foundry/project/src --yes
+extruder init /path/to/your/foundry/project/src --yes
 ```
 
 This scans `src/` and writes:
@@ -58,7 +60,7 @@ rather than silently.
 ## 4. Transpile
 
 ```bash
-python3 -m transpiler /path/to/your/foundry/project/src \
+extruder /path/to/your/foundry/project/src \
   -o /path/to/your/foundry/project/ts-output \
   -d /path/to/your/foundry/project/src \
   --emit-metadata

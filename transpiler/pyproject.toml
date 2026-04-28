@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extruder"
+version = "0.1.0"
+description = "Source-to-source Solidity to TypeScript transpiler"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0" }
+authors = [
+  { name = "Chomp" }
+]
+
+[project.scripts]
+extruder = "transpiler.sol2ts:main"
+
+[tool.setuptools]
+packages = [
+  "transpiler",
+  "transpiler.codegen",
+  "transpiler.dependency_resolver",
+  "transpiler.lexer",
+  "transpiler.parser",
+  "transpiler.type_system",
+]
+
+[tool.setuptools.package-dir]
+transpiler = "."
+
+[tool.setuptools.package-data]
+transpiler = [
+  "docs/*.md",
+  "runtime/*.ts",
+  "transpiler-config.json",
+  "tsconfig.json",
+]
