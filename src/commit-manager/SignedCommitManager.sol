@@ -82,13 +82,11 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         bytes calldata committerSignature,
         bytes calldata revealerSignature
     ) external {
-        // Use lightweight getter (validates internally, reverts on bad state)
         (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        // Compute the committer's move hash
         bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
-        // Verify the committer's signature over SignedCommit
+        // Scoped to keep `commit`/`reveal` structs from sharing stack space across recoveries.
         {
             SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
                 moveHash: committerMoveHash,
@@ -101,7 +99,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             }
         }
 
-        // Verify the revealer's signature over DualSignedReveal
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
                 battleKey: battleKey,
@@ -117,10 +114,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             }
         }
 
-        // Execute with moves in a single call (engine validates during execution)
-        // No playerData updates needed - engine tracks lastExecuteTimestamp for timeouts
         if (turnId % 2 == 0) {
-            // Committer is p0
             ENGINE.executeWithMoves(
                 battleKey,
                 committerMoveIndex,
@@ -131,7 +125,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
                 revealerExtraData
             );
         } else {
-            // Committer is p1
             ENGINE.executeWithMoves(
                 battleKey,
                 revealerMoveIndex,

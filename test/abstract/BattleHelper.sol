@@ -170,4 +170,19 @@ abstract contract BattleHelper is Test {
             ability: 0
         });
     }
+
+    /// @dev Layout used by `test/mocks/StatBoostsMove.sol`:
+    /// `[boostAmount:8 (signed) | statIndex:4 | monIndex:3 | playerIndex:1]`
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount)
+        internal
+        pure
+        returns (uint16)
+    {
+        return uint16(
+            (playerIndex & 0x1)
+            | ((monIndex & 0x7) << 1)
+            | ((statIndex & 0xF) << 4)
+            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
+        );
+    }
 }

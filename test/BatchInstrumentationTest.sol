@@ -13,7 +13,7 @@ import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
-import {EIP712} from "../src/lib/EIP712.sol";
+import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
 
 import {IEngine} from "../src/IEngine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
@@ -30,7 +30,7 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// Counts SLOAD / SSTORE access patterns on a warm steady-state turn, to ground the PLAN_OPT.md
 /// gas math in real data instead of estimates.
-contract BatchInstrumentationTest is Test, EIP712 {
+contract BatchInstrumentationTest is SignedCommitHelper {
 
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
@@ -46,10 +46,6 @@ contract BatchInstrumentationTest is Test, EIP712 {
     ITypeCalculator typeCalc;
     TestTeamRegistry defaultRegistry;
     StandardAttackFactory attackFactory;
-
-    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return ("SignedCommitManager", "1");
-    }
 
     function setUp() public {
         p0 = vm.addr(P0_PK);
@@ -103,61 +99,6 @@ contract BatchInstrumentationTest is Test, EIP712 {
         return battleKey;
     }
 
-    function _signDualReveal(
-        uint256 privateKey,
-        bytes32 battleKey,
-        uint64 turnId,
-        bytes32 committerMoveHash,
-        uint8 revealerMoveIndex,
-        uint104 revealerSalt,
-        uint16 revealerExtraData
-    ) internal view returns (bytes memory) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
-            SignedCommitLib.DualSignedReveal({
-                battleKey: battleKey,
-                turnId: turnId,
-                committerMoveHash: committerMoveHash,
-                revealerMoveIndex: revealerMoveIndex,
-                revealerSalt: revealerSalt,
-                revealerExtraData: revealerExtraData
-            })
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
-    function _signCommit(uint256 privateKey, bytes32 moveHash, bytes32 battleKey, uint64 turnId)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashSignedCommit(
-            SignedCommitLib.SignedCommit({moveHash: moveHash, battleKey: battleKey, turnId: turnId})
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     function _fastTurn(
         bytes32 battleKey,
         uint8 p0MoveIndex,
@@ -197,9 +138,10 @@ contract BatchInstrumentationTest is Test, EIP712 {
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-        bytes memory committerSig = _signCommit(committerPk, committerMoveHash, battleKey, turnId);
+        address mgr = address(signedCommitManager);
+        bytes memory committerSig = _signCommit(mgr, committerPk, committerMoveHash, battleKey, turnId);
         bytes memory revealerSig = _signDualReveal(
-            revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
+            mgr, revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
         );
 
         vm.prank(committer);

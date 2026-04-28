@@ -436,13 +436,11 @@ contract BetterCPUTest is Test {
 
         // CPU mon is faster than Alice's so attack ordering is deterministic regardless
         // of the engine's RNG-based speed-tie breaker.
-        Mon memory aliceMon = _createMon(Type.Fire, 100, 50, 10);
+        Mon memory aliceMon = _createMonWithSpeed(Type.Fire, 100, 50, 10, 10);
         aliceMon.moves = moves;
-        Mon memory cpuMon = _createMon(Type.Fire, 100, 50, 10);
-        cpuMon.stats.speed = 100;
+        Mon memory cpuMon = _createMonWithSpeed(Type.Fire, 100, 50, 10, 100);
         cpuMon.moves = moves;
 
-        // Need 2 mons per team
         Mon[] memory aliceTeam = new Mon[](2);
         aliceTeam[0] = aliceMon;
         aliceTeam[1] = aliceMon;
@@ -1066,11 +1064,9 @@ contract BetterCPUTest is Test {
 
         // CPU mons are faster so they attack first and get to deal damage before being KO'd.
         Mon[] memory cpuTeam = new Mon[](2);
-        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
-        cpuTeam[0].stats.speed = 100;
+        cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 100);
         cpuTeam[0].moves = moves;
-        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
-        cpuTeam[1].stats.speed = 100;
+        cpuTeam[1] = _createMonWithSpeed(Type.Fire, 100, 50, 10, 100);
         cpuTeam[1].moves = moves;
 
         Mon[] memory aliceTeam = new Mon[](2);

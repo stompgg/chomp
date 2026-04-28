@@ -60,8 +60,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Both players sign off-chain
-        bytes memory p0CommitSig = _signCommit(P0_PK, p0MoveHash, battleKey, 0);
-        bytes memory p1Signature = _signDualReveal(
+        bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey, 0);
+        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
             P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
         );
 
@@ -128,8 +128,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         uint104 p1Salt = uint104(101);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
-        bytes memory p0CommitSig = _signCommit(P0_PK, p0MoveHash, battleKey, 2);
-        bytes memory p1Signature = _signDualReveal(
+        bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey, 2);
+        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
             P1_PK, battleKey, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0
         );
 
@@ -186,8 +186,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             uint104 p1Salt = uint104(2);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
-            bytes memory p0CommitSig = _signCommit(P0_PK, p0MoveHash, battleKey2, 0);
-            bytes memory p1Signature = _signDualReveal(
+            bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey2, 0);
+            bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
                 P1_PK, battleKey2, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
             );
 
@@ -240,8 +240,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             uint104 p1Salt = uint104(101);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
-            bytes memory p0CommitSig = _signCommit(P0_PK, p0MoveHash, battleKey2, 2);
-            bytes memory p1Signature = _signDualReveal(
+            bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey2, 2);
+            bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
                 P1_PK, battleKey2, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0
             );
 

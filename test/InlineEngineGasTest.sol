@@ -15,7 +15,7 @@ import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
-import {EIP712} from "../src/lib/EIP712.sol";
+import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
@@ -59,16 +59,6 @@ contract InlineEngineGasTest is Test, BattleHelper {
     // Inline validation constants
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
-
-    // Pack into 16 bits: [boostAmount:8 | statIndex:4 | monIndex:3 | playerIndex:1]
-    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint16) {
-        return uint16(
-            (playerIndex & 0x1)
-            | ((monIndex & 0x7) << 1)
-            | ((statIndex & 0xF) << 4)
-            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
-        );
-    }
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
@@ -569,7 +559,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
 ///         SignedMatchmaker (no propose/accept/confirm storage), and
 ///         SignedCommitManager::executeWithDualSignedMoves (1 TX per two-player turn).
 /// @dev Forced single-player switches after KOs use SignedCommitManager::executeSinglePlayerMove.
-contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
+contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
@@ -589,20 +579,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
     // across one pass. Cleared between passes.
     mapping(bytes32 => bool) private _seenSlot;
     bytes32[] private _seenKeys;
-
-    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return ("SignedCommitManager", "1");
-    }
-
-    // Pack into 16 bits: [boostAmount:8 | statIndex:4 | monIndex:3 | playerIndex:1]
-    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint16) {
-        return uint16(
-            (playerIndex & 0x1)
-            | ((monIndex & 0x7) << 1)
-            | ((statIndex & 0xF) << 4)
-            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
-        );
-    }
 
     function setUp() public {
         p0 = vm.addr(P0_PK);
@@ -657,61 +633,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         return battleKey;
     }
 
-    function _signDualReveal(
-        uint256 privateKey,
-        bytes32 battleKey,
-        uint64 turnId,
-        bytes32 committerMoveHash,
-        uint8 revealerMoveIndex,
-        uint104 revealerSalt,
-        uint16 revealerExtraData
-    ) internal view returns (bytes memory) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
-            SignedCommitLib.DualSignedReveal({
-                battleKey: battleKey,
-                turnId: turnId,
-                committerMoveHash: committerMoveHash,
-                revealerMoveIndex: revealerMoveIndex,
-                revealerSalt: revealerSalt,
-                revealerExtraData: revealerExtraData
-            })
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
-    function _signCommit(uint256 privateKey, bytes32 moveHash, bytes32 battleKey, uint64 turnId)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashSignedCommit(
-            SignedCommitLib.SignedCommit({moveHash: moveHash, battleKey: battleKey, turnId: turnId})
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     /// @dev Executes a two-player turn in 1 TX via executeWithDualSignedMoves.
     ///      p0Move/p1Move semantics match _commitRevealExecuteForAliceAndBob so the
     ///      battle scripts can be transcribed directly from the non-optimized test.
@@ -754,9 +675,10 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-        bytes memory committerSig = _signCommit(committerPk, committerMoveHash, battleKey, turnId);
+        address mgr = address(signedCommitManager);
+        bytes memory committerSig = _signCommit(mgr, committerPk, committerMoveHash, battleKey, turnId);
         bytes memory revealerSig = _signDualReveal(
-            revealerPk, battleKey, turnId, committerMoveHash,
+            mgr, revealerPk, battleKey, turnId, committerMoveHash,
             revealerMoveIndex, revealerSalt, revealerExtraData
         );
 

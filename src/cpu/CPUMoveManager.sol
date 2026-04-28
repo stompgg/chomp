@@ -45,6 +45,8 @@ abstract contract CPUMoveManager {
         // P1's turn or both players move: CPU calculates its move. Fetch the full context now.
         CPUContext memory ctx = ENGINE.getCPUContext(battleKey);
         (uint128 cpuMoveIndex, uint16 cpuExtraData) = ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
+        // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
+        // RNG source within the seconds-to-minutes commit-reveal window.
         uint104 p1Salt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
 
         if (playerSwitchForTurnFlag == 1) {
