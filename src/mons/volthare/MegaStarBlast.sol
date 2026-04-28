@@ -52,7 +52,7 @@ contract MegaStarBlast is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) external {
         // Check if Overclock is active
@@ -104,7 +104,7 @@ contract MegaStarBlast is IMoveSet {
         return MoveClass.Special;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

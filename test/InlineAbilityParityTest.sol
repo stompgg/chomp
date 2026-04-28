@@ -117,7 +117,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         // Turn 0: both switch in
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "p0 should have effect");
@@ -139,18 +139,18 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         // Turn 0: switch in mon 0
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         assertEq(_countEffect(battleKey, 0, 0, address(singletonAbility)), 1, "should have 1 effect");
 
         // Switch to mon 1 then back to mon 0
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
+            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
+            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
         );
 
         assertEq(_countEffect(battleKey, 0, 0, address(singletonAbility)), 1, "should still have exactly 1 effect");
@@ -170,7 +170,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         // Turn 0
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Execute 2 attack turns — AfterDamage should increment counter each time
@@ -205,7 +205,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         // Turn 0
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // EffectAbility adds dummyEffect — verify it's registered
@@ -233,14 +233,14 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         // Turn 0: switch in mon 0 (inline)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "alice mon 0 should have inline effect");
 
         // Alice switches to mon 1 (external)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
+            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
         assertTrue(_hasEffect(battleKey, 0, 1, address(dummyEffect)), "alice mon 1 should have external effect");
     }
@@ -260,7 +260,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "p0 should have inline effect");

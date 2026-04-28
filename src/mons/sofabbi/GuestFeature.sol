@@ -30,7 +30,7 @@ contract GuestFeature is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256,
         uint256,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) external {
         uint256 monIndex = uint256(extraData);
@@ -67,7 +67,7 @@ contract GuestFeature is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

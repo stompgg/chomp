@@ -47,11 +47,11 @@ struct Battle {
     IEngineHook[] engineHooks;
 }
 
-// Packed into 1 storage slot (8 + 240 = 248 bits)
+// Packed into 1 storage slot (8 + 16 = 24 bits)
 // packedMoveIndex: lower 7 bits = moveIndex (0-127), bit 7 = isRealTurn (1 = real, 0 = not set)
 struct MoveDecision {
     uint8 packedMoveIndex;
-    uint240 extraData;
+    uint16 extraData;
 }
 
 // Stored by the Engine, tracks immutable battle data and battle state
@@ -81,8 +81,8 @@ struct BattleConfig {
     uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
     bool hasInlineStaminaRegen; //   8
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
-    bytes32 p0Salt;
-    bytes32 p1Salt;
+    uint104 p0Salt;
+    uint104 p1Salt;
     MoveDecision p0Move;
     MoveDecision p1Move;
     mapping(uint256 index => Mon) p0Team;
@@ -118,8 +118,8 @@ struct BattleConfigView {
     uint96 packedP1EffectsCount;
     uint8 teamSizes;
     uint40 startTimestamp; // Needed client-side for the getGlobalKV freshness gate
-    bytes32 p0Salt;
-    bytes32 p1Salt;
+    uint104 p0Salt;
+    uint104 p1Salt;
     MoveDecision p0Move;
     MoveDecision p1Move;
     EffectInstance[] globalEffects;
@@ -185,8 +185,8 @@ struct PlayerDecisionData {
 
 struct RevealedMove {
     uint8 moveIndex;
-    uint240 extraData;
-    bytes32 salt;
+    uint16 extraData;
+    uint104 salt;
 }
 
 // Used for StatBoosts

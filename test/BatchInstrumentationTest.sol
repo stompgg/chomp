@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import "../lib/forge-std/src/Test.sol";
-
 import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
@@ -29,16 +28,9 @@ import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
-/// @title StandardAttack PvP gas benchmark
-/// @notice Measures the per-turn cost of a fully-optimized PvP battle whose moves are real
-///         StandardAttack-derived contracts (the production shape for ~30 mon move contracts
-///         in src/mons/). Uses the production TypeCalculator (which delegates to TypeCalcLib)
-///         so pre/post numbers reflect only gas-path changes, not type-chart differences.
-///
-///         Existing PvP benchmarks (FullyOptimizedInlineGasTest) use CustomAttack /
-///         EffectAttack / StatBoostsMove — none of which extend StandardAttack — so the
-///         StandardAttack hot path doesn't show up there.
-contract StandardAttackPvPGasTest is Test, EIP712 {
+/// Counts SLOAD / SSTORE access patterns on a warm steady-state turn, to ground the PLAN_OPT.md
+/// gas math in real data instead of estimates.
+contract BatchInstrumentationTest is Test, EIP712 {
 
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
@@ -66,12 +58,7 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
         engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         signedMatchmaker = new SignedMatchmaker(engine);
-
-        // Production TypeCalculator wraps TypeCalcLib — same chart the engine's internal
-        // dispatch path uses. With this, moving from StandardAttack._move to
-        // engine.dispatchStandardAttack is a pure code-path swap, no damage-value drift.
         typeCalc = new TypeCalculator();
-
         defaultRegistry = new TestTeamRegistry();
         attackFactory = new StandardAttackFactory(typeCalc);
     }
@@ -95,8 +82,8 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
                 p1: p1,
                 p1TeamIndex: 0,
                 teamRegistry: defaultRegistry,
-                validator: IValidator(address(0)), // inline validator
-                rngOracle: IRandomnessOracle(address(0)), // inline RNG
+                validator: IValidator(address(0)),
+                rngOracle: IRandomnessOracle(address(0)),
                 ruleset: ruleset,
                 moveManager: address(signedCommitManager),
                 matchmaker: signedMatchmaker,
@@ -218,14 +205,9 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
         vm.prank(committer);
         signedCommitManager.executeWithDualSignedMoves(
             battleKey,
-            committerMoveIndex,
-            committerSalt,
-            committerExtraData,
-            revealerMoveIndex,
-            revealerSalt,
-            revealerExtraData,
-            committerSig,
-            revealerSig
+            committerMoveIndex, committerSalt, committerExtraData,
+            revealerMoveIndex, revealerSalt, revealerExtraData,
+            committerSig, revealerSig
         );
         engine.resetCallContext();
     }
@@ -233,7 +215,7 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
     function _createMon(Type t1) internal pure returns (Mon memory) {
         return Mon({
             stats: MonStats({
-                hp: 10000, // High HP — no KOs during the measured window
+                hp: 10000,
                 stamina: 50,
                 speed: 10,
                 attack: 30,
@@ -248,40 +230,96 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
         });
     }
 
-    /// @notice Hot-path benchmark: PvP battle, 4 turns of damage trades using two real
-    ///         StandardAttack-derived moves. No KOs, no switches, no effects — isolates
-    ///         the StandardAttack._move → AttackCalculator → engine.dealDamage path that
-    ///         4-B will collapse into engine.dispatchStandardAttack.
-    function test_standardAttackPvP_damageTrade() public {
-        // Two damage-only StandardAttack moves. Both Fire → Fire (TypeCalcLib: 1x baseline).
+    /// @dev Iterates account accesses returned by stopAndReturnStateDiff and counts SLOAD/SSTORE
+    /// per (account, slot) — distinguishing first-touch (cold) from subsequent (warm), and
+    /// for SSTORE distinguishing zero→nonzero / nonzero→nonzero / no-op.
+    function _summarizeAccesses(Vm.AccountAccess[] memory accesses)
+        internal
+        pure
+        returns (
+            uint256 totalSloadCount,
+            uint256 totalSstoreCount,
+            uint256 coldSloads,
+            uint256 warmSloads,
+            uint256 coldSstores,
+            uint256 warmSstores,
+            uint256 zeroToNonzeroSstores,
+            uint256 nonzeroToNonzeroSstores,
+            uint256 noopSstores,
+            uint256 uniqueSlotsTouched,
+            uint256 multiWriteSlots
+        )
+    {
+        // Count slot-touch frequencies via a small fixed-capacity table (we don't expect many uniques)
+        bytes32[] memory keys = new bytes32[](256);
+        uint8[] memory writes = new uint8[](256);
+        bool[] memory reads = new bool[](256);
+        uint256 keyCount;
+
+        for (uint256 i = 0; i < accesses.length; i++) {
+            Vm.StorageAccess[] memory storageAccesses = accesses[i].storageAccesses;
+            for (uint256 j = 0; j < storageAccesses.length; j++) {
+                Vm.StorageAccess memory a = storageAccesses[j];
+                bytes32 key = keccak256(abi.encode(a.account, a.slot));
+
+                // Locate or create entry
+                uint256 idx = keyCount;
+                for (uint256 k = 0; k < keyCount; k++) {
+                    if (keys[k] == key) {
+                        idx = k;
+                        break;
+                    }
+                }
+                if (idx == keyCount) {
+                    keys[idx] = key;
+                    keyCount++;
+                }
+
+                if (a.isWrite) {
+                    totalSstoreCount++;
+                    writes[idx]++;
+                    if (a.previousValue == bytes32(0) && a.newValue != bytes32(0)) zeroToNonzeroSstores++;
+                    else if (a.previousValue != bytes32(0) && a.newValue != bytes32(0) && a.previousValue != a.newValue)
+                        nonzeroToNonzeroSstores++;
+                    else if (a.previousValue == a.newValue) noopSstores++;
+
+                    if (writes[idx] == 1 && !reads[idx]) {
+                        coldSstores++;
+                    } else {
+                        warmSstores++;
+                    }
+                } else {
+                    totalSloadCount++;
+                    if (!reads[idx] && writes[idx] == 0) {
+                        coldSloads++;
+                        reads[idx] = true;
+                    } else {
+                        warmSloads++;
+                    }
+                }
+            }
+        }
+
+        uniqueSlotsTouched = keyCount;
+        for (uint256 i = 0; i < keyCount; i++) {
+            if (writes[i] >= 2) multiWriteSlots++;
+        }
+    }
+
+    /// @notice Per-turn storage-access profile for a clean PvP damage-trade turn (steady state).
+    function test_storageAccessProfile_cleanDamageTradeTurn() public {
         IMoveSet moveA = attackFactory.createAttack(
             ATTACK_PARAMS({
-                BASE_POWER: 30,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "AttackA",
-                EFFECT: IEffect(address(0))
+                BASE_POWER: 30, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "AttackA", EFFECT: IEffect(address(0))
             })
         );
         IMoveSet moveB = attackFactory.createAttack(
             ATTACK_PARAMS({
-                BASE_POWER: 25,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Special,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "AttackB",
-                EFFECT: IEffect(address(0))
+                BASE_POWER: 25, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Special,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "AttackB", EFFECT: IEffect(address(0))
             })
         );
 
@@ -293,56 +331,48 @@ contract StandardAttackPvPGasTest is Test, EIP712 {
         mon.moves[3] = uint256(uint160(address(moveB)));
 
         Mon[] memory team = new Mon[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            team[i] = mon;
-        }
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
         defaultRegistry.setTeam(p0, team);
         defaultRegistry.setTeam(p1, team);
 
-        // Inline stamina-regen ruleset — production-shape.
         IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
-
         bytes32 battleKey = _startBattle(ruleset);
         vm.warp(vm.getBlockTimestamp() + 1);
 
-        // Turn 0: lead-in switch.
-        vm.startSnapshotGas("Turn0_Lead");
+        // Warm-up: lead-in switch + 1 damage trade.
         _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
-        uint256 turn0 = vm.stopSnapshotGas("Turn0_Lead");
-
-        // Turns 1-4: pure damage trades. Both players use move 0 / move 1 alternately.
-        // No effects fire, no KOs (mon HP is 10000), so this is isolated dispatch cost.
-        vm.startSnapshotGas("Turn1_BothAttack");
         _fastTurn(battleKey, 0, 0, 0, 0);
-        uint256 turn1 = vm.stopSnapshotGas("Turn1_BothAttack");
 
-        vm.startSnapshotGas("Turn2_BothAttack");
+        // Now profile a steady-state warm turn.
+        vm.startStateDiffRecording();
         _fastTurn(battleKey, 1, 1, 0, 0);
-        uint256 turn2 = vm.stopSnapshotGas("Turn2_BothAttack");
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
 
-        vm.startSnapshotGas("Turn3_BothAttack");
-        _fastTurn(battleKey, 0, 1, 0, 0);
-        uint256 turn3 = vm.stopSnapshotGas("Turn3_BothAttack");
+        (
+            uint256 totalSload,
+            uint256 totalSstore,
+            uint256 coldSload,
+            uint256 warmSload,
+            uint256 coldSstore,
+            uint256 warmSstore,
+            uint256 z2nz,
+            uint256 nz2nz,
+            uint256 noop,
+            uint256 unique,
+            uint256 multiWrite
+        ) = _summarizeAccesses(diffs);
 
-        vm.startSnapshotGas("Turn4_BothAttack");
-        _fastTurn(battleKey, 1, 0, 0, 0);
-        uint256 turn4 = vm.stopSnapshotGas("Turn4_BothAttack");
-
-        // Sanity: battle still in progress, both mons still alive.
-        assertEq(engine.getWinner(battleKey), address(0), "battle must still be in progress");
-        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 2, "flag must still be 2");
-
-        uint256 avg = (turn1 + turn2 + turn3 + turn4) / 4;
-
-        console.log("========================================");
-        console.log("StandardAttack PvP damage-trade benchmark");
-        console.log("========================================");
-        console.log("Turn 0 (lead select)              :", turn0);
-        console.log("Turn 1 (both attack, move 0)      :", turn1);
-        console.log("Turn 2 (both attack, move 1)      :", turn2);
-        console.log("Turn 3 (mixed)                    :", turn3);
-        console.log("Turn 4 (mixed)                    :", turn4);
-        console.log("Average flag==2 attack turn       :", avg);
-        console.log("========================================");
+        console.log("=== CLEAN DAMAGE-TRADE TURN - STORAGE PROFILE ===");
+        console.log("Total SLOADs                   :", totalSload);
+        console.log("  Cold (first-touch in tx)     :", coldSload);
+        console.log("  Warm                         :", warmSload);
+        console.log("Total SSTOREs                  :", totalSstore);
+        console.log("  Cold (first-touch in tx)     :", coldSstore);
+        console.log("  Warm                         :", warmSstore);
+        console.log("    zero -> nonzero            :", z2nz);
+        console.log("    nonzero -> nonzero (diff)  :", nz2nz);
+        console.log("    no-op (same value)         :", noop);
+        console.log("Unique slots touched           :", unique);
+        console.log("Slots written 2+ times in turn :", multiWrite);
     }
 }

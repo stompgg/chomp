@@ -51,7 +51,7 @@ contract HoneyBribe is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256
     ) external {
         // Heal active mon by max HP / 2**bribeLevel
@@ -110,7 +110,7 @@ contract HoneyBribe is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

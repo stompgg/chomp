@@ -103,7 +103,7 @@ contract DefaultValidator is IValidator {
         bytes32 battleKey,
         uint256 moveIndex,
         uint256 playerIndex,
-        uint240 extraData
+        uint16 extraData
     ) public view returns (bool) {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         uint256 activeMonIndex = (playerIndex == 0) ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
@@ -127,7 +127,7 @@ contract DefaultValidator is IValidator {
     }
 
     // Validates that you can't switch to the same mon, you have enough stamina, the move isn't disabled, etc.
-    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
+    function validatePlayerMove(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
         view
         returns (bool)
@@ -191,7 +191,7 @@ contract DefaultValidator is IValidator {
         bytes32 battleKey,
         uint256 moveIndex,
         uint256 playerIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256 activeMonIndex,
         ValidationContext memory vctx
     ) internal view returns (bool) {

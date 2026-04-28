@@ -124,7 +124,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify that Bob's mon took damage from PreemptiveShock
@@ -207,11 +207,11 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses the Overclock move (move index 0), Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), 0);
 
         // Verify that Overclock is applied
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
@@ -222,7 +222,7 @@ contract VolthareTest is Test, BattleHelper {
         mockOracle.setRNG(2);
 
         // Alice uses Mega Star Blast (move index 1), Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
 
         // Verify that Bob's mon is zapped
         (effects,) = engine.getEffects(battleKey, 1, 0);
@@ -237,7 +237,7 @@ contract VolthareTest is Test, BattleHelper {
         mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
 
         // Alice uses Mega Star Blast, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
 
         // Verify that Bob's mon is not zapped (again)
         (effects,) = engine.getEffects(battleKey, 1, 0);
@@ -303,7 +303,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // Both players send in their mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob applies Overclock (stored with player index 1). Alice does nothing.
@@ -320,7 +320,7 @@ contract VolthareTest is Test, BattleHelper {
         mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
 
         // Alice uses MegaStarBlast. Bob does nothing.
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint240(0), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
 
         // Overclock should still be present (Alice cannot clear Bob's Overclock)
         (effects,) = engine.getEffects(battleKey, 2, 0);
@@ -396,7 +396,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Both players use Dual Shock, Alice should move first and skip their next move

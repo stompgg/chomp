@@ -24,10 +24,10 @@ contract GildedRecovery is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256,
-        uint240 extraData,
+        uint16 extraData,
         uint256
     ) external {
-        // extraData contains the mon index as raw uint240
+        // extraData contains the mon index as raw uint16
         uint256 targetMonIndex = uint256(extraData);
 
         // Check if the target mon has a status effect
@@ -84,7 +84,7 @@ contract GildedRecovery is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

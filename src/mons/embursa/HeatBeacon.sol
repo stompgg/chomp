@@ -28,7 +28,7 @@ contract HeatBeacon is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256
     ) external {
         // Apply burn to opposing mon
@@ -56,7 +56,7 @@ contract HeatBeacon is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

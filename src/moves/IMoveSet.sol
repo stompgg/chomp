@@ -13,7 +13,7 @@ interface IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) external;
     function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) external view returns (uint32);
@@ -22,7 +22,7 @@ interface IMoveSet {
         view
         returns (uint32);
     function moveType(IEngine engine, bytes32 battleKey) external view returns (Type);
-    function isValidTarget(IEngine engine, bytes32 battleKey, uint240 extraData) external view returns (bool);
+    function isValidTarget(IEngine engine, bytes32 battleKey, uint16 extraData) external view returns (bool);
     function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass);
     function extraDataType() external view returns (ExtraDataType);
 

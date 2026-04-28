@@ -97,7 +97,7 @@ contract GorillaxTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice chooses to attack, Bob chooses to do nothing for CHARGE_COUNT rounds
@@ -168,12 +168,12 @@ contract GorillaxTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Rock Pull, Bob switches to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint240(0), uint240(1)
+            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint16(0), uint16(1)
         );
 
         // Assert that Bob's mon index 0 took damage
@@ -184,7 +184,7 @@ contract GorillaxTest is Test, BattleHelper {
 
         // Alice uses Rock Pull, Bob does not switch
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Assert that Alice's mon index 0 took damage

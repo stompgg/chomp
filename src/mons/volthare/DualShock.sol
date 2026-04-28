@@ -45,7 +45,7 @@ contract DualShock is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) public override {
         // Deal the damage

@@ -37,18 +37,18 @@ interface IEngine {
         uint256 rng
     ) external returns (int32 damage, bytes32 eventType);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
     function execute(bytes32 battleKey) external;
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
-        bytes32 p0Salt,
-        uint240 p0ExtraData,
+        uint104 p0Salt,
+        uint16 p0ExtraData,
         uint8 p1MoveIndex,
-        bytes32 p1Salt,
-        uint240 p1ExtraData
+        uint104 p1Salt,
+        uint16 p1ExtraData
     ) external;
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external;
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external;
     function resetCallContext() external;
 
     // Getters
@@ -94,7 +94,7 @@ interface IEngine {
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
-    function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
+    function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
         returns (bool);
     function getEffects(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)

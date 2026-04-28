@@ -40,14 +40,14 @@ library SignedCommitLib {
         uint64 turnId;
         bytes32 committerMoveHash; // A's hash that B signs over
         uint8 revealerMoveIndex;
-        bytes32 revealerSalt;
-        uint240 revealerExtraData;
+        uint104 revealerSalt;
+        uint16 revealerExtraData;
     }
 
     /// @notice Computes the type hash for DualSignedReveal
     function computeDualSignedRevealTypehash() internal pure returns (bytes32) {
         return keccak256(
-            "DualSignedReveal(bytes32 battleKey,uint64 turnId,bytes32 committerMoveHash,uint8 revealerMoveIndex,bytes32 revealerSalt,uint240 revealerExtraData)"
+            "DualSignedReveal(bytes32 battleKey,uint64 turnId,bytes32 committerMoveHash,uint8 revealerMoveIndex,uint104 revealerSalt,uint16 revealerExtraData)"
         );
     }
 
@@ -58,7 +58,7 @@ library SignedCommitLib {
         return keccak256(
             abi.encode(
                 keccak256(
-                    "DualSignedReveal(bytes32 battleKey,uint64 turnId,bytes32 committerMoveHash,uint8 revealerMoveIndex,bytes32 revealerSalt,uint240 revealerExtraData)"
+                    "DualSignedReveal(bytes32 battleKey,uint64 turnId,bytes32 committerMoveHash,uint8 revealerMoveIndex,uint104 revealerSalt,uint16 revealerExtraData)"
                 ),
                 reveal.battleKey,
                 reveal.turnId,

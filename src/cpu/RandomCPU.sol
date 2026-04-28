@@ -15,10 +15,10 @@ contract RandomCPU is CPU {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(CPUContext memory ctx, uint8, uint240)
+    function calculateMove(CPUContext memory ctx, uint8, uint16)
         external
         override
-        returns (uint128 moveIndex, uint240 extraData)
+        returns (uint128 moveIndex, uint16 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
             _calculateValidMoves(ctx);
