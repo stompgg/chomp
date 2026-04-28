@@ -28,7 +28,7 @@ Module layout:
 
 import shutil
 from pathlib import Path
-from typing import Optional, List, Dict, Set
+from typing import Optional, List, Dict
 
 # Import from refactored modules
 from .lexer import Lexer
@@ -70,12 +70,6 @@ class SolidityToTypeScriptTranspiler:
         # Load consolidated transpiler configuration
         config_path = self.overrides_path or TranspilerConfig.default_path()
         self.config = TranspilerConfig.load(config_path, warn_missing=True)
-        self.runtime_replacements: Dict[str, dict] = self.config.runtime_replacements
-        self.runtime_replacement_classes: Set[str] = self.config.runtime_replacement_classes
-        self.runtime_replacement_mixins: Dict[str, str] = self.config.runtime_replacement_mixins
-        self.runtime_replacement_methods: Dict[str, Set[str]] = self.config.runtime_replacement_methods
-        self.skip_files: Set[str] = self.config.skip_files
-        self.skip_dirs: Set[str] = self.config.skip_dirs
 
         # Run type discovery on specified directories
         if discovery_dirs:
@@ -187,9 +181,9 @@ class SolidityToTypeScriptTranspiler:
             self.registry if use_registry else None,
             file_depth=file_depth,
             current_file_path=current_file_path,
-            runtime_replacement_classes=self.runtime_replacement_classes,
-            runtime_replacement_mixins=self.runtime_replacement_mixins,
-            runtime_replacement_methods=self.runtime_replacement_methods,
+            runtime_replacement_classes=self.config.runtime_replacement_classes,
+            runtime_replacement_mixins=self.config.runtime_replacement_mixins,
+            runtime_replacement_methods=self.config.runtime_replacement_methods,
         )
         return generator.generate(ast)
 
