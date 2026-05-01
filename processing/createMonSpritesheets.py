@@ -132,7 +132,17 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
     metadata = {}
     all_frames, all_switch_frames = [], []
 
-    for gif_path in gif_files:
+    # Damage gifs (e.g. aurox_front_damage.gif) are not standalone entries —
+    # their frames get attached to the matching {mon}_front.gif entry as a
+    # `damageFront` sub-key, and are packed into the spritesheet immediately
+    # after the parent's idle frames so related frames stay contiguous.
+    regular_gifs = [g for g in gif_files if "_front_damage" not in Path(g).name.lower()]
+    damage_gifs = [g for g in gif_files if "_front_damage" in Path(g).name.lower()]
+    damage_by_parent = {
+        Path(g).name.replace("_front_damage.gif", "_front.gif"): g for g in damage_gifs
+    }
+
+    for gif_path in regular_gifs:
         name = Path(gif_path).name
         frames, frame_rate = extract_frames(gif_path)
         print(f"Extracted {len(frames)} frames from {name} (frame rate: {frame_rate}ms)")
@@ -142,6 +152,18 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         all_frames.extend(frames)
         metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames)}
 
+        # Damage frames immediately follow the idle frames for this mon
+        if name in damage_by_parent:
+            damage_path = damage_by_parent.pop(name)
+            damage_name = Path(damage_path).name
+            d_frames, d_rate = extract_frames(damage_path)
+            damage_start = len(all_frames)
+            all_frames.extend(d_frames)
+            metadata[name]["_damage_start"] = damage_start
+            metadata[name]["_damage_count"] = len(d_frames)
+            metadata[name]["_damage_rate"] = d_rate
+            print(f"Extracted {len(d_frames)} damage frames from {damage_name} -> {name} (frame rate: {d_rate}ms)")
+
         # Switch animation frames
         white = to_white_silhouette(frames[0])
         morph = create_morph_animation(white, is_back="back" in name.lower())
@@ -150,6 +172,9 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         metadata[name]["_switch_start"] = switch_start
         metadata[name]["_switch_count"] = len(morph)
         print(f"Generated {len(morph)} switch frames for {name}")
+
+    for parent in damage_by_parent:
+        print(f"⚠ No matching {parent} entry for {parent.replace('_front.gif', '_front_damage.gif')}, skipping")
 
     # Build main spritesheet
     sheet, positions = build_spritesheet(all_frames)
@@ -189,6 +214,14 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         switch_frames = [list(switch_positions[switch_start + i]) for i in range(switch_count)]
         data["switchOut"] = {"msPerFrame": 100, "frames": switch_frames}
         data["switchIn"] = {"msPerFrame": 100, "frames": switch_frames[::-1]}
+        if "_damage_start" in data:
+            d_start = data.pop("_damage_start")
+            d_count = data.pop("_damage_count")
+            d_rate = data.pop("_damage_rate")
+            data["damageFront"] = {
+                "msPerFrame": d_rate,
+                "frames": [list(positions[d_start + i]) for i in range(d_count)],
+            }
 
     # Save JSON with compact coordinate arrays
     json_path = Path(output_dir) / "spritesheet.json"

@@ -95,6 +95,7 @@ def build_sprites(
         ("front", "frontIdle", None, "mon_spritesheet.png", True),
         ("front", "frontSwitchIn", "switchIn", "mon_switch.png", False),
         ("front", "frontSwitchOut", "switchOut", "mon_switch.png", False),
+        ("front", "frontHurt", "damageFront", "mon_spritesheet.png", False),
         ("back", "backIdle", None, "mon_spritesheet.png", True),
         ("back", "backSwitchIn", "switchIn", "mon_switch.png", False),
         ("back", "backSwitchOut", "switchOut", "mon_switch.png", False),
@@ -353,9 +354,11 @@ export type Mon = {{
     readonly frontIdle: SpriteAnimationConfig;
     readonly frontSwitchIn: SpriteAnimationConfig;
     readonly frontSwitchOut: SpriteAnimationConfig;
+    readonly frontHurt?: SpriteAnimationConfig;
     readonly backIdle: SpriteAnimationConfig;
     readonly backSwitchIn: SpriteAnimationConfig;
     readonly backSwitchOut: SpriteAnimationConfig;
+    readonly backHurt?: SpriteAnimationConfig;
   }};
   readonly stats: {{
     readonly hp: number;
