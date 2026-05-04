@@ -125,7 +125,7 @@ contract GachaTest is Test, BattleHelper {
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
 
         // Alice wins the battle (inactivity for Bob), we skip ahead
         mockRNG.setRNG(1); // No extra bonus for points
@@ -197,7 +197,7 @@ contract GachaTest is Test, BattleHelper {
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
 
         // Alice wins the battle
         engine.end(battleKey);
@@ -295,7 +295,7 @@ contract GachaTest is Test, BattleHelper {
             _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
         vm.warp(vm.getBlockTimestamp() + 1);
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
         vm.stopPrank();
         mockRNG.setRNG(1);
         engine.end(battleKey);
@@ -318,7 +318,7 @@ contract GachaTest is Test, BattleHelper {
             _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
         vm.warp(vm.getBlockTimestamp() + 1);
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint240(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
         vm.stopPrank();
         mockRNG.setRNG(1);
         engine.end(battleKey);

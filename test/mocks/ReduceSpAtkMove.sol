@@ -20,7 +20,7 @@ contract ReduceSpAtkMove is IMoveSet {
         return "Reduce SpAtk";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
         // Get the opposing player's index
         uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
@@ -40,7 +40,7 @@ contract ReduceSpAtkMove is IMoveSet {
         return Type.Math;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

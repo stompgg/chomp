@@ -166,10 +166,10 @@ contract BattleHistoryTest is Test, BattleHelper {
         address p1,
         uint8 p0MoveIndex,
         uint8 p1MoveIndex,
-        uint240 p0ExtraData,
-        uint240 p1ExtraData
+        uint16 p0ExtraData,
+        uint16 p1ExtraData
     ) internal {
-        bytes32 salt = "";
+        uint104 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(p0MoveIndex, salt, p0ExtraData));
         bytes32 p1MoveHash = keccak256(abi.encodePacked(p1MoveIndex, salt, p1ExtraData));
 
@@ -199,7 +199,7 @@ contract BattleHistoryTest is Test, BattleHelper {
 
         // First move - both players switch to their mon
         _commitRevealExecute(
-            battleKey, battleData.p0, battleData.p1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            battleKey, battleData.p0, battleData.p1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Second move - both attack (faster mon wins)
@@ -216,7 +216,7 @@ contract BattleHistoryTest is Test, BattleHelper {
         assertEq(battleHistory.getNumBattles(BOB), 0, "Bob should have 0 battles before completion");
 
         // First turn - both switch to their mons
-        _commitRevealExecute(battleKey, ALICE, BOB, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecute(battleKey, ALICE, BOB, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
 
         // Stats should still be 0 after first turn
         assertEq(battleHistory.getNumBattles(ALICE), 0, "Alice should have 0 battles after switch");

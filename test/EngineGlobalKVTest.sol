@@ -30,12 +30,12 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     DefaultValidator validator;
 
     // Arbitrary keys used throughout the tests.
-    uint240 constant KEY_A = 1001;
-    uint240 constant KEY_B = 1002;
-    uint240 constant KEY_C = 1003;
-    uint240 constant KEY_D = 1004;
-    uint240 constant KEY_E = 1005;
-    uint240 constant KEY_F = 1006;
+    uint16 constant KEY_A = 1001;
+    uint16 constant KEY_B = 1002;
+    uint16 constant KEY_C = 1003;
+    uint16 constant KEY_D = 1004;
+    uint16 constant KEY_E = 1005;
+    uint16 constant KEY_F = 1006;
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
@@ -71,7 +71,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
         battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
     }
 
@@ -82,22 +82,22 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
         battleKey2 = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
     }
 
     /// @dev Both players use the mock write-move with their respective keys.
-    function _bothWrite(bytes32 battleKey, uint240 aliceKey, uint240 bobKey) internal {
+    function _bothWrite(bytes32 battleKey, uint16 aliceKey, uint16 bobKey) internal {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, aliceKey, bobKey);
     }
 
     /// @dev Alice writes; Bob rests.
-    function _aliceWrites(bytes32 battleKey, uint240 aliceKey) internal {
+    function _aliceWrites(bytes32 battleKey, uint16 aliceKey) internal {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, aliceKey, 0);
     }
 
     /// @dev Bob writes; Alice rests.
-    function _bobWrites(bytes32 battleKey, uint240 bobKey) internal {
+    function _bobWrites(bytes32 battleKey, uint16 bobKey) internal {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, bobKey);
     }
 
@@ -127,7 +127,8 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         bytes32 firstPacked = view1.globalKVEntries[0].value;
 
         // Second call re-writes via encoded value bump so we can confirm it changed.
-        uint240 extraData = KEY_A | (uint240(42) << 64);
+        // Layout: bits 0..9 = key, bits 10..15 = value.
+        uint16 extraData = KEY_A | (uint16(42) << 10);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, extraData, 0);
 
         (BattleConfigView memory view2,) = engine.getBattle(battleKey);

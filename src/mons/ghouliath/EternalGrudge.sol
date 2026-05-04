@@ -30,7 +30,7 @@ contract EternalGrudge is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256
     ) external {
         // Apply the debuff (50% debuff to both attack and special attack)
@@ -69,7 +69,7 @@ contract EternalGrudge is IMoveSet {
         return Type.Yin;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

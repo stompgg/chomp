@@ -41,7 +41,7 @@ contract Gachachacha is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) external {
         uint256 chance = rng % OPP_KO_THRESHOLD_R;
@@ -91,7 +91,7 @@ contract Gachachacha is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

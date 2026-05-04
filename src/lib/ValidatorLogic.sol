@@ -43,7 +43,7 @@ library ValidatorLogic {
         uint256 rawMoveSlot,
         uint256 playerIndex,
         uint256 activeMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint32 baseStamina,
         int32 staminaDelta
     ) internal view returns (bool valid) {

@@ -40,7 +40,7 @@ contract BullRush is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) public override {
         // Deal the damage to opponent

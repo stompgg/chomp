@@ -24,7 +24,7 @@ contract TestMove is IMoveSet {
         return "Test Move";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
         uint256 opponentIndex = (attackerPlayerIndex + 1) % 2;
         engine.dealDamage(opponentIndex, defenderMonIndex, _damage);
     }
@@ -41,7 +41,7 @@ contract TestMove is IMoveSet {
         return _moveType;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

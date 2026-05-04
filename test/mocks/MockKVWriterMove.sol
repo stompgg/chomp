@@ -9,17 +9,18 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {MoveMeta} from "../../src/Structs.sol";
 
 /// @notice Test-only move that writes a single, caller-chosen (key, value) pair to globalKV.
-/// @dev extraData layout: lower 64 bits = key, upper 176 bits = value. A 0-value input
-///      writes 1 by default so tests can quickly assert "something was written" without
-///      encoding a non-zero value every time.
+/// @dev extraData layout (16 bits total): bits 0..9 = key (≤1023), bits 10..15 = value (≤63).
+///      A 0-value input writes 1 by default so tests can quickly assert "something was written"
+///      without encoding a non-zero value every time. Tests that need wider key/value ranges
+///      should use a different mock.
 contract MockKVWriterMove is IMoveSet {
     function name() external pure returns (string memory) {
         return "MockKVWriter";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint240 extraData, uint256) external {
-        uint64 key = uint64(extraData);
-        uint192 value = uint192(uint256(extraData) >> 64);
+    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint16 extraData, uint256) external {
+        uint64 key = uint64(extraData) & 0x3FF; // 10 bits
+        uint192 value = uint192(uint256(extraData) >> 10); // 6 bits
         if (value == 0) {
             value = 1;
         }
@@ -42,7 +43,7 @@ contract MockKVWriterMove is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

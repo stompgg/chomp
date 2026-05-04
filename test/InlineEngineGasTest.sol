@@ -15,7 +15,7 @@ import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
-import {EIP712} from "../src/lib/EIP712.sol";
+import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
@@ -59,10 +59,6 @@ contract InlineEngineGasTest is Test, BattleHelper {
     // Inline validation constants
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
-
-    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
-        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
-    }
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
@@ -162,26 +158,26 @@ contract InlineEngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("FirstBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(1), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(2), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(3), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 firstBattleGas = vm.stopSnapshotGas("FirstBattle");
@@ -209,27 +205,27 @@ contract InlineEngineGasTest is Test, BattleHelper {
         console.log("After setup 2 - packedP1EffectsCount:", cfgAfterSetup2.packedP1EffectsCount);
 
         vm.startSnapshotGas("SecondBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 1, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint16(1), true);
         engine.resetCallContext();
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, 2, uint16(1), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, NO_OP_MOVE_INDEX, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint16(2), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint16(2), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        commitManager.revealMove(battleKey2, SWITCH_MOVE_INDEX, 0, uint16(3), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         uint256 secondBattleGas = vm.stopSnapshotGas("SecondBattle");
@@ -252,26 +248,26 @@ contract InlineEngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("ThirdBattle");
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 0, 1, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(0), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint16(0), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, 3, NO_OP_MOVE_INDEX, 0, 0);
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(1), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint16(1), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(2), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint16(2), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint240(3), true);
+        commitManager.revealMove(battleKey3, SWITCH_MOVE_INDEX, 0, uint16(3), true);
         engine.resetCallContext();
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 thirdBattleGas = vm.stopSnapshotGas("ThirdBattle");
@@ -338,7 +334,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Battle1_Execute");
-        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey1, 0, 0, 0, 0);
         uint256 execute1 = vm.stopSnapshotGas("Battle1_Execute");
 
@@ -350,7 +346,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Battle2_Execute");
-        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, 0, 0, 0, 0);
         uint256 execute2 = vm.stopSnapshotGas("Battle2_Execute");
 
@@ -412,7 +408,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("B1_Execute");
-        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
 
         (BattleConfigView memory cfgAfterSwitch,) = inlineEngine.getBattle(battleKey1);
         console.log("After B1 switch - globalEffectsLength:", cfgAfterSwitch.globalEffectsLength);
@@ -445,7 +441,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         console.log("After B2 setup - packedP1EffectsCount:", cfg2.packedP1EffectsCount);
 
         vm.startSnapshotGas("B2_Execute");
-        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, 0, 0, 0, 0);
         _commitRevealExecuteForEngine(inlineEngine, inlineCommitManager, battleKey2, 1, 1, 0, 0);
         uint256 execute2 = vm.stopSnapshotGas("B2_Execute");
@@ -525,10 +521,10 @@ contract InlineEngineGasTest is Test, BattleHelper {
         bytes32 battleKey,
         uint8 aliceMoveIndex,
         uint8 bobMoveIndex,
-        uint240 aliceExtraData,
-        uint240 bobExtraData
+        uint16 aliceExtraData,
+        uint16 bobExtraData
     ) internal {
-        bytes32 salt = "";
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         uint256 turnId = eng.getTurnIdForBattleState(battleKey);
@@ -563,7 +559,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
 ///         SignedMatchmaker (no propose/accept/confirm storage), and
 ///         SignedCommitManager::executeWithDualSignedMoves (1 TX per two-player turn).
 /// @dev Forced single-player switches after KOs use SignedCommitManager::executeSinglePlayerMove.
-contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
+contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
@@ -583,14 +579,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
     // across one pass. Cleared between passes.
     mapping(bytes32 => bool) private _seenSlot;
     bytes32[] private _seenKeys;
-
-    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return ("SignedCommitManager", "1");
-    }
-
-    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint240) {
-        return uint240(playerIndex | (monIndex << 60) | (statIndex << 120) | (uint256(uint32(boostAmount)) << 180));
-    }
 
     function setUp() public {
         p0 = vm.addr(P0_PK);
@@ -645,39 +633,6 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         return battleKey;
     }
 
-    function _signDualReveal(
-        uint256 privateKey,
-        bytes32 battleKey,
-        uint64 turnId,
-        bytes32 committerMoveHash,
-        uint8 revealerMoveIndex,
-        bytes32 revealerSalt,
-        uint240 revealerExtraData
-    ) internal view returns (bytes memory) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
-            SignedCommitLib.DualSignedReveal({
-                battleKey: battleKey,
-                turnId: turnId,
-                committerMoveHash: committerMoveHash,
-                revealerMoveIndex: revealerMoveIndex,
-                revealerSalt: revealerSalt,
-                revealerExtraData: revealerExtraData
-            })
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     /// @dev Executes a two-player turn in 1 TX via executeWithDualSignedMoves.
     ///      p0Move/p1Move semantics match _commitRevealExecuteForAliceAndBob so the
     ///      battle scripts can be transcribed directly from the non-optimized test.
@@ -685,17 +640,18 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         bytes32 battleKey,
         uint8 p0MoveIndex,
         uint8 p1MoveIndex,
-        uint240 p0ExtraData,
-        uint240 p1ExtraData
+        uint16 p0ExtraData,
+        uint16 p1ExtraData
     ) internal {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-        bytes32 committerSalt = keccak256(abi.encode("committer", battleKey, turnId));
-        bytes32 revealerSalt = keccak256(abi.encode("revealer", battleKey, turnId));
+        uint104 committerSalt = uint104(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
+        uint104 revealerSalt = uint104(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
 
         uint8 committerMoveIndex;
-        uint240 committerExtraData;
+        uint16 committerExtraData;
         uint8 revealerMoveIndex;
-        uint240 revealerExtraData;
+        uint16 revealerExtraData;
+        uint256 committerPk;
         uint256 revealerPk;
         address committer;
 
@@ -704,6 +660,7 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
             committerExtraData = p0ExtraData;
             revealerMoveIndex = p1MoveIndex;
             revealerExtraData = p1ExtraData;
+            committerPk = P0_PK;
             revealerPk = P1_PK;
             committer = p0;
         } else {
@@ -711,14 +668,17 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
             committerExtraData = p1ExtraData;
             revealerMoveIndex = p0MoveIndex;
             revealerExtraData = p0ExtraData;
+            committerPk = P1_PK;
             revealerPk = P0_PK;
             committer = p1;
         }
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        address mgr = address(signedCommitManager);
+        bytes memory committerSig = _signCommit(mgr, committerPk, committerMoveHash, battleKey, turnId);
         bytes memory revealerSig = _signDualReveal(
-            revealerPk, battleKey, turnId, committerMoveHash,
+            mgr, revealerPk, battleKey, turnId, committerMoveHash,
             revealerMoveIndex, revealerSalt, revealerExtraData
         );
 
@@ -727,16 +687,16 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
             battleKey,
             committerMoveIndex, committerSalt, committerExtraData,
             revealerMoveIndex, revealerSalt, revealerExtraData,
-            revealerSig
+            committerSig, revealerSig
         );
         engine.resetCallContext();
     }
 
     /// @dev Single-player forced switch after a KO. This uses the optimized
     ///      SignedCommitManager path because there is no hidden opponent move to reveal.
-    function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint240 extraData) internal {
+    function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint16 extraData) internal {
         vm.prank(isP0 ? p0 : p1);
-        signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), extraData);
+        signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), extraData);
         engine.resetCallContext();
     }
 
@@ -768,43 +728,43 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
 
         bytes32 oldFlowBattleKey = _startBattleFullyOptimized(ruleset);
         vm.warp(vm.getBlockTimestamp() + 1);
-        _fastTurn(oldFlowBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
-        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(oldFlowBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
 
         vm.prank(p1);
         uint256 gasBefore = gasleft();
-        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1), true);
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         uint256 oldFlowGas = gasBefore - gasleft();
         engine.resetCallContext();
 
-        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(2), true);
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(2), true);
         uint256 oldFlowSecondGas = gasBefore - gasleft();
         engine.resetCallContext();
 
         bytes32 fastPathBattleKey = _startBattleFullyOptimized(ruleset);
         vm.warp(vm.getBlockTimestamp() + 1);
-        _fastTurn(fastPathBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
-        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(fastPathBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
         uint256 fastPathGas = gasBefore - gasleft();
         engine.resetCallContext();
 
-        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(2));
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(2));
         uint256 fastPathSecondGas = gasBefore - gasleft();
         engine.resetCallContext();
 
@@ -857,19 +817,19 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Fast_Battle1");
-        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey, 0, 1, 0, 0);
-        _fastTurn(battleKey, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
-        _fastSwitchReveal(battleKey, true, uint240(0));
+        _fastSwitchReveal(battleKey, true, uint16(0));
         _fastTurn(battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastTurn(battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
-        _fastSwitchReveal(battleKey, false, uint240(1));
+        _fastSwitchReveal(battleKey, false, uint16(1));
         _fastTurn(battleKey, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
-        _fastSwitchReveal(battleKey, true, uint240(2));
+        _fastSwitchReveal(battleKey, true, uint16(2));
         _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
-        _fastSwitchReveal(battleKey, true, uint240(3));
+        _fastSwitchReveal(battleKey, true, uint16(3));
         _fastTurn(battleKey, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 firstBattleGas = vm.stopSnapshotGas("Fast_Battle1");
 
@@ -891,20 +851,20 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Fast_Battle2");
-        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey2, 3, 1, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _fastSwitchReveal(battleKey2, false, uint240(1));
-        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, 2, uint240(1), 0);
+        _fastSwitchReveal(battleKey2, false, uint16(1));
+        _fastTurn(battleKey2, SWITCH_MOVE_INDEX, 2, uint16(1), 0);
         _fastTurn(battleKey2, 3, NO_OP_MOVE_INDEX, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _fastSwitchReveal(battleKey2, false, uint240(2));
+        _fastSwitchReveal(battleKey2, false, uint16(2));
         _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
-        _fastSwitchReveal(battleKey2, true, uint240(2));
+        _fastSwitchReveal(battleKey2, true, uint16(2));
         _fastTurn(battleKey2, 3, 3, _packStatBoost(0, 2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(1, 2, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _fastSwitchReveal(battleKey2, false, uint240(3));
+        _fastSwitchReveal(battleKey2, false, uint16(3));
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         uint256 secondBattleGas = vm.stopSnapshotGas("Fast_Battle2");
 
@@ -926,19 +886,19 @@ contract FullyOptimizedInlineGasTest is Test, BattleHelper, EIP712 {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         vm.startSnapshotGas("Fast_Battle3");
-        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey3, 0, 1, 0, 0);
-        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, 2, uint240(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey3, 2, 3, _packStatBoost(0, 1, uint256(MonStateIndexName.Attack), int32(90)), 0);
-        _fastSwitchReveal(battleKey3, true, uint240(0));
+        _fastSwitchReveal(battleKey3, true, uint16(0));
         _fastTurn(battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastTurn(battleKey3, 3, NO_OP_MOVE_INDEX, 0, 0);
-        _fastSwitchReveal(battleKey3, false, uint240(1));
+        _fastSwitchReveal(battleKey3, false, uint16(1));
         _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 2, 0, _packStatBoost(1, 1, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
-        _fastSwitchReveal(battleKey3, true, uint240(2));
+        _fastSwitchReveal(battleKey3, true, uint16(2));
         _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
-        _fastSwitchReveal(battleKey3, true, uint240(3));
+        _fastSwitchReveal(battleKey3, true, uint16(3));
         _fastTurn(battleKey3, NO_OP_MOVE_INDEX, 3, 0, 0);
         uint256 thirdBattleGas = vm.stopSnapshotGas("Fast_Battle3");
 

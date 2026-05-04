@@ -159,28 +159,28 @@ contract BetterCPUInlineGasTest is Test {
 
         // Turn 0: lead selection. Both players "switch in" a starting mon.
         vm.startSnapshotGas("Turn0_Lead");
-        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
+        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
         uint256 turn0Gas = vm.stopSnapshotGas("Turn0_Lead");
         engine.resetCallContext();
 
         // Turns 1-4: both attack with move 1. Every one is flag == 2, no KOs.
         vm.startSnapshotGas("Turn1_BothAttack");
-        cpu.selectMove(battleKey, 1, "", 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn1Gas = vm.stopSnapshotGas("Turn1_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn2_BothAttack");
-        cpu.selectMove(battleKey, 1, "", 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn2Gas = vm.stopSnapshotGas("Turn2_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn3_BothAttack");
-        cpu.selectMove(battleKey, 1, "", 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn3Gas = vm.stopSnapshotGas("Turn3_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn4_BothAttack");
-        cpu.selectMove(battleKey, 1, "", 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn4Gas = vm.stopSnapshotGas("Turn4_BothAttack");
         engine.resetCallContext();
 
@@ -225,11 +225,11 @@ contract BetterCPUInlineGasTest is Test {
         mockCPURNG.setRNG(0);
 
         // Turn 0: lead.
-        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(0));
+        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
 
         // Turn 1: both attack. CPU's move 1 (BP=40, attack=200, defense=10) should KO Alice.
-        cpu.selectMove(battleKey, 1, "", 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         engine.resetCallContext();
 
         // After the KO we should be in flag==0 (Alice forced switch).
@@ -238,7 +238,7 @@ contract BetterCPUInlineGasTest is Test {
 
         // Measure the cheap-router path: Alice submits her switch via the CPU manager.
         vm.startSnapshotGas("Flag0_P0ForcedSwitch");
-        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint240(1));
+        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(1));
         uint256 flag0Gas = vm.stopSnapshotGas("Flag0_P0ForcedSwitch");
         engine.resetCallContext();
 

@@ -39,7 +39,7 @@ contract RoundTrip is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) public override {
         // Deal the damage
@@ -51,7 +51,7 @@ contract RoundTrip is StandardAttack {
         );
 
         if (damage > 0) {
-            // extraData contains the swap index as raw uint240
+            // extraData contains the swap index as raw uint16
             uint256 swapIndex = uint256(extraData);
             engine.switchActiveMon(attackerPlayerIndex, swapIndex);
         }

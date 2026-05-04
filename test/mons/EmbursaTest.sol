@@ -94,12 +94,12 @@ contract EmbursaTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Q5, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify no damage occurred
@@ -110,7 +110,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Wait 4 turns
         for (uint256 i = 0; i < 4; i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
             );
         }
         // Verify no damage occurred
@@ -123,7 +123,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         // Alice and Bob both do nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify damage occurred
@@ -226,7 +226,7 @@ contract EmbursaTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
@@ -259,7 +259,7 @@ contract EmbursaTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         (effects, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 0, "Bob's mon should have no effects");
@@ -276,7 +276,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Verify Q5 was applied to global effects, verify Alice is KOed
         battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 4, 0, 0);
@@ -295,7 +295,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Verify Honey Bribe applied stat boost to Bob's mon, verify Alice is KOed
         battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, 4, 0, 0);
@@ -372,7 +372,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         // Both switch in
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Q5, Bob does nothing
@@ -381,7 +381,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Wait 4 turns (Q5 counter ticks from 1 to 5)
         for (uint256 i = 0; i < 4; i++) {
             _commitRevealExecuteForAliceAndBob(
-                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
             );
         }
 
@@ -469,7 +469,7 @@ contract EmbursaTest is Test, BattleHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Set RNG so that burn triggers (rng % 3 == 2)
@@ -555,7 +555,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob uses burn attack on Alice (Bob is faster)

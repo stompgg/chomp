@@ -116,7 +116,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses effect move on Bob (Bob does NoOp)
@@ -175,7 +175,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -248,7 +248,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Both use 5-stamina move. After: -5 from move + 1 from RoundEnd regen = -4
@@ -318,7 +318,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Both use 5-stamina move: staminaDelta = -5 + 1 (RoundEnd) = -4
@@ -393,7 +393,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Use 1-stamina move: -1 from move + 1 from RoundEnd regen = 0 (not +1)
@@ -414,7 +414,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         _forceP1Switch(testEngine, signedManager, battleKey);
 
-        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
         uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeMons[1], 1, "P1 should switch to mon 1");
@@ -433,7 +433,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
         vm.stopPrank();
     }
 
@@ -442,12 +442,12 @@ contract EngineOptimizationTest is Test, BattleHelper {
             _startSignedInlineSwitchBattle(false);
 
         _commitRevealExecuteForAliceAndBob(
-            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         vm.startPrank(BOB);
         vm.expectRevert(SignedCommitManager.NotSinglePlayerTurn.selector);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1));
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
         vm.stopPrank();
     }
 
@@ -456,11 +456,11 @@ contract EngineOptimizationTest is Test, BattleHelper {
             _startSignedInlineSwitchBattle(false);
 
         _forceP1Switch(testEngine, signedManager, battleKey);
-        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
         uint256 turnBefore = testEngine.getTurnIdForBattleState(battleKey);
         _commitRevealExecuteForAliceAndBob(
-            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertEq(testEngine.getTurnIdForBattleState(battleKey), turnBefore + 1, "Normal fallback should execute");
@@ -473,7 +473,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _forceP1Switch(testEngine, signedManager, battleKey);
 
         vm.prank(BOB);
-        signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), uint240(1), true);
+        signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         testEngine.resetCallContext();
 
         uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
@@ -489,11 +489,11 @@ contract EngineOptimizationTest is Test, BattleHelper {
         (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) = _startSignedInlineSwitchBattle(true);
 
         _forceP1Switch(testEngine, signedManager, battleKey);
-        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint240(1));
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
         assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 0, "P0 should be forced to switch");
 
-        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint240(1));
+        _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint16(1));
         assertEq(
             testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
             2,
@@ -502,7 +502,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         uint256 turnBefore = testEngine.getTurnIdForBattleState(battleKey);
         _commitRevealExecuteForAliceAndBob(
-            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            testEngine, signedManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertEq(
@@ -514,10 +514,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
     function _forceP1Switch(Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey) internal {
         _commitRevealExecuteForAliceAndBob(
-            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            testEngine, signedManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(
-            testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(0), uint240(0)
+            testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 1, "P1 should be forced to switch");
@@ -528,10 +528,10 @@ contract EngineOptimizationTest is Test, BattleHelper {
         SignedCommitManager signedManager,
         bytes32 battleKey,
         address player,
-        uint240 monIndex
+        uint16 monIndex
     ) internal {
         vm.prank(player);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, bytes32(0), monIndex);
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), monIndex);
         testEngine.resetCallContext();
     }
 
@@ -665,7 +665,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
         vm.warp(vm.getBlockTimestamp() + 1);
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, warmupKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, warmupKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, 0, 0, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
@@ -683,7 +683,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
         vm.warp(vm.getBlockTimestamp() + 1);
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, externalKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, externalKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         vm.startSnapshotGas("ExternalStaminaRegen");
@@ -704,7 +704,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         );
         vm.warp(vm.getBlockTimestamp() + 1);
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, inlineKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, inlineKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         vm.startSnapshotGas("InlineStaminaRegen");

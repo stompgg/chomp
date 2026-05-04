@@ -111,9 +111,9 @@ contract InlineMoveParityTest is Test, BattleHelper {
     }
 
     function _doSwitchTurn(bytes32 battleKey) internal {
-        bytes32 salt = "";
+        uint104 salt = 0;
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
-        bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint240(0)));
+        bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
         if (turnId % 2 == 0) {
             vm.startPrank(ALICE);
             commitManager.commitMove(battleKey, moveHash);
@@ -134,10 +134,10 @@ contract InlineMoveParityTest is Test, BattleHelper {
     }
 
     function _doAttackTurn(bytes32 battleKey, uint8 aliceMove, uint8 bobMove) internal {
-        bytes32 salt = "";
+        uint104 salt = 0;
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         if (turnId % 2 == 0) {
-            bytes32 moveHash = keccak256(abi.encodePacked(aliceMove, salt, uint240(0)));
+            bytes32 moveHash = keccak256(abi.encodePacked(aliceMove, salt, uint16(0)));
             vm.startPrank(ALICE);
             commitManager.commitMove(battleKey, moveHash);
             vm.startPrank(BOB);
@@ -145,7 +145,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
             vm.startPrank(ALICE);
             commitManager.revealMove(battleKey, aliceMove, salt, 0, true);
         } else {
-            bytes32 moveHash = keccak256(abi.encodePacked(bobMove, salt, uint240(0)));
+            bytes32 moveHash = keccak256(abi.encodePacked(bobMove, salt, uint16(0)));
             vm.startPrank(BOB);
             commitManager.commitMove(battleKey, moveHash);
             vm.startPrank(ALICE);

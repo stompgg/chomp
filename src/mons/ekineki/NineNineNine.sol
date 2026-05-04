@@ -17,7 +17,7 @@ contract NineNineNine is IMoveSet {
         return "Nine Nine Nine";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint240, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
         // Set crit boost for the next turn
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
         uint64 key = NineNineNineLib._getKey(attackerPlayerIndex);
@@ -40,7 +40,7 @@ contract NineNineNine is IMoveSet {
         return MoveClass.Self;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

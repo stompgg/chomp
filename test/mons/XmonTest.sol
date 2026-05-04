@@ -87,7 +87,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Contagious Slumber, Bob does nothing
@@ -160,7 +160,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Set RNG to guarantee stamina steal (>= 50)
@@ -219,7 +219,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Somniphobia, Bob uses Somniphobia too
@@ -337,7 +337,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Alice sends in fast mon, Bob sends in slow mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(1)
         );
 
         // Verify that Alice has the Dreamcatcher effect
@@ -400,7 +400,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
@@ -467,7 +467,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
@@ -485,7 +485,7 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(hasNightTerrorsBeforeSwap, "Alice's mon 0 should have Night Terrors effect before swap");
 
         // Turn 2: Alice swaps to mon 1, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
 
         // Verify Alice's mon 0 no longer has Night Terrors effect
         (EffectInstance[] memory aliceEffectsAfterSwap, ) = engine.getEffects(battleKey, 0, 0);
@@ -555,7 +555,7 @@ contract XmonTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Set RNG to 1 to prevent early waking from sleep (rng % 3 == 0 wakes early)
@@ -569,10 +569,10 @@ contract XmonTest is Test, BattleHelper {
         int32 awakeDamage = -bobHpAfterAwakeDamage;
 
         // Turn 2: Alice swaps out to mon 1 to clear Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
 
         // Turn 3: Alice swaps back to mon 0, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0);
 
         // Turn 4: Alice uses Sleep move on Bob, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
