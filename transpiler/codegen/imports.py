@@ -59,16 +59,16 @@ class ImportGenerator:
         lines.append(f"import {{ {', '.join(runtime_imports)} }} from '{prefix}runtime';")
 
         # Base contract imports
-        lines.extend(self._generate_base_contract_imports(prefix))
+        lines.extend(self._generate_base_contract_imports())
 
         # Library imports
-        lines.extend(self._generate_library_imports(prefix, runtime_imports))
+        lines.extend(self._generate_library_imports())
 
         # Contract type imports
-        lines.extend(self._generate_contract_type_imports(prefix, contract_name))
+        lines.extend(self._generate_contract_type_imports(contract_name))
 
         # Inherited struct imports
-        lines.extend(self._generate_inherited_struct_imports(prefix, contract_name))
+        lines.extend(self._generate_inherited_struct_imports(contract_name))
 
         # External struct imports
         lines.extend(self._generate_external_struct_imports(prefix))
@@ -109,7 +109,7 @@ class ImportGenerator:
 
         return imports
 
-    def _generate_base_contract_imports(self, prefix: str) -> List[str]:
+    def _generate_base_contract_imports(self) -> List[str]:
         """Generate import statements for base contracts and their inherited structs."""
         lines = []
         for base_contract in sorted(self._ctx.base_contracts_needed):
@@ -132,11 +132,7 @@ class ImportGenerator:
                 lines.append(f"import {{ {base_contract} }} from '{import_path}';")
         return lines
 
-    def _generate_library_imports(
-        self,
-        prefix: str,
-        runtime_imports: List[str]
-    ) -> List[str]:
+    def _generate_library_imports(self) -> List[str]:
         """Generate import statements for library contracts."""
         lines = []
         for library in sorted(self._ctx.libraries_referenced):
@@ -148,11 +144,7 @@ class ImportGenerator:
             lines.append(f"import {{ {singleton_name} }} from '{import_path}';")
         return lines
 
-    def _generate_contract_type_imports(
-        self,
-        prefix: str,
-        contract_name: str
-    ) -> List[str]:
+    def _generate_contract_type_imports(self, contract_name: str) -> List[str]:
         """Generate import statements for contracts used as types."""
         lines = []
         for contract in sorted(self._ctx.contracts_referenced):
@@ -162,11 +154,7 @@ class ImportGenerator:
                 lines.append(f"import {{ {contract} }} from '{import_path}';")
         return lines
 
-    def _generate_inherited_struct_imports(
-        self,
-        prefix: str,
-        contract_name: str
-    ) -> List[str]:
+    def _generate_inherited_struct_imports(self, contract_name: str) -> List[str]:
         """Generate import statements for inherited structs."""
         lines = []
 

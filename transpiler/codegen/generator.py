@@ -6,7 +6,7 @@ the generation of TypeScript code from Solidity AST by coordinating
 specialized generators for different AST node types.
 """
 
-from typing import Optional, Set, Dict, List
+from typing import Optional, Set, Dict
 
 from .context import CodeGenerationContext
 from .type_converter import TypeConverter
@@ -27,7 +27,7 @@ class TypeScriptCodeGenerator:
 
     This class orchestrates the generation of TypeScript code from Solidity AST
     by coordinating specialized generators for different concerns:
-    - TypeConverter: Type conversions
+    - TypeConverter: Type conversions and type-driven semantic decisions
     - ExpressionGenerator: Expressions
     - StatementGenerator: Statements
     - FunctionGenerator: Functions
@@ -151,116 +151,6 @@ class TypeScriptCodeGenerator:
         output[import_placeholder_index] = import_lines
 
         return '\n'.join(output)
-
-    # =========================================================================
-    # BACKWARD COMPATIBILITY
-    # =========================================================================
-
-    # Expose some context properties for backward compatibility
-
-    @property
-    def indent_level(self) -> int:
-        """Get the current indentation level."""
-        return self._ctx.indent_level
-
-    @indent_level.setter
-    def indent_level(self, value: int):
-        """Set the current indentation level."""
-        self._ctx.indent_level = value
-
-    @property
-    def indent_str(self) -> str:
-        """Get the indentation string."""
-        return self._ctx.indent_str
-
-    def indent(self) -> str:
-        """Return the current indentation string."""
-        return self._ctx.indent()
-
-    @property
-    def current_state_vars(self) -> Set[str]:
-        """Get the current contract's state variables."""
-        return self._ctx.current_state_vars
-
-    @current_state_vars.setter
-    def current_state_vars(self, value: Set[str]):
-        self._ctx.current_state_vars = value
-
-    @property
-    def current_methods(self) -> Set[str]:
-        """Get the current contract's methods."""
-        return self._ctx.current_methods
-
-    @current_methods.setter
-    def current_methods(self, value: Set[str]):
-        self._ctx.current_methods = value
-
-    @property
-    def var_types(self) -> Dict:
-        """Get the variable types dictionary."""
-        return self._ctx.var_types
-
-    @var_types.setter
-    def var_types(self, value: Dict):
-        self._ctx.var_types = value
-
-    @property
-    def known_structs(self) -> Set[str]:
-        """Get the set of known struct names."""
-        return self._ctx.known_structs
-
-    @property
-    def known_enums(self) -> Set[str]:
-        """Get the set of known enum names."""
-        return self._ctx.known_enums
-
-    @property
-    def known_contracts(self) -> Set[str]:
-        """Get the set of known contract names."""
-        return self._ctx.known_contracts
-
-    @property
-    def known_interfaces(self) -> Set[str]:
-        """Get the set of known interface names."""
-        return self._ctx.known_interfaces
-
-    def get_qualified_name(self, name: str) -> str:
-        """Get the qualified name for a type."""
-        return self._ctx.get_qualified_name(name)
-
-    # Delegate to specialized generators for methods that might be called directly
-
-    def generate_expression(self, expr) -> str:
-        """Generate TypeScript expression (for backward compatibility)."""
-        return self._expr_generator.generate(expr)
-
-    def generate_statement(self, stmt) -> str:
-        """Generate TypeScript statement (for backward compatibility)."""
-        return self._stmt_generator.generate(stmt)
-
-    def generate_function(self, func) -> str:
-        """Generate TypeScript function (for backward compatibility)."""
-        return self._func_generator.generate_function(func)
-
-    def generate_struct(self, struct) -> str:
-        """Generate TypeScript struct (for backward compatibility)."""
-        return self._def_generator.generate_struct(struct)
-
-    def generate_enum(self, enum) -> str:
-        """Generate TypeScript enum (for backward compatibility)."""
-        return self._def_generator.generate_enum(enum)
-
-    def generate_contract(self, contract) -> str:
-        """Generate TypeScript contract (for backward compatibility)."""
-        return self._contract_generator.generate_contract(contract)
-
-    def solidity_type_to_ts(self, type_name) -> str:
-        """Convert Solidity type to TypeScript (for backward compatibility)."""
-        return self._type_converter.solidity_type_to_ts(type_name)
-
-    def default_value(self, ts_type: str) -> str:
-        """Get default value for TypeScript type (for backward compatibility)."""
-        return self._type_converter.default_value(ts_type)
 
     # =========================================================================
     # PRIVATE METHODS

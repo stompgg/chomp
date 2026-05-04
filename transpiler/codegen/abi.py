@@ -6,7 +6,10 @@ expressions, used for encoding/decoding operations like abi.encode,
 abi.encodePacked, etc.
 """
 
-from typing import List, Optional, Dict, Set
+from typing import List, Optional, Dict, Set, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .type_converter import TypeConverter
 
 from ..parser.ast_nodes import (
     Expression,
@@ -36,6 +39,7 @@ class AbiTypeInferer:
         known_interfaces: Optional[Set[str]] = None,
         known_struct_fields: Optional[Dict[str, Dict[str, str]]] = None,
         method_return_types: Optional[Dict[str, str]] = None,
+        type_converter: Optional['TypeConverter'] = None,
     ):
         """
         Initialize the ABI type inferer.
@@ -47,6 +51,7 @@ class AbiTypeInferer:
             known_interfaces: Set of known interface type names
             known_struct_fields: Maps struct names to their field types
             method_return_types: Maps method names to their return types
+            type_converter: Optional shared converter for Solidity→ABI type mapping
         """
         self.var_types = var_types or {}
         self.known_enums = known_enums or set()
@@ -54,6 +59,7 @@ class AbiTypeInferer:
         self.known_interfaces = known_interfaces or set()
         self.known_struct_fields = known_struct_fields or {}
         self.method_return_types = method_return_types or {}
+        self.type_converter = type_converter
 
     def infer_abi_types(self, args: List[Expression]) -> str:
         """
@@ -202,6 +208,9 @@ class AbiTypeInferer:
 
         Single source of truth for Solidity→ABI type mapping.
         """
+        if self.type_converter:
+            return self.type_converter.solidity_type_to_abi_param(type_name, is_array)
+
         array_suffix = '[]' if is_array else ''
         if type_name in ('address', 'string', 'bool'):
             return f"{{type: '{type_name}{array_suffix}'}}"
@@ -268,6 +277,9 @@ class AbiTypeInferer:
 
     def _get_packed_type(self, type_name: str, is_array: bool = False) -> str:
         """Get packed type string for a Solidity type."""
+        if self.type_converter:
+            return self.type_converter.solidity_type_to_abi_type(type_name, is_array)
+
         array_suffix = '[]' if is_array else ''
         if type_name == 'address':
             return f'address{array_suffix}'

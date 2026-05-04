@@ -150,7 +150,7 @@ function executeBatch(bytes32 battleKey) external;
 | `MonState` (per mon) | Per-`(playerIndex, monIndex)` mirror, lazy-loaded. Dirty bit per slot. |
 | `koBitmaps` (16 bits in `BattleConfig` slot 2) | `uint16` mirror, loaded flag. |
 | `winnerIndex` / `prevPlayerSwitchForTurnFlag` / `playerSwitchForTurnFlag` / `activeMonIndex` / `turnId` / `lastExecuteTimestamp` | Single packed `uint256` mirror. |
-| Effect list slots (`globalEffects[i]`, `pXEffects[i]`) | Sparse transient map keyed by list + slot index, mirrors the full `EffectInstance` (`effect`, `stepsBitmap`, `data`). |
+| Effect list slots (`globalEffects[i]`, `pXEffects[i]`) | Fixed numeric transient keys, mirrors the full `EffectInstance` (`effect`, `stepsBitmap`, `data`). |
 | `packedP0EffectsCount` / `packedP1EffectsCount` / `globalEffectsLength` | Three small mirrors, flushed with effect-list shadow. |
 | `globalKV[storageKey][key]` | Per-`key` mirror, lazy-loaded. |
 | `BattleConfig.p0Move` / `p1Move` / salts | Re-populated per sub-turn from buffer slot. |
@@ -162,6 +162,79 @@ Hydrate strategy:
 Loaded-flag strategy:
 - **Bitmap** for fixed-shape slots (MonState, effects, slot-2 packed fields).
 - **Per-key transient hash-set** for `globalKV` (dynamic keys).
+
+### 5.1.1 Effect shadow key layout
+
+Effects are bounded and already partitioned, so use numeric transient keys and bitmaps instead of hashed keys.
+
+Assumptions:
+- Up to 8 mons per side.
+- Up to 8 effects per mon.
+- Up to 16 global effects.
+
+Flat effect-slot keys:
+
+```solidity
+uint256 constant EFFECTS_PER_MON = 8;
+uint256 constant MONS_PER_SIDE = 8;
+uint256 constant MAX_GLOBAL_EFFECTS = 16;
+
+uint256 constant EFFECT_P0_OFFSET = 0;    // keys   0..63
+uint256 constant EFFECT_P1_OFFSET = 64;   // keys  64..127
+uint256 constant EFFECT_GLOBAL_OFFSET = 128; // keys 128..143
+
+function _effectShadowKey(uint256 targetIndex, uint256 monIndex, uint256 localEffectIndex)
+    internal
+    pure
+    returns (uint256)
+{
+    if (targetIndex == 2) return EFFECT_GLOBAL_OFFSET + localEffectIndex;
+    uint256 sideOffset = targetIndex == 0 ? EFFECT_P0_OFFSET : EFFECT_P1_OFFSET;
+    return sideOffset + monIndex * EFFECTS_PER_MON + localEffectIndex;
+}
+```
+
+For player effects, `localEffectIndex` is `0..7` and the storage slot remains
+`_getEffectSlotIndex(monIndex, localEffectIndex)`. For global effects, `monIndex` is ignored and
+`localEffectIndex` is the global effect index.
+
+Loaded/dirty bitmaps:
+
+```solidity
+uint256 transient effectSlotLoadedBitmap;
+uint256 transient effectSlotDirtyBitmap;
+
+function _effectBit(uint256 key) internal pure returns (uint256) {
+    return 1 << key;
+}
+```
+
+Shadow values can use numeric transient key regions, one region per `EffectInstance` field:
+
+```solidity
+uint256 constant T_EFFECT_ADDR_BASE  = 0x1000;
+uint256 constant T_EFFECT_STEPS_BASE = 0x2000;
+uint256 constant T_EFFECT_DATA_BASE  = 0x3000;
+
+// tstore(T_EFFECT_ADDR_BASE + key, address(effect))
+// tstore(T_EFFECT_STEPS_BASE + key, stepsBitmap)
+// tstore(T_EFFECT_DATA_BASE + key, data)
+```
+
+Counts use a separate compact key space:
+
+```solidity
+// 0 = globalEffectsLength
+// 1..8 = p0 mon counts
+// 9..16 = p1 mon counts
+function _effectCountKey(uint256 targetIndex, uint256 monIndex) internal pure returns (uint256) {
+    if (targetIndex == 2) return 0;
+    if (targetIndex == 0) return 1 + monIndex;
+    return 9 + monIndex;
+}
+```
+
+Use separate loaded/dirty bitmaps for counts. Flush scans only dirty effect-slot bits in `0..143` and dirty count bits in `0..16`, so flush work is bounded and independent of calldata shape.
 
 ### 5.2 Helper boundary
 
@@ -316,37 +389,17 @@ Validator/legality is unchanged: signature recovery proves player intent (or `ms
 
 ## 9. Phased rollout
 
-**Phase 0 — Dual-sig security fix + width changes (preflight, ships first, independent of batching).** The existing `executeWithDualSignedMoves` relies on `msg.sender == committer` as the committer's binding. Without that check, a malicious revealer could sign `DualSignedReveal{committerMoveHash: keccak(P*), …}` for any preimage `P*` they choose and submit unilaterally — the contract would happily compute `committerMoveHash = keccak(P*)`, recover the revealer's sig, and play `P*` as the committer's move. The check is load-bearing today, but it's also fragile: any future evolution of the flow that drops or weakens it (relayers, batching, alt entry points) silently re-opens the hole.
+**Phase 0 — Dual-sig security fix (preflight, ships first, independent of batching).** The existing `executeWithDualSignedMoves` relies on `msg.sender == committer` as the committer's binding. Without that check, a malicious revealer could sign `DualSignedReveal{committerMoveHash: keccak(P*), …}` for any preimage `P*` they choose and submit unilaterally — the contract would happily compute `committerMoveHash = keccak(P*)`, recover the revealer's sig, and play `P*` as the committer's move. The check is load-bearing today, but it's also fragile: any future evolution of the flow that drops or weakens it (relayers, batching, alt entry points) silently re-opens the hole.
 
 Fix: require an explicit committer signature over the existing `SignedCommit{moveHash, battleKey, turnId}` struct (already used by `commitWithSignature`).
 
-Bundled with the security fix in this same phase: the §3 width changes (`extraData` 240→16 bits, `salt` 256→104 bits). They share callers with the dual-signed flow, including the EIP-712 `DualSignedReveal` typehash — touching them together avoids two breaking-change waves through the same surface.
-
 - Modify `executeWithDualSignedMoves` to take an additional `bytes calldata committerSignature` parameter.
 - Recover `committerSignature` over `SignedCommit{committerMoveHash, battleKey, turnId}`; require equality with `committer`.
-- Drop the `msg.sender == committer` check (and remove `error CallerNotCommitter`); the function becomes relayer-friendly (anyone with both sigs + the preimage can submit).
-- Narrow `IMoveSet.move()` / `isValidTarget()` `extraData` to `uint16`; narrow `RevealedMove`/`MoveDecision`/`BattleConfig.{p0,p1}Salt`/event `MonMove.salt` and all commit-manager / engine entry points (`setMove`, `executeWithMoves`, `executeWithSingleMove`, `revealMove`, `executeSinglePlayerMove`, `selectMove`) to `uint104 salt` and `uint16 extraData`.
-- Update `SignedCommitLib.DualSignedReveal` (`uint104 revealerSalt`, `uint16 revealerExtraData`) and the matching EIP-712 typehash.
-- Repack the `_packStatBoost` test helper + `StatBoostsMove` mock from 4×60 bits into 16 bits: `[boostAmount:8 | statIndex:4 | monIndex:3 | playerIndex:1]`.
+- Drop the `msg.sender == committer` check; the function becomes relayer-friendly (anyone with both sigs + the preimage can submit).
 - Breaking signature change. Update all callers (tests, `BattleHelper`, anything off-chain that calls this function) in the same PR. No deployed callers in production yet.
-- New tests: third-party relayer with both valid sigs succeeds; revealer alone (with garbage/missing committer sig) cannot submit a self-chosen committer preimage (regression for unilateral-revealer attack); wrong committer signer reverts; committer sig over a different moveHash reverts.
+- New tests: missing committer sig reverts; wrong committer signer reverts; submission by a third party with both valid sigs succeeds; revealer cannot submit a self-chosen committer preimage (regression).
 
-This phase ships before any batching work. It hardens the existing flow on its own merits, narrows the wire formats once (uint104 salt + uint16 extraData are the shapes Phase 2's `PackedTurnEntry` needs anyway), and unifies the security model so the batched path in Phase 2 inherits the same shape (§4.1) without surprises.
-
-**Status (Phase 0 complete):**
-- ✅ Width sweep across `src/`: `IMoveSet`, `IEngine`, `Engine`, `IValidator`, `DefaultValidator`, `ValidatorLogic`, `ICommitManager`, `DefaultCommitManager`, `SignedCommitManager`, `SignedCommitLib` (incl. EIP-712 typehash), `CPUMoveManager`, `BetterCPU`/`OkayCPU`/`RandomCPU`/`PlayerCPU`/`CPU`, `SleepStatus`, all 50+ mon move/ability files, `Structs.sol` (`MoveDecision.extraData`, `RevealedMove.{salt,extraData}`, `BattleConfig{,View}.{p0,p1}Salt`), and `Engine`'s transient `_turnP{0,1}Salt` + `MonMove` event signature.
-- ✅ Width sweep across `test/`: `BattleHelper`, all top-level test files, all per-mon tests, mocks (`StatBoostsMove`, `ForceSwitchMove`, `EditEffectAttack`, `MockKVWriterMove`, `MockEffectRemover`), and `_packStatBoost`/`_packForceSwitch` test helpers repacked into 16 bits.
-- ✅ Committer signature parameter (`bytes calldata committerSignature` before `revealerSignature`) added to `executeWithDualSignedMoves`. `msg.sender == committer` check and `error CallerNotCommitter` removed. EIP-712 recovery against `SignedCommit{committerMoveHash, battleKey, turnId}` enforces committer binding.
-- ✅ All test helpers (`_completeTurnFast`, `_executeDualSigned`, `_fastTurn` across `SignedCommitManager.t.sol`, `BatchInstrumentationTest`, `InlineEngineGasTest`, `StandardAttackPvPGasTest`, `SignedCommitManagerGasBenchmark`) produce a committer signature in addition to the revealer signature.
-- ✅ New TDD security tests added in `SignedCommitManager.t.sol`:
-  - `test_executeWithDualSigned_thirdPartyRelay_succeeds` — drops `msg.sender` check; arbitrary relayer with both valid sigs can submit.
-  - `test_revert_executeWithDualSigned_unilateralRevealerAttack` — regression: revealer alone (forging committer sig with their own key) cannot inject a self-chosen committer preimage.
-  - `test_revert_executeWithDualSigned_wrongCommitterSigner` — committer-sig recovers to revealer's address → revert.
-  - `test_revert_executeWithDualSigned_committerSigForWrongHash` — committer signs a different `moveHash` than the submitted preimage → engine recomputes from preimage, mismatch → revert.
-- ✅ Forge build clean (0 errors).
-- ✅ Forge test green (352/352 passing). Two BetterCPU strategy tests (`test_betterCPUSelectsHighestDamageMove`, `test_defensiveSwitch_materialityNotMet`) needed CPU-mon speed bumps to break a salt-derived RNG tiebreaker — collateral effect of the salt narrowing.
-- ✅ Gas snapshots refreshed for all impacted tests. Dual-signed flow shows expected ECDSA-recovery cost increase from the second `ecrecover`; calldata savings from narrower types partially offset.
-- ⏭ Phase 0.5 (helper extraction, no behavior change) is the next planned phase per §9.
+This phase ships before any batching work. It hardens the existing flow on its own merits and unifies the security model so the batched path in Phase 2 inherits the same shape (§4.1) without surprises.
 
 **Phase 0.1 — Instrumentation refresh.** `test/BatchInstrumentationTest.sol` already wires `vm.startStateDiffRecording` for the clean damage-trade case. Add scenarios: effect-heavy turn (status DOT + StatBoosts active), forced-switch turn, multi-mon turn. Lock final batch-size guidance.
 
@@ -384,3 +437,36 @@ New tests:
 Existing tests stay untouched — they use the legacy entry points.
 
 Targeted equivalence tests for v1; differential fuzzing as a follow-up.
+
+### 10.1 Effect-shadow correctness tests
+
+Correctness target: for any scripted turn sequence, batched execution produces the same final battle state and the same mid-execution observations as legacy single-turn execution would produce after each turn.
+
+Use a small purpose-built mock effect/move suite instead of relying only on production mons:
+
+- `AddEffectOnRun`: during a hook, calls `engine.addEffect` to append another effect to the same list.
+- `EditSelfOnRun`: calls `engine.editEffect` on its own slot and increments a counter in `data`.
+- `RemoveSelfOnRun`: returns `removeAfterRun = true`.
+- `RemoveOtherOnRun`: calls `engine.removeEffect` for another slot.
+- `InspectEffectsOnRun`: calls `engine.getEffects` during the batch and records/validates the visible list.
+- `SingletonAbilityRegister`: exercises ability-triggered self-registration through `_activateAbility`.
+
+Required cases:
+
+- **Add visibility:** an effect added on sub-turn `T` is visible to `getEffects` and to `_handleEffects` on sub-turn `T+1`.
+- **Add during iteration:** when an effect adds another effect while `_handleEffects` is iterating, the shadow count + `effectsDirtyBitmap` behavior matches legacy storage behavior.
+- **Edit visibility:** data written by `editEffect` or returned from a hook is visible to later hooks in the same batch.
+- **Remove visibility:** a removed effect is tombstoned in shadow, skipped by later `_handleEffects`, and omitted from `getEffects`, with slot indices preserved.
+- **OnRemove callback:** removing an effect with `OnRemove` sees shadowed active mon indices and can perform shadowed writes.
+- **Singleton/idempotency:** ability self-registration checks the shadow list, so repeated activation in one batch does not duplicate an effect.
+- **Global effects:** repeat add/edit/remove/getEffects cases for global effects, including index `15` to cover the `MAX_GLOBAL_EFFECTS = 16` boundary.
+- **Per-player boundaries:** cover p0 mon 0, p0 mon 7, p1 mon 0, and p1 mon 7 to exercise numeric key offsets.
+- **Capacity:** adding a ninth effect to one mon or a seventeenth global effect fails/no-ops according to the chosen production behavior, and never corrupts adjacent shadow keys.
+- **Flush parity:** after batch flush, storage `EffectInstance` slots and counts match the legacy run byte-for-byte, including tombstones.
+
+Test shape:
+
+1. Start two identical battles.
+2. Run the same scripted turns through legacy single-turn execution in battle A.
+3. Submit all turns, execute one full batch in battle B.
+4. Compare `BattleData`, mon states, `globalKV`, `getEffects` for all relevant lists, and any mock-recorded observations.

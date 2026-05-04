@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
+from ..parser.ast_nodes import FunctionDefinition, ModifierDefinition, SourceUnit
+from ..parser.visitor import ASTVisitor
+
 
 class DiagnosticSeverity(Enum):
     """Severity levels for transpiler diagnostics."""
@@ -240,3 +243,30 @@ class TranspilerDiagnostics:
 
         parts = [f'{count} {construct}' for construct, count in sorted(by_construct.items())]
         return f'Transpiler warnings: {", ".join(parts)}'
+
+
+class AstDiagnosticVisitor(ASTVisitor):
+    """Collect diagnostics from a parsed AST."""
+
+    def __init__(self, diagnostics: TranspilerDiagnostics, file_path: str = ''):
+        self.diagnostics = diagnostics
+        self.file_path = file_path
+
+    def visit_ModifierDefinition(self, node: ModifierDefinition):
+        self.diagnostics.warn_modifier_stripped(node.name, file_path=self.file_path)
+        return self.generic_visit(node)
+
+    def visit_FunctionDefinition(self, node: FunctionDefinition):
+        for mod_name in node.modifiers:
+            name = mod_name if isinstance(mod_name, str) else str(mod_name)
+            self.diagnostics.warn_modifier_stripped(name, file_path=self.file_path)
+        return self.generic_visit(node)
+
+
+def emit_ast_diagnostics(
+    ast: SourceUnit,
+    diagnostics: TranspilerDiagnostics,
+    file_path: str = '',
+) -> None:
+    """Scan an AST and emit diagnostics for degraded/unsupported constructs."""
+    AstDiagnosticVisitor(diagnostics, file_path).visit(ast)
