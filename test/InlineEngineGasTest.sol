@@ -10,7 +10,6 @@ import "../src/Structs.sol";
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";

@@ -10,7 +10,6 @@ import {IEffect} from "../effects/IEffect.sol";
 
 import {Ownable} from "../lib/Ownable.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";
-import {AttackCalculator} from "./AttackCalculator.sol";
 import {IMoveSet} from "./IMoveSet.sol";
 import {ATTACK_PARAMS} from "./StandardAttackStructs.sol";
 

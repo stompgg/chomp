@@ -6,15 +6,11 @@ import "../src/Constants.sol";
 
 // Fundamental entities
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
-import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {IEffect} from "../src/effects/IEffect.sol";
-import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
 import {GachaRegistry, IGachaRNG} from "../src/gacha/GachaRegistry.sol";
-import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";

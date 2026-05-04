@@ -187,7 +187,7 @@ contract PengymTest is Test, BattleHelper {
         (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
         bool hasPostWorkoutEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(postWorkout))) {
+            if (address(aliceEffects[i].effect) == address(postWorkout)) {
                 hasPostWorkoutEffect = true;
                 break;
             }
@@ -204,7 +204,7 @@ contract PengymTest is Test, BattleHelper {
         (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
         bool hasPanicEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(panicStatus))) {
+            if (address(aliceEffects[i].effect) == address(panicStatus)) {
                 hasPanicEffect = true;
                 break;
             }
@@ -229,7 +229,7 @@ contract PengymTest is Test, BattleHelper {
         hasPanicEffect = false;
 
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(panicStatus))) {
+            if (address(aliceEffects[i].effect) == address(panicStatus)) {
                 hasPanicEffect = true;
                 break;
             }
@@ -362,7 +362,7 @@ contract PengymTest is Test, BattleHelper {
         (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
         bool hasPostWorkoutEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(postWorkout))) {
+            if (address(aliceEffects[i].effect) == address(postWorkout)) {
                 hasPostWorkoutEffect = true;
                 break;
             }
@@ -379,7 +379,7 @@ contract PengymTest is Test, BattleHelper {
         (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
         bool hasFrostbiteEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(frostbiteStatus))) {
+            if (address(aliceEffects[i].effect) == address(frostbiteStatus)) {
                 hasFrostbiteEffect = true;
                 break;
             }
@@ -408,7 +408,7 @@ contract PengymTest is Test, BattleHelper {
         (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
         hasFrostbiteEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (aliceEffects[i].effect == IEffect(address(frostbiteStatus))) {
+            if (address(aliceEffects[i].effect) == address(frostbiteStatus)) {
                 hasFrostbiteEffect = true;
                 break;
             }

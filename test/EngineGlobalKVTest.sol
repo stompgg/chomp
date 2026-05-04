@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
-import {MonStateIndexName, Type} from "../src/Enums.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 

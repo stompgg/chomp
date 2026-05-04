@@ -10,7 +10,6 @@ import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {GachaRegistry} from "../src/gacha/GachaRegistry.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
-import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 

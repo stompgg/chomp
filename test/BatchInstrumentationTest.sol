@@ -8,12 +8,10 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
-import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
-import {EIP712} from "../src/lib/EIP712.sol";
 
 import {IEngine} from "../src/IEngine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
@@ -26,11 +24,12 @@ import {IValidator} from "../src/IValidator.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
+import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// Counts SLOAD / SSTORE access patterns on a warm steady-state turn, to ground the PLAN_OPT.md
 /// gas math in real data instead of estimates.
-contract BatchInstrumentationTest is Test, EIP712 {
+contract BatchInstrumentationTest is SignedCommitHelper {
 
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
@@ -46,10 +45,6 @@ contract BatchInstrumentationTest is Test, EIP712 {
     ITypeCalculator typeCalc;
     TestTeamRegistry defaultRegistry;
     StandardAttackFactory attackFactory;
-
-    function _domainNameAndVersion() internal pure override returns (string memory, string memory) {
-        return ("SignedCommitManager", "1");
-    }
 
     function setUp() public {
         p0 = vm.addr(P0_PK);
@@ -103,84 +98,60 @@ contract BatchInstrumentationTest is Test, EIP712 {
         return battleKey;
     }
 
-    function _signDualReveal(
-        uint256 privateKey,
-        bytes32 battleKey,
-        uint64 turnId,
-        bytes32 committerMoveHash,
-        uint8 revealerMoveIndex,
-        bytes32 revealerSalt,
-        uint240 revealerExtraData
-    ) internal view returns (bytes memory) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256("SignedCommitManager"),
-                keccak256("1"),
-                block.chainid,
-                address(signedCommitManager)
-            )
-        );
-        bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
-            SignedCommitLib.DualSignedReveal({
-                battleKey: battleKey,
-                turnId: turnId,
-                committerMoveHash: committerMoveHash,
-                revealerMoveIndex: revealerMoveIndex,
-                revealerSalt: revealerSalt,
-                revealerExtraData: revealerExtraData
-            })
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     function _fastTurn(
         bytes32 battleKey,
         uint8 p0MoveIndex,
         uint8 p1MoveIndex,
-        uint240 p0ExtraData,
-        uint240 p1ExtraData
+        uint16 p0ExtraData,
+        uint16 p1ExtraData
     ) internal {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-        bytes32 committerSalt = keccak256(abi.encode("committer", battleKey, turnId));
-        bytes32 revealerSalt = keccak256(abi.encode("revealer", battleKey, turnId));
+        uint104 committerSalt = uint104(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
+        uint104 revealerSalt = uint104(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
 
         uint8 committerMoveIndex;
-        uint240 committerExtraData;
+        uint16 committerExtraData;
         uint8 revealerMoveIndex;
-        uint240 revealerExtraData;
+        uint16 revealerExtraData;
+        uint256 committerPk;
         uint256 revealerPk;
-        address committer;
 
         if (turnId % 2 == 0) {
             committerMoveIndex = p0MoveIndex;
             committerExtraData = p0ExtraData;
             revealerMoveIndex = p1MoveIndex;
             revealerExtraData = p1ExtraData;
+            committerPk = P0_PK;
             revealerPk = P1_PK;
-            committer = p0;
         } else {
             committerMoveIndex = p1MoveIndex;
             committerExtraData = p1ExtraData;
             revealerMoveIndex = p0MoveIndex;
             revealerExtraData = p0ExtraData;
+            committerPk = P1_PK;
             revealerPk = P0_PK;
-            committer = p1;
         }
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        bytes memory committerSig =
+            _signCommit(address(signedCommitManager), committerPk, committerMoveHash, battleKey, turnId);
         bytes memory revealerSig = _signDualReveal(
-            revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
+            address(signedCommitManager),
+            revealerPk,
+            battleKey,
+            turnId,
+            committerMoveHash,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData
         );
 
-        vm.prank(committer);
         signedCommitManager.executeWithDualSignedMoves(
             battleKey,
             committerMoveIndex, committerSalt, committerExtraData,
             revealerMoveIndex, revealerSalt, revealerExtraData,
+            committerSig,
             revealerSig
         );
         engine.resetCallContext();
@@ -314,7 +285,7 @@ contract BatchInstrumentationTest is Test, EIP712 {
         vm.warp(vm.getBlockTimestamp() + 1);
 
         // Warm-up: lead-in switch + 1 damage trade.
-        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0));
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey, 0, 0, 0, 0);
 
         // Now profile a steady-state warm turn.

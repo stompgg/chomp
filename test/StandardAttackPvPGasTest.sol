@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
-import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";

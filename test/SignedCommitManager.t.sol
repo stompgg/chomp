@@ -18,7 +18,6 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
-import {SignedCommitLib} from "../src/commit-manager/SignedCommitLib.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 
 abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelper {
