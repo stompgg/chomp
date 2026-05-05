@@ -34,10 +34,10 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
      * If it's turn 0, randomly selects a mon index to swap to
      *     Otherwise, randomly selects a valid move, switch index, or no op
      */
-    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint240 playerExtraData)
+    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint16 playerExtraData)
         external
         virtual
-        returns (uint128 moveIndex, uint240 extraData);
+        returns (uint128 moveIndex, uint16 extraData);
 
     /**
      * Public test-friendly wrapper: fetches context and forwards. playerIndex is ignored
@@ -63,7 +63,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             uint256 teamSize = ctx.p1TeamSize;
             RevealedMove[] memory switchChoices = new RevealedMove[](teamSize);
             for (uint256 i = 0; i < teamSize; i++) {
-                switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(i)});
+                switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: 0, extraData: uint16(i)});
             }
             return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
         }
@@ -77,7 +77,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             validSwitchIndices = new uint256[](teamSize);
             for (uint256 i = 0; i < teamSize; i++) {
                 if (i != activeMonIndex) {
-                    if (_validateCPUMove(ctx, SWITCH_MOVE_INDEX, uint240(i))) {
+                    if (_validateCPUMove(ctx, SWITCH_MOVE_INDEX, uint16(i))) {
                         validSwitchIndices[validSwitchCount++] = i;
                     }
                 }
@@ -89,19 +89,19 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             for (uint256 i = 0; i < validSwitchCount; i++) {
                 switchChoices[i] = RevealedMove({
                     moveIndex: SWITCH_MOVE_INDEX,
-                    salt: "",
-                    extraData: uint240(validSwitchIndices[i])
+                    salt: 0,
+                    extraData: uint16(validSwitchIndices[i])
                 });
             }
             return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
         }
         uint8[] memory validMoveIndices = new uint8[](NUM_MOVES);
-        uint240[] memory validMoveExtraData = new uint240[](NUM_MOVES);
+        uint16[] memory validMoveExtraData = new uint16[](NUM_MOVES);
         uint256 validMoveCount;
         // Check for valid moves
         for (uint256 i = 0; i < NUM_MOVES; i++) {
             uint256 rawMoveSlot = ctx.cpuActiveMonMoveSlots[i];
-            uint240 extraDataToUse = 0;
+            uint16 extraDataToUse = 0;
             // Inline moves always have ExtraDataType.None — skip extraData logic
             if (!MoveSlotLib.isInline(rawMoveSlot)) {
                 IMoveSet move = MoveSlotLib.toIMoveSet(rawMoveSlot);
@@ -112,7 +112,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     }
                     uint256 randomIndex =
                         _sampleRNG(keccak256(abi.encode(nonce++, ctx.battleKey, block.timestamp))) % validSwitchCount;
-                    extraDataToUse = uint240(validSwitchIndices[randomIndex]);
+                    extraDataToUse = uint16(validSwitchIndices[randomIndex]);
                     validMoveExtraData[validMoveCount] = extraDataToUse;
                 } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
                     uint256 opponentTeamSize = ctx.p0TeamSize;
@@ -129,7 +129,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     }
                     uint256 randomIndex =
                         _sampleRNG(keccak256(abi.encode(nonce++, ctx.battleKey, block.timestamp))) % validTargetCount;
-                    extraDataToUse = uint240(validTargets[randomIndex]);
+                    extraDataToUse = uint16(validTargets[randomIndex]);
                     validMoveExtraData[validMoveCount] = extraDataToUse;
                 }
             }
@@ -141,15 +141,15 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         RevealedMove[] memory validMovesArray = new RevealedMove[](validMoveCount);
         for (uint256 i = 0; i < validMoveCount; i++) {
             validMovesArray[i] =
-                RevealedMove({moveIndex: validMoveIndices[i], salt: "", extraData: validMoveExtraData[i]});
+                RevealedMove({moveIndex: validMoveIndices[i], salt: 0, extraData: validMoveExtraData[i]});
         }
         RevealedMove[] memory validSwitchesArray = new RevealedMove[](validSwitchCount);
         for (uint256 i = 0; i < validSwitchCount; i++) {
             validSwitchesArray[i] =
-                RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: "", extraData: uint240(validSwitchIndices[i])});
+                RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: 0, extraData: uint16(validSwitchIndices[i])});
         }
         RevealedMove[] memory noOpArray = new RevealedMove[](1);
-        noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: "", extraData: 0});
+        noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: 0, extraData: 0});
 
         nonceToUse = nonce;
         return (noOpArray, validMovesArray, validSwitchesArray);
@@ -172,7 +172,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     ///      DEFAULT_MOVES_PER_MON / DEFAULT_MONS_PER_TEAM; the CPU's own iteration already bounds
     ///      moveIndex below NUM_MOVES and monToSwitchIndex below p1TeamSize, so the basic/switch
     ///      checks are equivalent to the engine-side versions.
-    function _validateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint240 extraData)
+    function _validateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint16 extraData)
         internal
         returns (bool)
     {
@@ -182,7 +182,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
     }
 
-    function _inlineValidateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint240 extraData)
+    function _inlineValidateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint16 extraData)
         private
         view
         returns (bool)

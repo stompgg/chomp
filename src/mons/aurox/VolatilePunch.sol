@@ -46,7 +46,7 @@ contract VolatilePunch is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) public override {
         // Deal the damage to opponent

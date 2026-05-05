@@ -35,7 +35,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) external {
         // Check if already used this switch-in (effect present = already used)
@@ -107,7 +107,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

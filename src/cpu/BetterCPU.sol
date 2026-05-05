@@ -56,10 +56,10 @@ contract BetterCPU is CPU {
 
     // ============ CORE DECISION TREE ============
 
-    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint240 playerExtraData)
+    function calculateMove(CPUContext memory ctx, uint8 playerMoveIndex, uint16 playerExtraData)
         external
         override
-        returns (uint128 moveIndex, uint240 extraData)
+        returns (uint128 moveIndex, uint16 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
             _calculateValidMoves(ctx);
@@ -380,9 +380,9 @@ contract BetterCPU is CPU {
     // ============ LEAD SELECTION ============
 
     /// @notice Select lead with dual-type scoring (defensive + offensive)
-    function _selectLead(bytes32 battleKey, uint240 opponentMonExtraData, RevealedMove[] memory switches)
+    function _selectLead(bytes32 battleKey, uint16 opponentMonExtraData, RevealedMove[] memory switches)
         internal
-        returns (uint128, uint240)
+        returns (uint128, uint16)
     {
         MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, uint256(opponentMonExtraData));
         Type oppType1 = oppStats.type1;
@@ -445,7 +445,7 @@ contract BetterCPU is CPU {
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex,
         RevealedMove[] memory switches
-    ) internal view returns (uint128, uint240) {
+    ) internal view returns (uint128, uint16) {
         // If opponent isn't attacking, fall back to random
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) {
             return (switches[0].moveIndex, switches[0].extraData);

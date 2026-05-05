@@ -36,6 +36,10 @@ this Solidity source, emit a stub that re-exports from this runtime module."
 Use for Solidity whose Yul the generator can't handle, or whose semantics
 need hand-written TypeScript.
 
+Runtime replacements are explicit and take precedence over `skipFiles` and
+`skipDirs`. If a file appears in both places, the transpiler still emits the
+runtime re-export and does not parse that Solidity file.
+
 | Field | Purpose |
 |---|---|
 | `source` | Path to the `.sol` file, relative to the source root. |
@@ -104,8 +108,9 @@ you don't want in your simulator (e.g., legacy migration contracts).
 ## Field: `skipFiles`
 
 Files listed here are skipped at the filesystem level — never parsed,
-never transpiled. Nothing from the file is available for cross-file type
-discovery. Use for files that can't be parsed, files your simulator
+never transpiled, unless the same file has a `runtimeReplacements` entry.
+Nothing from the file is available for cross-file type discovery. Use for
+files that can't be parsed, files your simulator
 doesn't need, or files that transpile incorrectly but also aren't worth
 a runtime replacement.
 
@@ -119,6 +124,15 @@ domain-specific subtrees that don't belong in your simulator (e.g., a
 `cpu/` or `gacha/` directory used only in production).
 
 ## Precedence rules
+
+File-level transpilation:
+
+1. `runtimeReplacements[source]` — emits a TypeScript re-export and avoids
+   parsing the Solidity file.
+2. `skipFiles` / `skipDirs` — skips files with no runtime replacement.
+3. Normal parse + code generation.
+
+Dependency resolution:
 
 When multiple sources could decide a dependency:
 

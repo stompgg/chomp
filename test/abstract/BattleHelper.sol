@@ -25,10 +25,10 @@ abstract contract BattleHelper is Test {
         bytes32 battleKey,
         uint8 aliceMoveIndex,
         uint8 bobMoveIndex,
-        uint240 aliceExtraData,
-        uint240 bobExtraData
+        uint16 aliceExtraData,
+        uint16 bobExtraData
     ) internal {
-        bytes32 salt = "";
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         // Decide which player commits
@@ -64,8 +64,8 @@ abstract contract BattleHelper is Test {
         DefaultCommitManager commitManager,
         bytes32 battleKey,
         uint8 moveIndex,
-        bytes32 salt,
-        uint240 extraData
+        uint104 salt,
+        uint16 extraData
     ) internal {
         commitManager.revealMove(battleKey, moveIndex, salt, extraData, true);
         vm.stopPrank();
@@ -169,5 +169,20 @@ abstract contract BattleHelper is Test {
             moves: new uint256[](0),
             ability: 0
         });
+    }
+
+    /// @dev Layout used by `test/mocks/StatBoostsMove.sol`:
+    /// `[boostAmount:8 (signed) | statIndex:4 | monIndex:3 | playerIndex:1]`
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount)
+        internal
+        pure
+        returns (uint16)
+    {
+        return uint16(
+            (playerIndex & 0x1)
+            | ((monIndex & 0x7) << 1)
+            | ((statIndex & 0xF) << 4)
+            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
+        );
     }
 }

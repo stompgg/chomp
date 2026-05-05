@@ -10,8 +10,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 /**
  * Mock move that removes an effect from a target mon.
- * The effect address to remove is passed as extraData (targetArgs).
- * Targets the opponent's active mon.
+ * The effect's slot index is passed as extraData. Targets the opponent's active mon.
  */
 contract MockEffectRemover is IMoveSet {
 
@@ -25,20 +24,23 @@ contract MockEffectRemover is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256
     ) external {
-        // extraData contains the address of the effect to remove (packed as uint160)
-        address effectToRemove = address(uint160(extraData));
+        // extraData is the slot index of the effect to remove (from getEffects).
+        uint256 slotIndex = uint256(extraData);
 
         // Target the opponent's active mon
         uint256 targetPlayerIndex = 1 - attackerPlayerIndex;
 
-        // Find and remove the effect (removeEffect in Engine handles calling onRemove with proper params)
-        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetPlayerIndex, defenderMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == effectToRemove) {
-                engine.removeEffect(targetPlayerIndex, defenderMonIndex, indices[i]);
+        // Verify the slot is still occupied at this index before removing
+        (EffectInstance[] memory effects, uint256[] memory indices) =
+            engine.getEffects(battleKey, targetPlayerIndex, defenderMonIndex);
+        for (uint256 i = 0; i < indices.length; i++) {
+            if (indices[i] == slotIndex) {
+                if (address(effects[i].effect) != address(0)) {
+                    engine.removeEffect(targetPlayerIndex, defenderMonIndex, slotIndex);
+                }
                 break;
             }
         }
@@ -60,7 +62,7 @@ contract MockEffectRemover is IMoveSet {
         return MoveClass.Other;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

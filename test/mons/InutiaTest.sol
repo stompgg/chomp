@@ -112,7 +112,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // First move: Alice switches to the mon with Interweaving ability, Bob switches to the other mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(1), uint16(0)
         );
 
         // Check that Bob's mon Attack stat has been decreased
@@ -124,7 +124,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Alice switches back to the regular mon, Bob does a No-Op
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
         );
 
         // Check that Bob's mon SpecialAttack stat has been decreased
@@ -177,7 +177,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Send in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Both players select move index 0
@@ -205,7 +205,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Now both players swap to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(1), uint240(1)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(1), uint16(1)
         );
 
         // The stat boost should carry over
@@ -220,7 +220,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Now both players swap back to mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Both players select move index 0
@@ -326,7 +326,7 @@ contract InutiaTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(v, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses CE, Bob does nothing (turn 1)
@@ -339,7 +339,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps to mon index 1 (turn 3)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
         );
 
         // Verify damage dealt to Bob's mon index 1 is 1/16 of max HP (charge 1)
@@ -348,7 +348,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps to mon index 2 (turn 4)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(2)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(2)
         );
 
         // Verify damage dealt to Bob's mon index 2 is 1/4 of max HP (charge 2)
@@ -357,7 +357,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps back to mon index 0 (turn 5)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(0)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(0)
         );
 
         // Verify damage dealt to Bob's mon index 0 is 1/8 of max HP (charge 3)
@@ -366,7 +366,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Bob swaps to mon index 1
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint240(1)
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
         );
 
         // Verify damage dealt to Bob's mon index 1 is 1/16 of max HP (charge 4)
@@ -391,12 +391,12 @@ contract InutiaTest is Test, BattleHelper {
 
         // Alice swaps to mon index 1, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
 
         // Alice swaps back to mon index 0, Bob does nothing
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
         );
 
         // Verify Alice's mon index 0 is healed by 1/16 of max HP

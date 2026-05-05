@@ -30,7 +30,7 @@ contract SkipTurnMove is IMoveSet {
         return "Skip Turn";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
         engine.updateMonState(targetIndex, defenderMonIndex, MonStateIndexName.ShouldSkipTurn, 1);
     }
@@ -47,7 +47,7 @@ contract SkipTurnMove is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

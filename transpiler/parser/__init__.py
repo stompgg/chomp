@@ -58,6 +58,7 @@ from .ast_nodes import (
     AssemblyStatement,
 )
 from .parser import Parser
+from .visitor import ASTVisitor, iter_child_nodes
 
 __all__ = [
     # Base
@@ -113,4 +114,6 @@ __all__ = [
     'AssemblyStatement',
     # Parser
     'Parser',
+    'ASTVisitor',
+    'iter_child_nodes',
 ]

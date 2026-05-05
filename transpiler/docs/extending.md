@@ -42,7 +42,7 @@ wire it into codegen, add a test.
 1. In `runtime/base.ts`, define `SolidityRevertError extends Error` carrying
    `reason: string` and `data: string`.
 2. In `codegen/expression.py`, change the `require` lowering from
-   `throw new Error("Require failed")` to `throw new SolidityRevertError(<message>)`.
+   `throw new Error(...)` to `throw new SolidityRevertError(<message>)`.
    Do the same for `RevertStatement` in `codegen/statement.py`, and for
    `revert CustomError(...)` encode the error selector + args into `data`.
 3. Register `SolidityRevertError` in `ImportGenerator`'s runtime imports so

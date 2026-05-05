@@ -108,7 +108,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify that the CarrotHarvest effect was applied to Alice's mon
@@ -117,12 +117,12 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Now have Alice switch to her second mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
 
         // Now have Alice switch back to her first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(0), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
         );
 
         // Verify that the CarrotHarvest effect is still only applied once
@@ -188,7 +188,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify that staminaDelta is 1 for both mons
@@ -297,28 +297,28 @@ contract SofabbiTest is Test, BattleHelper {
 
         // First move: Both players select their first mon (index 0, the Air mon)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Damage is returned in negative, so that's why there are some weird sign cancellations below
 
         // Alice uses Guest Feature targeting mon index 1, it should deal 2x damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), uint240(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), uint16(0)
         );
         int32 bobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertApproxEqRel(-1 * bobDmg, int32(2 * gf.BASE_POWER()), 2e17);
 
         // Alice uses Guest Feature targeting mon index 2, it should deal 0 damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(2), uint240(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
         );
         int32 newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertEq(newBobDmg, bobDmg, "No damage");
 
         // Alice uses Guest Feature targeting mon index 3, it should deal 1/2 damage
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(3), uint240(0)
+            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(3), uint16(0)
         );
         newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         bobDmg = bobDmg - newBobDmg;
@@ -377,7 +377,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses nothing, Bob uses move index 1, puts Alice at 1 HP
@@ -454,7 +454,7 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Set rng to be 10

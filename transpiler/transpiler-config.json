@@ -51,7 +51,7 @@
           { "name": "at", "visibility": "protected", "params": ["set: AddressSet", "index: bigint"], "returns": "string" }
         ]
       }
-    },
+    }
   ],
   "dependencyOverrides": {
     "DefaultRuleset": {

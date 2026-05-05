@@ -121,7 +121,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Bubble Bop, Bob does nothing
@@ -147,7 +147,7 @@ contract EkinekiTest is Test, BattleHelper {
         bytes32 battleKey2 =
             _startBattle(validator2, engine2, mockOracle, registry2, matchmaker2, address(commitManager2));
         _commitRevealExecuteForAliceAndBob(
-            engine2, commitManager2, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine2, commitManager2, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob uses single hit on Alice
@@ -194,11 +194,11 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses SneakAttack targeting Bob's non-active mon (index 1)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), 0);
 
         // Verify Bob's mon at index 1 (non-active) took damage
         int32 bobMon1HpDelta = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
@@ -241,17 +241,17 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses SneakAttack targeting Bob's non-active mon (index 1) - first use
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), 0);
 
         int32 bobMon1DamageAfterFirst = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertTrue(bobMon1DamageAfterFirst < 0, "First sneak attack should deal damage");
 
         // Alice uses SneakAttack again - should do nothing (already used this switch-in)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), 0);
 
         int32 bobMon1DamageAfterSecond = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertEq(
@@ -293,21 +293,21 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both players select mon 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses SneakAttack - first use works
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), 0);
         int32 damageAfterFirst = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertTrue(damageAfterFirst < 0, "First sneak attack should deal damage");
 
         // Alice switches to mon 1 (sneak attack effect removed on switch-out)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint240(1), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
 
         // Alice (now mon 1) uses SneakAttack again - should work (reset by switch)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint240(1), 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), 0);
         int32 damageAfterReset = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertTrue(damageAfterReset < damageAfterFirst, "Sneak attack should work again after switching");
     }
@@ -362,7 +362,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob uses test attack without 999 (baseline)
@@ -457,7 +457,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob attacks Alice's mon 0 (KO), Alice does nothing
@@ -473,7 +473,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Alice forced switch to mon 2 (the one with savior complex)
         // After KO, playerSwitchForTurnFlag = 0 (Alice must switch, no commit needed)
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(2), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(2), true);
         engine.resetCallContext();
         // Verify that Alice's mon 2 got a sp atk boost (STAGE_1_BOOST = 15% of 100 = 15)
         int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 2, MonStateIndexName.SpecialAttack);
@@ -556,7 +556,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Bob KOs Alice's mon 0
@@ -564,14 +564,14 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Alice forced switch to mon 1 (savior complex triggers with 1 KO)
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         engine.resetCallContext();
         int32 spAtkDeltaFirstSwitch = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.SpecialAttack);
         assertEq(spAtkDeltaFirstSwitch, 15, "Should get 15 sp atk boost from 1 KO");
 
         // Alice switches to mon 2, Bob KOs Alice's mon 2 in the same turn (Bob is faster but switch has higher priority)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint240(2), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint16(2), 0
         );
 
         // Verify Alice's mon 2 is KO'd
@@ -583,7 +583,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Alice forced switch back to mon 1 (savior complex should NOT trigger again)
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         engine.resetCallContext();
         int32 spAtkDeltaSecondSwitch = engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.SpecialAttack);
         // Boost is temp so it was cleared when mon 1 switched out, and savior complex
@@ -665,7 +665,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Alice selects mon 0 (with savior complex) - no KO'd mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify no boost was applied (0 KOs)
@@ -682,7 +682,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         // Alice forced switch to mon 1
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, "", uint240(1), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         engine.resetCallContext();
         // Mon 1 has no ability, so no savior complex trigger
         // But the savior complex on mon 0 should NOT have been consumed (it didn't trigger)
@@ -720,7 +720,7 @@ contract EkinekiTest is Test, BattleHelper {
             _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Overflow, Bob does nothing

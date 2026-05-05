@@ -31,24 +31,19 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from .lexer import Lexer
 from .parser import Parser, SourceUnit
+from .parser.visitor import ASTVisitor
 from .parser.ast_nodes import (
     ASTNode,
     AssemblyBlock,
     AssemblyStatement,
-    Block,
     ContractDefinition,
-    Expression,
-    ExpressionStatement,
     FunctionCall,
-    FunctionDefinition,
     Identifier,
-    IfStatement,
     MemberAccess,
     NewExpression,
-    ReturnStatement,
-    VariableDeclarationStatement,
 )
 from .codegen.metadata import MetadataExtractor
+from .config import TranspilerConfig, merge_config_updates
 from .dependency_resolver import DependencyResolver
 from .type_system import TypeRegistry
 
@@ -298,34 +293,35 @@ def _scan_contract_for_maybe(contract: ContractDefinition) -> List[str]:
 
 def _walk_for_flags(node: ASTNode, reasons: List[str]) -> None:
     """Recurse an AST subtree, appending red-flag reasons as we find them."""
-    if node is None:
-        return
+    _RedFlagVisitor(reasons).visit(node)
 
-    # Assembly block — inspect the raw Yul source for patterns.
-    if isinstance(node, AssemblyBlock):
-        _inspect_yul(node.code, reasons)
-        return
-    if isinstance(node, AssemblyStatement):
-        _inspect_yul(node.block.code, reasons)
-        return
 
-    # Solidity-level function calls.
-    if isinstance(node, FunctionCall):
-        _inspect_call(node, reasons)
+class _RedFlagVisitor(ASTVisitor):
+    """Collect init-time REPLACE red flags from statement/expression trees."""
 
-    # Solidity-level `new Foo(...)` — only flag contract deployment, not
-    # array allocation (`new bytes(len)`, `new uint[](size)`).
-    if isinstance(node, NewExpression):
+    def __init__(self, reasons: List[str]):
+        self.reasons = reasons
+
+    def visit_AssemblyBlock(self, node: AssemblyBlock):
+        _inspect_yul(node.code, self.reasons)
+
+    def visit_AssemblyStatement(self, node: AssemblyStatement):
+        _inspect_yul(node.block.code, self.reasons)
+
+    def visit_FunctionCall(self, node: FunctionCall):
+        _inspect_call(node, self.reasons)
+        return self.generic_visit(node)
+
+    def visit_NewExpression(self, node: NewExpression):
         tn = node.type_name
         is_array_alloc = getattr(tn, 'is_array', False) or tn.name in (
             'bytes', 'string',
         ) or tn.name.startswith(('uint', 'int'))
         if not is_array_alloc:
-            reasons.append(f'uses `new {tn.name}(...)` to deploy a contract (no bytecode model)')
-
-    # Recurse into children.
-    for child in _iter_children(node):
-        _walk_for_flags(child, reasons)
+            self.reasons.append(
+                f'uses `new {tn.name}(...)` to deploy a contract (no bytecode model)'
+            )
+        return self.generic_visit(node)
 
 
 def _inspect_call(call: FunctionCall, reasons: List[str]) -> None:
@@ -373,19 +369,6 @@ def _inspect_yul(code: str, reasons: List[str]) -> None:
             'calls an EVM precompile via staticcall '
             '(e.g. ecrecover / sha256 / ripemd160 — no precompile impls in runtime)'
         )
-
-
-def _iter_children(node: ASTNode):
-    """Yield child AST nodes. Generic — walks any dataclass field that is an
-    AST node or a list of AST nodes. Keeps the scan insulated from specific
-    statement/expression shapes."""
-    for attr in vars(node).values():
-        if isinstance(attr, ASTNode):
-            yield attr
-        elif isinstance(attr, list):
-            for item in attr:
-                if isinstance(item, ASTNode):
-                    yield item
 
 
 def _run_resolver_dry_run(
@@ -721,13 +704,7 @@ def apply(
 def _load_config(path: Path) -> dict:
     """Read a `transpiler-config.json` — empty dict if missing or malformed.
     Warns once on invalid JSON; writers downstream clobber the file."""
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        print(f'Warning: {path} is not valid JSON; will overwrite.')
-        return {}
+    return TranspilerConfig.load(path, warn_missing=False).raw
 
 
 def _write_config(
@@ -739,44 +716,23 @@ def _write_config(
     if existing is None:
         existing = _load_config(path)
 
-    # Non-destructive merge: union skipFiles, union interfaceAliases.
-    # runtimeReplacements entries are added for each replace target.
-    skip_files = sorted(set(existing.get('skipFiles', [])) | set(plan.skip_files))
-
-    interface_aliases = dict(existing.get('interfaceAliases', {}))
-    for k, v in plan.interface_aliases.items():
-        interface_aliases.setdefault(k, v)  # existing wins on conflict
-
-    runtime_replacements = list(existing.get('runtimeReplacements', []))
-    existing_sources = {r.get('source') for r in runtime_replacements}
-    for rel_path, contract_name in plan.replace_targets:
-        if rel_path in existing_sources:
-            continue
-        runtime_replacements.append({
+    runtime_replacements = [
+        {
             'source': rel_path,
             'reason': 'TODO: explain why this Solidity source needs a runtime replacement',
             'runtimeModule': '../runtime-replacements',
             'exports': [contract_name],
-        })
+        }
+        for rel_path, contract_name in plan.replace_targets
+    ]
 
-    # Dependency overrides: existing wins on the (contract, param) key pair.
-    dep_overrides: Dict[str, Dict[str, object]] = {
-        k: dict(v) for k, v in existing.get('dependencyOverrides', {}).items()
-    }
-    for contract_name, params in plan.dependency_overrides.items():
-        dest = dep_overrides.setdefault(contract_name, {})
-        for param_name, impl in params.items():
-            dest.setdefault(param_name, impl)
-
-    merged = dict(existing)
-    if skip_files:
-        merged['skipFiles'] = skip_files
-    if interface_aliases:
-        merged['interfaceAliases'] = interface_aliases
-    if dep_overrides:
-        merged['dependencyOverrides'] = dep_overrides
-    if runtime_replacements:
-        merged['runtimeReplacements'] = runtime_replacements
+    merged = merge_config_updates(
+        existing,
+        skip_files=plan.skip_files,
+        interface_aliases=plan.interface_aliases,
+        dependency_overrides=plan.dependency_overrides,
+        runtime_replacements=runtime_replacements,
+    )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(merged, indent=2) + '\n')

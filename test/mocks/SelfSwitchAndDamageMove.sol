@@ -21,7 +21,7 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return "Self Switch And Damage Move";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240 extraData, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16 extraData, uint256) external {
         uint256 monToSwitchIndex = uint256(extraData);
 
         // Deal damage first to opponent
@@ -44,7 +44,7 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

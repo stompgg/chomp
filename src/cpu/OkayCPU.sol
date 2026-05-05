@@ -21,10 +21,10 @@ contract OkayCPU is CPU {
     /**
      * If it's turn 0, swap in a mon that resists the other player's type1 (if possible)
      */
-    function calculateMove(CPUContext memory ctx, uint8, uint240)
+    function calculateMove(CPUContext memory ctx, uint8, uint16)
         external
         override
-        returns (uint128 moveIndex, uint240 extraData)
+        returns (uint128 moveIndex, uint16 extraData)
     {
         (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
             _calculateValidMoves(ctx);
@@ -126,7 +126,7 @@ contract OkayCPU is CPU {
         RevealedMove[] memory noOp,
         RevealedMove[] memory moves,
         RevealedMove[] memory switches
-    ) internal returns (uint128, uint240) {
+    ) internal returns (uint128, uint16) {
         // Single RNG call - use different bit ranges for different random decisions
         uint256 rng = _getRNG(battleKey);
         uint256 movesLen = moves.length;

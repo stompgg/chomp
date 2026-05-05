@@ -10,7 +10,6 @@ import {IEffect} from "../effects/IEffect.sol";
 
 import {Ownable} from "../lib/Ownable.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";
-import {AttackCalculator} from "./AttackCalculator.sol";
 import {IMoveSet} from "./IMoveSet.sol";
 import {ATTACK_PARAMS} from "./StandardAttackStructs.sol";
 
@@ -51,7 +50,7 @@ contract StandardAttack is IMoveSet, Ownable {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) public virtual {
         _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
@@ -83,7 +82,7 @@ contract StandardAttack is IMoveSet, Ownable {
         );
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) public pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) public pure returns (bool) {
         return true;
     }
 

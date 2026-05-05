@@ -9,7 +9,7 @@ Module Structure:
 - parser/: AST nodes and parsing (Parser, all AST node types)
 - types/: Type registry and mappings (TypeRegistry, type conversion utilities)
 - codegen/: Code generation (TypeScriptCodeGenerator + specialized generators)
-- sol2ts.py: Main transpiler entry point
+- sol2ts.py: Main transpiler entry point (run with `python3 -m transpiler`)
 
 Usage:
     from transpiler import SolidityToTypeScriptTranspiler

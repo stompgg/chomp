@@ -93,7 +93,7 @@ contract StandardAttackRngTest is Test, BattleHelper {
 
         // Switch in mon 0 on both sides.
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Oracle returns the same rng for both attackers this turn.

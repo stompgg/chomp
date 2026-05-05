@@ -9,11 +9,10 @@ Resolution order:
 Unresolved dependencies are tracked and can be exported for user action.
 """
 
-import json
-from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from ..config import TranspilerConfig
 from .name_inferrer import NameInferrer
 
 
@@ -100,15 +99,9 @@ class DependencyResolver:
         Legacy `dependency-overrides.json` with a top-level `overrides` key
         is also accepted for backwards compatibility.
         """
-        try:
-            with open(path, 'r') as f:
-                data = json.load(f)
-                self.overrides = data.get('dependencyOverrides', data.get('overrides', {}))
-                self.interface_aliases = data.get('interfaceAliases', {})
-        except FileNotFoundError:
-            pass  # No overrides file is fine
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse {path}: {e}")
+        config = TranspilerConfig.load(path, warn_missing=False)
+        self.overrides = config.dependency_overrides
+        self.interface_aliases = config.interface_aliases
 
     def add_known_class(self, class_name: str) -> None:
         """Add a known concrete class."""
@@ -325,4 +318,3 @@ class DependencyResolver:
 
         with open(output_path, 'w') as f:
             json.dump(output, f, indent=2)
-

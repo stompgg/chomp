@@ -39,7 +39,7 @@ contract Overflow is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256,
         uint256 defenderMonIndex,
-        uint240,
+        uint16,
         uint256 rng
     ) public override {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);

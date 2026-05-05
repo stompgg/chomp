@@ -24,11 +24,30 @@ into TypeScript you can run in Node or the browser.
 
 ```bash
 git clone <REPO_URL> ~/tools/extruder
-cd ~/tools/extruder && pip install -r requirements.txt
+cd ~/tools/extruder
+
+# Optional: install the standalone CLI in editable mode.
+python3 -m pip install -e ./transpiler
 
 # In your own Foundry project:
 npm install -D viem vitest
 ```
+
+If installed, run:
+
+```bash
+extruder --help
+```
+
+From a source checkout, you can also run extruder as a Python module from
+the directory that contains the `transpiler/` package:
+
+```bash
+cd ~/tools/extruder
+python3 -m transpiler --help
+```
+
+Do not run `transpiler/sol2ts.py` directly; it uses package-relative imports.
 
 ## Quickstart
 
@@ -36,13 +55,17 @@ Bootstrap the config and scaffolded runtime-replacement stubs with one
 command:
 
 ```bash
-python3 ~/tools/extruder/sol2ts.py init src/ --yes
+cd ~/tools/extruder
+extruder init /path/to/your/foundry/project/src --yes
 ```
 
 Then transpile:
 
 ```bash
-python3 ~/tools/extruder/sol2ts.py src/ -o ts-output -d src --emit-metadata
+extruder /path/to/your/foundry/project/src \
+  -o /path/to/your/foundry/project/ts-output \
+  -d /path/to/your/foundry/project/src \
+  --emit-metadata
 ```
 
 See [`docs/quickstart.md`](docs/quickstart.md) for the full walkthrough.
@@ -51,7 +74,7 @@ See [`docs/quickstart.md`](docs/quickstart.md) for the full walkthrough.
 
 - **Parse → AST → emit TS.** Not bytecode, not an EVM.
 - `uint*` / `int*` → `bigint`. `address` / `bytes*` → `string`. Mappings →
-  `Record`. Structs → interfaces + factory. Enums → `as const` objects.
+  `Record`. Structs → interfaces + factory. Enums → TypeScript `enum`s.
 - Contracts become ES classes extending a runtime `Contract` base that
   carries `_contractAddress`, `_storage`, `_msg`, an event emitter, and a
   transient-storage reset hook.
@@ -75,6 +98,8 @@ extruder init <src-dir> [--yes] [--stub-output-dir DIR] [--config-path PATH]
 extruder --emit-replacement-stub CONTRACT SOL_FILE [-o OUTPUT]
 ```
 
+`python3 -m transpiler ...` supports the same commands from a source checkout.
+
 | Flag | Purpose |
 |---|---|
 | `input` *(positional)* | File or directory to transpile. |
@@ -82,8 +107,7 @@ extruder --emit-replacement-stub CONTRACT SOL_FILE [-o OUTPUT]
 | `-d`, `--discover` *(repeatable)* | Root(s) to scan for type discovery. Pass every source root you need cross-file resolution across. |
 | `--stdout` | Print a single file to stdout instead of writing (debugging). |
 | `--emit-metadata` | Also emit `factories.ts`. |
-| `--metadata-only` | Skip TS generation, only write `factories.ts`. |
-| `--overrides` | Path to `transpiler-config.json`. Defaults to the one next to `sol2ts.py`. |
+| `--overrides` | Path to `transpiler-config.json`. Defaults to the one bundled with the package. |
 | `--emit-replacement-stub CONTRACT SOL_FILE` | Emit a TypeScript scaffold for a runtime replacement. Body = `throw new Error('Not implemented')`. See [`docs/runtime-replacements.md`](docs/runtime-replacements.md). |
 | `init <src-dir>` | Scan a tree and scaffold a starter `transpiler-config.json` + runtime-replacement stubs. See [`docs/init.md`](docs/init.md). |
 
@@ -103,12 +127,11 @@ extruder --emit-replacement-stub CONTRACT SOL_FILE [-o OUTPUT]
   reading before shipping.
 - [Extending](docs/extending.md) — contributor-facing; closing gaps in the
   transpiler itself.
-- [FAQ](docs/faq.md) — currently empty; grows as real questions come in.
 
 ## Testing
 
 ```bash
-python3 transpiler/test_transpiler.py
+python3 -m transpiler.test_transpiler
 ```
 
 Python unit tests cover the lexer, parser, codegen (Yul, type casts,

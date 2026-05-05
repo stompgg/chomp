@@ -14,6 +14,7 @@ from ..parser.ast_nodes import (
     FunctionDefinition,
     VariableDeclaration,
 )
+from ..parser.visitor import ASTVisitor
 from ..dependency_resolver import DependencyResolver
 
 
@@ -29,13 +30,14 @@ class ContractMetadata:
         self.is_abstract = kind == 'abstract'
 
 
-class MetadataExtractor:
+class MetadataExtractor(ASTVisitor):
     """Extracts metadata from parsed Solidity ASTs."""
 
     def __init__(self):
         self.contracts: Dict[str, ContractMetadata] = {}
         self.interfaces: Set[str] = set()
         self.libraries: Set[str] = set()
+        self._file_path = ''
 
     def extract_from_ast(self, ast: SourceUnit, file_path: str) -> None:
         """Extract metadata from a parsed AST.
@@ -44,29 +46,34 @@ class MetadataExtractor:
             ast: The parsed SourceUnit
             file_path: Relative file path (without .sol extension)
         """
-        for contract in ast.contracts:
-            metadata = ContractMetadata(
-                name=contract.name,
-                kind=contract.kind,
-                file_path=file_path
+        previous_file_path = self._file_path
+        self._file_path = file_path
+        self.visit(ast)
+        self._file_path = previous_file_path
+
+    def visit_ContractDefinition(self, contract: ContractDefinition) -> None:
+        metadata = ContractMetadata(
+            name=contract.name,
+            kind=contract.kind,
+            file_path=self._file_path,
+        )
+
+        # Track contract type
+        if contract.kind == 'interface':
+            self.interfaces.add(contract.name)
+        elif contract.kind == 'library':
+            self.libraries.add(contract.name)
+
+        # Extract base contracts
+        metadata.base_contracts = list(contract.base_contracts)
+
+        # Extract constructor parameters
+        if contract.constructor:
+            metadata.constructor_params = self._extract_params(
+                contract.constructor
             )
 
-            # Track contract type
-            if contract.kind == 'interface':
-                self.interfaces.add(contract.name)
-            elif contract.kind == 'library':
-                self.libraries.add(contract.name)
-
-            # Extract base contracts
-            metadata.base_contracts = list(contract.base_contracts)
-
-            # Extract constructor parameters
-            if contract.constructor:
-                metadata.constructor_params = self._extract_params(
-                    contract.constructor
-                )
-
-            self.contracts[contract.name] = metadata
+        self.contracts[contract.name] = metadata
 
     def _extract_params(
         self, func: FunctionDefinition

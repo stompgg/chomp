@@ -41,7 +41,7 @@ contract SleepStatus is StatusEffect {
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex != SWITCH_MOVE_INDEX) {
-            engine.setMove(battleKey, targetIndex, NO_OP_MOVE_INDEX, "", 0);
+            engine.setMove(battleKey, targetIndex, NO_OP_MOVE_INDEX, 0, 0);
         }
     }
 

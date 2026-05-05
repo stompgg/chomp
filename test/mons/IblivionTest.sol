@@ -112,7 +112,7 @@ contract IblivionTest is Test, BattleHelper {
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Check that Baselight level is 2 (1 from switch-in + 1 from round end)
@@ -153,7 +153,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Baselight starts at 2 (1 from switch + 1 from round end)
@@ -227,7 +227,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice starts with 2 Baselight stacks (1 from switch + 1 from round end)
@@ -292,7 +292,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // No Baselight stacks
@@ -370,7 +370,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice has 2 stacks (not 3), so normal power (80)
@@ -441,7 +441,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Wait for 3 stacks (start at 2, need 1 more round)
@@ -500,7 +500,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // At Baselight 2, Loop should give 30% boost
@@ -555,7 +555,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop first time
@@ -611,7 +611,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Wait for 3 stacks (start at 2, need 1 more round)
@@ -666,7 +666,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Start at 2 stacks (1 initial + 1 from round end)
@@ -714,7 +714,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop to get stat boosts
@@ -767,7 +767,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop
@@ -847,7 +847,7 @@ contract IblivionTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Check priority
@@ -945,7 +945,7 @@ contract IblivionTest is Test, BattleHelper {
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint240(0), uint240(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Verify Alice's attack starts at base (0 delta)
@@ -994,10 +994,20 @@ contract IblivionTest is Test, BattleHelper {
         }
         assertTrue(stillHasBurn, "Alice should still have burn effect after Renormalize");
 
-        // Bob uses MockEffectRemover to remove burn from Alice (move index 1)
-        // Pass burn status address as extraData
+        // Bob uses MockEffectRemover to remove burn from Alice (move index 1).
+        // Pass burn status's slot index as extraData (looked up from Alice's effects).
+        uint16 burnSlot;
+        {
+            (EffectInstance[] memory beforeRemove, uint256[] memory beforeIndices) = engine.getEffects(battleKey, 0, 0);
+            for (uint256 i = 0; i < beforeRemove.length; i++) {
+                if (address(beforeRemove[i].effect) == address(burnStatus)) {
+                    burnSlot = uint16(beforeIndices[i]);
+                    break;
+                }
+            }
+        }
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, uint240(uint160(address(burnStatus)))
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, burnSlot
         );
 
         // Verify burn effect is removed

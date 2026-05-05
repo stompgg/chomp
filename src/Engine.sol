@@ -15,7 +15,6 @@ import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {TimeoutCheckParams, ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
-import {MoveSlotLib} from "./moves/MoveSlotLib.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
 contract Engine is IEngine, MappingAllocator {
@@ -46,8 +45,8 @@ contract Engine is IEngine, MappingAllocator {
     // A non-zero encoded move is the "transient is populated for this call" signal.
     uint256 private transient _turnP0MoveEncoded;
     uint256 private transient _turnP1MoveEncoded;
-    bytes32 private transient _turnP0Salt;
-    bytes32 private transient _turnP1Salt;
+    uint104 private transient _turnP0Salt;
+    uint104 private transient _turnP1Salt;
 
     // Errors
     error NoWriteAllowed();
@@ -65,7 +64,7 @@ contract Engine is IEngine, MappingAllocator {
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
     event MonMove(
-        bytes32 indexed battleKey, uint256 packedPlayerIndexMonIndex, uint256 packedMoveIndexExtraData, bytes32 salt
+        bytes32 indexed battleKey, uint256 packedPlayerIndexMonIndex, uint256 packedMoveIndexExtraData, uint104 salt
     );
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
@@ -300,11 +299,11 @@ contract Engine is IEngine, MappingAllocator {
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
-        bytes32 p0Salt,
-        uint240 p0ExtraData,
+        uint104 p0Salt,
+        uint16 p0ExtraData,
         uint8 p1MoveIndex,
-        bytes32 p1Salt,
-        uint240 p1ExtraData
+        uint104 p1Salt,
+        uint16 p1ExtraData
     ) external {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
@@ -329,7 +328,7 @@ contract Engine is IEngine, MappingAllocator {
 
     /// @notice Combined single-player setMove + execute for forced switch turns
     /// @dev Only callable by moveManager. The acting player is inferred from battle.playerSwitchForTurnFlag.
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external {
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
 
@@ -358,12 +357,12 @@ contract Engine is IEngine, MappingAllocator {
         _executeInternal(battleKey, storageKey);
     }
 
-    /// @dev Decodes a transient-encoded move (layout: [extraData:240 | packedMoveIndex:8]) into a
+    /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
     /// MoveDecision. Encoded == 0 means "no current turn move" since packedMoveIndex always has
     /// IS_REAL_TURN_BIT set for a real move.
     function _decodeMove(uint256 encoded) private pure returns (MoveDecision memory m) {
         m.packedMoveIndex = uint8(encoded & 0xFF);
-        m.extraData = uint240(encoded >> 8);
+        m.extraData = uint16(encoded >> 8);
     }
 
     /// @dev Returns the current turn's MoveDecision for `playerIndex`. During an active
@@ -381,7 +380,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     /// @dev Salt companion to `_getCurrentTurnMove`.
-    function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (bytes32) {
+    function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint104) {
         uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
         if (encoded != 0) {
             return playerIndex == 0 ? _turnP0Salt : _turnP1Salt;
@@ -481,12 +480,12 @@ contract Engine is IEngine, MappingAllocator {
             // Update the temporary RNG to the newest value
             // Inline RNG computation when oracle is address(0) to avoid external call
             uint256 rng;
-            bytes32 p0TurnSalt = _getCurrentTurnSalt(config, 0);
-            bytes32 p1TurnSalt = _getCurrentTurnSalt(config, 1);
+            uint104 p0TurnSalt = _getCurrentTurnSalt(config, 0);
+            uint104 p1TurnSalt = _getCurrentTurnSalt(config, 1);
             if (address(config.rngOracle) == address(0)) {
                 rng = uint256(keccak256(abi.encode(p0TurnSalt, p1TurnSalt)));
             } else {
-                rng = config.rngOracle.getRNG(p0TurnSalt, p1TurnSalt);
+                rng = config.rngOracle.getRNG(bytes32(uint256(p0TurnSalt)), bytes32(uint256(p1TurnSalt)));
             }
             tempRNG = rng;
 
@@ -730,8 +729,8 @@ contract Engine is IEngine, MappingAllocator {
     function resetCallContext() external {
         _turnP0MoveEncoded = 0;
         _turnP1MoveEncoded = 0;
-        _turnP0Salt = bytes32(0);
-        _turnP1Salt = bytes32(0);
+        _turnP0Salt = 0;
+        _turnP1Salt = 0;
     }
 
     function end(bytes32 battleKey) external {
@@ -1377,8 +1376,8 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config,
         uint256 playerIndex,
         uint8 moveIndex,
-        bytes32 salt,
-        uint240 extraData
+        uint104 salt,
+        uint16 extraData
     ) internal {
         // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
         // Regular moves (< SWITCH_MOVE_INDEX) are stored as moveIndex + 1 to avoid zero ambiguity
@@ -1395,7 +1394,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, bytes32 salt, uint240 extraData)
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
     {
         bool isInsideExecute = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
@@ -1565,7 +1564,7 @@ contract Engine is IEngine, MappingAllocator {
         // check below silently no-ops and timeout handles the stuck player.
         if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
             moveIndex = SWITCH_MOVE_INDEX;
-            move.extraData = uint240(0);
+            move.extraData = uint16(0);
         }
 
         // Handle a switch, no-op, or regular move.
@@ -2391,7 +2390,7 @@ contract Engine is IEngine, MappingAllocator {
 
     /// @notice Validates a player move, handling both inline validation (when validator is address(0)) and external validators
     /// @dev This allows callers like CPU to validate moves without needing to handle the address(0) case themselves
-    function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint240 extraData)
+    function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
         returns (bool)
     {

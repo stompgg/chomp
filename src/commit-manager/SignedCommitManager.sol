@@ -20,13 +20,16 @@ import {SignedCommitLib} from "./SignedCommitLib.sol";
 ///        3. Alice reveals (TX 3)
 ///
 ///      Dual-signed flow (1 transaction):
-///        1. Alice signs her move hash off-chain, sends to Bob
-///        2. Bob signs his move + Alice's hash off-chain, sends to Alice
-///        3. Alice calls executeWithDualSignedMoves with both moves + Bob's signature (TX 1)
+///        1. Alice signs her move hash off-chain (SignedCommit), sends to Bob
+///        2. Bob signs his move + Alice's hash off-chain (DualSignedReveal), sends back
+///        3. Anyone (Alice, Bob, or a relayer) calls executeWithDualSignedMoves with
+///           both signatures + Alice's preimage (TX 1)
 ///
-///      Security: Alice commits to her hash before seeing Bob's move. Bob signs over
-///      Alice's hash, so even though Alice sees Bob's move before submitting, Alice
-///      cannot change her move (must provide valid preimage for the hash Bob signed).
+///      Security: Alice commits to her hash before seeing Bob's move (binding Alice
+///      cryptographically via her SignedCommit). Bob signs over Alice's hash (binding
+///      Bob via his DualSignedReveal). Both signatures together prove both players'
+///      intent without trusting msg.sender — submission can be relayed without
+///      reopening any unilateral-revealer attack.
 ///
 ///      Fallback if Alice stalls: Bob can use commitWithSignature() to publish Alice's
 ///      signed commitment on-chain, then continue with the normal reveal flow.
@@ -35,9 +38,6 @@ import {SignedCommitLib} from "./SignedCommitLib.sol";
 contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when the signature verification fails
     error InvalidSignature();
-
-    /// @notice Thrown when caller is not the committing player for this turn
-    error CallerNotCommitter();
 
     /// @notice Thrown when trying to use dual-signed flow on a single-player turn
     error NotTwoPlayerTurn();
@@ -54,8 +54,12 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     }
 
     /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
-    /// @dev The committer (A) submits both moves. The revealer (B) has signed over
-    ///      their move and A's move hash, binding both players to their moves.
+    /// @dev Both players sign off-chain — committer over `SignedCommit{committerMoveHash, …}`
+    ///      and revealer over `DualSignedReveal{committerMoveHash, …, revealerMove…}`. Anyone
+    ///      can submit (relayer-friendly) since both signatures are required and bind each
+    ///      player independently. Without the explicit committer signature, a malicious
+    ///      revealer could pick any preimage `P*`, sign `DualSignedReveal{keccak(P*), …}`
+    ///      and play `P*` as the committer's move — the committer signature closes that.
     /// @param battleKey The battle identifier
     /// @param committerMoveIndex The committer's move index
     /// @param committerSalt The committer's salt
@@ -63,48 +67,54 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @param revealerMoveIndex The revealer's move index
     /// @param revealerSalt The revealer's salt
     /// @param revealerExtraData The revealer's extra data
+    /// @param committerSignature EIP-712 signature from the committer over
+    ///        SignedCommit(committerMoveHash, battleKey, turnId)
     /// @param revealerSignature EIP-712 signature from the revealer over
-    ///        DualSignedReveal(battleKey, turnId, committerMoveHash, revealerMove...)
+    ///        DualSignedReveal(battleKey, turnId, committerMoveHash, revealerMove…)
     function executeWithDualSignedMoves(
         bytes32 battleKey,
         uint8 committerMoveIndex,
-        bytes32 committerSalt,
-        uint240 committerExtraData,
+        uint104 committerSalt,
+        uint16 committerExtraData,
         uint8 revealerMoveIndex,
-        bytes32 revealerSalt,
-        uint240 revealerExtraData,
+        uint104 revealerSalt,
+        uint16 revealerExtraData,
+        bytes calldata committerSignature,
         bytes calldata revealerSignature
     ) external {
-        // Use lightweight getter (validates internally, reverts on bad state)
         (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        // Caller must be the committing player
-        if (msg.sender != committer) {
-            revert CallerNotCommitter();
-        }
-
-        // Compute the committer's move hash
         bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
-        // Verify the revealer's signature over DualSignedReveal
-        SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
-            battleKey: battleKey,
-            turnId: turnId,
-            committerMoveHash: committerMoveHash,
-            revealerMoveIndex: revealerMoveIndex,
-            revealerSalt: revealerSalt,
-            revealerExtraData: revealerExtraData
-        });
-
-        bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
-        if (ECDSA.recoverCalldata(digest, revealerSignature) != revealer) {
-            revert InvalidSignature();
+        // Scoped to keep `commit`/`reveal` structs from sharing stack space across recoveries.
+        {
+            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
+                moveHash: committerMoveHash,
+                battleKey: battleKey,
+                turnId: turnId
+            });
+            bytes32 commitDigest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
+            if (ECDSA.recoverCalldata(commitDigest, committerSignature) != committer) {
+                revert InvalidSignature();
+            }
         }
 
-        // Execute with moves in a single call (engine validates during execution)
-        // No playerData updates needed - engine tracks lastExecuteTimestamp for timeouts
+        {
+            SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: revealerMoveIndex,
+                revealerSalt: revealerSalt,
+                revealerExtraData: revealerExtraData
+            });
+            bytes32 revealDigest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+            if (ECDSA.recoverCalldata(revealDigest, revealerSignature) != revealer) {
+                revert InvalidSignature();
+            }
+        }
+
         if (turnId % 2 == 0) {
-            // Committer is p0
             ENGINE.executeWithMoves(
                 battleKey,
                 committerMoveIndex,
@@ -115,7 +125,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
                 revealerExtraData
             );
         } else {
-            // Committer is p1
             ENGINE.executeWithMoves(
                 battleKey,
                 revealerMoveIndex,
@@ -130,7 +139,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
     /// @notice Executes a forced single-player move, usually a switch after a KO, in one transaction.
     /// @dev The acting player is inferred from the engine's switch flag and must be msg.sender.
-    function executeSinglePlayerMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData) external {
+    function executeSinglePlayerMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
         CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
 
         if (ctx.startTimestamp == 0) {

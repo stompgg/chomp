@@ -118,7 +118,7 @@ contract DefaultCommitManager is ICommitManager {
         emit MoveCommit(battleKey, caller);
     }
 
-    function revealMove(bytes32 battleKey, uint8 moveIndex, bytes32 salt, uint240 extraData, bool autoExecute)
+    function revealMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData, bool autoExecute)
         external
     {
         // Get all battle context in one call

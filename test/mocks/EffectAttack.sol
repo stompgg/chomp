@@ -33,7 +33,7 @@ contract EffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint240, uint256) external {
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
         engine.addEffect(targetIndex, defenderMonIndex, EFFECT, bytes32(0));
     }
@@ -50,7 +50,7 @@ contract EffectAttack is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(IEngine, bytes32, uint240) external pure returns (bool) {
+    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
         return true;
     }
 

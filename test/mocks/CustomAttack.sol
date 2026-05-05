@@ -55,7 +55,7 @@ contract CustomAttack is IMoveSet {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint240 extraData,
+        uint16 extraData,
         uint256 rng
     ) external {
         _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
@@ -73,7 +73,7 @@ contract CustomAttack is IMoveSet {
         return _standardAttack.moveType(engine, battleKey);
     }
 
-    function isValidTarget(IEngine engine, bytes32 battleKey, uint240 extraData) external view returns (bool) {
+    function isValidTarget(IEngine engine, bytes32 battleKey, uint16 extraData) external view returns (bool) {
         return _standardAttack.isValidTarget(engine, battleKey, extraData);
     }
 
