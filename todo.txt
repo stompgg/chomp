@@ -1,15 +1,51 @@
 # TODO
+- allow anyone to customize team index for cpu battles (?)
+- add leveling system as a hook
+    - at end of game, if mon survived, +2 exp, if KO'ed +1 exp
+    - if first game of the day (resets every 24 hrs) x2 exp
+    - if pvp game, x2 exp as well
+    - levels 
+        1-4: exp needed is level + 3
+        5-8: 
+        9-12: 
+    +/- hp, atk, def, speed (12 levels)
+    - apply  to mon (13 : null, and then +/- for all 4 stats)
 
-Content updates:
-- Random CPU mode
-- Basic achievements
-- Add Nirvamma
-- Better multiplayer
+    Relentless ATK↑DEF↓—Pure aggression, no regard for safety
+    Inexorable ATK↑SPD↓—A slow, unstoppable crushing force
+    Despolate ATK↑HP↓— Wild, self-destructive power
+    Ossified DEF↑SPD↓—Dug in, immovable, going nowhere
+    Stoic DEF↑ATK↓—Endures everything, retaliates nothing
+    Warded DEF↑HP↓—A hard shell over a brittle core
+    Corpulent HP↑SPD↓—Lethargic, swollen with reserves
+    Benevolent HP↑DEF↓—Vital and full-blooded, but exposed
+    Abundant HP↑ATK↓—Passive, enduring — never the aggressor
+    Meteoric SPD↑HP↓—Blink-and-miss-it; burns bright, fades fast
+    Unfettered SPD↑DEF↓—Strips off all armor to move freely
+    Elusive SPD↑ATK↓—Impossible to catch, but harmless
 
-Balance Patch 3:
+Nirvamma:
 
-Xmon:
-- Somniphobia damage buffed [x].
+Hard Reset, 2 stamina, -1 priority:
+- Switches out Nirvamma and the opposing mon (if able, for both)
+- If Modal Bolt is out of charges, deals damage to the inbound mon and heals Nirvamma for the damage dealt
+
+Scary Numbers, MATH, 3 stamina:
+- Deals damage, 20% chance to cause panic
+
+Chronoffense, MATH, 1 stamina:
+- When first used, track the current turn.
+- When used again, deal damage that scales with how many turns have passed
+
+Modal Bolt, 3 stamina:
+- Ice -> Fire -> Lightning cycling move, can only choose one that hasn't been chosen yet, resets on switch out
+    - separate into different layers, and then hide the resulting layer when chosen (20% chance to inflict Burn, Frostbite, Zap)
+    - once all have been chosen, something happens
+
+- Ability: Adapt
+Any time Nirvamma takes take, track the source (if it exists). Any subsequent damage from that type is reduced by 25% (this stacks), resets on switch in, up to a cap of -50% damage (i.e. 2 stacks).
+
+---------------------------------------------------------------------------------------------
 
 Volthare:
 - change dual shock to not inflict zap on self, but instead also damage self?
@@ -24,38 +60,10 @@ Aurox:
 Sofabbi
 - Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
 
-
-
-
-Nirvamma ideas:
-
-
-
-Meditate:
-- Inflicts sleep on self, boosts defenses by 25%
-- 0 stamina
-- Upon waking, gain 50% atk, lose defense boost.
-
-Chronoffense:
-- When first used, track the current turn.
-- When used again, deal damage that scales with how many turns have passed
-
-Modal Bolt
-- Ice -> Fire -> Lightning cycling move, can only choose one that hasn't been chosen yet, resets on switch out
-    - separate into different layers, and then hide the resulting layer when chosen (20% chance to inflict Burn, Frostbite, Zap)
-    - once all have been chosen, something happens
-
-- Ability: Acclimation
-Any time Nirvamma takes take, track the source (if it exists). Any subsequent damage from that type is reduced by 25% (this stacks), resets on switch in, up to a cap of -50% damage (i.e. 2 stacks).
-
------------------------------------------------------
-Implement https://docs.bungee.exchange/bungee-api/integration-guides/additional-guides/destination-payload to handle bridge + calls
-
 ---------------------------------------------------------------------------------------------
-LATER FEATURES
+LATER 
 
-0) fix the rng issue in the way StandardAttack decides which effects to apply (rn if an attack is only X% accurate, and an effect has a Y% chance, the lower X is, the higher Y should be (they shld be independent but we use the same rng source currently))
-- should fix this, but am afraid of tests needing to be rewritten.
+- consider int16 and uint16 values to pack things even more tightly
 
 ---------------------------------------------------------------------------------------------
 
@@ -78,7 +86,7 @@ Ways to mitigate:
 - avoid dealing damage in the afterDamage hook itself
 - maintain manual mutex to prevent infinite recurse
 
-4) Malicious p0 can commit to a team that has an array of mons, but modify the mon moves prior to starting a battle (after p1 commits)
+3) Malicious p0 can commit to a team that has an array of mons, but modify the mon moves prior to starting a battle (after p1 commits)
 
 Ways to mitigate:
 - Need to handle on the team registry angle probably

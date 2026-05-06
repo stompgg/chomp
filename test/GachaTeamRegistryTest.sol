@@ -7,19 +7,18 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
+import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {GachaRegistry} from "../src/gacha/GachaRegistry.sol";
 import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
-import {LookupTeamRegistry} from "../src/teams/LookupTeamRegistry.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
-
-
 
 contract GachaTeamRegistryTest is Test {
     address constant ALICE = address(1);
     address constant BOB = address(2);
+    address constant CPU = address(0xC9);
 
     DefaultMonRegistry monRegistry;
     GachaTeamRegistry gachaTeamRegistry;
@@ -42,7 +41,7 @@ contract GachaTeamRegistryTest is Test {
         gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
 
         gachaTeamRegistry = new GachaTeamRegistry(
-            LookupTeamRegistry.Args({
+            GachaTeamRegistry.Args({
                 REGISTRY: gachaRegistry, MONS_PER_TEAM: MONS_PER_TEAM, MOVES_PER_MON: MOVES_PER_MON
             }),
             gachaRegistry
@@ -124,22 +123,145 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.updateTeam(0, teamMonIndicesToOverride, newMonIndices);
     }
 
-    function test_updateTeamOverrideWorks() public {
+    function _allowOnly(address opponent) internal {
+        address[] memory toAllow = new address[](1);
+        toAllow[0] = opponent;
+        address[] memory toDisallow = new address[](0);
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
+    }
+
+    function test_setWhitelistedOpponents_onlyOwner_reverts() public {
+        // setUp leaves a prank active as ALICE.
+        address[] memory toAllow = new address[](1);
+        toAllow[0] = CPU;
+        address[] memory toDisallow = new address[](0);
+        vm.expectRevert();
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
+    }
+
+    function test_setWhitelistedOpponents_ownerSucceeds() public {
+        vm.stopPrank();
+
+        address[] memory toAllow = new address[](2);
+        toAllow[0] = CPU;
+        toAllow[1] = address(0xCA);
+        address[] memory toDisallow = new address[](0);
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
+        assertTrue(gachaTeamRegistry.isWhitelistedOpponent(CPU));
+        assertTrue(gachaTeamRegistry.isWhitelistedOpponent(address(0xCA)));
+
+        // Toggle one off via the disallow list.
+        address[] memory toAllow2 = new address[](0);
+        address[] memory toDisallow2 = new address[](1);
+        toDisallow2[0] = CPU;
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow2, toDisallow2);
+        assertFalse(gachaTeamRegistry.isWhitelistedOpponent(CPU));
+        assertTrue(gachaTeamRegistry.isWhitelistedOpponent(address(0xCA)));
+    }
+
+    function test_setOpponentTeam_revertsIfNotWhitelisted() public {
         vm.startPrank(ALICE);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            monIndices[i] = i;
-        }
-        gachaTeamRegistry.createTeam(monIndices);
-        uint256[] memory newMonIndices = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            newMonIndices[i] = i + 1;
-        }
-        gachaTeamRegistry.updateTeamForUser(newMonIndices);
-        // Assert the new indices have been set for team index 0
-        uint256[] memory teamIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            assertEq(teamIndices[i], i + 1);
-        }
+        monIndices[0] = 0;
+        monIndices[1] = 1;
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+    }
+
+    // Covers both "phantom team is keyed at uint256(uint160(msg.sender))" and "no ownership check".
+    function test_setOpponentTeam_writesAtUserAddressIndex() public {
+        vm.stopPrank();
+        _allowOnly(CPU);
+
+        vm.startPrank(ALICE);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = unownedMonId; // Alice does NOT own this mon.
+        monIndices[1] = 0;
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+
+        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(ALICE)));
+        assertEq(readIndices[0], unownedMonId);
+        assertEq(readIndices[1], 0);
+    }
+
+    function test_setOpponentTeam_overwritesPriorTeam() public {
+        vm.stopPrank();
+        _allowOnly(CPU);
+
+        vm.startPrank(ALICE);
+        uint256[] memory firstIndices = new uint256[](MONS_PER_TEAM);
+        firstIndices[0] = 0;
+        firstIndices[1] = 1;
+        gachaTeamRegistry.setOpponentTeam(CPU, firstIndices);
+
+        uint256[] memory secondIndices = new uint256[](MONS_PER_TEAM);
+        secondIndices[0] = 2;
+        secondIndices[1] = 3;
+        gachaTeamRegistry.setOpponentTeam(CPU, secondIndices);
+
+        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(ALICE)));
+        assertEq(readIndices[0], 2);
+        assertEq(readIndices[1], 3);
+    }
+
+    function test_setOpponentTeam_perUserSlots() public {
+        vm.stopPrank();
+        _allowOnly(CPU);
+
+        vm.startPrank(ALICE);
+        uint256[] memory aliceIndices = new uint256[](MONS_PER_TEAM);
+        aliceIndices[0] = 0;
+        aliceIndices[1] = 1;
+        gachaTeamRegistry.setOpponentTeam(CPU, aliceIndices);
+        vm.stopPrank();
+
+        vm.startPrank(BOB);
+        uint256[] memory bobIndices = new uint256[](MONS_PER_TEAM);
+        bobIndices[0] = 2;
+        bobIndices[1] = 3;
+        gachaTeamRegistry.setOpponentTeam(CPU, bobIndices);
+        vm.stopPrank();
+
+        uint256[] memory aliceTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(ALICE)));
+        uint256[] memory bobTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(BOB)));
+        assertEq(aliceTeam[0], 0);
+        assertEq(aliceTeam[1], 1);
+        assertEq(bobTeam[0], 2);
+        assertEq(bobTeam[1], 3);
+    }
+
+    function test_defaultValidator_acceptsPhantomTeam() public {
+        DefaultValidator validator = new DefaultValidator(
+            engine,
+            DefaultValidator.Args({MONS_PER_TEAM: MONS_PER_TEAM, MOVES_PER_MON: MOVES_PER_MON, TIMEOUT_DURATION: 0})
+        );
+
+        vm.stopPrank();
+        _allowOnly(CPU);
+
+        // CPU needs at least one regular team so getTeamCount(CPU) > 0.
+        uint256[] memory cpuRegularTeam = new uint256[](MONS_PER_TEAM);
+        cpuRegularTeam[0] = 0;
+        cpuRegularTeam[1] = 1;
+        gachaTeamRegistry.createTeamForUser(CPU, cpuRegularTeam);
+
+        vm.startPrank(ALICE);
+        uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
+        aliceTeam[0] = 0;
+        aliceTeam[1] = 1;
+        gachaTeamRegistry.createTeam(aliceTeam);
+
+        uint256[] memory phantomTeam = new uint256[](MONS_PER_TEAM);
+        phantomTeam[0] = unownedMonId;
+        phantomTeam[1] = 0;
+        gachaTeamRegistry.setOpponentTeam(CPU, phantomTeam);
+        vm.stopPrank();
+
+        Mon[][] memory teams = new Mon[][](2);
+        teams[0] = gachaTeamRegistry.getTeam(ALICE, 0);
+        teams[1] = gachaTeamRegistry.getTeam(CPU, uint256(uint160(ALICE)));
+
+        bool ok = validator.validateGameStart(ALICE, CPU, teams, gachaTeamRegistry, 0, uint256(uint160(ALICE)));
+        assertTrue(ok);
     }
 }

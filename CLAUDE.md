@@ -78,7 +78,6 @@ chomp/
 │   │   ├── ITeamRegistry.sol
 │   │   ├── DefaultTeamRegistry.sol
 │   │   ├── GachaTeamRegistry.sol
-│   │   ├── LookupTeamRegistry.sol
 │   │   ├── IMonRegistry.sol
 │   │   └── DefaultMonRegistry.sol
 │   └── types/              # Type effectiveness calculator

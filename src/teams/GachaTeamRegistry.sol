@@ -1,16 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import "../Structs.sol";
+
 import {IOwnableMon} from "../gacha/IOwnableMon.sol";
 import {Ownable} from "../lib/Ownable.sol";
-import "./LookupTeamRegistry.sol";
+import "./IMonRegistry.sol";
+import "./ITeamRegistry.sol";
 
-contract GachaTeamRegistry is LookupTeamRegistry, Ownable {
+contract GachaTeamRegistry is ITeamRegistry, Ownable {
+    uint32 constant BITS_PER_MON_INDEX = 32;
+    uint256 constant ONES_MASK = (2 ** BITS_PER_MON_INDEX) - 1;
+
+    struct Args {
+        IMonRegistry REGISTRY;
+        uint256 MONS_PER_TEAM;
+        uint256 MOVES_PER_MON;
+    }
+
+    error InvalidTeamSize();
+    error DuplicateMonId();
+    error InvalidTeamIndex();
+    error NotOwner();
+    error NotWhitelistedOpponent();
+
+    IMonRegistry immutable REGISTRY;
+    uint256 immutable MONS_PER_TEAM;
+    uint256 immutable MOVES_PER_MON;
     IOwnableMon immutable OWNER_LOOKUP;
 
-    error NotOwner();
+    mapping(address => mapping(uint256 => uint256)) public monRegistryIndicesForTeamPacked;
+    mapping(address => uint256) public numTeams;
+    mapping(address => bool) public isWhitelistedOpponent;
 
-    constructor(Args memory args, IOwnableMon _OWNER_LOOKUP) LookupTeamRegistry(args) {
+    constructor(Args memory args, IOwnableMon _OWNER_LOOKUP) {
+        REGISTRY = args.REGISTRY;
+        MONS_PER_TEAM = args.MONS_PER_TEAM;
+        MOVES_PER_MON = args.MOVES_PER_MON;
         OWNER_LOOKUP = _OWNER_LOOKUP;
         _initializeOwner(msg.sender);
     }
@@ -21,29 +47,205 @@ contract GachaTeamRegistry is LookupTeamRegistry, Ownable {
         }
     }
 
-    function createTeam(uint256[] memory monIndices) public override {
+    function createTeam(uint256[] memory monIndices) external {
         _validateOwnership(monIndices);
-        super.createTeam(monIndices);
+        _createTeamForUser(msg.sender, monIndices);
     }
 
     function createTeamForUser(address user, uint256[] memory monIndices) external onlyOwner {
         _createTeamForUser(user, monIndices);
     }
 
-    // TODO: For prod we won't want this
-    function updateTeamForUser(uint256[] memory newMonIndices) external {
-        uint256[] memory teamMonIndicesToOverride = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            teamMonIndicesToOverride[i] = i;
+    function setWhitelistedOpponents(address[] memory toAllow, address[] memory toDisallow) external onlyOwner {
+        for (uint256 i; i < toAllow.length;) {
+            isWhitelistedOpponent[toAllow[i]] = true;
+            unchecked {
+                ++i;
+            }
         }
-        super.updateTeam(0, teamMonIndicesToOverride, newMonIndices);
+        for (uint256 i; i < toDisallow.length;) {
+            isWhitelistedOpponent[toDisallow[i]] = false;
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function setOpponentTeam(address opponent, uint256[] memory monIndices) external {
+        if (!isWhitelistedOpponent[opponent]) revert NotWhitelistedOpponent();
+        monRegistryIndicesForTeamPacked[opponent][uint256(uint160(msg.sender))] = _packTeam(monIndices);
+    }
+
+    function _createTeamForUser(address user, uint256[] memory monIndices) internal {
+        uint256 packed = _packTeam(monIndices);
+
+        uint256 teamId = numTeams[user];
+        monRegistryIndicesForTeamPacked[user][teamId] = packed;
+
+        // Update the team index
+        numTeams[user] = teamId + 1;
+    }
+
+    function _packTeam(uint256[] memory monIndices) internal view returns (uint256 packed) {
+        if (monIndices.length != MONS_PER_TEAM) {
+            revert InvalidTeamSize();
+        }
+        _checkForDuplicates(monIndices);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            packed |= uint256(uint32(monIndices[i])) << (i * BITS_PER_MON_INDEX);
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     function updateTeam(uint256 teamIndex, uint256[] memory teamMonIndicesToOverride, uint256[] memory newMonIndices)
-        public
-        override
+        external
     {
         _validateOwnership(newMonIndices);
-        super.updateTeam(teamIndex, teamMonIndicesToOverride, newMonIndices);
+
+        uint256 numMonsToOverride = teamMonIndicesToOverride.length;
+
+        // Check for duplicate mon indices
+        _checkForDuplicates(newMonIndices);
+
+        // Update the team
+        for (uint256 i; i < numMonsToOverride; i++) {
+            uint256 monIndexToOverride = teamMonIndicesToOverride[i];
+            _setMonRegistryIndices(teamIndex, uint32(newMonIndices[i]), monIndexToOverride, msg.sender);
+        }
+    }
+
+    function _checkForDuplicates(uint256[] memory monIndices) internal view {
+        for (uint256 i; i < MONS_PER_TEAM - 1; i++) {
+            for (uint256 j = i + 1; j < MONS_PER_TEAM; j++) {
+                if (monIndices[i] == monIndices[j]) {
+                    revert DuplicateMonId();
+                }
+            }
+        }
+    }
+
+    // Layout: | Nothing | Nothing | Mon5 | Mon4 | Mon3 | Mon2 | Mon1 | Mon 0 <-- rightmost bits
+    function _setMonRegistryIndices(uint256 teamIndex, uint32 monId, uint256 position, address caller) internal {
+        // Create a bitmask to clear the bits we want to modify
+        uint256 clearBitmask = ~(ONES_MASK << (position * BITS_PER_MON_INDEX));
+
+        // Get the existing packed value
+        uint256 existingPackedValue = monRegistryIndicesForTeamPacked[caller][teamIndex];
+
+        // Clear the bits we want to modify
+        uint256 clearedValue = existingPackedValue & clearBitmask;
+
+        // Create the value bitmask with the new monId
+        uint256 valueBitmask = uint256(monId) << (position * BITS_PER_MON_INDEX);
+
+        // Combine the cleared value with the new value
+        monRegistryIndicesForTeamPacked[caller][teamIndex] = clearedValue | valueBitmask;
+    }
+
+    function _getMonRegistryIndex(address player, uint256 teamIndex, uint256 position) internal view returns (uint256) {
+        return uint32(monRegistryIndicesForTeamPacked[player][teamIndex] >> (position * BITS_PER_MON_INDEX));
+    }
+
+    function getMonRegistryIndicesForTeam(address player, uint256 teamIndex) public view returns (uint256[] memory) {
+        if (!isWhitelistedOpponent[player] && teamIndex >= numTeams[player]) {
+            revert InvalidTeamIndex();
+        }
+        // Cache packed value (1 SLOAD instead of MONS_PER_TEAM)
+        uint256 packed = monRegistryIndicesForTeamPacked[player][teamIndex];
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            ids[i] = uint32(packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
+            }
+        }
+        return ids;
+    }
+
+    // Read directly from the registry
+    function getTeam(address player, uint256 teamIndex) external view returns (Mon[] memory) {
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+
+        // Cache packed index (1 SLOAD instead of MONS_PER_TEAM)
+        uint256 packed = monRegistryIndicesForTeamPacked[player][teamIndex];
+
+        // Build monIds for batch call
+        uint256[] memory monIds = new uint256[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            monIds[i] = uint32(packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Single batch call instead of MONS_PER_TEAM individual calls
+        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = REGISTRY.getMonDataBatch(monIds);
+
+        // Unpack into team
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            uint256[] memory movesToUse = new uint256[](MOVES_PER_MON);
+            for (uint256 j; j < MOVES_PER_MON;) {
+                movesToUse[j] = moves[i][j];
+                unchecked {
+                    ++j;
+                }
+            }
+            team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: movesToUse});
+            unchecked {
+                ++i;
+            }
+        }
+        return team;
+    }
+
+    function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external view returns (Mon[] memory, Mon[] memory) {
+        Mon[] memory p0Team = new Mon[](MONS_PER_TEAM);
+        Mon[] memory p1Team = new Mon[](MONS_PER_TEAM);
+
+        uint256 p0Packed = monRegistryIndicesForTeamPacked[p0][p0TeamIndex];
+        uint256 p1Packed = monRegistryIndicesForTeamPacked[p1][p1TeamIndex];
+
+        // Build all monIds for batch call
+        uint256 totalMons = MONS_PER_TEAM * 2;
+        uint256[] memory monIds = new uint256[](totalMons);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            monIds[i] = uint32(p0Packed >> (i * BITS_PER_MON_INDEX));
+            monIds[i + MONS_PER_TEAM] = uint32(p1Packed >> (i * BITS_PER_MON_INDEX));
+            unchecked {
+                ++i;
+            }
+        }
+
+        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = REGISTRY.getMonDataBatch(monIds);
+
+        // Unpack into teams
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            uint256[] memory p0MovesToUse = new uint256[](MOVES_PER_MON);
+            uint256[] memory p1MovesToUse = new uint256[](MOVES_PER_MON);
+            for (uint256 j; j < MOVES_PER_MON;) {
+                p0MovesToUse[j] = moves[i][j];
+                p1MovesToUse[j] = moves[i + MONS_PER_TEAM][j];
+                unchecked {
+                    ++j;
+                }
+            }
+            p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: p0MovesToUse});
+            p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: abilities[i + MONS_PER_TEAM][0], moves: p1MovesToUse});
+            unchecked {
+                ++i;
+            }
+        }
+
+        return (p0Team, p1Team);
+    }
+
+    function getTeamCount(address player) external view returns (uint256) {
+        return numTeams[player];
+    }
+
+    function getMonRegistry() external view returns (IMonRegistry) {
+        return REGISTRY;
     }
 }

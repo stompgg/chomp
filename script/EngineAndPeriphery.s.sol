@@ -14,7 +14,6 @@ import {GachaRegistry, IGachaRNG} from "../src/gacha/GachaRegistry.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
-import {LookupTeamRegistry} from "../src/teams/LookupTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
@@ -58,7 +57,7 @@ contract EngineAndPeriphery is Script {
         deployedContracts.push(DeployData({name: "GACHA REGISTRY", contractAddress: address(gachaRegistry)}));
 
         GachaTeamRegistry gachaTeamRegistry = new GachaTeamRegistry(
-            LookupTeamRegistry.Args({REGISTRY: gachaRegistry, MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON}), gachaRegistry
+            GachaTeamRegistry.Args({REGISTRY: gachaRegistry, MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON}), gachaRegistry
         );
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
 
