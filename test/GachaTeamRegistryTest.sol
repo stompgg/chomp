@@ -9,8 +9,6 @@ import "../src/Structs.sol";
 
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
-import {GachaRegistry} from "../src/gacha/GachaRegistry.sol";
-import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
@@ -20,9 +18,7 @@ contract GachaTeamRegistryTest is Test {
     address constant BOB = address(2);
     address constant CPU = address(0xC9);
 
-    DefaultMonRegistry monRegistry;
     GachaTeamRegistry gachaTeamRegistry;
-    GachaRegistry gachaRegistry;
     Engine engine;
     MockGachaRNG mockRNG;
 
@@ -34,18 +30,10 @@ contract GachaTeamRegistryTest is Test {
     uint256 unownedMonId;
 
     function setUp() public {
-        monRegistry = new DefaultMonRegistry();
         engine = new Engine(0, 0, 0);
         mockRNG = new MockGachaRNG();
 
-        gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
-
-        gachaTeamRegistry = new GachaTeamRegistry(
-            GachaTeamRegistry.Args({
-                REGISTRY: gachaRegistry, MONS_PER_TEAM: MONS_PER_TEAM, MOVES_PER_MON: MOVES_PER_MON
-            }),
-            gachaRegistry
-        );
+        gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
 
         MonStats memory stats = MonStats({
             hp: 100,
@@ -68,16 +56,16 @@ contract GachaTeamRegistryTest is Test {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
 
-        for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS() + 1; i++) {
-            monRegistry.createMon(i, stats, moves, abilities, keys, values);
+        for (uint256 i = 0; i < gachaTeamRegistry.INITIAL_ROLLS() + 1; i++) {
+            gachaTeamRegistry.createMon(i, stats, moves, abilities, keys, values);
         }
 
         // Roll for Alice (due to RNG, we should get IDs 0 to INITIAL_ROLLS)
         vm.startPrank(ALICE);
-        gachaRegistry.firstRoll();
+        gachaTeamRegistry.firstRoll();
 
         // Set unowned mon id
-        unownedMonId = gachaRegistry.INITIAL_ROLLS();
+        unownedMonId = gachaTeamRegistry.INITIAL_ROLLS();
     }
 
     /*
@@ -202,6 +190,21 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(ALICE)));
         assertEq(readIndices[0], 2);
         assertEq(readIndices[1], 3);
+    }
+
+    function test_setOpponentTeam_allowsDuplicateMonIds() public {
+        vm.stopPrank();
+        _allowOnly(CPU);
+
+        vm.startPrank(ALICE);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = 0;
+        monIndices[1] = 0; // duplicate
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+
+        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint160(ALICE)));
+        assertEq(readIndices[0], 0);
+        assertEq(readIndices[1], 0);
     }
 
     function test_setOpponentTeam_perUserSlots() public {

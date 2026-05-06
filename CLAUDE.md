@@ -56,7 +56,6 @@ chomp/
 │   │   ├── StatBoosts.sol
 │   │   ├── status/         # Status effects (Burn, Frostbite, Panic, Sleep, Zap)
 │   │   └── battlefield/    # Battlefield effects (Overclock)
-│   ├── gacha/              # Gacha system for mon ownership
 │   ├── hooks/              # Engine hooks (BattleHistory)
 │   ├── lib/                # Utility libraries (ECDSA, EIP712, Ownable, etc.)
 │   ├── matchmaker/         # Battle matchmaking
@@ -74,12 +73,9 @@ chomp/
 │   │   ├── StandardAttackStructs.sol # ATTACK_PARAMS struct
 │   │   └── AttackCalculator.sol      # Damage calculation
 │   ├── rng/                # Randomness oracle interface
-│   ├── teams/              # Team and mon registry
+│   ├── teams/              # Team registry (combined team + mon registry + gacha)
 │   │   ├── ITeamRegistry.sol
-│   │   ├── DefaultTeamRegistry.sol
-│   │   ├── GachaTeamRegistry.sol
-│   │   ├── IMonRegistry.sol
-│   │   └── DefaultMonRegistry.sol
+│   │   └── GachaTeamRegistry.sol
 │   └── types/              # Type effectiveness calculator
 ├── test/                   # Foundry test suite
 │   ├── abstract/BattleHelper.sol  # Shared test helper (battle setup, commit-reveal)

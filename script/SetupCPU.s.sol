@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 
 struct DeployData {
     string name;

@@ -5,12 +5,27 @@ import "../Structs.sol";
 
 import "../abilities/IAbility.sol";
 import "../moves/IMoveSet.sol";
-import "./IMonRegistry.sol";
 
 interface ITeamRegistry {
-    function getMonRegistry() external returns (IMonRegistry);
     function getTeam(address player, uint256 teamIndex) external returns (Mon[] memory);
     function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external returns (Mon[] memory, Mon[] memory);
     function getTeamCount(address player) external returns (uint256);
     function getMonRegistryIndicesForTeam(address player, uint256 teamIndex) external returns (uint256[] memory);
+
+    function getMonData(uint256 monId)
+        external
+        view
+        returns (MonStats memory mon, uint256[] memory moves, uint256[] memory abilities);
+    function getMonDataBatch(uint256[] calldata monIds)
+        external
+        view
+        returns (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities);
+    function getMonStats(uint256 monId) external view returns (MonStats memory);
+    function getMonMetadata(uint256 monId, bytes32 key) external view returns (bytes32);
+    function getMonCount() external view returns (uint256);
+    function getMonIds(uint256 start, uint256 end) external view returns (uint256[] memory);
+    function isValidMove(uint256 monId, uint256 moveSlot) external view returns (bool);
+    function isValidAbility(uint256 monId, uint256 ability) external view returns (bool);
+    function validateMon(Mon memory m, uint256 monId) external view returns (bool);
+    function validateMonBatch(Mon[] calldata mons, uint256[] calldata monIds) external view returns (bool);
 }

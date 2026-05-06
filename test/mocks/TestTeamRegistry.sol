@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
 
-import {IMonRegistry} from "../../src/teams/IMonRegistry.sol";
 import {ITeamRegistry} from "../../src/teams/ITeamRegistry.sol";
 
 contract TestTeamRegistry is ITeamRegistry {
@@ -48,15 +47,60 @@ contract TestTeamRegistry is ITeamRegistry {
         return teams[player].length;
     }
 
-    function getMonRegistry() external pure returns (IMonRegistry) {
-        return IMonRegistry(address(0));
-    }
-
     function setIndices(uint256[] memory _indices) public {
         indices = _indices;
     }
 
     function getMonRegistryIndicesForTeam(address, uint256) external view returns (uint256[] memory) {
         return indices;
+    }
+
+    // Tests skip mon validation by having validateMonBatch always return true.
+    function validateMonBatch(Mon[] calldata, uint256[] calldata) external pure returns (bool) {
+        return true;
+    }
+
+    function validateMon(Mon memory, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function getMonData(uint256)
+        external
+        pure
+        returns (MonStats memory, uint256[] memory, uint256[] memory)
+    {
+        return (MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None}), new uint256[](0), new uint256[](0));
+    }
+
+    function getMonDataBatch(uint256[] calldata)
+        external
+        pure
+        returns (MonStats[] memory, uint256[][] memory, uint256[][] memory)
+    {
+        return (new MonStats[](0), new uint256[][](0), new uint256[][](0));
+    }
+
+    function getMonStats(uint256) external pure returns (MonStats memory) {
+        return MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None});
+    }
+
+    function getMonMetadata(uint256, bytes32) external pure returns (bytes32) {
+        return bytes32(0);
+    }
+
+    function getMonCount() external pure returns (uint256) {
+        return 0;
+    }
+
+    function getMonIds(uint256, uint256) external pure returns (uint256[] memory) {
+        return new uint256[](0);
+    }
+
+    function isValidMove(uint256, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function isValidAbility(uint256, uint256) external pure returns (bool) {
+        return true;
     }
 }

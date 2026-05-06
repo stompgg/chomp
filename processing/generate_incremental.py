@@ -177,7 +177,7 @@ def _generate_update_function(
     num_deploy = len(deploy_contracts)
 
     lines = []
-    lines.append(f"    function {fn_name}(DefaultMonRegistry registry) internal returns (DeployData[] memory) {{")
+    lines.append(f"    function {fn_name}(GachaTeamRegistry registry) internal returns (DeployData[] memory) {{")
     lines.append(f"        DeployData[] memory deployedContracts = new DeployData[]({num_deploy});")
 
     if not deploy_contracts:
@@ -272,7 +272,7 @@ def _generate_update_function(
     lines.append("")
 
     # Helper function
-    lines.append(f"    function {helper_name}(DefaultMonRegistry registry, address[{num_deploy}] memory addrs) internal {{")
+    lines.append(f"    function {helper_name}(GachaTeamRegistry registry, address[{num_deploy}] memory addrs) internal {{")
     _append_registry_update(lines, mon, diff, base_path, deployed_indices, imports)
     lines.append("    }")
     lines.append("")
@@ -445,7 +445,7 @@ def generate_incremental_script(
         "pragma solidity ^0.8.0;",
         "",
         'import {Script} from "forge-std/Script.sol";',
-        'import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";',
+        'import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";',
         'import {MonStats} from "../src/Structs.sol";',
         'import {Type} from "../src/Enums.sol";',
         "",
@@ -467,7 +467,7 @@ def generate_incremental_script(
         "    function run() external returns (DeployData[] memory deployedContracts) {",
         "        vm.startBroadcast();",
         "",
-        "        DefaultMonRegistry registry = DefaultMonRegistry(vm.envAddress(\"DEFAULT_MON_REGISTRY\"));",
+        "        GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress(\"GACHA_TEAM_REGISTRY\"));",
         "",
         f"        DeployData[][] memory allDeployData = new DeployData[][]({len(mon_fn_names)});",
         "",

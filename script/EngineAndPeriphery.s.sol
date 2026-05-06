@@ -10,9 +10,8 @@ import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {GachaRegistry, IGachaRNG} from "../src/gacha/GachaRegistry.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
-import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
+import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
@@ -50,15 +49,8 @@ contract EngineAndPeriphery is Script {
         SignedCommitManager commitManager = new SignedCommitManager(engine);
         deployedContracts.push(DeployData({name: "COMMIT MANAGER", contractAddress: address(commitManager)}));
 
-        DefaultMonRegistry monRegistry = new DefaultMonRegistry();
-        deployedContracts.push(DeployData({name: "DEFAULT MON REGISTRY", contractAddress: address(monRegistry)}));
-
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, IGachaRNG(address(0)));
-        deployedContracts.push(DeployData({name: "GACHA REGISTRY", contractAddress: address(gachaRegistry)}));
-
-        GachaTeamRegistry gachaTeamRegistry = new GachaTeamRegistry(
-            GachaTeamRegistry.Args({REGISTRY: gachaRegistry, MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON}), gachaRegistry
-        );
+        GachaTeamRegistry gachaTeamRegistry =
+            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)));
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
 
         // DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();

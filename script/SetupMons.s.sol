@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {Script} from "forge-std/Script.sol";
-import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
+import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 import {MonStats} from "../src/Structs.sol";
 import {Type} from "../src/Enums.sol";
 
@@ -69,8 +69,8 @@ contract SetupMons is Script {
     function run() external returns (DeployData[] memory deployedContracts) {
         vm.startBroadcast();
 
-        // Get the DefaultMonRegistry address
-        DefaultMonRegistry registry = DefaultMonRegistry(vm.envAddress("DEFAULT_MON_REGISTRY"));
+        // Get the GachaTeamRegistry address
+        GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
 
         // Deploy all mons and collect deployment data
         DeployData[][] memory allDeployData = new DeployData[][](12);
@@ -109,7 +109,7 @@ contract SetupMons is Script {
         vm.stopBroadcast();
     }
 
-    function deployGhouliath(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployGhouliath(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
@@ -139,7 +139,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerGhouliath(DefaultMonRegistry registry, address[4] memory addrs) internal {
+    function _registerGhouliath(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 303,
             stamina: 5,
@@ -163,7 +163,7 @@ contract SetupMons is Script {
         registry.createMon(0, stats, moves, abilities, keys, values);
     }
 
-    function deployInutia(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployInutia(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
@@ -194,7 +194,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerInutia(DefaultMonRegistry registry, address[4] memory addrs) internal {
+    function _registerInutia(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 351,
             stamina: 5,
@@ -218,7 +218,7 @@ contract SetupMons is Script {
         registry.createMon(1, stats, moves, abilities, keys, values);
     }
 
-    function deployMalalien(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployMalalien(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](2);
 
         // Cache commonly used addresses
@@ -240,7 +240,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerMalalien(DefaultMonRegistry registry, address[2] memory addrs) internal {
+    function _registerMalalien(GachaTeamRegistry registry, address[2] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 258,
             stamina: 5,
@@ -264,7 +264,7 @@ contract SetupMons is Script {
         registry.createMon(2, stats, moves, abilities, keys, values);
     }
 
-    function deployIblivion(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployIblivion(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
@@ -299,7 +299,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerIblivion(DefaultMonRegistry registry, address[5] memory addrs) internal {
+    function _registerIblivion(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 277,
             stamina: 5,
@@ -323,7 +323,7 @@ contract SetupMons is Script {
         registry.createMon(3, stats, moves, abilities, keys, values);
     }
 
-    function deployGorillax(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployGorillax(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](2);
 
         address[2] memory addrs;
@@ -342,7 +342,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerGorillax(DefaultMonRegistry registry, address[2] memory addrs) internal {
+    function _registerGorillax(GachaTeamRegistry registry, address[2] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 407,
             stamina: 5,
@@ -366,7 +366,7 @@ contract SetupMons is Script {
         registry.createMon(4, stats, moves, abilities, keys, values);
     }
 
-    function deploySofabbi(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deploySofabbi(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
@@ -396,7 +396,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerSofabbi(DefaultMonRegistry registry, address[4] memory addrs) internal {
+    function _registerSofabbi(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 333,
             stamina: 5,
@@ -420,7 +420,7 @@ contract SetupMons is Script {
         registry.createMon(5, stats, moves, abilities, keys, values);
     }
 
-    function deployPengym(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployPengym(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
@@ -450,7 +450,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerPengym(DefaultMonRegistry registry, address[4] memory addrs) internal {
+    function _registerPengym(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 371,
             stamina: 5,
@@ -474,7 +474,7 @@ contract SetupMons is Script {
         registry.createMon(6, stats, moves, abilities, keys, values);
     }
 
-    function deployEmbursa(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployEmbursa(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
@@ -510,7 +510,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerEmbursa(DefaultMonRegistry registry, address[5] memory addrs) internal {
+    function _registerEmbursa(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 420,
             stamina: 5,
@@ -534,7 +534,7 @@ contract SetupMons is Script {
         registry.createMon(7, stats, moves, abilities, keys, values);
     }
 
-    function deployVolthare(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployVolthare(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
@@ -565,7 +565,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerVolthare(DefaultMonRegistry registry, address[4] memory addrs) internal {
+    function _registerVolthare(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 310,
             stamina: 5,
@@ -589,7 +589,7 @@ contract SetupMons is Script {
         registry.createMon(8, stats, moves, abilities, keys, values);
     }
 
-    function deployAurox(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployAurox(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
@@ -623,7 +623,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerAurox(DefaultMonRegistry registry, address[5] memory addrs) internal {
+    function _registerAurox(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 400,
             stamina: 5,
@@ -647,7 +647,7 @@ contract SetupMons is Script {
         registry.createMon(9, stats, moves, abilities, keys, values);
     }
 
-    function deployXmon(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployXmon(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
@@ -682,7 +682,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerXmon(DefaultMonRegistry registry, address[5] memory addrs) internal {
+    function _registerXmon(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 311,
             stamina: 5,
@@ -706,7 +706,7 @@ contract SetupMons is Script {
         registry.createMon(10, stats, moves, abilities, keys, values);
     }
 
-    function deployEkineki(DefaultMonRegistry registry) internal returns (DeployData[] memory) {
+    function deployEkineki(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
@@ -740,7 +740,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerEkineki(DefaultMonRegistry registry, address[5] memory addrs) internal {
+    function _registerEkineki(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 299,
             stamina: 5,

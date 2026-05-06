@@ -7,10 +7,9 @@ import "../src/Engine.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {GachaRegistry} from "../src/gacha/GachaRegistry.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
-import {DefaultMonRegistry} from "../src/teams/DefaultMonRegistry.sol";
+import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
@@ -23,7 +22,6 @@ contract GachaTest is Test, BattleHelper {
     Engine engine;
     DefaultCommitManager commitManager;
     TestTeamRegistry defaultRegistry;
-    DefaultMonRegistry monRegistry;
     MockGachaRNG mockRNG;
     DefaultMatchmaker matchmaker;
 
@@ -32,17 +30,16 @@ contract GachaTest is Test, BattleHelper {
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
-        monRegistry = new DefaultMonRegistry();
         mockRNG = new MockGachaRNG();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_firstRoll() public {
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
         // Set up mon IDs 0 to INITIAL ROLLS
         for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
-            monRegistry.createMon(
+            gachaRegistry.createMon(
                 i,
                 MonStats({
                     hp: 10,
@@ -67,17 +64,17 @@ contract GachaTest is Test, BattleHelper {
         assertEq(monIds.length, gachaRegistry.INITIAL_ROLLS());
 
         // Alice rolls again, it should fail
-        vm.expectRevert(GachaRegistry.AlreadyFirstRolled.selector);
+        vm.expectRevert(GachaTeamRegistry.AlreadyFirstRolled.selector);
         vm.prank(ALICE);
         gachaRegistry.firstRoll();
     }
 
     function test_assignPoints() public {
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
         // Set up mon IDs 0 to INITIAL ROLLS
         for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
-            monRegistry.createMon(
+            gachaRegistry.createMon(
                 i,
                 MonStats({
                     hp: 10,
@@ -140,11 +137,11 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_spendPoints() public {
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
         // Set up mon IDs 0 to INITIAL ROLLS + 1
         for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
-            monRegistry.createMon(
+            gachaRegistry.createMon(
                 i,
                 MonStats({
                     hp: 10,
@@ -208,12 +205,12 @@ contract GachaTest is Test, BattleHelper {
         vm.startPrank(ALICE);
         // (Do first roll first)
         gachaRegistry.firstRoll();
-        vm.expectRevert(GachaRegistry.NoMoreStock.selector);
+        vm.expectRevert(GachaTeamRegistry.NoMoreStock.selector);
         uint256[] memory monIds = gachaRegistry.roll(1);
         vm.stopPrank();
 
         // Add one more mon to the registry and roll again
-        monRegistry.createMon(
+        gachaRegistry.createMon(
             gachaRegistry.INITIAL_ROLLS(),
             MonStats({
                 hp: 10,
@@ -243,10 +240,10 @@ contract GachaTest is Test, BattleHelper {
     function test_firstGameBonusNotReawardedAfterRoll() public {
         // Repro: first battle → roll → second battle. The ROLL_COST first-game
         // bonus must only fire once, even though a roll happens in between.
-        GachaRegistry gachaRegistry = new GachaRegistry(monRegistry, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
         // One mon in the registry is enough for a single regular roll.
-        monRegistry.createMon(
+        gachaRegistry.createMon(
             0,
             MonStats({
                 hp: 10,

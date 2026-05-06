@@ -69,8 +69,6 @@
     "IRandomnessOracle": "DefaultRandomnessOracle",
     "IRuleset": "DefaultRuleset",
     "IValidator": "DefaultValidator",
-    "IMonRegistry": "DefaultMonRegistry",
-    "IOwnableMon": "GachaRegistry",
     "ICPURNG": null,
     "IGachaRNG": null
   },
@@ -92,7 +90,6 @@
     "rng/IGachaRNG.sol"
   ],
   "skipDirs": [
-    "cpu",
-    "gacha"
+    "cpu"
   ]
 }

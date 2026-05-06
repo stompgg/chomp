@@ -354,7 +354,7 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
     function_name = f"deploy{mon.name.replace(' ', '')}"
     lines = []
 
-    lines.append(f"    function {function_name}(DefaultMonRegistry registry) internal returns (DeployData[] memory) {{")
+    lines.append(f"    function {function_name}(GachaTeamRegistry registry) internal returns (DeployData[] memory) {{")
 
     # Get contracts for this mon
     mon_contracts = get_contracts_for_mon(mon, base_path)
@@ -446,7 +446,7 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
         deployed_indices = {name: idx for idx, name in enumerate(deployment_order)}
 
         helper_name = f"_register{mon.name.replace(' ', '')}"
-        lines.append(f"    function {helper_name}(DefaultMonRegistry registry, address[{num_contracts}] memory addrs) internal {{")
+        lines.append(f"    function {helper_name}(GachaTeamRegistry registry, address[{num_contracts}] memory addrs) internal {{")
 
         # Generate MonStats
         type1 = convert_type_to_solidity(mon.type1)
@@ -562,7 +562,7 @@ def generate_solidity_script(mons: Dict[str, MonData], contracts: Dict[str, Cont
         "pragma solidity ^0.8.0;",
         "",
         "import {Script} from \"forge-std/Script.sol\";",
-        "import {DefaultMonRegistry} from \"../src/teams/DefaultMonRegistry.sol\";",
+        "import {GachaTeamRegistry} from \"../src/teams/GachaTeamRegistry.sol\";",
         "import {MonStats} from \"../src/Structs.sol\";",
         "import {Type} from \"../src/Enums.sol\";",
         ""
@@ -611,8 +611,8 @@ def generate_solidity_script(mons: Dict[str, MonData], contracts: Dict[str, Cont
         "    function run() external returns (DeployData[] memory deployedContracts) {",
         "        vm.startBroadcast();",
         "",
-        "        // Get the DefaultMonRegistry address",
-        "        DefaultMonRegistry registry = DefaultMonRegistry(vm.envAddress(\"DEFAULT_MON_REGISTRY\"));",
+        "        // Get the GachaTeamRegistry address",
+        "        GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress(\"GACHA_TEAM_REGISTRY\"));",
         ""
     ]
 

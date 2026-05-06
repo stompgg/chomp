@@ -9,7 +9,6 @@ import {IValidator} from "./IValidator.sol";
 import {ValidatorLogic, TimeoutCheckParams} from "./lib/ValidatorLogic.sol";
 
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
-import {IMonRegistry} from "./teams/IMonRegistry.sol";
 
 contract DefaultValidator is IValidator {
     struct Args {
@@ -39,8 +38,6 @@ contract DefaultValidator is IValidator {
     // Validates that there are MONS_PER_TEAM mons per team w/ MOVES_PER_MON moves each
     function validateGameStart(address p0, address p1, Mon[][] calldata teams, ITeamRegistry teamRegistry, uint256 p0TeamIndex, uint256 p1TeamIndex
     ) external returns (bool) {
-        IMonRegistry monRegistry = teamRegistry.getMonRegistry();
-
         // p0 and p1 each have 6 mons, each mon has 4 moves
         uint256[2] memory playerIndices = [uint256(0), uint256(1)];
         address[2] memory players = [p0, p1];
@@ -67,12 +64,9 @@ contract DefaultValidator is IValidator {
                 }
             }
 
-            // Batch validate all mons against registry (1 external call instead of MONS_PER_TEAM)
-            if (address(monRegistry) != address(0)) {
-                uint256[] memory teamIndices = teamRegistry.getMonRegistryIndicesForTeam(players[i], teamIndex[i]);
-                if (!monRegistry.validateMonBatch(teams[i], teamIndices)) {
-                    return false;
-                }
+            uint256[] memory teamIndices = teamRegistry.getMonRegistryIndicesForTeam(players[i], teamIndex[i]);
+            if (!teamRegistry.validateMonBatch(teams[i], teamIndices)) {
+                return false;
             }
         }
         return true;
