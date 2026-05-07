@@ -254,7 +254,7 @@ abstract contract Ownable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Marks a function as only callable by the owner.
-    modifier onlyOwner() virtual {
+    modifier onlyOwner() {
         _checkOwner();
         _;
     }

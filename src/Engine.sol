@@ -157,16 +157,21 @@ contract Engine is IEngine, MappingAllocator {
         if (config.moveManager != battle.moveManager) {
             config.moveManager = battle.moveManager;
         }
+        if (address(config.teamRegistry) != address(battle.teamRegistry)) {
+            config.teamRegistry = battle.teamRegistry;
+        }
         // Reset effects lengths and KO bitmaps to 0 for the new battle
         config.packedP0EffectsCount = 0;
         config.packedP1EffectsCount = 0;
         config.koBitmaps = 0;
         config.globalKVCount = 0;
 
-        // Store the battle data with initial state
+        // teamIndices narrowed from Battle.uint96; phantom-team writes truncate to match.
         battleData[battleKey] = BattleData({
             p0: battle.p0,
             p1: battle.p1,
+            p0TeamIndex: uint16(battle.p0TeamIndex),
+            p1TeamIndex: uint16(battle.p1TeamIndex),
             winnerIndex: 2, // Initialize to 2 (uninitialized/no winner)
             prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
@@ -2320,6 +2325,24 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
+        // Frontend hydration: passthrough to registry for level/exp on both teams.
+        TeamLevelInfo memory p0Levels;
+        TeamLevelInfo memory p1Levels;
+        {
+            (
+                uint256[] memory p0MonIds,
+                uint256[] memory p0Exp,
+                uint256[] memory p0LevelArr,
+                uint256[] memory p1MonIds,
+                uint256[] memory p1Exp,
+                uint256[] memory p1LevelArr
+            ) = config.teamRegistry.getExpAndLevelsForTeams(
+                data.p0, data.p0TeamIndex, data.p1, data.p1TeamIndex
+            );
+            p0Levels = TeamLevelInfo({monIds: p0MonIds, exp: p0Exp, levels: p0LevelArr});
+            p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
+        }
+
         BattleConfigView memory configView = BattleConfigView({
             validator: config.validator,
             rngOracle: config.rngOracle,
@@ -2331,6 +2354,8 @@ contract Engine is IEngine, MappingAllocator {
             startTimestamp: config.startTimestamp,
             p0Salt: config.p0Salt,
             p1Salt: config.p1Salt,
+            p0TeamIndex: data.p0TeamIndex,
+            p1TeamIndex: data.p1TeamIndex,
             p0Move: config.p0Move,
             p1Move: config.p1Move,
             globalEffects: globalEffects,
@@ -2338,7 +2363,9 @@ contract Engine is IEngine, MappingAllocator {
             p1Effects: p1Effects,
             teams: teams,
             monStates: monStates,
-            globalKVEntries: globalKVEntries
+            globalKVEntries: globalKVEntries,
+            p0Levels: p0Levels,
+            p1Levels: p1Levels
         });
 
         return (configView, data);
@@ -2842,5 +2869,60 @@ contract Engine is IEngine, MappingAllocator {
         for (uint256 i; i < len; ++i) {
             ctx.cpuActiveMonMoveSlots[i] = moves[i];
         }
+    }
+
+    /// @notice Returns the MonState array for one side of a battle. Used by registry-side
+    ///         quest opcodes that aggregate over MonState fields (e.g. MIN/MAX_HP_DELTA) so
+    ///         they pay 1 extcall + N internal SLOADs instead of N separate getMonStateForBattle
+    ///         extcalls. Length = team size for that side.
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
+        external
+        view
+        returns (MonState[] memory states)
+    {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        BattleConfig storage config = battleConfig[storageKey];
+        uint8 teamSizes = config.teamSizes;
+        uint256 size = playerIndex == 0 ? (teamSizes & 0xF) : (teamSizes >> 4);
+        states = new MonState[](size);
+        if (playerIndex == 0) {
+            for (uint256 i; i < size;) {
+                states[i] = config.p0States[i];
+                unchecked { ++i; }
+            }
+        } else {
+            for (uint256 i; i < size;) {
+                states[i] = config.p1States[i];
+                unchecked { ++i; }
+            }
+        }
+    }
+
+    /// @notice Batched getter for the registry's onBattleEnd hook. Bundles every
+    ///         BattleData + BattleConfig field needed at battle end into a single staticcall —
+    ///         replaces the older split (getPlayersForBattle + getWinner + getKOBitmap×2).
+    function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory ctx) {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        BattleConfig storage config = battleConfig[storageKey];
+
+        ctx.p0 = data.p0;
+        ctx.p1 = data.p1;
+        // winner: address(0) when uninitialized OR when it's a draw the engine never
+        // explicitly sets to a non-2 winnerIndex; both cases collapse to address(0).
+        uint8 wi = data.winnerIndex;
+        ctx.winner = wi == 0 ? data.p0 : (wi == 1 ? data.p1 : address(0));
+
+        ctx.p0TeamIndex = data.p0TeamIndex;
+        ctx.p1TeamIndex = data.p1TeamIndex;
+
+        uint16 koBitmaps = config.koBitmaps;
+        ctx.p0KOBitmap = uint8(koBitmaps & 0xFF);
+        ctx.p1KOBitmap = uint8(koBitmaps >> 8);
+
+        ctx.p0ActiveMonIndex = uint8(_unpackActiveMonIndex(data.activeMonIndex, 0));
+        ctx.p1ActiveMonIndex = uint8(_unpackActiveMonIndex(data.activeMonIndex, 1));
+
+        ctx.turnId = data.turnId;
     }
 }

@@ -68,3 +68,14 @@ uint256 constant GAME_TIMEOUT_DURATION = 30; // seconds
 uint256 constant GACHA_ROLL_COST = 7;
 uint256 constant GACHA_POINTS_PER_WIN = 3;
 uint256 constant GACHA_POINTS_PER_LOSS = 2;
+
+// Per-mon exp + daily multipliers
+uint256 constant EXP_PER_SURVIVING_MON = 2;
+uint256 constant EXP_PER_KOD_MON = 1;
+uint256 constant EXP_FIRST_GAME_OF_DAY_MULT = 2;
+uint256 constant EXP_FIRST_PVP_OF_DAY_MULT = 2;
+
+// Quest rewards
+uint256 constant QUEST_REWARD_POINTS = 2;
+uint256 constant QUEST_REWARD_EXP_MULT = 2;
+uint256 constant MAX_PREDICATES_PER_QUEST = 6;

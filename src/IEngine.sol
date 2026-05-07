@@ -122,4 +122,9 @@ interface IEngine {
         external
         view
         returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag);
+    function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
+        external
+        view
+        returns (MonState[] memory);
 }
