@@ -41,6 +41,7 @@ contract Engine is IEngine, MappingAllocator {
     mapping(bytes32 storageKey => mapping(uint256 slotIdx => uint256 packedKeys)) private globalKVKeySlots;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
+    int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
     // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
     // A non-zero encoded move is the "transient is populated for this call" signal.
     uint256 private transient _turnP0MoveEncoded;
@@ -1159,9 +1160,13 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _dealDamageInternal(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, int32 damage)
-        internal
-    {
+    function _dealDamageInternal(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex,
+        int32 damage,
+        uint256 source
+    ) internal {
         // If game is already over, skip all damage
         BattleData storage battle = battleData[battleKeyForWrite];
         if (battle.winnerIndex != 2) {
@@ -1171,6 +1176,24 @@ contract Engine is IEngine, MappingAllocator {
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
 
         if (monState.isKnockedOut) {
+            return;
+        }
+
+        // PreDamage pipeline: victim-side mon-local effects can mutate the in-flight damage by
+        // calling engine.setPreDamage(). Reuses the standard _runEffects loop; running damage is
+        // threaded through the transient `tempPreDamage` slot so the iteration logic doesn't change.
+        uint256 monEffectCount = playerIndex == 0
+            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        if (monEffectCount > 0) {
+            tempPreDamage = damage;
+            _runEffects(
+                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source)
+            );
+            damage = tempPreDamage;
+            tempPreDamage = 0;
+        }
+        if (damage <= 0) {
             return;
         }
 
@@ -1188,12 +1211,14 @@ contract Engine is IEngine, MappingAllocator {
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
         // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
-        uint256 afterDamageCount = playerIndex == 0
-            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (afterDamageCount > 0) {
+        if (monEffectCount > 0) {
             _runEffects(
-                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, abi.encode(damage)
+                battleKeyForWrite,
+                tempRNG,
+                playerIndex,
+                playerIndex,
+                EffectStep.AfterDamage,
+                abi.encode(damage, source)
             );
         }
     }
@@ -1204,7 +1229,18 @@ contract Engine is IEngine, MappingAllocator {
             revert NoWriteAllowed();
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        _dealDamageInternal(config, playerIndex, monIndex, damage);
+        _dealDamageInternal(config, playerIndex, monIndex, damage, uint256(uint160(msg.sender)));
+    }
+
+    function getPreDamage() external view returns (int32) {
+        return tempPreDamage;
+    }
+
+    function setPreDamage(int32 value) external {
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        tempPreDamage = value;
     }
 
     function _dispatchStandardAttackInternal(
@@ -1221,7 +1257,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 critRate,
         uint8 effectAccuracy,
         IEffect effect,
-        uint256 rng
+        uint256 rng,
+        uint256 source
     ) internal returns (int32 damage, bytes32 eventType) {
         // Per-attacker rng mix: mirror mons using the same move against each other must roll differently.
         // See AttackCalculator.mixRngForAttacker for rationale; matches StandardAttack._move's external path.
@@ -1250,7 +1287,7 @@ contract Engine is IEngine, MappingAllocator {
                 AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rngToUse, critRate);
 
             if (damage > 0 && scaledBasePower > 0) {
-                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage);
+                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source);
             }
         }
 
@@ -1293,7 +1330,8 @@ contract Engine is IEngine, MappingAllocator {
             DEFAULT_CRIT_RATE,
             effectAccuracy,
             IEffect(effectAddr),
-            rng
+            rng,
+            rawMoveSlot
         );
     }
 
@@ -1332,7 +1370,8 @@ contract Engine is IEngine, MappingAllocator {
             critRate,
             effectAccuracy,
             effect,
-            rng
+            rng,
+            uint256(uint160(msg.sender))
         );
     }
 
@@ -1834,6 +1873,7 @@ contract Engine is IEngine, MappingAllocator {
                 self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
             );
         } else if (round == EffectStep.AfterDamage) {
+            (int32 damage, uint256 source) = abi.decode(extraEffectsData, (int32, uint256));
             return effect.onAfterDamage(
                 self,
                 battleKey,
@@ -1843,7 +1883,21 @@ contract Engine is IEngine, MappingAllocator {
                 monIndex,
                 p0ActiveMonIndex,
                 p1ActiveMonIndex,
-                abi.decode(extraEffectsData, (int32))
+                damage,
+                source
+            );
+        } else if (round == EffectStep.PreDamage) {
+            uint256 source = abi.decode(extraEffectsData, (uint256));
+            return effect.onPreDamage(
+                self,
+                battleKey,
+                rng,
+                data,
+                playerIndex,
+                monIndex,
+                p0ActiveMonIndex,
+                p1ActiveMonIndex,
+                source
             );
         } else if (round == EffectStep.AfterMove) {
             return

@@ -13,6 +13,10 @@ interface IEngine {
     function battleKeyForWrite() external view returns (bytes32);
     function tempRNG() external view returns (uint256);
 
+    // PreDamage threading: hooks read the running damage and call setPreDamage to mutate it.
+    function getPreDamage() external view returns (int32);
+    function setPreDamage(int32 value) external;
+
     // State mutating effects
     function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external;
     function startBattle(Battle memory battle) external;

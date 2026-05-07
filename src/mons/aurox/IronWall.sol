@@ -97,7 +97,7 @@ contract IronWall is IMoveSet, BasicEffect {
         return 0x8060;
     }
 
-    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

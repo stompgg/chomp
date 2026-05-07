@@ -10,7 +10,8 @@ interface IEffect {
 
     // Returns pre-computed bitmap of steps this effect runs at (set at deploy time)
     // Bit layout: OnApply=0x01, RoundStart=0x02, RoundEnd=0x04, OnRemove=0x08,
-    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80, OnUpdateMonState=0x100
+    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80,
+    //             OnUpdateMonState=0x100, PreDamage=0x200
     function getStepsBitmap() external view returns (uint16);
 
     // Whether or not to add the effect if some condition is met
@@ -65,6 +66,9 @@ interface IEffect {
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
+    // `source` is the originator of the damage (low 160 bits = address for external dealDamage
+    // callers; full uint256 = packed move slot for the inline-StandardAttack path — detect with
+    // `source >> 160 != 0`). `damage` is the final post-PreDamage value actually applied.
     function onAfterDamage(
         IEngine engine,
         bytes32 battleKey,
@@ -74,7 +78,25 @@ interface IEffect {
         uint256 monIndex,
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex,
-        int32 damage
+        int32 damage,
+        uint256 source
+    ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
+
+    // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
+    // Runs before damage is applied; effects can mutate the in-flight damage by calling
+    // `engine.setPreDamage(int32)`. Read the current running damage via `engine.getPreDamage()`.
+    // Multiple subscribed effects compose sequentially in effect-array order, each observing
+    // the post-mutation value from prior effects.
+    function onPreDamage(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 p0ActiveMonIndex,
+        uint256 p1ActiveMonIndex,
+        uint256 source
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onAfterMove(
