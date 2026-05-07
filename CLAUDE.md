@@ -73,9 +73,11 @@ chomp/
 │   │   ├── StandardAttackStructs.sol # ATTACK_PARAMS struct
 │   │   └── AttackCalculator.sol      # Damage calculation
 │   ├── rng/                # Randomness oracle interface
-│   ├── teams/              # Team registry (combined team + mon registry + gacha)
+│   ├── teams/              # Team registry (combined team + mon registry + gacha + progression)
 │   │   ├── ITeamRegistry.sol
-│   │   └── GachaTeamRegistry.sol
+│   │   ├── GachaTeamRegistry.sol  # Roll, exp, daily multipliers, onBattleEnd hook
+│   │   ├── Facets.sol             # 12-facet ±5% stat tradeoff system (abstract)
+│   │   └── Quests.sol             # Daily quest pool + packed predicate evaluator (abstract)
 │   └── types/              # Type effectiveness calculator
 ├── test/                   # Foundry test suite
 │   ├── abstract/BattleHelper.sol  # Shared test helper (battle setup, commit-reveal)
@@ -195,6 +197,54 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 ### Type System
 
 16 types: Yin, Yang, Earth, Liquid, Fire, Metal, Ice, Nature, Lightning, Mythic, Air, Math, Cyber, Wild, Cosmic, None. Type effectiveness is calculated by `ITypeCalculator`.
+
+### Gacha & Progression System
+
+`GachaTeamRegistry` is also an `IEngineHook` (subscribes to `OnBattleEnd`) and inherits `Facets` + `Quests`. It owns the full progression loop: rolling, points, per-mon exp, daily multipliers, level-up facet draws, and quest evaluation.
+
+**Rolling.** Mon ids are sequential starting at 0 (`createMon` enforces `monId == monIds.length()`). Ids `[0, NUM_STARTERS)` (= 3) are *starter* mons.
+
+- `firstRoll(uint256 starterId)` — one-shot per player. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free.
+- `roll(uint256 numRolls)` — paid (`ROLL_COST` per roll, default 7 points). Uniform across the entire pool. Reverts `NoMoreStock` once the caller owns every mon.
+- Linear-probing dedup keeps draws inside their window so `firstRoll`'s 3 random picks never land on a starter.
+
+**Points / exp / facets storage.** All packed for gas:
+
+```
+playerData[address] (1 slot per player):
+  bit 255       bonusAwarded (first-roll bonus claimed)
+  bit 254       isWhitelistedAsOpponent (admin-set; replaces a separate mapping)
+  bits 192-223  lastQuestCompletedDay (uint32, day = block.timestamp / 1 days)
+  bits 160-191  lastPvPDay (uint32)
+  bits 128-159  lastGameDay (uint32)
+  bits 0-127    pointsBalance (uint128)
+
+packedExpForMon[player][monId / 16]: 16 mons × 16 bits each, capped at 65535.
+facetData[player][monId / 16]:        16 mons × 16 bits each
+                                       (bits 0-11 unlockedBitmap, bits 12-15 assignedFacetId).
+```
+
+Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws` walks the team in one pass and coalesces SSTOREs by bucket.
+
+**Battle rewards (`onBattleEnd`).** CPU side is short-circuited (no SSTOREs, no event). For each human side:
+
+- Base points: `POINTS_PER_WIN` (3) on win, `POINTS_PER_LOSS` (2) otherwise.
+- First-roll bonus: `+ROLL_COST` on the player's first ever battle (one-shot).
+- Per-mon exp: `EXP_PER_SURVIVING_MON` (2) for alive slots, `EXP_PER_KOD_MON` (1) for KO'd slots.
+- Multipliers stack multiplicatively: `EXP_FIRST_GAME_OF_DAY_MULT` (×2) on the player's first battle of any kind that day, `EXP_FIRST_PVP_OF_DAY_MULT` (×2) on the first PvP battle that day, `QUEST_REWARD_EXP_MULT` (×2) when the active quest completes. Max stack = ×8.
+- Quest reward: winner-only, one-shot per day; adds `QUEST_REWARD_POINTS` (2) on top.
+- Level-ups (12-tier curve, capped at level 12 to match `TOTAL_FACETS`) trigger one facet draw per level crossed.
+
+**Facets.** 12 systematically-derived ±5% stat tradeoffs across 4 stat groups (`HP`, `Atk`, `Def`, `Speed`). `_facetDef(facetId)` is pure — no constant table. Unlocks are persistent per-mon; `assignFacets(monIds, facetIds)` is a free bulk re-assign that requires the caller to own every listed mon and the facet to be in the unlocked bitmap (`facetId == 0` clears). Active facets shift base stats at battle start (Engine applies deltas after validator, so the validator still sees base stats).
+
+**CPU opponent facets.** When fighting a whitelisted opponent (CPU), the human caller picks the CPU's team *and* its facet config in one call: `setOpponentTeam(opponent, monIndices, facetIds)`. Per-user-per-CPU storage (`opponentTeamFacetsPacked[opponent][phantomKey]`) keyed by the same `uint16(uint160(msg.sender))` phantom slot as the team. No ownership/unlock checks — any facet 0..12 is allowed. `getTeamsWithDeltas` short-circuits to this slot-indexed config when a side is `isWhitelistedOpponent`, so per-user CPU facet configurations stay isolated even when many users fight the same CPU.
+
+**Quests.** Owner-managed `questPool` + a single `activeQuestPacked` slot (current day + active quest id). One quest is active per day, picked pseudorandomly via lazy rotation at the *end* of `onBattleEnd` so the current battle is judged against the pre-rotation quest. Each quest has up to `MAX_PREDICATES_PER_QUEST` (6) AND-composed predicates packed into one storage slot (41 bits each: `op` 5b, `cmp` 3b, `negate` 1b, `arg` 16b, `operand` 16b — total 246b + 3b count). Opcodes cover battle context (`TURNS`, `ALIVE_COUNT`, `ACTIVE_SLOT_INDEX`, `MON_KO_AT_SLOT`), team composition (`HAS_MON_ID`), per-mon progression (`MON_LEVEL`, `MON_FACET`), and live battle state (`MON_STATE` via `Engine.getMonStateForBattle`).
+
+**Events.**
+
+- `Roll(address indexed player, uint256[] monIds, uint256 pointsSpent)` — fires on both `firstRoll` (spend = 0) and paid `roll`.
+- `GachaEvent(address indexed player, uint256 packed)` — one per non-CPU player per battle. Layout sized for `MONS_PER_TEAM` up to 8: points (bits 0-15), per-mon exp gain (bits 16-79, 8 lanes × 8b), per-mon facets unlocked this battle (bits 80-111, 8 lanes × 4b), `BONUS_*` flags (bits 112-119: `FIRST_ROLL` | `FIRST_GAME` | `FIRST_PVP` | `QUEST`), multiplier (bits 120-127), outcome (bits 128-135: 0=loss, 1=win, 2=draw). Lanes saturate so a future tuning blow-up can't bleed into neighbouring fields.
 
 ### Storage Architecture
 

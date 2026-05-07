@@ -64,18 +64,24 @@ contract GachaTeamRegistryTest is Test {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
 
-        for (uint256 i = 0; i < gachaTeamRegistry.INITIAL_ROLLS() + 1; i++) {
+        // Need NUM_STARTERS starters + (INITIAL_ROLLS - 1) non-starters = 6 mons minimum.
+        uint256 poolSize = gachaTeamRegistry.NUM_STARTERS() + gachaTeamRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
             gachaTeamRegistry.createMon(i, stats, moves, abilities, keys, values);
         }
 
-        // Roll for Alice (due to RNG, we should get IDs 0 to INITIAL_ROLLS).
+        // Pick starter 0; with mockRNG=0 and linear probing, Alice ends up owning {0, 3, 4, 5}.
         // Use single-shot prank so setUp leaves no lingering prank state — tests opt in.
         vm.prank(ALICE);
-        gachaTeamRegistry.firstRoll();
+        gachaTeamRegistry.firstRoll(0);
 
-        // Set unowned mon id
-        unownedMonId = gachaTeamRegistry.INITIAL_ROLLS();
+        // Mon id 1 is a starter Alice didn't pick → unowned. Mon id 2 is also unowned.
+        unownedMonId = 1;
     }
+
+    // After setUp Alice owns {0, 3, 4, 5}. Tests build 2-mon teams from this slice.
+    uint256 constant ALICE_TEAM_MON_0 = 0;
+    uint256 constant ALICE_TEAM_MON_1 = 3;
 
     /*
      * Test that createTeam reverts when attempting to use mons not owned by the caller.
@@ -92,9 +98,8 @@ contract GachaTeamRegistryTest is Test {
     function test_createTeamReturnsCorrectValues() public {
         vm.startPrank(ALICE);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            monIndices[i] = i;
-        }
+        monIndices[0] = ALICE_TEAM_MON_0;
+        monIndices[1] = ALICE_TEAM_MON_1;
         gachaTeamRegistry.createTeam(monIndices);
         assertEq(gachaTeamRegistry.getTeamCount(ALICE), 1);
         Mon[] memory team = gachaTeamRegistry.getTeam(ALICE, 0);
@@ -108,9 +113,8 @@ contract GachaTeamRegistryTest is Test {
     function test_updateTeam_revertsWithUnownedMon() public {
         vm.startPrank(ALICE);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) {
-            monIndices[i] = i;
-        }
+        monIndices[0] = ALICE_TEAM_MON_0;
+        monIndices[1] = ALICE_TEAM_MON_1;
         gachaTeamRegistry.createTeam(monIndices);
         uint256[] memory teamMonIndicesToOverride = new uint256[](1);
         teamMonIndicesToOverride[0] = 0;
@@ -156,13 +160,17 @@ contract GachaTeamRegistryTest is Test {
         assertTrue(gachaTeamRegistry.isWhitelistedOpponent(address(0xCA)));
     }
 
+    function _zeroFacets() internal pure returns (uint8[] memory) {
+        return new uint8[](MONS_PER_TEAM);
+    }
+
     function test_setOpponentTeam_revertsIfNotWhitelisted() public {
         vm.startPrank(ALICE);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
         monIndices[0] = 0;
         monIndices[1] = 1;
         vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
-        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, _zeroFacets());
     }
 
     // Covers both "phantom team is keyed at uint256(uint160(msg.sender))" and "no ownership check".
@@ -174,7 +182,7 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
         monIndices[0] = unownedMonId; // Alice does NOT own this mon.
         monIndices[1] = 0;
-        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, _zeroFacets());
 
         uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], unownedMonId);
@@ -189,12 +197,12 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory firstIndices = new uint256[](MONS_PER_TEAM);
         firstIndices[0] = 0;
         firstIndices[1] = 1;
-        gachaTeamRegistry.setOpponentTeam(CPU, firstIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, firstIndices, _zeroFacets());
 
         uint256[] memory secondIndices = new uint256[](MONS_PER_TEAM);
         secondIndices[0] = 2;
         secondIndices[1] = 3;
-        gachaTeamRegistry.setOpponentTeam(CPU, secondIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, secondIndices, _zeroFacets());
 
         uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], 2);
@@ -209,7 +217,7 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
         monIndices[0] = 0;
         monIndices[1] = 0; // duplicate
-        gachaTeamRegistry.setOpponentTeam(CPU, monIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, _zeroFacets());
 
         uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], 0);
@@ -224,14 +232,14 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory aliceIndices = new uint256[](MONS_PER_TEAM);
         aliceIndices[0] = 0;
         aliceIndices[1] = 1;
-        gachaTeamRegistry.setOpponentTeam(CPU, aliceIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, aliceIndices, _zeroFacets());
         vm.stopPrank();
 
         vm.startPrank(BOB);
         uint256[] memory bobIndices = new uint256[](MONS_PER_TEAM);
         bobIndices[0] = 2;
         bobIndices[1] = 3;
-        gachaTeamRegistry.setOpponentTeam(CPU, bobIndices);
+        gachaTeamRegistry.setOpponentTeam(CPU, bobIndices, _zeroFacets());
         vm.stopPrank();
 
         uint256[] memory aliceTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
@@ -240,6 +248,90 @@ contract GachaTeamRegistryTest is Test {
         assertEq(aliceTeam[1], 1);
         assertEq(bobTeam[0], 2);
         assertEq(bobTeam[1], 3);
+    }
+
+    function test_setOpponentTeam_revertsOnFacetLengthMismatch() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM + 1);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Facets.FacetArgsLengthMismatch.selector);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, facets);
+    }
+
+    function test_setOpponentTeam_revertsOnFacetIdOutOfRange() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM);
+        facets[1] = 13; // > TOTAL_FACETS
+
+        vm.prank(ALICE);
+        vm.expectRevert(Facets.InvalidFacetId.selector);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, facets);
+    }
+
+    function test_setOpponentTeam_perUserFacetsAreIsolated() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = 0; monIndices[1] = 1;
+
+        uint8[] memory aliceFacets = new uint8[](MONS_PER_TEAM);
+        aliceFacets[0] = 5; aliceFacets[1] = 0;
+        uint8[] memory bobFacets = new uint8[](MONS_PER_TEAM);
+        bobFacets[0] = 0; bobFacets[1] = 12;
+
+        vm.prank(ALICE);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, aliceFacets);
+        vm.prank(BOB);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, bobFacets);
+
+        uint8[] memory aliceRead = gachaTeamRegistry.getOpponentTeamFacets(ALICE, CPU);
+        uint8[] memory bobRead = gachaTeamRegistry.getOpponentTeamFacets(BOB, CPU);
+        assertEq(aliceRead[0], 5); assertEq(aliceRead[1], 0);
+        assertEq(bobRead[0], 0);   assertEq(bobRead[1], 12);
+    }
+
+    function test_setOpponentTeam_facetsApplyInGetTeamsWithDeltas() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = 0; monIndices[1] = 1;
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM);
+        // Facet 1: boost HP, nerf Atk. With test mon hp=100, the 5% boost is 5 (non-zero).
+        // Other stats in setUp are 10, where 5% truncates to 0 — so we only assert HP here.
+        facets[0] = 1;
+        // Facet 7: boost Def, nerf HP. With hp=100, the nerf is -5 (non-zero).
+        facets[1] = 7;
+
+        vm.prank(ALICE);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, facets);
+
+        uint256 aliceTeamIdx = _aliceTeamIndex();
+        uint256 cpuTeamIdx = uint256(uint16(uint160(ALICE)));
+        (, , StatDelta[] memory aliceDeltas, StatDelta[] memory cpuDeltas) =
+            gachaTeamRegistry.getTeamsWithDeltas(ALICE, aliceTeamIdx, CPU, cpuTeamIdx);
+
+        // Alice (human) has no assigned facets → all-zero deltas.
+        assertEq(aliceDeltas[0].hp, 0);
+        assertEq(aliceDeltas[0].atk, 0);
+        // CPU slot 0: facet 1 boosts HP by +5% of 100 = +5.
+        assertEq(cpuDeltas[0].hp, 5, "CPU slot 0 HP boosted");
+        // CPU slot 1: facet 7 nerfs HP by 5% = -5.
+        assertEq(cpuDeltas[1].hp, -5, "CPU slot 1 HP nerfed");
+    }
+
+    function test_setOpponentTeam_facetsIgnoredWhenSideNotWhitelisted() public {
+        // Two human players: neither is whitelisted, so opponentTeamFacetsPacked is ignored
+        // and per-mon facetData wins. Bob (a human) has no facets unlocked → zero deltas.
+        _bobOwnsTeam();
+        uint256 aliceTeam = _aliceTeamIndex();
+
+        // Even if some adversarial caller wrote opponentTeamFacets[BOB][...] (we can't, since
+        // BOB isn't whitelisted; setOpponentTeam reverts), the path wouldn't be taken anyway.
+        (, , StatDelta[] memory aliceDeltas, StatDelta[] memory bobDeltas) =
+            gachaTeamRegistry.getTeamsWithDeltas(ALICE, aliceTeam, BOB, 0);
+        assertEq(aliceDeltas[0].hp, 0);
+        assertEq(bobDeltas[0].hp, 0);
     }
 
     function test_defaultValidator_acceptsPhantomTeam() public {
@@ -259,14 +351,14 @@ contract GachaTeamRegistryTest is Test {
 
         vm.startPrank(ALICE);
         uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
-        aliceTeam[0] = 0;
-        aliceTeam[1] = 1;
+        aliceTeam[0] = ALICE_TEAM_MON_0;
+        aliceTeam[1] = ALICE_TEAM_MON_1;
         gachaTeamRegistry.createTeam(aliceTeam);
 
         uint256[] memory phantomTeam = new uint256[](MONS_PER_TEAM);
         phantomTeam[0] = unownedMonId;
         phantomTeam[1] = 0;
-        gachaTeamRegistry.setOpponentTeam(CPU, phantomTeam);
+        gachaTeamRegistry.setOpponentTeam(CPU, phantomTeam, _zeroFacets());
         vm.stopPrank();
 
         Mon[][] memory teams = new Mon[][](2);
@@ -286,7 +378,8 @@ contract GachaTeamRegistryTest is Test {
 
     function _aliceTeamIndex() internal returns (uint256 teamIdx) {
         uint256[] memory ids = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) ids[i] = i;
+        ids[0] = ALICE_TEAM_MON_0;
+        ids[1] = ALICE_TEAM_MON_1;
         vm.prank(ALICE);
         gachaTeamRegistry.createTeam(ids);
         teamIdx = 0;
@@ -295,9 +388,10 @@ contract GachaTeamRegistryTest is Test {
     function _bobOwnsTeam() internal returns (uint256 teamIdx) {
         // Give Bob the same set of mons; same monIds so the same buckets are touched.
         vm.prank(BOB);
-        gachaTeamRegistry.firstRoll();
+        gachaTeamRegistry.firstRoll(0);
         uint256[] memory ids = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; i++) ids[i] = i;
+        ids[0] = ALICE_TEAM_MON_0;
+        ids[1] = ALICE_TEAM_MON_1;
         vm.prank(BOB);
         gachaTeamRegistry.createTeam(ids);
         teamIdx = 0;
@@ -360,14 +454,14 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // Mon 0 KO'd, mon 1 alive (KO bitmap = 0b01 → bit 0 set).
+        // Slot 0 KO'd, slot 1 alive (KO bitmap = 0b01 → bit 0 set).
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x3, uint16(teamIdx)));
 
         // First game of day → multiplier x2.
-        // Mon 0 KO'd: gain = EXP_PER_KOD_MON * 2 = 2.
-        // Mon 1 alive: gain = EXP_PER_SURVIVING_MON * 2 = 4.
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 2, "mon 0 (KO'd) exp");
-        assertEq(gachaTeamRegistry.getExp(ALICE, 1), 4, "mon 1 (alive) exp");
+        // Slot 0 KO'd: gain = EXP_PER_KOD_MON * 2 = 2.
+        // Slot 1 alive: gain = EXP_PER_SURVIVING_MON * 2 = 4.
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 2, "slot 0 (KO'd) exp");
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 4, "slot 1 (alive) exp");
     }
 
     function test_exp_firstGameOfDayMultiplier() public {
@@ -439,8 +533,8 @@ contract GachaTeamRegistryTest is Test {
         uint256 teamIdx = _aliceTeamIndex();
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         // Both mons < 16 → same bucket (bucket 0). Exp packed in adjacent lanes.
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 4);
-        assertEq(gachaTeamRegistry.getExp(ALICE, 1), 4);
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 4);
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 4);
     }
 
     function test_exp_capsAtMax() public {
@@ -496,7 +590,7 @@ contract GachaTeamRegistryTest is Test {
     // =====================================================================
 
     function test_createMon_revertsOnNonSequentialMonId() public {
-        // Existing setUp creates ids 0..INITIAL_ROLLS (i.e. 0..4). Next sequential is 5.
+        // setUp creates NUM_STARTERS + INITIAL_ROLLS - 1 = 6 mons (ids 0..5). Next sequential is 6.
         MonStats memory stats = MonStats({
             hp: 1, stamina: 1, speed: 1, attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
             type1: Type.None, type2: Type.None
@@ -506,10 +600,10 @@ contract GachaTeamRegistryTest is Test {
         bytes32[] memory values = new bytes32[](0);
 
         vm.expectRevert(GachaTeamRegistry.NonSequentialMonId.selector);
-        gachaTeamRegistry.createMon(7, stats, empty, empty, keys, values); // 7 is non-sequential
+        gachaTeamRegistry.createMon(8, stats, empty, empty, keys, values); // non-sequential
 
-        // Sequential id (5) succeeds.
-        gachaTeamRegistry.createMon(5, stats, empty, empty, keys, values);
+        // Sequential id (6) succeeds.
+        gachaTeamRegistry.createMon(6, stats, empty, empty, keys, values);
     }
 
     // =====================================================================
@@ -569,17 +663,17 @@ contract GachaTeamRegistryTest is Test {
         }
         assertGt(unlockedFacetId, 0, "found unlocked facet");
 
-        // Assign in bulk: mon 0 → unlocked facet, mon 1 → 0 (null).
+        // Assign in bulk: slot 0 → unlocked facet, slot 1 → 0 (null).
         uint256[] memory ids = new uint256[](2);
-        ids[0] = 0; ids[1] = 1;
+        ids[0] = ALICE_TEAM_MON_0; ids[1] = ALICE_TEAM_MON_1;
         uint8[] memory facetIds = new uint8[](2);
         facetIds[0] = unlockedFacetId; facetIds[1] = 0;
 
         vm.prank(ALICE);
         gachaTeamRegistry.assignFacets(ids, facetIds);
 
-        (, uint8 mon0Facet) = gachaTeamRegistry.getFacetData(ALICE, 0);
-        (, uint8 mon1Facet) = gachaTeamRegistry.getFacetData(ALICE, 1);
+        (, uint8 mon0Facet) = gachaTeamRegistry.getFacetData(ALICE, ALICE_TEAM_MON_0);
+        (, uint8 mon1Facet) = gachaTeamRegistry.getFacetData(ALICE, ALICE_TEAM_MON_1);
         assertEq(mon0Facet, unlockedFacetId);
         assertEq(mon1Facet, 0);
     }
@@ -810,13 +904,16 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_op_HAS_MON_ID() public {
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false, arg: 1, operand: 1});
+        preds[0] = Quests.Predicate({
+            op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false,
+            arg: uint16(ALICE_TEAM_MON_1), operand: 1
+        });
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
-        uint256 teamIdx = _aliceTeamIndex(); // Alice's team has mons 0, 1.
+        uint256 teamIdx = _aliceTeamIndex(); // Alice's team has ALICE_TEAM_MON_0 + ALICE_TEAM_MON_1.
 
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "team contains mon 1: reward");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "team contains second mon: reward");
 
         // Try with a quest looking for mon 99 (not in team) → no reward.
         gachaTeamRegistry.removeQuest(0);
@@ -936,8 +1033,8 @@ contract GachaTeamRegistryTest is Test {
 
     function _driveBothMonsToLevel(uint256 teamIdx, uint256 targetLevel) internal {
         while (
-            gachaTeamRegistry.getLevel(ALICE, 0) < targetLevel
-                || gachaTeamRegistry.getLevel(ALICE, 1) < targetLevel
+            gachaTeamRegistry.getLevel(ALICE, ALICE_TEAM_MON_0) < targetLevel
+                || gachaTeamRegistry.getLevel(ALICE, ALICE_TEAM_MON_1) < targetLevel
         ) {
             _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
             vm.warp(block.timestamp + 1 days);
@@ -1021,8 +1118,8 @@ contract GachaTeamRegistryTest is Test {
         _driveBothMonsToLevel(teamIdx, 1);
 
         // Find each mon's first unlocked facet.
-        (uint16 bm0,) = gachaTeamRegistry.getFacetData(ALICE, 0);
-        (uint16 bm1,) = gachaTeamRegistry.getFacetData(ALICE, 1);
+        (uint16 bm0,) = gachaTeamRegistry.getFacetData(ALICE, ALICE_TEAM_MON_0);
+        (uint16 bm1,) = gachaTeamRegistry.getFacetData(ALICE, ALICE_TEAM_MON_1);
         uint8 f0;
         uint8 f1;
         for (uint8 i; i < 12; i++) { if (bm0 & uint16(1 << i) != 0) { f0 = i + 1; break; } }
@@ -1035,7 +1132,7 @@ contract GachaTeamRegistryTest is Test {
 
         // Assign facets to both mons.
         uint256[] memory ids = new uint256[](2);
-        ids[0] = 0; ids[1] = 1;
+        ids[0] = ALICE_TEAM_MON_0; ids[1] = ALICE_TEAM_MON_1;
         uint8[] memory facetIds = new uint8[](2);
         facetIds[0] = f0; facetIds[1] = f1;
         vm.prank(ALICE);
@@ -1099,5 +1196,103 @@ contract GachaTeamRegistryTest is Test {
         _runBattleEnd(_ctxAliceVsBob(ALICE, 0x0, 0x3, uint16(aliceTeam), 0));
         // Surviving mon: EXP_PER_SURVIVING_MON (2) * 2 (first-game) * 2 (first-PvP) * 2 (quest) = 16.
         assertEq(gachaTeamRegistry.getExp(ALICE, 0), 16, "x8 multiplier stack");
+    }
+
+    // =====================================================================
+    // GachaEvent: packed event emission
+    // =====================================================================
+
+    bytes32 constant GACHA_EVENT_SIG = keccak256("GachaEvent(address,uint256)");
+
+    struct DecodedGachaEvent {
+        uint256 points;
+        uint256[8] perMonExp;
+        uint256[8] perMonFacets;
+        uint256 bonusFlags;
+        uint256 multiplier;
+        uint256 outcome;
+    }
+
+    function _decodeGachaEvent(uint256 packed) internal pure returns (DecodedGachaEvent memory d) {
+        d.points = packed & 0xFFFF;
+        for (uint256 j; j < 8; j++) {
+            d.perMonExp[j] = (packed >> (16 + j * 8)) & 0xFF;
+            d.perMonFacets[j] = (packed >> (80 + j * 4)) & 0xF;
+        }
+        d.bonusFlags = (packed >> 112) & 0xFF;
+        d.multiplier = (packed >> 120) & 0xFF;
+        d.outcome = (packed >> 128) & 0xFF;
+    }
+
+    /// @dev Captures the GachaEvent emitted for `player` during the next call.
+    function _expectGachaEvent(address player) internal view returns (DecodedGachaEvent memory) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topicPlayer = bytes32(uint256(uint160(player)));
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] == GACHA_EVENT_SIG && logs[i].topics[1] == topicPlayer) {
+                uint256 packed = abi.decode(logs[i].data, (uint256));
+                return _decodeGachaEvent(packed);
+            }
+        }
+        revert("GachaEvent for player not found");
+    }
+
+    function test_gachaEvent_packsPointsExpFacetsBonusesOutcome() public {
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(10));
+        _bobOwnsTeam();
+        uint256 aliceTeam = _aliceTeamIndex();
+
+        vm.recordLogs();
+        _runBattleEnd(_ctxAliceVsBob(ALICE, 0x0, 0x3, uint16(aliceTeam), 0));
+        DecodedGachaEvent memory ev = _expectGachaEvent(ALICE);
+
+        // Alice wins: ROLL_COST (7, first-roll bonus) + POINTS_PER_WIN (3) + QUEST_REWARD_POINTS (2) = 12.
+        assertEq(ev.points, 12, "points total");
+        // Multiplier: x2 first-game * x2 first-pvp * x2 quest = 8.
+        assertEq(ev.multiplier, 8, "multiplier x8");
+        // Per-mon exp gain: surviving slots 0 and 1 each gain 2 * 8 = 16.
+        assertEq(ev.perMonExp[0], 16, "slot 0 gain");
+        assertEq(ev.perMonExp[1], 16, "slot 1 gain");
+        // Slots 2..7 unused (lanes zero).
+        for (uint256 j = 2; j < 8; j++) {
+            assertEq(ev.perMonExp[j], 0, "unused lane zero");
+            assertEq(ev.perMonFacets[j], 0, "unused facet lane zero");
+        }
+        // All four bonus flags fire on this battle.
+        uint256 expectedFlags = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // FIRST_ROLL|FIRST_GAME|FIRST_PVP|QUEST
+        assertEq(ev.bonusFlags, expectedFlags, "all bonus flags");
+        assertEq(ev.outcome, 1, "win outcome");
+    }
+
+    function test_gachaEvent_lossOutcomeAndNoFirstRollOnSecondBattle() public {
+        _whitelist(CPU);
+        uint256 aliceTeam = _aliceTeamIndex();
+
+        // First battle: Alice loses to CPU. Should emit FIRST_ROLL + FIRST_GAME bonuses.
+        vm.recordLogs();
+        _runBattleEnd(_ctxAliceVsCpu(CPU, 0x3, 0x0, uint16(aliceTeam))); // CPU wins, all Alice mons KO'd
+        DecodedGachaEvent memory firstEv = _expectGachaEvent(ALICE);
+        assertEq(firstEv.outcome, 0, "loss outcome");
+        assertTrue(firstEv.bonusFlags & (1 << 0) != 0, "first-roll bonus on first battle");
+
+        // Second battle same day: no first-roll, no first-game (already used).
+        vm.recordLogs();
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(aliceTeam))); // Alice wins
+        DecodedGachaEvent memory secondEv = _expectGachaEvent(ALICE);
+        assertEq(secondEv.outcome, 1, "win outcome");
+        assertEq(secondEv.bonusFlags, 0, "no bonuses on second battle");
+        assertEq(secondEv.multiplier, 1, "no multiplier");
+        assertEq(secondEv.points, 3, "POINTS_PER_WIN only");
+    }
+
+    function test_gachaEvent_drawOutcome() public {
+        _whitelist(CPU);
+        uint256 aliceTeam = _aliceTeamIndex();
+
+        // Draw: ctx.winner = address(0).
+        vm.recordLogs();
+        _runBattleEnd(_ctxAliceVsCpu(address(0), 0x3, 0x3, uint16(aliceTeam)));
+        DecodedGachaEvent memory ev = _expectGachaEvent(ALICE);
+        assertEq(ev.outcome, 2, "draw outcome");
     }
 }

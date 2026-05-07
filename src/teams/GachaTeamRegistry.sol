@@ -33,6 +33,7 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
     // ----- Gacha constants -----
     uint256 public constant INITIAL_ROLLS = 4;
+    uint256 public constant NUM_STARTERS = 3;
     uint256 public constant ROLL_COST = GACHA_ROLL_COST;
     uint256 public constant POINTS_PER_WIN = GACHA_POINTS_PER_WIN;
     uint256 public constant POINTS_PER_LOSS = GACHA_POINTS_PER_LOSS;
@@ -59,6 +60,32 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     uint256 internal constant MON_STATE_SLOT_SHIFT = 4;
     uint256 internal constant MON_STATE_FIELD_MASK = 0xF;
 
+    // ----- GachaEvent packing -----
+    // Layout reserves 8 lanes for per-mon data so MONS_PER_TEAM can grow up to 8 without
+    // a layout migration. Bumping past 8 silently truncates per-mon fields and would
+    // require an event-version bump.
+    //   bits 0-15    pointsAwarded (uint16)
+    //   bits 16-79   per-mon exp gain (8 lanes * 8 bits)
+    //   bits 80-111  per-mon facets unlocked this battle (8 lanes * 4 bits)
+    //   bits 112-119 bonus flags
+    //   bits 120-127 multiplier (uint8)
+    //   bits 128-135 outcome: 0=loss, 1=win, 2=draw
+    //   bits 136-255 reserved
+    uint256 internal constant GE_EXP_SHIFT = 16;
+    uint256 internal constant GE_EXP_BITS_PER_MON = 8;
+    uint256 internal constant GE_EXP_LANE_MASK = (1 << GE_EXP_BITS_PER_MON) - 1;
+    uint256 internal constant GE_FACETS_SHIFT = 80;
+    uint256 internal constant GE_FACETS_BITS_PER_MON = 4;
+    uint256 internal constant GE_FACETS_LANE_MASK = (1 << GE_FACETS_BITS_PER_MON) - 1;
+    uint256 internal constant GE_BONUS_SHIFT = 112;
+    uint256 internal constant GE_MULT_SHIFT = 120;
+    uint256 internal constant GE_OUTCOME_SHIFT = 128;
+
+    uint256 internal constant BONUS_FIRST_ROLL = 1 << 0;
+    uint256 internal constant BONUS_FIRST_GAME = 1 << 1;
+    uint256 internal constant BONUS_FIRST_PVP  = 1 << 2;
+    uint256 internal constant BONUS_QUEST      = 1 << 3;
+
     // ----- Errors -----
     error InvalidTeamSize();
     error DuplicateMonId();
@@ -69,13 +96,13 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     error MonNotyetCreated();
     error NonSequentialMonId();
     error AlreadyFirstRolled();
+    error InvalidStarterId();
     error NoMoreStock();
     error NotEngine();
 
     // ----- Events -----
-    event MonRoll(address indexed player, uint256[] monIds);
-    event PointsAwarded(address indexed player, uint256 points);
-    event PointsSpent(address indexed player, uint256 points);
+    event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
+    event GachaEvent(address indexed player, uint256 packed);
 
     // ----- Immutables -----
     uint256 immutable MONS_PER_TEAM;
@@ -100,6 +127,15 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
     // ----- Per-mon exp packing -----
     mapping(address player => mapping(uint256 monBucket => uint256 packedExp)) public packedExpForMon;
+
+    // ----- Per-(user, opponent) CPU team facet config -----
+    // Each user picks any facet (0-12) for each slot of a whitelisted opponent's phantom team.
+    // Slot-indexed: 4 bits per slot, MONS_PER_TEAM slots fit comfortably in one uint256.
+    // Keyed identically to monRegistryIndicesForTeamPacked phantom slots so a single SLOAD
+    // resolves both the team's mon ids and its facet config at battle start.
+    uint256 internal constant OPP_FACET_BITS_PER_SLOT = 4;
+    uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
+    mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
     constructor(uint256 _MONS_PER_TEAM, uint256 _MOVES_PER_MON, IEngine _ENGINE, IGachaRNG _RNG) {
         MONS_PER_TEAM = _MONS_PER_TEAM;
@@ -145,9 +181,42 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     // Phantom teams: duplicate mon ids allowed; phantom key truncated to uint16 to match
     // BattleData.pXTeamIndex storage width. ~2^16 collision space — acceptable since exp accrual
     // is winner/human-only and uses the player's own (small) teamIndex, not the phantom key.
-    function setOpponentTeam(address opponent, uint256[] memory monIndices) external {
+    //
+    // facetIds is a parallel array: facetIds[i] is the facet (0=none, 1..12) the caller wants
+    // applied to the CPU's slot i. No ownership / unlock checks — the user is configuring an
+    // opponent they will fight, not their own mons.
+    function setOpponentTeam(
+        address opponent,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds
+    ) external {
         if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
-        monRegistryIndicesForTeamPacked[opponent][uint16(uint160(msg.sender))] = _packIndices(monIndices);
+        if (monIndices.length != facetIds.length) revert FacetArgsLengthMismatch();
+        uint256 phantomKey = uint16(uint160(msg.sender));
+        monRegistryIndicesForTeamPacked[opponent][phantomKey] = _packIndices(monIndices);
+
+        uint256 packedFacets;
+        for (uint256 i; i < facetIds.length;) {
+            uint8 facetId = facetIds[i];
+            if (facetId > TOTAL_FACETS) revert InvalidFacetId();
+            packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
+            unchecked { ++i; }
+        }
+        opponentTeamFacetsPacked[opponent][phantomKey] = packedFacets;
+    }
+
+    /// @notice Unpack the caller's configured facets for a CPU opponent.
+    function getOpponentTeamFacets(address user, address opponent)
+        external
+        view
+        returns (uint8[] memory facetIds)
+    {
+        uint256 packed = opponentTeamFacetsPacked[opponent][uint16(uint160(user))];
+        facetIds = new uint8[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            facetIds[i] = uint8((packed >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK);
+            unchecked { ++i; }
+        }
     }
 
     function _createTeamForUser(address user, uint256[] memory monIndices) internal {
@@ -514,43 +583,46 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         return uint128(playerData[player]);
     }
 
-    function firstRoll() external returns (uint256[] memory) {
-        if (monsOwned[msg.sender].length() > 0) {
-            revert AlreadyFirstRolled();
-        }
-        return _roll(INITIAL_ROLLS);
+    function firstRoll(uint256 starterId) external returns (uint256[] memory rolledIds) {
+        if (monsOwned[msg.sender].length() > 0) revert AlreadyFirstRolled();
+        if (starterId >= NUM_STARTERS) revert InvalidStarterId();
+
+        rolledIds = new uint256[](INITIAL_ROLLS);
+        rolledIds[0] = starterId;
+        monsOwned[msg.sender].add(starterId);
+        // Remaining rolls are uniform across non-starter pool [NUM_STARTERS, numMons).
+        _rollInto(rolledIds, 1, NUM_STARTERS);
+        emit Roll(msg.sender, rolledIds, 0);
     }
 
-    function roll(uint256 numRolls) external returns (uint256[] memory) {
-        if (monsOwned[msg.sender].length() == monIds.length()) {
-            revert NoMoreStock();
-        } else {
-            uint256 cost = numRolls * ROLL_COST;
-            uint256 data = playerData[msg.sender];
-            uint256 currentPoints = uint128(data);
-            playerData[msg.sender] = (data & BONUS_AWARDED_BIT) | (currentPoints - cost);
-            emit PointsSpent(msg.sender, cost);
-        }
-        return _roll(numRolls);
-    }
-
-    function _roll(uint256 numRolls) internal returns (uint256[] memory rolledIds) {
+    function roll(uint256 numRolls) external returns (uint256[] memory rolledIds) {
+        if (monsOwned[msg.sender].length() == monIds.length()) revert NoMoreStock();
+        uint256 cost = numRolls * ROLL_COST;
+        uint256 data = playerData[msg.sender];
+        uint256 currentPoints = uint128(data);
+        playerData[msg.sender] = (data & ~POINTS_MASK_128) | (currentPoints - cost);
         rolledIds = new uint256[](numRolls);
+        _rollInto(rolledIds, 0, 0);
+        emit Roll(msg.sender, rolledIds, cost);
+    }
+
+    /// @dev Fills `out[startIdx..]` with unowned mon ids drawn uniformly from `[minId, numMons)`.
+    /// Linear probing stays inside the same window so it never lands on a starter.
+    function _rollInto(uint256[] memory out, uint256 startIdx, uint256 minId) internal {
         uint256 numMons = monIds.length();
+        uint256 range = numMons - minId;
         bytes32 seed = keccak256(abi.encodePacked(blockhash(block.number - 1), msg.sender));
         uint256 prng = RNG.getRNG(seed);
-        for (uint256 i; i < numRolls; ++i) {
-            uint256 monId = prng % numMons;
-            // Linear probing to solve for duplicate mons
+        for (uint256 i = startIdx; i < out.length; ++i) {
+            uint256 monId = (prng % range) + minId;
             while (monsOwned[msg.sender].contains(monId)) {
-                monId = (monId + 1) % numMons;
+                monId = ((monId + 1 - minId) % range) + minId;
             }
-            rolledIds[i] = monId;
+            out[i] = monId;
             monsOwned[msg.sender].add(monId);
             seed = keccak256(abi.encodePacked(seed));
             prng = RNG.getRNG(seed);
         }
-        emit MonRoll(msg.sender, rolledIds);
     }
 
     // Default RNG implementation (used when constructed with address(0) RNG)
@@ -619,7 +691,7 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
         for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
             bool isCPU = playerIndex == 0 ? isCpu0 : isCpu1;
-            if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward
+            if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward, no event
 
             address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
             uint256 teamIdx = playerIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
@@ -634,22 +706,28 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
             uint32 lastPvPDay = uint32(packed >> 160);
             uint32 lastQuestCompletedDay = uint32(packed >> 192);
 
+            uint256 bonusFlags;
+            uint256 pointsThisBattle;
+
             if (bonus == 0) {
                 points += ROLL_COST;
+                pointsThisBattle += ROLL_COST;
                 bonus = BONUS_AWARDED_BIT;
-                emit PointsAwarded(player, ROLL_COST);
+                bonusFlags |= BONUS_FIRST_ROLL;
             }
             points += pts;
-            emit PointsAwarded(player, pts);
+            pointsThisBattle += pts;
 
             uint256 multiplier = 1;
             if (lastGameDay != currentDay) {
                 multiplier *= EXP_FIRST_GAME_OF_DAY_MULT;
                 lastGameDay = currentDay;
+                bonusFlags |= BONUS_FIRST_GAME;
             }
             if (isPvP && lastPvPDay != currentDay) {
                 multiplier *= EXP_FIRST_PVP_OF_DAY_MULT;
                 lastPvPDay = currentDay;
+                bonusFlags |= BONUS_FIRST_PVP;
             }
 
             // Quest reward stacks multiplicatively. Winner only, one-shot per day.
@@ -660,8 +738,10 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                 && _evalActiveQuest(ctx, playerIndex, battleKey, activeQuestId)
             ) {
                 points += QUEST_REWARD_POINTS;
+                pointsThisBattle += QUEST_REWARD_POINTS;
                 multiplier *= QUEST_REWARD_EXP_MULT;
                 lastQuestCompletedDay = currentDay;
+                bonusFlags |= BONUS_QUEST;
             }
 
             playerData[player] = bonus
@@ -671,7 +751,15 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                 | (uint256(lastPvPDay) << 160)
                 | (uint256(lastQuestCompletedDay) << 192);
 
-            _applyExpAndFacetDraws(player, teamIdx, koBitmap, multiplier);
+            uint256 expFacetPacked = _applyExpAndFacetDraws(player, teamIdx, koBitmap, multiplier);
+
+            uint256 outcome = ctx.winner == player ? 1 : (ctx.winner == address(0) ? 2 : 0);
+            uint256 evt = (pointsThisBattle & 0xFFFF)
+                | expFacetPacked
+                | (bonusFlags << GE_BONUS_SHIFT)
+                | ((multiplier & 0xFF) << GE_MULT_SHIFT)
+                | (outcome << GE_OUTCOME_SHIFT);
+            emit GachaEvent(player, evt);
         }
 
         // Rotation fires after eval so this battle is judged against the pre-rotation quest.
@@ -684,12 +772,14 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     }
 
     /// @dev Walks the team in one pass, sharing lastBucket across exp + facet slot reads.
+    /// Returns the per-mon exp/facet portion of the GachaEvent (bits 16..111). Lanes are
+    /// saturated at their packed widths so a future tuning blow-up can't bleed into other fields.
     function _applyExpAndFacetDraws(
         address player,
         uint256 teamIdx,
         uint8 koBitmap,
         uint256 multiplier
-    ) internal {
+    ) internal returns (uint256 expFacetPacked) {
         uint256 packedTeam = monRegistryIndicesForTeamPacked[player][teamIdx];
         uint256 lastBucket = type(uint256).max;
         uint256 expSlot;
@@ -722,6 +812,11 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
             expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
                 | (newExp << (lane * EXP_BITS_PER_MON));
 
+            // Track actual gain for the event (post-cap), saturating at lane width.
+            uint256 actualGain = newExp - oldExp;
+            if (actualGain > GE_EXP_LANE_MASK) actualGain = GE_EXP_LANE_MASK;
+            expFacetPacked |= actualGain << (GE_EXP_SHIFT + j * GE_EXP_BITS_PER_MON);
+
             // Facet draws on level crossings
             uint256 oldLevel = _levelForExp(oldExp);
             uint256 newLevel = _levelForExp(newExp);
@@ -731,12 +826,16 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                     facetLoaded = true;
                 }
                 (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
+                uint8 priorPop = _popcount(unlockedBitmap);
                 for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
                     if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
                     uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
                     (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
                     unchecked { ++levelNum; }
                 }
+                uint256 drawn = _popcount(unlockedBitmap) - priorPop;
+                if (drawn > GE_FACETS_LANE_MASK) drawn = GE_FACETS_LANE_MASK;
+                expFacetPacked |= drawn << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
                 facetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
                 facetDirty = true;
             }
@@ -886,6 +985,13 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
         (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
 
+        // Whitelisted (CPU) sides pull facets from the per-(user, opponent) phantom slot the
+        // human caller configured via setOpponentTeam. Human sides keep using per-mon facetData.
+        bool p0IsCpu = isWhitelistedOpponent(p0);
+        bool p1IsCpu = isWhitelistedOpponent(p1);
+        uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
+        uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
+
         for (uint256 i; i < MONS_PER_TEAM;) {
             uint256[] memory p0MovesToUse = new uint256[](MOVES_PER_MON);
             uint256[] memory p1MovesToUse = new uint256[](MOVES_PER_MON);
@@ -897,16 +1003,23 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
             p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: p0MovesToUse});
             p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: abilities[i + MONS_PER_TEAM][0], moves: p1MovesToUse});
 
-            // Compute deltas from each player's assigned facet
-            (, uint8 p0FacetId) = _readFacetSlotForMon(facetData[p0][ids[i] / MONS_PER_FACET_BUCKET], ids[i] % MONS_PER_FACET_BUCKET);
-            (, uint8 p1FacetId) = _readFacetSlotForMon(
-                facetData[p1][ids[i + MONS_PER_TEAM] / MONS_PER_FACET_BUCKET],
-                ids[i + MONS_PER_TEAM] % MONS_PER_FACET_BUCKET
-            );
+            uint8 p0FacetId = p0IsCpu
+                ? uint8((p0CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
+                : _facetIdForMon(p0, ids[i]);
+            uint8 p1FacetId = p1IsCpu
+                ? uint8((p1CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
+                : _facetIdForMon(p1, ids[i + MONS_PER_TEAM]);
             p0Deltas[i] = _computeFacetDelta(stats[i], p0FacetId);
             p1Deltas[i] = _computeFacetDelta(stats[i + MONS_PER_TEAM], p1FacetId);
             unchecked { ++i; }
         }
+    }
+
+    function _facetIdForMon(address player, uint256 monId) private view returns (uint8 facetId) {
+        (, facetId) = _readFacetSlotForMon(
+            facetData[player][monId / MONS_PER_FACET_BUCKET],
+            monId % MONS_PER_FACET_BUCKET
+        );
     }
 
     // =====================================================================
