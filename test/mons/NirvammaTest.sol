@@ -27,7 +27,7 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {Adapt} from "../../src/mons/nirvamma/Adapt.sol";
+import {Adaptor} from "../../src/mons/nirvamma/Adaptor.sol";
 import {Chronoffense} from "../../src/mons/nirvamma/Chronoffense.sol";
 import {HardReset} from "../../src/mons/nirvamma/HardReset.sol";
 import {ModalBolt} from "../../src/mons/nirvamma/ModalBolt.sol";
@@ -476,10 +476,10 @@ contract NirvammaTest is Test, BattleHelper {
         );
     }
 
-    // ===== Adapt =====
+    // ===== Adaptor =====
 
-    function _setupAdapt() internal returns (bytes32 battleKey, Adapt adapt, StandardAttack atkA, StandardAttack atkB) {
-        adapt = new Adapt();
+    function _setupAdaptor() internal returns (bytes32 battleKey, Adaptor adaptor, StandardAttack atkA, StandardAttack atkB) {
+        adaptor = new Adaptor();
         atkA = _ping(50);
         atkB = _ping(50);
 
@@ -494,7 +494,7 @@ contract NirvammaTest is Test, BattleHelper {
 
         Mon memory nirvamma = _createMon();
         nirvamma.moves = aliceMoves;
-        nirvamma.ability = uint160(address(adapt));
+        nirvamma.ability = uint160(address(adaptor));
         nirvamma.stats.hp = 1000;
         nirvamma.stats.stamina = 20;
         nirvamma.stats.speed = 2;
@@ -532,8 +532,8 @@ contract NirvammaTest is Test, BattleHelper {
         );
     }
 
-    function test_adapt_sameSourceHalving() public {
-        (bytes32 battleKey,,,) = _setupAdapt();
+    function test_adaptor_sameSourceHalving() public {
+        (bytes32 battleKey,,,) = _setupAdaptor();
 
         // Turn 1: Bob attacks with A. Alice no-ops.
         int32 hpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -549,8 +549,8 @@ contract NirvammaTest is Test, BattleHelper {
         assertEq(dmg2, dmg1 / 2, "Second A hit should be halved");
     }
 
-    function test_adapt_latchAndSwapOutReset() public {
-        (bytes32 battleKey,,,) = _setupAdapt();
+    function test_adaptor_latchPersistsForRestOfBattle() public {
+        (bytes32 battleKey,,,) = _setupAdaptor();
 
         // Turn 1: A hits, latched.
         int32 hp0 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -558,25 +558,24 @@ contract NirvammaTest is Test, BattleHelper {
         int32 hp1 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         int32 dmgFullA = hp0 - hp1;
 
-        // Turn 2: B hits — A is still latched, B is NOT, so B's hit is full damage. A is still latched.
+        // Turn 2: B hits. A is latched, B is not, so B's hit is full damage. Latch is not displaced.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
         int32 hp2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        int32 dmgFullB = hp1 - hp2;
-        assertEq(dmgFullB, dmgFullA, "B's first hit is full damage (A is latched, B is not)");
+        assertEq(hp1 - hp2, dmgFullA, "B's first hit is full damage (A is latched, B is not)");
 
-        // Turn 3: A hits again → halved (A still latched).
+        // Turn 3: A hits again, halved.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
         int32 hp3 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hp2 - hp3, dmgFullA / 2, "A's second hit is halved");
 
-        // Turn 4: Alice swaps Nirvamma out → in (via filler). On swap-out, stale bit is set.
+        // Alice swaps Nirvamma out and back in. Latch should persist (no session reset).
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 1, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Turn 5: A hits → full damage again (latch was reset on swap-out).
-        int32 hpResetBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        // A still latched: hit is still halved.
+        int32 hpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
-        int32 hpResetAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertEq(hpResetBefore - hpResetAfter, dmgFullA, "After swap-out reset, A's hit is full damage again");
+        int32 hpAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        assertEq(hpBefore - hpAfter, dmgFullA / 2, "Latch persists across swap-out");
     }
 }
