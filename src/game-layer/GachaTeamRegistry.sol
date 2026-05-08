@@ -1154,11 +1154,11 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
     // ITeamRegistry redeclares these — required override stubs delegate to Facets.
 
-    function assignFacets(uint256[] calldata monIds, uint8[] calldata facetIds)
+    function assignFacets(uint256[] calldata monIdsToAssign, uint8[] calldata facetIds)
         public
         override(Facets, ITeamRegistry)
     {
-        super.assignFacets(monIds, facetIds);
+        super.assignFacets(monIdsToAssign, facetIds);
     }
 
     function getFacetData(address player, uint256 monId)

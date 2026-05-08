@@ -382,6 +382,7 @@ contract BetterCPU is CPU {
     /// @notice Select lead with dual-type scoring (defensive + offensive)
     function _selectLead(bytes32 battleKey, uint16 opponentMonExtraData, RevealedMove[] memory switches)
         internal
+        view
         returns (uint128, uint16)
     {
         MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, uint256(opponentMonExtraData));

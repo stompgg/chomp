@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
 
-import {ITeamRegistry} from "../../src/teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 
 contract TestTeamRegistry is ITeamRegistry {
     // Legacy: single team per player (for backwards compatibility)
@@ -166,7 +166,7 @@ contract TestTeamRegistry is ITeamRegistry {
     }
 
     function getFacetDeltaForMon(address, uint256) external pure returns (StatDelta memory) {
-        return StatDelta(0, 0, 0, 0, 0, 0);
+        return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
     }
 
     function getTeamsWithDeltas(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)

@@ -11,7 +11,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 
 contract Somniphobia is IMoveSet, BasicEffect {
-    uint256 public constant DURATION = 6;
+    uint256 public constant DURATION = 8;
     int32 public constant DAMAGE_DENOM = 8;
 
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {

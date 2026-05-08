@@ -11,7 +11,6 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IEngineHook} from "../../src/IEngineHook.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";

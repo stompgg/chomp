@@ -38,9 +38,9 @@ contract SetAblaze is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
+        uint256,
         uint256 defenderMonIndex,
-        uint16 args,
+        uint16,
         uint256 rng
     ) public override {
         engine.dispatchStandardAttack(

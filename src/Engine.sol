@@ -1057,7 +1057,7 @@ contract Engine is IEngine, MappingAllocator {
         _addEffectInternal(targetIndex, monIndex, effect, extraData);
     }
 
-    function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external {
+    function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external {
         bytes32 battleKey = battleKeyForWrite;
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
@@ -1312,10 +1312,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 defenderMonIndex,
         uint256 rng
     ) internal {
-        // Unpack params from rawMoveSlot
         uint32 basePower = uint32((rawMoveSlot >> 248) & 0xFF);
         uint8 moveClassRaw = uint8((rawMoveSlot >> 246) & 0x3);
-        uint8 priorityOffset = uint8((rawMoveSlot >> 244) & 0x3);
         uint8 moveTypeRaw = uint8((rawMoveSlot >> 240) & 0xF);
         uint8 effectAccuracy = uint8((rawMoveSlot >> 228) & 0xFF);
         address effectAddr = address(uint160(rawMoveSlot));
@@ -1403,7 +1401,7 @@ contract Engine is IEngine, MappingAllocator {
         }
         if (isValid) {
             // Only call the internal switch function if the switch is valid
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, msg.sender);
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
 
             // Check for game over and/or KOs
             (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, battle, playerIndex);
@@ -1535,7 +1533,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex, address source) internal {
+    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) internal {
         // NOTE: We will check for game over after the switch in the engine for two player turns, so we don't do it here
         // But this also means that the current flow of OnMonSwitchOut effects -> OnMonSwitchIn effects -> ability activateOnSwitch
         // will all resolve before checking for KOs or winners
@@ -1633,7 +1631,7 @@ contract Engine is IEngine, MappingAllocator {
             if (battle.turnId != 0 && monToSwitchIndex == activeMonIndex) {
                 return playerSwitchForTurnFlag;
             }
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, address(0));
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // No-op: do nothing (e.g. just recover stamina)
         } else {

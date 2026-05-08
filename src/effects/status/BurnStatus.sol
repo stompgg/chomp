@@ -99,7 +99,7 @@ contract BurnStatus is StatusEffect {
             if (burnDegree < MAX_BURN_DEGREE) {
                 newExtraData = bytes32(burnDegree + 1);
             }
-            engine.editEffect(targetIndex, monIndex, indexOfBurnEffect, newExtraData);
+            engine.editEffect(targetIndex, indexOfBurnEffect, newExtraData);
         }
 
         return (bytes32(uint256(1)), hasBurnAlready);

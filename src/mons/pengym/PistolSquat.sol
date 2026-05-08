@@ -8,6 +8,7 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
+import {SwitchTargetLib} from "../../lib/SwitchTargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -33,34 +34,13 @@ contract PistolSquat is StandardAttack {
         )
     {}
 
-    function _findRandomNonKOedMon(IEngine engine, uint256 playerIndex, uint256 currentMonIndex, uint256 rng)
-        internal
-        view
-        returns (int32)
-    {
-        bytes32 battleKey = engine.battleKeyForWrite();
-        uint256 teamSize = engine.getTeamSize(battleKey, playerIndex);
-        for (uint256 i; i < teamSize; ++i) {
-            uint256 monIndex = (i + rng) % teamSize;
-            // Only look at other mons
-            if (monIndex != currentMonIndex) {
-                bool isKOed =
-                    engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
-                if (!isKOed) {
-                    return int32(int256(monIndex));
-                }
-            }
-        }
-        return -1;
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
+        uint256,
         uint256 defenderMonIndex,
-        uint16 extraData,
+        uint16,
         uint256 rng
     ) public override {
         // Deal the damage
@@ -77,9 +57,9 @@ contract PistolSquat is StandardAttack {
             engine.getMonStateForBattle(battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut)
                 == 1;
         if (!isKOed) {
-            int32 possibleSwitchTarget = _findRandomNonKOedMon(engine, otherPlayerIndex, defenderMonIndex, rng);
-            if (possibleSwitchTarget != -1) {
-                engine.switchActiveMon(otherPlayerIndex, uint256(uint32(possibleSwitchTarget)));
+            int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, otherPlayerIndex, defenderMonIndex, rng);
+            if (target != -1) {
+                engine.switchActiveMon(otherPlayerIndex, uint256(uint32(target)));
             }
         }
     }

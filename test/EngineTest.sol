@@ -3146,8 +3146,8 @@ contract EngineTest is Test, BattleHelper {
         assertEq(effects.length, 1);
 
         // Alice uses the edit effect attack to change the extra data to 69 on Bob
-        // Pack extraData: bits 0..1 = targetIndex (1), bits 2..5 = monIndex (0), bits 6..15 = effectIndex
-        uint16 editExtraData = uint16(uint256(1) | (uint256(0) << 2) | (uint256(indices[0]) << 6));
+        // Pack extraData: bits 0..1 = targetIndex (1), bits 2..15 = effectIndex
+        uint16 editExtraData = uint16(uint256(1) | (uint256(indices[0]) << 2));
         _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
         (effects, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));

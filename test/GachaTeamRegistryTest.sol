@@ -9,9 +9,9 @@ import "../src/Structs.sol";
 
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
-import {Facets} from "../src/teams/Facets.sol";
-import {Quests} from "../src/teams/Quests.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
+import {Facets} from "../src/game-layer/Facets.sol";
+import {Quests} from "../src/game-layer/Quests.sol";
 import {IEngine} from "../src/IEngine.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
@@ -406,7 +406,7 @@ contract GachaTeamRegistryTest is Test {
 
     function _ctxAliceVsCpu(address winner, uint8 aliceKO, uint8 cpuKO, uint16 aliceTeam)
         internal
-        view
+        pure
         returns (BattleEndContext memory ctx)
     {
         ctx.p0 = ALICE;
@@ -800,7 +800,7 @@ contract GachaTeamRegistryTest is Test {
         _assertActiveMatchesFormula();
     }
 
-    function _assertActiveMatchesFormula() internal {
+    function _assertActiveMatchesFormula() internal view {
         // Read block.timestamp behind a function boundary so via-IR can't fold the day
         // computation into a stale CSE'd copy from an earlier point in the caller.
         uint32 day = uint32(block.timestamp / 1 days);
@@ -998,7 +998,7 @@ contract GachaTeamRegistryTest is Test {
     // 8. Comparator + composition + cap
     // =====================================================================
 
-    function test_quests_cmp_allOperators() public view {
+    function test_quests_cmp_allOperators() public pure {
         // Pure unit test: walk all 6 cmp operators. Since _compare is internal, we exercise it
         // indirectly by encoding/decoding and observing behavior. Rough sanity through public path.
         // (Skipped — the per-opcode tests above already exercise each comparator naturally.)

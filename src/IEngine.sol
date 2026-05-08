@@ -24,7 +24,7 @@ interface IEngine {
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
-    function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external;
+    function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(

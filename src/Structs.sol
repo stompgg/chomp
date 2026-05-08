@@ -8,7 +8,7 @@ import {IValidator} from "./IValidator.sol";
 import {IEffect} from "./effects/IEffect.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {IRandomnessOracle} from "./rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "./teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 
 // Used by DefaultMatchmaker
 struct ProposedBattle {

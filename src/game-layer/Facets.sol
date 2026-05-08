@@ -158,7 +158,7 @@ abstract contract Facets {
         uint256 bucket = monId / MONS_PER_FACET_BUCKET;
         uint256 lane = monId % MONS_PER_FACET_BUCKET;
         (, uint8 facetId) = _readFacetSlotForMon(facetData[player][bucket], lane);
-        if (facetId == 0) return StatDelta(0, 0, 0, 0, 0, 0);
+        if (facetId == 0) return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
         return _computeFacetDelta(_getMonStatsForFacets(monId), facetId);
     }
 

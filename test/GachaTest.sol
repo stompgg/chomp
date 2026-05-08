@@ -9,7 +9,7 @@ import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.s
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";

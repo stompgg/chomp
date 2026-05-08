@@ -15,7 +15,7 @@ library MoveSlotLib {
         return raw >> 160 != 0;
     }
 
-    function basePower(uint256 raw, bytes32 battleKey) internal view returns (uint32) {
+    function basePower(uint256 raw, bytes32 /* battleKey */) internal pure returns (uint32) {
         if (raw >> 160 != 0) {
             return uint32((raw >> 248) & 0xFF);
         }

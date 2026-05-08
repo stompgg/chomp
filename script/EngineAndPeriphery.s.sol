@@ -12,7 +12,7 @@ import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
