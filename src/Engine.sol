@@ -64,9 +64,17 @@ contract Engine is IEngine, MappingAllocator {
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
-    event MonMove(
-        bytes32 indexed battleKey, uint256 packedPlayerIndexMonIndex, uint256 packedMoveIndexExtraData, uint104 salt
-    );
+    // packedMoves layout (per-lane sentinel: lane bytes all zero == player did not submit):
+    //   bits   0-  7  p0 monIndex        (uint8)
+    //   bits   8- 15  p0 packedMoveIndex (uint8, 0 = not submitted)
+    //   bits  16- 31  p0 extraData       (uint16)
+    //   bits  32- 39  p1 monIndex        (uint8)
+    //   bits  40- 47  p1 packedMoveIndex (uint8, 0 = not submitted)
+    //   bits  48- 63  p1 extraData       (uint16)
+    // packedSalts layout:
+    //   bits   0-103  p0 salt (uint104)
+    //   bits 104-207  p1 salt (uint104)
+    event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
 
@@ -432,19 +440,15 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // Emit MonMove upfront for every player that submitted a move this turn.
+        // Emit MonMoves upfront with both players' moves + salts packed into one event.
         // This guarantees clients always receive each player's move + salt, regardless
         // of any early returns (mid-turn KO, shouldSkipTurn, stamina/validator failure)
-        // inside _handleMove. packedMoveIndex == 0 means the player did not submit
-        // (e.g. non-acting side on a switch-only follow-up turn).
+        // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
+        // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
+        // are zero the emit is skipped entirely.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        if (p0TurnMove.packedMoveIndex != 0) {
-            _emitMonMove(battleKey, config, p0TurnMove, 0, _unpackActiveMonIndex(battle.activeMonIndex, 0));
-        }
-        if (p1TurnMove.packedMoveIndex != 0) {
-            _emitMonMove(battleKey, config, p1TurnMove, 1, _unpackActiveMonIndex(battle.activeMonIndex, 1));
-        }
+        _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
 
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
@@ -1612,7 +1616,7 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Handle a switch, no-op, or regular move.
-        // Note: MonMove emission moved to the top of execute() so clients always learn
+        // Note: MonMoves emission moved to the top of execute() so clients always learn
         // each player's submitted move + salt, regardless of any early return below.
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Validate switch target before mutating state. Each gate silently no-ops — an invalid
@@ -1658,7 +1662,7 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina and execute (MonMove already emitted upfront in execute())
+                // Deduct stamina and execute (MonMoves already emitted upfront in execute())
                 _deductStamina(currentMonState, staminaCost);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
@@ -1691,7 +1695,7 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina and execute (MonMove already emitted upfront in execute())
+                // Deduct stamina and execute (MonMoves already emitted upfront in execute())
                 if (!inlineValidation) {
                     staminaCost = int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 }
@@ -2172,19 +2176,27 @@ contract Engine is IEngine, MappingAllocator {
         state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? -cost : state.staminaDelta - cost;
     }
 
-    function _emitMonMove(
+    function _emitMonMoves(
         bytes32 battleKey,
         BattleConfig storage config,
-        MoveDecision memory move,
-        uint256 playerIndex,
-        uint256 activeMonIndex
+        BattleData storage battle,
+        MoveDecision memory p0Move,
+        MoveDecision memory p1Move
     ) private {
-        emit MonMove(
-            battleKey,
-            (playerIndex << 8) | activeMonIndex,
-            uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
-            _getCurrentTurnSalt(config, playerIndex)
-        );
+        // Skip the emit entirely if neither player submitted this turn.
+        if (p0Move.packedMoveIndex == 0 && p1Move.packedMoveIndex == 0) return;
+
+        uint256 p0MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+        uint256 p1MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+
+        uint256 packedMoves = uint256(uint8(p0MonIndex)) | (uint256(p0Move.packedMoveIndex) << 8)
+            | (uint256(p0Move.extraData) << 16) | (uint256(uint8(p1MonIndex)) << 32)
+            | (uint256(p1Move.packedMoveIndex) << 40) | (uint256(p1Move.extraData) << 48);
+
+        uint256 packedSalts =
+            uint256(_getCurrentTurnSalt(config, 0)) | (uint256(_getCurrentTurnSalt(config, 1)) << 104);
+
+        emit MonMoves(battleKey, packedMoves, packedSalts);
     }
 
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)

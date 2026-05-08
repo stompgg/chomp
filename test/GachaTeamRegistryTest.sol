@@ -43,6 +43,13 @@ contract GachaTeamRegistryTest is Test {
 
         gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
 
+        // Constructor seeds 12 production quests; wipe so each test starts with an empty
+        // pool and gets length 1 (mod 1 == 0) the moment it adds its own quest. Keeps
+        // assertions about absolute pointsBalance stable without per-test day-alignment.
+        while (gachaTeamRegistry.getQuestPoolLength() > 0) {
+            gachaTeamRegistry.removeQuest(0);
+        }
+
         MonStats memory stats = MonStats({
             hp: 100,
             stamina: 10,
@@ -780,21 +787,41 @@ contract GachaTeamRegistryTest is Test {
         assertEq(gachaTeamRegistry.getQuestPoolLength(), 0);
     }
 
-    function test_quests_rotationAfterFirstBattleOfNewDay() public {
-        // Seed two distinct quests so rotation is observable.
-        Quests.Predicate[] memory predsA = _simpleTurnsQuest(10);
-        Quests.Predicate[] memory predsB = _simpleTurnsQuest(20);
-        gachaTeamRegistry.addQuest(predsA);
-        gachaTeamRegistry.addQuest(predsB);
+    function test_quests_dayBasedSelection() public {
+        // Two distinct quests in the pool. Active selection is keccak256(day) % len, computed
+        // on the fly — no SSTORE, no race between concurrent battles.
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(10));
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(20));
 
-        _whitelist(CPU);
-        uint256 teamIdx = _aliceTeamIndex();
+        _assertActiveMatchesFormula();
 
-        // Run first battle today — eval against whatever rotates in, then rotation fires at end.
-        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        (uint32 dayAfter,) = gachaTeamRegistry.getActiveQuest();
-        // Rotation should have fired (activeDay was 0 originally, currentDay > 0 → rotates).
-        assertEq(dayAfter, uint32(block.timestamp / 1 days), "activeDay updated after first battle of day");
+        // Roll forward; selection updates without any state mutation.
+        vm.warp(block.timestamp + 1 days);
+        _assertActiveMatchesFormula();
+    }
+
+    function _assertActiveMatchesFormula() internal {
+        // Read block.timestamp behind a function boundary so via-IR can't fold the day
+        // computation into a stale CSE'd copy from an earlier point in the caller.
+        uint32 day = uint32(block.timestamp / 1 days);
+        uint32 len = uint32(gachaTeamRegistry.getQuestPoolLength());
+        uint32 expected = uint32(uint256(keccak256(abi.encode(day))) % len);
+        (uint32 outDay, uint32 outQuestId) = gachaTeamRegistry.getActiveQuest();
+        assertEq(outDay, day, "active day matches block.timestamp");
+        assertEq(outQuestId, expected, "active quest matches keccak(day) % len");
+    }
+
+    function test_quests_emptyPoolReturnsZero() public view {
+        // setUp wipes the pool. getActiveQuest should not revert on empty pool.
+        (uint32 day, uint32 questId) = gachaTeamRegistry.getActiveQuest();
+        assertEq(day, uint32(block.timestamp / 1 days));
+        assertEq(questId, 0, "empty pool: questId 0");
+    }
+
+    function test_quests_constructorSeedsPool() public {
+        // Fresh registry — constructor must seed the production quest pool.
+        GachaTeamRegistry fresh = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
+        assertEq(fresh.getQuestPoolLength(), 12, "constructor seeds 12 quests");
     }
 
     // =====================================================================

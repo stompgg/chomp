@@ -143,6 +143,48 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         ENGINE = _ENGINE;
         RNG = address(_RNG) == address(0) ? IGachaRNG(address(this)) : _RNG;
         _initializeOwner(msg.sender);
+        _seedInitialQuests();
+    }
+
+    /// @dev Seeds the day-rotated quest pool. Pool size and content fix the schedule, since
+    /// active quest = keccak256(day) % poolLength. Owner can mutate later via add/edit/remove.
+    function _seedInitialQuests() internal {
+        int16 teamSize = int16(int256(MONS_PER_TEAM));
+        Quests.Predicate[] memory preds = new Quests.Predicate[](1);
+
+        // Flawless / Last Stand
+        preds[0] = Quests.Predicate({op: Quests.Op.ALIVE_COUNT, cmp: Quests.Cmp.GE, negate: false, arg: 0, operand: teamSize});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.ALIVE_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
+        _addQuest(preds);
+
+        // Untouchable: at least one mon at base HP at end.
+        preds[0] = Quests.Predicate({op: Quests.Op.MAX_HP_DELTA, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 0});
+        _addQuest(preds);
+
+        // Have mon X in team — three variants (starter ids 0..NUM_STARTERS-1).
+        preds[0] = Quests.Predicate({op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false, arg: 1, operand: 1});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false, arg: 2, operand: 1});
+        _addQuest(preds);
+
+        // Fully Equipped / Veteran Squad / Star Student
+        preds[0] = Quests.Predicate({op: Quests.Op.FACET_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: teamSize});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.MIN_LEVEL, cmp: Quests.Cmp.GT, negate: false, arg: 0, operand: 3});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.MAX_LEVEL, cmp: Quests.Cmp.GT, negate: false, arg: 0, operand: 6});
+        _addQuest(preds);
+
+        // Lightning rounds — three difficulty tiers.
+        preds[0] = Quests.Predicate({op: Quests.Op.TURNS, cmp: Quests.Cmp.LT, negate: false, arg: 0, operand: 30});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.TURNS, cmp: Quests.Cmp.LT, negate: false, arg: 0, operand: 25});
+        _addQuest(preds);
+        preds[0] = Quests.Predicate({op: Quests.Op.TURNS, cmp: Quests.Cmp.LT, negate: false, arg: 0, operand: 20});
+        _addQuest(preds);
     }
 
     // =====================================================================
@@ -684,11 +726,6 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         bool isCpu1 = packed1 & IS_CPU_BIT != 0;
         bool isPvP = !(isCpu0 || isCpu1);
 
-        // Read cached active quest. Rotation deferred to end-of-fn so this battle is judged
-        // against the pre-rotation quest (matches the UI a player saw when they started).
-        uint256 activeQP = activeQuestPacked;
-        uint32 activeQuestId = uint32(activeQP >> 32);
-
         for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
             bool isCPU = playerIndex == 0 ? isCpu0 : isCpu1;
             if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward, no event
@@ -735,7 +772,7 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                 ctx.winner == player
                 && lastQuestCompletedDay != currentDay
                 && questPool.length > 0
-                && _evalActiveQuest(ctx, playerIndex, battleKey, activeQuestId)
+                && _evalActiveQuest(ctx, playerIndex, battleKey)
             ) {
                 points += QUEST_REWARD_POINTS;
                 pointsThisBattle += QUEST_REWARD_POINTS;
@@ -760,14 +797,6 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                 | ((multiplier & 0xFF) << GE_MULT_SHIFT)
                 | (outcome << GE_OUTCOME_SHIFT);
             emit GachaEvent(player, evt);
-        }
-
-        // Rotation fires after eval so this battle is judged against the pre-rotation quest.
-        uint32 activeDay = uint32(activeQP);
-        if (activeDay != currentDay && questPool.length > 0) {
-            uint256 seed = uint256(keccak256(abi.encode(blockhash(block.number - 1), currentDay)));
-            uint32 newQuestId = uint32(seed % questPool.length);
-            activeQuestPacked = uint256(currentDay) | (uint256(newQuestId) << 32);
         }
     }
 

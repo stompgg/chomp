@@ -13,7 +13,6 @@ import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
-import {Quests} from "../src/teams/Quests.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
@@ -72,8 +71,6 @@ contract EngineAndPeriphery is Script {
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }
 
-        seedInitialQuests(gachaTeamRegistry);
-
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
@@ -122,44 +119,5 @@ contract EngineAndPeriphery is Script {
 
         ZapStatus zapStatus = new ZapStatus();
         deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
-    }
-
-    /// @notice Seed the initial quest pool. One rotates in per day; owner can mutate later.
-    function seedInitialQuests(GachaTeamRegistry registry) internal {
-        int16 teamSize = int16(int256(GAME_MONS_PER_TEAM));
-
-        // Flawless / Last Stand
-        _addSimple(registry, Quests.Op.ALIVE_COUNT, Quests.Cmp.GE, 0, teamSize);
-        _addSimple(registry, Quests.Op.ALIVE_COUNT, Quests.Cmp.EQ, 0, 1);
-
-        // Untouchable: at least one mon at base HP at end.
-        _addSimple(registry, Quests.Op.MAX_HP_DELTA, Quests.Cmp.EQ, 0, 0);
-
-        // Have mon X in team — three variants.
-        _addSimple(registry, Quests.Op.HAS_MON_ID, Quests.Cmp.EQ, 0, 1);
-        _addSimple(registry, Quests.Op.HAS_MON_ID, Quests.Cmp.EQ, 1, 1);
-        _addSimple(registry, Quests.Op.HAS_MON_ID, Quests.Cmp.EQ, 2, 1);
-
-        // Fully Equipped / Veteran Squad / Star Student
-        _addSimple(registry, Quests.Op.FACET_COUNT, Quests.Cmp.EQ, 0, teamSize);
-        _addSimple(registry, Quests.Op.MIN_LEVEL,   Quests.Cmp.GT, 0, 3);
-        _addSimple(registry, Quests.Op.MAX_LEVEL,   Quests.Cmp.GT, 0, 6);
-
-        // Lightning rounds — three difficulty tiers.
-        _addSimple(registry, Quests.Op.TURNS, Quests.Cmp.LT, 0, 30);
-        _addSimple(registry, Quests.Op.TURNS, Quests.Cmp.LT, 0, 25);
-        _addSimple(registry, Quests.Op.TURNS, Quests.Cmp.LT, 0, 20);
-    }
-
-    function _addSimple(
-        GachaTeamRegistry registry,
-        Quests.Op op,
-        Quests.Cmp cmp,
-        uint16 arg,
-        int16 operand
-    ) internal {
-        Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: op, cmp: cmp, negate: false, arg: arg, operand: operand});
-        registry.addQuest(preds);
     }
 }
