@@ -107,7 +107,7 @@ contract ModalBolt is IMoveSet {
     }
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
-        return MoveClass.Special;
+        return MoveClass.Physical;
     }
 
     function isValidTarget(IEngine, bytes32, uint16 extraData) external pure returns (bool) {

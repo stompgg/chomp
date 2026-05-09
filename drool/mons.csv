@@ -11,3 +11,4 @@ Id,Name,HP,Attack,Defense,SpecialAttack,SpecialDefense,Speed,Type1,Type2,Flavor
 9,Aurox,400,150,230,100,220,100,Metal,NA,"Its gold sheen never fades away, serving as a symbol of optimism."
 10,Xmon,311,123,179,222,185,285,Cosmic,NA,"bGJoIHBuYSBmcnIgdmcgdmEgbGJoZSBxZXJuemY="
 11,Ekineki,299,130,180,280,175,266,Liquid,NA,"Born from a single drop of water."
+12,Nirvamma,395,202,168,140,202,177,Math,NA,"Supposedly watches the entire universe."

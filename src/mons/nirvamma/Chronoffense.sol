@@ -3,16 +3,24 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
-import {MoveMeta} from "../../Structs.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type} from "../../Enums.sol";
+import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract Chronoffense is IMoveSet {
     uint32 public constant BP_COEFFICIENT = 20;
     uint32 public constant BP_CAP = 999;
+    uint8 public constant SP_DEF_BOOST_PERCENT = 25;
+
+    StatBoosts immutable STAT_BOOSTS;
+
+    constructor(StatBoosts _STAT_BOOSTS) {
+        STAT_BOOSTS = _STAT_BOOSTS;
+    }
 
     function name() public pure returns (string memory) {
         return "Chronoffense";
@@ -38,6 +46,15 @@ contract Chronoffense is IMoveSet {
         if (stored == 0) {
             // First use: record anchor (turnId + 1 to keep 0 sentinel).
             engine.setGlobalKV(key, uint192(turnId + 1));
+
+            // Buff SpDef by 25%
+            StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
+            boosts[0] = StatBoostToApply({
+                stat: MonStateIndexName.SpecialDefense,
+                boostPercent: SP_DEF_BOOST_PERCENT,
+                boostType: StatBoostType.Multiply
+            });
+            STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Perm);
             return;
         }
 
@@ -78,7 +95,7 @@ contract Chronoffense is IMoveSet {
     }
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
-        return MoveClass.Special;
+        return MoveClass.Physical;
     }
 
     function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {

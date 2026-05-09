@@ -218,10 +218,10 @@ class MoveValidator:
         # Look for constant declarations
         contract_data.power = self._extract_constant_value(content, 'BASE_POWER')
 
-        # Look for accuracy constant (try both DEFAULT_ACCURACY and ACCURACY)
-        contract_data.accuracy = self._extract_constant_value(content, 'DEFAULT_ACCURACY')
-        if contract_data.accuracy is None:
-            contract_data.accuracy = self._extract_constant_value(content, 'ACCURACY')
+        # Prefer an explicit ACCURACY constant; otherwise infer from DEFAULT_ACCURACY usage in the body
+        contract_data.accuracy = self._extract_constant_value(content, 'ACCURACY')
+        if contract_data.accuracy is None and self._references_default_accuracy(content):
+            contract_data.accuracy = 100
 
         # Look for function implementations
         contract_data.stamina = self._extract_function_return_value(content, 'stamina')
@@ -233,7 +233,7 @@ class MoveValidator:
 
     def _extract_param_value(self, params_block: str, param_name: str) -> Optional[int]:
         """Extract numeric parameter value from ATTACK_PARAMS block"""
-        pattern = rf'{param_name}:\s*(\d+)'
+        pattern = rf'\b{param_name}\b:\s*(\d+)'
         match = re.search(pattern, params_block)
         return int(match.group(1)) if match else None
 
@@ -282,9 +282,14 @@ class MoveValidator:
 
     def _extract_constant_value(self, content: str, constant_name: str) -> Optional[int]:
         """Extract constant value from contract"""
-        pattern = rf'{constant_name}\s*=\s*(\d+)'
+        pattern = rf'\b{constant_name}\b\s*=\s*(\d+)'
         match = re.search(pattern, content)
         return int(match.group(1)) if match else None
+
+    def _references_default_accuracy(self, content: str) -> bool:
+        """Check whether the contract body references DEFAULT_ACCURACY (ignoring import lines)"""
+        body = re.sub(r'^\s*import\s+[^;]+;', '', content, flags=re.MULTILINE)
+        return re.search(r'\bDEFAULT_ACCURACY\b', body) is not None
 
     def _extract_function_return_value(self, content: str, function_name: str) -> Optional[int]:
         """Extract return value from function implementation"""

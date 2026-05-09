@@ -270,7 +270,7 @@ contract NirvammaTest is Test, BattleHelper {
     // ===== Chronoffense =====
 
     function _setupChronoffense() internal returns (bytes32 battleKey, Chronoffense chrono) {
-        chrono = new Chronoffense();
+        chrono = new Chronoffense(statBoosts);
         StandardAttack ping = _ping(10);
 
         uint256[] memory nirvammaMoves = new uint256[](2);
@@ -283,6 +283,7 @@ contract NirvammaTest is Test, BattleHelper {
         nirvamma.stats.stamina = 20;
         nirvamma.stats.speed = 2;
         nirvamma.stats.specialAttack = 10;
+        nirvamma.stats.specialDefense = 100;
 
         Mon memory filler = _createMon();
         filler.moves = nirvammaMoves;
@@ -340,6 +341,26 @@ contract NirvammaTest is Test, BattleHelper {
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
             bobHpBeforeReanchor,
             "Re-armed Chronoffense should set anchor and deal no damage"
+        );
+    }
+
+    function test_chronoffense_anchorAppliesSpDefBuff() public {
+        (bytes32 battleKey,) = _setupChronoffense();
+
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialDefense),
+            0,
+            "No SpDef delta before anchoring"
+        );
+
+        // Turn 1: Alice anchors. Bob NO_OPs.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Base SpDef = 100 → 1.25× → delta = +25
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialDefense),
+            25,
+            "Anchor should apply +25% SpDef buff"
         );
     }
 
