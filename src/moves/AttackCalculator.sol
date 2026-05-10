@@ -173,9 +173,14 @@ library AttackCalculator {
             critDenom = CRIT_DENOM;
             eventType = MOVE_CRIT_EVENT_TYPE;
         }
-        int32 damage = int32(
-            critNum * (scaledBasePower * attackStat * rngScaling) / (defenceStat * RNG_SCALING_DENOM * critDenom)
-        );
+        // Compute in uint256 so heavily-boosted stats don't overflow the uint32 product, then
+        // clamp to int32 max. With the StatBoosts apply-time clamp upstream, attackStat itself
+        // is bounded by int32 max; this widening also covers any future tuning headroom.
+        uint256 rawDamage = uint256(critNum) * scaledBasePower * attackStat * rngScaling
+            / (uint256(defenceStat) * RNG_SCALING_DENOM * critDenom);
+        int32 damage = rawDamage > uint256(uint32(type(int32).max))
+            ? type(int32).max
+            : int32(uint32(rawDamage));
         // Handle the case where the type immunity results in 0 damage
         if (scaledBasePower == 0) {
             eventType = MOVE_TYPE_IMMUNITY_EVENT_TYPE;

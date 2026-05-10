@@ -85,7 +85,9 @@
     "matchmaker/DefaultMatchmaker.sol",
     "hooks/BattleHistory.sol",
     "commit-manager/DefaultCommitManager.sol",
-    "teams/GachaTeamRegistry.sol",
+    "game-layer/GachaTeamRegistry.sol",
+    "game-layer/Facets.sol",
+    "game-layer/Quests.sol",
     "rng/ICPURNG.sol",
     "rng/IGachaRNG.sol"
   ],

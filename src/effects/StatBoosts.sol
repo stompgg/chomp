@@ -25,6 +25,13 @@ import {IEffect} from "./IEffect.sol";
 
 contract StatBoosts is BasicEffect {
     uint256 public constant DENOM = 100;
+    // Per-instance boost count is stored in a 7-bit field (see layout below). Cap merge increments
+    // at this value so the packed write can't bleed into the boostPercent field above it, and so
+    // the in-memory uint8 increment can't revert at 256.
+    uint8 public constant MAX_BOOST_COUNT_PER_INSTANCE = 127;
+    // Apply-time clamp on the boosted stat: keeps the int32 cast safe and gives downstream
+    // damage math headroom against uint32 overflow.
+    uint32 public constant MAX_BOOSTED_STAT = uint32(type(int32).max);
     // Layout: [8 bits isPerm | 168 bits key | 80 bits stat data]
     uint256 private constant PERM_FLAG_OFFSET = 248; // 256 - 8 = 248
     uint256 private constant KEY_OFFSET = 80;
@@ -138,7 +145,11 @@ contract StatBoosts is BasicEffect {
         return uint168(uint256(keccak256(abi.encode(targetIndex, monIndex, caller, salt))));
     }
 
-    // Accumulate boost contributions into running totals (modifies arrays in place)
+    // Accumulate boost contributions into running totals (modifies arrays in place).
+    // Multiplication is unchecked: high stack counts wrap mod 2^256 instead of reverting. The
+    // resulting numerator may be garbage past the safe range; the apply step clamps the final
+    // boosted stat to int32, so the wrap is observable as "unexpected stat value" but never as
+    // a revert or as out-of-range delta arithmetic downstream.
     function _accumulateBoosts(
         uint32[5] memory baseStats,
         uint8[5] memory boostPercents,
@@ -152,7 +163,9 @@ contract StatBoosts is BasicEffect {
             uint256 existingStatValue =
                 (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
             uint256 scalingFactor = isMultiply[k] ? DENOM + boostPercents[k] : DENOM - boostPercents[k];
-            accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCounts[k]);
+            unchecked {
+                accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCounts[k]);
+            }
             numBoostsPerStat[k] += boostCounts[k];
         }
     }
@@ -166,8 +179,16 @@ contract StatBoosts is BasicEffect {
         if (exp == 5) return 10000000000;
         if (exp == 6) return 1000000000000;
         if (exp == 7) return 100000000000000;
-        // Fallback for larger exponents (rare)
-        return DENOM ** exp;
+        // Fallback for larger exponents — unchecked so high total stack counts don't revert.
+        // Pairs with the unchecked numerator multiply in _accumulateBoosts; the apply step
+        // clamps the final stat to int32 either way.
+        // 100 = 2^2 * 25, so 100^exp wraps to 0 mod 2^256 once exp >= 128. Substitute 1 in
+        // that case so the apply-time division can't revert with division-by-zero — the
+        // resulting raw value is garbage but the [1, MAX_BOOSTED_STAT] clamp contains it.
+        unchecked {
+            uint256 result = DENOM ** exp;
+            return result == 0 ? 1 : result;
+        }
     }
 
     function _packBoostSnapshot(uint32[5] memory unpackedSnapshot) internal pure returns (uint192) {
@@ -192,11 +213,23 @@ contract StatBoosts is BasicEffect {
         uint192 prevSnapshot = engine.getGlobalKV(battleKey, snapshotKey);
         uint32[5] memory oldBoostedStats = _unpackBoostSnapshot(prevSnapshot, baseStats);
 
-        // Calculate final values
+        // Calculate final values. Clamp to int32 max so the int32 cast at delta time can't wrap
+        // and the engine's `monState.<stat>Delta + valueToAdd` arithmetic stays in range.
         uint32[5] memory newBoostedStats;
         for (uint256 i = 0; i < 5; i++) {
             if (numBoostsPerStat[i] > 0) {
-                newBoostedStats[i] = uint32(accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]));
+                uint256 raw = accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]);
+                // Clamp to [1, MAX_BOOSTED_STAT]. Lower bound matters because the snapshot uses
+                // 0 as a "no snapshot" sentinel (filled with baseStats on read); after an
+                // unchecked-wrap turn that produced 0, storing 0 would break delta telescoping
+                // and let monState.<stat>Delta drift outside [base..., MAX_BOOSTED_STAT - base].
+                if (raw > MAX_BOOSTED_STAT) {
+                    newBoostedStats[i] = MAX_BOOSTED_STAT;
+                } else if (raw == 0) {
+                    newBoostedStats[i] = 1;
+                } else {
+                    newBoostedStats[i] = uint32(raw);
+                }
             } else {
                 newBoostedStats[i] = baseStats[i];
             }
@@ -302,10 +335,22 @@ contract StatBoosts is BasicEffect {
             }
         }
 
-        // Calculate final values
+        // Calculate final values. Clamp to int32 max so the int32 cast at delta time can't wrap
+        // and the engine's `monState.<stat>Delta + valueToAdd` arithmetic stays in range.
         for (uint256 i = 0; i < 5; i++) {
             if (numBoostsPerStat[i] > 0) {
-                newBoostedStats[i] = uint32(accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]));
+                uint256 raw = accumulatedNumeratorPerStat[i] / _denomPower(numBoostsPerStat[i]);
+                // Clamp to [1, MAX_BOOSTED_STAT]. Lower bound matters because the snapshot uses
+                // 0 as a "no snapshot" sentinel (filled with baseStats on read); after an
+                // unchecked-wrap turn that produced 0, storing 0 would break delta telescoping
+                // and let monState.<stat>Delta drift outside [base..., MAX_BOOSTED_STAT - base].
+                if (raw > MAX_BOOSTED_STAT) {
+                    newBoostedStats[i] = MAX_BOOSTED_STAT;
+                } else if (raw == 0) {
+                    newBoostedStats[i] = 1;
+                } else {
+                    newBoostedStats[i] = uint32(raw);
+                }
             } else {
                 newBoostedStats[i] = stats[i];
             }
@@ -339,7 +384,9 @@ contract StatBoosts is BasicEffect {
         for (uint256 i; i < newBoostsToApply.length; i++) {
             uint256 statIndex = _monStateIndexToStatBoostIndex(newBoostsToApply[i].stat);
             if (existingBoostPercents[statIndex] != 0) {
-                mergedBoostCounts[statIndex]++;
+                if (mergedBoostCounts[statIndex] < MAX_BOOST_COUNT_PER_INSTANCE) {
+                    mergedBoostCounts[statIndex]++;
+                }
             } else {
                 mergedBoostPercents[statIndex] = newBoostsToApply[i].boostPercent;
                 mergedBoostCounts[statIndex] = 1;

@@ -20,12 +20,9 @@ contract Surgery is Script {
     function run() external returns (DeployData[] memory) {
         vm.startBroadcast();
 
-        OkayCPU cpu2 = new OkayCPU(4, IEngine(0x0db7f5f66fFFCA63Ef92D7A57Ad84bbdAf646b70), ICPURNG(address(0)), ITypeCalculator(0xbe585139aB24aE96794f65a33205EE931fbb6A42));
+        // Whitelist okay/better cpu
+        // Do this automatically in the future for SetupCPU
 
-        BetterCPU cpu = new BetterCPU(4, IEngine(0x0db7f5f66fFFCA63Ef92D7A57Ad84bbdAf646b70), ICPURNG(address(0)), ITypeCalculator(0xbe585139aB24aE96794f65a33205EE931fbb6A42));
-        deployedContracts.push(DeployData({name: "Better CPU", contractAddress: address(cpu)}));
-
-        vm.stopBroadcast();
         return deployedContracts;
     }
 }

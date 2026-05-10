@@ -52,6 +52,14 @@ contract SetupCPU is Script {
             gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
         }
 
+        // Set CPUs to be mutable opponents
+        address[] memory empty = new address[](0);
+        address[] memory cpuAddresses = new address[](cpuPlayers.length);
+        for (uint256 i; i < cpuPlayers.length; i++) {
+            cpuAddresses[i] = vm.envAddress(cpuPlayers[i]);
+        }
+        gachaTeamRegistry.setWhitelistedOpponents(cpuAddresses, empty);
+
         vm.stopBroadcast();
 
         return deployedContracts;

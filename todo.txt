@@ -12,18 +12,18 @@
     - apply  to mon (13 : null, and then +/- for all 4 stats)
 - select starter from 0/1/2 for first roll, remaining are rng (but cannot be 1 or 2)
 
-    Relentless ATK↑DEF↓—Pure aggression, no regard for safety
-    Inexorable ATK↑SPD↓—A slow, unstoppable crushing force
-    Despolate ATK↑HP↓— Wild, self-destructive power
-    Ossified DEF↑SPD↓—Dug in, immovable, going nowhere
-    Stoic DEF↑ATK↓—Endures everything, retaliates nothing
-    Warded DEF↑HP↓—A hard shell over a brittle core
-    Corpulent HP↑SPD↓—Lethargic, swollen with reserves
-    Benevolent HP↑DEF↓—Vital and full-blooded, but exposed
-    Abundant HP↑ATK↓—Passive, enduring — never the aggressor
-    Meteoric SPD↑HP↓—Blink-and-miss-it; burns bright, fades fast
-    Unfettered SPD↑DEF↓—Strips off all armor to move freely
-    Elusive SPD↑ATK↓—Impossible to catch, but harmless
+    Relentless ATK↑DEF↓—
+    Inexorable ATK↑SPD↓—
+    Despolate ATK↑HP↓—
+    Ossified DEF↑SPD↓— 
+    Stoic DEF↑ATK↓— 
+    Warded DEF↑HP↓— 
+    Corpulent HP↑SPD↓
+    Benevolent HP↑DEF↓
+    Abundant HP↑ATK↓
+    Meteoric SPD↑HP↓
+    Unfettered SPD↑DEF↓
+    Elusive SPD↑ATK↓
 
 Nirvamma:
 

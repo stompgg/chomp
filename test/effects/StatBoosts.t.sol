@@ -432,4 +432,187 @@ contract StatBoostsTest is Test, BattleHelper {
         int32 reducedStatAfterSwitch = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
         assertEq(reducedStatAfterSwitch, -50, "Stat should be set to -50% now");
     }
+
+    /// @dev Stack +75% multiplicative SpAtk to the point where the raw value exceeds int32 max
+    /// but the math still fits in uint256 (no wrap). The clamp must pin boosted SpAtk at
+    /// MAX_BOOSTED_STAT exactly. With base=100, raw exceeds int32.max around N=31, while
+    /// 175^N stays under uint256 max through N≈34, so 32 stacks lands in the clamp-but-no-wrap
+    /// regime — the strongest tight assertion we can make.
+    function test_statBoostExactClampWithoutWrap() public {
+        bytes32 battleKey = _setupSingleStatBoostBattle(100);
+
+        for (uint256 i = 0; i < 32; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine,
+                commitManager,
+                battleKey,
+                0,
+                NO_OP_MOVE_INDEX,
+                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                0
+            );
+        }
+
+        int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
+        assertEq(int256(spAtkDelta) + 100, int256(type(int32).max), "Boosted SpAtk should be clamped at int32 max");
+    }
+
+    /// @dev Push past the unchecked-wrap threshold. `175^N * 100` overflows uint256 around N=34;
+    /// past that, raw values are unpredictable. The only guarantee is no revert and that the
+    /// clamp keeps the stored boosted stat inside [1, MAX_BOOSTED_STAT] — which is what keeps
+    /// monState.<stat>Delta from drifting outside int32 (so the engine's checked addition in
+    /// `_updateMonStateInternal` never reverts).
+    function test_statBoostWrapRegimeStaysInInt32Range() public {
+        bytes32 battleKey = _setupSingleStatBoostBattle(100);
+
+        // 60 stacks > 34 (uint256 wrap point). Verify safe behavior past wrap.
+        for (uint256 i = 0; i < 60; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine,
+                commitManager,
+                battleKey,
+                0,
+                NO_OP_MOVE_INDEX,
+                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                0
+            );
+        }
+
+        int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
+        int256 boosted = int256(spAtkDelta) + 100;
+        // [1, MAX_BOOSTED_STAT] is the post-wrap invariant the apply-time clamp guarantees.
+        assertTrue(boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]");
+    }
+
+    /// @dev Push the per-instance count well past the 7-bit storage field (and past 256, where
+    /// the in-memory uint8 increment would otherwise revert). The merge cap holds storage at
+    /// 127 and the unchecked accumulation prevents reverts in `_accumulateBoosts` / `_denomPower`.
+    function test_statBoostMassiveStackBeyondUint8DoesNotRevert() public {
+        bytes32 battleKey = _setupSingleStatBoostBattle(100);
+
+        // 300 > 256 (uint8 increment revert point) and >> 127 (storage field width). Both
+        // protections are exercised here.
+        for (uint256 i = 0; i < 300; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine,
+                commitManager,
+                battleKey,
+                0,
+                NO_OP_MOVE_INDEX,
+                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                0
+            );
+        }
+
+        int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
+        int256 boosted = int256(spAtkDelta) + 100;
+        assertTrue(boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]");
+    }
+
+    /// @dev With the StatBoosts apply-time clamp + AttackCalculator's uint256 product, a heavily
+    /// boosted attacker stat must not revert the damage path. Without the changes,
+    /// `scaledBasePower * attackStat * rngScaling` would overflow the uint32 multiplication.
+    function test_dealDamageDoesNotRevertWithExtremelyBoostedAttack() public {
+        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
+        uint256 attackMoveAddr = uint256(uint160(address(attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 100,
+                STAMINA_COST: 0,
+                ACCURACY: 100,
+                PRIORITY: 1,
+                MOVE_TYPE: Type.Air,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "BoostedHit",
+                EFFECT: IEffect(address(0))
+            })
+        ))));
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(statBoostMove)));
+        moves[1] = attackMoveAddr;
+
+        Mon memory attacker = _createMon();
+        attacker.stats.hp = 10_000;
+        attacker.stats.attack = 100;
+        attacker.stats.defense = 100;
+        attacker.stats.stamina = 100;
+        attacker.moves = moves;
+
+        Mon memory defender = attacker;
+
+        Mon[] memory team = new Mon[](2);
+        team[0] = attacker;
+        team[1] = defender;
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validatorToUse = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // 32 stacks of +75% with base 100 lands raw above int32.max but the math still fits
+        // in uint256 — exact-clamp regime. Attack pins at MAX_BOOSTED_STAT = int32.max.
+        for (uint256 i = 0; i < 32; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine,
+                commitManager,
+                battleKey,
+                0,
+                NO_OP_MOVE_INDEX,
+                _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(75)),
+                0
+            );
+        }
+
+        // Confirm Alice's attack stat is clamped (delta + base == int32.max).
+        int32 atkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
+        assertEq(int256(atkDelta) + 100, int256(type(int32).max), "Alice's attack should be clamped at int32 max");
+
+        // Now attack. The damage formula must compute in uint256 and clamp to int32 — no revert.
+        int32 defenderHpDeltaBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0
+        );
+        int32 defenderHpDeltaAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+
+        // Damage was applied (hpDelta moved). Whether the defender survives or KOs depends on the
+        // clamped damage value vs HP — both outcomes are valid; the only invariant is no revert.
+        assertTrue(defenderHpDeltaAfter != defenderHpDeltaBefore, "Boosted attack should land");
+    }
+
+    /// @dev Helper: spin up a battle with a single mon per team that has only the StatBoostsMove,
+    /// configured with the given base SpecialAttack value, and select it as active.
+    function _setupSingleStatBoostBattle(uint32 baseSpAtk) internal returns (bytes32) {
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(statBoostMove)));
+
+        Mon memory mon = _createMon();
+        mon.stats.specialAttack = baseSpAtk;
+        mon.moves = moves;
+
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        bytes32 battleKey =
+            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+        return battleKey;
+    }
 }
