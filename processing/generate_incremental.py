@@ -445,7 +445,7 @@ def generate_incremental_script(
         "pragma solidity ^0.8.0;",
         "",
         'import {Script} from "forge-std/Script.sol";',
-        'import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";',
+        'import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";',
         'import {MonStats} from "../src/Structs.sol";',
         'import {Type} from "../src/Enums.sol";',
         "",
