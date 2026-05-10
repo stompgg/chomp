@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "./Structs.sol";
-import "./teams/ITeamRegistry.sol";
+import "./game-layer/ITeamRegistry.sol";
 
 interface IValidator {
     // Validates that e.g. there are X mons per team w/ Y moves each

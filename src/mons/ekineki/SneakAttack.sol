@@ -79,7 +79,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
             defenderType2: defenderStats.type2
         });
 
-        (int32 damage, bytes32 eventType) = AttackCalculator._calculateDamageFromContext(
+        (int32 damage,) = AttackCalculator._calculateDamageFromContext(
             TYPE_CALCULATOR, ctx, BASE_POWER, DEFAULT_ACCURACY, DEFAULT_VOL, Type.Liquid, MoveClass.Special, rng, effectiveCritRate
         );
 

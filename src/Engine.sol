@@ -41,6 +41,7 @@ contract Engine is IEngine, MappingAllocator {
     mapping(bytes32 storageKey => mapping(uint256 slotIdx => uint256 packedKeys)) private globalKVKeySlots;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
+    int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
     // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
     // A non-zero encoded move is the "transient is populated for this call" signal.
     uint256 private transient _turnP0MoveEncoded;
@@ -63,9 +64,17 @@ contract Engine is IEngine, MappingAllocator {
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
-    event MonMove(
-        bytes32 indexed battleKey, uint256 packedPlayerIndexMonIndex, uint256 packedMoveIndexExtraData, uint104 salt
-    );
+    // packedMoves layout (per-lane sentinel: lane bytes all zero == player did not submit):
+    //   bits   0-  7  p0 monIndex        (uint8)
+    //   bits   8- 15  p0 packedMoveIndex (uint8, 0 = not submitted)
+    //   bits  16- 31  p0 extraData       (uint16)
+    //   bits  32- 39  p1 monIndex        (uint8)
+    //   bits  40- 47  p1 packedMoveIndex (uint8, 0 = not submitted)
+    //   bits  48- 63  p1 extraData       (uint16)
+    // packedSalts layout:
+    //   bits   0-103  p0 salt (uint104)
+    //   bits 104-207  p1 salt (uint104)
+    event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
 
@@ -157,16 +166,21 @@ contract Engine is IEngine, MappingAllocator {
         if (config.moveManager != battle.moveManager) {
             config.moveManager = battle.moveManager;
         }
+        if (address(config.teamRegistry) != address(battle.teamRegistry)) {
+            config.teamRegistry = battle.teamRegistry;
+        }
         // Reset effects lengths and KO bitmaps to 0 for the new battle
         config.packedP0EffectsCount = 0;
         config.packedP1EffectsCount = 0;
         config.koBitmaps = 0;
         config.globalKVCount = 0;
 
-        // Store the battle data with initial state
+        // teamIndices narrowed from Battle.uint96; phantom-team writes truncate to match.
         battleData[battleKey] = BattleData({
             p0: battle.p0,
             p1: battle.p1,
+            p0TeamIndex: uint16(battle.p0TeamIndex),
+            p1TeamIndex: uint16(battle.p1TeamIndex),
             winnerIndex: 2, // Initialize to 2 (uninitialized/no winner)
             prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
@@ -426,19 +440,15 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // Emit MonMove upfront for every player that submitted a move this turn.
+        // Emit MonMoves upfront with both players' moves + salts packed into one event.
         // This guarantees clients always receive each player's move + salt, regardless
         // of any early returns (mid-turn KO, shouldSkipTurn, stamina/validator failure)
-        // inside _handleMove. packedMoveIndex == 0 means the player did not submit
-        // (e.g. non-acting side on a switch-only follow-up turn).
+        // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
+        // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
+        // are zero the emit is skipped entirely.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        if (p0TurnMove.packedMoveIndex != 0) {
-            _emitMonMove(battleKey, config, p0TurnMove, 0, _unpackActiveMonIndex(battle.activeMonIndex, 0));
-        }
-        if (p1TurnMove.packedMoveIndex != 0) {
-            _emitMonMove(battleKey, config, p1TurnMove, 1, _unpackActiveMonIndex(battle.activeMonIndex, 1));
-        }
+        _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
 
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
@@ -1047,7 +1057,7 @@ contract Engine is IEngine, MappingAllocator {
         _addEffectInternal(targetIndex, monIndex, effect, extraData);
     }
 
-    function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external {
+    function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external {
         bytes32 battleKey = battleKeyForWrite;
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
@@ -1154,9 +1164,13 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _dealDamageInternal(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, int32 damage)
-        internal
-    {
+    function _dealDamageInternal(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex,
+        int32 damage,
+        uint256 source
+    ) internal {
         // If game is already over, skip all damage
         BattleData storage battle = battleData[battleKeyForWrite];
         if (battle.winnerIndex != 2) {
@@ -1166,6 +1180,24 @@ contract Engine is IEngine, MappingAllocator {
         MonState storage monState = _getMonState(config, playerIndex, monIndex);
 
         if (monState.isKnockedOut) {
+            return;
+        }
+
+        // PreDamage pipeline: victim-side mon-local effects can mutate the in-flight damage by
+        // calling engine.setPreDamage(). Reuses the standard _runEffects loop; running damage is
+        // threaded through the transient `tempPreDamage` slot so the iteration logic doesn't change.
+        uint256 monEffectCount = playerIndex == 0
+            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        if (monEffectCount > 0) {
+            tempPreDamage = damage;
+            _runEffects(
+                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source)
+            );
+            damage = tempPreDamage;
+            tempPreDamage = 0;
+        }
+        if (damage <= 0) {
             return;
         }
 
@@ -1183,12 +1215,14 @@ contract Engine is IEngine, MappingAllocator {
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
         // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
-        uint256 afterDamageCount = playerIndex == 0
-            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (afterDamageCount > 0) {
+        if (monEffectCount > 0) {
             _runEffects(
-                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.AfterDamage, abi.encode(damage)
+                battleKeyForWrite,
+                tempRNG,
+                playerIndex,
+                playerIndex,
+                EffectStep.AfterDamage,
+                abi.encode(damage, source)
             );
         }
     }
@@ -1199,7 +1233,18 @@ contract Engine is IEngine, MappingAllocator {
             revert NoWriteAllowed();
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        _dealDamageInternal(config, playerIndex, monIndex, damage);
+        _dealDamageInternal(config, playerIndex, monIndex, damage, uint256(uint160(msg.sender)));
+    }
+
+    function getPreDamage() external view returns (int32) {
+        return tempPreDamage;
+    }
+
+    function setPreDamage(int32 value) external {
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        tempPreDamage = value;
     }
 
     function _dispatchStandardAttackInternal(
@@ -1216,7 +1261,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 critRate,
         uint8 effectAccuracy,
         IEffect effect,
-        uint256 rng
+        uint256 rng,
+        uint256 source
     ) internal returns (int32 damage, bytes32 eventType) {
         // Per-attacker rng mix: mirror mons using the same move against each other must roll differently.
         // See AttackCalculator.mixRngForAttacker for rationale; matches StandardAttack._move's external path.
@@ -1245,7 +1291,7 @@ contract Engine is IEngine, MappingAllocator {
                 AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rngToUse, critRate);
 
             if (damage > 0 && scaledBasePower > 0) {
-                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage);
+                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source);
             }
         }
 
@@ -1266,10 +1312,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 defenderMonIndex,
         uint256 rng
     ) internal {
-        // Unpack params from rawMoveSlot
         uint32 basePower = uint32((rawMoveSlot >> 248) & 0xFF);
         uint8 moveClassRaw = uint8((rawMoveSlot >> 246) & 0x3);
-        uint8 priorityOffset = uint8((rawMoveSlot >> 244) & 0x3);
         uint8 moveTypeRaw = uint8((rawMoveSlot >> 240) & 0xF);
         uint8 effectAccuracy = uint8((rawMoveSlot >> 228) & 0xFF);
         address effectAddr = address(uint160(rawMoveSlot));
@@ -1288,7 +1332,8 @@ contract Engine is IEngine, MappingAllocator {
             DEFAULT_CRIT_RATE,
             effectAccuracy,
             IEffect(effectAddr),
-            rng
+            rng,
+            rawMoveSlot
         );
     }
 
@@ -1327,7 +1372,8 @@ contract Engine is IEngine, MappingAllocator {
             critRate,
             effectAccuracy,
             effect,
-            rng
+            rng,
+            uint256(uint160(msg.sender))
         );
     }
 
@@ -1355,7 +1401,7 @@ contract Engine is IEngine, MappingAllocator {
         }
         if (isValid) {
             // Only call the internal switch function if the switch is valid
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, msg.sender);
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
 
             // Check for game over and/or KOs
             (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, battle, playerIndex);
@@ -1487,7 +1533,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex, address source) internal {
+    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) internal {
         // NOTE: We will check for game over after the switch in the engine for two player turns, so we don't do it here
         // But this also means that the current flow of OnMonSwitchOut effects -> OnMonSwitchIn effects -> ability activateOnSwitch
         // will all resolve before checking for KOs or winners
@@ -1568,7 +1614,7 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Handle a switch, no-op, or regular move.
-        // Note: MonMove emission moved to the top of execute() so clients always learn
+        // Note: MonMoves emission moved to the top of execute() so clients always learn
         // each player's submitted move + salt, regardless of any early return below.
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Validate switch target before mutating state. Each gate silently no-ops — an invalid
@@ -1585,7 +1631,7 @@ contract Engine is IEngine, MappingAllocator {
             if (battle.turnId != 0 && monToSwitchIndex == activeMonIndex) {
                 return playerSwitchForTurnFlag;
             }
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, address(0));
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // No-op: do nothing (e.g. just recover stamina)
         } else {
@@ -1614,7 +1660,7 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina and execute (MonMove already emitted upfront in execute())
+                // Deduct stamina and execute (MonMoves already emitted upfront in execute())
                 _deductStamina(currentMonState, staminaCost);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
@@ -1647,7 +1693,7 @@ contract Engine is IEngine, MappingAllocator {
                     return playerSwitchForTurnFlag;
                 }
 
-                // Deduct stamina and execute (MonMove already emitted upfront in execute())
+                // Deduct stamina and execute (MonMoves already emitted upfront in execute())
                 if (!inlineValidation) {
                     staminaCost = int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 }
@@ -1829,6 +1875,7 @@ contract Engine is IEngine, MappingAllocator {
                 self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
             );
         } else if (round == EffectStep.AfterDamage) {
+            (int32 damage, uint256 source) = abi.decode(extraEffectsData, (int32, uint256));
             return effect.onAfterDamage(
                 self,
                 battleKey,
@@ -1838,7 +1885,21 @@ contract Engine is IEngine, MappingAllocator {
                 monIndex,
                 p0ActiveMonIndex,
                 p1ActiveMonIndex,
-                abi.decode(extraEffectsData, (int32))
+                damage,
+                source
+            );
+        } else if (round == EffectStep.PreDamage) {
+            uint256 source = abi.decode(extraEffectsData, (uint256));
+            return effect.onPreDamage(
+                self,
+                battleKey,
+                rng,
+                data,
+                playerIndex,
+                monIndex,
+                p0ActiveMonIndex,
+                p1ActiveMonIndex,
+                source
             );
         } else if (round == EffectStep.AfterMove) {
             return
@@ -2113,19 +2174,27 @@ contract Engine is IEngine, MappingAllocator {
         state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? -cost : state.staminaDelta - cost;
     }
 
-    function _emitMonMove(
+    function _emitMonMoves(
         bytes32 battleKey,
         BattleConfig storage config,
-        MoveDecision memory move,
-        uint256 playerIndex,
-        uint256 activeMonIndex
+        BattleData storage battle,
+        MoveDecision memory p0Move,
+        MoveDecision memory p1Move
     ) private {
-        emit MonMove(
-            battleKey,
-            (playerIndex << 8) | activeMonIndex,
-            uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8),
-            _getCurrentTurnSalt(config, playerIndex)
-        );
+        // Skip the emit entirely if neither player submitted this turn.
+        if (p0Move.packedMoveIndex == 0 && p1Move.packedMoveIndex == 0) return;
+
+        uint256 p0MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
+        uint256 p1MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+
+        uint256 packedMoves = uint256(uint8(p0MonIndex)) | (uint256(p0Move.packedMoveIndex) << 8)
+            | (uint256(p0Move.extraData) << 16) | (uint256(uint8(p1MonIndex)) << 32)
+            | (uint256(p1Move.packedMoveIndex) << 40) | (uint256(p1Move.extraData) << 48);
+
+        uint256 packedSalts =
+            uint256(_getCurrentTurnSalt(config, 0)) | (uint256(_getCurrentTurnSalt(config, 1)) << 104);
+
+        emit MonMoves(battleKey, packedMoves, packedSalts);
     }
 
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)
@@ -2320,6 +2389,24 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
+        // Frontend hydration: passthrough to registry for level/exp on both teams.
+        TeamLevelInfo memory p0Levels;
+        TeamLevelInfo memory p1Levels;
+        {
+            (
+                uint256[] memory p0MonIds,
+                uint256[] memory p0Exp,
+                uint256[] memory p0LevelArr,
+                uint256[] memory p1MonIds,
+                uint256[] memory p1Exp,
+                uint256[] memory p1LevelArr
+            ) = config.teamRegistry.getExpAndLevelsForTeams(
+                data.p0, data.p0TeamIndex, data.p1, data.p1TeamIndex
+            );
+            p0Levels = TeamLevelInfo({monIds: p0MonIds, exp: p0Exp, levels: p0LevelArr});
+            p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
+        }
+
         BattleConfigView memory configView = BattleConfigView({
             validator: config.validator,
             rngOracle: config.rngOracle,
@@ -2331,6 +2418,8 @@ contract Engine is IEngine, MappingAllocator {
             startTimestamp: config.startTimestamp,
             p0Salt: config.p0Salt,
             p1Salt: config.p1Salt,
+            p0TeamIndex: data.p0TeamIndex,
+            p1TeamIndex: data.p1TeamIndex,
             p0Move: config.p0Move,
             p1Move: config.p1Move,
             globalEffects: globalEffects,
@@ -2338,7 +2427,9 @@ contract Engine is IEngine, MappingAllocator {
             p1Effects: p1Effects,
             teams: teams,
             monStates: monStates,
-            globalKVEntries: globalKVEntries
+            globalKVEntries: globalKVEntries,
+            p0Levels: p0Levels,
+            p1Levels: p1Levels
         });
 
         return (configView, data);
@@ -2842,5 +2933,60 @@ contract Engine is IEngine, MappingAllocator {
         for (uint256 i; i < len; ++i) {
             ctx.cpuActiveMonMoveSlots[i] = moves[i];
         }
+    }
+
+    /// @notice Returns the MonState array for one side of a battle. Used by registry-side
+    ///         quest opcodes that aggregate over MonState fields (e.g. MIN/MAX_HP_DELTA) so
+    ///         they pay 1 extcall + N internal SLOADs instead of N separate getMonStateForBattle
+    ///         extcalls. Length = team size for that side.
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
+        external
+        view
+        returns (MonState[] memory states)
+    {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        BattleConfig storage config = battleConfig[storageKey];
+        uint8 teamSizes = config.teamSizes;
+        uint256 size = playerIndex == 0 ? (teamSizes & 0xF) : (teamSizes >> 4);
+        states = new MonState[](size);
+        if (playerIndex == 0) {
+            for (uint256 i; i < size;) {
+                states[i] = config.p0States[i];
+                unchecked { ++i; }
+            }
+        } else {
+            for (uint256 i; i < size;) {
+                states[i] = config.p1States[i];
+                unchecked { ++i; }
+            }
+        }
+    }
+
+    /// @notice Batched getter for the registry's onBattleEnd hook. Bundles every
+    ///         BattleData + BattleConfig field needed at battle end into a single staticcall —
+    ///         replaces the older split (getPlayersForBattle + getWinner + getKOBitmap×2).
+    function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory ctx) {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        BattleConfig storage config = battleConfig[storageKey];
+
+        ctx.p0 = data.p0;
+        ctx.p1 = data.p1;
+        // winner: address(0) when uninitialized OR when it's a draw the engine never
+        // explicitly sets to a non-2 winnerIndex; both cases collapse to address(0).
+        uint8 wi = data.winnerIndex;
+        ctx.winner = wi == 0 ? data.p0 : (wi == 1 ? data.p1 : address(0));
+
+        ctx.p0TeamIndex = data.p0TeamIndex;
+        ctx.p1TeamIndex = data.p1TeamIndex;
+
+        uint16 koBitmaps = config.koBitmaps;
+        ctx.p0KOBitmap = uint8(koBitmaps & 0xFF);
+        ctx.p1KOBitmap = uint8(koBitmaps >> 8);
+
+        ctx.p0ActiveMonIndex = uint8(_unpackActiveMonIndex(data.activeMonIndex, 0));
+        ctx.p1ActiveMonIndex = uint8(_unpackActiveMonIndex(data.activeMonIndex, 1));
+
+        ctx.turnId = data.turnId;
     }
 }

@@ -10,7 +10,7 @@ import {IEngineHook} from "../../src/IEngineHook.sol";
 import {IValidator} from "../../src/IValidator.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IRandomnessOracle} from "../../src/rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "../../src/teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 
 import {Test} from "forge-std/Test.sol";
 

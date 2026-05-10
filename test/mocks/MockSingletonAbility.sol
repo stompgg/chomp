@@ -28,7 +28,7 @@ contract MockSingletonAbility is IAbility, BasicEffect {
         return 0x8040; // ALWAYS_APPLIES | AfterDamage
     }
 
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32, uint256)
         external
         pure
         override

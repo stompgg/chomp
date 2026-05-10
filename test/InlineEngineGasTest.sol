@@ -22,7 +22,7 @@ import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "../src/teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "../src/game-layer/ITeamRegistry.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 
@@ -377,7 +377,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         DefaultCommitManager inlineCommitManager = new DefaultCommitManager(inlineEngine);
         DefaultMatchmaker inlineMatchmaker = new DefaultMatchmaker(inlineEngine);
 
-        StatBoosts statBoosts = new StatBoosts();
+        new StatBoosts(); // deployed for side effect on registry; instance not retained
         IMoveSet effectMove = new EffectAttack(
             new SingleInstanceEffect(),
             EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})

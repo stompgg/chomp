@@ -64,7 +64,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
         if (found) {
             // Edit existing effect
-            engine.editEffect(attackerPlayerIndex, attackerMonIndex, effectIndex, newExtraData);
+            engine.editEffect(attackerPlayerIndex, effectIndex, newExtraData);
         } else {
             // Add new effect
             engine.addEffect(attackerPlayerIndex, attackerMonIndex, this, newExtraData);

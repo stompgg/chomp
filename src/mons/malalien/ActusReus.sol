@@ -62,7 +62,7 @@ contract ActusReus is IAbility, BasicEffect {
         return (extraData, false);
     }
 
-    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32)
+    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32, uint256)
         external
         override
         returns (bytes32, bool)

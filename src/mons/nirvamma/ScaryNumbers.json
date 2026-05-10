@@ -1,0 +1,9 @@
+{
+  "name": "Scary Numbers",
+  "basePower": 80,
+  "staminaCost": 3,
+  "moveType": "Math",
+  "moveClass": "Physical",
+  "effectAccuracy": 20,
+  "effect": "PanicStatus"
+}

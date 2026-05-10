@@ -422,7 +422,7 @@ contract MatchmakerTest is Test, BattleHelper {
         // Accept battle as Bob
         vm.startPrank(BOB);
         bytes32 battleIntegrityHash = matchmaker.getBattleProposalIntegrityHash(proposal);
-        bytes32 updatedBattleKey = matchmaker.acceptBattle(battleKey, 0, battleIntegrityHash);
+        matchmaker.acceptBattle(battleKey, 0, battleIntegrityHash);
 
         // Attempt to accept the battle again as Bob
         vm.expectRevert(DefaultMatchmaker.AlreadyAccepted.selector);

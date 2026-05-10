@@ -50,7 +50,7 @@ contract PostWorkout is IAbility, BasicEffect {
             uint256 effectIndex;
             (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
             for (uint256 i; i < effects.length; i++) {
-                if (effects[i].effect == statusEffect) {
+                if (address(effects[i].effect) == address(statusEffect)) {
                     effectIndex = indices[i];
                     break;
                 }

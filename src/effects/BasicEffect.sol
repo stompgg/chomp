@@ -8,7 +8,8 @@ import "../Structs.sol";
 abstract contract BasicEffect is IEffect {
     // Each subclass must override getStepsBitmap() to return a static constant
     // Bit layout: OnApply=0x01, RoundStart=0x02, RoundEnd=0x04, OnRemove=0x08,
-    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80, OnUpdateMonState=0x100
+    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80,
+    //             OnUpdateMonState=0x100, PreDamage=0x200
     function getStepsBitmap() external pure virtual returns (uint16);
 
     function name() external virtual returns (string memory) {
@@ -57,7 +58,16 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32, uint256)
+        external
+        virtual
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
+        return (extraData, false);
+    }
+
+    // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
+    function onPreDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)

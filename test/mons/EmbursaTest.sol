@@ -408,6 +408,133 @@ contract EmbursaTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), address(0), "Game should not be over yet");
     }
 
+    // Reproduces a battle log where Q5 fires on RoundStart and KOs Bob's active mon, while
+    // BOTH players submitted a switch as their Q-priority move that turn. Confirms whether
+    // those queued switches still execute or are short-circuited like a normal attack would be.
+    function test_q5_ko_with_concurrent_switches() public {
+        Q5 q5 = new Q5(typeCalc);
+
+        uint256[] memory q5Moves = new uint256[](1);
+        q5Moves[0] = uint256(uint160(address(q5)));
+
+        // Bob doesn't need a real attack move — both players will submit switches on the firing turn.
+        IMoveSet bobAttack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 1,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: 0,
+                MOVE_TYPE: Type.Fire,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "TestAttack",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory attackMoves = new uint256[](1);
+        attackMoves[0] = uint256(uint160(address(bobAttack)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = q5Moves;
+        aliceMon.stats.hp = 1000;
+        aliceMon.stats.specialAttack = 5;
+        aliceMon.stats.defense = 5;
+        aliceMon.stats.stamina = 10;
+        aliceMon.stats.speed = 10;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = attackMoves;
+        bobMon.stats.hp = 100;
+        bobMon.stats.attack = 5;
+        bobMon.stats.specialDefense = 5;
+        bobMon.stats.stamina = 10;
+        bobMon.stats.speed = 5;
+
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        IValidator validatorToUse = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        bytes32 battleKey =
+            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Turn 0: both pick mon 0
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1: Alice uses Q5
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Turns 2..5: idle so Q5's tick counter advances 1 -> 5
+        for (uint256 i = 0; i < 4; i++) {
+            _commitRevealExecuteForAliceAndBob(
+                engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
+            );
+        }
+
+        // Sanity: pre-firing turn, both active mons are slot 0 with no KO
+        assertEq(_aliceActive(battleKey), 0, "Alice active mon == 0 pre-fire");
+        assertEq(_bobActive(battleKey), 0, "Bob active mon == 0 pre-fire");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut), 0, "Bob slot 0 alive pre-fire"
+        );
+
+        mockOracle.setRNG(2);
+
+        // Firing turn: BOTH players queue a switch to their slot-1 mon. Q5 ticks at RoundStart
+        // and KOs Bob's slot-0 active mon BEFORE the Q-priority switch moves run.
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(1), uint16(1)
+        );
+
+        // Q5 ticked and KO'd Bob's slot 0
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut),
+            1,
+            "Bob slot 0 should be KO'd by Q5 tick"
+        );
+
+        // Question under test: do the queued switches still execute, or does the post-RoundStart-KO
+        // playerSwitchForTurnFlag short-circuit them in _handleMove (Engine.sol line ~1603)?
+        // Engine reading: both _handleMove calls should early-return → both active indices stay at 0,
+        // and next turn becomes a single-player forced switch for Bob.
+        assertEq(_aliceActive(battleKey), 0, "Alice's queued switch should NOT execute (early-return)");
+        assertEq(_bobActive(battleKey), 0, "Bob's queued switch should NOT execute (early-return)");
+
+        // After turn ends, only Bob has a forced switch pending.
+        assertEq(
+            uint256(engine.getPlayerSwitchForTurnFlagForBattleState(battleKey)),
+            1,
+            "Next turn should be Bob's single-player forced switch"
+        );
+
+        // Game not over — Bob still has slot 1
+        assertEq(engine.getWinner(battleKey), address(0), "Game should not be over yet");
+    }
+
+    function _aliceActive(bytes32 battleKey) internal view returns (uint256) {
+        return engine.getActiveMonIndexForBattleState(battleKey)[0];
+    }
+
+    function _bobActive(bytes32 battleKey) internal view returns (uint256) {
+        return engine.getActiveMonIndexForBattleState(battleKey)[1];
+    }
+
     /**
      * Tinderclaws ability tests:
      * - After using a move (not NO_OP or SWITCH), Embursa has a 1/3 chance to self-burn

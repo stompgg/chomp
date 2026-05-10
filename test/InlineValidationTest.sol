@@ -127,7 +127,6 @@ contract InlineValidationTest is Test, BattleHelper {
         // Both players switch in mon 0
         uint104 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
-        bytes32 p1MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
 
         vm.startPrank(p0);
         commitManager.commitMove(battleKey, p0MoveHash);

@@ -473,7 +473,7 @@ contract StatBoosts is BasicEffect {
 
         // Update effect storage
         if (found) {
-            engine.editEffect(targetIndex, monIndex, foundEffectIndex, newData);
+            engine.editEffect(targetIndex, foundEffectIndex, newData);
         } else {
             engine.addEffect(targetIndex, monIndex, IEffect(address(this)), newData);
         }

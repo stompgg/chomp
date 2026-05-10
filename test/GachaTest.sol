@@ -9,7 +9,7 @@ import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.s
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
@@ -37,8 +37,9 @@ contract GachaTest is Test, BattleHelper {
     function test_firstRoll() public {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
-        // Set up mon IDs 0 to INITIAL ROLLS
-        for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
+        // Need NUM_STARTERS starters + (INITIAL_ROLLS - 1) non-starters = 6 mons minimum.
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
             gachaRegistry.createMon(
                 i,
                 MonStats({
@@ -60,13 +61,72 @@ contract GachaTest is Test, BattleHelper {
         }
 
         vm.prank(ALICE);
-        uint256[] memory monIds = gachaRegistry.firstRoll();
+        uint256[] memory monIds = gachaRegistry.firstRoll(0);
         assertEq(monIds.length, gachaRegistry.INITIAL_ROLLS());
+        assertEq(monIds[0], 0, "starter at index 0");
+        for (uint256 i = 1; i < monIds.length; i++) {
+            assertGe(monIds[i], gachaRegistry.NUM_STARTERS(), "non-starter range");
+        }
 
         // Alice rolls again, it should fail
         vm.expectRevert(GachaTeamRegistry.AlreadyFirstRolled.selector);
         vm.prank(ALICE);
-        gachaRegistry.firstRoll();
+        gachaRegistry.firstRoll(0);
+    }
+
+    function test_firstRoll_invalidStarter_reverts() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10, stamina: 2, speed: 2, attack: 1, defense: 1,
+                    specialAttack: 1, specialDefense: 1, type1: Type.Fire, type2: Type.None
+                }),
+                new uint256[](0), new uint256[](0), new bytes32[](0), new bytes32[](0)
+            );
+        }
+
+        // Read NUM_STARTERS first so prank applies to firstRoll, not the constant getter.
+        uint256 invalidStarter = gachaRegistry.NUM_STARTERS();
+        vm.expectRevert(GachaTeamRegistry.InvalidStarterId.selector);
+        vm.prank(ALICE);
+        gachaRegistry.firstRoll(invalidStarter);
+    }
+
+    function test_firstRoll_emitsRollWithZeroSpend() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10, stamina: 2, speed: 2, attack: 1, defense: 1,
+                    specialAttack: 1, specialDefense: 1, type1: Type.Fire, type2: Type.None
+                }),
+                new uint256[](0), new uint256[](0), new bytes32[](0), new bytes32[](0)
+            );
+        }
+
+        // Don't try to match the monIds[] payload — just assert the spend is 0.
+        // (Prank-aware emitter; topic is the player.)
+        vm.recordLogs();
+        vm.prank(ALICE);
+        gachaRegistry.firstRoll(0);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        // Find Roll(address,uint256[],uint256). topic0 = keccak("Roll(address,uint256[],uint256)").
+        bytes32 rollSig = keccak256("Roll(address,uint256[],uint256)");
+        bool found;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] == rollSig) {
+                found = true;
+                (uint256[] memory ids, uint256 spent) = abi.decode(logs[i].data, (uint256[], uint256));
+                assertEq(ids.length, gachaRegistry.INITIAL_ROLLS());
+                assertEq(spent, 0, "first roll is free");
+            }
+        }
+        assertTrue(found, "Roll event emitted");
     }
 
     function test_assignPoints() public {
@@ -139,8 +199,9 @@ contract GachaTest is Test, BattleHelper {
     function test_spendPoints() public {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
 
-        // Set up mon IDs 0 to INITIAL ROLLS + 1
-        for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
+        // Minimum pool for firstRoll: NUM_STARTERS + INITIAL_ROLLS - 1 = 6.
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
             gachaRegistry.createMon(
                 i,
                 MonStats({
@@ -201,41 +262,18 @@ contract GachaTest is Test, BattleHelper {
         // Assert Alice has enough points to roll
         assertGe(gachaRegistry.pointsBalance(ALICE), gachaRegistry.ROLL_COST());
 
-        // Alice rolls
+        // Alice does her first roll, then a paid roll.
         vm.startPrank(ALICE);
-        // (Do first roll first)
-        gachaRegistry.firstRoll();
-        vm.expectRevert(GachaTeamRegistry.NoMoreStock.selector);
-        uint256[] memory monIds = gachaRegistry.roll(1);
-        vm.stopPrank();
-
-        // Add one more mon to the registry and roll again
-        gachaRegistry.createMon(
-            gachaRegistry.INITIAL_ROLLS(),
-            MonStats({
-                hp: 10,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Fire,
-                type2: Type.None
-            }),
-            new uint256[](0),
-            new uint256[](0),
-            new bytes32[](0),
-            new bytes32[](0)
-        );
-        vm.startPrank(ALICE);
-        monIds = gachaRegistry.roll(1);
+        gachaRegistry.firstRoll(0); // owns starter 0 + 3 non-starters (with mockRNG=0 → ids 3,4,5).
+        uint256[] memory monIds = gachaRegistry.roll(1); // costs ROLL_COST, picks unowned id 1 or 2.
         assertEq(monIds.length, 1);
 
-        // Verify Alice cannot roll again (should underflow)
+        // Alice has 10 - 7 = 3 points remaining; another roll(1) underflows.
         vm.expectRevert();
         gachaRegistry.roll(1);
+        vm.stopPrank();
     }
+
 
     function test_firstGameBonusNotReawardedAfterRoll() public {
         // Repro: first battle → roll → second battle. The ROLL_COST first-game

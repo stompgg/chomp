@@ -74,22 +74,22 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         if (existingBattle.p1 != proposal.p1) {
             existingBattle.p1 = proposal.p1;
         }
-        if (existingBattle.teamRegistry != proposal.teamRegistry) {
+        if (address(existingBattle.teamRegistry) != address(proposal.teamRegistry)) {
             existingBattle.teamRegistry = proposal.teamRegistry;
         }
-        if (existingBattle.validator != proposal.validator) {
+        if (address(existingBattle.validator) != address(proposal.validator)) {
             existingBattle.validator = proposal.validator;
         }
-        if (existingBattle.rngOracle != proposal.rngOracle) {
+        if (address(existingBattle.rngOracle) != address(proposal.rngOracle)) {
             existingBattle.rngOracle = proposal.rngOracle;
         }
-        if (existingBattle.ruleset != proposal.ruleset) {
+        if (address(existingBattle.ruleset) != address(proposal.ruleset)) {
             existingBattle.ruleset = proposal.ruleset;
         }
         if (existingBattle.moveManager != proposal.moveManager) {
             existingBattle.moveManager = proposal.moveManager;
         }
-        if (existingBattle.matchmaker != proposal.matchmaker) {
+        if (address(existingBattle.matchmaker) != address(proposal.matchmaker)) {
             existingBattle.matchmaker = proposal.matchmaker;
         }
         if (existingBattle.engineHooks.length != proposal.engineHooks.length && proposal.engineHooks.length != 0) {

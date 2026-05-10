@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {Script} from "forge-std/Script.sol";
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {MonStats} from "../src/Structs.sol";
 import {Type} from "../src/Enums.sol";
 
@@ -42,6 +42,10 @@ import {Initialize} from "../src/mons/inutia/Initialize.sol";
 import {Interweaving} from "../src/mons/inutia/Interweaving.sol";
 import {ActusReus} from "../src/mons/malalien/ActusReus.sol";
 import {TripleThink} from "../src/mons/malalien/TripleThink.sol";
+import {Adaptor} from "../src/mons/nirvamma/Adaptor.sol";
+import {Chronoffense} from "../src/mons/nirvamma/Chronoffense.sol";
+import {HardReset} from "../src/mons/nirvamma/HardReset.sol";
+import {ModalBolt} from "../src/mons/nirvamma/ModalBolt.sol";
 import {Deadlift} from "../src/mons/pengym/Deadlift.sol";
 import {DeepFreeze} from "../src/mons/pengym/DeepFreeze.sol";
 import {PistolSquat} from "../src/mons/pengym/PistolSquat.sol";
@@ -73,7 +77,7 @@ contract SetupMons is Script {
         GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
 
         // Deploy all mons and collect deployment data
-        DeployData[][] memory allDeployData = new DeployData[][](12);
+        DeployData[][] memory allDeployData = new DeployData[][](13);
 
         allDeployData[0] = deployGhouliath(registry);
         allDeployData[1] = deployInutia(registry);
@@ -87,6 +91,7 @@ contract SetupMons is Script {
         allDeployData[9] = deployAurox(registry);
         allDeployData[10] = deployXmon(registry);
         allDeployData[11] = deployEkineki(registry);
+        allDeployData[12] = deployNirvamma(registry);
 
         // Calculate total length for flattened array
         uint256 totalLength = 0;
@@ -762,6 +767,57 @@ contract SetupMons is Script {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(11, stats, moves, abilities, keys, values);
+    }
+
+    function deployNirvamma(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
+        DeployData[] memory deployedContracts = new DeployData[](4);
+
+        address[4] memory addrs;
+
+        {
+            addrs[0] = address(new HardReset());
+            deployedContracts[0] = DeployData({name: "Hard Reset", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new Chronoffense(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            deployedContracts[1] = DeployData({name: "Chronoffense", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new ModalBolt(IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS")), IEffect(vm.envAddress("ZAP_STATUS"))));
+            deployedContracts[2] = DeployData({name: "Modal Bolt", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new Adaptor());
+            deployedContracts[3] = DeployData({name: "Adaptor", contractAddress: addrs[3]});
+        }
+
+        _registerNirvamma(registry, addrs);
+
+        return deployedContracts;
+    }
+
+    function _registerNirvamma(GachaTeamRegistry registry, address[4] memory addrs) internal {
+        MonStats memory stats = MonStats({
+            hp: 373,
+            stamina: 5,
+            speed: 177,
+            attack: 202,
+            defense: 168,
+            specialAttack: 140,
+            specialDefense: 202,
+            type1: Type.Math,
+            type2: Type.None
+        });
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(addrs[0]));
+        moves[1] = 0x500b314000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
+        moves[2] = uint256(uint160(addrs[1]));
+        moves[3] = uint256(uint160(addrs[2]));
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[3]));
+        bytes32[] memory keys = new bytes32[](0);
+        bytes32[] memory values = new bytes32[](0);
+        registry.createMon(12, stats, moves, abilities, keys, values);
     }
 
 }

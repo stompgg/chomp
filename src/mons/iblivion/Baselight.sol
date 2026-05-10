@@ -51,7 +51,7 @@ contract Baselight is IAbility, BasicEffect {
         }
         (bool exists, uint256 effectIndex,) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
-            engine.editEffect(playerIndex, monIndex, effectIndex, bytes32(level));
+            engine.editEffect(playerIndex, effectIndex, bytes32(level));
         }
     }
 
@@ -59,7 +59,7 @@ contract Baselight is IAbility, BasicEffect {
         (bool exists, uint256 effectIndex, uint256 currentLevel) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
             uint256 newLevel = amount >= currentLevel ? 0 : currentLevel - amount;
-            engine.editEffect(playerIndex, monIndex, effectIndex, bytes32(newLevel));
+            engine.editEffect(playerIndex, effectIndex, bytes32(newLevel));
         }
     }
 

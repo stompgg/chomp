@@ -20,7 +20,7 @@ import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "../src/teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "../src/game-layer/ITeamRegistry.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 

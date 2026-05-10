@@ -13,6 +13,10 @@ interface IEngine {
     function battleKeyForWrite() external view returns (bytes32);
     function tempRNG() external view returns (uint256);
 
+    // PreDamage threading: hooks read the running damage and call setPreDamage to mutate it.
+    function getPreDamage() external view returns (int32);
+    function setPreDamage(int32 value) external;
+
     // State mutating effects
     function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external;
     function startBattle(Battle memory battle) external;
@@ -20,7 +24,7 @@ interface IEngine {
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
-    function editEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex, bytes32 newExtraData) external;
+    function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
@@ -122,4 +126,9 @@ interface IEngine {
         external
         view
         returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag);
+    function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
+        external
+        view
+        returns (MonState[] memory);
 }

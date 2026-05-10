@@ -40,7 +40,7 @@ contract VitalSiphon is StandardAttack {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderMonIndex,
-        uint16 extraData,
+        uint16,
         uint256 rng
     ) public override {
         // Deal the damage

@@ -12,7 +12,7 @@ import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
-import {GachaTeamRegistry} from "../src/teams/GachaTeamRegistry.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleHistory} from "../src/hooks/BattleHistory.sol";
@@ -61,6 +61,15 @@ contract EngineAndPeriphery is Script {
 
         BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
+
+        // Whitelist both CPUs so users can setOpponentTeam against them.
+        {
+            address[] memory toAllow = new address[](2);
+            toAllow[0] = address(okayCPU);
+            toAllow[1] = address(betterCPU);
+            address[] memory toDisallow = new address[](0);
+            gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
+        }
 
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));

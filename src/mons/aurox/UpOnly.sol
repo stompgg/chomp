@@ -44,7 +44,7 @@ contract UpOnly is IAbility, BasicEffect {
         return 0x8040;
     }
 
-    function onAfterDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32)
+    function onAfterDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

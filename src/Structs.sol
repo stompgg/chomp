@@ -8,7 +8,7 @@ import {IValidator} from "./IValidator.sol";
 import {IEffect} from "./effects/IEffect.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {IRandomnessOracle} from "./rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "./teams/ITeamRegistry.sol";
+import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 
 // Used by DefaultMatchmaker
 struct ProposedBattle {
@@ -54,10 +54,14 @@ struct MoveDecision {
     uint16 extraData;
 }
 
-// Stored by the Engine, tracks immutable battle data and battle state
+// Stored by the Engine, tracks immutable battle data and battle state.
+// Slot 0: p1 (160) + turnId (64) + p0TeamIndex (16) + p1TeamIndex (16) = 256 bits exactly.
+// teamIndices are narrowed from Battle.uint96 at startBattle; phantom-team writes truncate to match.
 struct BattleData {
     address p1;
     uint64 turnId;
+    uint16 p0TeamIndex;
+    uint16 p1TeamIndex;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint8 prevPlayerSwitchForTurnFlag;
@@ -85,6 +89,8 @@ struct BattleConfig {
     uint104 p1Salt;
     MoveDecision p0Move;
     MoveDecision p1Move;
+    // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
+    ITeamRegistry teamRegistry;
     mapping(uint256 index => Mon) p0Team;
     mapping(uint256 index => Mon) p1Team;
     mapping(uint256 index => MonState) p0States;
@@ -120,6 +126,8 @@ struct BattleConfigView {
     uint40 startTimestamp; // Needed client-side for the getGlobalKV freshness gate
     uint104 p0Salt;
     uint104 p1Salt;
+    uint16 p0TeamIndex;
+    uint16 p1TeamIndex;
     MoveDecision p0Move;
     MoveDecision p1Move;
     EffectInstance[] globalEffects;
@@ -128,6 +136,26 @@ struct BattleConfigView {
     Mon[][] teams;
     MonState[][] monStates;
     GlobalKVEntry[] globalKVEntries; // Live globalKV entries for the current battle
+    TeamLevelInfo p0Levels;
+    TeamLevelInfo p1Levels;
+}
+
+// Three parallel arrays of length MONS_PER_TEAM, indexed identically.
+struct TeamLevelInfo {
+    uint256[] monIds;
+    uint256[] exp;
+    uint256[] levels;
+}
+
+// Per-mon stat adjustment from an active Facet. Engine applies deltas after the validator
+// runs against base stats.
+struct StatDelta {
+    int16 hp;
+    int16 atk;
+    int16 spAtk;
+    int16 def;
+    int16 spDef;
+    int16 speed;
 }
 
 // Returned in BattleConfigView.globalKVEntries; value is packed [timestamp << 192 | value].
@@ -302,4 +330,19 @@ struct CPUContext {
     int32 cpuActiveMonStaminaDelta;
     bool cpuActiveMonKnockedOut;
     uint256[4] cpuActiveMonMoveSlots;
+}
+
+// Batched context for the registry's onBattleEnd hook — replaces the older split of
+// getPlayersForBattle + getWinner + getKOBitmap×2.
+struct BattleEndContext {
+    address p0;
+    address p1;
+    address winner;          // address(0) = draw
+    uint16 p0TeamIndex;
+    uint16 p1TeamIndex;
+    uint8 p0KOBitmap;
+    uint8 p1KOBitmap;
+    uint8 p0ActiveMonIndex;
+    uint8 p1ActiveMonIndex;
+    uint64 turnId;
 }
