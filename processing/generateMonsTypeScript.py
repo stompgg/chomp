@@ -380,16 +380,86 @@ export type Mon = {{
 
 export type MonDatabase = Record<number, Mon>;
 
-// Pre-computed lookup map for O(1) mon matching by stats
-export const monStatLookup = new Map<string, Mon>();
-for (const mon of Object.values(MonMetadata)) {{
-  const key = `${{mon.stats.hp}}-${{mon.stats.attack}}-${{mon.stats.defense}}-${{mon.stats.specialAttack}}-${{mon.stats.specialDefense}}-${{mon.stats.speed}}`;
-  monStatLookup.set(key, mon);
+export interface MonStatMatch {{
+  readonly mon: Mon;
+  readonly facetId: number; // 0 = no facet, 1..12 = facet id (mirrors Facets.sol)
 }}
+
+// Lookup map for O(1) mon matching by stats. Pre-baked with all 13 variants per
+// mon (no-facet + facets 1..12) so a Facet-equipped mon's on-chain stats hit
+// directly. ±5% math here mirrors `applyFacetToStats` in ./facets and the
+// Solidity `uint256 * 5 / 100` truncation — duplicated rather than imported to
+// avoid the mon ↔ facets module cycle.
+export const monStatLookup = new Map<string, MonStatMatch>();
 
 // Helper to create a stats key for lookup
 export function getMonStatsKey(stats: {{ hp: number; attack: number; defense: number; specialAttack: number; specialDefense: number; speed: number }}): string {{
   return `${{stats.hp}}-${{stats.attack}}-${{stats.defense}}-${{stats.specialAttack}}-${{stats.specialDefense}}-${{stats.speed}}`;
+}}
+
+const FACET_BUILD_TABLE: ReadonlyArray<{{ boost: 'HP'|'Atk'|'Def'|'Speed'; nerf: 'HP'|'Atk'|'Def'|'Speed' }}> = [
+  {{ boost: 'HP',    nerf: 'Atk'   }},  // 1  Abundant
+  {{ boost: 'HP',    nerf: 'Def'   }},  // 2  Benevolent
+  {{ boost: 'HP',    nerf: 'Speed' }},  // 3  Corpulent
+  {{ boost: 'Atk',   nerf: 'HP'    }},  // 4  Despolate
+  {{ boost: 'Atk',   nerf: 'Def'   }},  // 5  Relentless
+  {{ boost: 'Atk',   nerf: 'Speed' }},  // 6  Inexorable
+  {{ boost: 'Def',   nerf: 'HP'    }},  // 7  Warded
+  {{ boost: 'Def',   nerf: 'Atk'   }},  // 8  Stoic
+  {{ boost: 'Def',   nerf: 'Speed' }},  // 9  Ossified
+  {{ boost: 'Speed', nerf: 'HP'    }},  // 10 Meteoric
+  {{ boost: 'Speed', nerf: 'Atk'   }},  // 11 Elusive
+  {{ boost: 'Speed', nerf: 'Def'   }},  // 12 Unfettered
+];
+
+function fivePercentFloor(base: number): number {{
+  return Math.floor(base * 5 / 100);
+}}
+
+function applyFacetDelta(
+  base: Mon['stats'],
+  group: 'HP'|'Atk'|'Def'|'Speed',
+  sign: 1 | -1,
+  out: {{ hp: number; attack: number; defense: number; specialAttack: number; specialDefense: number; speed: number }},
+): void {{
+  switch (group) {{
+    case 'HP':    out.hp    += sign * fivePercentFloor(base.hp);    break;
+    case 'Speed': out.speed += sign * fivePercentFloor(base.speed); break;
+    case 'Atk':
+      out.attack        += sign * fivePercentFloor(base.attack);
+      out.specialAttack += sign * fivePercentFloor(base.specialAttack);
+      break;
+    case 'Def':
+      out.defense        += sign * fivePercentFloor(base.defense);
+      out.specialDefense += sign * fivePercentFloor(base.specialDefense);
+      break;
+  }}
+}}
+
+for (const mon of Object.values(MonMetadata)) {{
+  monStatLookup.set(getMonStatsKey(mon.stats), {{ mon, facetId: 0 }});
+
+  for (let i = 0; i < FACET_BUILD_TABLE.length; i++) {{
+    const facetId = i + 1;
+    const def = FACET_BUILD_TABLE[i];
+    const variant = {{
+      hp: mon.stats.hp,
+      attack: mon.stats.attack,
+      defense: mon.stats.defense,
+      specialAttack: mon.stats.specialAttack,
+      specialDefense: mon.stats.specialDefense,
+      speed: mon.stats.speed,
+    }};
+    applyFacetDelta(mon.stats, def.boost, +1, variant);
+    applyFacetDelta(mon.stats, def.nerf,  -1, variant);
+    const key = getMonStatsKey(variant);
+    // No-facet variant always wins on collision (it's inserted first). Among
+    // facet variants, first writer wins — only matters for cosmetic post-match
+    // annotation since the chain is the source of truth for facetId on a slot.
+    if (!monStatLookup.has(key)) {{
+      monStatLookup.set(key, {{ mon, facetId }});
+    }}
+  }}
 }}
 
 // Pre-computed max stats across all mons
