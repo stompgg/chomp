@@ -62,10 +62,6 @@ contract MockEffectRemover is IMoveSet {
         return MoveClass.Other;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }

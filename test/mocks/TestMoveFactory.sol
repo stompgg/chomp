@@ -41,10 +41,6 @@ contract TestMove is IMoveSet {
         return _moveType;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     function moveClass(IEngine, bytes32) public view returns (MoveClass) {
         return _moveClass;
     }

@@ -9,8 +9,9 @@ import {MoveMeta} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {IMoveSetWithRange} from "../../moves/IMoveSetWithRange.sol";
 
-contract ModalBolt is IMoveSet {
+contract ModalBolt is IMoveSet, IMoveSetWithRange {
     uint32 public constant BASE_POWER = 90;
     uint8 public constant EFFECT_ACCURACY = 20;
 
@@ -53,22 +54,31 @@ contract ModalBolt is IMoveSet {
         uint16 extraData,
         uint256 rng
     ) external {
-        if (extraData > MODE_LIGHTNING) {
-            return;
-        }
         uint64 key = _modalKey(attackerPlayerIndex, attackerMonIndex);
         uint256 used = uint256(engine.getGlobalKV(battleKey, key));
-        uint256 mask = 1 << extraData;
-        if ((used & mask) != 0) {
-            return;
+
+        // Defensive: if the caller submitted an out-of-range or already-spent mode,
+        // fall back to the lowest still-available mode. No-op only if every mode is spent.
+        uint16 mode = extraData;
+        if (mode > MODE_LIGHTNING || (used & (uint256(1) << mode)) != 0) {
+            bool found;
+            for (uint16 i = MODE_FIRE; i <= MODE_LIGHTNING; i++) {
+                if ((used & (uint256(1) << i)) == 0) {
+                    mode = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return;
         }
+        uint256 mask = uint256(1) << mode;
 
         Type t;
         IEffect status;
-        if (extraData == MODE_FIRE) {
+        if (mode == MODE_FIRE) {
             t = Type.Fire;
             status = BURN_STATUS;
-        } else if (extraData == MODE_ICE) {
+        } else if (mode == MODE_ICE) {
             t = Type.Ice;
             status = FROSTBITE_STATUS;
         } else {
@@ -110,12 +120,12 @@ contract ModalBolt is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16 extraData) external pure returns (bool) {
-        return extraData <= MODE_LIGHTNING;
+    function extraDataType() public pure returns (ExtraDataType) {
+        return ExtraDataType.InclusiveRange;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
+    function extraDataRange() public pure returns (uint16, uint16) {
+        return (MODE_FIRE, MODE_LIGHTNING);
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)

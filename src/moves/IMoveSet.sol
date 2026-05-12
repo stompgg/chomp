@@ -22,7 +22,6 @@ interface IMoveSet {
         view
         returns (uint32);
     function moveType(IEngine engine, bytes32 battleKey) external view returns (Type);
-    function isValidTarget(IEngine engine, bytes32 battleKey, uint16 extraData) external view returns (bool);
     function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass);
     function extraDataType() external view returns (ExtraDataType);
 

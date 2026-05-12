@@ -56,13 +56,6 @@ library ValidatorLogic {
             return false;
         }
 
-        // Inline moves have no target validation (always valid)
-        if (!MoveSlotLib.isInline(rawMoveSlot)) {
-            if (!MoveSlotLib.toIMoveSet(rawMoveSlot).isValidTarget(engine, battleKey, extraData)) {
-                return false;
-            }
-        }
-
         return true;
     }
 

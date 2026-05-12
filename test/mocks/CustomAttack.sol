@@ -73,10 +73,6 @@ contract CustomAttack is IMoveSet {
         return _standardAttack.moveType(engine, battleKey);
     }
 
-    function isValidTarget(IEngine engine, bytes32 battleKey, uint16 extraData) external view returns (bool) {
-        return _standardAttack.isValidTarget(engine, battleKey, extraData);
-    }
-
     function moveClass(IEngine engine, bytes32 battleKey) public view returns (MoveClass) {
         return _standardAttack.moveClass(engine, battleKey);
     }

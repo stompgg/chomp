@@ -61,10 +61,6 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     /**
      *  Effect implementation
      */

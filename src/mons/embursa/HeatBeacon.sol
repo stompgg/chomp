@@ -56,10 +56,6 @@ contract HeatBeacon is IMoveSet {
         return Type.Fire;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Self;
     }

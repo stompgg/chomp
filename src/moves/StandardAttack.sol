@@ -82,10 +82,6 @@ contract StandardAttack is IMoveSet, Ownable {
         );
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) public pure returns (bool) {
-        return true;
-    }
-
     function priority(IEngine, bytes32, uint256) public view virtual returns (uint32) {
         return _priority;
     }

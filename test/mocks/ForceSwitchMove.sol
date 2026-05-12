@@ -51,10 +51,6 @@ contract ForceSwitchMove is IMoveSet {
         return TYPE;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Physical;
     }

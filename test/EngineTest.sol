@@ -30,7 +30,6 @@ import {GlobalEffectAttack} from "./mocks/GlobalEffectAttack.sol";
 import {InstantDeathEffect} from "./mocks/InstantDeathEffect.sol";
 import {InstantDeathOnSwitchInEffect} from "./mocks/InstantDeathOnSwitchInEffect.sol";
 import {SelfSwitchAndDamageMove} from "./mocks/SelfSwitchAndDamageMove.sol";
-import {InvalidMove} from "./mocks/InvalidMove.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 
 import {IEngineHook} from "../src/IEngineHook.sol";
@@ -2363,51 +2362,6 @@ contract EngineTest is Test, BattleHelper {
         (EffectInstance[] memory effects1, ) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 1);
         assertEq(effects1.length, 1);
-    }
-
-    function test_moveSpecificInvalidFlagsAreCheckedDuringReveal() public {
-        uint256[] memory moves = new uint256[](1);
-        IMoveSet invalidMove = new InvalidMove();
-        moves[0] = uint256(uint160(address(invalidMove)));
-        Mon memory mon = Mon({
-            stats: MonStats({
-                hp: 10,
-                stamina: 1,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: moves,
-            ability: 0
-        });
-        Mon[] memory team = new Mon[](1);
-        team[0] = mon;
-
-        // Register teams
-        defaultRegistry.setTeam(ALICE, team);
-        defaultRegistry.setTeam(BOB, team);
-
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // First move of the game has to be selecting their mons (both index 0)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-
-        // Bob commits to NO_OP
-        vm.startPrank(BOB);
-        uint8 moveIndex = NO_OP_MOVE_INDEX;
-        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, uint104(0), uint16(0)));
-        commitManager.commitMove(battleKey, bobMoveHash);
-
-        // Alice should revert when revealing
-        vm.startPrank(ALICE);
-        vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, 0, uint104(0), uint16(0), false);
     }
 
     function test_onMonSwitchOutHookWorksWithTempStatBoost() public {

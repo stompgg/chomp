@@ -1682,7 +1682,7 @@ contract Engine is IEngine, MappingAllocator {
                         staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
                     uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
                     uint32 moveStamina = moveSet.stamina(self, battleKey, playerIndex, activeMonIndex);
-                    isValid = moveStamina <= currentStamina && moveSet.isValidTarget(self, battleKey, move.extraData);
+                    isValid = moveStamina <= currentStamina;
                     staminaCost = int32(moveStamina);
                 } else {
                     isValid = config.validator.validateSpecificMoveSelection(

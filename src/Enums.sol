@@ -77,7 +77,8 @@ enum StatBoostFlag {
 enum ExtraDataType {
     None,
     SelfTeamIndex,
-    OpponentNonKOTeamIndex
+    OpponentNonKOTeamIndex,
+    InclusiveRange
 }
 
 enum EngineHookStep {

@@ -467,33 +467,39 @@ contract NirvammaTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x1);
 
-        // Pick Fire again — silent no-op (stamina consumed, no new damage).
+        // Pick Fire again — falls back to the lowest still-free mode (Ice).
         int32 hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        int32 stamBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        assertEq(
+        assertLt(
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
             hpBefore,
-            "Second pick of same mode should not damage"
+            "Duplicate-mode submission falls back and still damages"
         );
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina),
-            stamBefore - 3,
-            "Second pick of same mode still costs stamina"
-        );
+        assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x3, "Fallback consumed Ice slot");
 
-        // Pick Ice and Lightning to fill the bitmap.
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 1, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 2, 0);
-        assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x7);
-
-        // Any pick now is a no-op.
+        // Out-of-range submission also falls back — only Lightning is free.
         hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 99, 0);
+        assertLt(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
+            hpBefore,
+            "Out-of-range submission falls back to Lightning"
+        );
+        assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x7, "All three modes consumed");
+
+        // Every mode spent — now any pick is a true no-op (stamina still charged).
+        hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 stamBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 1, 0);
         assertEq(
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
             hpBefore,
             "Pick after all-used should not damage"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina),
+            stamBefore - 3,
+            "Pick after all-used still costs stamina"
         );
     }
 

@@ -83,10 +83,6 @@ contract Initialize is IMoveSet, BasicEffect {
         return MoveClass.Self;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     /**
      *  Effect implementation
      */

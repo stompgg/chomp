@@ -96,10 +96,6 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function isValidTarget(IEngine, bytes32, uint16) external pure returns (bool) {
-        return true;
-    }
-
     function extraDataType() public pure returns (ExtraDataType) {
         return ExtraDataType.None;
     }
