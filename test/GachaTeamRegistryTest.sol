@@ -1229,12 +1229,12 @@ contract GachaTeamRegistryTest is Test {
     // GachaEvent: packed event emission
     // =====================================================================
 
-    bytes32 constant GACHA_EVENT_SIG = keccak256("GachaEvent(address,uint256)");
+    bytes32 constant GACHA_EVENT_SIG = keccak256("GachaEvent(bytes32,uint256,uint256)");
 
     struct DecodedGachaEvent {
         uint256 points;
         uint256[8] perMonExp;
-        uint256[8] perMonFacets;
+        uint256[8] perMonFacets;     // 12-bit bitmap per slot (bit i set = facet id (i+1) drawn this battle)
         uint256 bonusFlags;
         uint256 multiplier;
         uint256 outcome;
@@ -1244,24 +1244,27 @@ contract GachaTeamRegistryTest is Test {
         d.points = packed & 0xFFFF;
         for (uint256 j; j < 8; j++) {
             d.perMonExp[j] = (packed >> (16 + j * 8)) & 0xFF;
-            d.perMonFacets[j] = (packed >> (80 + j * 4)) & 0xF;
+            d.perMonFacets[j] = (packed >> (80 + j * 12)) & 0xFFF;
         }
-        d.bonusFlags = (packed >> 112) & 0xFF;
-        d.multiplier = (packed >> 120) & 0xFF;
-        d.outcome = (packed >> 128) & 0xFF;
+        d.bonusFlags = (packed >> 176) & 0xFF;
+        d.multiplier = (packed >> 184) & 0xFF;
+        d.outcome = (packed >> 192) & 0xFF;
     }
 
-    /// @dev Captures the GachaEvent emitted for `player` during the next call.
+    /// @dev Captures the single per-battle GachaEvent and decodes the side
+    /// belonging to `player`. ALICE is always p0 in this test harness; BOB / CPU
+    /// are always p1.
     function _expectGachaEvent(address player) internal view returns (DecodedGachaEvent memory) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 topicPlayer = bytes32(uint256(uint160(player)));
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].topics[0] == GACHA_EVENT_SIG && logs[i].topics[1] == topicPlayer) {
-                uint256 packed = abi.decode(logs[i].data, (uint256));
+            if (logs[i].topics[0] == GACHA_EVENT_SIG) {
+                (uint256 p0Packed, uint256 p1Packed) = abi.decode(logs[i].data, (uint256, uint256));
+                uint256 packed = player == ALICE ? p0Packed : p1Packed;
+                require(packed != 0, "no rewards in slot for that player");
                 return _decodeGachaEvent(packed);
             }
         }
-        revert("GachaEvent for player not found");
+        revert("GachaEvent not found");
     }
 
     function test_gachaEvent_packsPointsExpFacetsBonusesOutcome() public {
@@ -1321,5 +1324,23 @@ contract GachaTeamRegistryTest is Test {
         _runBattleEnd(_ctxAliceVsCpu(address(0), 0x3, 0x3, uint16(aliceTeam)));
         DecodedGachaEvent memory ev = _expectGachaEvent(ALICE);
         assertEq(ev.outcome, 2, "draw outcome");
+    }
+
+    // Timeout/forfeit: neither side was fully KO'd → no rewards, no event.
+    function test_noRewardsWhenNeitherSideFullyKOd() public {
+        _whitelist(CPU);
+        uint256 aliceTeam = _aliceTeamIndex();
+
+        vm.recordLogs();
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x2, uint16(aliceTeam)));
+
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 0, "no points awarded");
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 0, "slot 0 exp untouched");
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 0, "slot 1 exp untouched");
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; i++) {
+            require(logs[i].topics[0] != GACHA_EVENT_SIG, "no GachaEvent emitted");
+        }
     }
 }

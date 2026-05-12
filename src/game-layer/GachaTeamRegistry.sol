@@ -61,25 +61,27 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     uint256 internal constant MON_STATE_FIELD_MASK = 0xF;
 
     // ----- GachaEvent packing -----
-    // Layout reserves 8 lanes for per-mon data so MONS_PER_TEAM can grow up to 8 without
-    // a layout migration. Bumping past 8 silently truncates per-mon fields and would
+    // One event per battle carries both players' packed payloads. Each payload is
+    // a uint256 with the layout below; CPU sides are emitted as 0. Layout reserves
+    // 8 lanes for per-mon data so MONS_PER_TEAM can grow up to 8 without a layout
+    // migration. Bumping past 8 silently truncates per-mon fields and would
     // require an event-version bump.
-    //   bits 0-15    pointsAwarded (uint16)
-    //   bits 16-79   per-mon exp gain (8 lanes * 8 bits)
-    //   bits 80-111  per-mon facets unlocked this battle (8 lanes * 4 bits)
-    //   bits 112-119 bonus flags
-    //   bits 120-127 multiplier (uint8)
-    //   bits 128-135 outcome: 0=loss, 1=win, 2=draw
-    //   bits 136-255 reserved
+    //   bits 0-15     pointsAwarded (uint16)
+    //   bits 16-79    per-mon exp gain (8 lanes * 8 bits)
+    //   bits 80-175   per-mon facets unlocked this battle (8 lanes * 12-bit bitmap, 1 bit per facet id)
+    //   bits 176-183  bonus flags
+    //   bits 184-191  multiplier (uint8)
+    //   bits 192-199  outcome: 0=loss, 1=win, 2=draw
+    //   bits 200-255  reserved
     uint256 internal constant GE_EXP_SHIFT = 16;
     uint256 internal constant GE_EXP_BITS_PER_MON = 8;
     uint256 internal constant GE_EXP_LANE_MASK = (1 << GE_EXP_BITS_PER_MON) - 1;
     uint256 internal constant GE_FACETS_SHIFT = 80;
-    uint256 internal constant GE_FACETS_BITS_PER_MON = 4;
+    uint256 internal constant GE_FACETS_BITS_PER_MON = 12;
     uint256 internal constant GE_FACETS_LANE_MASK = (1 << GE_FACETS_BITS_PER_MON) - 1;
-    uint256 internal constant GE_BONUS_SHIFT = 112;
-    uint256 internal constant GE_MULT_SHIFT = 120;
-    uint256 internal constant GE_OUTCOME_SHIFT = 128;
+    uint256 internal constant GE_BONUS_SHIFT = 176;
+    uint256 internal constant GE_MULT_SHIFT = 184;
+    uint256 internal constant GE_OUTCOME_SHIFT = 192;
 
     uint256 internal constant BONUS_FIRST_ROLL = 1 << 0;
     uint256 internal constant BONUS_FIRST_GAME = 1 << 1;
@@ -102,7 +104,7 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
 
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
-    event GachaEvent(address indexed player, uint256 packed);
+    event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
 
     // ----- Immutables -----
     uint256 immutable MONS_PER_TEAM;
@@ -718,6 +720,11 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         if (msg.sender != address(ENGINE)) revert NotEngine();
 
         BattleEndContext memory ctx = ENGINE.getBattleEndContext(battleKey);
+
+        // No rewards on timeout/forfeit: at least one side must have all mons KO'd.
+        uint8 allKOd = uint8((1 << MONS_PER_TEAM) - 1);
+        if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
+
         uint32 currentDay = uint32(block.timestamp / 1 days);
 
         uint256 packed0 = playerData[ctx.p0];
@@ -726,9 +733,11 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         bool isCpu1 = packed1 & IS_CPU_BIT != 0;
         bool isPvP = !(isCpu0 || isCpu1);
 
+        uint256[2] memory packedEvents;
+
         for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
             bool isCPU = playerIndex == 0 ? isCpu0 : isCpu1;
-            if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward, no event
+            if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward. Pack stays 0.
 
             address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
             uint256 teamIdx = playerIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
@@ -791,13 +800,14 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
             uint256 expFacetPacked = _applyExpAndFacetDraws(player, teamIdx, koBitmap, multiplier);
 
             uint256 outcome = ctx.winner == player ? 1 : (ctx.winner == address(0) ? 2 : 0);
-            uint256 evt = (pointsThisBattle & 0xFFFF)
+            packedEvents[playerIndex] = (pointsThisBattle & 0xFFFF)
                 | expFacetPacked
                 | (bonusFlags << GE_BONUS_SHIFT)
                 | ((multiplier & 0xFF) << GE_MULT_SHIFT)
                 | (outcome << GE_OUTCOME_SHIFT);
-            emit GachaEvent(player, evt);
         }
+
+        emit GachaEvent(battleKey, packedEvents[0], packedEvents[1]);
     }
 
     /// @dev Walks the team in one pass, sharing lastBucket across exp + facet slot reads.
@@ -855,16 +865,17 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
                     facetLoaded = true;
                 }
                 (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
-                uint8 priorPop = _popcount(unlockedBitmap);
+                uint16 priorBitmap = unlockedBitmap;
                 for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
                     if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
                     uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
                     (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
                     unchecked { ++levelNum; }
                 }
-                uint256 drawn = _popcount(unlockedBitmap) - priorPop;
-                if (drawn > GE_FACETS_LANE_MASK) drawn = GE_FACETS_LANE_MASK;
-                expFacetPacked |= drawn << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
+                // Emit the diff bitmap (bits set in unlockedBitmap that weren't in priorBitmap).
+                // TOTAL_FACETS = 12 fits in GE_FACETS_BITS_PER_MON = 12 — the mask is a safety net.
+                uint256 drawnBitmap = uint256(unlockedBitmap & ~priorBitmap) & GE_FACETS_LANE_MASK;
+                expFacetPacked |= drawnBitmap << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
                 facetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
                 facetDirty = true;
             }
