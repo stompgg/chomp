@@ -4,26 +4,13 @@
 - Add one-time rewards, consumable EXP / points
 - Mix up CPU team comp
 
-    Relentless ATK↑DEF↓—
-    Inexorable ATK↑SPD↓—
-    Despolate ATK↑HP↓—
-    Ossified DEF↑SPD↓— 
-    Stoic DEF↑ATK↓— 
-    Warded DEF↑HP↓— 
-    Corpulent HP↑SPD↓
-    Benevolent HP↑DEF↓
-    Abundant HP↑ATK↓
-    Meteoric SPD↑HP↓
-    Unfettered SPD↑DEF↓
-    Elusive SPD↑ATK↓
-
 Buffs:
 - Aurox: 
-    - Bull Rush to 140 bp
+    - Bull Rush to 140 bp [x]
 - Inutia:
-    - Hit And Dip to 50 bp
+    - Hit And Dip to 50 bp [x]
 - Xmon:
-    - Somniphobia to 8 turns
+    - Somniphobia to 8 turns [x]
 
 ---------------------------------------------------------------------------------------------
 

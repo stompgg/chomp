@@ -20,7 +20,7 @@ contract BullRush is StandardAttack {
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Bull Rush",
-                BASE_POWER: 120,
+                BASE_POWER: 140,
                 STAMINA_COST: 2,
                 ACCURACY: 100,
                 MOVE_TYPE: Type.Metal,

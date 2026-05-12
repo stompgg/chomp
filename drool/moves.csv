@@ -14,7 +14,7 @@ Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all
 Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up long-lasting battlefield effect. Triggers on switch ins. Damages opponent and heals self for 1/8 of max HP. Has 4 charges.,,none
 Initialize,Inutia,0,2,100,0,Mythic,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, half of the bonus is transferred to the next incoming mon.",,none
 Big Bite,Inutia,85,2,100,0,Wild,Physical,Deals damage.,,none
-Hit And Dip,Inutia,30,2,100,0,Mythic,Special,"Deals damage, then swaps out.",,self-mon
+Hit And Dip,Inutia,50,2,100,0,Mythic,Special,"Deals damage, then swaps out.",,self-mon
 Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none
 Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, 10% chance to cause Panic.",,none
@@ -38,7 +38,7 @@ Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns and Burns the enemy.
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none
 Gilded Recovery,Aurox,0,2,100,0,Mythic,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,self-mon
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated for the first time each switch-in, Aurox gains 25% of max HP",,none
-Bull Rush,Aurox,120,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to Aurox.,,none
+Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to Aurox.,,none
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,"Inflicts Sleep on self and opponent. When asleep, you are forced to rest.",,none
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, 50% chance to steal 1 stamina from opponent.",,none
 Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For the next 8 turns, any mon that rests will take 1/8th of max HP as damage.",,none
