@@ -124,7 +124,6 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
     event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
-    event TeamCreated(address indexed player, uint256 slot);
 
     // ----- Immutables -----
     uint256 immutable MONS_PER_TEAM;
@@ -325,8 +324,6 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         packed |= (slot << (_popcount(liveBitmap) * ORDER_ENTRY_BITS))
                 | (uint256(1) << (LIVE_BITMAP_SHIFT + slot));
         teamOrderPacked[user] = packed;
-
-        emit TeamCreated(user, slot);
     }
 
     // ----- Lane-level helpers (packed teamGroupsPacked I/O) -----

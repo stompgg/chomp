@@ -1362,13 +1362,6 @@ contract GachaTeamRegistryTest is Test {
         assertEq(second, 1, "second team lands at slot 1");
     }
 
-    function test_createTeam_emitsTeamCreatedEvent() public {
-        vm.startPrank(ALICE);
-        vm.expectEmit(true, false, false, true);
-        emit GachaTeamRegistry.TeamCreated(ALICE, 0);
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
-    }
-
     function test_packedStorage_lanesAreIsolated() public {
         vm.startPrank(ALICE);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0, lane 0
