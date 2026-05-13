@@ -1,6 +1,6 @@
 {
   "name": "Big Bite",
-  "basePower": 85,
+  "basePower": 80,
   "staminaCost": 2,
   "moveType": "Wild",
   "moveClass": "Physical",

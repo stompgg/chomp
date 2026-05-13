@@ -7,10 +7,16 @@ import "../abilities/IAbility.sol";
 import "../moves/IMoveSet.sol";
 
 interface ITeamRegistry {
+    function createTeam(uint256[] memory monIndices) external returns (uint256 slot);
+    function deleteTeam(uint256 slot) external;
+    function updateTeam(uint256 slot, uint256[] memory positions, uint256[] memory newMonIndices) external;
+
     function getTeam(address player, uint256 teamIndex) external returns (Mon[] memory);
     function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external returns (Mon[] memory, Mon[] memory);
     function getTeamCount(address player) external returns (uint256);
     function getMonRegistryIndicesForTeam(address player, uint256 teamIndex) external returns (uint256[] memory);
+    function getOrderedLiveTeams(address player) external view returns (uint256[] memory slots);
+    function getPlayerTeams(address player) external view returns (uint256[] memory slots, uint256[][] memory teamMonIds);
 
     function getMonData(uint256 monId)
         external

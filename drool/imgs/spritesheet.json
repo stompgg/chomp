@@ -362,5 +362,83 @@
       "msPerFrame": 100,
       "frames": [[0, 1056], [96, 1056], [192, 1056], [288, 1056]]
     }
+  },
+  "aurox_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[0, 0], [16, 0]]
+    }
+  },
+  "ekineki_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[32, 0], [48, 0]]
+    }
+  },
+  "embursa_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[64, 0], [80, 0]]
+    }
+  },
+  "ghouliath_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[0, 16], [16, 16]]
+    }
+  },
+  "gorillax_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[32, 16], [48, 16]]
+    }
+  },
+  "iblivion_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[64, 16], [80, 16]]
+    }
+  },
+  "inutia_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[0, 32], [16, 32]]
+    }
+  },
+  "malalien_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[32, 32], [48, 32]]
+    }
+  },
+  "nirvamma_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[64, 32], [80, 32]]
+    }
+  },
+  "pengym_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[0, 48], [16, 48]]
+    }
+  },
+  "sofabbi_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[32, 48], [48, 48]]
+    }
+  },
+  "volthare_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[64, 48], [80, 48]]
+    }
+  },
+  "xmon_mini.gif": {
+    "micro": {
+      "msPerFrame": 200,
+      "frames": [[0, 64], [16, 64]]
+    }
   }
 }

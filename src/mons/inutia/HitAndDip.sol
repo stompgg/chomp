@@ -19,7 +19,7 @@ contract HitAndDip is StandardAttack {
             TYPE_CALCULATOR,
             ATTACK_PARAMS({
                 NAME: "Hit And Dip",
-                BASE_POWER: 50,
+                BASE_POWER: 60,
                 STAMINA_COST: 2,
                 ACCURACY: 100,
                 MOVE_TYPE: Type.Mythic,

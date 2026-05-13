@@ -55,6 +55,29 @@ contract TestTeamRegistry is ITeamRegistry {
         return indices;
     }
 
+    // ---- Mutation stubs (mock is set up directly via setTeamAt/setIndices in tests) ----
+
+    function createTeam(uint256[] memory) external pure returns (uint256) {
+        return 0;
+    }
+
+    function deleteTeam(uint256) external pure {}
+
+    function updateTeam(uint256, uint256[] memory, uint256[] memory) external pure {}
+
+    function getOrderedLiveTeams(address) external pure returns (uint256[] memory) {
+        return new uint256[](0);
+    }
+
+    function getPlayerTeams(address)
+        external
+        pure
+        returns (uint256[] memory slots, uint256[][] memory teamMonIds)
+    {
+        slots = new uint256[](0);
+        teamMonIds = new uint256[][](0);
+    }
+
     // Tests skip mon validation by having validateMonBatch always return true.
     function validateMonBatch(Mon[] calldata, uint256[] calldata) external pure returns (bool) {
         return true;

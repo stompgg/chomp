@@ -119,6 +119,18 @@ def build_sprites(
             loop=loops,
         )
 
+    # 16x16 micro sprite (looping idle) lives on the *_mini.gif entry
+    mini_data = spritesheet_data.get(f"{mon_name_lower}_mini.gif", {})
+    micro_source = mini_data.get("micro") if mini_data else None
+    if micro_source and "frames" in micro_source:
+        sprites["micro"] = build_sprite_config(
+            "/assets/mons/all/mon_micro.png",
+            micro_source,
+            frame_width=16,
+            frame_height=16,
+            loop=True,
+        )
+
     return sprites
 
 
@@ -360,6 +372,7 @@ export type Mon = {{
     readonly backSwitchIn: SpriteAnimationConfig;
     readonly backSwitchOut: SpriteAnimationConfig;
     readonly backHurt?: SpriteAnimationConfig;
+    readonly micro?: SpriteAnimationConfig;
   }};
   readonly stats: {{
     readonly hp: number;

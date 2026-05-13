@@ -11,7 +11,8 @@ import {IEffect} from "../../effects/IEffect.sol";
 import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract Interweaving is IAbility, BasicEffect {
-    uint8 constant DECREASE_PERCENTAGE = 10;
+    
+    uint8 constant DECREASE_PERCENTAGE = 15;
     StatBoosts immutable STAT_BOOST;
 
     constructor(StatBoosts _STAT_BOOSTS) {

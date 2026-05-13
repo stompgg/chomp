@@ -10,6 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 FRAME_SIZE = 96
+MICRO_FRAME_SIZE = 16
 MORPH_FRAMES = 8
 
 def find_96x96_gifs(directory: str) -> list[str]:
@@ -86,14 +87,14 @@ def create_morph_animation(start_frame: Image.Image, is_back: bool = False) -> l
     return frames
 
 
-def build_spritesheet(frames: list[Image.Image]) -> tuple[Image.Image, list[tuple[int, int]]]:
+def build_spritesheet(frames: list[Image.Image], frame_size: int = FRAME_SIZE) -> tuple[Image.Image, list[tuple[int, int]]]:
     """Create spritesheet image and return frame positions."""
     cols = math.ceil(math.sqrt(len(frames)))
     rows = math.ceil(len(frames) / cols)
-    sheet = Image.new('RGBA', (cols * FRAME_SIZE, rows * FRAME_SIZE), (0, 0, 0, 0))
+    sheet = Image.new('RGBA', (cols * frame_size, rows * frame_size), (0, 0, 0, 0))
     positions = []
     for i, frame in enumerate(frames):
-        x, y = (i % cols) * FRAME_SIZE, (i // cols) * FRAME_SIZE
+        x, y = (i % cols) * frame_size, (i // cols) * frame_size
         sheet.paste(frame, (x, y))
         positions.append((x, y))
     return sheet, positions
@@ -125,6 +126,71 @@ def save_and_compress_png(sheet: Image.Image, path: Path, description: str) -> N
     sheet.save(path, "PNG")
     print(f"✅ {description} saved: {sheet.size[0]}x{sheet.size[1]} -> {path}")
     run_pngout(path)
+
+
+def create_micro_spritesheet(
+    imgs_dir: Path,
+    munch_assets_dir: Path,
+    metadata: dict,
+) -> None:
+    """Generate 16x16 micro spritesheet from icons/*_icon.gif.
+
+    Invokes make_icons.py to regenerate icons from *_mini.gif, then packs every
+    frame of every icon into one shared sheet. Attaches a `micro` sub-key to
+    each `<mon>_mini.gif` entry in metadata (creating the entry if needed).
+    """
+    print("\n" + "=" * 50)
+    print("Generating 16x16 micro spritesheet")
+
+    make_icons_script = imgs_dir / "make_icons.py"
+    if not make_icons_script.exists():
+        print(f"⚠ make_icons.py not found at {make_icons_script}, skipping micro spritesheet")
+        return
+
+    print(f"Running {make_icons_script.name}...")
+    result = subprocess.run(
+        [sys.executable, str(make_icons_script)],
+        cwd=str(imgs_dir),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"⚠ make_icons.py failed (exit {result.returncode}):\n{result.stderr}")
+        return
+    if result.stdout.strip():
+        print(result.stdout.strip())
+
+    icons_dir = imgs_dir / "icons"
+    icon_gifs = sorted(icons_dir.glob("*_icon.gif"))
+    if not icon_gifs:
+        print(f"⚠ No *_icon.gif files in {icons_dir}, skipping")
+        return
+
+    all_frames: list[Image.Image] = []
+    mini_entries: list[tuple[str, int, int, int]] = []  # (mini_key, start, count, rate)
+
+    for icon_path in icon_gifs:
+        frames, frame_rate = extract_frames(str(icon_path))
+        mini_key = icon_path.name.replace("_icon.gif", "_mini.gif")
+        start = len(all_frames)
+        all_frames.extend(frames)
+        mini_entries.append((mini_key, start, len(frames), frame_rate))
+        print(f"Extracted {len(frames)} micro frames from {icon_path.name} (rate: {frame_rate}ms)")
+
+    sheet, positions = build_spritesheet(all_frames, frame_size=MICRO_FRAME_SIZE)
+    drool_micro_path = imgs_dir / "mon_micro.png"
+    save_and_compress_png(sheet, drool_micro_path, "Micro spritesheet")
+
+    if munch_assets_dir.exists():
+        munch_micro_path = munch_assets_dir / "mon_micro.png"
+        save_and_compress_png(sheet, munch_micro_path, "Munch micro spritesheet")
+
+    for mini_key, start, count, rate in mini_entries:
+        frames_list = [list(positions[start + i]) for i in range(count)]
+        metadata.setdefault(mini_key, {})["micro"] = {
+            "msPerFrame": rate,
+            "frames": frames_list,
+        }
 
 
 def create_spritesheets(gif_files: list[str], output_dir: str):
@@ -222,6 +288,9 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
                 "msPerFrame": d_rate,
                 "frames": [list(positions[d_start + i]) for i in range(d_count)],
             }
+
+    # Build 16x16 micro spritesheet (icons) and attach to *_mini.gif entries
+    create_micro_spritesheet(Path(output_dir), munch_assets_dir, metadata)
 
     # Save JSON with compact coordinate arrays
     json_path = Path(output_dir) / "spritesheet.json"

@@ -1343,4 +1343,208 @@ contract GachaTeamRegistryTest is Test {
             require(logs[i].topics[0] != GACHA_EVENT_SIG, "no GachaEvent emitted");
         }
     }
+
+    // =====================================================================
+    // Packed team storage — delete, reuse, ordering, cap enforcement
+    // =====================================================================
+
+    function _aliceTeam(uint256 monA, uint256 monB) internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = monA;
+        ids[1] = monB;
+    }
+
+    function test_createTeam_returnsSlotId() public {
+        vm.startPrank(ALICE);
+        uint256 first = gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        assertEq(first, 0, "first team lands at slot 0");
+        uint256 second = gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+        assertEq(second, 1, "second team lands at slot 1");
+    }
+
+    function test_createTeam_emitsTeamCreatedEvent() public {
+        vm.startPrank(ALICE);
+        vm.expectEmit(true, false, false, true);
+        emit GachaTeamRegistry.TeamCreated(ALICE, 0);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+    }
+
+    function test_packedStorage_lanesAreIsolated() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0, lane 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1, lane 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2, lane 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3, lane 3 (same group)
+
+        // Update slot 0 — should not affect slots 1/2/3 (same group, different lanes).
+        uint256[] memory positions = new uint256[](2);
+        positions[0] = 0;
+        positions[1] = 1;
+        gachaTeamRegistry.updateTeam(0, positions, _aliceTeam(4, 5));
+
+        // Slot 0 has the new mons.
+        uint256[] memory t0 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
+        assertEq(t0[0], 4); assertEq(t0[1], 5);
+
+        // Slots 1/2/3 unchanged.
+        uint256[] memory t1 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 1);
+        assertEq(t1[0], 0); assertEq(t1[1], 4);
+        uint256[] memory t2 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 2);
+        assertEq(t2[0], 0); assertEq(t2[1], 5);
+        uint256[] memory t3 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 3);
+        assertEq(t3[0], 3); assertEq(t3[1], 4);
+    }
+
+    function test_packedStorage_crossesGroupBoundary() public {
+        vm.startPrank(ALICE);
+        // Fill 5 teams so we cross group 0 (slots 0..3) into group 1 (slot 4).
+        for (uint256 i; i < 5; ++i) {
+            gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        }
+        // Touch slot 3 (group 0, lane 3) and slot 4 (group 1, lane 0) independently.
+        uint256[] memory positions = new uint256[](2);
+        positions[0] = 0; positions[1] = 1;
+        gachaTeamRegistry.updateTeam(3, positions, _aliceTeam(4, 5));
+        gachaTeamRegistry.updateTeam(4, positions, _aliceTeam(3, 5));
+
+        uint256[] memory t3 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 3);
+        uint256[] memory t4 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 4);
+        assertEq(t3[0], 4); assertEq(t3[1], 5);
+        assertEq(t4[0], 3); assertEq(t4[1], 5);
+    }
+
+    function test_deleteTeam_clearsLiveBit() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+        gachaTeamRegistry.deleteTeam(1);
+        assertEq(gachaTeamRegistry.getTeamCount(ALICE), 1, "live count drops to 1");
+    }
+
+    function test_deleteTeam_revertsOnNotLive() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        vm.expectRevert(GachaTeamRegistry.TeamNotLive.selector);
+        gachaTeamRegistry.deleteTeam(1);  // slot 1 was never created
+    }
+
+    function test_deleteTeam_revertsOnOutOfRange() public {
+        vm.startPrank(ALICE);
+        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        gachaTeamRegistry.deleteTeam(16);
+    }
+
+    function test_readsRevert_onDeletedSlot() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+        gachaTeamRegistry.deleteTeam(1);
+
+        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 1);
+
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 0;
+        uint256[] memory newMons = new uint256[](1);
+        newMons[0] = 5;
+        vm.expectRevert(GachaTeamRegistry.TeamNotLive.selector);
+        gachaTeamRegistry.updateTeam(1, positions, newMons);
+    }
+
+    function test_createTeam_reusesLowestFreeSlot() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 5));  // slot 4
+
+        gachaTeamRegistry.deleteTeam(2);
+        uint256 reused = gachaTeamRegistry.createTeam(_aliceTeam(4, 5));
+        assertEq(reused, 2, "createTeam reuses lowest unset bit");
+
+        // New team's mons live at the reused slot.
+        uint256[] memory mons = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 2);
+        assertEq(mons[0], 4); assertEq(mons[1], 5);
+    }
+
+    function test_getOrderedLiveTeams_reflectsCreationOrderWithReuse() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 5));  // slot 4
+
+        gachaTeamRegistry.deleteTeam(2);
+
+        // Order should now be [0, 1, 3, 4] (slot 2 spliced out).
+        uint256[] memory afterDelete = gachaTeamRegistry.getOrderedLiveTeams(ALICE);
+        assertEq(afterDelete.length, 4);
+        assertEq(afterDelete[0], 0);
+        assertEq(afterDelete[1], 1);
+        assertEq(afterDelete[2], 3);
+        assertEq(afterDelete[3], 4);
+
+        // Reuse slot 2 → it goes at the tail of the order.
+        gachaTeamRegistry.createTeam(_aliceTeam(4, 5));
+        uint256[] memory afterReuse = gachaTeamRegistry.getOrderedLiveTeams(ALICE);
+        assertEq(afterReuse.length, 5);
+        assertEq(afterReuse[0], 0);
+        assertEq(afterReuse[1], 1);
+        assertEq(afterReuse[2], 3);
+        assertEq(afterReuse[3], 4);
+        assertEq(afterReuse[4], 2);
+    }
+
+    function test_getPlayerTeams_returnsOrderedSlotsAndMons() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));
+        gachaTeamRegistry.deleteTeam(1);
+
+        (uint256[] memory slots, uint256[][] memory teamMonIds) = gachaTeamRegistry.getPlayerTeams(ALICE);
+        assertEq(slots.length, 2);
+        assertEq(slots[0], 0);
+        assertEq(slots[1], 2);
+        assertEq(teamMonIds[0][0], 0); assertEq(teamMonIds[0][1], 3);
+        assertEq(teamMonIds[1][0], 0); assertEq(teamMonIds[1][1], 5);
+    }
+
+    function test_createTeam_revertsOnCapReached() public {
+        vm.startPrank(ALICE);
+        // 16 distinct teams; duplicate mon sets are allowed across slots.
+        for (uint256 i; i < 16; ++i) {
+            gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        }
+        vm.expectRevert(GachaTeamRegistry.TeamCapReached.selector);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+    }
+
+    function test_deleteOpenSlotThenFill_keepsCapEnforcement() public {
+        vm.startPrank(ALICE);
+        for (uint256 i; i < 16; ++i) {
+            gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        }
+        gachaTeamRegistry.deleteTeam(7);
+        // Cap freed up — should succeed and reuse slot 7.
+        uint256 reused = gachaTeamRegistry.createTeam(_aliceTeam(4, 5));
+        assertEq(reused, 7);
+
+        // Cap again.
+        vm.expectRevert(GachaTeamRegistry.TeamCapReached.selector);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
+    }
+
+    function test_getTeamCount_isLiveCountNotHighWater() public {
+        vm.startPrank(ALICE);
+        for (uint256 i; i < 5; ++i) {
+            gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+        }
+        assertEq(gachaTeamRegistry.getTeamCount(ALICE), 5);
+        gachaTeamRegistry.deleteTeam(0);
+        gachaTeamRegistry.deleteTeam(2);
+        assertEq(gachaTeamRegistry.getTeamCount(ALICE), 3, "live count tracks deletes");
+    }
 }

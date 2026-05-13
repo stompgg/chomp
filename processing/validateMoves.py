@@ -529,6 +529,10 @@ class MoveValidator:
         move_name = result['normalized_name']
         move_data = self.moves_data[move_name]
 
+        # JSON inline moves use a different update path
+        if file_path.endswith('.json'):
+            return self._update_json_move(file_path, move_data)
+
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
 
@@ -676,6 +680,45 @@ class MoveValidator:
 
         return False
 
+    def _update_json_move(self, file_path: str, move_data: MoveData) -> bool:
+        """Update a JSON inline move definition with CSV values. Returns True if file was modified."""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        modified = False
+
+        if move_data.power != '?' and isinstance(move_data.power, int):
+            if data.get('basePower') != move_data.power:
+                data['basePower'] = move_data.power
+                modified = True
+
+        if move_data.stamina != '?' and isinstance(move_data.stamina, int):
+            if data.get('staminaCost') != move_data.stamina:
+                data['staminaCost'] = move_data.stamina
+                modified = True
+
+        if move_data.move_type and data.get('moveType') != move_data.move_type:
+            data['moveType'] = move_data.move_type
+            modified = True
+
+        if move_data.move_class and data.get('moveClass') != move_data.move_class:
+            data['moveClass'] = move_data.move_class
+            modified = True
+
+        # JSON inline moves can't represent non-default accuracy or priority
+        if move_data.accuracy != '?' and isinstance(move_data.accuracy, int) and move_data.accuracy != 100:
+            print(f"  ⚠️  JSON inline moves only support DEFAULT_ACCURACY (100); CSV wants {move_data.accuracy}. Convert to .sol to express this.")
+        if move_data.priority != '?' and isinstance(move_data.priority, int) and move_data.priority != 0:
+            print(f"  ⚠️  JSON inline moves only support DEFAULT_PRIORITY; CSV priority offset is {move_data.priority}. Convert to .sol to express this.")
+
+        if modified:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+                f.write('\n')
+            return True
+
+        return False
+
     def update_all_contracts(self) -> None:
         """Update all contract files with CSV values where there are mismatches"""
         print("\n" + "="*80)
@@ -687,7 +730,12 @@ class MoveValidator:
             if not result['errors']:
                 continue
 
-            impl_type = "StandardAttack" if result['is_standard_attack'] else "Custom IMoveSet"
+            if result['contract_file'].endswith('.json'):
+                impl_type = "JSON inline"
+            elif result['is_standard_attack']:
+                impl_type = "StandardAttack"
+            else:
+                impl_type = "Custom IMoveSet"
             print(f"\n  Updating ({impl_type}): {result['contract_file']}")
 
             if self.update_contract_file(result):
