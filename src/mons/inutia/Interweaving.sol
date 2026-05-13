@@ -12,7 +12,7 @@ import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract Interweaving is IAbility, BasicEffect {
     
-    uint8 constant DECREASE_PERCENTAGE = 15;
+    uint8 public constant DECREASE_PERCENTAGE = 15;
     StatBoosts immutable STAT_BOOST;
 
     constructor(StatBoosts _STAT_BOOSTS) {

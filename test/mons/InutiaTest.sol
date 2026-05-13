@@ -54,14 +54,16 @@ contract InutiaTest is Test, BattleHelper {
         // Create a team with a mon that has Interweaving ability
         uint256[] memory moves = new uint256[](0);
         // Create a mon with Interweaving ability
+        // Attack/SpecialAttack = 100 so the integer-divided stat delta equals -DECREASE_PERCENTAGE
+        // exactly for any percentage in [0, 100), independent of rounding.
         Mon memory interweavingMon = Mon({
             stats: MonStats({
                 hp: 100,
                 stamina: 5,
                 speed: 5,
-                attack: 10,
+                attack: 100,
                 defense: 5,
-                specialAttack: 10,
+                specialAttack: 100,
                 specialDefense: 5,
                 type1: Type.Liquid,
                 type2: Type.None
@@ -76,9 +78,9 @@ contract InutiaTest is Test, BattleHelper {
                 hp: 100,
                 stamina: 5,
                 speed: 5,
-                attack: 10,
+                attack: 100,
                 defense: 5,
-                specialAttack: 10,
+                specialAttack: 100,
                 specialDefense: 5,
                 type1: Type.Liquid,
                 type2: Type.None
@@ -115,11 +117,12 @@ contract InutiaTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(1), uint16(0)
         );
 
-        // Check that Bob's mon Attack stat has been decreased
+        // Check that Bob's mon Attack stat has been decreased. With base stat 100, the
+        // post-boost stat is 100 * (100 - P) / 100 = 100 - P, so the delta equals -P exactly.
+        int32 expectedDecrease = -int32(uint32(interweaving.DECREASE_PERCENTAGE()));
         int32 bobAttackAfterSwapIn = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
-        int32 expectedAttackDecrease = -1; // -1 * base Attack / DECREASE_DENOM
         assertEq(
-            bobAttackAfterSwapIn, bobInitialAttack + expectedAttackDecrease, "Attack should be decreased after swap in"
+            bobAttackAfterSwapIn, bobInitialAttack + expectedDecrease, "Attack should be decreased after swap in"
         );
 
         // Alice switches back to the regular mon, Bob does a No-Op
@@ -130,10 +133,9 @@ contract InutiaTest is Test, BattleHelper {
         // Check that Bob's mon SpecialAttack stat has been decreased
         int32 bobSpecialAttackAfterSwapOut =
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.SpecialAttack);
-        int32 expectedSpecialAttackDecrease = -1; // -1 * base SpecialAttack / DECREASE_DENOM
         assertEq(
             bobSpecialAttackAfterSwapOut,
-            bobInitialSpecialAttack + expectedSpecialAttackDecrease,
+            bobInitialSpecialAttack + expectedDecrease,
             "SpecialAttack should be decreased after swap out"
         );
     }
