@@ -11,10 +11,7 @@ import {Engine} from "../src/Engine.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {CPUMoveManager} from "../src/cpu/CPUMoveManager.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
-import {PlayerCPU} from "../src/cpu/PlayerCPU.sol";
-import {RandomCPU} from "../src/cpu/RandomCPU.sol";
 
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
@@ -35,8 +32,6 @@ import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
 contract CPUTest is Test {
     Engine engine;
     DefaultCommitManager commitManager;
-    RandomCPU cpu;
-    PlayerCPU playerCPU;
     DefaultValidator validator;
     DefaultRandomnessOracle defaultOracle;
     TestTypeCalculator typeCalc;
@@ -52,8 +47,6 @@ contract CPUTest is Test {
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(engine);
         mockCPURNG = new MockCPURNG();
-        cpu = new RandomCPU(2, engine, mockCPURNG);
-        playerCPU = new PlayerCPU(2, engine, mockCPURNG);
         validator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
         );
@@ -168,227 +161,7 @@ contract CPUTest is Test {
         team[2] = mon3;
         team[3] = mon4;
 
-        teamRegistry.setTeam(address(cpu), team);
-        teamRegistry.setTeam(address(playerCPU), team);
         teamRegistry.setTeam(ALICE, team);
-    }
-
-    /**
-     * CPU should:
-     * - Only swap if they are KO'ed [x]
-     * - Only pick valid moves (e.g. should not pick a move that costs too much stamina) [x]
-     * - Moves that need a self team index correctly generate a random index
-     */
-    function test_cpuOnlyPicksValidMoves() public {
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(cpu),
-            p1TeamIndex: 0,
-            validator: validator,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(cpu),
-            matchmaker: cpu
-        });
-
-        vm.startPrank(ALICE);
-        // Authorize the CPU as a matchmaker
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(cpu);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-
-        vm.startPrank(ALICE);
-        // Start the battle directly via CPU
-        bytes32 battleKey = cpu.startBattle(proposal);
-
-        // Check that the CPU enumerates mon indices 0 to 4
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 4);
-        }
-
-        // Alice selects mon 2, CPU selects mon 1
-        mockCPURNG.setRNG(1);
-        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(2));
-        engine.resetCallContext();
-        // Assert active mon index for both p0 and p1 are correct
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 2);
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
-
-        // Check that the CPU now has 6 moves (can swap to any one of the other 3 mons, 2 valid moves, and a no op)
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 6);
-        }
-
-        // Alice KO's the CPU's mon, the CPU chooses no op
-        mockCPURNG.setRNG(0); // [no op, move 1, move 2, swap 0, swap 2, swap 3] and we want no op at index 0
-        cpu.selectMove(battleKey, 0, uint104(0), 0);
-        engine.resetCallContext();
-        // Check that the CPU now has 3 moves, all of which are switching to mon index 0, 2, or 3
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 3);
-            uint256[] memory swapIds = new uint256[](3);
-            swapIds[0] = 0;
-            swapIds[1] = 2;
-            swapIds[2] = 3;
-            for (uint256 i = 0; i < swapIds.length; i++) {
-                assertEq(switches[i].moveIndex, SWITCH_MOVE_INDEX);
-                assertEq(uint256(switches[i].extraData), swapIds[i]);
-            }
-        }
-
-        // Alice chooses no op (choice is irrelevant here), CPU chooses to switch to mon index 0
-        cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert the CPU now has mon index 0 as the active mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
-
-        // Assert that there are now 5 moves, switching to mon index 2, 3, the two moves, and no op
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 5);
-        }
-
-        // Alice chooses no op, CPU chooses move2 which should consume all stamina
-        mockCPURNG.setRNG(2); // [no op, move 1, move 2, swap 2, swap 3] and we want move 2 at index 2
-        // (note that the swaps are 0-indexed, and the moves are 1-indexed to refer to the above variable
-        // naming convention, sorry D: )
-        cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that there are now 3 moves, switching to mon index 2, 3, and no op (all stamina has been consumed)
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 3);
-        }
-
-        // Alice chooses no op, CPU chooses swapping to mon index 3
-        mockCPURNG.setRNG(2); // [no op, swap 2, swap 3] and we want swap 3 at index 2
-        cpu.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert the CPU now has mon index 3 as the active mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 3);
-
-        // Assert that there are now 4 moves, switching to mon index 0, 2, the two moves, and no op
-        // Assert that both moves generate a valid self team index (either mon 0 or mon 2)
-        {
-            (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-                cpu.calculateValidMoves(battleKey, 1);
-            assertEq(noOp.length + moves.length + switches.length, 5);
-            assertEq(uint256(moves[0].extraData), 0); // rng is set to 2, which % 2 is 0
-            assertEq(uint256(moves[1].extraData), 0);
-        }
-    }
-
-    /**
-     * Test that only p0 can call setMove on PlayerCPU
-     * Should revert if someone other than p0 attempts to call setMove
-     */
-    function test_onlyP0CanSetMoveOnPlayerCPU() public {
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(playerCPU),
-            p1TeamIndex: 0,
-            validator: validator,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(playerCPU),
-            matchmaker: playerCPU
-        });
-
-        vm.startPrank(ALICE);
-        // Authorize the PlayerCPU as a matchmaker
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(playerCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-
-        vm.startPrank(ALICE);
-        // Start the battle directly via PlayerCPU
-        bytes32 battleKey = playerCPU.startBattle(proposal);
-
-        // Test that BOB (not p0) cannot call setMove
-        vm.startPrank(BOB);
-        vm.expectRevert(CPUMoveManager.NotP0.selector);
-        playerCPU.setMove(battleKey, 0, 0);
-    }
-
-    /**
-     * Test that PlayerCPU flow works correctly for p0 over multiple turns
-     * Should allow p0 to call setMove followed by selectMove, and subsequent calls should override previous moves
-     */
-    function test_playerCPUFlowWorksForP0() public {
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(playerCPU),
-            p1TeamIndex: 0,
-            validator: validator,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(playerCPU),
-            matchmaker: playerCPU
-        });
-
-        vm.startPrank(ALICE);
-        // Authorize the PlayerCPU as a matchmaker
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(playerCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-
-        vm.startPrank(ALICE);
-        // Start the battle directly via PlayerCPU
-        bytes32 battleKey = playerCPU.startBattle(proposal);
-
-        // First turn: p0 sets move 0 for PlayerCPU
-        playerCPU.setMove(battleKey, 0, 0);
-
-        // Verify that calculateMove returns the correct move
-        CPUContext memory cpuCtx = engine.getCPUContext(battleKey);
-        (uint128 moveIndex, uint16 extraData) = playerCPU.calculateMove(cpuCtx, 0, 0);
-        assertEq(moveIndex, 0);
-        assertEq(extraData, 0);
-
-        // Execute the turn
-        playerCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(1));
-        engine.resetCallContext();
-        // Second turn: p0 sets move 1 for PlayerCPU (should override previous move)
-        playerCPU.setMove(battleKey, 1, uint16(42));
-
-        // Verify that calculateMove now returns the new move
-        cpuCtx = engine.getCPUContext(battleKey);
-        (moveIndex, extraData) = playerCPU.calculateMove(cpuCtx, 0, 0);
-        assertEq(moveIndex, 1);
-        assertEq(uint256(extraData), 42);
-
-        // Execute another turn to verify the flow continues to work
-        playerCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
     }
 
     function _createMon(Type t) internal pure returns (Mon memory) {

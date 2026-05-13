@@ -15,7 +15,6 @@ import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
-import {BattleHistory} from "../src/hooks/BattleHistory.sol";
 import {SimplePM} from "../src/hooks/SimplePM.sol";
 
 // Shared effects
@@ -74,9 +73,6 @@ contract EngineAndPeriphery is Script {
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
-        BattleHistory battleHistory = new BattleHistory(engine);
-        deployedContracts.push(DeployData({name: "BATTLE HISTORY", contractAddress: address(battleHistory)}));
-
         SimplePM simplePM = new SimplePM(engine);
         deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
@@ -87,13 +83,6 @@ contract EngineAndPeriphery is Script {
     }
 
     function deployGameFundamentals(Engine engine) public {
-        // StaminaRegen staminaRegen = new StaminaRegen();
-        // deployedContracts.push(DeployData({name: "STAMINA REGEN", contractAddress: address(staminaRegen)}));
-
-        // IEffect[] memory effects = new IEffect[](1);
-        // effects[0] = staminaRegen;
-        // DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
-        // deployedContracts.push(DeployData({name: "DEFAULT RULESET", contractAddress: address(ruleset)}));
 
         DefaultValidator validator =
             new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));

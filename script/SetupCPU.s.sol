@@ -21,12 +21,11 @@ contract SetupCPU is Script {
         cpuPlayers[0] = "OKAY_CPU";
         cpuPlayers[1] = "BETTER_CPU";
 
-        // Create team of Ghouliath, Malalien, Pengym, and Volthare for cpu player
         uint256[] memory monIndices = new uint256[](4);
         monIndices[0] = 0; // Ghouliath
-        monIndices[1] = 2; // Malalien
-        monIndices[2] = 6; // Pengym
-        monIndices[3] = 8; // Volthare
+        monIndices[1] = 3; // Iblivion
+        monIndices[2] = 10; // Xmon
+        monIndices[3] = 5; // Sofabbi
 
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
@@ -34,19 +33,19 @@ contract SetupCPU is Script {
 
         // Create alternative team
         monIndices[0] = 1; // Inutia
-        monIndices[1] = 3; // Iblivion
-        monIndices[2] = 4; // Gorillax
-        monIndices[3] = 5; // Sofabbi
+        monIndices[1] = 11; // Ekineki
+        monIndices[2] = 6; // Pengym
+        monIndices[3] = 7; // Embursa
 
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
         }
 
         // Create team of Embursa, Aurox, Xmon, and Ekineki
-        monIndices[0] = 7; // Embursa
+        monIndices[0] = 2; // Malalien
         monIndices[1] = 9; // Aurox
-        monIndices[2] = 10; // Xmon
-        monIndices[3] = 11; // Ekineki
+        monIndices[2] = 4; // Gorillax
+        monIndices[3] = 8; // Volthare
 
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);

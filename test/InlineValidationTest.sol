@@ -17,8 +17,9 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {RandomCPU} from "../src/cpu/RandomCPU.sol";
+import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {MockCPURNG} from "./mocks/MockCPURNG.sol";
+import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 /// @title Inline Validation Tests
 /// @notice Tests that inline validation works correctly when validator is address(0)
@@ -443,7 +444,8 @@ contract InlineValidationTest is Test, BattleHelper {
     /// @notice Test that CPU works with inline validation (validator = address(0))
     function test_cpu_worksWithInlineValidation() public {
         MockCPURNG mockRNG = new MockCPURNG();
-        RandomCPU cpu = new RandomCPU(MOVES_PER_MON, engine, mockRNG);
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        OkayCPU cpu = new OkayCPU(MOVES_PER_MON, engine, mockRNG, typeCalc);
 
         // Setup team for CPU
         defaultRegistry.setTeam(address(cpu), defaultRegistry.getTeam(p0, 0));
