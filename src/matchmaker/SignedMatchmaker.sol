@@ -42,7 +42,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     function startGame(BattleOffer memory offer, bytes calldata p0Signature) external {
         uint96 actualP1TeamIndex = offer.battle.p1TeamIndex;
 
-        // Set to 0 (assume p0 signs with default team index of 0) for p0 signature validation
+        // Set to 0 (assume p0 signs with default team index of 0 for p1) for p0 signature validation
         offer.battle.p1TeamIndex = 0;
 
         // Validate that p0's signature is valid

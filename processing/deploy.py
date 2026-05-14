@@ -615,6 +615,14 @@ def main():
             print("ERROR: Solidity generation failed.")
             sys.exit(1)
 
+        print(f"\n{'='*60}")
+        print("Generating SetupCPU.s.sol + munch cpu-teams.ts from cpu-teams.json")
+        print(f"{'='*60}")
+        from generateSetupCPU import run as run_setup_cpu
+        if not run_setup_cpu():
+            print("ERROR: SetupCPU generation failed.")
+            sys.exit(1)
+
     # Collect all addresses across forge scripts
     all_addresses: list[tuple[str, str]] = []
 

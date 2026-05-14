@@ -4,14 +4,6 @@
 - Add one-time rewards, consumable EXP / points
 - Mix up CPU team comp
 
-Buffs:
-- Aurox: 
-    - Bull Rush to 140 bp [x]
-- Inutia:
-    - Hit And Dip to 50 bp [x]
-- Xmon:
-    - Somniphobia to 8 turns [x]
-
 ---------------------------------------------------------------------------------------------
 
 Volthare:
@@ -30,7 +22,8 @@ Sofabbi
 ---------------------------------------------------------------------------------------------
 LATER 
 
-- consider int16 and uint16 values to pack things even more tightly
+- consider int16 and uint16 values to pack things even more tightly for stats
+- consider reworking the team index into an array of mon indices to reduce certain runtime exploits
 
 ---------------------------------------------------------------------------------------------
 

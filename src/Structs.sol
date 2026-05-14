@@ -26,6 +26,24 @@ struct ProposedBattle {
     IEngineHook[] engineHooks;
 }
 
+// Used by CPU.startCustomBattle: bundles phantom team-config writes with battle start.
+// p1 (= the CPU calling startCustomBattle) and p1TeamIndex (= uint16(uint160(p0)))
+// are derived inside the CPU contract, so they're omitted here. p0TeamHash is
+// unused in the phantom flow.
+struct CustomBattleProposal {
+    address p0;
+    uint96 p0TeamIndex;
+    uint256[] monIndices;
+    uint8[] facetIds;
+    ITeamRegistry teamRegistry;
+    IValidator validator;
+    IRandomnessOracle rngOracle;
+    IRuleset ruleset;
+    address moveManager;
+    IMatchmaker matchmaker;
+    IEngineHook[] engineHooks;
+}
+
 // Used by SignedMatchmaker
 struct BattleOffer {
     Battle battle;

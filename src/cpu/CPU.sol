@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {IEngine} from "../IEngine.sol";
 
 import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
+import {IPhantomTeamRegistry} from "../game-layer/IPhantomTeamRegistry.sol";
 import {ValidatorLogic} from "../lib/ValidatorLogic.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../moves/IMoveSet.sol";
@@ -13,7 +14,7 @@ import {CPUMoveManager} from "./CPUMoveManager.sol";
 import {ICPU} from "./ICPU.sol";
 
 import {ExtraDataType} from "../Enums.sol";
-import {Battle, CPUContext, ProposedBattle, RevealedMove} from "../Structs.sol";
+import {Battle, CPUContext, CustomBattleProposal, ProposedBattle, RevealedMove} from "../Structs.sol";
 
 abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     uint256 internal immutable NUM_MOVES;
@@ -237,6 +238,32 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 engineHooks: proposal.engineHooks,
                 moveManager: proposal.moveManager,
                 matchmaker: proposal.matchmaker
+            })
+        );
+    }
+
+    /// @notice Bundle the caller's phantom team-config write with battle start. p1 is this CPU
+    /// and p1TeamIndex is the caller's phantom slot — both filled in here so callers can't write
+    /// to other users' slots. The registry must implement IPhantomTeamRegistry; the relay gate
+    /// enforces that only whitelisted CPUs (i.e. this contract once added) can land the write.
+    function startCustomBattle(CustomBattleProposal calldata p) external returns (bytes32 battleKey) {
+        IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(p.p0, p.monIndices, p.facetIds);
+
+        uint96 p1TeamIndex = uint96(uint16(uint160(p.p0)));
+        (battleKey,) = ENGINE.computeBattleKey(p.p0, address(this));
+        ENGINE.startBattle(
+            Battle({
+                p0: p.p0,
+                p0TeamIndex: p.p0TeamIndex,
+                p1: address(this),
+                p1TeamIndex: p1TeamIndex,
+                teamRegistry: p.teamRegistry,
+                validator: p.validator,
+                rngOracle: p.rngOracle,
+                ruleset: p.ruleset,
+                engineHooks: p.engineHooks,
+                moveManager: p.moveManager,
+                matchmaker: p.matchmaker
             })
         );
     }

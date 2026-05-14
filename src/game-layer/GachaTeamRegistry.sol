@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../Structs.sol";
+import "./IPhantomTeamRegistry.sol";
 import "./ITeamRegistry.sol";
 import "./Facets.sol";
 import "./Quests.sol";
@@ -24,7 +25,7 @@ import {IEngine} from "../IEngine.sol";
 import {IEngineHook} from "../IEngineHook.sol";
 import {IGachaRNG} from "../rng/IGachaRNG.sol";
 
-contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Quests {
+contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, IGachaRNG, Facets, Quests {
     using EnumerableSetLib for *;
 
     // ----- Team layout -----
@@ -283,8 +284,29 @@ contract GachaTeamRegistry is ITeamRegistry, IEngineHook, IGachaRNG, Facets, Que
         uint8[] memory facetIds
     ) external {
         if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
+        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds);
+    }
+
+    /// @notice Trusted-relayer entry: a whitelisted CPU writes a user's phantom team
+    /// config on their behalf so the CPU's matchmaker can bundle config + start in one tx.
+    /// Opponent is implicitly msg.sender — a CPU can only configure its own phantom slot.
+    function setOpponentTeamFor(
+        address user,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds
+    ) external override {
+        if (!isWhitelistedOpponent(msg.sender)) revert NotWhitelistedOpponent();
+        _setOpponentTeam(msg.sender, user, monIndices, facetIds);
+    }
+
+    function _setOpponentTeam(
+        address opponent,
+        address user,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds
+    ) internal {
         if (monIndices.length != facetIds.length) revert FacetArgsLengthMismatch();
-        uint256 phantomKey = uint16(uint160(msg.sender));
+        uint256 phantomKey = uint16(uint160(user));
         _writeTeamLane(opponent, phantomKey, _packIndices(monIndices));
 
         uint256 packedFacets;

@@ -327,6 +327,85 @@ contract GachaTeamRegistryTest is Test {
         assertEq(cpuDeltas[1].hp, -5, "CPU slot 1 HP nerfed");
     }
 
+    function test_setOpponentTeamFor_revertsIfCallerNotWhitelisted() public {
+        // ALICE isn't whitelisted as a CPU — relay gate should reject.
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = 0; monIndices[1] = 1;
+
+        vm.prank(ALICE);
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeamFor(BOB, monIndices, _zeroFacets());
+    }
+
+    function test_setOpponentTeamFor_writesAtUserPhantomKey() public {
+        // When CPU calls on behalf of ALICE, the phantom key should be ALICE's address — not CPU's.
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = unownedMonId; // ownership not checked for phantom teams
+        monIndices[1] = 0;
+
+        vm.prank(CPU);
+        gachaTeamRegistry.setOpponentTeamFor(ALICE, monIndices, _zeroFacets());
+
+        uint256[] memory readIndices =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        assertEq(readIndices[0], unownedMonId);
+        assertEq(readIndices[1], 0);
+    }
+
+    function test_setOpponentTeamFor_perUserIsolation() public {
+        // CPU writes for ALICE then BOB; the two phantom slots should stay independent.
+        _allowOnly(CPU);
+
+        uint256[] memory aliceIndices = new uint256[](MONS_PER_TEAM);
+        aliceIndices[0] = 0; aliceIndices[1] = 1;
+        uint256[] memory bobIndices = new uint256[](MONS_PER_TEAM);
+        bobIndices[0] = 2; bobIndices[1] = 3;
+
+        uint8[] memory aliceFacets = new uint8[](MONS_PER_TEAM);
+        aliceFacets[0] = 5;
+        uint8[] memory bobFacets = new uint8[](MONS_PER_TEAM);
+        bobFacets[1] = 12;
+
+        vm.startPrank(CPU);
+        gachaTeamRegistry.setOpponentTeamFor(ALICE, aliceIndices, aliceFacets);
+        gachaTeamRegistry.setOpponentTeamFor(BOB, bobIndices, bobFacets);
+        vm.stopPrank();
+
+        uint256[] memory aliceTeam =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        uint256[] memory bobTeam =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(BOB))));
+        assertEq(aliceTeam[0], 0); assertEq(aliceTeam[1], 1);
+        assertEq(bobTeam[0], 2);   assertEq(bobTeam[1], 3);
+
+        uint8[] memory aliceFacetsRead = gachaTeamRegistry.getOpponentTeamFacets(ALICE, CPU);
+        uint8[] memory bobFacetsRead = gachaTeamRegistry.getOpponentTeamFacets(BOB, CPU);
+        assertEq(aliceFacetsRead[0], 5); assertEq(aliceFacetsRead[1], 0);
+        assertEq(bobFacetsRead[0], 0);   assertEq(bobFacetsRead[1], 12);
+    }
+
+    function test_setOpponentTeamFor_revertsOnFacetLengthMismatch() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM + 1);
+
+        vm.prank(CPU);
+        vm.expectRevert(Facets.FacetArgsLengthMismatch.selector);
+        gachaTeamRegistry.setOpponentTeamFor(ALICE, monIndices, facets);
+    }
+
+    function test_setOpponentTeamFor_revertsOnFacetIdOutOfRange() public {
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM);
+        facets[1] = 13; // > TOTAL_FACETS
+
+        vm.prank(CPU);
+        vm.expectRevert(Facets.InvalidFacetId.selector);
+        gachaTeamRegistry.setOpponentTeamFor(ALICE, monIndices, facets);
+    }
+
     function test_setOpponentTeam_facetsIgnoredWhenSideNotWhitelisted() public {
         // Two human players: neither is whitelisted, so opponentTeamFacetsPacked is ignored
         // and per-mon facetData wins. Bob (a human) has no facets unlocked → zero deltas.

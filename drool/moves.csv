@@ -12,7 +12,7 @@ Loop,Iblivion,0,1,100,0,Yang,Self,"Raises all stats by 15/30/40% based on Baseli
 Brightback,Iblivion,70,2,100,0,Yang,Physical,"Deals damage. Consume 1 Baselight stack to heal for 50% of damage dealt.",,none
 Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none
 Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up long-lasting battlefield effect. Triggers on switch ins. Damages opponent and heals self for 1/8 of max HP. Has 4 charges.,,none
-Initialize,Inutia,0,2,100,0,Mythic,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, half of the bonus is transferred to the next incoming mon.",,none
+Initialize,Inutia,0,2,100,0,Mythic,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none
 Big Bite,Inutia,80,2,100,0,Wild,Physical,Deals damage.,,none
 Hit And Dip,Inutia,60,2,100,0,Mythic,Special,"Deals damage, then swaps out.",,self-mon
 Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none
