@@ -36,6 +36,7 @@ class ContractData:
     priority: Optional[int] = None
     move_type: Optional[str] = None
     move_class: Optional[str] = None
+    extra_data_type: str = 'None'  # ExtraDataType enum variant; default matches StandardAttack
     is_standard_attack: bool = False
     is_custom_implementation: bool = False
 
@@ -71,6 +72,15 @@ class MoveValidator:
         'Special': 'MoveClass.Special',
         'Self': 'MoveClass.Self',
         'Other': 'MoveClass.Other'
+    }
+
+    # CSV InputType → ExtraDataType enum variant
+    EXTRA_DATA_MAPPING = {
+        '': 'None',
+        'none': 'None',
+        'self-mon': 'SelfTeamIndex',
+        'opponent-mon': 'OpponentNonKOTeamIndex',
+        'mode-select': 'InclusiveRange',
     }
     
     def __init__(self, csv_path: str, src_path: str):
@@ -186,6 +196,11 @@ class MoveValidator:
         elif 'IMoveSet' in content and 'is IMoveSet' in content:
             contract_data.is_custom_implementation = True
             contract_data = self._parse_custom_implementation(content, contract_data)
+
+        # extraDataType defaults to None via IMoveSet/StandardAttack inheritance unless overridden.
+        override = self._extract_function_enum_return(content, 'extraDataType', 'ExtraDataType')
+        if override is not None:
+            contract_data.extra_data_type = override
 
         # Apply mon-specific parsing rules after standard parsing (allows overrides)
         if mon_name and mon_name in self.mon_specific_rules:
@@ -393,6 +408,17 @@ class MoveValidator:
             result['errors'].append(f"Move class not found in contract (expected: {move_data.move_class})")
         elif contract_data.move_class != move_data.move_class:
             result['errors'].append(f"Move class mismatch: contract={contract_data.move_class}, csv={move_data.move_class}")
+
+        # Validate InputType ↔ ExtraDataType round-trip
+        csv_extra = (move_data.extra_data or '').strip()
+        expected = self.EXTRA_DATA_MAPPING.get(csv_extra)
+        if expected is None:
+            result['errors'].append(f"Unknown CSV InputType: {csv_extra!r}")
+        elif contract_data.extra_data_type != expected:
+            result['errors'].append(
+                f"InputType mismatch: csv={csv_extra or 'none'} (expects ExtraDataType.{expected}), "
+                f"contract returns ExtraDataType.{contract_data.extra_data_type}"
+            )
 
         return result
 

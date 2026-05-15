@@ -32,6 +32,20 @@ contract GachaTeamRegistryTest is Test {
 
     uint256 unownedMonId;
 
+    // Gacha pts formula: (basePts + streakFlat) * gachaMult + (firstEver ? FIRST_GAME_EVER_BONUS : 0)
+
+    function _winPts(uint256 streakDay, bool questPasses, bool firstEver) internal pure returns (uint256) {
+        uint256 mult = questPasses ? QUEST_REWARD_MULT : 1;
+        uint256 pts = (GACHA_POINTS_PER_WIN + streakDay) * mult;
+        return firstEver ? pts + GACHA_FIRST_GAME_EVER_BONUS : pts;
+    }
+
+    function _lossPts(uint256 streakDay, bool firstEver) internal pure returns (uint256) {
+        // Quest is winner-only — never multiplies a loss.
+        uint256 pts = GACHA_POINTS_PER_LOSS + streakDay;
+        return firstEver ? pts + GACHA_FIRST_GAME_EVER_BONUS : pts;
+    }
+
     function setUp() public {
         // Warp past the day boundary so currentDay > 0 — otherwise lastGameDay (initialized to 0)
         // and currentDay (= block.timestamp / 1 days = 0 in Foundry's default state) collide and
@@ -543,24 +557,23 @@ contract GachaTeamRegistryTest is Test {
         // Slot 0 KO'd, slot 1 alive (KO bitmap = 0b01 → bit 0 set).
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x3, uint16(teamIdx)));
 
-        // First game of day → multiplier x2.
-        // Slot 0 KO'd: gain = EXP_PER_KOD_MON * 2 = 2.
-        // Slot 1 alive: gain = EXP_PER_SURVIVING_MON * 2 = 4.
+        // First-ever battle: streak=1, no game-type mult (CPU not hard).
+        // Slot 0 KO'd: (1 + 1) * 1 = 2. Slot 1 alive: (2 + 1) * 1 = 3.
         assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 2, "slot 0 (KO'd) exp");
-        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 4, "slot 1 (alive) exp");
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 3, "slot 1 (alive) exp");
     }
 
     function test_exp_firstGameOfDayMultiplier() public {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // First battle: x2 multiplier on alive mons.
+        // First-ever battle: streak=1, alive gain = (2+1)*1 = 3.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 4, "first battle: 2 base * 2 mult");
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 3, "first battle: alive + streak 1");
 
-        // Second battle same day: no multiplier, just base 2.
+        // Second battle same day: no streak, gain = (2+0)*1 = 2.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 6, "+2 from second battle");
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 5, "+2 from second battle");
     }
 
     function test_exp_pvpAfterCpuSameDay() public {
@@ -568,28 +581,28 @@ contract GachaTeamRegistryTest is Test {
         _bobOwnsTeam();
         uint256 aliceTeam = _aliceTeamIndex();
 
-        // First (CPU) battle: first-game x2.
+        // First (CPU, not hard) battle: streak=1, gain = (2+1)*1 = 3.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(aliceTeam)));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 4, "after CPU win: 4");
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 3, "after CPU win: 3");
 
-        // PvP same day: first-PvP x2 (first-game already used).
+        // PvP same day: no streak, expMult = PvP 2x. Gain = (2+0)*2 = 4.
         _runBattleEnd(_ctxAliceVsBob(ALICE, 0x0, 0x3, uint16(aliceTeam), 0));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 8, "+4 from first-PvP x2");
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 7, "+4 from PvP mult");
     }
 
     function test_exp_dailyResetsAtNewDay() public {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // first-game x2 → 4
-        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // x1 → +2 → 6
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // (2+1)*1 = 3
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // (2+0)*1 = 2 → 5
 
         // Warp 1 day forward.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
 
-        // First battle of new day → x2 again.
+        // First battle of new day: streak ratchets to 2. Gain = (2+2)*1 = 4.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 10, "+4 from refreshed first-game multiplier");
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 9, "+4 from streak day 2");
     }
 
     function test_exp_skipsCPUSide() public {
@@ -608,9 +621,9 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 aliceTeam = _aliceTeamIndex();
 
-        // First battle: alice vs CPU (not PvP). First-game x2 only → 4.
+        // CPU game (not PvP): no PvP mult. Streak=1, gain = (2+1)*1 = 3.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(aliceTeam)));
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 4);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 3);
     }
 
     // packing_singleBucket: a 2-mon team where both ids are < 16. Verify exp accumulates for both.
@@ -619,8 +632,8 @@ contract GachaTeamRegistryTest is Test {
         uint256 teamIdx = _aliceTeamIndex();
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         // Both mons < 16 → same bucket (bucket 0). Exp packed in adjacent lanes.
-        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 4);
-        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 4);
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_0), 3);
+        assertEq(gachaTeamRegistry.getExp(ALICE, ALICE_TEAM_MON_1), 3);
     }
 
     function test_exp_capsAtMax() public {
@@ -647,7 +660,7 @@ contract GachaTeamRegistryTest is Test {
         // then assert exp is monotonically non-decreasing and bounded by cap.
         for (uint256 day; day < 5; day++) {
             _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-            vm.warp(block.timestamp + 1 days);
+            vm.warp(vm.getBlockTimestamp() + 1 days);
         }
         uint256 expAfter5 = gachaTeamRegistry.getExp(ALICE, 0);
         assertGt(expAfter5, 0);
@@ -708,7 +721,7 @@ contract GachaTeamRegistryTest is Test {
             // Run battles until level on mon 0 reaches levelTarget.
             while (gachaTeamRegistry.getLevel(ALICE, 0) < levelTarget) {
                 _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-                vm.warp(block.timestamp + 1 days);
+                vm.warp(vm.getBlockTimestamp() + 1 days);
             }
             (uint16 bitmap,) = gachaTeamRegistry.getFacetData(ALICE, 0);
             // Each level should add exactly one new bit.
@@ -726,7 +739,7 @@ contract GachaTeamRegistryTest is Test {
         // the bitmap stays at 0xFFF without revert and the unlock loop is a no-op.
         for (uint256 i; i < 5; i++) {
             _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-            vm.warp(block.timestamp + 1 days);
+            vm.warp(vm.getBlockTimestamp() + 1 days);
         }
         (uint16 stillFull,) = gachaTeamRegistry.getFacetData(ALICE, 0);
         assertEq(stillFull, 0xFFF, "still 0xFFF after extra battles past lv12");
@@ -739,7 +752,7 @@ contract GachaTeamRegistryTest is Test {
         // Drive Alice's mon 0 to level 1 so Facet 1 (or whichever) is unlocked.
         while (gachaTeamRegistry.getLevel(ALICE, 0) < 1) {
             _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-            vm.warp(block.timestamp + 1 days);
+            vm.warp(vm.getBlockTimestamp() + 1 days);
         }
         (uint16 bitmap,) = gachaTeamRegistry.getFacetData(ALICE, 0);
         // Pick the first unlocked facet (lowest set bit + 1).
@@ -875,7 +888,7 @@ contract GachaTeamRegistryTest is Test {
         _assertActiveMatchesFormula();
 
         // Roll forward; selection updates without any state mutation.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _assertActiveMatchesFormula();
     }
 
@@ -915,9 +928,7 @@ contract GachaTeamRegistryTest is Test {
 
         // Alice wins vs CPU. Alice should get the quest reward.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        // Reward is +2 points. Verify Alice's points increased correspondingly.
-        // First battle: ROLL_COST (7) + POINTS_PER_WIN (3) + QUEST_REWARD_POINTS (2) = 12.
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "Alice gets quest reward");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "Alice gets quest reward");
     }
 
     function test_quests_oneShotPerDay() public {
@@ -943,13 +954,13 @@ contract GachaTeamRegistryTest is Test {
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         uint256 afterFirst = gachaTeamRegistry.pointsBalance(ALICE);
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
 
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         uint256 afterSecondDay = gachaTeamRegistry.pointsBalance(ALICE);
 
-        // After day rolls: POINTS_PER_WIN (3) + QUEST_REWARD_POINTS (2) again.
-        assertEq(afterSecondDay - afterFirst, gachaTeamRegistry.POINTS_PER_WIN() + QUEST_REWARD_POINTS);
+        // Day rolls: streak ratchets to 2 + quest re-eligible.
+        assertEq(afterSecondDay - afterFirst, _winPts(2, true, false));
     }
 
     // =====================================================================
@@ -962,7 +973,6 @@ contract GachaTeamRegistryTest is Test {
 
     function _expectQuestPasses(BattleEndContext memory ctx, uint256 baselinePoints) internal {
         _runBattleEndWithCtx(ctx);
-        // Quest passing yields +QUEST_REWARD_POINTS on top of POINTS_PER_WIN/POINTS_PER_LOSS + ROLL_COST(if first).
         uint256 afterPoints = gachaTeamRegistry.pointsBalance(ALICE);
         assertGt(afterPoints, baselinePoints, "quest passed: points increased");
     }
@@ -975,19 +985,22 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // Battle ends turn 5 → reward.
+        // Battle ends turn 5 → quest passes.
         BattleEndContext memory ctx = _ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx));
         ctx.turnId = 5;
         _runBattleEnd(ctx);
-        // Reward fired: ROLL_COST(7) + WIN(3) + QUEST(2) = 12.
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true));
 
-        // Next-day battle ends turn 11 → quest fails, just WIN(3).
-        vm.warp(block.timestamp + 1 days);
+        // Next-day battle ends turn 11 → quest fails, streak ratchets to 2.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         ctx = _ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx));
         ctx.turnId = 11;
         _runBattleEnd(ctx);
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12 + 3, "no quest reward on turn 11");
+        assertEq(
+            gachaTeamRegistry.pointsBalance(ALICE),
+            _winPts(1, true, true) + _winPts(2, false, false),
+            "no quest reward on turn 11"
+        );
     }
 
     function test_quests_op_ALIVE_COUNT() public {
@@ -998,14 +1011,14 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // Both alive (KO bitmap = 0) → reward.
+        // Both alive (KO bitmap = 0) → quest passes.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true));
 
-        // Next day, only 1 alive (KO bitmap = 0x1) → no reward.
-        vm.warp(block.timestamp + 1 days);
+        // Next day, only 1 alive (KO bitmap = 0x1) → quest fails, streak ratchets to 2.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12 + 3);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true) + _winPts(2, false, false));
     }
 
     function test_quests_op_HAS_MON_ID() public {
@@ -1019,17 +1032,16 @@ contract GachaTeamRegistryTest is Test {
         uint256 teamIdx = _aliceTeamIndex(); // Alice's team has ALICE_TEAM_MON_0 + ALICE_TEAM_MON_1.
 
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "team contains second mon: reward");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "team contains second mon: reward");
 
-        // Try with a quest looking for mon 99 (not in team) → no reward.
+        // Try with a quest looking for mon 99 (not in team) → no quest.
         gachaTeamRegistry.removeQuest(0);
         preds[0].arg = 99;
         gachaTeamRegistry.addQuest(preds);
         // Reset rotation by warping to next day so the new quest gets picked.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        // Only POINTS_PER_WIN added.
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12 + 3);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true) + _winPts(2, false, false));
     }
 
     function test_quests_op_MON_KO_AT_SLOT() public {
@@ -1039,14 +1051,14 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // Slot 0 KO'd → reward.
+        // Slot 0 KO'd → quest passes.
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true));
 
-        // Next day, slot 0 alive → no reward.
-        vm.warp(block.timestamp + 1 days);
+        // Next day, slot 0 alive → quest fails, streak ratchets.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12 + 3);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true) + _winPts(2, false, false));
     }
 
     function test_quests_op_ALIVE_AT_SLOT() public {
@@ -1057,7 +1069,7 @@ contract GachaTeamRegistryTest is Test {
         uint256 teamIdx = _aliceTeamIndex();
 
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "slot 0 alive: reward");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "slot 0 alive: reward");
     }
 
     function test_quests_op_ACTIVE_SLOT_INDEX() public {
@@ -1070,7 +1082,7 @@ contract GachaTeamRegistryTest is Test {
         BattleEndContext memory ctx = _ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx));
         ctx.p0ActiveMonIndex = 1;
         _runBattleEnd(ctx);
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12, "active slot 1 matches");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "active slot 1 matches");
     }
 
     // =====================================================================
@@ -1092,18 +1104,22 @@ contract GachaTeamRegistryTest is Test {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
 
-        // turnId 5 → negated LE 10 fails → no reward.
+        // turnId 5 → negated LE 10 fails → no quest.
         BattleEndContext memory ctx = _ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx));
         ctx.turnId = 5;
         _runBattleEnd(ctx);
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3, "no reward on short battle");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, false, true), "no reward on short battle");
 
-        // Next day, turnId 15 → negated LE 10 passes → reward.
-        vm.warp(block.timestamp + 1 days);
+        // Next day, turnId 15 → negated LE 10 passes → quest fires.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         ctx = _ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx));
         ctx.turnId = 15;
         _runBattleEnd(ctx);
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3 + 3 + 2, "reward on long battle");
+        assertEq(
+            gachaTeamRegistry.pointsBalance(ALICE),
+            _winPts(1, false, true) + _winPts(2, true, false),
+            "reward on long battle"
+        );
     }
 
     function test_quests_andComposite_passesIffAllPredicatesPass() public {
@@ -1116,12 +1132,12 @@ contract GachaTeamRegistryTest is Test {
 
         // Both pass: turnId 5 (≤10) AND aliveCount 2 (≥2).
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true));
 
         // Next day, only one alive (1 < 2) → fails.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x1, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 12 + 3);
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true) + _winPts(2, false, false));
     }
 
     function test_quests_capPredicates_revertsOverMax() public {
@@ -1143,7 +1159,7 @@ contract GachaTeamRegistryTest is Test {
                 || gachaTeamRegistry.getLevel(ALICE, ALICE_TEAM_MON_1) < targetLevel
         ) {
             _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-            vm.warp(block.timestamp + 1 days);
+            vm.warp(vm.getBlockTimestamp() + 1 days);
         }
     }
 
@@ -1176,18 +1192,21 @@ contract GachaTeamRegistryTest is Test {
 
         // First battle: mons at level 0 → MIN_LEVEL = 0, fails (0 ≤ 3).
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        // Reward not granted: only WIN points + ROLL_COST = 10.
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3, "pre-level: no quest");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, false, true), "pre-level: no quest");
 
         // Drive both mons to level 4+.
         _driveBothMonsToLevel(teamIdx, 4);
 
-        // Run a fresh battle on a new day so the rotation picks up our quest as still-active.
-        vm.warp(block.timestamp + 1 days);
+        // _drive leaves a trailing 1-day warp; the next warp pushes total gap past the 36h grace,
+        // so the test battle resets the streak to 1 and we know exactly what to assert.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        // Quest passes: +WIN +QUEST_REWARD_POINTS.
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + 3 + QUEST_REWARD_POINTS, "post-level: quest passes");
+        assertEq(
+            gachaTeamRegistry.pointsBalance(ALICE),
+            before + _winPts(1, true, false),
+            "post-level: quest passes"
+        );
     }
 
     function test_quests_op_MAX_LEVEL() public {
@@ -1199,14 +1218,18 @@ contract GachaTeamRegistryTest is Test {
         uint256 teamIdx = _aliceTeamIndex();
 
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3, "pre-level: no quest");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, false, true), "pre-level: no quest");
 
         _driveBothMonsToLevel(teamIdx, 7);
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + 3 + QUEST_REWARD_POINTS, "MAX_LEVEL > 6 passes");
+        assertEq(
+            gachaTeamRegistry.pointsBalance(ALICE),
+            before + _winPts(1, true, false),
+            "MAX_LEVEL > 6 passes"
+        );
     }
 
     function test_quests_op_FACET_COUNT() public {
@@ -1232,7 +1255,7 @@ contract GachaTeamRegistryTest is Test {
         for (uint8 i; i < 12; i++) { if (bm1 & uint16(1 << i) != 0) { f1 = i + 1; break; } }
 
         // Run a battle with NO facets assigned → quest fails.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         uint256 afterFail = gachaTeamRegistry.pointsBalance(ALICE);
 
@@ -1244,11 +1267,15 @@ contract GachaTeamRegistryTest is Test {
         vm.prank(ALICE);
         gachaTeamRegistry.assignFacets(ids, facetIds);
 
-        // Next battle: FACET_COUNT == 2 → quest passes.
-        vm.warp(block.timestamp + 1 days);
+        // Next battle: FACET_COUNT == 2 → quest passes. Gap from afterFail is 1 day, streak ratchets to 2.
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         uint256 afterPass = gachaTeamRegistry.pointsBalance(ALICE);
-        assertEq(afterPass - afterFail, 3 + QUEST_REWARD_POINTS, "facet-count quest fires only once both assigned");
+        assertEq(
+            afterPass - afterFail,
+            _winPts(2, true, false),
+            "facet-count quest fires only once both assigned"
+        );
     }
 
     function test_quests_op_MIN_HP_DELTA() public {
@@ -1262,14 +1289,14 @@ contract GachaTeamRegistryTest is Test {
         // Mock: deltas [-5, -8] → MIN = -8, GE -10 passes.
         _mockHpDeltas(-5, -8);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3 + QUEST_REWARD_POINTS, "MIN -8 GE -10");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "MIN -8 GE -10");
 
         // Next day, mock deltas [-50, -3] → MIN = -50, fails.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _mockHpDeltas(-50, -3);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + 3, "MIN -50 fails");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + _winPts(2, false, false), "MIN -50 fails");
     }
 
     function test_quests_op_MAX_HP_DELTA() public {
@@ -1283,25 +1310,25 @@ contract GachaTeamRegistryTest is Test {
         // Mock: deltas [0, -30] → MAX = 0, EQ 0 passes.
         _mockHpDeltas(0, -30);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 7 + 3 + QUEST_REWARD_POINTS, "one mon untouched");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, true, true), "one mon untouched");
 
         // Next day, mock deltas [-10, -5] → MAX = -5, EQ 0 fails.
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         _mockHpDeltas(-10, -5);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + 3, "all mons damaged");
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + _winPts(2, false, false), "all mons damaged");
     }
 
     function test_quests_bonusStacksWithDailyMultipliers() public {
-        // First-PvP-of-day battle that also completes the quest → x2 * x2 * x2 = x8 multiplier on exp.
+        // First-ever PvP battle that also completes the quest. Streak=1, expMult = PvP 2x * Quest 2x = 4.
         gachaTeamRegistry.addQuest(_simpleTurnsQuest(10));
         _bobOwnsTeam();
         uint256 aliceTeam = _aliceTeamIndex();
 
         _runBattleEnd(_ctxAliceVsBob(ALICE, 0x0, 0x3, uint16(aliceTeam), 0));
-        // Surviving mon: EXP_PER_SURVIVING_MON (2) * 2 (first-game) * 2 (first-PvP) * 2 (quest) = 16.
-        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 16, "x8 multiplier stack");
+        // Surviving mon: (EXP_PER_SURVIVING_MON 2 + streak 1) * mult 4 = 12.
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 12, "PvP * quest stack");
     }
 
     // =====================================================================
@@ -1355,21 +1382,20 @@ contract GachaTeamRegistryTest is Test {
         _runBattleEnd(_ctxAliceVsBob(ALICE, 0x0, 0x3, uint16(aliceTeam), 0));
         DecodedGachaEvent memory ev = _expectGachaEvent(ALICE);
 
-        // Alice wins: ROLL_COST (7, first-roll bonus) + POINTS_PER_WIN (3) + QUEST_REWARD_POINTS (2) = 12.
-        assertEq(ev.points, 12, "points total");
-        // Multiplier: x2 first-game * x2 first-pvp * x2 quest = 8.
-        assertEq(ev.multiplier, 8, "multiplier x8");
-        // Per-mon exp gain: surviving slots 0 and 1 each gain 2 * 8 = 16.
-        assertEq(ev.perMonExp[0], 16, "slot 0 gain");
-        assertEq(ev.perMonExp[1], 16, "slot 1 gain");
-        // Slots 2..7 unused (lanes zero).
+        // Alice wins (first-ever, streak=1, quest passes, PvP).
+        assertEq(ev.points, _winPts(1, true, true), "points total");
+        // Exp mult: PvP 2x * quest 2x = 4.
+        assertEq(ev.multiplier, 4, "exp mult x4");
+        // Per-mon gain: surviving slots get (baseExp + streak) * mult = (2 + 1) * 4 = 12.
+        assertEq(ev.perMonExp[0], 12, "slot 0 gain");
+        assertEq(ev.perMonExp[1], 12, "slot 1 gain");
         for (uint256 j = 2; j < 8; j++) {
             assertEq(ev.perMonExp[j], 0, "unused lane zero");
             assertEq(ev.perMonFacets[j], 0, "unused facet lane zero");
         }
-        // All four bonus flags fire on this battle.
-        uint256 expectedFlags = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // FIRST_ROLL|FIRST_GAME|FIRST_PVP|QUEST
-        assertEq(ev.bonusFlags, expectedFlags, "all bonus flags");
+        // FIRST_ROLL | FIRST_GAME | QUEST. BONUS_HARD_CPU does not fire in PvP.
+        uint256 expectedFlags = (1 << 0) | (1 << 1) | (1 << 3);
+        assertEq(ev.bonusFlags, expectedFlags, "bonus flags");
         assertEq(ev.outcome, 1, "win outcome");
     }
 
@@ -1391,7 +1417,7 @@ contract GachaTeamRegistryTest is Test {
         assertEq(secondEv.outcome, 1, "win outcome");
         assertEq(secondEv.bonusFlags, 0, "no bonuses on second battle");
         assertEq(secondEv.multiplier, 1, "no multiplier");
-        assertEq(secondEv.points, 3, "POINTS_PER_WIN only");
+        assertEq(secondEv.points, _winPts(0, false, false), "POINTS_PER_WIN only");
     }
 
     function test_gachaEvent_drawOutcome() public {
@@ -1618,5 +1644,210 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.deleteTeam(0);
         gachaTeamRegistry.deleteTeam(2);
         assertEq(gachaTeamRegistry.getTeamCount(ALICE), 3, "live count tracks deletes");
+    }
+
+    // =====================================================================
+    // Assigner API (IGachaPointsAssigner / IExpAssigner)
+    // =====================================================================
+
+    address constant ASSIGNER = address(0xA551);
+
+    function _authorizeAssigner(address addr) internal {
+        address[] memory toAdd = new address[](1);
+        address[] memory toRemove = new address[](0);
+        toAdd[0] = addr;
+        gachaTeamRegistry.setAssigners(toAdd, toRemove);
+    }
+
+    function test_setAssigners_onlyOwner() public {
+        address[] memory toAdd = new address[](1);
+        address[] memory toRemove = new address[](0);
+        toAdd[0] = ASSIGNER;
+        vm.prank(BOB);
+        vm.expectRevert();
+        gachaTeamRegistry.setAssigners(toAdd, toRemove);
+
+        // Owner succeeds.
+        gachaTeamRegistry.setAssigners(toAdd, toRemove);
+        assertTrue(gachaTeamRegistry.isAssigner(ASSIGNER));
+
+        // Remove.
+        address[] memory empty = new address[](0);
+        address[] memory toRemove2 = new address[](1);
+        toRemove2[0] = ASSIGNER;
+        gachaTeamRegistry.setAssigners(empty, toRemove2);
+        assertFalse(gachaTeamRegistry.isAssigner(ASSIGNER));
+    }
+
+    function test_assignPoints_revertsForNonAssigner() public {
+        vm.prank(BOB);
+        vm.expectRevert(GachaTeamRegistry.NotAssigner.selector);
+        gachaTeamRegistry.assignPoints(ALICE, 100);
+    }
+
+    function test_assignPoints_credits() public {
+        _authorizeAssigner(ASSIGNER);
+        uint256 before_ = gachaTeamRegistry.pointsBalance(ALICE);
+
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignPoints(ALICE, 50);
+
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before_ + 50);
+    }
+
+    function test_assignPoints_preservesUpperBits() public {
+        // Mark ALICE as whitelisted CPU (sets IS_CPU_BIT) and hard CPU; both must survive
+        // the assignPoints write.
+        address[] memory toAllow = new address[](1);
+        address[] memory empty = new address[](0);
+        toAllow[0] = ALICE;
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow, empty);
+        gachaTeamRegistry.setHardCpuOpponents(toAllow, empty);
+
+        assertTrue(gachaTeamRegistry.isWhitelistedOpponent(ALICE));
+        assertTrue(gachaTeamRegistry.isHardCpu(ALICE));
+
+        _authorizeAssigner(ASSIGNER);
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignPoints(ALICE, 123);
+
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), 123);
+        assertTrue(gachaTeamRegistry.isWhitelistedOpponent(ALICE), "IS_CPU_BIT preserved");
+        assertTrue(gachaTeamRegistry.isHardCpu(ALICE), "IS_HARD_CPU_BIT preserved");
+    }
+
+    function test_assignPoints_revertsOnOverflow() public {
+        _authorizeAssigner(ASSIGNER);
+        // First grant: just under uint128 max.
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignPoints(ALICE, type(uint128).max - 1);
+
+        // Second grant overflows the 128-bit lane.
+        vm.prank(ASSIGNER);
+        vm.expectRevert(GachaTeamRegistry.PointsOverflow.selector);
+        gachaTeamRegistry.assignPoints(ALICE, 2);
+    }
+
+    function test_assignExp_revertsForNonAssigner() public {
+        uint256[] memory monIdsArr = new uint256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        monIdsArr[0] = 0;
+        amounts[0] = 5;
+        vm.prank(BOB);
+        vm.expectRevert(GachaTeamRegistry.NotAssigner.selector);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+    }
+
+    function test_assignExp_lengthMismatch() public {
+        _authorizeAssigner(ASSIGNER);
+        uint256[] memory monIdsArr = new uint256[](2);
+        uint256[] memory amounts = new uint256[](1);
+        monIdsArr[0] = 0;
+        monIdsArr[1] = 1;
+        amounts[0] = 5;
+        vm.prank(ASSIGNER);
+        vm.expectRevert(GachaTeamRegistry.LengthMismatch.selector);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+    }
+
+    function test_assignExp_invalidMonId() public {
+        _authorizeAssigner(ASSIGNER);
+        uint256 outOfRange = gachaTeamRegistry.getMonCount();
+        uint256[] memory monIdsArr = new uint256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        monIdsArr[0] = outOfRange;
+        amounts[0] = 5;
+        vm.prank(ASSIGNER);
+        vm.expectRevert(GachaTeamRegistry.InvalidMonId.selector);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+    }
+
+    function test_assignExp_creditsAndSaturates() public {
+        _authorizeAssigner(ASSIGNER);
+        uint256[] memory monIdsArr = new uint256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        monIdsArr[0] = 0;
+        amounts[0] = 3;
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 3);
+
+        // Saturation: grant well past the cap (65535) and assert clamp + no revert.
+        amounts[0] = type(uint64).max;
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 65535);
+    }
+
+    function test_assignExp_triggersLevelUpAndDrawsFacet() public {
+        _authorizeAssigner(ASSIGNER);
+        // Threshold for level 1 = 4 exp.
+        uint256[] memory monIdsArr = new uint256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        monIdsArr[0] = 0;
+        amounts[0] = 4;
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+
+        assertEq(gachaTeamRegistry.getLevel(ALICE, 0), 1, "crossed level 1");
+        (uint16 unlocked,) = gachaTeamRegistry.getFacetData(ALICE, 0);
+        // Exactly one facet bit should be unlocked.
+        uint256 count;
+        for (uint256 i; i < 12; ++i) if (unlocked & (1 << i) != 0) count++;
+        assertEq(count, 1, "one facet drawn");
+    }
+
+    function test_assignExp_duplicateMonIdsAccumulate() public {
+        _authorizeAssigner(ASSIGNER);
+        uint256[] memory monIdsArr = new uint256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        monIdsArr[0] = 0;
+        monIdsArr[1] = 0;
+        amounts[0] = 3;
+        amounts[1] = 5;
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 8);
+    }
+
+    function test_assignExp_unsortedInputStillCorrect() public {
+        // monId 16 lives in bucket 1, ids 0 and 1 in bucket 0 — input forces bucket revisit.
+        // Need at least 17 mons; setUp() only creates 6. Add more.
+        MonStats memory stats = MonStats({
+            hp: 100,
+            stamina: 10,
+            speed: 10,
+            attack: 10,
+            defense: 10,
+            specialAttack: 10,
+            specialDefense: 10,
+            type1: Type.Fire,
+            type2: Type.None
+        });
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(MOVE_ADDRESS));
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = uint160(ABILITY_ADDRESS);
+        bytes32[] memory ks = new bytes32[](0);
+        bytes32[] memory vs = new bytes32[](0);
+        for (uint256 i = gachaTeamRegistry.getMonCount(); i <= 16; ++i) {
+            gachaTeamRegistry.createMon(i, stats, moves, abilities, ks, vs);
+        }
+
+        _authorizeAssigner(ASSIGNER);
+        uint256[] memory monIdsArr = new uint256[](3);
+        uint256[] memory amounts = new uint256[](3);
+        monIdsArr[0] = 0;
+        monIdsArr[1] = 16; // bucket change
+        monIdsArr[2] = 1;  // bucket revisit
+        amounts[0] = 2;
+        amounts[1] = 3;
+        amounts[2] = 1;
+        vm.prank(ASSIGNER);
+        gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
+
+        assertEq(gachaTeamRegistry.getExp(ALICE, 0), 2);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 1), 1);
+        assertEq(gachaTeamRegistry.getExp(ALICE, 16), 3);
     }
 }

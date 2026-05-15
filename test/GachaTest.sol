@@ -191,9 +191,15 @@ contract GachaTest is Test, BattleHelper {
         // Assert Alice won
         assertEq(engine.getWinner(battleKey), ALICE);
 
-        // Verify points are correct (includes first-game bonus of ROLL_COST)
-        assertEq(gachaRegistry.pointsBalance(ALICE), gachaRegistry.ROLL_COST() + gachaRegistry.POINTS_PER_WIN());
-        assertEq(gachaRegistry.pointsBalance(BOB), gachaRegistry.ROLL_COST() + gachaRegistry.POINTS_PER_LOSS());
+        // First-ever battle: each side gets FIRST_GAME_EVER_BONUS + (base + streak day 1) * 1.
+        assertEq(
+            gachaRegistry.pointsBalance(ALICE),
+            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
+        );
+        assertEq(
+            gachaRegistry.pointsBalance(BOB),
+            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_LOSS() + 1
+        );
     }
 
     function test_spendPoints() public {
@@ -335,9 +341,12 @@ contract GachaTest is Test, BattleHelper {
         engine.end(battleKey);
         assertEq(engine.getWinner(battleKey), ALICE);
 
-        // Alice: ROLL_COST (first-game bonus) + POINTS_PER_WIN
+        // Alice: FIRST_GAME_EVER_BONUS + (POINTS_PER_WIN + streak day 1) * 1
         uint256 alicePointsAfterFirstBattle = gachaRegistry.pointsBalance(ALICE);
-        assertEq(alicePointsAfterFirstBattle, gachaRegistry.ROLL_COST() + gachaRegistry.POINTS_PER_WIN());
+        assertEq(
+            alicePointsAfterFirstBattle,
+            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
+        );
 
         // ---- Roll ----
         vm.startPrank(ALICE);

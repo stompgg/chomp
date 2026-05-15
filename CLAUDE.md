@@ -205,18 +205,19 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 **Rolling.** Mon ids are sequential starting at 0 (`createMon` enforces `monId == monIds.length()`). Ids `[0, NUM_STARTERS)` (= 3) are *starter* mons.
 
 - `firstRoll(uint256 starterId)` — one-shot per player. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free.
-- `roll(uint256 numRolls)` — paid (`ROLL_COST` per roll, default 7 points). Uniform across the entire pool. Reverts `NoMoreStock` once the caller owns every mon.
+- `roll(uint256 numRolls)` — paid (`ROLL_COST` per roll, default 16 points). Uniform across the entire pool. Reverts `NoMoreStock` once the caller owns every mon.
 - Linear-probing dedup keeps draws inside their window so `firstRoll`'s 3 random picks never land on a starter.
 
 **Points / exp / facets storage.** All packed for gas:
 
 ```
 playerData[address] (1 slot per player):
-  bit 255       bonusAwarded (first-roll bonus claimed)
+  bit 255       bonusAwarded (first-game-ever bonus claimed)
   bit 254       isWhitelistedAsOpponent (admin-set; replaces a separate mapping)
-  bits 192-223  lastQuestCompletedDay (uint32, day = block.timestamp / 1 days)
-  bits 160-191  lastPvPDay (uint32)
-  bits 128-159  lastGameDay (uint32)
+  bit 253       isHardCpu (only meaningful when bit 254 is set)
+  bits 250-252  streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
+  bits 192-223  lastQuestCompletedDay (uint32 calendar day)
+  bits 128-159  lastFirstGameTimestamp (uint32 seconds since epoch)
   bits 0-127    pointsBalance (uint128)
 
 packedExpForMon[player][monId / 16]: 16 mons × 16 bits each, capped at 65535.
@@ -224,15 +225,20 @@ facetData[player][monId / 16]:        16 mons × 16 bits each
                                        (bits 0-11 unlockedBitmap, bits 12-15 assignedFacetId).
 ```
 
+Streak is timestamp-driven (not calendar-day): a battle counts as "first of day"
+when ≥24h have passed since `lastFirstGameTimestamp`. A gap >36h
+(`STREAK_GRACE_WINDOW`) resets `streakDay` to 1; otherwise it ratchets up
+toward the cap of `STREAK_FLAT_BONUS_MAX` (= 5).
+
 Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws` walks the team in one pass and coalesces SSTOREs by bucket.
 
 **Battle rewards (`onBattleEnd`).** CPU side is short-circuited (no SSTOREs, no event). For each human side:
 
-- Base points: `POINTS_PER_WIN` (3) on win, `POINTS_PER_LOSS` (2) otherwise.
-- First-roll bonus: `+ROLL_COST` on the player's first ever battle (one-shot).
-- Per-mon exp: `EXP_PER_SURVIVING_MON` (2) for alive slots, `EXP_PER_KOD_MON` (1) for KO'd slots.
-- Multipliers stack multiplicatively: `EXP_FIRST_GAME_OF_DAY_MULT` (×2) on the player's first battle of any kind that day, `EXP_FIRST_PVP_OF_DAY_MULT` (×2) on the first PvP battle that day, `QUEST_REWARD_EXP_MULT` (×2) when the active quest completes. Max stack = ×8.
-- Quest reward: winner-only, one-shot per day; adds `QUEST_REWARD_POINTS` (2) on top.
+- Base points: `POINTS_PER_WIN` (2) on win, `POINTS_PER_LOSS` (1) otherwise.
+- Streak flat: `streakDay` (1..5) added inside the parenthetical of both the points and per-mon-exp formulas. Only granted when the battle qualifies as "first of day" (≥24h since the last grant).
+- Points formula: `(basePts + streakFlat) × gachaMult + firstGameEverBonus`. `gachaMult` is `×QUEST_REWARD_MULT` (= 2) when the active daily quest completes (winner-only, one-shot per day), else 1. `firstGameEverBonus` is `+FIRST_GAME_EVER_BONUS` (= 16), one-shot ever, applied *after* the multiplier.
+- Per-mon exp formula: `(baseExp + streakFlat) × expMult`, capped at 65535. `baseExp` is `EXP_PER_SURVIVING_MON` (2) for alive slots, `EXP_PER_KOD_MON` (1) for KO'd slots.
+- `expMult` stack: `PVP_EXP_MULT` (×2) on any PvP battle **xor** `HARD_CPU_EXP_MULT` (×2) on a battle against the Hard CPU (mutually exclusive — PvP wins the branch), times `QUEST_REWARD_MULT` (×2) on quest completion. Max stack = ×4.
 - Level-ups (12-tier curve, capped at level 12 to match `TOTAL_FACETS`) trigger one facet draw per level crossed.
 
 **Facets.** 12 systematically-derived ±5% stat tradeoffs across 4 stat groups (`HP`, `Atk`, `Def`, `Speed`). `_facetDef(facetId)` is pure — no constant table. Unlocks are persistent per-mon; `assignFacets(monIds, facetIds)` is a free bulk re-assign that requires the caller to own every listed mon and the facet to be in the unlocked bitmap (`facetId == 0` clears). Active facets shift base stats at battle start (Engine applies deltas after validator, so the validator still sees base stats).
@@ -244,7 +250,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 **Events.**
 
 - `Roll(address indexed player, uint256[] monIds, uint256 pointsSpent)` — fires on both `firstRoll` (spend = 0) and paid `roll`.
-- `GachaEvent(address indexed player, uint256 packed)` — one per non-CPU player per battle. Layout sized for `MONS_PER_TEAM` up to 8: points (bits 0-15), per-mon exp gain (bits 16-79, 8 lanes × 8b), per-mon facets unlocked this battle (bits 80-111, 8 lanes × 4b), `BONUS_*` flags (bits 112-119: `FIRST_ROLL` | `FIRST_GAME` | `FIRST_PVP` | `QUEST`), multiplier (bits 120-127), outcome (bits 128-135: 0=loss, 1=win, 2=draw). Lanes saturate so a future tuning blow-up can't bleed into neighbouring fields.
+- `GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed)` — one per battle, carrying both sides' packed payloads (CPU side is 0). Layout sized for `MONS_PER_TEAM` up to 8: points (bits 0-15), per-mon exp gain (bits 16-79, 8 lanes × 8b), per-mon facets unlocked this battle (bits 80-175, 8 lanes × 12-bit bitmap = 1 bit per facet id), `BONUS_*` flags (bits 176-183: `FIRST_ROLL` | `FIRST_GAME` | `HARD_CPU` | `QUEST`), combined exp multiplier (bits 184-191), outcome (bits 192-199: 0=loss, 1=win, 2=draw), `streakDay` (bits 200-202). Lanes saturate so a future tuning blow-up can't bleed into neighbouring fields.
 
 ### Storage Architecture
 

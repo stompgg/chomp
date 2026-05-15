@@ -55,6 +55,10 @@ contract SetupCPU is Script {
         }
         gachaTeamRegistry.setWhitelistedOpponents(cpuAddresses, empty);
 
+        address[] memory hardCpus = new address[](1);
+        hardCpus[0] = vm.envAddress("BETTER_CPU");
+        gachaTeamRegistry.setHardCpuOpponents(hardCpus, empty);
+
         vm.stopBroadcast();
 
         return deployedContracts;

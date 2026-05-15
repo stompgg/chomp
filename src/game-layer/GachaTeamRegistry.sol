@@ -2,6 +2,8 @@
 pragma solidity ^0.8.0;
 
 import "../Structs.sol";
+import "./IExpAssigner.sol";
+import "./IGachaPointsAssigner.sol";
 import "./IPhantomTeamRegistry.sol";
 import "./ITeamRegistry.sol";
 import "./Facets.sol";
@@ -11,12 +13,14 @@ import {
     GACHA_ROLL_COST,
     GACHA_POINTS_PER_WIN,
     GACHA_POINTS_PER_LOSS,
+    GACHA_FIRST_GAME_EVER_BONUS,
     EXP_PER_SURVIVING_MON,
     EXP_PER_KOD_MON,
-    EXP_FIRST_GAME_OF_DAY_MULT,
-    EXP_FIRST_PVP_OF_DAY_MULT,
-    QUEST_REWARD_POINTS,
-    QUEST_REWARD_EXP_MULT,
+    PVP_EXP_MULT,
+    HARD_CPU_EXP_MULT,
+    STREAK_FLAT_BONUS_MAX,
+    STREAK_GRACE_WINDOW,
+    QUEST_REWARD_MULT,
     CLEARED_MON_STATE_SENTINEL
 } from "../Constants.sol";
 import {EngineHookStep, MonStateIndexName} from "../Enums.sol";
@@ -25,7 +29,16 @@ import {IEngine} from "../IEngine.sol";
 import {IEngineHook} from "../IEngineHook.sol";
 import {IGachaRNG} from "../rng/IGachaRNG.sol";
 
-contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, IGachaRNG, Facets, Quests {
+contract GachaTeamRegistry is
+    ITeamRegistry,
+    IPhantomTeamRegistry,
+    IGachaPointsAssigner,
+    IExpAssigner,
+    IEngineHook,
+    IGachaRNG,
+    Facets,
+    Quests
+{
     using EnumerableSetLib for *;
 
     // ----- Team layout -----
@@ -54,17 +67,29 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
     uint256 public constant ROLL_COST = GACHA_ROLL_COST;
     uint256 public constant POINTS_PER_WIN = GACHA_POINTS_PER_WIN;
     uint256 public constant POINTS_PER_LOSS = GACHA_POINTS_PER_LOSS;
+    uint256 public constant FIRST_GAME_EVER_BONUS = GACHA_FIRST_GAME_EVER_BONUS;
+    uint256 public constant STREAK_BONUS_MAX = STREAK_FLAT_BONUS_MAX;
+    uint256 public constant STREAK_GRACE = STREAK_GRACE_WINDOW;
     uint16 public constant STEPS_BITMAP = uint16(1) << uint8(EngineHookStep.OnBattleEnd);
 
     // ----- playerData[address] bit layout -----
-    //   bit 255       : bonusAwarded (first-roll bonus has been awarded)
-    //   bit 254       : isWhitelistedAsOpponent (admin-set, replaces old separate mapping)
-    //   bits 192-223  : lastQuestCompletedDay (uint32)
-    //   bits 160-191  : lastPvPGameDay (uint32, day = block.timestamp / 1 days)
-    //   bits 128-159  : lastGameDay (uint32)
-    //   bits 0-127    : pointsBalance (uint128)
+    //   bit 255         : bonusAwarded (first-game-ever bonus has been awarded)
+    //   bit 254         : isWhitelistedAsOpponent
+    //   bit 253         : isHardCpu (only meaningful when bit 254 is set)
+    //   bits 250-252    : streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
+    //   bits 224-249    : reserved
+    //   bits 192-223    : lastQuestCompletedDay (uint32 calendar day)
+    //   bits 160-191    : reserved
+    //   bits 128-159    : lastFirstGameTimestamp (uint32 seconds since epoch)
+    //   bits 0-127      : pointsBalance (uint128)
     uint256 private constant BONUS_AWARDED_BIT = 1 << 255;
     uint256 private constant IS_CPU_BIT = 1 << 254;
+    uint256 private constant IS_HARD_CPU_BIT = 1 << 253;
+    uint256 private constant STREAK_DAY_SHIFT = 250;
+    uint256 private constant STREAK_DAY_MASK = 0x7;
+    uint256 private constant LAST_FIRST_GAME_TS_SHIFT = 128;
+    uint256 private constant LAST_QUEST_DAY_SHIFT = 192;
+    uint256 private constant FIRST_GAME_OF_DAY_COOLDOWN = 1 days;
     uint256 private constant POINTS_MASK_128 = (1 << 128) - 1;
 
     // ----- Exp packing (per (player, mon-bucket); 16 mons per slot, 16 bits each) -----
@@ -87,9 +112,10 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
     //   bits 16-79    per-mon exp gain (8 lanes * 8 bits)
     //   bits 80-175   per-mon facets unlocked this battle (8 lanes * 12-bit bitmap, 1 bit per facet id)
     //   bits 176-183  bonus flags
-    //   bits 184-191  multiplier (uint8)
+    //   bits 184-191  combined exp multiplier (uint8)
     //   bits 192-199  outcome: 0=loss, 1=win, 2=draw
-    //   bits 200-255  reserved
+    //   bits 200-202  streakDay (3 bits, matches storage)
+    //   bits 203-255  reserved
     uint256 internal constant GE_EXP_SHIFT = 16;
     uint256 internal constant GE_EXP_BITS_PER_MON = 8;
     uint256 internal constant GE_EXP_LANE_MASK = (1 << GE_EXP_BITS_PER_MON) - 1;
@@ -99,10 +125,11 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
     uint256 internal constant GE_BONUS_SHIFT = 176;
     uint256 internal constant GE_MULT_SHIFT = 184;
     uint256 internal constant GE_OUTCOME_SHIFT = 192;
+    uint256 internal constant GE_STREAK_SHIFT = 200;
 
     uint256 internal constant BONUS_FIRST_ROLL = 1 << 0;
     uint256 internal constant BONUS_FIRST_GAME = 1 << 1;
-    uint256 internal constant BONUS_FIRST_PVP  = 1 << 2;
+    uint256 internal constant BONUS_HARD_CPU  = 1 << 2;
     uint256 internal constant BONUS_QUEST      = 1 << 3;
 
     // ----- Errors -----
@@ -121,6 +148,10 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
     error TeamCapReached();
     error TeamNotLive();
     error MonIdTooLarge();
+    error NotAssigner();
+    error LengthMismatch();
+    error InvalidMonId();
+    error PointsOverflow();
 
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
@@ -149,6 +180,11 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
     // ----- Gacha state -----
     mapping(address => EnumerableSetLib.Uint256Set) private monsOwned;
     mapping(address => uint256) private playerData;
+
+    // ----- Owner-managed assigner allowlist -----
+    // A single bool grants both IGachaPointsAssigner and IExpAssigner authority. If finer roles
+    // are needed later, split into two mappings — interface ABIs don't change.
+    mapping(address => bool) public isAssigner;
 
     // ----- Per-mon exp packing -----
     mapping(address player => mapping(uint256 monBucket => uint256 packedExp)) public packedExpForMon;
@@ -255,20 +291,45 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
         teamOrderPacked[msg.sender] = (packed & ~ORDER_REGION_MASK & ~liveBit) | below | above;
     }
 
-    // Whitelist lives in bit 254 of playerData[addr] so per-battle eval rides the existing SLOAD.
+    // Whitelist + hard-CPU flags live in playerData so per-battle eval rides the existing SLOAD.
     function setWhitelistedOpponents(address[] memory toAllow, address[] memory toDisallow) external onlyOwner {
-        for (uint256 i; i < toAllow.length;) {
-            playerData[toAllow[i]] |= IS_CPU_BIT;
+        _flipPlayerDataBitBulk(toAllow, toDisallow, IS_CPU_BIT);
+    }
+
+    function setHardCpuOpponents(address[] memory toMark, address[] memory toUnmark) external onlyOwner {
+        _flipPlayerDataBitBulk(toMark, toUnmark, IS_HARD_CPU_BIT);
+    }
+
+    /// @notice Grant or revoke both points-assigning and exp-assigning authority. The role is
+    /// combined; split the mapping if finer-grained roles are ever needed.
+    function setAssigners(address[] memory toAdd, address[] memory toRemove) external onlyOwner {
+        for (uint256 i; i < toAdd.length;) {
+            isAssigner[toAdd[i]] = true;
             unchecked { ++i; }
         }
-        for (uint256 i; i < toDisallow.length;) {
-            playerData[toDisallow[i]] &= ~IS_CPU_BIT;
+        for (uint256 i; i < toRemove.length;) {
+            isAssigner[toRemove[i]] = false;
+            unchecked { ++i; }
+        }
+    }
+
+    function _flipPlayerDataBitBulk(address[] memory on, address[] memory off, uint256 bit) internal {
+        for (uint256 i; i < on.length;) {
+            playerData[on[i]] |= bit;
+            unchecked { ++i; }
+        }
+        for (uint256 i; i < off.length;) {
+            playerData[off[i]] &= ~bit;
             unchecked { ++i; }
         }
     }
 
     function isWhitelistedOpponent(address addr) public view returns (bool) {
         return playerData[addr] & IS_CPU_BIT != 0;
+    }
+
+    function isHardCpu(address addr) public view returns (bool) {
+        return playerData[addr] & IS_HARD_CPU_BIT != 0;
     }
 
     // Phantom teams: duplicate mon ids allowed; phantom key truncated to uint16 to match
@@ -855,7 +916,8 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
         uint8 allKOd = uint8((1 << MONS_PER_TEAM) - 1);
         if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
 
-        uint32 currentDay = uint32(block.timestamp / 1 days);
+        uint32 currentTime = uint32(block.timestamp);
+        uint32 currentDay = currentTime / 1 days;
 
         uint256 packed0 = playerData[ctx.p0];
         uint256 packed1 = playerData[ctx.p1];
@@ -867,74 +929,88 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
 
         for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
             bool isCPU = playerIndex == 0 ? isCpu0 : isCpu1;
-            if (isCPU) continue; // CPU side: no SSTORE, no exp/facet writes, no quest reward. Pack stays 0.
+            if (isCPU) continue; // CPU side has no human-side state to update.
 
             address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
             uint256 teamIdx = playerIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
             uint8 koBitmap = playerIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
-            uint256 pts = ctx.winner == player ? POINTS_PER_WIN : POINTS_PER_LOSS;
+            uint256 basePts = ctx.winner == player ? POINTS_PER_WIN : POINTS_PER_LOSS;
             uint256 packed = playerIndex == 0 ? packed0 : packed1;
+            uint256 opponentPacked = playerIndex == 0 ? packed1 : packed0;
+            // Mask-and-compare keeps it to one SLOAD-free check; canonical accessors are
+            // isWhitelistedOpponent / isHardCpu.
+            bool oppIsHardCpu = (opponentPacked & (IS_CPU_BIT | IS_HARD_CPU_BIT))
+                                == (IS_CPU_BIT | IS_HARD_CPU_BIT);
 
-            uint256 bonus = packed & BONUS_AWARDED_BIT;
-            uint256 cpuBit = packed & IS_CPU_BIT; // always 0 here; preserved on writeback for safety
+            uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT | IS_HARD_CPU_BIT);
             uint256 points = packed & POINTS_MASK_128;
-            uint32 lastGameDay = uint32(packed >> 128);
-            uint32 lastPvPDay = uint32(packed >> 160);
-            uint32 lastQuestCompletedDay = uint32(packed >> 192);
+            uint32 lastFirstGameTs = uint32(packed >> LAST_FIRST_GAME_TS_SHIFT);
+            uint256 streakDay = (packed >> STREAK_DAY_SHIFT) & STREAK_DAY_MASK;
+            uint32 lastQuestCompletedDay = uint32(packed >> LAST_QUEST_DAY_SHIFT);
 
             uint256 bonusFlags;
-            uint256 pointsThisBattle;
+            uint256 streakFlat;
+            uint256 expMult = 1;
+            uint256 gachaMult = 1;
 
-            if (bonus == 0) {
-                points += ROLL_COST;
-                pointsThisBattle += ROLL_COST;
-                bonus = BONUS_AWARDED_BIT;
-                bonusFlags |= BONUS_FIRST_ROLL;
+            if (isPvP) {
+                expMult *= PVP_EXP_MULT;
+            } else if (oppIsHardCpu) {
+                expMult *= HARD_CPU_EXP_MULT;
+                bonusFlags |= BONUS_HARD_CPU;
             }
-            points += pts;
-            pointsThisBattle += pts;
 
-            uint256 multiplier = 1;
-            if (lastGameDay != currentDay) {
-                multiplier *= EXP_FIRST_GAME_OF_DAY_MULT;
-                lastGameDay = currentDay;
+            // Rolling 24h cooldown gates the streak bonus; 36h grace decides whether to
+            // ratchet or reset. Pure timestamp delta avoids a UTC-midnight cliff.
+            uint256 gap = lastFirstGameTs == 0 ? type(uint256).max : currentTime - lastFirstGameTs;
+            if (gap >= FIRST_GAME_OF_DAY_COOLDOWN) {
+                if (gap > STREAK_GRACE_WINDOW) {
+                    streakDay = 1;
+                } else if (streakDay < STREAK_FLAT_BONUS_MAX) {
+                    streakDay += 1;
+                }
+                streakFlat = streakDay;
+                lastFirstGameTs = currentTime;
                 bonusFlags |= BONUS_FIRST_GAME;
             }
-            if (isPvP && lastPvPDay != currentDay) {
-                multiplier *= EXP_FIRST_PVP_OF_DAY_MULT;
-                lastPvPDay = currentDay;
-                bonusFlags |= BONUS_FIRST_PVP;
-            }
 
-            // Quest reward stacks multiplicatively. Winner only, one-shot per day.
             if (
                 ctx.winner == player
                 && lastQuestCompletedDay != currentDay
                 && questPool.length > 0
                 && _evalActiveQuest(ctx, playerIndex, battleKey)
             ) {
-                points += QUEST_REWARD_POINTS;
-                pointsThisBattle += QUEST_REWARD_POINTS;
-                multiplier *= QUEST_REWARD_EXP_MULT;
+                gachaMult *= QUEST_REWARD_MULT;
+                expMult *= QUEST_REWARD_MULT;
                 lastQuestCompletedDay = currentDay;
                 bonusFlags |= BONUS_QUEST;
             }
 
-            playerData[player] = bonus
-                | cpuBit
-                | (points & POINTS_MASK_128)
-                | (uint256(lastGameDay) << 128)
-                | (uint256(lastPvPDay) << 160)
-                | (uint256(lastQuestCompletedDay) << 192);
+            uint256 pointsThisBattle = (basePts + streakFlat) * gachaMult;
+            if (preservedFlags & BONUS_AWARDED_BIT == 0) {
+                pointsThisBattle += FIRST_GAME_EVER_BONUS;
+                preservedFlags |= BONUS_AWARDED_BIT;
+                bonusFlags |= BONUS_FIRST_ROLL;
+            }
+            points += pointsThisBattle;
 
-            uint256 expFacetPacked = _applyExpAndFacetDraws(player, teamIdx, koBitmap, multiplier);
+            // points is bounded by uint128 invariant on the prior balance + a per-battle delta
+            // that's far below 2^128, so no mask needed on writeback.
+            playerData[player] = preservedFlags
+                | (streakDay << STREAK_DAY_SHIFT)
+                | (uint256(lastQuestCompletedDay) << LAST_QUEST_DAY_SHIFT)
+                | (uint256(lastFirstGameTs) << LAST_FIRST_GAME_TS_SHIFT)
+                | points;
+
+            uint256 expFacetPacked = _applyExpAndFacetDraws(player, teamIdx, koBitmap, expMult, streakFlat);
 
             uint256 outcome = ctx.winner == player ? 1 : (ctx.winner == address(0) ? 2 : 0);
             packedEvents[playerIndex] = (pointsThisBattle & 0xFFFF)
                 | expFacetPacked
                 | (bonusFlags << GE_BONUS_SHIFT)
-                | ((multiplier & 0xFF) << GE_MULT_SHIFT)
-                | (outcome << GE_OUTCOME_SHIFT);
+                | ((expMult & 0xFF) << GE_MULT_SHIFT)
+                | (outcome << GE_OUTCOME_SHIFT)
+                | (streakDay << GE_STREAK_SHIFT);
         }
 
         emit GachaEvent(battleKey, packedEvents[0], packedEvents[1]);
@@ -947,7 +1023,8 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
         address player,
         uint256 teamIdx,
         uint8 koBitmap,
-        uint256 multiplier
+        uint256 expMult,
+        uint256 streakFlat
     ) internal returns (uint256 expFacetPacked) {
         uint256 packedTeam = _readTeamLane(player, teamIdx);
         uint256 lastBucket = type(uint256).max;
@@ -972,10 +1049,10 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
                 lastBucket = bucket;
             }
 
-            // Exp update with cap
             uint256 oldExp = (expSlot >> (lane * EXP_BITS_PER_MON)) & EXP_PER_MON_MASK;
             uint256 alive = (koBitmap & (1 << j)) == 0 ? 1 : 0;
-            uint256 gain = (alive == 1 ? EXP_PER_SURVIVING_MON : EXP_PER_KOD_MON) * multiplier;
+            uint256 baseExp = alive == 1 ? EXP_PER_SURVIVING_MON : EXP_PER_KOD_MON;
+            uint256 gain = (baseExp + streakFlat) * expMult;
             uint256 newExp = oldExp + gain;
             if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
             expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
@@ -987,30 +1064,122 @@ contract GachaTeamRegistry is ITeamRegistry, IPhantomTeamRegistry, IEngineHook, 
             expFacetPacked |= actualGain << (GE_EXP_SHIFT + j * GE_EXP_BITS_PER_MON);
 
             // Facet draws on level crossings
-            uint256 oldLevel = _levelForExp(oldExp);
-            uint256 newLevel = _levelForExp(newExp);
-            if (newLevel > oldLevel) {
-                if (!facetLoaded) {
-                    facetSlot = facetData[player][bucket];
-                    facetLoaded = true;
-                }
-                (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
-                uint16 priorBitmap = unlockedBitmap;
-                for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
-                    if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
-                    uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
-                    (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
-                    unchecked { ++levelNum; }
-                }
-                // Emit the diff bitmap (bits set in unlockedBitmap that weren't in priorBitmap).
-                // TOTAL_FACETS = 12 fits in GE_FACETS_BITS_PER_MON = 12 — the mask is a safety net.
-                uint256 drawnBitmap = uint256(unlockedBitmap & ~priorBitmap) & GE_FACETS_LANE_MASK;
-                expFacetPacked |= drawnBitmap << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
-                facetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
+            (uint256 newFacetSlot, uint256 drawnBitmap, bool drewAnyFacets) =
+                _processLevelUps(player, monId, bucket, lane, oldExp, newExp, facetSlot, facetLoaded);
+            if (drewAnyFacets) {
+                facetSlot = newFacetSlot;
+                facetLoaded = true;
                 facetDirty = true;
+                expFacetPacked |= drawnBitmap << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
             }
 
             unchecked { ++j; }
+        }
+
+        if (lastBucket != type(uint256).max) {
+            packedExpForMon[player][lastBucket] = expSlot;
+            if (facetDirty) facetData[player][lastBucket] = facetSlot;
+        }
+    }
+
+    /// @dev Handles the per-mon level-up + facet-draw step. Shared between the battle-end walk
+    /// and external `assignExp` so a level crossed via a gift draws facets identically.
+    /// Caller is responsible for SSTOREing the returned facetSlot. `facetLoaded` lets the caller
+    /// reuse a previously-loaded bucket so we don't re-SLOAD facetData on every mon.
+    function _processLevelUps(
+        address player,
+        uint256 monId,
+        uint256 bucket,
+        uint256 lane,
+        uint256 oldExp,
+        uint256 newExp,
+        uint256 facetSlot,
+        bool facetLoaded
+    ) internal view returns (uint256 newFacetSlot, uint256 drawnBitmap, bool drew) {
+        uint256 oldLevel = _levelForExp(oldExp);
+        uint256 newLevel = _levelForExp(newExp);
+        if (newLevel <= oldLevel) {
+            return (facetSlot, 0, false);
+        }
+        if (!facetLoaded) {
+            facetSlot = facetData[player][bucket];
+        }
+        (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
+        uint16 priorBitmap = unlockedBitmap;
+        for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
+            if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
+            uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
+            (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
+            unchecked { ++levelNum; }
+        }
+        // TOTAL_FACETS = 12 fits in GE_FACETS_BITS_PER_MON = 12; the mask is a safety net.
+        drawnBitmap = uint256(unlockedBitmap & ~priorBitmap) & GE_FACETS_LANE_MASK;
+        newFacetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
+        drew = true;
+    }
+
+    // =====================================================================
+    // Assigner API (IGachaPointsAssigner + IExpAssigner)
+    // =====================================================================
+
+    function assignPoints(address player, uint256 amount) external override {
+        if (!isAssigner[msg.sender]) revert NotAssigner();
+        uint256 data = playerData[player];
+        uint256 newPoints = (data & POINTS_MASK_128) + amount;
+        if (newPoints > POINTS_MASK_128) revert PointsOverflow();
+        playerData[player] = (data & ~POINTS_MASK_128) | newPoints;
+    }
+
+    /// @dev Mirrors the bucket-coalescing walk in _applyExpAndFacetDraws so externally-granted
+    /// exp behaves identically to battle exp (saturating cap, level-up facet draws). Unsorted
+    /// monIds work correctly but pay extra SLOAD/SSTORE per bucket revisit.
+    function assignExp(
+        address player,
+        uint256[] calldata monIds_,
+        uint256[] calldata amounts
+    ) external override {
+        if (!isAssigner[msg.sender]) revert NotAssigner();
+        if (monIds_.length != amounts.length) revert LengthMismatch();
+
+        uint256 monRegistrySize = monIds.length();
+        uint256 lastBucket = type(uint256).max;
+        uint256 expSlot;
+        uint256 facetSlot;
+        bool facetLoaded;
+        bool facetDirty;
+
+        for (uint256 i; i < monIds_.length;) {
+            uint256 monId = monIds_[i];
+            if (monId >= monRegistrySize) revert InvalidMonId();
+            uint256 bucket = monId / MONS_PER_EXP_BUCKET;
+            uint256 lane = monId % MONS_PER_EXP_BUCKET;
+
+            if (bucket != lastBucket) {
+                if (lastBucket != type(uint256).max) {
+                    packedExpForMon[player][lastBucket] = expSlot;
+                    if (facetDirty) facetData[player][lastBucket] = facetSlot;
+                }
+                expSlot = packedExpForMon[player][bucket];
+                facetLoaded = false;
+                facetDirty = false;
+                lastBucket = bucket;
+            }
+
+            uint256 oldExp = (expSlot >> (lane * EXP_BITS_PER_MON)) & EXP_PER_MON_MASK;
+            uint256 newExp = oldExp + amounts[i];
+            if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
+            expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
+                | (newExp << (lane * EXP_BITS_PER_MON));
+
+            (uint256 newFacetSlot,, bool drew) =
+                _processLevelUps(player, monId, bucket, lane, oldExp, newExp, facetSlot, facetLoaded);
+            if (drew) {
+                facetSlot = newFacetSlot;
+                facetLoaded = true;
+                facetDirty = true;
+            }
+
+            unchecked { ++i; }
         }
 
         if (lastBucket != type(uint256).max) {

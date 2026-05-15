@@ -78,18 +78,19 @@
     "lib/Ownable.sol",
     "lib/EIP712.sol",
     "lib/ECDSA.sol",
+    "lib/MerkleProofLib.sol",
     "hooks/SimplePM.sol",
     "commit-manager/SignedCommitManager.sol",
     "matchmaker/SignedMatchmaker.sol",
     "matchmaker/BattleOfferLib.sol",
     "matchmaker/DefaultMatchmaker.sol",
-    "hooks/BattleHistory.sol",
     "commit-manager/DefaultCommitManager.sol",
     "game-layer/GachaTeamRegistry.sol",
     "game-layer/Facets.sol",
     "game-layer/Quests.sol",
     "rng/ICPURNG.sol",
-    "rng/IGachaRNG.sol"
+    "rng/IGachaRNG.sol",
+    "game-layer/ReturnerGift.sol"
   ],
   "skipDirs": [
     "cpu"

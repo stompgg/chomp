@@ -340,7 +340,7 @@ export enum MoveClass {{
   Self = 'Self',
 }};
 
-export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon';
+export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon' | 'mode-select';
 
 export const MonMetadata = {json_str} as const;
 

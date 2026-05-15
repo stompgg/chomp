@@ -65,17 +65,28 @@ uint256 constant GAME_TIMEOUT_DURATION = 30; // seconds
 
 // Gacha point economy — mirrored in the transpiled frontend so copy/breakdowns
 // can key off these values.
-uint256 constant GACHA_ROLL_COST = 7;
-uint256 constant GACHA_POINTS_PER_WIN = 3;
-uint256 constant GACHA_POINTS_PER_LOSS = 2;
+uint256 constant GACHA_ROLL_COST = 16;
+uint256 constant GACHA_POINTS_PER_WIN = 2;
+uint256 constant GACHA_POINTS_PER_LOSS = 1;
+// One-shot bonus on a player's first ever battle. Matches ROLL_COST so a brand new
+// player can always afford one paid roll after their first game (guaranteeing a 5th mon
+// on top of the 4 from the starter + initial rolls).
+uint256 constant GACHA_FIRST_GAME_EVER_BONUS = 16;
 
-// Per-mon exp + daily multipliers
+// Per-mon exp
 uint256 constant EXP_PER_SURVIVING_MON = 2;
 uint256 constant EXP_PER_KOD_MON = 1;
-uint256 constant EXP_FIRST_GAME_OF_DAY_MULT = 2;
-uint256 constant EXP_FIRST_PVP_OF_DAY_MULT = 2;
 
-// Quest rewards
-uint256 constant QUEST_REWARD_POINTS = 2;
-uint256 constant QUEST_REWARD_EXP_MULT = 2;
+// Always-on exp multipliers (game-type bonuses)
+uint256 constant PVP_EXP_MULT = 2;
+uint256 constant HARD_CPU_EXP_MULT = 2;
+
+// First-game-of-the-day flat bonus that ratchets with a daily-login streak.
+// Added to base reward *before* multipliers so it rides quest / PvP / hard-CPU mults.
+// Streak resets to 1 once the gap since the last bonus exceeds STREAK_GRACE_WINDOW.
+uint256 constant STREAK_FLAT_BONUS_MAX = 5;
+uint256 constant STREAK_GRACE_WINDOW = 36 hours;
+
+// Quest rewards — single multiplier applied to both gacha pts and exp.
+uint256 constant QUEST_REWARD_MULT = 2;
 uint256 constant MAX_PREDICATES_PER_QUEST = 6;
