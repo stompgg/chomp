@@ -287,7 +287,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     // THE IMPORTANT FUNCTION
-    function execute(bytes32 battleKey) external {
+    function execute(bytes32 battleKey) external returns (address winner) {
         // Cache storage key in transient storage for the duration of the call
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
@@ -302,7 +302,7 @@ contract Engine is IEngine, MappingAllocator {
             revert MovesNotSet();
         }
 
-        _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey);
     }
 
     /// @notice Combined setMove + setMove + execute for gas optimization
@@ -318,7 +318,7 @@ contract Engine is IEngine, MappingAllocator {
         uint8 p1MoveIndex,
         uint104 p1Salt,
         uint16 p1ExtraData
-    ) external {
+    ) external returns (address winner) {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
 
@@ -337,12 +337,15 @@ contract Engine is IEngine, MappingAllocator {
         _turnP0Salt = p0Salt;
         _turnP1Salt = p1Salt;
 
-        _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey);
     }
 
     /// @notice Combined single-player setMove + execute for forced switch turns
     /// @dev Only callable by moveManager. The acting player is inferred from battle.playerSwitchForTurnFlag.
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
+        external
+        returns (address winner)
+    {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
 
@@ -368,7 +371,7 @@ contract Engine is IEngine, MappingAllocator {
             _turnP1Salt = salt;
         }
 
-        _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey);
     }
 
     /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
@@ -403,7 +406,8 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal {
+    /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -702,12 +706,12 @@ contract Engine is IEngine, MappingAllocator {
 
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
-            address winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
+            winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
             // Still emit execute event
             emit EngineExecute(battleKey);
-            return;
+            return winner;
         }
 
         // End of turn cleanup:

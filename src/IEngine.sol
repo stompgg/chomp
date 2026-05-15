@@ -42,7 +42,7 @@ interface IEngine {
     ) external returns (int32 damage, bytes32 eventType);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
-    function execute(bytes32 battleKey) external;
+    function execute(bytes32 battleKey) external returns (address winner);
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
@@ -51,8 +51,10 @@ interface IEngine {
         uint8 p1MoveIndex,
         uint104 p1Salt,
         uint16 p1ExtraData
-    ) external;
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external;
+    ) external returns (address winner);
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
+        external
+        returns (address winner);
     function resetCallContext() external;
 
     // Getters
