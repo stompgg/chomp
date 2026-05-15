@@ -33,7 +33,6 @@ library ValidatorLogic {
     /// @param rawMoveSlot Raw move slot (inline packed data or external address)
     /// @param playerIndex The player using the move
     /// @param activeMonIndex The active mon index for this player
-    /// @param extraData Extra data for the move
     /// @param baseStamina The mon's base stamina
     /// @param staminaDelta The mon's current stamina delta (or CLEARED_MON_STATE_SENTINEL if unset)
     /// @return valid Whether the move selection is valid
@@ -43,7 +42,7 @@ library ValidatorLogic {
         uint256 rawMoveSlot,
         uint256 playerIndex,
         uint256 activeMonIndex,
-        uint16 extraData,
+        uint16, /* extraData */
         uint32 baseStamina,
         int32 staminaDelta
     ) internal view returns (bool valid) {

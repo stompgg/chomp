@@ -16,8 +16,7 @@ library MerkleProofLib {
         pure
         returns (bool isValid)
     {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             if mload(proof) {
                 // Initialize `offset` to the offset of `proof` elements in memory.
                 let offset := add(proof, 0x20)
@@ -48,8 +47,7 @@ library MerkleProofLib {
         pure
         returns (bool isValid)
     {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             if proof.length {
                 // Left shift by 5 is equivalent to multiplying by 0x20.
                 let end := add(proof.offset, shl(5, proof.length))
@@ -98,8 +96,7 @@ library MerkleProofLib {
         // The `flags` array denotes whether the sibling
         // should be popped from the queue (`flag == true`), or
         // should be popped from the `proof` (`flag == false`).
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Cache the lengths of the arrays.
             let leavesLength := mload(leaves)
             let proofLength := mload(proof)
@@ -201,8 +198,7 @@ library MerkleProofLib {
         // The `flags` array denotes whether the sibling
         // should be popped from the queue (`flag == true`), or
         // should be popped from the `proof` (`flag == false`).
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // If the number of flags is correct.
             for {} eq(add(leaves.length, proof.length), add(flags.length, 1)) {} {
                 // For the case where `proof.length + leaves.length == 1`.
@@ -286,24 +282,21 @@ library MerkleProofLib {
 
     /// @dev Returns an empty calldata bytes32 array.
     function emptyProof() internal pure returns (bytes32[] calldata proof) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             proof.length := 0
         }
     }
 
     /// @dev Returns an empty calldata bytes32 array.
     function emptyLeaves() internal pure returns (bytes32[] calldata leaves) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             leaves.length := 0
         }
     }
 
     /// @dev Returns an empty calldata bool array.
     function emptyFlags() internal pure returns (bool[] calldata flags) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             flags.length := 0
         }
     }
