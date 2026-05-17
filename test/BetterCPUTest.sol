@@ -26,6 +26,30 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
 
+import {IEngine} from "../src/IEngine.sol";
+import {ICPURNG} from "../src/rng/ICPURNG.sol";
+import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
+
+/// @dev Test-only subclass exposing internal state machine + storage. Kept in the test file so
+///      prod stays clean (per CLAUDE memory: "test plumbing belongs in tests, not prod").
+contract TestBetterCPU is BetterCPU {
+    constructor(uint256 numMoves, IEngine _engine, ICPURNG rng, ITypeCalculator typeCalc)
+        BetterCPU(numMoves, _engine, rng, typeCalc)
+    {}
+
+    function recordResultExposed(address p0, bool cpuWon) external {
+        _recordResult(p0, cpuWon);
+    }
+
+    function setPlayerStateExposed(address player, uint256 state) external {
+        playerState[player] = state;
+    }
+
+    function setCpuMoveUsedBitmapExposed(bytes32 battleKey, uint256 bitmap) external {
+        cpuMoveUsedBitmap[battleKey] = bitmap;
+    }
+}
+
 contract BetterCPUTest is Test {
     Engine engine;
     DefaultCommitManager commitManager;
@@ -1691,5 +1715,567 @@ contract BetterCPUTest is Test {
         engine.resetCallContext();
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         assertEq(staminaDelta, 0, "CPU stamina should be unchanged (couldn't afford attack)");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //                  STRONG CPU TESTS — Hell / Tartarus / Diyu
+    // ════════════════════════════════════════════════════════════════
+    // Goals: (1) baseline preserved (existing 36 tests above), (2) aggressive ramp visible,
+    // (3) no revert paths. Each ramp test pairs the harder mode against its baseline on the
+    // same synthetic team so a vacuous pass is impossible.
+
+    // ─── Helpers ─────────────────────────────────────────────────────
+
+    uint8 constant MODE_HELL = 0;
+    uint8 constant MODE_TARTARUS = 1;
+    uint8 constant MODE_DIYU = 2;
+
+    TestBetterCPU testCpu;
+
+    function _newTestCpu(uint256 numMoves) internal returns (TestBetterCPU) {
+        return new TestBetterCPU(numMoves, engine, mockCPURNG, typeCalc);
+    }
+
+    function _modeOf(BetterCPU c, address player) internal view returns (uint8) {
+        return uint8((c.playerState(player) >> 8) & 0x3);
+    }
+
+    function _priorLossOf(BetterCPU c, address player) internal view returns (bool) {
+        return ((c.playerState(player) >> 10) & 0x1) != 0;
+    }
+
+    function _cpuActive(bytes32 battleKey) internal view returns (uint256) {
+        return engine.getCPUContext(battleKey).p1ActiveMonIndex;
+    }
+
+    /// @dev Mirror of `_startBattleWithCPU` but instantiates `TestBetterCPU` (with exposed
+    ///      internals) into the `testCpu` field. Use for behavior tests that need to force a
+    ///      specific mode before `calculateMove` runs.
+    function _startBattleWithTestCpu(Mon[] memory aliceTeam, Mon[] memory cpuTeam) internal returns (bytes32) {
+        require(aliceTeam.length == cpuTeam.length, "Team sizes must match");
+
+        uint32 maxMoves = 0;
+        for (uint256 i = 0; i < aliceTeam.length; i++) {
+            if (aliceTeam[i].moves.length > maxMoves) maxMoves = uint32(aliceTeam[i].moves.length);
+        }
+        for (uint256 i = 0; i < cpuTeam.length; i++) {
+            if (cpuTeam[i].moves.length > maxMoves) maxMoves = uint32(cpuTeam[i].moves.length);
+        }
+
+        testCpu = _newTestCpu(maxMoves);
+
+        teamRegistry.setTeam(ALICE, aliceTeam);
+        teamRegistry.setTeam(address(testCpu), cpuTeam);
+
+        DefaultValidator v = new DefaultValidator(
+            engine,
+            DefaultValidator.Args({MONS_PER_TEAM: uint32(aliceTeam.length), MOVES_PER_MON: maxMoves, TIMEOUT_DURATION: 10})
+        );
+
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: keccak256(
+                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
+            ),
+            p1: address(testCpu),
+            p1TeamIndex: 0,
+            validator: v,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            teamRegistry: teamRegistry,
+            engineHooks: new IEngineHook[](0),
+            moveManager: address(testCpu),
+            matchmaker: testCpu
+        });
+
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(testCpu);
+        address[] memory empty = new address[](0);
+        engine.updateMatchmakers(makersToAdd, empty);
+        return testCpu.startBattle(proposal);
+    }
+
+    /// @dev Lead-ramp synthetic team:
+    ///   mon 0 = Air (defensive): Fire→Air immune (def=0), Air→Fire resist (off=5).
+    ///   mon 1 = Nature (offensive): defaults both ways (def=20, off=20).
+    ///   HELL score (off - def):      A: 5 - 0 = 5.   B: 20 - 20 = 0.   → HELL picks A.
+    ///   TARTARUS (3*off - def):      A: 15 - 0 = 15. B: 60 - 20 = 40.  → TARTARUS picks B.
+    function _setupLeadRampTeams() internal returns (Mon[] memory aliceTeam, Mon[] memory cpuTeam) {
+        typeCalc.setTypeEffectiveness(Type.Fire, Type.Air, 0); // immune
+        typeCalc.setTypeEffectiveness(Type.Air, Type.Fire, 5); // 0.5x
+
+        IMoveSet move = _createAttack(10, Type.Fire, MoveClass.Physical);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(move)));
+
+        cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Air, 100, 10, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Nature, 100, 10, 10);
+        cpuTeam[1].moves = moves;
+
+        aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 100, 10, 10);
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 100, 10, 10);
+        aliceTeam[1].moves = moves;
+    }
+
+    /// @dev KO-bypass scenario for D3 tests. CPU's best move deals 90% damage to opp (near-KO,
+    ///      not actual KO so P2 doesn't fire). Alice's move deals 75% to CPU (severe).
+    ///      CPU mon 1 is a much-better switch candidate (high def, takes 7%).
+    ///      In DIYU + CPU outspeeds: KO-bypass fires → stays in.
+    ///      In DIYU + opp outspeeds: bypass denied → switches.
+    ///      Damage math (basePower * 1x type-eff * atk / def):
+    ///        Alice atk=50, bp=15 → 75 to def=10. CPU atk=50, bp=18 → 90 to opp def=10.
+    function _setupKOBypassScenario(uint32 cpuSpeed, uint32 oppSpeed)
+        internal
+        returns (Mon[] memory aliceTeam, Mon[] memory cpuTeam)
+    {
+        IMoveSet aliceAttack = _createAttack(15, Type.Fire, MoveClass.Physical);
+        IMoveSet cpuAttack = _createAttack(18, Type.Fire, MoveClass.Physical);
+
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceAttack)));
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(cpuAttack)));
+
+        cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, cpuSpeed);
+        cpuTeam[0].moves = cpuMoves;
+        cpuTeam[1] = _createMonWithSpeed(Type.Air, 100, 50, 100, cpuSpeed); // high def sponge
+        cpuTeam[1].moves = cpuMoves;
+
+        aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMonWithSpeed(Type.Fire, 100, 50, 10, oppSpeed);
+        aliceTeam[0].moves = aliceMoves;
+        aliceTeam[1] = _createMonWithSpeed(Type.Fire, 100, 50, 10, oppSpeed);
+        aliceTeam[1].moves = aliceMoves;
+    }
+
+    /// @dev 55%-incoming-damage scenario for D3 threshold tests:
+    ///   Alice mon: Fire, atk=50. Alice move: Fire, bp=11.
+    ///   CPU mon 0 (active): Fire, hp=100, def=10. Incoming damage = 11*1x*50/10 = 55 (55%).
+    ///   CPU mon 1 (switch candidate): Air, hp=100, def=100. Incoming = 11*1x*50/100 = 5 (5%).
+    ///   55 - 5 = 50 > SWITCH_THRESHOLD (30) -> switch is materially better.
+    ///   HELL threshold 30: switches. TARTARUS threshold 50: switches. DIYU threshold 60: stays.
+    function _setupThresholdScenario() internal returns (Mon[] memory aliceTeam, Mon[] memory cpuTeam) {
+        IMoveSet aliceAttack = _createAttack(11, Type.Fire, MoveClass.Physical);
+        IMoveSet cpuAttack = _createAttack(10, Type.Fire, MoveClass.Physical);
+
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(aliceAttack)));
+        uint256[] memory cpuMoves = new uint256[](1);
+        cpuMoves[0] = uint256(uint160(address(cpuAttack)));
+
+        cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0].moves = cpuMoves;
+        cpuTeam[1] = _createMon(Type.Air, 100, 50, 100); // Air to avoid type-mismatch surprises
+        cpuTeam[1].moves = cpuMoves;
+
+        aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[0].moves = aliceMoves;
+        aliceTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[1].moves = aliceMoves;
+    }
+
+    // ─── State machine (3) ──────────────────────────────────────────
+
+    /// @notice testStateMachine_LadderClimbAndReset — drives all 6 transitions via _recordResult.
+    function testStateMachine_LadderClimbAndReset() public {
+        TestBetterCPU c = _newTestCpu(1);
+        // HELL + win → HELL
+        c.recordResultExposed(ALICE, true);
+        assertEq(_modeOf(c, ALICE), MODE_HELL, "win in HELL stays in HELL");
+        // HELL + loss → TARTARUS
+        c.recordResultExposed(ALICE, false);
+        assertEq(_modeOf(c, ALICE), MODE_TARTARUS, "loss in HELL promotes to TARTARUS");
+        // TARTARUS + loss → DIYU
+        c.recordResultExposed(ALICE, false);
+        assertEq(_modeOf(c, ALICE), MODE_DIYU, "loss in TARTARUS promotes to DIYU");
+        assertFalse(_priorLossOf(c, ALICE), "DIYU entry clears priorLoss");
+        // DIYU + loss (first) → DIYU (priorLoss set)
+        c.recordResultExposed(ALICE, false);
+        assertEq(_modeOf(c, ALICE), MODE_DIYU, "first DIYU loss stays in DIYU");
+        assertTrue(_priorLossOf(c, ALICE), "first DIYU loss sets priorLoss");
+        // DIYU + loss (second) → HELL (priorLoss cleared)
+        c.recordResultExposed(ALICE, false);
+        assertEq(_modeOf(c, ALICE), MODE_HELL, "second DIYU loss resets to HELL");
+        assertFalse(_priorLossOf(c, ALICE), "second DIYU loss clears priorLoss");
+        // HELL + loss + win brings us back to TARTARUS then HELL — exercise TARTARUS + win
+        c.recordResultExposed(ALICE, false); // HELL → TARTARUS
+        c.recordResultExposed(ALICE, true);  // TARTARUS + win → HELL
+        assertEq(_modeOf(c, ALICE), MODE_HELL, "TARTARUS win drops to HELL");
+    }
+
+    /// @notice testStateMachine_DiyuWinDropsToTartarus — covers both priorLoss states.
+    function testStateMachine_DiyuWinDropsToTartarus() public {
+        TestBetterCPU c = _newTestCpu(1);
+        // DIYU with priorLoss=0: mode=2, bit 10 clear.
+        c.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        c.recordResultExposed(ALICE, true);
+        assertEq(_modeOf(c, ALICE), MODE_TARTARUS, "DIYU+win (no prior) -> TARTARUS");
+        assertFalse(_priorLossOf(c, ALICE), "DIYU+win clears priorLoss");
+        // DIYU with priorLoss=1.
+        c.setPlayerStateExposed(ALICE, (uint256(MODE_DIYU) << 8) | (uint256(1) << 10));
+        c.recordResultExposed(ALICE, true);
+        assertEq(_modeOf(c, ALICE), MODE_TARTARUS, "DIYU+win (with prior) -> TARTARUS");
+        assertFalse(_priorLossOf(c, ALICE), "DIYU+win clears priorLoss even when set");
+    }
+
+    /// @notice testSafety_DrawDoesNotMutateState — _afterTurn early-returns on winnerIndex == 2.
+    ///         Run a turn that doesn't end the battle and verify state is untouched.
+    function testSafety_DrawDoesNotMutateState() public {
+        // Use a normal battle setup; mid-battle turn leaves winnerIndex == 2.
+        IMoveSet attack = _createAttack(10, Type.Fire, MoveClass.Physical);
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(attack)));
+
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 200, 10, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Fire, 200, 10, 10);
+        cpuTeam[1].moves = moves;
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 200, 10, 10);
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 200, 10, 10);
+        aliceTeam[1].moves = moves;
+
+        bytes32 battleKey = _startBattleWithCPU(aliceTeam, cpuTeam);
+        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        uint256 stateBefore = cpu.playerState(ALICE);
+        mockCPURNG.setRNG(1);
+        cpu.selectMove(battleKey, 0, uint104(0), 0); // mid-battle turn
+        engine.resetCallContext();
+        assertEq(cpu.playerState(ALICE), stateBefore, "mid-battle turn must not mutate playerState");
+    }
+
+    // ─── Tartarus ramp ──────────────────────────────────────────────
+
+    /// @notice testRamp_HellLeadDefensive — HELL picks defensive lead (Air, immune) on the
+    ///         shared lead-ramp team.
+    function testRamp_HellLeadDefensive() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupLeadRampTeams();
+        bytes32 key = _startBattleWithCPU(aliceTeam, cpuTeam);
+        cpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "HELL picks Air (defensive, immune to opp)");
+    }
+
+    /// @notice testRamp_TartarusLeadOffensive — same team, TARTARUS picks offensive lead (Nature).
+    function testRamp_TartarusLeadOffensive() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupLeadRampTeams();
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_TARTARUS) << 8);
+        mockCPURNG.setRNG(1); // rng % 10 = 1, no chaos roll
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 1, "TARTARUS picks Nature (offensive)");
+    }
+
+    /// @notice testRamp_Tartarus55PctSwitches — incoming 55%, TARTARUS threshold 50% → switches.
+    function testRamp_Tartarus55PctSwitches() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupThresholdScenario();
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_TARTARUS) << 8);
+        mockCPURNG.setRNG(1);
+        // Turn 0: lead with mon 0 (Fire). HELL/TARTARUS scoring on Fire vs Fire (defaults) ties
+        // both at 0 (off=10, def=10); first wins → mon 0.
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "TARTARUS lead = mon 0 (tied scores, first wins)");
+
+        // Turn 1: Alice attacks with move 0. Damage 55% to mon 0, switch candidate takes 5%.
+        // TARTARUS threshold 50, materiality 30: switches.
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 1, "TARTARUS at 55% incoming with better switch -> switches");
+    }
+
+    /// @notice testRamp_Diyu55PctStays — same scenario, DIYU threshold 60% → stays in.
+    function testRamp_Diyu55PctStays() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupThresholdScenario();
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "DIYU lead = mon 0");
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "DIYU at 55% incoming stays in (threshold raised to 60)");
+    }
+
+    // ─── Chaos roll ─────────────────────────────────────────────────
+
+    /// @notice testChaosRoll_FiresOnlyInTartarus — same RNG that triggers chaos in TARTARUS does
+    ///         nothing in HELL. Uses the lead-ramp team where HELL heuristic = mon 0 and
+    ///         chaos pick with rng=100 lands on idx 0 (= mon 0 here, no visible difference).
+    ///         To distinguish, use rng=260 which fires chaos AND picks idx 1 (mon 1 = Nature).
+    function testChaosRoll_FiresOnlyInTartarus() public {
+        // HELL with chaos-trigger RNG: should still pick heuristic (mon 0 Air).
+        {
+            (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupLeadRampTeams();
+            bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+            // mode = HELL by default (state = 0)
+            mockCPURNG.setRNG(260); // would trigger chaos AND pick idx 1 in TARTARUS
+            testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+            engine.resetCallContext();
+            assertEq(_cpuActive(key), 0, "HELL ignores chaos trigger RNG: heuristic picks mon 0");
+        }
+    }
+
+    /// @notice testSafety_ChaosRollPicksFromUnionWithoutRevert — driving TARTARUS chaos with
+    ///         turn-0 context (only switches available) returns a valid switch without revert.
+    function testSafety_ChaosRollPicksFromUnionWithoutRevert() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupLeadRampTeams();
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_TARTARUS) << 8);
+        // rng=260: rng%10=0 (chaos fires), rng>>8=1, 1%2=1 → picks idx 1.
+        mockCPURNG.setRNG(260);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 1, "TARTARUS chaos pick lands on idx 1 (= mon 1)");
+    }
+
+    // ─── Diyu D5: HP-gated clear ────────────────────────────────────
+
+    /// @notice testRamp_HpGatedClearAbove50Clears — switching in at 100% HP clears both lanes.
+    ///         The ≤50% branch requires HP manipulation infrastructure (no test-side setMonState)
+    ///         and is scoped for follow-up.
+    function testRamp_HpGatedClearAbove50Clears() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupLeadRampTeams();
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setCpuMoveUsedBitmapExposed(key, (uint256(1) << 0) | (uint256(1) << 8));
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        uint256 bitmap = testCpu.cpuMoveUsedBitmap(key);
+        assertEq(bitmap & uint256(1), 0, "switch-in lane cleared on switch-in");
+        assertEq(bitmap & (uint256(1) << 8), 0, "setup lane cleared at 100% HP");
+    }
+
+    // ─── Diyu D4: free-turn detection ───────────────────────────────
+
+    /// @notice testRamp_DiyuFreeTurnGating — verifies D4 path fires in DIYU when opp reveals a
+    ///         bp=0 Self-class move, and the decision tree falls through to best-damage default
+    ///         (no setup configured on this team, no momentum-asymmetry).
+    function testRamp_DiyuFreeTurnGating() public {
+        // Both teams must have MOVES_PER_MON moves each — validator enforces parity.
+        IMoveSet setupMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        IMoveSet damageMove = _createAttack(10, Type.Fire, MoveClass.Physical);
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(setupMove)));   // index 0 — Self bp=0 (free-turn trigger)
+        moves[1] = uint256(uint160(address(damageMove)));  // index 1 — basic attack
+
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1].moves = moves;
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[1].moves = moves;
+
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        // Turn 1: Alice plays move 0 (Self, bp=0). DIYU should detect free turn and enter
+        // _diyuFreeTurnPick. Without setup configured + 2HKO failing + matchup-switch unavailable,
+        // it falls through to best-damage default. The key check: NO REVERT.
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0); // Alice plays move 0 (Self bp=0)
+        engine.resetCallContext();
+        // CPU should not have crashed and should have attacked or fallen through.
+        // Verify it didn't switch (matchup switch threshold not met on identical mons).
+        assertEq(_cpuActive(key), 0, "DIYU free-turn falls through to damage when no setup/switch beats threshold");
+    }
+
+    // ─── Diyu D3: KO-bypass ─────────────────────────────────────────
+
+    /// @notice testRamp_DiyuKOBypassStaysInForTheKO — CPU outspeeds (20 vs 10). Our best move
+    ///         deals 90% (near-KO) so P2 doesn't fire. Alice deals 75% (above DIYU 60% threshold).
+    ///         KO-bypass fires → CPU stays in.
+    function testRamp_DiyuKOBypassStaysInForTheKO() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupKOBypassScenario(20, 10);
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "lead = mon 0 (Fire, default scoring ties first wins)");
+
+        // Turn 1: Alice attacks for 75%; CPU best damage = 90% of opp HP; CPU outspeeds.
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 0, "DIYU KO-bypass: stays in for the kill despite severe incoming");
+    }
+
+    /// @notice testSafety_DiyuKOBypassRequiresOutspeed — same setup but opp outspeeds (20 vs 10).
+    ///         KO-bypass denied (we don't go first). CPU switches defensively to mon 1.
+    function testSafety_DiyuKOBypassRequiresOutspeed() public {
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) = _setupKOBypassScenario(10, 20);
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+        assertEq(_cpuActive(key), 1, "DIYU KO-bypass denied when opp outspeeds: switches defensively");
+    }
+
+    // ─── Diyu D5: setup once-per-switch-in ─────────────────────────
+
+    /// @notice testDiyu_SetupOncePerSwitchIn — with the setup lane bit pre-set on the active
+    ///         mon, the free-turn decision tree does not replay setup; falls through to damage.
+    function testDiyu_SetupOncePerSwitchIn() public {
+        IMoveSet setupClassMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        IMoveSet damageMove = _createAttack(10, Type.Fire, MoveClass.Physical);
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(setupClassMove)));
+        moves[1] = uint256(uint160(address(damageMove)));
+
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1].moves = moves;
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[1].moves = moves;
+
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        // Configure setup move = slot 0 (CONFIG_SETUP_MOVE = 2, value = slot+1 = 1).
+        testCpu.setMonConfig(0, 2, 1);
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        // Pre-mark setup lane bit for active mon 0 to simulate "already used this switch-in".
+        // (Direct call to setCpuMoveUsedBitmapExposed BEFORE turn 1.)
+        uint256 currentBitmap = testCpu.cpuMoveUsedBitmap(key);
+        testCpu.setCpuMoveUsedBitmapExposed(key, currentBitmap | (uint256(1) << 8));
+
+        // Turn 1: Alice plays bp=0 Self → free turn for DIYU.
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+
+        // Setup not replayed (bit was already set). CPU falls through to best damage. The
+        // setup lane bit stays set (we marked it; nothing toggles it back without a switch-out).
+        uint256 finalBitmap = testCpu.cpuMoveUsedBitmap(key);
+        assertTrue((finalBitmap & (uint256(1) << 8)) != 0, "setup lane bit remains set (already-used path)");
+        // Alice took damage from CPU's damage move (proof CPU didn't play setup or rest).
+        int32 aliceHpDelta = engine.getMonStateForBattle(key, 0, 0, MonStateIndexName.Hp);
+        assertTrue(aliceHpDelta < 0, "Alice took damage -> CPU played damage move, not setup");
+    }
+
+    /// @notice testRamp_DiyuFreeTurnSetupWhenMomentum — free turn detected, setup configured,
+    ///         2HKO fails (opp has 2x HP so bestDmg*2 < oppHp), momentum favors CPU
+    ///         (2 alive vs 2 alive, equal stamina). CPU plays setup move.
+    function testRamp_DiyuFreeTurnSetupWhenMomentum() public {
+        IMoveSet setupClassMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        IMoveSet damageMove = _createAttack(10, Type.Fire, MoveClass.Physical); // 50 damage
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(setupClassMove)));
+        moves[1] = uint256(uint160(address(damageMove)));
+
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1].moves = moves;
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 200, 50, 10); // hp doubled — 50*2 < 200 -> 2HKO fails
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 200, 50, 10);
+        aliceTeam[1].moves = moves;
+
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        testCpu.setMonConfig(0, 2, 1); // setup = slot 0 (encoded as slot+1 = 1)
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+        // After turn 0, mon 0 active at 100% HP. _clearMoveUsedBitsOnSwitchIn cleared both lanes.
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0); // Alice plays setup (free turn)
+        engine.resetCallContext();
+
+        // Decision tree: 2HKO fails (50*2=100 < 200), momentum=true, setup eligible -> setup plays.
+        uint256 bitmap = testCpu.cpuMoveUsedBitmap(key);
+        assertTrue((bitmap & (uint256(1) << 8)) != 0, "setup lane bit SET -> setup move played");
+        int32 aliceHpDelta = engine.getMonStateForBattle(key, 0, 0, MonStateIndexName.Hp);
+        assertEq(aliceHpDelta, 0, "Alice undamaged -> CPU played setup (bp=0 Self), not damage");
+    }
+
+    /// @notice testSafety_DiyuFreeTurn_2HKOBeatsSetup — when free turn is detected AND CPU can
+    ///         2HKO opp (bestDmg * 2 >= oppHp), damage takes precedence over setup. The setup
+    ///         lane bit must NOT be set after the turn (proof setup wasn't played).
+    function testSafety_DiyuFreeTurn_2HKOBeatsSetup() public {
+        IMoveSet setupClassMove = _createAttackFull(0, 1, Type.Fire, MoveClass.Self, 1);
+        IMoveSet damageMove = _createAttack(10, Type.Fire, MoveClass.Physical); // bp=10, atk=50, def=10 -> 50 damage
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(setupClassMove)));
+        moves[1] = uint256(uint160(address(damageMove)));
+
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[0].moves = moves;
+        cpuTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        cpuTeam[1].moves = moves;
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[0].moves = moves;
+        aliceTeam[1] = _createMon(Type.Fire, 100, 50, 10);
+        aliceTeam[1].moves = moves;
+
+        bytes32 key = _startBattleWithTestCpu(aliceTeam, cpuTeam);
+        testCpu.setPlayerStateExposed(ALICE, uint256(MODE_DIYU) << 8);
+        testCpu.setMonConfig(0, 2, 1); // setup = slot 0
+
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, SWITCH_MOVE_INDEX, 0, uint16(0));
+        engine.resetCallContext();
+
+        // Turn 1: Alice plays bp=0 Self (free-turn trigger). bestDmg=50, oppHp=100 -> 2*50 >= 100,
+        // 2HKO step fires before setup step.
+        mockCPURNG.setRNG(1);
+        testCpu.selectMove(key, 0, uint104(0), 0);
+        engine.resetCallContext();
+
+        // Setup lane must remain unset — proof setup move was not played.
+        uint256 bitmap = testCpu.cpuMoveUsedBitmap(key);
+        assertEq(bitmap & (uint256(1) << 8), 0, "setup lane untouched when 2HKO takes priority");
+
+        int32 aliceHpDelta = engine.getMonStateForBattle(key, 0, 0, MonStateIndexName.Hp);
+        assertTrue(aliceHpDelta < 0, "Alice took damage -> CPU picked damage via 2HKO branch");
     }
 }

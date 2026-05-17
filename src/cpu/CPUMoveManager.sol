@@ -37,24 +37,31 @@ abstract contract CPUMoveManager {
             return;
         }
 
+        address winner;
         if (playerSwitchForTurnFlag == 0) {
-            ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);
-            return;
+            winner = ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);
+        } else {
+            // P1's turn or both players move: CPU calculates its move. Fetch the full context now.
+            CPUContext memory ctx = ENGINE.getCPUContext(battleKey);
+            (uint128 cpuMoveIndex, uint16 cpuExtraData) =
+                ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
+            // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
+            // RNG source within the seconds-to-minutes commit-reveal window.
+            uint104 p1Salt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
+
+            if (playerSwitchForTurnFlag == 1) {
+                winner = ENGINE.executeWithSingleMove(battleKey, uint8(cpuMoveIndex), p1Salt, cpuExtraData);
+            } else {
+                winner = ENGINE.executeWithMoves(
+                    battleKey, moveIndex, salt, extraData, uint8(cpuMoveIndex), p1Salt, cpuExtraData
+                );
+            }
         }
 
-        // P1's turn or both players move: CPU calculates its move. Fetch the full context now.
-        CPUContext memory ctx = ENGINE.getCPUContext(battleKey);
-        (uint128 cpuMoveIndex, uint16 cpuExtraData) = ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
-        // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
-        // RNG source within the seconds-to-minutes commit-reveal window.
-        uint104 p1Salt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
-
-        if (playerSwitchForTurnFlag == 1) {
-            ENGINE.executeWithSingleMove(battleKey, uint8(cpuMoveIndex), p1Salt, cpuExtraData);
-            return;
-        }
-
-        // Single external call: set both moves and execute
-        ENGINE.executeWithMoves(battleKey, moveIndex, salt, extraData, uint8(cpuMoveIndex), p1Salt, cpuExtraData);
+        _afterTurn(battleKey, p0, winner);
     }
+
+    /// @notice Post-execute hook. `winner == address(0)` means the battle is still ongoing;
+    ///         otherwise it's the winning player's address. Subclasses override to react.
+    function _afterTurn(bytes32 battleKey, address p0, address winner) internal virtual {}
 }

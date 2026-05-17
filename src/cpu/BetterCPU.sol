@@ -33,18 +33,34 @@ contract BetterCPU is CPU {
 
     // Damage estimation constants
     uint256 constant SIMILAR_DAMAGE_THRESHOLD = 85; // 85% — moves within 15% are "similar"
-    uint256 constant SEVERE_DAMAGE_PCT = 30; // 30% of max HP = "severe" damage threshold
     uint256 constant SWITCH_THRESHOLD = 30; // 30% HP difference needed to justify switching
 
+    // Per-mode severe-damage thresholds (Hell/Tartarus/Diyu ladder). See STRONG_CPU.md.
+    uint256 constant SEVERE_DAMAGE_PCT_HELL = 30;
+    uint256 constant SEVERE_DAMAGE_PCT_TARTARUS = 50;
+    uint256 constant SEVERE_DAMAGE_PCT_DIYU = 60;
+
+    // Mode constants for the adaptive state machine
+    uint8 constant MODE_HELL = 0;
+    uint8 constant MODE_TARTARUS = 1;
+    uint8 constant MODE_DIYU = 2;
+
     // Per-mon strategy config
-    uint256 constant CONFIG_PREFERRED_MOVE = 0;
-    uint256 constant CONFIG_SWITCH_IN_MOVE = 1;
+    uint256 public constant CONFIG_PREFERRED_MOVE = 0;
+    uint256 public constant CONFIG_SWITCH_IN_MOVE = 1;
+    uint256 public constant CONFIG_SETUP_MOVE = 2;
     uint256 constant CONFIG_UNSET = type(uint256).max;
 
     // Per-mon config: monIndex → configKey → configValue
     mapping(uint256 => mapping(uint256 => uint256)) public monConfig;
-    // Per-battle bitmap: tracks which mons have used their switch-in move
-    mapping(bytes32 => uint256) public switchInMoveUsedBitmap;
+    // Per-battle bitmap: bits 0-7 track switch-in move use per monIndex,
+    //                    bits 8-15 track setup move use per monIndex.
+    mapping(bytes32 => uint256) public cpuMoveUsedBitmap;
+
+    // Per-human packed state controlling mode escalation.
+    //   bits  8-9  : mode (0 HELL, 1 TARTARUS, 2 DIYU)
+    //   bit  10    : diyuPriorLoss (CPU has lost once already in current DIYU stint)
+    mapping(address => uint256) public playerState;
 
     constructor(uint256 numMoves, IEngine engine, ICPURNG rng, ITypeCalculator typeCalc) CPU(numMoves, engine, rng) {
         TYPE_CALC = typeCalc;
@@ -52,6 +68,42 @@ contract BetterCPU is CPU {
 
     function setMonConfig(uint256 monIndex, uint256 key, uint256 value) external {
         monConfig[monIndex][key] = value;
+    }
+
+    // ============ ADAPTIVE STATE MACHINE ============
+
+    /// @notice Update playerState[p0] based on battle outcome — Hell/Tartarus/Diyu ladder.
+    ///         DIYU is sticky for one loss then resets; a DIYU win demotes to TARTARUS.
+    function _recordResult(address p0, bool cpuWon) internal {
+        uint256 state = playerState[p0];
+        uint8 mode = uint8((state >> 8) & 0x3);
+        bool diyuPriorLoss = ((state >> 10) & 0x1) != 0;
+
+        uint8 newMode;
+        bool newDiyuPriorLoss = false;
+
+        if (mode == MODE_HELL) {
+            newMode = cpuWon ? MODE_HELL : MODE_TARTARUS;
+        } else if (mode == MODE_TARTARUS) {
+            newMode = cpuWon ? MODE_HELL : MODE_DIYU;
+        } else if (cpuWon) {
+            newMode = MODE_TARTARUS;
+        } else if (diyuPriorLoss) {
+            newMode = MODE_HELL;
+        } else {
+            newMode = MODE_DIYU;
+            newDiyuPriorLoss = true;
+        }
+
+        uint256 newState = (state & ~uint256(0x700))
+            | (uint256(newMode) << 8)
+            | (newDiyuPriorLoss ? (uint256(1) << 10) : 0);
+        if (newState != state) playerState[p0] = newState;
+    }
+
+    function _afterTurn(bytes32, address p0, address winner) internal override {
+        if (winner == address(0)) return; // battle ongoing
+        _recordResult(p0, winner == address(this)); // CPU is p1
     }
 
     // ============ CORE DECISION TREE ============
@@ -66,13 +118,24 @@ contract BetterCPU is CPU {
 
         bytes32 battleKey = ctx.battleKey;
 
+        uint8 mode = uint8((playerState[ctx.p0] >> 8) & 0x3);
+        bool aggressive = (mode == MODE_TARTARUS || mode == MODE_DIYU);
+        bool diyu = (mode == MODE_DIYU);
+
+        // Tartarus 1/10 chaos roll: bypass the heuristic and pick uniformly across valid options.
+        if (mode == MODE_TARTARUS) {
+            uint256 rng = _getRNG(battleKey);
+            if (rng % 10 == 0) {
+                return _pickRandomValidOption(rng, noOp, moves, switches);
+            }
+        }
+
         // ══════════════════════════════════════════
         // P0: Turn 0 — Lead Selection
         // ══════════════════════════════════════════
         if (ctx.turnId == 0) {
-            (moveIndex, extraData) = _selectLead(battleKey, playerExtraData, switches);
-            // Clear switch-in move bit for the mon we're sending in
-            switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
+            (moveIndex, extraData) = _selectLead(battleKey, playerExtraData, switches, aggressive);
+            _clearMoveUsedBitsOnSwitchIn(battleKey, uint256(extraData));
             return (moveIndex, extraData);
         }
 
@@ -83,9 +146,8 @@ contract BetterCPU is CPU {
         // P1: KO'd — Forced Switch
         // ══════════════════════════════════════════
         if (ctx.cpuActiveMonKnockedOut) {
-            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches);
-            // Clear switch-in move bit for the mon we're switching to
-            switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
+            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches, aggressive);
+            _clearMoveUsedBitsOnSwitchIn(battleKey, uint256(extraData));
             return (moveIndex, extraData);
         }
 
@@ -129,7 +191,7 @@ contract BetterCPU is CPU {
         // ══════════════════════════════════════════
         if (playerMoveIndex == SWITCH_MOVE_INDEX) {
             // Try switch-in move on this safe turn
-            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
+            int256 switchInMove = _tryConfiguredMove(battleKey, activeMonIndex, moves, CONFIG_SWITCH_IN_MOVE, 0);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
@@ -150,7 +212,7 @@ contract BetterCPU is CPU {
                 return (noOp[0].moveIndex, noOp[0].extraData); // Both rest
             }
             // Try switch-in move on this safe turn
-            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
+            int256 switchInMove = _tryConfiguredMove(battleKey, activeMonIndex, moves, CONFIG_SWITCH_IN_MOVE, 0);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
@@ -162,14 +224,30 @@ contract BetterCPU is CPU {
         }
 
         // ══════════════════════════════════════════
+        // P4.5: Diyu D4 free-turn — opp revealed a 0-power Self/Other move (setup, heal, hazard)
+        // ══════════════════════════════════════════
+        if (diyu && _isFreeTurnReveal(battleKey, opponentMonIndex, playerMoveIndex)) {
+            (bool picked, uint128 freeM, uint16 freeE) = _diyuFreeTurnPick(ctx, attackCtx, metas, moves, switches);
+            if (picked) return (freeM, freeE);
+        }
+
+        // ══════════════════════════════════════════
         // P5: Opponent Using a Move — Evaluate Defensive Switch
         // ══════════════════════════════════════════
         if (switches.length > 0) {
-            (bool shouldSwitch, uint256 switchIdx) =
-                _evaluateDefensiveSwitch(ctx, activeMonIndex, opponentMonIndex, playerMoveIndex, switches);
+            uint256 severeDamagePct = diyu
+                ? SEVERE_DAMAGE_PCT_DIYU
+                : (aggressive ? SEVERE_DAMAGE_PCT_TARTARUS : SEVERE_DAMAGE_PCT_HELL);
+            // D3 KO-bypass: in Diyu, if our best move would KO opp (within ±10%) and we outspeed,
+            // stay in for the kill regardless of incoming damage.
+            bool koBypassFires = diyu
+                && moves.length > 0
+                && _checkKOBypass(ctx, battleKey, activeMonIndex, opponentMonIndex, attackCtx, metas, moves, playerMoveIndex);
+            (bool shouldSwitch, uint256 switchIdx) = _evaluateDefensiveSwitch(
+                ctx, activeMonIndex, opponentMonIndex, playerMoveIndex, switches, severeDamagePct, koBypassFires
+            );
             if (shouldSwitch) {
-                // Clear switch-in move bit for the mon we're switching to
-                switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(switches[switchIdx].extraData));
+                _clearMoveUsedBitsOnSwitchIn(battleKey, uint256(switches[switchIdx].extraData));
                 return (switches[switchIdx].moveIndex, switches[switchIdx].extraData);
             }
         }
@@ -179,7 +257,7 @@ contract BetterCPU is CPU {
         // ══════════════════════════════════════════
         if (moves.length > 0) {
             // Try switch-in move
-            int256 switchInMove = _trySwitchInMove(battleKey, activeMonIndex, moves);
+            int256 switchInMove = _tryConfiguredMove(battleKey, activeMonIndex, moves, CONFIG_SWITCH_IN_MOVE, 0);
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
@@ -196,10 +274,11 @@ contract BetterCPU is CPU {
             }
         }
 
-        // No moves left — switch if possible, else rest
+        // No moves left — switch if possible, else rest. Stuck-out-of-moves is not a revenge
+        // scenario; pass aggressive=false to keep the safest sponge.
         if (switches.length > 0) {
-            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches);
-            switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData));
+            (moveIndex, extraData) = _selectBestSwitch(battleKey, opponentMonIndex, playerMoveIndex, switches, false);
+            _clearMoveUsedBitsOnSwitchIn(battleKey, uint256(extraData));
             return (moveIndex, extraData);
         }
         return (noOp[0].moveIndex, noOp[0].extraData);
@@ -379,12 +458,32 @@ contract BetterCPU is CPU {
 
     // ============ LEAD SELECTION ============
 
-    /// @notice Select lead with dual-type scoring (defensive + offensive)
-    function _selectLead(bytes32 battleKey, uint16 opponentMonExtraData, RevealedMove[] memory switches)
-        internal
-        view
-        returns (uint128, uint16)
+    /// @notice Sum of type-effectiveness for both type pairs (candidate offense vs opponent defense).
+    ///         Used by aggressive lead scoring, the Tartarus revenge-KO selector, and Diyu D1.
+    function _offensiveMatchupScore(Type candType1, Type candType2, Type oppType1, Type oppType2)
+        internal view returns (int256)
     {
+        int256 score = int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType1, 10)));
+        if (oppType2 != Type.None) {
+            score += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType2, 10)));
+        }
+        if (candType2 != Type.None) {
+            score += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType1, 10)));
+            if (oppType2 != Type.None) {
+                score += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType2, 10)));
+            }
+        }
+        return score;
+    }
+
+    /// @notice Select lead with dual-type scoring. `aggressive` weights offense more heavily,
+    ///         producing offensive leads in TARTARUS/DIYU vs balanced/defensive in HELL.
+    function _selectLead(
+        bytes32 battleKey,
+        uint16 opponentMonExtraData,
+        RevealedMove[] memory switches,
+        bool aggressive
+    ) internal view returns (uint128, uint16) {
         MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, uint256(opponentMonExtraData));
         Type oppType1 = oppStats.type1;
         Type oppType2 = oppStats.type2;
@@ -393,39 +492,40 @@ contract BetterCPU is CPU {
         uint256 bestIndex = 0;
 
         for (uint256 i; i < switches.length;) {
-            MonStats memory candidateStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
-            Type candType1 = candidateStats.type1;
-            Type candType2 = candidateStats.type2;
+            int256 score;
+            {
+                MonStats memory candStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
+                Type candType1 = candStats.type1;
+                Type candType2 = candStats.type2;
 
-            // Defensive score: how much damage do opponent's types deal to us? (lower = better for us)
-            // We use basePower=10 as a reference point
-            int256 defensiveScore = 0;
-            defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType1, candType1, 10)));
-            if (candType2 != Type.None) {
-                defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType1, candType2, 10)));
-            }
-            if (oppType2 != Type.None) {
-                defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType2, candType1, 10)));
+                // Defensive: opp types attacking candidate.
+                int256 defensiveScore = int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType1, candType1, 10)));
                 if (candType2 != Type.None) {
-                    defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType2, candType2, 10)));
+                    defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType1, candType2, 10)));
                 }
-            }
-
-            // Offensive score: can we hit them super-effectively? (higher = better)
-            int256 offensiveScore = 0;
-            offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType1, 10)));
-            if (oppType2 != Type.None) {
-                offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType2, 10)));
-            }
-            if (candType2 != Type.None) {
-                offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType1, 10)));
                 if (oppType2 != Type.None) {
-                    offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType2, 10)));
+                    defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType2, candType1, 10)));
+                    if (candType2 != Type.None) {
+                        defensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(oppType2, candType2, 10)));
+                    }
                 }
-            }
 
-            // Combined: higher offensive minus higher defensive = better
-            int256 score = offensiveScore - defensiveScore;
+                // Offensive: candidate types attacking opp.
+                int256 offensiveScore = int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType1, 10)));
+                if (oppType2 != Type.None) {
+                    offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType1, oppType2, 10)));
+                }
+                if (candType2 != Type.None) {
+                    offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType1, 10)));
+                    if (oppType2 != Type.None) {
+                        offensiveScore += int256(uint256(TYPE_CALC.getTypeEffectiveness(candType2, oppType2, 10)));
+                    }
+                }
+
+                score = aggressive
+                    ? (3 * offensiveScore - defensiveScore)
+                    : (offensiveScore - defensiveScore);
+            }
             if (score > bestScore) {
                 bestScore = score;
                 bestIndex = i;
@@ -440,19 +540,41 @@ contract BetterCPU is CPU {
 
     // ============ SWITCH SELECTION ============
 
-    /// @notice Select switch candidate that takes least damage from opponent's move
+    /// @notice Pick a switch candidate. In non-aggressive (HELL) mode, the safest sponge — least
+    ///         damage taken from opp's revealed move. In aggressive mode (TARTARUS/DIYU revenge),
+    ///         the best offensive matchup against the opponent's active mon.
     function _selectBestSwitch(
         bytes32 battleKey,
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex,
-        RevealedMove[] memory switches
+        RevealedMove[] memory switches,
+        bool aggressive
     ) internal view returns (uint128, uint16) {
-        // If opponent isn't attacking, fall back to random
+        if (aggressive) {
+            MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, opponentMonIndex);
+            Type oppType1 = oppStats.type1;
+            Type oppType2 = oppStats.type2;
+
+            int256 bestScore = type(int256).min;
+            uint256 bestIdx = 0;
+            for (uint256 i; i < switches.length;) {
+                MonStats memory candStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
+                int256 score = _offensiveMatchupScore(candStats.type1, candStats.type2, oppType1, oppType2);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestIdx = i;
+                }
+                unchecked {
+                    ++i;
+                }
+            }
+            return (switches[bestIdx].moveIndex, switches[bestIdx].extraData);
+        }
+
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) {
             return (switches[0].moveIndex, switches[0].extraData);
         }
 
-        // Try to estimate damage from opponent's specific move to each candidate
         uint256 oppMoveSlot;
         MoveClass oppMoveClass;
         bool canEstimate = false;
@@ -567,6 +689,39 @@ contract BetterCPU is CPU {
 
     // ============ DEFENSIVE SWITCH EVALUATION ============
 
+    /// @notice Diyu D3 KO-bypass check. True if our best damaging move would deal at least 90%
+    ///         of opp's current HP and we outspeed — in which case we stay in for the kill
+    ///         rather than swap out under heavy incoming damage.
+    function _checkKOBypass(
+        CPUContext memory ctx,
+        bytes32 battleKey,
+        uint256 activeMonIndex,
+        uint256 opponentMonIndex,
+        DamageCalcContext memory attackCtx,
+        MoveMeta[4] memory metas,
+        RevealedMove[] memory moves,
+        uint8 playerMoveIndex
+    ) internal view returns (bool) {
+        int256 bestIdx = _findBestDamageMove(attackCtx, metas, moves);
+        if (bestIdx < 0) return false;
+
+        uint256 bestDmg = _estimateDamageMeta(attackCtx, metas[moves[uint256(bestIdx)].moveIndex]);
+        if (bestDmg == 0) return false;
+
+        uint32 oppMaxHp = ENGINE.getMonValueForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
+        int32 oppHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
+        int256 oppCurrentHp = int256(uint256(oppMaxHp)) + int256(oppHpDelta);
+        if (oppCurrentHp <= 0) return false;
+
+        // ±10% tolerance: bestDmg >= 90% of opp current HP
+        if (bestDmg * 10 < uint256(oppCurrentHp) * 9) return false;
+
+        return _weGoFirst(
+            ctx, metas, activeMonIndex, opponentMonIndex,
+            moves[uint256(bestIdx)].moveIndex, playerMoveIndex
+        );
+    }
+
     /// @notice Estimate damage % and survival for a candidate switch-in, packed into one uint256
     ///         (damagePct in upper 248 bits, survives flag in bit 0). Packing keeps the caller's
     ///         loop stack footprint within via-IR limits while still returning both values.
@@ -612,14 +767,20 @@ contract BetterCPU is CPU {
         }
     }
 
-    /// @notice Evaluate whether switching is materially better than staying
+    /// @notice Evaluate whether switching is materially better than staying. `severeDamagePct` is
+    ///         the per-mode threshold (Hell/Tartarus/Diyu) — incoming damage below this is ignored
+    ///         unless lethal. `koBypassFires` short-circuits the switch entirely (Diyu D3): we're
+    ///         about to KO the opponent and outspeed, so it's worth eating the hit.
     function _evaluateDefensiveSwitch(
         CPUContext memory cpuCtx,
         uint256 activeMonIndex,
         uint256 opponentMonIndex,
         uint8 opponentMoveIndex,
-        RevealedMove[] memory switches
+        RevealedMove[] memory switches,
+        uint256 severeDamagePct,
+        bool koBypassFires
     ) internal view returns (bool shouldSwitch, uint256 bestSwitchIdx) {
+        if (koBypassFires) return (false, 0);
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) return (false, 0);
 
         bytes32 battleKey = cpuCtx.battleKey;
@@ -650,7 +811,7 @@ contract BetterCPU is CPU {
             damagePctToUs = (damageToUs * 100) / uint256(ourMaxHp);
             lethalToUs = damageToUs >= uint256(ourCurrentHp);
 
-            if (damagePctToUs < SEVERE_DAMAGE_PCT && !lethalToUs) return (false, 0);
+            if (damagePctToUs < severeDamagePct && !lethalToUs) return (false, 0);
         }
 
         uint256 bestDamagePct;
@@ -676,24 +837,26 @@ contract BetterCPU is CPU {
 
     // ============ PER-MON STRATEGY ============
 
-    /// @notice Try to use the switch-in move if set and not yet used this switch-in
-    function _trySwitchInMove(bytes32 battleKey, uint256 activeMonIndex, RevealedMove[] memory moves)
-        internal
-        returns (int256)
-    {
-        uint256 configValue = monConfig[activeMonIndex][CONFIG_SWITCH_IN_MOVE];
-        // Convention: stores (moveIndex + 1), 0 = unset
+    /// @notice Try to play a per-mon configured move (switch-in or setup), marking the
+    ///         corresponding `cpuMoveUsedBitmap` lane bit. Returns -1 if unconfigured, already
+    ///         used this switch-in, or absent from the available `moves`.
+    function _tryConfiguredMove(
+        bytes32 battleKey,
+        uint256 activeMonIndex,
+        RevealedMove[] memory moves,
+        uint256 configKey,
+        uint256 laneBitOffset
+    ) internal returns (int256) {
+        uint256 configValue = monConfig[activeMonIndex][configKey];
         if (configValue == 0) return -1;
         uint256 targetMoveIndex = configValue - 1;
 
-        // Check if already used this switch-in
-        if ((switchInMoveUsedBitmap[battleKey] & (1 << activeMonIndex)) != 0) return -1;
+        uint256 laneBit = uint256(1) << (activeMonIndex + laneBitOffset);
+        if ((cpuMoveUsedBitmap[battleKey] & laneBit) != 0) return -1;
 
-        // Find the move in the moves array
         for (uint256 i; i < moves.length;) {
             if (moves[i].moveIndex == targetMoveIndex) {
-                // Mark as used
-                switchInMoveUsedBitmap[battleKey] |= (1 << activeMonIndex);
+                cpuMoveUsedBitmap[battleKey] |= laneBit;
                 return int256(i);
             }
             unchecked {
@@ -701,6 +864,171 @@ contract BetterCPU is CPU {
             }
         }
         return -1;
+    }
+
+    /// @notice Clear move-used bits on mon re-entry. Switch-in lane clears unconditionally;
+    ///         setup lane clears only when current HP is strictly above 50% — a low-HP re-entry
+    ///         shouldn't waste a turn setting up.
+    function _clearMoveUsedBitsOnSwitchIn(bytes32 battleKey, uint256 monIdx) internal {
+        uint256 bitmap = cpuMoveUsedBitmap[battleKey];
+        uint256 setupBit = uint256(1) << (monIdx + 8);
+        uint256 newBitmap = bitmap & ~(uint256(1) << monIdx);
+
+        // Only fetch HP if the setup lane bit is actually set (skips two external calls per turn-0).
+        if ((bitmap & setupBit) != 0) {
+            uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, 1, monIdx, MonStateIndexName.Hp);
+            int32 hpDelta = ENGINE.getMonStateForBattle(battleKey, 1, monIdx, MonStateIndexName.Hp);
+            int256 currentHp = int256(uint256(maxHp)) + int256(hpDelta);
+            if (currentHp * 2 > int256(uint256(maxHp))) {
+                newBitmap &= ~setupBit;
+            }
+        }
+
+        if (newBitmap != bitmap) cpuMoveUsedBitmap[battleKey] = newBitmap;
+    }
+
+    /// @notice Extract basePower from a move slot, falling back to 0 for non-attack moves or
+    ///         contracts that don't implement IAttackMove. Used by Diyu D4 free-turn detection.
+    function _getMoveBasePower(uint256 rawMoveSlot, bytes32 battleKey) internal view returns (uint32) {
+        if (MoveSlotLib.isInline(rawMoveSlot)) {
+            return MoveSlotLib.basePower(rawMoveSlot, battleKey);
+        }
+        try IAttackMove(address(uint160(rawMoveSlot))).basePower(battleKey) returns (uint32 bp) {
+            return bp;
+        } catch {
+            return 0;
+        }
+    }
+
+    /// @notice Detect a "free turn" — opponent revealed a 0-power Self/Other move (setup, heal,
+    ///         hazard). Diyu D4 trigger gate.
+    function _isFreeTurnReveal(bytes32 battleKey, uint256 opponentMonIndex, uint8 playerMoveIndex)
+        internal view returns (bool)
+    {
+        if (playerMoveIndex >= SWITCH_MOVE_INDEX) return false;
+        try ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, playerMoveIndex) returns (uint256 slot) {
+            MoveClass oppClass = MoveSlotLib.moveClass(slot, ENGINE, battleKey);
+            if (oppClass != MoveClass.Other && oppClass != MoveClass.Self) return false;
+            return _getMoveBasePower(slot, battleKey) == 0;
+        } catch {
+            return false;
+        }
+    }
+
+    function _popcount8(uint8 bitmap) internal pure returns (uint256 count) {
+        for (uint256 i; i < 8;) {
+            if ((bitmap >> i) & 1 == 1) ++count;
+            unchecked { ++i; }
+        }
+    }
+
+    /// @notice Momentum check for Diyu D4 step 4. CPU has momentum if more mons alive, or — on
+    ///         a tie — its active mon has at least as much stamina as the opponent's.
+    function _hasMomentum(CPUContext memory ctx, bytes32 battleKey) internal view returns (bool) {
+        uint256 ourAlive = ctx.p1TeamSize - _popcount8(ctx.p1KOBitmap);
+        uint256 theirAlive = ctx.p0TeamSize - _popcount8(ctx.p0KOBitmap);
+        if (ourAlive > theirAlive) return true;
+        if (ourAlive < theirAlive) return false;
+
+        int256 ourStam = int256(uint256(ctx.cpuActiveMonBaseStamina)) + int256(ctx.cpuActiveMonStaminaDelta);
+        uint32 theirBase = ENGINE.getMonValueForBattle(battleKey, 0, ctx.p0ActiveMonIndex, MonStateIndexName.Stamina);
+        int32 theirDelta = ENGINE.getMonStateForBattle(battleKey, 0, ctx.p0ActiveMonIndex, MonStateIndexName.Stamina);
+        int256 theirStam = int256(uint256(theirBase)) + int256(theirDelta);
+        return ourStam >= theirStam;
+    }
+
+    /// @notice Diyu D4 step 5: pick a switch candidate whose offensive matchup against the
+    ///         opponent's active mon exceeds the current mon's by ≥ SWITCH_THRESHOLD. Returns -1
+    ///         when no candidate clears the bar (caller falls through to best-damage default).
+    function _tryFreeTurnMatchupSwitch(
+        bytes32 battleKey,
+        uint256 activeMonIndex,
+        uint256 opponentMonIndex,
+        RevealedMove[] memory switches
+    ) internal view returns (int256) {
+        MonStats memory oppStats = ENGINE.getMonStatsForBattle(battleKey, 0, opponentMonIndex);
+        int256 currentScore;
+        {
+            MonStats memory ourStats = ENGINE.getMonStatsForBattle(battleKey, 1, activeMonIndex);
+            currentScore =
+                _offensiveMatchupScore(ourStats.type1, ourStats.type2, oppStats.type1, oppStats.type2);
+        }
+
+        int256 bestScore = currentScore;
+        int256 bestIdx = -1;
+        for (uint256 i; i < switches.length;) {
+            MonStats memory candStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
+            int256 score =
+                _offensiveMatchupScore(candStats.type1, candStats.type2, oppStats.type1, oppStats.type2);
+            if (score > bestScore) {
+                bestScore = score;
+                bestIdx = int256(i);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        if (bestIdx >= 0 && bestScore >= currentScore + int256(SWITCH_THRESHOLD)) {
+            return bestIdx;
+        }
+        return -1;
+    }
+
+    /// @notice Diyu D4 decision tree. Returns (picked, moveIndex, extraData). When `picked` is
+    ///         false the caller should fall through to P5. Order: switch-in → 2HKO damage →
+    ///         (momentum ? setup : matchup switch) → best damage fallback.
+    function _diyuFreeTurnPick(
+        CPUContext memory ctx,
+        DamageCalcContext memory attackCtx,
+        MoveMeta[4] memory metas,
+        RevealedMove[] memory moves,
+        RevealedMove[] memory switches
+    ) internal returns (bool picked, uint128 moveIndex, uint16 extraData) {
+        bytes32 battleKey = ctx.battleKey;
+        uint256 activeMonIndex = ctx.p1ActiveMonIndex;
+        uint256 opponentMonIndex = ctx.p0ActiveMonIndex;
+
+        int256 switchInMove = _tryConfiguredMove(battleKey, activeMonIndex, moves, CONFIG_SWITCH_IN_MOVE, 0);
+        if (switchInMove >= 0) {
+            RevealedMove memory m = moves[uint256(switchInMove)];
+            return (true, m.moveIndex, m.extraData);
+        }
+
+        int256 bestIdx = _findBestDamageMove(attackCtx, metas, moves);
+        if (bestIdx >= 0) {
+            uint256 bestDmg = _estimateDamageMeta(attackCtx, metas[moves[uint256(bestIdx)].moveIndex]);
+            uint32 oppMaxHp = ENGINE.getMonValueForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
+            int32 oppHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
+            int256 oppCurrentHp = int256(uint256(oppMaxHp)) + int256(oppHpDelta);
+            // 2HKO uses opp current HP (not max), so a damaged opp is easier to finish.
+            if (oppCurrentHp > 0 && bestDmg * 2 >= uint256(oppCurrentHp)) {
+                RevealedMove memory m = moves[uint256(bestIdx)];
+                return (true, m.moveIndex, m.extraData);
+            }
+        }
+
+        if (_hasMomentum(ctx, battleKey)) {
+            int256 setupMove = _tryConfiguredMove(battleKey, activeMonIndex, moves, CONFIG_SETUP_MOVE, 8);
+            if (setupMove >= 0) {
+                RevealedMove memory m = moves[uint256(setupMove)];
+                return (true, m.moveIndex, m.extraData);
+            }
+        } else if (switches.length > 0) {
+            int256 swIdx = _tryFreeTurnMatchupSwitch(battleKey, activeMonIndex, opponentMonIndex, switches);
+            if (swIdx >= 0) {
+                RevealedMove memory s = switches[uint256(swIdx)];
+                _clearMoveUsedBitsOnSwitchIn(battleKey, uint256(s.extraData));
+                return (true, s.moveIndex, s.extraData);
+            }
+        }
+
+        if (bestIdx >= 0) {
+            RevealedMove memory m = moves[uint256(bestIdx)];
+            return (true, m.moveIndex, m.extraData);
+        }
+
+        return (false, 0, 0);
     }
 
     /// @notice Try to use the preferred move if set and within damage threshold of best
@@ -755,5 +1083,24 @@ contract BetterCPU is CPU {
 
     function _getRNG(bytes32 battleKey) internal returns (uint256) {
         return _sampleRNG(keccak256(abi.encode(nonceToUse++, battleKey, block.timestamp)));
+    }
+
+    /// @notice Pick uniformly across `noOp ++ moves ++ switches`. The Tartarus chaos roll uses
+    ///         the high bits of `rng` for the index so the 1/10 trigger and the index don't
+    ///         share entropy. `_calculateValidMoves` already filters by context, so the union
+    ///         is the valid action set.
+    function _pickRandomValidOption(
+        uint256 rng,
+        RevealedMove[] memory noOp,
+        RevealedMove[] memory moves,
+        RevealedMove[] memory switches
+    ) internal pure returns (uint128, uint16) {
+        uint256 total = noOp.length + moves.length + switches.length;
+        uint256 idx = (rng >> 8) % total;
+        if (idx < noOp.length) return (noOp[idx].moveIndex, noOp[idx].extraData);
+        idx -= noOp.length;
+        if (idx < moves.length) return (moves[idx].moveIndex, moves[idx].extraData);
+        idx -= moves.length;
+        return (switches[idx].moveIndex, switches[idx].extraData);
     }
 }

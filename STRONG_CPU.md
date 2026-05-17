@@ -2,15 +2,11 @@
 
 ## Context
 
-`BetterCPU` (`src/cpu/BetterCPU.sol`) is a heuristic CPU whose decision tree is identical for every player it has ever faced. We want it to *learn* from a player within a session: if a human beats it, the next battle the CPU plays harder — picks a lead that punishes the player's lead, raises its tolerance for incoming damage before bailing out, and on a KO swaps to the best offensive matchup instead of the safest sponge. After one aggressive win, it gets one more "bonus" aggressive battle, then resets to default. State is keyed by the human's address.
-
-`_findBestDamageMove` already routes through `AttackCalculator._calculateDamageFromContext` with `TYPE_CALC`, so type effectiveness already scales the damage score — no change there.
-
-The user explicitly rejected the `IEngineHook` route. Battle outcome is detected at the end of `CPUMoveManager.selectMove` by re-reading `winnerIndex` after `executeWithMoves`/`executeWithSingleMove`. There is no real "draw" path in the engine — `_handleGameOver` only fires when `winnerIndex` is 0 or 1; `winnerIndex == 2` post-execute means the game is still live (Engine.sol:708, 769).
+`BetterCPU` (`src/cpu/BetterCPU.sol`) is a heuristic CPU whose decision tree is identical for every player it has ever faced. We want it to *learn* from a player within a session: if a human beats it, the next battle the CPU plays harder — picks a lead that punishes the player's lead, raises its tolerance for incoming damage before bailing out, and on a KO swaps to the best offensive matchup instead of the safest sponge. The CPU cycles through three escalating tiers — **Hell** (baseline), **Tartarus** (harder), **Diyu** (hardest) — and naturally drops back down again after the player breaks the streak. State is keyed by the human's address.
 
 ---
 
-## Part 1 — Aggressive Mode (the agreed design)
+## Part 1 — Mode ladder (Hell / Tartarus / Diyu)
 
 ### Storage (BetterCPU.sol)
 
@@ -20,24 +16,25 @@ One slot per human address. Use the full 256 bits to leave headroom for Part 2.
 mapping(address => uint256) public playerState;
 
 // bits   0-7  : 8-bit rolling history (1 = CPU win, 0 = CPU loss); LSB = newest
-// bits   8-10 : mode (0 DEFAULT, 1 AGGRESSIVE, 2 AGG_BONUS, 3 HARD — see Part 2)
+// bits   8-9  : mode (0 HELL, 1 TARTARUS, 2 DIYU)
+// bit   10    : diyuPriorLoss flag (CPU has already lost once in current DIYU stint)
 // bits  11-14 : history length, capped at 8
-// bits  15-...: reserved (Part 2 uses bits 15-30)
+// bits  15-...: reserved (Part 2 uses bits 15-22)
 ```
 
 ### Mode constants
 
 ```
-uint8  constant MODE_DEFAULT    = 0;
-uint8  constant MODE_AGGRESSIVE = 1;
-uint8  constant MODE_AGG_BONUS  = 2;
-uint8  constant MODE_HARD       = 3;        // Part 2
+uint8  constant MODE_HELL     = 0;
+uint8  constant MODE_TARTARUS = 1;
+uint8  constant MODE_DIYU     = 2;
 
-uint256 constant SEVERE_DAMAGE_PCT_DEFAULT    = 30;
-uint256 constant SEVERE_DAMAGE_PCT_AGGRESSIVE = 50;
+uint256 constant SEVERE_DAMAGE_PCT_HELL     = 30;
+uint256 constant SEVERE_DAMAGE_PCT_TARTARUS = 50;
+uint256 constant SEVERE_DAMAGE_PCT_DIYU     = 60;   // +10% over TARTARUS (Part 2, H3)
 ```
 
-(`SEVERE_DAMAGE_PCT` constant at line 36 is removed; threshold becomes a parameter to `_evaluateDefensiveSwitch`.)
+(`SEVERE_DAMAGE_PCT` constant at line 36 is removed; threshold becomes a parameter to `_evaluateDefensiveSwitch`, picked per mode.)
 
 ### End-of-turn hook (CPUMoveManager.sol)
 
@@ -61,15 +58,21 @@ function _afterTurn(bytes32 battleKey, address p0) internal override {
 }
 ```
 
-Transition rules (Part 1 only — Part 2 extends with HARD):
+Transition rules (full ladder — symmetric promote/demote with one sticky bit in DIYU):
 
 ```
-DEFAULT    + CPU won  → DEFAULT
-DEFAULT    + CPU lost → AGGRESSIVE
-AGGRESSIVE + CPU won  → AGG_BONUS
-AGGRESSIVE + CPU lost → DEFAULT
-AGG_BONUS  + any      → DEFAULT
+HELL     + CPU won  → HELL
+HELL     + CPU lost → TARTARUS
+
+TARTARUS + CPU won  → HELL
+TARTARUS + CPU lost → DIYU                       (diyuPriorLoss = 0)
+
+DIYU     + CPU won  → TARTARUS                   (diyuPriorLoss = 0)
+DIYU     + CPU lost, diyuPriorLoss == 0 → DIYU   (diyuPriorLoss = 1)
+DIYU     + CPU lost, diyuPriorLoss == 1 → HELL   (diyuPriorLoss = 0)
 ```
+
+DIYU is not a sink: two cumulative wins from a DIYU starting point bring the CPU back to HELL through TARTARUS, and two losses in DIYU also reset to HELL (the player has clearly figured the CPU out — cool off and try a fresh angle next time). One DIYU loss earns the CPU a second crack at the same tier; the `diyuPriorLoss` bit is the cheapest way to express that without a multi-bit consecutive-loss counter.
 
 `winnerIndex` convention confirmed at Engine.sol:769 (`(winner == data.p0) ? 0 : 1`).
 
@@ -78,8 +81,9 @@ AGG_BONUS  + any      → DEFAULT
 Read mode once at the top of `calculateMove`:
 
 ```
-uint8 mode = uint8((playerState[ctx.p0] >> 8) & 0x7);
-bool aggressive = (mode == MODE_AGGRESSIVE || mode == MODE_AGG_BONUS || mode == MODE_HARD);
+uint8 mode = uint8((playerState[ctx.p0] >> 8) & 0x3);
+bool aggressive = (mode == MODE_TARTARUS || mode == MODE_DIYU);
+bool diyu = (mode == MODE_DIYU);
 ```
 
 Plumb `aggressive` into the three branch helpers:
@@ -95,38 +99,90 @@ Plumb `aggressive` into the three branch helpers:
   - line 201 (P6 fallback when no usable moves left) → pass `false`. Stuck-out-of-moves is not a revenge scenario.
 
 - **`_evaluateDefensiveSwitch(... , uint256 severeDamagePct)`** (line 616, threshold at line 653)
-  Take threshold as a parameter. Caller passes
-  `aggressive ? SEVERE_DAMAGE_PCT_AGGRESSIVE : SEVERE_DAMAGE_PCT_DEFAULT`.
+  Take threshold as a parameter. Caller picks by mode:
+  `diyu ? SEVERE_DAMAGE_PCT_DIYU : (aggressive ? SEVERE_DAMAGE_PCT_TARTARUS : SEVERE_DAMAGE_PCT_HELL)`.
 
 - **`_findBestDamageMove`**: NO CHANGE.
 
+### Tartarus chaos roll
+
+To make Tartarus harder to game-plan against without disturbing Diyu's deterministic scariness, Tartarus gets a **1/10 chance per turn to bypass the decision tree and pick uniformly from all valid options** for the current context.
+
+At the very top of `calculateMove`, after `_calculateValidMoves` and mode resolution but before turn-0 / P1-KO branching:
+
+```
+if (mode == MODE_TARTARUS) {
+    uint256 rng = _getRNG(battleKey);
+    if (rng % 10 == 0) {
+        return _pickRandomValidOption(rng, noOp, moves, switches);
+    }
+}
+```
+
+`_pickRandomValidOption` picks from the union `noOp ++ moves ++ switches`. Because `_calculateValidMoves` already filters by context (turn 0 / KO'd → no moves array; insufficient stamina → moves excluded), the union *is* the valid action set — no extra context-awareness needed.
+
+```
+function _pickRandomValidOption(
+    uint256 rng,
+    RevealedMove[] memory noOp,
+    RevealedMove[] memory moves,
+    RevealedMove[] memory switches
+) internal pure returns (uint128, uint16) {
+    uint256 total = noOp.length + moves.length + switches.length;
+    // Use upper bits for selection so the 1/10 trigger and the index don't share entropy.
+    uint256 idx = (rng >> 8) % total;
+    if (idx < noOp.length) return (noOp[idx].moveIndex, noOp[idx].extraData);
+    idx -= noOp.length;
+    if (idx < moves.length) return (moves[idx].moveIndex, moves[idx].extraData);
+    idx -= moves.length;
+    return (switches[idx].moveIndex, switches[idx].extraData);
+}
+```
+
+Notes:
+- HELL stays fully deterministic. DIYU also stays fully deterministic — chaos would dilute D3/D4.
+- The chaos roll *can* land on turn 0, randomizing the lead 10% of the time in Tartarus. Acceptable trade-off.
+- `_getRNG` already exists (uses `_sampleRNG` + `nonceToUse++`); the chaos roll adds one RNG sample per Tartarus turn (~free).
+
 ### Tests (test/BetterCPUTest.sol)
 
-State machine / packing:
-- `testStateMachine_DefaultLossToAggressive`
-- `testStateMachine_AggressiveWinToBonus`
-- `testStateMachine_AggressiveLossToDefault`
-- `testStateMachine_BonusAfterWinResetsToDefault`
-- `testStateMachine_BonusAfterLossResetsToDefault`
-- `testHistoryShiftAndCap` — play 10 battles, assert length caps at 8 and LSB pattern matches.
+Three goals — *not* full behavioral coverage:
+1. **Baseline preserved** — covered by the existing BetterCPU test suite; the refactor must keep those green. No new "HELL still works" tests needed.
+2. **Aggressive ramp visible** — one test per feature showing the harder mode picks differently from the easier mode on the *same* synthetic team. Without the paired baseline run, the test could pass vacuously.
+3. **Never revert** — state machine doesn't deadlock; helpers handle sentinel HP, fresh mons, and empty option lanes without reverting; CPU doesn't suicide.
 
-Behavior (synthetic teams via `TestTypeCalculator.setTypeEffectiveness` so default and aggressive diverge):
-- `testAggressiveLeadPicksOffensiveCandidate`
-- `testAggressiveRevengeKOPicksOffensiveMatchup`
-- `testAggressive50PctThresholdSkipsDefensiveSwitch`
-- `testAfterTurnNotCalledOnEarlyReturn`
+Naming: `testRamp_*` (ramp visible), `testSafety_*` (revert / suicide guard), `testStateMachine_*`, `testChaosRoll_*`.
+
+#### State machine — 3 tests
+
+- `testStateMachine_LadderClimbAndReset` — end-to-end integration through real battles: HELL → lose → TARTARUS → lose → DIYU → lose (flag set, mode unchanged) → lose → HELL. *Catches*: any broken transition, plus the `selectMove` → `_afterTurn` → `_recordResult` wiring. Subsumes per-transition unit tests.
+- `testStateMachine_DiyuWinDropsToTartarus` — parameterized over `diyuPriorLoss ∈ {0, 1}`; assert mode = TARTARUS and flag = 0 after a DIYU win in either starting state. *Catches*: stuck in DIYU after a win; flag not cleared on demote.
+- `testSafety_DrawDoesNotMutateState` — `winnerIndex == 2` early return; mode/flag/history all unchanged. *Catches*: corruption on incomplete or drawn battles.
+
+#### Tartarus ramp — 2 paired tests + 1 safety
+
+Each paired test runs HELL and TARTARUS on the same synthetic team and asserts both picks.
+
+- `testRamp_LeadOffensiveVsDefensive` — team has candidate A (defensive-best, resists opp types, low offense) and B (SE offense, weak defense) constructed so HELL's `off - def` picks A and TARTARUS's `3*off - def` picks B. *Catches*: aggressive lead-score multiplier not wired in.
+- `testRamp_DefensiveThresholdRaised` — incoming damage = 45% of max HP, materially-better switch candidate exists. HELL switches; TARTARUS stays. *Catches*: severe-damage threshold not mode-aware.
+- `testSafety_AfterTurnSkipsOnDraw` — battle ends in draw mid-stream; assert `playerState[ALICE]` unchanged. *Catches*: state corruption on `winnerIndex == 2` execute path. (Belongs here rather than state machine because it crosses the full `selectMove` flow.)
+
+#### Tartarus chaos roll — 2 tests
+
+- `testChaosRoll_ModeAndTriggerGating` — table-driven over (mode, RNG % 10): only `(TARTARUS, 0)` yields the chaos pick; `(HELL, 0)`, `(DIYU, 0)`, and all `(*, non-zero)` rows use the heuristic. Constructed so heuristic pick X ≠ chaos pick Y, so non-firing is observable. Also exercises `MockCPURNG` wiring through `_getRNG`. *Catches*: chaos firing in wrong mode, firing on wrong trigger value, RNG plumbing broken.
+- `testSafety_ChaosRollPicksFromUnionWithoutRevert` — context with `noOp.length = 1, moves.length = 2, switches.length = 3`. Force chaos to pick from each lane (3 RNG values targeting `idx ∈ {0, 1, 4}`). Assert the returned option matches the expected lane element each time. *Catches*: index-out-of-bounds in `_pickRandomValidOption`, lane stitching off-by-one.
 
 ---
 
-## Part 2 — Brainstorm: HARD difficulty
+## Part 2 — Diyu mode
 
-The goal: a tier above AGG_BONUS that triggers when the player keeps winning. AGG/AGG_BONUS reweights the existing helpers; HARD adds *new* capabilities that exploit information we already have but don't currently use.
+Diyu sits above Tartarus and converts the lookahead the CPU already has into actual punishment. Tartarus reweights existing helpers; Diyu adds *new* capabilities that exploit information we already read but don't currently use.
 
 ### What we have to work with
 
 **Free per-turn information** (already in CPUContext / IEngine getters):
 - The player's revealed move this turn (`playerMoveIndex`, `playerExtraData`) — this is the lookahead.
-- Every mon's full stats (HP, atk, def, spA, spD, speed, types).
+- Every mon's full stats (HP, atk, def, spA, spD, speed, types) and stat deltas.
 - Every mon's 4 move slots and their metadata (basePower, type, class, priority, stamina).
 - Stamina, status, stat-delta, KO bitmaps for both sides.
 - Turn count.
@@ -135,119 +191,163 @@ The goal: a tier above AGG_BONUS that triggers when the player keeps winning. AG
 - The player's *next* turn's intent.
 - Any way to reason across battles other than what we persist.
 
-**Persistent budget per player:** 256-bit slot, ~15 bits used by Part 1, ~241 free. Per-(player, mon) histograms are out of budget at scale; per-player aggregates are cheap.
+**Persistent budget per player:** 256-bit slot, ~15 bits used by Part 1, ~241 free.
 
-### Proposed HARD tier features
+### Diyu feature set
 
-Each is independently shippable. Pick the subset we want.
+Three independently-shippable features.
 
-#### (H1) Per-player lead memory — *uses storage*
+#### (D3) Win-condition lock-in — *free, no storage*
 
-Persist `lastSeenPlayerLead` (8 bits, opponent's mon ID at turn 0) across battles. When mode == HARD, override the turn-0 lead score: pick the candidate whose offensive matchup vs `lastSeenPlayerLead` is highest. Falls back to the standard aggressive scoring when:
-- We've never seen this player (`lastSeenPlayerLead == 0` and history length == 0), or
-- The player swapped openings (we still pre-position, and the standard turn-1 logic recovers).
+Two layered tweaks to defensive-switch evaluation in Diyu mode:
 
-Cost: 8 bits. Update at battle end via `getBattleEndContext().p0ActiveMonIndex` (active at end ≠ lead, but a separate read at turn 0 is needed). Cleaner: capture at turn 0 inside `calculateMove` (`ctx.turnId == 0`) using `playerExtraData`, write to storage there. One extra SSTORE per battle. **Highest single-feature impact** — turns rematches into a stacked deck.
+1. **Raised severe-damage threshold.** Pass `SEVERE_DAMAGE_PCT_DIYU` (60% — `SEVERE_DAMAGE_PCT_TARTARUS + 10`) into `_evaluateDefensiveSwitch`. Smaller incoming hits no longer scare the CPU into swapping out of a setup mon.
+2. **KO-bypass.** Inside `_evaluateDefensiveSwitch`, before checking the threshold, peek at our outgoing damage estimate against the opponent's current HP. If our best damage estimate would KO opp **within ±10% tolerance** (`bestOutDmg >= oppCurrentHp * 90 / 100`) **and** `_weGoFirst(...)` is true, short-circuit `return (false, 0)` regardless of `damagePctToUs`. Mirror P2's KO check but compare with the looser threshold — a sweeper that's *almost* going to KO shouldn't get pulled.
 
-Storage bits: **15-22**.
+Reuses `_findBestDamageMove`'s damage estimate (already computed by the caller) and the existing `_weGoFirst` helper. No new external calls.
 
-#### (H2) Last-mon kamikaze — *free, no storage*
+#### (D4) Reveal-move free-turn detection — *free, no storage*
 
-When `popcount(p0KOBitmap) == p0TeamSize - 1`, opponent has only their active mon left. In HARD mode:
-- Skip defensive switching entirely (P5).
-- Skip "preferred move" / "switch-in move" preferences (P6).
-- Force the highest-damage move regardless of incoming damage.
+Currently P3 catches `playerMoveIndex == SWITCH_MOVE_INDEX` and P4 catches `playerMoveIndex == NO_OP_MOVE_INDEX`. Add a Diyu-only branch ("P4.5") that catches **opponent revealing a Self/Other move with `basePower == 0`** — i.e. a setup, heal, hazard, or buff move that doesn't threaten us this turn. The move's class and base power are already cached in `_evaluateDefensiveSwitch`'s opener; lift that decode just above P5 so P4.5 can read it.
 
-Trivial to implement, big gain on closing battles. Especially valuable because the existing logic over-defends when it's already won.
-
-#### (H3) Lookahead-driven counter-switch — *free, no storage*
-
-P5 today only fires when `damagePctToUs >= SEVERE_DAMAGE_PCT`. HARD adds a second trigger using the lookahead move type:
-- Find a switch candidate that **resists** the player's revealed move type (effectiveness < 1.0x against it).
-- AND has a super-effective move (≥ 2.0x) against the player's active mon.
-- AND the candidate's expected damage taken from the revealed move is < 25%.
-
-If such a candidate exists, switch even when DEFAULT/AGGRESSIVE wouldn't. This converts the free info into a guaranteed tempo swing.
-
-#### (H4) Stamina-race exploitation — *free, no storage*
-
-Read opponent stamina via `getMonValueForBattle(... MonStateIndexName.Stamina)`. If opponent stamina ≤ 1 (forces them to rest next turn) AND we have a low-stamina move within the SIMILAR_DAMAGE_THRESHOLD band, prefer the low-stamina move. Goal: stay attacking while they rest. Already partially captured by the existing stamina tiebreak in `_findBestDamageMove`, but HARD escalates the bias when the opponent is one move from forced-rest.
-
-#### (H5) Setup-on-safe-turns — *free, no storage*
-
-Today P3/P4 (opponent switching/resting) just attack. HARD adds: if our active mon has a setup move (basePower == 0 with a known stat-boosting effect), use it on these safe turns instead of attacking. Detection is brittle without an explicit "is setup" flag — would require either reading the move's `EFFECT` address and matching against a registered set of setup effects, or extending move metadata. Probably out of scope unless we add a `MoveMeta.isSetup` bit.
-
-**Not recommended for the first HARD ship** — execution cost is high relative to other features.
-
-#### (H6) Opponent-side setup detection — *free, no storage*
-
-Read all four of the player active mon's move slots. If any is a known setup move (same detection problem as H5), bias toward switching out before they can capitalize. Same caveat as H5.
-
-#### (H7) Consecutive-loss escalation — *uses storage*
-
-Persist `consecCpuLosses` (4 bits, cap 15). Increment on CPU loss, reset on CPU win. Mode promotion:
-- AGGRESSIVE + lost AND `consecCpuLosses >= 2` → HARD (instead of DEFAULT)
-- HARD + won → AGG_BONUS (and reset losses)
-- HARD + lost → HARD (stays angry; capped by cap)
-
-This makes the CPU stick on HARD against a clearly-better player rather than oscillating.
-
-Storage bits: **23-26**.
-
-### Recommended HARD ship
-
-The combination (H1) + (H2) + (H3) + (H7) is the sharpest contrast for the implementation cost:
-- H1 turns rematches into a stacked deck.
-- H2 closes out winning battles cleanly.
-- H3 weaponizes the free lookahead in a way DEFAULT/AGGRESSIVE don't.
-- H7 keeps the CPU on HARD when it should be.
-
-H4 is cheap to add later if HARD still feels weak. H5/H6 wait until move metadata can flag setup moves cleanly.
-
-### Storage layout after Part 1 + recommended Part 2
+In P4.5, run a decision tree biased by "momentum":
 
 ```
-bits   0-7  : 8-bit rolling history
-bits   8-10 : mode (0 DEFAULT, 1 AGGRESSIVE, 2 AGG_BONUS, 3 HARD)
-bits  11-14 : history length, capped at 8
-bits  15-22 : lastSeenPlayerLead (mon ID, 0 = none)
-bits  23-26 : consecCpuLosses, capped at 15
-bits  27-... reserved
+momentum = (ourAliveCount > theirAliveCount)
+        || (ourAliveCount == theirAliveCount && ourActiveStamina >= theirActiveStamina)
 ```
 
-### State machine (full, with HARD)
+Order of options:
+1. **KO** — already caught by P2 upstream; nothing extra here.
+2. **Switch-in move** (if configured for active mon and not yet used) — same as P3/P4.
+3. **2HKO check**: if `bestEstimatedDamage * 2 >= oppCurrentHp`, take the damage move (we can finish in 2 turns and the free turn pays for itself).
+4. **Setup move** (if configured for active mon, not yet used this switch-in, and `momentum` is true) — see (D5).
+5. **Offensive/defensive switch**: run `_offensiveMatchupScore` against the opponent's active mon; pick the candidate that beats the matchup. Falls through to P5/P6 if no candidate clears the existing matchup score by ≥ `SWITCH_THRESHOLD`.
+6. **Default**: best damage move (P6 fallback).
+
+The KO short-circuit from (D3) still applies inside P5 if we fall through.
+
+#### (D5) Per-mon setup-move config — *minimal storage, reuses `monConfig`*
+
+Extend the existing `monConfig[monIndex][key]` map with a new key:
 
 ```
-DEFAULT    + won  → DEFAULT      (consecLosses = 0)
-DEFAULT    + lost → AGGRESSIVE   (consecLosses += 1)
-AGGRESSIVE + won  → AGG_BONUS    (consecLosses = 0)
-AGGRESSIVE + lost → if consecLosses >= 2 then HARD else DEFAULT (consecLosses += 1)
-AGG_BONUS  + won  → DEFAULT      (consecLosses = 0)
-AGG_BONUS  + lost → AGGRESSIVE   (consecLosses += 1)
-HARD       + won  → AGG_BONUS    (consecLosses = 0)
-HARD       + lost → HARD         (consecLosses += 1, capped)
+uint256 constant CONFIG_SETUP_MOVE = 2;       // stores (moveIndex + 1); 0 = unset
 ```
 
-### HARD-only behavior switches
+Set once at deploy via `setMonConfig(monIndex, CONFIG_SETUP_MOVE, slot + 1)` — sparse, one cold SLOAD per active-mon-turn, exact same shape as the existing `CONFIG_PREFERRED_MOVE` / `CONFIG_SWITCH_IN_MOVE` entries.
+
+Once-per-switch-in usage tracking: add a sibling bitmap to `switchInMoveUsedBitmap`. To avoid bloating per-battle storage, **pack both into one slot**:
+
+```
+mapping(bytes32 => uint256) public cpuMoveUsedBitmap;
+// bits   0-7  : switch-in move used per monIndex   (was switchInMoveUsedBitmap)
+// bits   8-15 : setup move used per monIndex
+```
+
+Rename the existing field to `cpuMoveUsedBitmap` and update all touch sites (`|= 1 << monIndex`, `& 1 << monIndex`, `&= ~(1 << monIndex)`) to take a base offset (0 for switch-in, 8 for setup). MONS_PER_TEAM caps at 8 per the validator, so both lanes fit cleanly.
+
+**Clear semantics on re-entry.** When the CPU switches a mon back into play (the four existing clear sites: turn-0 lead, P1 KO revenge, P5 defensive switch, P6 no-moves fallback), clear the switch-in lane (`bit monIndex`) unconditionally — same as today. Clear the setup lane (`bit 8 + monIndex`) **only if the incoming mon's current HP is above 50% of its max HP**. A low-HP mon coming back in is probably about to die; spending its turn on a stat-boost / hazard / heal is a bad trade, so we leave the "setup already used" bit set and let the D4 tree fall through to step 5/6 (matchup switch / damage).
+
+Extract a helper so the gate lives in one place:
+
+```
+function _clearMoveUsedBitsOnSwitchIn(bytes32 battleKey, uint256 monIdx) internal {
+    uint256 bitmap = cpuMoveUsedBitmap[battleKey];
+    bitmap &= ~(uint256(1) << monIdx);                         // always clear switch-in lane
+    uint32 maxHp = ENGINE.getMonValueForBattle(battleKey, 1, monIdx, MonStateIndexName.Hp);
+    int32 hpDelta = ENGINE.getMonStateForBattle(battleKey, 1, monIdx, MonStateIndexName.Hp);
+    if (hpDelta == CLEARED_MON_STATE_SENTINEL) hpDelta = 0;
+    int256 currentHp = int256(uint256(maxHp)) + int256(hpDelta);
+    if (currentHp * 2 > int256(uint256(maxHp))) {              // strictly above 50%
+        bitmap &= ~(uint256(1) << (monIdx + 8));               // clear setup lane
+    }
+    cpuMoveUsedBitmap[battleKey] = bitmap;
+}
+```
+
+Cost: one extra `getMonValueForBattle` + one `getMonStateForBattle` per CPU switch (≤4× per battle in normal play, plus once at turn 0). Acceptable. Replaces the four inline `switchInMoveUsedBitmap[battleKey] &= ~(1 << uint256(extraData))` lines.
+
+**Storage cleanup follow-up** (optional, separate PR): `cpuMoveUsedBitmap` currently accumulates one SSTORE-shaped slot per battle forever. Following the same pattern as `Engine` and `DefaultMatchmaker`, BetterCPU can extend `MappingAllocator` and key the bitmap through `_getStorageKey(battleKey)`, then free the key on battle end via the existing `_afterTurn` hook (or an `OnBattleEnd` engine hook). Out of scope for Part 2 — call it out and ship it as a cleanup if/when storage churn becomes a concern.
+
+**Setup move slots** (from `script/SetupMons.s.sol`):
+
+| Mon | Move | Slot | Why |
+|---|---|---|---|
+| Inutia | Initialize | 1 | +50% Atk/SpAtk, transfers on switch — already once-per-switch-in by design |
+| Malalien | Triple Think | 0 | +75% SpAtk, strongest single-turn setup in roster |
+| Pengym | Deadlift | 1 | +50% Atk/Def, hybrid |
+| Iblivion | Loop | 1 | +15/30/40% all stats by Baselight stacks (turn 2+) |
+| Aurox | Iron Wall | 2 | Damage regen + 25% HP first-use; pairs with Bull Rush recoil |
+| Ekineki | Nine Nine Nine | 2 | 90% crit next turn; one-shot offensive amplifier |
+| Embursa | Heat Beacon | 2 | +1 priority next turn + burn opp; tag for priority follow-up |
+| Nirvamma | Hard Reset | 0 | Trap: opp's next rest is punished, our next rest swaps; momentum tool |
+
+Mons not in the table have no setup move — (D4) skips step 4 and falls through to step 5/6.
+
+### Storage layout after Part 1 + Part 2
+
+```
+playerState[address]:
+  bits   8-9  : mode (0 HELL, 1 TARTARUS, 2 DIYU)
+  bit   10    : diyuPriorLoss flag
+
+monConfig[monIndex][key]:
+  key 0 = CONFIG_PREFERRED_MOVE   (unchanged)
+  key 1 = CONFIG_SWITCH_IN_MOVE   (unchanged)
+  key 2 = CONFIG_SETUP_MOVE       (new)
+
+cpuMoveUsedBitmap[battleKey]:
+  bits   0-7  : switch-in used per monIndex
+  bits   8-15 : setup used per monIndex
+```
+
+### Diyu-only behavior switches
 
 In `calculateMove`, after computing `mode` and `aggressive`:
 
 ```
-bool hard = (mode == MODE_HARD);
+bool diyu = (mode == MODE_DIYU);
 ```
 
-Branches:
-- (H1) Inside `_selectLead`: if `hard && lastSeenLead != 0`, use `_offensiveMatchupScore(battleKey, candidateMonIndex, lastSeenLead)` as the dominant score; tiebreak with the standard score.
-- (H2) Before P5: if `hard` and opponent has only the active mon left, jump straight to `_findBestDamageMove`, skipping `_evaluateDefensiveSwitch` and the preferred-move/switch-in-move logic.
-- (H3) Inside P5 evaluation: in addition to the existing "switch when severe damage" trigger, fire when the lookahead-counter conditions described in H3 are met.
+- (D3) Inside `_evaluateDefensiveSwitch`: caller picks the Diyu threshold; helper additionally short-circuits if Diyu and outgoing-damage estimate within 10% of `oppCurrentHp` and `_weGoFirst`.
+- (D4) Between P4 and P5 (new "P4.5"): if `diyu` and the opponent's revealed move is Self/Other with `basePower == 0`, enter the free-turn decision tree above.
+- (D5) The (D4) tree consults `monConfig[activeMonIndex][CONFIG_SETUP_MOVE]` and the upper lane of `cpuMoveUsedBitmap[battleKey]`.
 
-### Tests for HARD (additive)
+### Tests for Diyu (additive)
 
-- `testHard_LeadCountersLastSeenLead` — first battle establishes `lastSeenPlayerLead`; second battle (CPU is in HARD via H7) picks a different turn-0 switch than aggressive would.
-- `testHard_LastMonKamikazeIgnoresDefensiveSwitch` — opponent down to 1 mon, scenario where AGGRESSIVE would still defensive-switch; HARD attacks.
-- `testHard_LookaheadCounterSwitchFiresBelowSevereThreshold` — `damagePctToUs` < 50%, but a switch candidate resists the move and has SE counter; HARD switches.
-- `testHard_PromotedAfterTwoConsecLosses` — two CPU losses in a row out of AGGRESSIVE → HARD; one in non-AGGRESSIVE state doesn't.
-- `testHard_ResetsToAggBonusOnWin`.
+State-machine tests for Diyu are consolidated in Part 1's `testStateMachine_LadderClimbAndReset` — don't duplicate. The tests below are Diyu-only behaviors. Each ramp test runs paired TARTARUS + DIYU on the same synthetic team.
+
+#### (D3) Win-condition lock-in — 3 tests
+
+- `testRamp_DiyuRaisedThresholdAt55Pct` — incoming 55%, no outgoing-KO conditions. TARTARUS switches (>50); DIYU stays (<60). *Catches*: threshold not raised, or raised too far.
+- `testRamp_DiyuKOBypassStaysInForTheKO` — outgoing damage ≥ 90% of opp current HP, incoming 65%, CPU outspeeds. TARTARUS switches; DIYU stays and attacks. *Catches*: KO-bypass missing or wrong tolerance.
+- `testSafety_DiyuKOBypassRequiresOutspeed` — same as above, opp outspeeds. DIYU switches. *Catches*: CPU staying in for a KO it won't reach — suicide.
+
+#### (D4) Free-turn detection — 3 tests
+
+- `testRamp_DiyuFreeTurnGating` — table-driven over (mode, opp move):
+  - (DIYU, Other bp=0) → enters D4
+  - (DIYU, Physical bp>0) → skips D4, normal P5
+  - (TARTARUS, Other bp=0) → skips D4
+  Constructed so D4 outcome differs from P5 outcome on this team. *Catches*: class/bp gate wrong, mode gate wrong.
+- `testRamp_DiyuFreeTurnSetupVsMatchupSwitch` — opp reveals Other bp=0, setup move configured for active mon, `bestDmg * 2 < oppCurrentHp`. Two runs on the same setup:
+  - momentum=true (CPU 4 alive, opp 3) → DIYU plays setup move.
+  - momentum=false (CPU 3 alive, opp 4) and switch candidate beats current matchup by ≥ `SWITCH_THRESHOLD` → DIYU switches.
+  *Catches*: tree ordering inverted, momentum computation wrong, switch candidate ranking broken.
+- `testSafety_DiyuFreeTurn_2HKOBeatsSetup` — momentum=true, setup configured, but `bestDmg * 2 >= oppCurrentHp`. DIYU plays best-damage; setup lane bit NOT set after the turn. *Catches*: setup priority blocking a winning damage trade.
+
+#### (D5) Setup bitmap + HP-gated clear — 3 tests
+
+- `testDiyu_SetupOncePerSwitchIn` — turn N setup plays (lane bit `8 + monIdx` set). Turn N+1: same opp 0-power reveal, momentum still true, no switch in between. DIYU does NOT replay setup; falls through to step 5/6. *Catches*: bit not being set, or D4 step 4 not checking it.
+- `testRamp_HpGatedClearAbove50ClearsBelowDoesNot` — single test, two scenarios on the same setup:
+  - Mon switches out at full HP, switches back at 80% HP → setup bit cleared, setup playable again on next free-turn.
+  - Mon takes damage to 50% before switching back → bit stays set, setup not playable.
+  *Catches*: HP gate inverted, missing, or boundary off-by-one (strict `>` not `≥`).
+- `testSafety_SwitchInClearsAndFreshMonNoRevert` — two assertions:
+  - Switch-in lane (`bit monIdx`) clears on every re-entry regardless of HP (verify at 10% HP); setup lane is independently gated.
+  - Fresh mon (never switched in, HP delta == `CLEARED_MON_STATE_SENTINEL`) runs through `_clearMoveUsedBitsOnSwitchIn` without reverting.
+  *Catches*: switch-in lane accidentally tied to HP gate; sentinel HP delta not handled.
 
 ---
 
@@ -256,11 +356,4 @@ Branches:
 1. `forge build` (timeout 360000ms — see CLAUDE memory note on build timeout)
 2. `forge test --match-contract BetterCPUTest -vvv`
 3. Full suite: `forge test` to confirm no regression in other CPU tests, engine tests, or gas snapshots
-4. Inspect `snapshots/BetterCPUInlineGasTest.json` and `snapshots/EngineGasTest.json` — `_afterTurn` adds ~10 gas/turn across all CPUs; flag if larger.
-
-## Risks
-
-- `CPUMoveManager.selectMove` restructure must preserve early-return semantics so the hook never fires on `NotP0` revert or `winnerIndex != 2` early return. The cleanest shape is one trailing `_afterTurn(battleKey, p0)` call with the three execute branches reachable via if/else (no early `return` from inside them).
-- H1 (lead memory) writes during turn 0 of every battle — one extra SSTORE on the first turn, hot slot so cheap, but verify it doesn't show up in inline-engine gas tests.
-- H3 (lookahead counter-switch) reads opponent move metadata which is already cached locally for the existing P5 path — no extra calls if we plumb the existing `oppMoveSlot`/`oppMoveClass` through.
-- Aggressive `_selectBestSwitch` reuses lead's offensive-only scoring; existing tests that assert "least damage taken" behavior in DEFAULT mode keep passing because `aggressive=false` preserves old logic.
+4. Inspect `snapshots/BetterCPUInlineGasTest.json` and `snapshots/EngineGasTest.json` — `_afterTurn` adds ~10 gas/turn across all CPUs; flag if larger. The (D4) lookahead branch adds another ~30 gas in Diyu only; flag if it leaks into the HELL/TARTARUS paths.

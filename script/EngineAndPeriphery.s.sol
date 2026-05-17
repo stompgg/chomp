@@ -61,6 +61,18 @@ contract EngineAndPeriphery is Script {
         BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
+        // Diyu D5: per-mon setup moves. Value is stored as (slot + 1); see BetterCPU.monConfig.
+        // setMonConfig writes plain storage and does not require the mon to be registered yet.
+        uint256 setupKey = betterCPU.CONFIG_SETUP_MOVE();
+        betterCPU.setMonConfig(1,  setupKey, 2); // Inutia    -> Initialize    (slot 1)
+        betterCPU.setMonConfig(2,  setupKey, 1); // Malalien  -> Triple Think  (slot 0)
+        betterCPU.setMonConfig(3,  setupKey, 2); // Iblivion  -> Loop          (slot 1)
+        betterCPU.setMonConfig(6,  setupKey, 2); // Pengym    -> Deadlift      (slot 1)
+        betterCPU.setMonConfig(7,  setupKey, 3); // Embursa   -> Heat Beacon   (slot 2)
+        betterCPU.setMonConfig(9,  setupKey, 3); // Aurox     -> Iron Wall     (slot 2)
+        betterCPU.setMonConfig(11, setupKey, 3); // Ekineki   -> Nine Nine Nine (slot 2)
+        betterCPU.setMonConfig(12, setupKey, 1); // Nirvamma  -> Hard Reset    (slot 0)
+
         // Whitelist both CPUs so users can setOpponentTeam against them.
         {
             address[] memory toAllow = new address[](2);
