@@ -58,6 +58,19 @@ library ValidatorLogic {
         return true;
     }
 
+    /// @notice Variant of validateSpecificMoveSelection that accepts a pre-decoded stamina cost,
+    ///         avoiding the external `MoveSlotLib.stamina` call when metadata has already been
+    ///         fetched (e.g. via `MoveSlotLib.decodeMeta`).
+    function validateSpecificMoveSelectionWithStamina(
+        uint32 moveStaminaCost,
+        uint32 baseStamina,
+        int32 staminaDelta
+    ) internal pure returns (bool valid) {
+        int256 effectiveDelta = staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
+        uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
+        return uint256(moveStaminaCost) <= currentStamina;
+    }
+
     /// @notice Validates a switch to a different mon
     /// @param turnId Current turn ID
     /// @param activeMonIndex The current active mon index for this player

@@ -14,7 +14,7 @@ import {CPUMoveManager} from "./CPUMoveManager.sol";
 import {ICPU} from "./ICPU.sol";
 
 import {ExtraDataType} from "../Enums.sol";
-import {Battle, CPUContext, CustomBattleProposal, ProposedBattle, RevealedMove} from "../Structs.sol";
+import {Battle, CPUContext, CustomBattleProposal, MoveMeta, ProposedBattle, RevealedMove} from "../Structs.sol";
 
 abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     uint256 internal immutable NUM_MOVES;
@@ -48,7 +48,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         public
         returns (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches)
     {
-        return _calculateValidMoves(ENGINE.getCPUContext(battleKey));
+        (noOp, moves, switches,) = _calculateValidMoves(ENGINE.getCPUContext(battleKey));
     }
 
     /**
@@ -57,7 +57,12 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
      */
     function _calculateValidMoves(CPUContext memory ctx)
         internal
-        returns (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches)
+        returns (
+            RevealedMove[] memory noOp,
+            RevealedMove[] memory moves,
+            RevealedMove[] memory switches,
+            MoveMeta[4] memory metas
+        )
     {
         uint256 nonce = nonceToUse;
         if (ctx.turnId == 0) {
@@ -66,7 +71,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             for (uint256 i = 0; i < teamSize; i++) {
                 switchChoices[i] = RevealedMove({moveIndex: SWITCH_MOVE_INDEX, salt: 0, extraData: uint16(i)});
             }
-            return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
+            return (new RevealedMove[](0), new RevealedMove[](0), switchChoices, metas);
         }
 
         uint256 activeMonIndex = ctx.p1ActiveMonIndex;
@@ -94,8 +99,16 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     extraData: uint16(validSwitchIndices[i])
                 });
             }
-            return (new RevealedMove[](0), new RevealedMove[](0), switchChoices);
+            return (new RevealedMove[](0), new RevealedMove[](0), switchChoices, metas);
         }
+
+        // Build metadata for each move slot ONCE so the validation loop, the extraDataType
+        // branches, and the caller's decision tree all share the same data — saves the
+        // per-move-slot external `stamina` + `extraDataType` calls.
+        for (uint256 i; i < NUM_MOVES; ++i) {
+            metas[i] = MoveSlotLib.decodeMeta(ctx.cpuActiveMonMoveSlots[i], ENGINE, ctx.battleKey, 1, activeMonIndex);
+        }
+
         uint8[] memory validMoveIndices = new uint8[](NUM_MOVES);
         uint16[] memory validMoveExtraData = new uint16[](NUM_MOVES);
         uint256 validMoveCount;
@@ -105,9 +118,8 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
             uint16 extraDataToUse = 0;
             // Inline moves always have ExtraDataType.None — skip extraData logic
             if (!MoveSlotLib.isInline(rawMoveSlot)) {
-                IMoveSet move = MoveSlotLib.toIMoveSet(rawMoveSlot);
-                if (move.extraDataType() == ExtraDataType.SelfTeamIndex) {
-                    // Skip if there are no valid switches
+                ExtraDataType edt = metas[i].extraDataType;
+                if (edt == ExtraDataType.SelfTeamIndex) {
                     if (validSwitchCount == 0) {
                         continue;
                     }
@@ -115,7 +127,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                         _sampleRNG(keccak256(abi.encode(nonce++, ctx.battleKey, block.timestamp))) % validSwitchCount;
                     extraDataToUse = uint16(validSwitchIndices[randomIndex]);
                     validMoveExtraData[validMoveCount] = extraDataToUse;
-                } else if (move.extraDataType() == ExtraDataType.OpponentNonKOTeamIndex) {
+                } else if (edt == ExtraDataType.OpponentNonKOTeamIndex) {
                     uint256 opponentTeamSize = ctx.p0TeamSize;
                     uint256 koBitmap = ctx.p0KOBitmap;
                     uint256[] memory validTargets = new uint256[](opponentTeamSize);
@@ -134,7 +146,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                     validMoveExtraData[validMoveCount] = extraDataToUse;
                 }
             }
-            if (_validateCPUMove(ctx, uint8(i), extraDataToUse)) {
+            if (_validateCPUMoveWithMeta(ctx, uint8(i), extraDataToUse, metas[i])) {
                 validMoveIndices[validMoveCount++] = uint8(i);
             }
         }
@@ -153,7 +165,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         noOpArray[0] = RevealedMove({moveIndex: NO_OP_MOVE_INDEX, salt: 0, extraData: 0});
 
         nonceToUse = nonce;
-        return (noOpArray, validMovesArray, validSwitchesArray);
+        return (noOpArray, validMovesArray, validSwitchesArray, metas);
     }
 
     function _sampleRNG(bytes32 seed) internal view returns (uint256) {
@@ -179,6 +191,18 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     {
         if (ctx.validator == address(0)) {
             return _inlineValidateCPUMove(ctx, moveIndex, extraData);
+        }
+        return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
+    }
+
+    /// @notice Variant of `_validateCPUMove` that uses a pre-decoded `MoveMeta` for stamina,
+    ///         avoiding the redundant external `MoveSlotLib.stamina` call in the hot path.
+    function _validateCPUMoveWithMeta(CPUContext memory ctx, uint8 moveIndex, uint16 extraData, MoveMeta memory meta)
+        internal
+        returns (bool)
+    {
+        if (ctx.validator == address(0)) {
+            return _inlineValidateCPUMoveWithMeta(ctx, moveIndex, extraData, meta);
         }
         return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
     }
@@ -214,6 +238,32 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 extraData,
                 ctx.cpuActiveMonBaseStamina,
                 ctx.cpuActiveMonStaminaDelta
+            );
+        }
+        return true;
+    }
+
+    function _inlineValidateCPUMoveWithMeta(
+        CPUContext memory ctx,
+        uint8 moveIndex,
+        uint16 extraData,
+        MoveMeta memory meta
+    ) private view returns (bool) {
+        (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) = ValidatorLogic.validatePlayerMoveBasics(
+            moveIndex, ctx.turnId, ctx.cpuActiveMonKnockedOut, NUM_MOVES
+        );
+        if (!basicValid) return false;
+        if (isNoOp) return true;
+        if (isSwitch) {
+            uint256 monToSwitchIndex = uint256(extraData);
+            bool isTargetKnockedOut = (ctx.p1KOBitmap & (1 << monToSwitchIndex)) != 0;
+            return ValidatorLogic.validateSwitch(
+                ctx.turnId, ctx.p1ActiveMonIndex, monToSwitchIndex, isTargetKnockedOut, ctx.p1TeamSize
+            );
+        }
+        if (isRegularMove) {
+            return ValidatorLogic.validateSpecificMoveSelectionWithStamina(
+                meta.stamina, ctx.cpuActiveMonBaseStamina, ctx.cpuActiveMonStaminaDelta
             );
         }
         return true;

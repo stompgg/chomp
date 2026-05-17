@@ -14,7 +14,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 contract Chronoffense is IMoveSet {
     uint32 public constant BP_COEFFICIENT = 20;
     uint32 public constant BP_CAP = 999;
-    uint8 public constant SP_DEF_BOOST_PERCENT = 25;
+    uint8 public constant BOOST_PERCENT = 25;
 
     StatBoosts immutable STAT_BOOSTS;
 
@@ -48,13 +48,18 @@ contract Chronoffense is IMoveSet {
             engine.setGlobalKV(key, uint192(turnId + 1));
 
             // Buff SpDef by 25%
-            StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
+            StatBoostToApply[] memory boosts = new StatBoostToApply[](2);
             boosts[0] = StatBoostToApply({
                 stat: MonStateIndexName.SpecialDefense,
-                boostPercent: SP_DEF_BOOST_PERCENT,
+                boostPercent: BOOST_PERCENT,
                 boostType: StatBoostType.Multiply
             });
-            STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Perm);
+            boosts[1] = StatBoostToApply({
+                stat: MonStateIndexName.Defense,
+                boostPercent: BOOST_PERCENT,
+                boostType: StatBoostType.Multiply
+            });
+            STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Temp);
             return;
         }
 

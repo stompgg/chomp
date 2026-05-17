@@ -26,7 +26,7 @@ contract OkayCPU is CPU {
         override
         returns (uint128 moveIndex, uint16 extraData)
     {
-        (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
+        (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches,) =
             _calculateValidMoves(ctx);
 
         bytes32 battleKey = ctx.battleKey;

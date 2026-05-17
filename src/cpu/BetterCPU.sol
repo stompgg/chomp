@@ -113,8 +113,12 @@ contract BetterCPU is CPU {
         override
         returns (uint128 moveIndex, uint16 extraData)
     {
-        (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches) =
-            _calculateValidMoves(ctx);
+        (
+            RevealedMove[] memory noOp,
+            RevealedMove[] memory moves,
+            RevealedMove[] memory switches,
+            MoveMeta[4] memory metas
+        ) = _calculateValidMoves(ctx);
 
         bytes32 battleKey = ctx.battleKey;
 
@@ -151,14 +155,7 @@ contract BetterCPU is CPU {
             return (moveIndex, extraData);
         }
 
-        // Decode all four move metas once for reuse across the decision tree below.
-        // Inline slots: pure bit-unpack (~30 gas). External slots: one IMoveSet.getMeta call
-        // each (~3-4k cold). The decision tree (P2-P6) reads metadata across multiple helpers,
-        // so decoding once amortizes across ~8-12 metadata accesses per turn.
-        MoveMeta[4] memory metas;
-        for (uint256 i; i < NUM_MOVES; ++i) {
-            metas[i] = MoveSlotLib.decodeMeta(ctx.cpuActiveMonMoveSlots[i], ENGINE, battleKey, 1, activeMonIndex);
-        }
+        // metas[] is now pre-built by `_calculateValidMoves` and reused here.
 
         // Resolve opponent target: if switching, target the incoming mon
         if (playerMoveIndex == SWITCH_MOVE_INDEX) {
@@ -167,11 +164,13 @@ contract BetterCPU is CPU {
 
         // Cache damage context (us → opponent) — only valid for active mons
         DamageCalcContext memory attackCtx = ENGINE.getDamageCalcContext(battleKey, 1, 0);
+        // Compute outgoing damages once and reuse across P2/P3/P4/P6/D3/D4.
+        uint256[] memory damages = _computeMoveDamages(attackCtx, metas, moves);
 
         // ══════════════════════════════════════════
         // P2: Can We KO the Opponent?
         // ══════════════════════════════════════════
-        int256 koMoveIdx = _findKOMove(battleKey, opponentMonIndex, attackCtx, metas, moves);
+        int256 koMoveIdx = _findKOMove(battleKey, opponentMonIndex, metas, moves, damages);
         if (koMoveIdx >= 0) {
             bool opponentCanKOUs = _canOpponentKOUs(ctx, activeMonIndex, opponentMonIndex, playerMoveIndex);
             if (
@@ -196,7 +195,7 @@ contract BetterCPU is CPU {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
             if (moves.length > 0) {
-                int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
+                int256 bestMove = _findBestDamageMove(metas, moves, damages);
                 if (bestMove >= 0) {
                     return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
                 }
@@ -216,7 +215,7 @@ contract BetterCPU is CPU {
             if (switchInMove >= 0) {
                 return (moves[uint256(switchInMove)].moveIndex, moves[uint256(switchInMove)].extraData);
             }
-            int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
+            int256 bestMove = _findBestDamageMove(metas, moves, damages);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -227,7 +226,7 @@ contract BetterCPU is CPU {
         // P4.5: Diyu D4 free-turn — opp revealed a 0-power Self/Other move (setup, heal, hazard)
         // ══════════════════════════════════════════
         if (diyu && _isFreeTurnReveal(battleKey, opponentMonIndex, playerMoveIndex)) {
-            (bool picked, uint128 freeM, uint16 freeE) = _diyuFreeTurnPick(ctx, attackCtx, metas, moves, switches);
+            (bool picked, uint128 freeM, uint16 freeE) = _diyuFreeTurnPick(ctx, metas, moves, switches, damages);
             if (picked) return (freeM, freeE);
         }
 
@@ -242,7 +241,7 @@ contract BetterCPU is CPU {
             // stay in for the kill regardless of incoming damage.
             bool koBypassFires = diyu
                 && moves.length > 0
-                && _checkKOBypass(ctx, battleKey, activeMonIndex, opponentMonIndex, attackCtx, metas, moves, playerMoveIndex);
+                && _checkKOBypass(ctx, battleKey, activeMonIndex, opponentMonIndex, metas, moves, damages, playerMoveIndex);
             (bool shouldSwitch, uint256 switchIdx) = _evaluateDefensiveSwitch(
                 ctx, activeMonIndex, opponentMonIndex, playerMoveIndex, switches, severeDamagePct, koBypassFires
             );
@@ -268,7 +267,7 @@ contract BetterCPU is CPU {
                 return (moves[uint256(preferredMove)].moveIndex, moves[uint256(preferredMove)].extraData);
             }
 
-            int256 bestMove = _findBestDamageMove(attackCtx, metas, moves);
+            int256 bestMove = _findBestDamageMove(metas, moves, damages);
             if (bestMove >= 0) {
                 return (moves[uint256(bestMove)].moveIndex, moves[uint256(bestMove)].extraData);
             }
@@ -368,15 +367,34 @@ contract BetterCPU is CPU {
 
     // ============ MOVE SELECTION HELPERS ============
 
-    /// @notice Find a move that can KO the opponent (cheapest stamina among KO moves)
-    function _findKOMove(
-        bytes32 battleKey,
-        uint256 defenderMonIndex,
+    /// @notice Compute outgoing damage for every Physical/Special move. Built once per turn and
+    ///         threaded through `_findKOMove` / `_findBestDamageMove` so they don't recompute.
+    function _computeMoveDamages(
         DamageCalcContext memory ctx,
         MoveMeta[4] memory metas,
         RevealedMove[] memory moves
+    ) internal view returns (uint256[] memory damages) {
+        damages = new uint256[](moves.length);
+        for (uint256 i; i < moves.length;) {
+            MoveMeta memory meta = metas[moves[i].moveIndex];
+            if (meta.moveClass == MoveClass.Physical || meta.moveClass == MoveClass.Special) {
+                damages[i] = _estimateDamageMeta(ctx, meta);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @notice Find a move that can KO the opponent (cheapest stamina among KO moves).
+    ///         Damages are pre-computed by the caller via `_computeMoveDamages`.
+    function _findKOMove(
+        bytes32 battleKey,
+        uint256 defenderMonIndex,
+        MoveMeta[4] memory metas,
+        RevealedMove[] memory moves,
+        uint256[] memory damages
     ) internal view returns (int256) {
-        // Get defender's remaining HP
         uint32 defenderBaseHp = ENGINE.getMonValueForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
         int32 defenderHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, defenderMonIndex, MonStateIndexName.Hp);
         int256 defenderCurrentHp = int256(uint256(defenderBaseHp)) + int256(defenderHpDelta);
@@ -386,18 +404,10 @@ contract BetterCPU is CPU {
         uint32 bestStaminaCost = type(uint32).max;
 
         for (uint256 i; i < moves.length;) {
-            MoveMeta memory meta = metas[moves[i].moveIndex];
-            if (meta.moveClass != MoveClass.Physical && meta.moveClass != MoveClass.Special) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-
-            uint256 estimatedDamage = _estimateDamageMeta(ctx, meta);
-            if (estimatedDamage >= uint256(defenderCurrentHp)) {
-                if (meta.stamina < bestStaminaCost) {
-                    bestStaminaCost = meta.stamina;
+            if (damages[i] >= uint256(defenderCurrentHp)) {
+                uint32 stamina = metas[moves[i].moveIndex].stamina;
+                if (stamina < bestStaminaCost) {
+                    bestStaminaCost = stamina;
                     bestMoveIndex = int256(i);
                 }
             }
@@ -408,31 +418,21 @@ contract BetterCPU is CPU {
         return bestMoveIndex;
     }
 
-    /// @notice Find best damaging move with stamina cost tiebreaking
+    /// @notice Find best damaging move with stamina cost tiebreaking. Damages pre-computed.
     function _findBestDamageMove(
-        DamageCalcContext memory ctx,
         MoveMeta[4] memory metas,
-        RevealedMove[] memory moves
-    ) internal view returns (int256) {
+        RevealedMove[] memory moves,
+        uint256[] memory damages
+    ) internal pure returns (int256) {
         int256 bestMoveIndex = -1;
         uint256 bestDamage = 0;
         uint32 bestStaminaCost = type(uint32).max;
 
-        // Cache damage and stamina in memory to avoid redundant external calls
-        uint256[] memory damages = new uint256[](moves.length);
-        uint32[] memory costs = new uint32[](moves.length);
-
-        // First pass: compute + cache damage and stamina (metadata pre-decoded by caller)
         for (uint256 i; i < moves.length;) {
-            MoveMeta memory meta = metas[moves[i].moveIndex];
-            if (meta.moveClass == MoveClass.Physical || meta.moveClass == MoveClass.Special) {
-                damages[i] = _estimateDamageMeta(ctx, meta);
-                costs[i] = meta.stamina;
-                if (damages[i] > bestDamage) {
-                    bestDamage = damages[i];
-                    bestStaminaCost = costs[i];
-                    bestMoveIndex = int256(i);
-                }
+            if (damages[i] > bestDamage) {
+                bestDamage = damages[i];
+                bestStaminaCost = metas[moves[i].moveIndex].stamina;
+                bestMoveIndex = int256(i);
             }
             unchecked {
                 ++i;
@@ -441,11 +441,12 @@ contract BetterCPU is CPU {
 
         if (bestDamage == 0) return bestMoveIndex;
 
-        // Second pass: scan cached arrays only (cheap memory reads)
+        // Cheapest-stamina tiebreak within 85% of best damage.
         uint256 threshold = (bestDamage * SIMILAR_DAMAGE_THRESHOLD) / 100;
         for (uint256 i; i < moves.length;) {
-            if (damages[i] >= threshold && costs[i] < bestStaminaCost) {
-                bestStaminaCost = costs[i];
+            uint32 stamina = metas[moves[i].moveIndex].stamina;
+            if (damages[i] >= threshold && stamina < bestStaminaCost) {
+                bestStaminaCost = stamina;
                 bestMoveIndex = int256(i);
             }
             unchecked {
@@ -697,15 +698,15 @@ contract BetterCPU is CPU {
         bytes32 battleKey,
         uint256 activeMonIndex,
         uint256 opponentMonIndex,
-        DamageCalcContext memory attackCtx,
         MoveMeta[4] memory metas,
         RevealedMove[] memory moves,
+        uint256[] memory damages,
         uint8 playerMoveIndex
     ) internal view returns (bool) {
-        int256 bestIdx = _findBestDamageMove(attackCtx, metas, moves);
+        int256 bestIdx = _findBestDamageMove(metas, moves, damages);
         if (bestIdx < 0) return false;
 
-        uint256 bestDmg = _estimateDamageMeta(attackCtx, metas[moves[uint256(bestIdx)].moveIndex]);
+        uint256 bestDmg = damages[uint256(bestIdx)];
         if (bestDmg == 0) return false;
 
         uint32 oppMaxHp = ENGINE.getMonValueForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
@@ -980,10 +981,10 @@ contract BetterCPU is CPU {
     ///         (momentum ? setup : matchup switch) → best damage fallback.
     function _diyuFreeTurnPick(
         CPUContext memory ctx,
-        DamageCalcContext memory attackCtx,
         MoveMeta[4] memory metas,
         RevealedMove[] memory moves,
-        RevealedMove[] memory switches
+        RevealedMove[] memory switches,
+        uint256[] memory damages
     ) internal returns (bool picked, uint128 moveIndex, uint16 extraData) {
         bytes32 battleKey = ctx.battleKey;
         uint256 activeMonIndex = ctx.p1ActiveMonIndex;
@@ -995,9 +996,9 @@ contract BetterCPU is CPU {
             return (true, m.moveIndex, m.extraData);
         }
 
-        int256 bestIdx = _findBestDamageMove(attackCtx, metas, moves);
+        int256 bestIdx = _findBestDamageMove(metas, moves, damages);
         if (bestIdx >= 0) {
-            uint256 bestDmg = _estimateDamageMeta(attackCtx, metas[moves[uint256(bestIdx)].moveIndex]);
+            uint256 bestDmg = damages[uint256(bestIdx)];
             uint32 oppMaxHp = ENGINE.getMonValueForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
             int32 oppHpDelta = ENGINE.getMonStateForBattle(battleKey, 0, opponentMonIndex, MonStateIndexName.Hp);
             int256 oppCurrentHp = int256(uint256(oppMaxHp)) + int256(oppHpDelta);
