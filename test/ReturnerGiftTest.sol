@@ -61,7 +61,7 @@ contract ReturnerGiftTest is Test {
         // Alice gets a live team with mons [0,1,2,3] so tier 2..6 claims can resolve.
         uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
         for (uint256 i; i < MONS_PER_TEAM; ++i) aliceTeam[i] = i;
-        registry.createTeamForUser(ALICE, aliceTeam);
+        registry.setTeamForUser(ALICE, 0, aliceTeam, new uint8[](MONS_PER_TEAM));
 
         gift = new ReturnerGift(
             IGachaPointsAssigner(address(registry)),

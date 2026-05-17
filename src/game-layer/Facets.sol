@@ -19,6 +19,18 @@ abstract contract Facets {
     uint256 internal constant FACET_ASSIGNED_MASK = 0xF;
     uint8   internal constant TOTAL_FACETS = 12;
 
+    // Facet magnitudes are boost-indexed: the boosted stat determines both the boost%
+    // (gain on the boosted stat) and the cost% (loss on the nerfed stat). Speed boosts
+    // carry a heavier cost so they can't cheaply break speed ties.
+    uint256 internal constant BOOST_PCT_HP    = 5;
+    uint256 internal constant COST_PCT_HP     = 5;
+    uint256 internal constant BOOST_PCT_ATK   = 5;
+    uint256 internal constant COST_PCT_ATK    = 5;
+    uint256 internal constant BOOST_PCT_DEF   = 5;
+    uint256 internal constant COST_PCT_DEF    = 5;
+    uint256 internal constant BOOST_PCT_SPEED = 5;
+    uint256 internal constant COST_PCT_SPEED  = 10;
+
     // Per-mon (16 bits): bits 0-11 = unlockedBitmap, bits 12-15 = assignedFacetId (0 = none, 1-12).
     // 16 mons per uint256 slot, keyed by monId / MONS_PER_FACET_BUCKET.
     mapping(address player => mapping(uint256 monBucket => uint256 packed)) public facetData;
@@ -105,33 +117,42 @@ abstract contract Facets {
             return delta; // all zeros
         }
         (StatGroup boost, StatGroup nerf) = _facetDef(facetId);
-        _applyGroupDelta(delta, boost, base, true);
-        _applyGroupDelta(delta, nerf, base, false);
+        (uint256 boostPct, uint256 costPct) = _facetPctsForBoost(boost);
+        _applyGroupDelta(delta, boost, base, true, boostPct);
+        _applyGroupDelta(delta, nerf, base, false, costPct);
+    }
+
+    function _facetPctsForBoost(StatGroup boost) private pure returns (uint256 boostPct, uint256 costPct) {
+        if (boost == StatGroup.HP)  return (BOOST_PCT_HP,  COST_PCT_HP);
+        if (boost == StatGroup.Atk) return (BOOST_PCT_ATK, COST_PCT_ATK);
+        if (boost == StatGroup.Def) return (BOOST_PCT_DEF, COST_PCT_DEF);
+        return (BOOST_PCT_SPEED, COST_PCT_SPEED);
     }
 
     function _applyGroupDelta(
         StatDelta memory delta,
         StatGroup group,
         MonStats memory base,
-        bool isBoost
+        bool isBoost,
+        uint256 pct
     ) private pure {
-        // ±5% of base, integer-truncated.
+        // pct% of base, integer-truncated.
         if (group == StatGroup.HP) {
-            int16 d = int16(int256(uint256(base.hp) * 5 / 100));
+            int16 d = int16(int256(uint256(base.hp) * pct / 100));
             delta.hp = isBoost ? d : -d;
         } else if (group == StatGroup.Atk) {
-            int16 dAtk = int16(int256(uint256(base.attack) * 5 / 100));
-            int16 dSpAtk = int16(int256(uint256(base.specialAttack) * 5 / 100));
+            int16 dAtk = int16(int256(uint256(base.attack) * pct / 100));
+            int16 dSpAtk = int16(int256(uint256(base.specialAttack) * pct / 100));
             delta.atk = isBoost ? dAtk : -dAtk;
             delta.spAtk = isBoost ? dSpAtk : -dSpAtk;
         } else if (group == StatGroup.Def) {
-            int16 dDef = int16(int256(uint256(base.defense) * 5 / 100));
-            int16 dSpDef = int16(int256(uint256(base.specialDefense) * 5 / 100));
+            int16 dDef = int16(int256(uint256(base.defense) * pct / 100));
+            int16 dSpDef = int16(int256(uint256(base.specialDefense) * pct / 100));
             delta.def = isBoost ? dDef : -dDef;
             delta.spDef = isBoost ? dSpDef : -dSpDef;
         } else {
             // Speed
-            int16 d = int16(int256(uint256(base.speed) * 5 / 100));
+            int16 d = int16(int256(uint256(base.speed) * pct / 100));
             delta.speed = isBoost ? d : -d;
         }
     }

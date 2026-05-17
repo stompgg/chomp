@@ -10,6 +10,7 @@ import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
+import {FairCPU} from "../src/cpu/FairCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
@@ -73,11 +74,19 @@ contract EngineAndPeriphery is Script {
         betterCPU.setMonConfig(11, setupKey, 3); // Ekineki   -> Nine Nine Nine (slot 2)
         betterCPU.setMonConfig(12, setupKey, 1); // Nirvamma  -> Hard Reset    (slot 0)
 
-        // Whitelist both CPUs so users can setOpponentTeam against them.
+        // FairCPU: heuristic CPU that does not peek at the player's current-turn revealed move.
+        // Shares HeuristicCPUBase storage layout with BetterCPU but ignores playerMoveIndex/
+        // playerExtraData. Skips the per-mon SETUP_MOVE config — FairCPU deletes the Diyu
+        // free-turn branch entirely, so those configs would be dead writes.
+        FairCPU fairCPU = new FairCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
+        deployedContracts.push(DeployData({name: "FAIR CPU", contractAddress: address(fairCPU)}));
+
+        // Whitelist all CPUs so users can setOpponentTeam against them.
         {
-            address[] memory toAllow = new address[](2);
+            address[] memory toAllow = new address[](3);
             toAllow[0] = address(okayCPU);
             toAllow[1] = address(betterCPU);
+            toAllow[2] = address(fairCPU);
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }

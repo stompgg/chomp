@@ -49,6 +49,13 @@ abstract contract Quests is Ownable {
 
     Quest[] internal questPool;
 
+    /// @dev Admin-controlled forward-only offset added to `block.timestamp / 1 days` in
+    /// every quest-day read. Lets the owner advance the daily quest rotation without
+    /// having to wait wall-clock time on a long-running chain.
+    uint32 internal _dayOffset;
+
+    event DayAdvanced(uint32 by, uint32 newOffset, uint32 newEffectiveDay);
+
     uint256 internal constant PRED_BITS = 41;
     uint256 internal constant PRED_LANE_MASK = (uint256(1) << PRED_BITS) - 1;
     uint256 internal constant COUNT_SHIFT = 246;
@@ -117,6 +124,25 @@ abstract contract Quests is Ownable {
         return questPool.length;
     }
 
+    function dayOffset() external view returns (uint32) {
+        return _dayOffset;
+    }
+
+    /// @notice Bumps the day-offset forward by `n` days. Forward-only by design — every
+    /// quest-day read (`getActiveQuest`, battle-end completion gating) immediately sees
+    /// the new effective day on the next call.
+    function advanceDays(uint32 n) external onlyOwner {
+        _dayOffset += n;
+        emit DayAdvanced(n, _dayOffset, _currentDay());
+    }
+
+    /// @dev Single choke point for "what day is it for quest purposes". All callers
+    /// route through this so a future offset semantics change (signed, resettable, etc.)
+    /// only needs to touch one place.
+    function _currentDay() internal view returns (uint32) {
+        return uint32(block.timestamp / 1 days) + _dayOffset;
+    }
+
     function getQuest(uint256 questId)
         external
         view
@@ -132,7 +158,7 @@ abstract contract Quests is Ownable {
     /// battles, and no SSTORE on rotation. Returns activeQuestId = 0 when the pool is empty;
     /// callers must gate quest evaluation on `getQuestPoolLength() > 0`.
     function getActiveQuest() external view returns (uint32 activeDay, uint32 activeQuestId) {
-        activeDay = uint32(block.timestamp / 1 days);
+        activeDay = _currentDay();
         uint256 len = questPool.length;
         if (len == 0) return (activeDay, 0);
         activeQuestId = uint32(uint256(keccak256(abi.encode(activeDay))) % len);
@@ -162,7 +188,7 @@ abstract contract Quests is Ownable {
         uint256 playerIndex,
         bytes32 battleKey
     ) internal view returns (bool) {
-        uint32 day = uint32(block.timestamp / 1 days);
+        uint32 day = _currentDay();
         uint32 activeQuestId = _activeQuestIdForDay(day);
         uint256 packed = questPool[activeQuestId].packed; // 1 SLOAD
         uint256 count = (packed >> COUNT_SHIFT) & COUNT_MASK;

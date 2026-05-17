@@ -49,14 +49,9 @@ interface ITeamRegistry {
             uint256[] memory p1MonIds, uint256[] memory p1Exp, uint256[] memory p1Levels
         );
 
-    // Facets — assignment (caller-driven) + delta application (Engine consumes at startBattle)
+    // Facets — assignment (caller-driven). Delta application happens inside getTeams().
     function assignFacets(uint256[] calldata monIds, uint8[] calldata facetIds) external;
     function getFacetData(address player, uint256 monId)
         external view returns (uint16 unlockedBitmap, uint8 assignedFacetId);
     function getFacetDeltaForMon(address player, uint256 monId) external view returns (StatDelta memory);
-    function getTeamsWithDeltas(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
-        external view returns (
-            Mon[] memory p0Team, Mon[] memory p1Team,
-            StatDelta[] memory p0Deltas, StatDelta[] memory p1Deltas
-        );
 }

@@ -66,6 +66,7 @@ def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
 
     team_size = len(teams[0]) if teams else 0
     lines.append(f"        uint256[] memory monIndices = new uint256[]({team_size});")
+    lines.append(f"        uint8[] memory facetIds = new uint8[]({team_size});")
 
     for team_idx, team in enumerate(teams):
         if team_idx > 0:
@@ -74,7 +75,7 @@ def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
             mon_name = mon_names.get(mon_id, f"mon{mon_id}")
             lines.append(f"        monIndices[{slot}] = {mon_id}; // {mon_name}")
         lines.append("        for (uint256 i; i < cpuPlayers.length; i++) {")
-        lines.append("            gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);")
+        lines.append(f"            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), {team_idx}, monIndices, facetIds);")
         lines.append("        }")
 
     lines.append("")

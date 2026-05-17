@@ -19,17 +19,19 @@ contract SetupCPU is Script {
         vm.startBroadcast();
 
         GachaTeamRegistry gachaTeamRegistry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
-        string[] memory cpuPlayers = new string[](2);
+        string[] memory cpuPlayers = new string[](3);
         cpuPlayers[0] = "OKAY_CPU";
         cpuPlayers[1] = "BETTER_CPU";
+        cpuPlayers[2] = "FAIR_CPU";
 
         uint256[] memory monIndices = new uint256[](4);
+        uint8[] memory facetIds = new uint8[](4);
         monIndices[0] = 0; // Ghouliath
         monIndices[1] = 3; // Iblivion
         monIndices[2] = 10; // Xmon
         monIndices[3] = 5; // Sofabbi
         for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
+            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 0, monIndices, facetIds);
         }
 
         monIndices[0] = 1; // Inutia
@@ -37,7 +39,7 @@ contract SetupCPU is Script {
         monIndices[2] = 6; // Pengym
         monIndices[3] = 7; // Embursa
         for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
+            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 1, monIndices, facetIds);
         }
 
         monIndices[0] = 2; // Malalien
@@ -45,7 +47,7 @@ contract SetupCPU is Script {
         monIndices[2] = 4; // Gorillax
         monIndices[3] = 8; // Volthare
         for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.createTeamForUser(vm.envAddress(cpuPlayers[i]), monIndices);
+            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 2, monIndices, facetIds);
         }
 
         address[] memory empty = new address[](0);

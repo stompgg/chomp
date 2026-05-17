@@ -191,20 +191,4 @@ contract TestTeamRegistry is ITeamRegistry {
     function getFacetDeltaForMon(address, uint256) external pure returns (StatDelta memory) {
         return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
     }
-
-    function getTeamsWithDeltas(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
-        external
-        view
-        returns (
-            Mon[] memory p0Team,
-            Mon[] memory p1Team,
-            StatDelta[] memory p0Deltas,
-            StatDelta[] memory p1Deltas
-        )
-    {
-        p0Team = hasIndexedTeam[p0][p0TeamIndex] ? indexedTeams[p0][p0TeamIndex] : teams[p0];
-        p1Team = hasIndexedTeam[p1][p1TeamIndex] ? indexedTeams[p1][p1TeamIndex] : teams[p1];
-        p0Deltas = new StatDelta[](p0Team.length);
-        p1Deltas = new StatDelta[](p1Team.length);
-    }
 }

@@ -313,7 +313,7 @@ contract GachaTeamRegistryTest is Test {
         assertEq(bobRead[0], 0);   assertEq(bobRead[1], 12);
     }
 
-    function test_setOpponentTeam_facetsApplyInGetTeamsWithDeltas() public {
+    function test_setOpponentTeam_facetsAppliedToCpuTeamStats() public {
         _allowOnly(CPU);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
         monIndices[0] = 0; monIndices[1] = 1;
@@ -329,16 +329,16 @@ contract GachaTeamRegistryTest is Test {
 
         uint256 aliceTeamIdx = _aliceTeamIndex();
         uint256 cpuTeamIdx = uint256(uint16(uint160(ALICE)));
-        (, , StatDelta[] memory aliceDeltas, StatDelta[] memory cpuDeltas) =
-            gachaTeamRegistry.getTeamsWithDeltas(ALICE, aliceTeamIdx, CPU, cpuTeamIdx);
+        (Mon[] memory aliceTeam, Mon[] memory cpuTeam) =
+            gachaTeamRegistry.getTeams(ALICE, aliceTeamIdx, CPU, cpuTeamIdx);
 
-        // Alice (human) has no assigned facets → all-zero deltas.
-        assertEq(aliceDeltas[0].hp, 0);
-        assertEq(aliceDeltas[0].atk, 0);
-        // CPU slot 0: facet 1 boosts HP by +5% of 100 = +5.
-        assertEq(cpuDeltas[0].hp, 5, "CPU slot 0 HP boosted");
-        // CPU slot 1: facet 7 nerfs HP by 5% = -5.
-        assertEq(cpuDeltas[1].hp, -5, "CPU slot 1 HP nerfed");
+        // Alice (human) has no assigned facets → stats remain at base values.
+        assertEq(aliceTeam[0].stats.hp, 100, "Alice slot 0 HP unchanged");
+        assertEq(aliceTeam[0].stats.attack, 10, "Alice slot 0 Atk unchanged");
+        // CPU slot 0: facet 1 boosts HP by +5% of 100 = +5 → 105.
+        assertEq(cpuTeam[0].stats.hp, 105, "CPU slot 0 HP boosted");
+        // CPU slot 1: facet 7 nerfs HP by 5% = -5 → 95.
+        assertEq(cpuTeam[1].stats.hp, 95, "CPU slot 1 HP nerfed");
     }
 
     function test_setOpponentTeamFor_revertsIfCallerNotWhitelisted() public {
@@ -422,16 +422,66 @@ contract GachaTeamRegistryTest is Test {
 
     function test_setOpponentTeam_facetsIgnoredWhenSideNotWhitelisted() public {
         // Two human players: neither is whitelisted, so opponentTeamFacetsPacked is ignored
-        // and per-mon facetData wins. Bob (a human) has no facets unlocked → zero deltas.
+        // and per-mon facetData wins. Neither has facets unlocked → stats stay at base.
         _bobOwnsTeam();
         uint256 aliceTeam = _aliceTeamIndex();
 
         // Even if some adversarial caller wrote opponentTeamFacets[BOB][...] (we can't, since
         // BOB isn't whitelisted; setOpponentTeam reverts), the path wouldn't be taken anyway.
-        (, , StatDelta[] memory aliceDeltas, StatDelta[] memory bobDeltas) =
-            gachaTeamRegistry.getTeamsWithDeltas(ALICE, aliceTeam, BOB, 0);
-        assertEq(aliceDeltas[0].hp, 0);
-        assertEq(bobDeltas[0].hp, 0);
+        (Mon[] memory aliceMons, Mon[] memory bobMons) =
+            gachaTeamRegistry.getTeams(ALICE, aliceTeam, BOB, 0);
+        assertEq(aliceMons[0].stats.hp, 100);
+        assertEq(bobMons[0].stats.hp, 100);
+    }
+
+    function test_speedBoostFacets_carryHeavierCost() public {
+        // Speed-boost facets (10/11/12) pay -10% on the nerfed stat; non-speed boosts pay -5%.
+        // Compare facet 4 (+Atk/-HP, cost 5%) against facet 10 (+Speed/-HP, cost 10%) on identical
+        // base stats: the HP nerf should be 5 vs 10. The speed-boost gain itself (5% of 10 = 0)
+        // truncates at the setUp's base speed, so we measure the asymmetry via the HP cost.
+        _allowOnly(CPU);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = 0; monIndices[1] = 1;
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM);
+        facets[0] = 4;  // +Atk / -HP at the default 5% cost.
+        facets[1] = 10; // +Speed / -HP at the 10% speed cost.
+
+        vm.prank(ALICE);
+        gachaTeamRegistry.setOpponentTeam(CPU, monIndices, facets);
+
+        uint256 aliceTeamIdx = _aliceTeamIndex();
+        uint256 cpuTeamIdx = uint256(uint16(uint160(ALICE)));
+        (, Mon[] memory cpuTeam) = gachaTeamRegistry.getTeams(ALICE, aliceTeamIdx, CPU, cpuTeamIdx);
+
+        assertEq(cpuTeam[0].stats.hp, 95, "facet 4 nerfs HP by 5% of 100");
+        assertEq(cpuTeam[1].stats.hp, 90, "facet 10 nerfs HP by 10% of 100 (speed-boost cost)");
+    }
+
+    function test_humanFacets_appliedInGetTeams() public {
+        // Drive Alice's mon 0 to level 12 (full unlock) so we can deterministically pick a
+        // facet with a measurable HP effect. assignFacets gates on the unlock bitmap, so we
+        // can't just hand-pick a facet without leveling up first.
+        _whitelist(CPU);
+        uint256 teamIdx = _aliceTeamIndex();
+        while (gachaTeamRegistry.getLevel(ALICE, ALICE_TEAM_MON_0) < 12) {
+            _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+            vm.warp(vm.getBlockTimestamp() + 1 days);
+        }
+
+        // Facet 1: boost HP, nerf Atk. Apply to mon 0 only.
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = ALICE_TEAM_MON_0;
+        uint8[] memory facetIds = new uint8[](1);
+        facetIds[0] = 1;
+        vm.prank(ALICE);
+        gachaTeamRegistry.assignFacets(ids, facetIds);
+
+        _bobOwnsTeam();
+        (Mon[] memory aliceTeam, Mon[] memory bobTeam) =
+            gachaTeamRegistry.getTeams(ALICE, teamIdx, BOB, 0);
+        assertEq(aliceTeam[0].stats.hp, 105, "Alice mon 0 HP boosted by facet 1");
+        assertEq(aliceTeam[1].stats.hp, 100, "Alice mon 1 unaffected (no facet)");
+        assertEq(bobTeam[0].stats.hp, 100, "Bob unaffected (human, no unlocked facets)");
     }
 
     function test_defaultValidator_acceptsPhantomTeam() public {
@@ -447,7 +497,7 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory cpuRegularTeam = new uint256[](MONS_PER_TEAM);
         cpuRegularTeam[0] = 0;
         cpuRegularTeam[1] = 1;
-        gachaTeamRegistry.createTeamForUser(CPU, cpuRegularTeam);
+        gachaTeamRegistry.setTeamForUser(CPU, 0, cpuRegularTeam, new uint8[](MONS_PER_TEAM));
 
         vm.startPrank(ALICE);
         uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
@@ -1849,5 +1899,167 @@ contract GachaTeamRegistryTest is Test {
         assertEq(gachaTeamRegistry.getExp(ALICE, 0), 2);
         assertEq(gachaTeamRegistry.getExp(ALICE, 1), 1);
         assertEq(gachaTeamRegistry.getExp(ALICE, 16), 3);
+    }
+
+    // =====================================================================
+    // 11. Day-offset admin (advanceDays) + setTeamForUser
+    // =====================================================================
+
+    function test_advanceDays_shiftsActiveQuest() public {
+        // Two distinct quests so a 1-day rotation has a chance to produce a different id.
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(10));
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(20));
+
+        uint32 baseDay = uint32(block.timestamp / 1 days);
+        (uint32 dayBefore, uint32 idBefore) = gachaTeamRegistry.getActiveQuest();
+        assertEq(dayBefore, baseDay, "effective day = base day pre-offset");
+        assertEq(idBefore, uint32(uint256(keccak256(abi.encode(baseDay))) % 2));
+
+        gachaTeamRegistry.advanceDays(1);
+        assertEq(gachaTeamRegistry.dayOffset(), 1, "offset bumped");
+
+        (uint32 dayAfter, uint32 idAfter) = gachaTeamRegistry.getActiveQuest();
+        assertEq(dayAfter, baseDay + 1, "effective day shifted by offset");
+        assertEq(idAfter, uint32(uint256(keccak256(abi.encode(baseDay + 1))) % 2));
+    }
+
+    function test_advanceDays_reEligiblesQuestReward() public {
+        // TURNS LE 10 always passes for default turnId = 5.
+        gachaTeamRegistry.addQuest(_simpleTurnsQuest(10));
+        _whitelist(CPU);
+        uint256 teamIdx = _aliceTeamIndex();
+
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        uint256 afterFirst = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // No vm.warp — only the offset bumps the day. Quest must re-eligible.
+        gachaTeamRegistry.advanceDays(1);
+
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        uint256 afterSecond = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // Streak ratchets to 2 (first-game-of-day gate is timestamp-based and
+        // would normally block the streak bump within 24h, but we just need
+        // the quest-mult to fire). Use _winPts directly.
+        // The streak gate (lastFirstGameTs delta) is unaffected by the offset, so
+        // streakFlat stays 0 here — gain = (POINTS_PER_WIN + 0) * QUEST_REWARD_MULT.
+        assertEq(
+            afterSecond - afterFirst,
+            GACHA_POINTS_PER_WIN * QUEST_REWARD_MULT,
+            "quest mult re-applies after advanceDays"
+        );
+    }
+
+    function test_advanceDays_onlyOwner_reverts() public {
+        vm.prank(ALICE);
+        vm.expectRevert(); // Ownable.Unauthorized
+        gachaTeamRegistry.advanceDays(1);
+    }
+
+    function test_setTeamForUser_overwritesAndMarksLive() public {
+        // Slot 0 starts empty for Bob. Admin writes it with facets 0 (no-op).
+        uint256[] memory firstIds = new uint256[](MONS_PER_TEAM);
+        firstIds[0] = 0;
+        firstIds[1] = 3;
+        gachaTeamRegistry.setTeamForUser(BOB, 0, firstIds, new uint8[](MONS_PER_TEAM));
+
+        assertEq(gachaTeamRegistry.getTeamCount(BOB), 1, "slot marked live");
+        uint256[] memory slots = gachaTeamRegistry.getOrderedLiveTeams(BOB);
+        assertEq(slots.length, 1);
+        assertEq(slots[0], 0);
+        uint256[] memory readIds = gachaTeamRegistry.getMonRegistryIndicesForTeam(BOB, 0);
+        assertEq(readIds[0], 0);
+        assertEq(readIds[1], 3);
+
+        // Overwriting the same live slot replaces ids without changing live count.
+        uint256[] memory secondIds = new uint256[](MONS_PER_TEAM);
+        secondIds[0] = 4;
+        secondIds[1] = 5;
+        gachaTeamRegistry.setTeamForUser(BOB, 0, secondIds, new uint8[](MONS_PER_TEAM));
+        assertEq(gachaTeamRegistry.getTeamCount(BOB), 1, "live count unchanged");
+        readIds = gachaTeamRegistry.getMonRegistryIndicesForTeam(BOB, 0);
+        assertEq(readIds[0], 4);
+        assertEq(readIds[1], 5);
+
+        // No ownership grant: Bob is not recorded as owning these mons.
+        uint256[] memory ownership = new uint256[](MONS_PER_TEAM);
+        ownership[0] = 4;
+        ownership[1] = 5;
+        assertFalse(gachaTeamRegistry.isOwnerBatch(BOB, ownership), "no monsOwned grant");
+    }
+
+    function test_setTeamForUser_writesFacetsInSameTx() public {
+        // Admin sets team + facets together. Bob owns neither mon and has nothing
+        // unlocked — must bypass both checks.
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 4;
+        ids[1] = 5;
+        uint8[] memory facetIds = new uint8[](MONS_PER_TEAM);
+        facetIds[0] = 1;
+        facetIds[1] = 7;
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, facetIds);
+
+        (uint16 unlocked4, uint8 assigned4) = gachaTeamRegistry.getFacetData(BOB, 4);
+        (uint16 unlocked5, uint8 assigned5) = gachaTeamRegistry.getFacetData(BOB, 5);
+        assertEq(assigned4, 1);
+        assertEq(assigned5, 7);
+        assertEq(unlocked4 & uint16(1 << 0), uint16(1 << 0), "facet 1 marked unlocked");
+        assertEq(unlocked5 & uint16(1 << 6), uint16(1 << 6), "facet 7 marked unlocked");
+    }
+
+    function test_setTeamForUser_zeroFacetIdClearsAssignment() public {
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 0;
+        ids[1] = 3;
+        uint8[] memory facetIds = new uint8[](MONS_PER_TEAM);
+        facetIds[0] = 4;
+        facetIds[1] = 2;
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, facetIds);
+
+        // Resubmit with all-zero facets — assignment clears, unlock bits persist.
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, new uint8[](MONS_PER_TEAM));
+        (uint16 unlocked0, uint8 assigned0) = gachaTeamRegistry.getFacetData(BOB, 0);
+        (uint16 unlocked3, uint8 assigned3) = gachaTeamRegistry.getFacetData(BOB, 3);
+        assertEq(assigned0, 0);
+        assertEq(assigned3, 0);
+        assertEq(unlocked0 & uint16(1 << 3), uint16(1 << 3), "facet 4 unlock bit retained");
+        assertEq(unlocked3 & uint16(1 << 1), uint16(1 << 1), "facet 2 unlock bit retained");
+    }
+
+    function test_setTeamForUser_onlyOwner_reverts() public {
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 0;
+        ids[1] = 3;
+        vm.prank(ALICE);
+        vm.expectRevert(); // Ownable.Unauthorized
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, new uint8[](MONS_PER_TEAM));
+    }
+
+    function test_setTeamForUser_revertsOnOutOfRangeSlot() public {
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 0;
+        ids[1] = 3;
+        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        gachaTeamRegistry.setTeamForUser(BOB, 16, ids, new uint8[](MONS_PER_TEAM));
+    }
+
+    function test_setTeamForUser_revertsOnFacetLengthMismatch() public {
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 0;
+        ids[1] = 3;
+        uint8[] memory facets = new uint8[](1);
+        facets[0] = 1;
+        vm.expectRevert(Facets.FacetArgsLengthMismatch.selector);
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, facets);
+    }
+
+    function test_setTeamForUser_revertsOnFacetIdOutOfRange() public {
+        uint256[] memory ids = new uint256[](MONS_PER_TEAM);
+        ids[0] = 0;
+        ids[1] = 3;
+        uint8[] memory facets = new uint8[](MONS_PER_TEAM);
+        facets[1] = 13;
+        vm.expectRevert(Facets.InvalidFacetId.selector);
+        gachaTeamRegistry.setTeamForUser(BOB, 0, ids, facets);
     }
 }

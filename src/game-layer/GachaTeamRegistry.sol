@@ -262,8 +262,62 @@ contract GachaTeamRegistry is
         return _createTeamForUser(msg.sender, monIndices);
     }
 
-    function createTeamForUser(address user, uint256[] memory monIndices) external onlyOwner returns (uint256 slot) {
-        return _createTeamForUser(user, monIndices);
+    /// @notice Admin: write `monIndices` into `user`'s `slot` and apply parallel
+    /// `facetIds` for those mons in one tx. The slot is marked live if it wasn't
+    /// already (so fresh-slot allocation and overwrite share one path). Facet writes
+    /// bypass the ownership + unlock checks in `assignFacets` and also mark each
+    /// non-zero facet bit as unlocked, so the user's own `assignFacets` won't revert
+    /// `FacetNotUnlocked` later. Does NOT add the mons to `monsOwned` — the user
+    /// still can't swap mons they don't own via `updateTeam`.
+    function setTeamForUser(
+        address user,
+        uint256 slot,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds
+    ) external onlyOwner {
+        if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
+        if (facetIds.length != monIndices.length) revert FacetArgsLengthMismatch();
+
+        // Team write. _packTeam validates length + dedup.
+        uint256 packedTeam = _packTeam(monIndices);
+        _writeTeamLane(user, slot, packedTeam);
+        uint256 packed = teamOrderPacked[user];
+        uint256 liveBit = uint256(1) << (LIVE_BITMAP_SHIFT + slot);
+        if ((packed & liveBit) == 0) {
+            uint256 liveBitmap = (packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK;
+            packed |= (slot << (_popcount(liveBitmap) * ORDER_ENTRY_BITS)) | liveBit;
+            teamOrderPacked[user] = packed;
+        }
+
+        // Facet write — bucket-coalesced, mirrors assignFacets but skips both checks.
+        uint256 lastBucket = type(uint256).max;
+        uint256 currentSlot;
+        bool dirty;
+        for (uint256 i; i < monIndices.length;) {
+            uint8 facetId = facetIds[i];
+            if (facetId > TOTAL_FACETS) revert InvalidFacetId();
+            uint256 monId = monIndices[i];
+            uint256 bucket = monId / MONS_PER_FACET_BUCKET;
+            uint256 lane = monId % MONS_PER_FACET_BUCKET;
+            if (bucket != lastBucket) {
+                if (lastBucket != type(uint256).max && dirty) {
+                    facetData[user][lastBucket] = currentSlot;
+                }
+                currentSlot = facetData[user][bucket];
+                lastBucket = bucket;
+                dirty = false;
+            }
+            (uint16 unlockedBitmap,) = _readFacetSlotForMon(currentSlot, lane);
+            if (facetId != 0) {
+                unlockedBitmap |= uint16(1 << (facetId - 1));
+            }
+            currentSlot = _writeFacetSlotForMon(currentSlot, lane, unlockedBitmap, facetId);
+            dirty = true;
+            unchecked { ++i; }
+        }
+        if (lastBucket != type(uint256).max && dirty) {
+            facetData[user][lastBucket] = currentSlot;
+        }
     }
 
     function deleteTeam(uint256 slot) external {
@@ -539,6 +593,10 @@ contract GachaTeamRegistry is
         return team;
     }
 
+    // Returns each side's team with active-facet ±5% deltas folded into stats. Engine consumes
+    // these directly at startBattle — no separate delta channel. Whitelisted (CPU) sides pull
+    // facets from the per-(user, opponent) phantom slot the human caller configured via
+    // setOpponentTeam; human sides use per-mon facetData.
     function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external view returns (Mon[] memory, Mon[] memory) {
         _assertTeamLive(p0, p0TeamIndex);
         _assertTeamLive(p1, p1TeamIndex);
@@ -561,6 +619,11 @@ contract GachaTeamRegistry is
 
         (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
 
+        bool p0IsCpu = isWhitelistedOpponent(p0);
+        bool p1IsCpu = isWhitelistedOpponent(p1);
+        uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
+        uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
+
         // Unpack into teams
         for (uint256 i; i < MONS_PER_TEAM;) {
             uint256[] memory p0MovesToUse = new uint256[](MOVES_PER_MON);
@@ -572,6 +635,16 @@ contract GachaTeamRegistry is
                     ++j;
                 }
             }
+
+            uint8 p0FacetId = p0IsCpu
+                ? uint8((p0CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
+                : _facetIdForMon(p0, ids[i]);
+            uint8 p1FacetId = p1IsCpu
+                ? uint8((p1CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
+                : _facetIdForMon(p1, ids[i + MONS_PER_TEAM]);
+            _applyFacetToStats(stats[i], p0FacetId);
+            _applyFacetToStats(stats[i + MONS_PER_TEAM], p1FacetId);
+
             p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: p0MovesToUse});
             p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: abilities[i + MONS_PER_TEAM][0], moves: p1MovesToUse});
             unchecked {
@@ -580,6 +653,18 @@ contract GachaTeamRegistry is
         }
 
         return (p0Team, p1Team);
+    }
+
+    function _applyFacetToStats(MonStats memory stats, uint8 facetId) private pure {
+        if (facetId == 0) return;
+        StatDelta memory d = _computeFacetDelta(stats, facetId);
+        // Truncated ±5% can't underflow a uint32 stat for positive bases.
+        if (d.hp    != 0) stats.hp             = uint32(int32(stats.hp)             + int32(d.hp));
+        if (d.atk   != 0) stats.attack         = uint32(int32(stats.attack)         + int32(d.atk));
+        if (d.spAtk != 0) stats.specialAttack  = uint32(int32(stats.specialAttack)  + int32(d.spAtk));
+        if (d.def   != 0) stats.defense        = uint32(int32(stats.defense)        + int32(d.def));
+        if (d.spDef != 0) stats.specialDefense = uint32(int32(stats.specialDefense) + int32(d.spDef));
+        if (d.speed != 0) stats.speed          = uint32(int32(stats.speed)          + int32(d.speed));
     }
 
     function getTeamCount(address player) external view returns (uint256) {
@@ -706,15 +791,9 @@ contract GachaTeamRegistry is
     }
 
     function validateMon(Mon memory m, uint256 monId) public view returns (bool) {
-        // Check that the mon's stats match the current mon ID's stats
-        if (
-            m.stats.attack != monStats[monId].attack || m.stats.defense != monStats[monId].defense
-                || m.stats.specialAttack != monStats[monId].specialAttack
-                || m.stats.specialDefense != monStats[monId].specialDefense || m.stats.speed != monStats[monId].speed
-                || m.stats.hp != monStats[monId].hp || m.stats.stamina != monStats[monId].stamina
-        ) {
-            return false;
-        }
+        // No stat-equality check: getTeams now folds facet ±5% deltas into stats, so a passing team
+        // legitimately diverges from monStats[monId]. The Engine's only source of teams is this
+        // registry's getTeams, so caller-supplied stats can't be smuggled in here anyway.
         // Check that the mon's moves are valid for the current mon ID
         for (uint256 i; i < m.moves.length; ++i) {
             if (!monMoves[monId].contains(m.moves[i])) {
@@ -917,7 +996,7 @@ contract GachaTeamRegistry is
         if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
 
         uint32 currentTime = uint32(block.timestamp);
-        uint32 currentDay = currentTime / 1 days;
+        uint32 currentDay = _currentDay();
 
         uint256 packed0 = playerData[ctx.p0];
         uint256 packed1 = playerData[ctx.p1];
@@ -1290,71 +1369,6 @@ contract GachaTeamRegistry is
             p1Exp[i] = e1;
             p0Levels[i] = _levelForExp(e0);
             p1Levels[i] = _levelForExp(e1);
-            unchecked { ++i; }
-        }
-    }
-
-    // =====================================================================
-    // Teams + deltas (Engine consumes at startBattle)
-    // =====================================================================
-
-    function getTeamsWithDeltas(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
-        external
-        view
-        returns (
-            Mon[] memory p0Team,
-            Mon[] memory p1Team,
-            StatDelta[] memory p0Deltas,
-            StatDelta[] memory p1Deltas
-        )
-    {
-        _assertTeamLive(p0, p0TeamIndex);
-        _assertTeamLive(p1, p1TeamIndex);
-        p0Team = new Mon[](MONS_PER_TEAM);
-        p1Team = new Mon[](MONS_PER_TEAM);
-        p0Deltas = new StatDelta[](MONS_PER_TEAM);
-        p1Deltas = new StatDelta[](MONS_PER_TEAM);
-
-        uint256 p0Packed = _readTeamLane(p0, p0TeamIndex);
-        uint256 p1Packed = _readTeamLane(p1, p1TeamIndex);
-
-        // Build all monIds for the batch stat lookup
-        uint256 totalMons = MONS_PER_TEAM * 2;
-        uint256[] memory ids = new uint256[](totalMons);
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            ids[i] = (p0Packed >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
-            ids[i + MONS_PER_TEAM] = (p1Packed >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
-            unchecked { ++i; }
-        }
-
-        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
-
-        // Whitelisted (CPU) sides pull facets from the per-(user, opponent) phantom slot the
-        // human caller configured via setOpponentTeam. Human sides keep using per-mon facetData.
-        bool p0IsCpu = isWhitelistedOpponent(p0);
-        bool p1IsCpu = isWhitelistedOpponent(p1);
-        uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
-        uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
-
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256[] memory p0MovesToUse = new uint256[](MOVES_PER_MON);
-            uint256[] memory p1MovesToUse = new uint256[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON;) {
-                p0MovesToUse[j] = moves[i][j];
-                p1MovesToUse[j] = moves[i + MONS_PER_TEAM][j];
-                unchecked { ++j; }
-            }
-            p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: p0MovesToUse});
-            p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: abilities[i + MONS_PER_TEAM][0], moves: p1MovesToUse});
-
-            uint8 p0FacetId = p0IsCpu
-                ? uint8((p0CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
-                : _facetIdForMon(p0, ids[i]);
-            uint8 p1FacetId = p1IsCpu
-                ? uint8((p1CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
-                : _facetIdForMon(p1, ids[i + MONS_PER_TEAM]);
-            p0Deltas[i] = _computeFacetDelta(stats[i], p0FacetId);
-            p1Deltas[i] = _computeFacetDelta(stats[i + MONS_PER_TEAM], p1FacetId);
             unchecked { ++i; }
         }
     }
