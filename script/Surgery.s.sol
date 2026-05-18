@@ -3,11 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 
-import {IEngine} from "../src/IEngine.sol";
-import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {OkayCPU} from "../src/cpu/OkayCPU.sol";
-import {ICPURNG} from "../src/rng/ICPURNG.sol";
-import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
+import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 struct DeployData {
     string name;
@@ -20,8 +16,7 @@ contract Surgery is Script {
     function run() external returns (DeployData[] memory) {
         vm.startBroadcast();
 
-        // Whitelist okay/better cpu
-        // Do this automatically in the future for SetupCPU
+        ReturnerGift(0xb948153978F1f95c3481B189cb4656bDf756A247).setMerkleRoot(0x676c3dcca078e2a46cb67865fe30a3e807e4240312cbb923466334406b6e519d);
 
         return deployedContracts;
     }

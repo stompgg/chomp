@@ -7,12 +7,16 @@ import "../Structs.sol";
 import {IEngine} from "../IEngine.sol";
 
 /// @title StaminaRegenLogic
-/// @notice Shared stamina regen logic used by both the inline Engine path and the external StaminaRegen effect.
-/// @dev Exposes two parallel entry-point sets (storage-based and IEngine-based) that share the same
-/// pure decision predicates, so inline and external regen behave identically.
+/// @notice Shared decision predicates + external-effect entry points for stamina regen.
+/// @dev The inline Engine path used to live here too as storage-mutating helpers, but those
+/// bypassed engine.updateMonState() and so never fired OnUpdateMonState — abilities like
+/// Dreamcatcher silently missed inline regen ticks. The inline path now lives in Engine.sol
+/// (_inlineRegenStaminaForMon), which mirrors the storage write and then fires the hook
+/// fan-out. This library keeps the pure predicates and the external-IEngine entry points
+/// used by the StaminaRegen effect contract.
 library StaminaRegenLogic {
     // ---------------------------------------------------------------------
-    // Pure decision predicates (shared by both paths)
+    // Pure decision predicates (shared by inline + external paths)
     // ---------------------------------------------------------------------
 
     /// @notice Round-end regen only fires on full two-player turns.
@@ -23,46 +27,6 @@ library StaminaRegenLogic {
     /// @notice After-move regen fires only when the chosen move was a no-op (resting).
     function _isRestingMove(uint8 packedMoveIndex) internal pure returns (bool) {
         return (packedMoveIndex & MOVE_INDEX_MASK) == NO_OP_MOVE_INDEX;
-    }
-
-    // ---------------------------------------------------------------------
-    // Storage-based entry points (inline Engine path)
-    // ---------------------------------------------------------------------
-
-    /// @notice Regen stamina for a single mon if staminaDelta < 0
-    function regenStamina(MonState storage monState) internal {
-        if (monState.staminaDelta < 0) {
-            monState.staminaDelta += 1;
-        }
-    }
-
-    /// @notice Handle stamina regen for the RoundEnd step (both active mons)
-    function onRoundEnd(
-        BattleConfig storage config,
-        uint256 playerSwitchForTurnFlag,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    ) internal {
-        if (!_shouldRegenOnRoundEnd(playerSwitchForTurnFlag)) return;
-        regenStamina(config.p0States[p0ActiveMonIndex]);
-        regenStamina(config.p1States[p1ActiveMonIndex]);
-    }
-
-    /// @notice Handle stamina regen for the AfterMove step (regen if NoOp).
-    /// @dev `packedMoveIndex` is threaded in from the caller rather than read from `config.pXMove`
-    /// directly so that this works when moves are held in Engine's transient storage (the
-    /// executeWithMoves path skips SSTORE-ing config.pXMove to save gas).
-    function onAfterMove(
-        BattleConfig storage config,
-        uint256 playerIndex,
-        uint256 monIndex,
-        uint8 packedMoveIndex
-    ) internal {
-        if (!_isRestingMove(packedMoveIndex)) return;
-        MonState storage monState = playerIndex == 0
-            ? config.p0States[monIndex]
-            : config.p1States[monIndex];
-        regenStamina(monState);
     }
 
     // ---------------------------------------------------------------------

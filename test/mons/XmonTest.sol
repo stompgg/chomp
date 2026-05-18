@@ -39,7 +39,8 @@ import {NightTerrors} from "../../src/mons/xmon/NightTerrors.sol";
     - Contagious Slumber adds Sleep effect to both mons [x]
     - Vital Siphon drains stamina only when opponent has at least 1 stamina [x]
     - Somniphobia correctly damages both mons if they choose to NO_OP [x]
-    - Dreamcatcher heals on stamina gain [x]
+    - Dreamcatcher heals on stamina gain (external StaminaRegen path) [x]
+    - Dreamcatcher heals on inline stamina regen (INLINE_STAMINA_REGEN_RULESET) [x]
     - Night Terrors doesn't trigger when terror stacks > available stamina [ ]
     - Night Terrors effect clears on swap [ ]
     - Night Terrors damage differs when opponent is asleep vs awake [ ]
@@ -365,6 +366,128 @@ contract XmonTest is Test, BattleHelper {
         // Verify Alice is back to full HP
         int32 aliceHpAfterTurn2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpAfterTurn2, 0, "Alice should be back to full HP");
+    }
+
+    /// @notice Regression for a desync where Dreamcatcher silently no-op'd under the
+    /// inline stamina-regen ruleset. The inline path used to mutate `monState.staminaDelta`
+    /// directly in StaminaRegenLogic, skipping `engine.updateMonState` and so never firing
+    /// the OnUpdateMonState fan-out that Dreamcatcher subscribes to. Same setup as
+    /// `test_dreamcatcherHealsOnStaminaGain` but driven by `INLINE_STAMINA_REGEN_RULESET`
+    /// instead of a DefaultRuleset-wired StaminaRegen effect.
+    function test_dreamcatcherHealsOnInlineStaminaRegen() public {
+        Dreamcatcher dreamcatcher = new Dreamcatcher();
+
+        uint32 BASE_HP = 10;
+        uint32 maxHp = uint32(dreamcatcher.HEAL_DENOM()) * BASE_HP; // 160 HP
+
+        StandardAttack attack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 3 * BASE_HP,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: DEFAULT_PRIORITY,
+                MOVE_TYPE: Type.Cosmic,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Attack",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        StandardAttack staminaBurn = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 0,
+                STAMINA_COST: 3,
+                ACCURACY: 100,
+                PRIORITY: DEFAULT_PRIORITY,
+                MOVE_TYPE: Type.Cosmic,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Stamina Burn",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(attack)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory fastMon = _createMon();
+        fastMon.moves = moves;
+        fastMon.ability = uint160(address(dreamcatcher));
+        fastMon.stats.hp = maxHp;
+        fastMon.stats.stamina = 10;
+        fastMon.stats.speed = 2;
+
+        Mon memory slowMon = _createMon();
+        slowMon.moves = moves;
+        slowMon.ability = uint160(address(dreamcatcher));
+        slowMon.stats.hp = maxHp;
+        slowMon.stats.stamina = 10;
+        slowMon.stats.speed = 1;
+
+        Mon[] memory team = new Mon[](2);
+        team[0] = fastMon;
+        team[1] = slowMon;
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
+        );
+
+        // Use the sentinel address that flips Engine into `hasInlineStaminaRegen` mode.
+        bytes32 battleKey = _startBattle(
+            validator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
+            address(commitManager)
+        );
+
+        // Alice sends in fast mon, Bob sends in slow mon
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(1)
+        );
+
+        // Sanity: Alice has Dreamcatcher registered via activateOnSwitch
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
+        bool hasDreamcatcher = false;
+        for (uint256 i = 0; i < aliceEffects.length; i++) {
+            if (address(aliceEffects[i].effect) == address(dreamcatcher)) {
+                hasDreamcatcher = true;
+                break;
+            }
+        }
+        assertTrue(hasDreamcatcher, "Alice should have Dreamcatcher effect");
+
+        // Turn 1: Alice burns 3 stamina, Bob attacks Alice for 30 damage.
+        // Alice ends turn at -3 stamina, +1 regen from inline-after-move = -2.
+        // Dreamcatcher heals 10 HP, leaving Alice at -20.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, 0, 0);
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            -20,
+            "Alice should be at -20 HP after turn 1 (one inline-regen heal)"
+        );
+
+        // Turn 2: Both rest (NO_OP). Alice gets two regen ticks (post-move + round-end),
+        // each one firing OnUpdateMonState. Dreamcatcher heals 10 HP per tick → back to full.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            0,
+            "Alice should be back to full HP after inline regen heals fire"
+        );
     }
 
     function test_nightTerrorsDoesNotTriggerWhenStaminaTooLow() public {

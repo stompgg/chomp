@@ -2156,13 +2156,40 @@ contract Engine is IEngine, MappingAllocator {
         uint256 p1ActiveMonIndex
     ) private {
         if (round == EffectStep.RoundEnd) {
-            StaminaRegenLogic.onRoundEnd(
-                config, battleData[battleKeyForWrite].playerSwitchForTurnFlag, p0ActiveMonIndex, p1ActiveMonIndex
-            );
+            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) return;
+            _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
+            _inlineRegenStaminaForMon(config, 1, p1ActiveMonIndex);
         } else if (round == EffectStep.AfterMove) {
             // Fetch packedMoveIndex via helper - resolves to transient during executeWithMoves, storage otherwise.
             uint8 packedMoveIndex = _getCurrentTurnMove(config, playerIndex).packedMoveIndex;
-            StaminaRegenLogic.onAfterMove(config, playerIndex, monIndex, packedMoveIndex);
+            if (!StaminaRegenLogic._isRestingMove(packedMoveIndex)) return;
+            _inlineRegenStaminaForMon(config, playerIndex, monIndex);
+        }
+    }
+
+    /// @dev Mirrors the storage write that StaminaRegenLogic used to do, then fires
+    /// OnUpdateMonState so per-mon listeners (e.g. Dreamcatcher) see the +1 stamina —
+    /// matching the external StaminaRegen effect path, which goes through updateMonState.
+    function _inlineRegenStaminaForMon(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex
+    ) private {
+        MonState storage monState = playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
+        if (monState.staminaDelta >= 0) return;
+        monState.staminaDelta += 1;
+        uint256 effectCount = playerIndex == 0
+            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        if (effectCount > 0) {
+            _runEffects(
+                battleKeyForWrite,
+                tempRNG,
+                playerIndex,
+                playerIndex,
+                EffectStep.OnUpdateMonState,
+                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
+            );
         }
     }
 
