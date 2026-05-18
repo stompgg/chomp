@@ -17,6 +17,7 @@ import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {SimplePM} from "../src/hooks/SimplePM.sol";
+import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 // Shared effects
 import {StatBoosts} from "../src/effects/StatBoosts.sol";
@@ -94,20 +95,26 @@ contract EngineAndPeriphery is Script {
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
-        SimplePM simplePM = new SimplePM(engine);
-        deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
+        // SimplePM simplePM = new SimplePM(engine);
+        // deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
-        deployGameFundamentals(engine);
+        ReturnerGift returnerGift = new ReturnerGift(address(gachaTeamRegistry));
+        deployedContracts.push(DeployData({name: "RETURNER GIFT", contractAddress: address(returnerGift)}));
+
+        {
+            address[] memory toAllow = new address[](1);
+            toAllow[0] = address(returnerGift);
+            address[] memory toDisallow = new address[](0);
+            gachaTeamRegistry.setAssigners(toAllow, toDisallow);
+        }
+
+        deployGameFundamentals();
         
         vm.stopBroadcast();
         return deployedContracts;
     }
 
-    function deployGameFundamentals(Engine engine) public {
-
-        DefaultValidator validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: GAME_MONS_PER_TEAM, MOVES_PER_MON: GAME_MOVES_PER_MON, TIMEOUT_DURATION: GAME_TIMEOUT_DURATION}));
-        deployedContracts.push(DeployData({name: "DEFAULT VALIDATOR", contractAddress: address(validator)}));
+    function deployGameFundamentals() public {
 
         StatBoosts statBoosts = new StatBoosts();
         deployedContracts.push(DeployData({name: "STAT BOOSTS", contractAddress: address(statBoosts)}));

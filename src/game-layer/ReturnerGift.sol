@@ -26,16 +26,11 @@ contract ReturnerGift is Ownable {
     error InvalidTier();
     error NoLiveTeam();
 
-    constructor(
-        IGachaPointsAssigner pointsAssigner,
-        IExpAssigner expAssigner,
-        ITeamRegistry teamRegistry,
-        address owner_
-    ) {
-        POINTS_ASSIGNER = pointsAssigner;
-        EXP_ASSIGNER = expAssigner;
-        TEAM_REGISTRY = teamRegistry;
-        _initializeOwner(owner_);
+    constructor(address registry) {
+        POINTS_ASSIGNER = IGachaPointsAssigner(registry);
+        EXP_ASSIGNER = IExpAssigner(registry);
+        TEAM_REGISTRY = ITeamRegistry(registry);
+        _initializeOwner(msg.sender);
     }
 
     function setMerkleRoot(bytes32 root) external onlyOwner {

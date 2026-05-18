@@ -10,9 +10,6 @@ import "../src/Structs.sol";
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
-import {IGachaPointsAssigner} from "../src/game-layer/IGachaPointsAssigner.sol";
-import {IExpAssigner} from "../src/game-layer/IExpAssigner.sol";
-import {ITeamRegistry} from "../src/game-layer/ITeamRegistry.sol";
 import {PlayerProfile} from "../src/game-layer/PlayerProfile.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
@@ -64,12 +61,7 @@ contract ReturnerGiftTest is Test {
         for (uint256 i; i < MONS_PER_TEAM; ++i) aliceTeam[i] = i;
         registry.setTeamForUser(ALICE, 0, aliceTeam, new uint8[](MONS_PER_TEAM));
 
-        gift = new ReturnerGift(
-            IGachaPointsAssigner(address(registry)),
-            IExpAssigner(address(registry)),
-            ITeamRegistry(address(registry)),
-            address(this)
-        );
+        gift = new ReturnerGift(address(registry));
 
         address[] memory toAdd = new address[](1);
         address[] memory toRemove = new address[](0);
