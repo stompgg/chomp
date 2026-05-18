@@ -107,6 +107,7 @@ contract EngineAndPeriphery is Script {
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setAssigners(toAllow, toDisallow);
         }
+        returnerGift.setMerkleRoot(0xa5a0a4a18ff338c23790a0561e53748033ed3764ed3cbae49f06afcff7c7d773);
 
         deployGameFundamentals();
         

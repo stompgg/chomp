@@ -28,7 +28,7 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     uint256 internal constant FIRST_GAME_OF_DAY_COOLDOWN = 1 days;
     uint256 internal constant POINTS_MASK_128 = (1 << 128) - 1;
 
-    mapping(address => uint256) internal playerData;
+    mapping(address => uint256) public playerData;
 
     /// @notice One bool grants both IGachaPointsAssigner and IExpAssigner authority.
     mapping(address => bool) public isAssigner;
