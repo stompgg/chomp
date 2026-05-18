@@ -3,27 +3,58 @@
 Generate chomp/script/SetupCPU.s.sol and munch/src/app/data/cpu-teams.ts
 from chomp/script/cpu-teams.json (the source of truth).
 
-Mon names are looked up from chomp/drool/mons.csv at generation time, so
-the .sol comments and the munch TS file always reflect current naming.
+Mon names and stats are looked up from chomp/drool/mons.csv at generation time,
+so the .sol comments and the munch TS file always reflect current naming, and
+facet picks for BetterCPU stay consistent with current stat data.
+
+Facet assignment per CPU:
+  - OKAY_CPU: no facets (all zeros).
+  - FAIR_CPU: random facet in [1, 12] per slot (deterministic seed for reproducibility).
+  - BETTER_CPU: min-max picks based on each mon's stats.
+      Offensive mons (max(atk, spAtk) > max(def, spDef)):
+        Facet 4 (boost Atk, nerf HP) or 5 (boost Atk, nerf Def), whichever
+        nerfs the lower base stat (smaller absolute loss at the same 5% cost).
+      Defensive mons (otherwise):
+        Facet 8 (boost Def, nerf Atk).
+Facet ids correspond to the systematic table in Facets.sol — see _facetDef().
 """
 
 import csv
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Any
+
+# Facet ids from Facets._facetDef (boost, nerf).
+FACET_ATK_NERF_HP = 4
+FACET_ATK_NERF_DEF = 5
+FACET_DEF_NERF_ATK = 8
+
+# Deterministic seed for FairCPU random facet picks. Bumping this rerolls the
+# generated facetIds — keep stable unless you intend to regenerate them.
+FAIR_CPU_FACET_SEED = 0xC40FFEE
 
 
 def chomp_dir() -> Path:
     return Path(__file__).parent.parent
 
 
-def load_mon_names(csv_path: Path) -> dict[int, str]:
-    names: dict[int, str] = {}
+def load_mons_data(csv_path: Path) -> dict[int, dict[str, Any]]:
+    mons: dict[int, dict[str, Any]] = {}
     with open(csv_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            names[int(row["Id"])] = row["Name"]
-    return names
+            mon_id = int(row["Id"])
+            mons[mon_id] = {
+                "name": row["Name"],
+                "hp": int(row["HP"]),
+                "atk": int(row["Attack"]),
+                "def": int(row["Defense"]),
+                "spAtk": int(row["SpecialAttack"]),
+                "spDef": int(row["SpecialDefense"]),
+                "speed": int(row["Speed"]),
+            }
+    return mons
 
 
 def load_cpu_teams(json_path: Path) -> dict[str, Any]:
@@ -31,10 +62,55 @@ def load_cpu_teams(json_path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
+def _is_offensive(stats: dict[str, Any]) -> bool:
+    return max(stats["atk"], stats["spAtk"]) > max(stats["def"], stats["spDef"])
+
+
+def _better_cpu_facet(stats: dict[str, Any]) -> int:
+    if _is_offensive(stats):
+        # Boost Atk; nerf whichever of HP/Def has the smaller base value
+        # (5% of the smaller stat is the smaller absolute loss).
+        return FACET_ATK_NERF_HP if stats["hp"] <= stats["def"] else FACET_ATK_NERF_DEF
+    return FACET_DEF_NERF_ATK
+
+
+def compute_facets(
+    cpu_name: str,
+    team: list[int],
+    mons: dict[int, dict[str, Any]],
+    rng: random.Random,
+) -> list[int]:
+    if cpu_name == "BETTER_CPU":
+        return [_better_cpu_facet(mons[mid]) for mid in team]
+    if cpu_name == "FAIR_CPU":
+        return [rng.randint(1, 12) for _ in team]
+    return [0] * len(team)
+
+
+def _facet_comment(cpu_name: str, facet_id: int) -> str:
+    if facet_id == 0:
+        return ""
+    if cpu_name == "BETTER_CPU":
+        if facet_id == FACET_ATK_NERF_HP:
+            return " // +Atk -HP"
+        if facet_id == FACET_ATK_NERF_DEF:
+            return " // +Atk -Def"
+        if facet_id == FACET_DEF_NERF_ATK:
+            return " // +Def -Atk"
+    return ""
+
+
+def render_solidity(data: dict[str, Any], mons: dict[int, dict[str, Any]]) -> str:
     cpu_players: list[str] = data["cpuPlayers"]
     hard_cpus: list[str] = data.get("hardCpus", [])
     teams: list[list[int]] = data["teams"]
+
+    rng = random.Random(FAIR_CPU_FACET_SEED)
+    # Precompute facets[cpu_idx][team_idx] -> list[int].
+    facets_by_cpu_team: list[list[list[int]]] = [
+        [compute_facets(name, team, mons, rng) for team in teams]
+        for name in cpu_players
+    ]
 
     lines: list[str] = []
     lines.append("// SPDX-License-Identifier: AGPL-3.0")
@@ -72,11 +148,17 @@ def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
         if team_idx > 0:
             lines.append("")
         for slot, mon_id in enumerate(team):
-            mon_name = mon_names.get(mon_id, f"mon{mon_id}")
+            mon_name = mons.get(mon_id, {}).get("name", f"mon{mon_id}")
             lines.append(f"        monIndices[{slot}] = {mon_id}; // {mon_name}")
-        lines.append("        for (uint256 i; i < cpuPlayers.length; i++) {")
-        lines.append(f"            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), {team_idx}, monIndices, facetIds);")
-        lines.append("        }")
+        for cpu_idx, cpu_name in enumerate(cpu_players):
+            facets = facets_by_cpu_team[cpu_idx][team_idx]
+            lines.append(f"        // {cpu_name}")
+            for slot, fid in enumerate(facets):
+                comment = _facet_comment(cpu_name, fid)
+                lines.append(f"        facetIds[{slot}] = {fid};{comment}")
+            lines.append(
+                f'        gachaTeamRegistry.setTeamForUser(vm.envAddress("{cpu_name}"), {team_idx}, monIndices, facetIds);'
+            )
 
     lines.append("")
     lines.append("        address[] memory empty = new address[](0);")
@@ -103,7 +185,7 @@ def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
-def render_munch_ts(data: dict[str, Any], mon_names: dict[int, str]) -> str:
+def render_munch_ts(data: dict[str, Any], mons: dict[int, dict[str, Any]]) -> str:
     teams: list[list[int]] = data["teams"]
 
     lines: list[str] = []
@@ -112,7 +194,7 @@ def render_munch_ts(data: dict[str, Any], mon_names: dict[int, str]) -> str:
     lines.append("")
     lines.append("export const CPU_TEAMS: readonly (readonly number[])[] = [")
     for team in teams:
-        names = ", ".join(mon_names.get(mid, f"mon{mid}") for mid in team)
+        names = ", ".join(mons.get(mid, {}).get("name", f"mon{mid}") for mid in team)
         indices = ", ".join(str(mid) for mid in team)
         lines.append(f"  [{indices}], // {names}")
     lines.append("] as const;")
@@ -134,17 +216,17 @@ def run() -> bool:
         return False
 
     data = load_cpu_teams(json_path)
-    mon_names = load_mon_names(mons_csv)
+    mons = load_mons_data(mons_csv)
 
     with open(sol_path, "w", encoding="utf-8") as f:
-        f.write(render_solidity(data, mon_names))
+        f.write(render_solidity(data, mons))
     print(f"Wrote {sol_path}")
 
     munch_data = base.parent / "munch" / "src" / "app" / "data"
     if munch_data.exists():
         ts_path = munch_data / "cpu-teams.ts"
         with open(ts_path, "w", encoding="utf-8") as f:
-            f.write(render_munch_ts(data, mon_names))
+            f.write(render_munch_ts(data, mons))
         print(f"Wrote {ts_path}")
     else:
         print(f"Skipped munch TS: {munch_data} not found")

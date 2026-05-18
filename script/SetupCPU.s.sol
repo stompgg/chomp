@@ -30,25 +30,70 @@ contract SetupCPU is Script {
         monIndices[1] = 3; // Iblivion
         monIndices[2] = 10; // Xmon
         monIndices[3] = 5; // Sofabbi
-        for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 0, monIndices, facetIds);
-        }
+        // OKAY_CPU
+        facetIds[0] = 0;
+        facetIds[1] = 0;
+        facetIds[2] = 0;
+        facetIds[3] = 0;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("OKAY_CPU"), 0, monIndices, facetIds);
+        // BETTER_CPU
+        facetIds[0] = 8; // +Def -Atk
+        facetIds[1] = 5; // +Atk -Def
+        facetIds[2] = 5; // +Atk -Def
+        facetIds[3] = 8; // +Def -Atk
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("BETTER_CPU"), 0, monIndices, facetIds);
+        // FAIR_CPU
+        facetIds[0] = 2;
+        facetIds[1] = 9;
+        facetIds[2] = 6;
+        facetIds[3] = 2;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("FAIR_CPU"), 0, monIndices, facetIds);
 
         monIndices[0] = 1; // Inutia
         monIndices[1] = 11; // Ekineki
         monIndices[2] = 6; // Pengym
         monIndices[3] = 7; // Embursa
-        for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 1, monIndices, facetIds);
-        }
+        // OKAY_CPU
+        facetIds[0] = 0;
+        facetIds[1] = 0;
+        facetIds[2] = 0;
+        facetIds[3] = 0;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("OKAY_CPU"), 1, monIndices, facetIds);
+        // BETTER_CPU
+        facetIds[0] = 8; // +Def -Atk
+        facetIds[1] = 5; // +Atk -Def
+        facetIds[2] = 5; // +Atk -Def
+        facetIds[3] = 8; // +Def -Atk
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("BETTER_CPU"), 1, monIndices, facetIds);
+        // FAIR_CPU
+        facetIds[0] = 10;
+        facetIds[1] = 3;
+        facetIds[2] = 10;
+        facetIds[3] = 10;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("FAIR_CPU"), 1, monIndices, facetIds);
 
         monIndices[0] = 2; // Malalien
         monIndices[1] = 9; // Aurox
         monIndices[2] = 4; // Gorillax
         monIndices[3] = 8; // Volthare
-        for (uint256 i; i < cpuPlayers.length; i++) {
-            gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 2, monIndices, facetIds);
-        }
+        // OKAY_CPU
+        facetIds[0] = 0;
+        facetIds[1] = 0;
+        facetIds[2] = 0;
+        facetIds[3] = 0;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("OKAY_CPU"), 2, monIndices, facetIds);
+        // BETTER_CPU
+        facetIds[0] = 5; // +Atk -Def
+        facetIds[1] = 8; // +Def -Atk
+        facetIds[2] = 5; // +Atk -Def
+        facetIds[3] = 5; // +Atk -Def
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("BETTER_CPU"), 2, monIndices, facetIds);
+        // FAIR_CPU
+        facetIds[0] = 2;
+        facetIds[1] = 12;
+        facetIds[2] = 9;
+        facetIds[3] = 3;
+        gachaTeamRegistry.setTeamForUser(vm.envAddress("FAIR_CPU"), 2, monIndices, facetIds);
 
         address[] memory empty = new address[](0);
         address[] memory cpuAddresses = new address[](cpuPlayers.length);
