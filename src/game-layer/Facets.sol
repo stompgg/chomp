@@ -98,7 +98,7 @@ abstract contract Facets {
         return (unlockedBitmap, 0); // unreachable
     }
 
-    function _popcount(uint256 x) internal pure returns (uint8 count) {
+    function _popcount(uint256 x) internal pure virtual returns (uint8 count) {
         unchecked {
             for (uint256 v = x; v != 0; v >>= 1) {
                 if (v & 1 == 1) ++count;

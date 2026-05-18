@@ -13,6 +13,7 @@ import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 import {IGachaPointsAssigner} from "../src/game-layer/IGachaPointsAssigner.sol";
 import {IExpAssigner} from "../src/game-layer/IExpAssigner.sol";
 import {ITeamRegistry} from "../src/game-layer/ITeamRegistry.sol";
+import {PlayerProfile} from "../src/game-layer/PlayerProfile.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 
@@ -293,7 +294,7 @@ contract ReturnerGiftTest is Test {
         bytes32[] memory proof = _setupAliceTier(1);
 
         vm.prank(ALICE);
-        vm.expectRevert(GachaTeamRegistry.NotAssigner.selector);
+        vm.expectRevert(PlayerProfile.NotAssigner.selector);
         gift.claim(proof, 1);
     }
 

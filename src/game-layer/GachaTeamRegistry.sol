@@ -7,6 +7,11 @@ import "./IGachaPointsAssigner.sol";
 import "./IPhantomTeamRegistry.sol";
 import "./ITeamRegistry.sol";
 import "./Facets.sol";
+import "./MonExp.sol";
+import "./MonOwnership.sol";
+import "./MonRegistry.sol";
+import "./PackedTeamStore.sol";
+import "./PlayerProfile.sol";
 import "./Quests.sol";
 
 import {
@@ -30,36 +35,16 @@ import {IEngineHook} from "../IEngineHook.sol";
 import {IGachaRNG} from "../rng/IGachaRNG.sol";
 
 contract GachaTeamRegistry is
-    ITeamRegistry,
     IPhantomTeamRegistry,
-    IGachaPointsAssigner,
-    IExpAssigner,
     IEngineHook,
     IGachaRNG,
-    Facets,
+    MonOwnership,
+    MonRegistry,
+    PlayerProfile,
+    MonExp,
     Quests
 {
     using EnumerableSetLib for *;
-
-    // ----- Team layout -----
-    // 4 teams pack into one storage slot: 256 bits / 64 bits per lane = 4 lanes.
-    // Each lane holds up to MAX_MONS_PER_TEAM (8) mons × BITS_PER_MON_INDEX (8) = 64 bits.
-    // slot id S → group = S >> 2, lane = S & 0x3 (occupies bits [lane*64, (lane+1)*64)).
-    uint32 constant BITS_PER_MON_INDEX = 8;
-    uint256 constant ONES_MASK = (2 ** BITS_PER_MON_INDEX) - 1;
-    uint256 constant LANES_PER_GROUP = 4;
-    uint256 constant BITS_PER_LANE = 64;
-    uint256 constant LANE_MASK = (uint256(1) << BITS_PER_LANE) - 1;
-
-    // ----- Team allocator -----
-    // Live bitmap supports 16 slots → 4-bit slot ids, matches BattleData.pXTeamIndex's uint16 width.
-    uint256 public constant MAX_TEAMS_PER_PLAYER = 16;
-    uint256 public constant MAX_MONS_PER_TEAM = 8;
-    uint256 constant LIVE_BITMAP_SHIFT = 64; // teamOrderPacked: bits 64..79 hold liveBitmap
-    uint256 constant LIVE_BITMAP_MASK = (uint256(1) << MAX_TEAMS_PER_PLAYER) - 1;
-    uint256 constant ORDER_ENTRY_BITS = 4;
-    uint256 constant ORDER_ENTRY_MASK = (uint256(1) << ORDER_ENTRY_BITS) - 1;
-    uint256 constant ORDER_REGION_MASK = (uint256(1) << LIVE_BITMAP_SHIFT) - 1;
 
     // ----- Gacha constants -----
     uint256 public constant INITIAL_ROLLS = 4;
@@ -71,32 +56,6 @@ contract GachaTeamRegistry is
     uint256 public constant STREAK_BONUS_MAX = STREAK_FLAT_BONUS_MAX;
     uint256 public constant STREAK_GRACE = STREAK_GRACE_WINDOW;
     uint16 public constant STEPS_BITMAP = uint16(1) << uint8(EngineHookStep.OnBattleEnd);
-
-    // ----- playerData[address] bit layout -----
-    //   bit 255         : bonusAwarded (first-game-ever bonus has been awarded)
-    //   bit 254         : isWhitelistedAsOpponent
-    //   bit 253         : isHardCpu (only meaningful when bit 254 is set)
-    //   bits 250-252    : streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
-    //   bits 224-249    : reserved
-    //   bits 192-223    : lastQuestCompletedDay (uint32 calendar day)
-    //   bits 160-191    : reserved
-    //   bits 128-159    : lastFirstGameTimestamp (uint32 seconds since epoch)
-    //   bits 0-127      : pointsBalance (uint128)
-    uint256 private constant BONUS_AWARDED_BIT = 1 << 255;
-    uint256 private constant IS_CPU_BIT = 1 << 254;
-    uint256 private constant IS_HARD_CPU_BIT = 1 << 253;
-    uint256 private constant STREAK_DAY_SHIFT = 250;
-    uint256 private constant STREAK_DAY_MASK = 0x7;
-    uint256 private constant LAST_FIRST_GAME_TS_SHIFT = 128;
-    uint256 private constant LAST_QUEST_DAY_SHIFT = 192;
-    uint256 private constant FIRST_GAME_OF_DAY_COOLDOWN = 1 days;
-    uint256 private constant POINTS_MASK_128 = (1 << 128) - 1;
-
-    // ----- Exp packing (per (player, mon-bucket); 16 mons per slot, 16 bits each) -----
-    uint256 internal constant MONS_PER_EXP_BUCKET = 16;
-    uint256 internal constant EXP_BITS_PER_MON = 16;
-    uint256 internal constant EXP_PER_MON_MASK = (1 << EXP_BITS_PER_MON) - 1;
-    uint256 internal constant EXP_PER_MON_CAP = EXP_PER_MON_MASK; // 65535
 
     // ----- MON_STATE opcode arg layout: (slot << 4) | stateField; 4 bits each -----
     uint256 internal constant MON_STATE_SLOT_SHIFT = 4;
@@ -133,61 +92,19 @@ contract GachaTeamRegistry is
     uint256 internal constant BONUS_QUEST      = 1 << 3;
 
     // ----- Errors -----
-    error InvalidTeamSize();
-    error DuplicateMonId();
-    error InvalidTeamIndex();
-    error NotOwner();
     error NotWhitelistedOpponent();
-    error MonAlreadyCreated();
-    error MonNotyetCreated();
-    error NonSequentialMonId();
     error AlreadyFirstRolled();
     error InvalidStarterId();
     error NoMoreStock();
     error NotEngine();
-    error TeamCapReached();
-    error TeamNotLive();
-    error MonIdTooLarge();
-    error NotAssigner();
-    error LengthMismatch();
-    error InvalidMonId();
-    error PointsOverflow();
 
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
     event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
 
     // ----- Immutables -----
-    uint256 immutable MONS_PER_TEAM;
-    uint256 immutable MOVES_PER_MON;
     IEngine public immutable ENGINE;
     IGachaRNG immutable RNG;
-
-    // ----- Team state -----
-    // 4 teams per slot. Outer key = group (slot >> 2); lane (slot & 0x3) occupies 64 bits per team.
-    mapping(address => mapping(uint256 => uint256)) public teamGroupsPacked;
-    // Per-player single slot: bits 0..63 = ordered slot-id list (16 × 4 bits),
-    // bits 64..79 = liveBitmap, bits 80..255 reserved.
-    mapping(address => uint256) public teamOrderPacked;
-
-    // ----- Mon registry state -----
-    EnumerableSetLib.Uint256Set private monIds;
-    mapping(uint256 monId => MonStats) public monStats;
-    mapping(uint256 monId => EnumerableSetLib.Uint256Set) private monMoves;
-    mapping(uint256 monId => EnumerableSetLib.Uint256Set) private monAbilities;
-    mapping(uint256 monId => mapping(bytes32 => bytes32)) private monMetadata;
-
-    // ----- Gacha state -----
-    mapping(address => EnumerableSetLib.Uint256Set) private monsOwned;
-    mapping(address => uint256) private playerData;
-
-    // ----- Owner-managed assigner allowlist -----
-    // A single bool grants both IGachaPointsAssigner and IExpAssigner authority. If finer roles
-    // are needed later, split into two mappings — interface ABIs don't change.
-    mapping(address => bool) public isAssigner;
-
-    // ----- Per-mon exp packing -----
-    mapping(address player => mapping(uint256 monBucket => uint256 packedExp)) public packedExpForMon;
 
     // ----- Per-(user, opponent) CPU team facet config -----
     // Each user picks any facet (0-12) for each slot of a whitelisted opponent's phantom team.
@@ -198,10 +115,9 @@ contract GachaTeamRegistry is
     uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
     mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
-    constructor(uint256 _MONS_PER_TEAM, uint256 _MOVES_PER_MON, IEngine _ENGINE, IGachaRNG _RNG) {
-        require(_MONS_PER_TEAM <= MAX_MONS_PER_TEAM, "MONS_PER_TEAM > MAX_MONS_PER_TEAM");
-        MONS_PER_TEAM = _MONS_PER_TEAM;
-        MOVES_PER_MON = _MOVES_PER_MON;
+    constructor(uint256 _MONS_PER_TEAM, uint256 _MOVES_PER_MON, IEngine _ENGINE, IGachaRNG _RNG)
+        PackedTeamStore(_MONS_PER_TEAM, _MOVES_PER_MON)
+    {
         ENGINE = _ENGINE;
         RNG = address(_RNG) == address(0) ? IGachaRNG(address(this)) : _RNG;
         _initializeOwner(msg.sender);
@@ -252,15 +168,6 @@ contract GachaTeamRegistry is
     // =====================================================================
     // Team management
     // =====================================================================
-
-    function _validateOwnership(uint256[] memory monIndices) internal view {
-        if (!_isOwnerBatch(msg.sender, monIndices)) revert NotOwner();
-    }
-
-    function createTeam(uint256[] memory monIndices) external returns (uint256 slot) {
-        _validateOwnership(monIndices);
-        return _createTeamForUser(msg.sender, monIndices);
-    }
 
     /// @notice Admin: write `monIndices` into `user`'s `slot` and apply parallel
     /// `facetIds` for those mons in one tx. The slot is marked live if it wasn't
@@ -318,72 +225,6 @@ contract GachaTeamRegistry is
         if (lastBucket != type(uint256).max && dirty) {
             facetData[user][lastBucket] = currentSlot;
         }
-    }
-
-    function deleteTeam(uint256 slot) external {
-        if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
-        uint256 packed = teamOrderPacked[msg.sender];
-        uint256 liveBit = uint256(1) << (LIVE_BITMAP_SHIFT + slot);
-        if (packed & liveBit == 0) revert TeamNotLive();
-
-        // Operate on the order region in isolation so the splice can't pull liveBitmap bits
-        // into positions ≥ count. The invariant "positions ≥ live count == 0" lets createTeam
-        // append without masking.
-        uint256 order = packed & ORDER_REGION_MASK;
-        uint256 count = _popcount((packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK);
-        uint256 position;
-        for (uint256 i; i < count;) {
-            if (((order >> (i * ORDER_ENTRY_BITS)) & ORDER_ENTRY_MASK) == slot) {
-                position = i;
-                break;
-            }
-            unchecked { ++i; }
-        }
-
-        uint256 below = order & ((uint256(1) << (position * ORDER_ENTRY_BITS)) - 1);
-        uint256 above = (order >> ((position + 1) * ORDER_ENTRY_BITS)) << (position * ORDER_ENTRY_BITS);
-        teamOrderPacked[msg.sender] = (packed & ~ORDER_REGION_MASK & ~liveBit) | below | above;
-    }
-
-    // Whitelist + hard-CPU flags live in playerData so per-battle eval rides the existing SLOAD.
-    function setWhitelistedOpponents(address[] memory toAllow, address[] memory toDisallow) external onlyOwner {
-        _flipPlayerDataBitBulk(toAllow, toDisallow, IS_CPU_BIT);
-    }
-
-    function setHardCpuOpponents(address[] memory toMark, address[] memory toUnmark) external onlyOwner {
-        _flipPlayerDataBitBulk(toMark, toUnmark, IS_HARD_CPU_BIT);
-    }
-
-    /// @notice Grant or revoke both points-assigning and exp-assigning authority. The role is
-    /// combined; split the mapping if finer-grained roles are ever needed.
-    function setAssigners(address[] memory toAdd, address[] memory toRemove) external onlyOwner {
-        for (uint256 i; i < toAdd.length;) {
-            isAssigner[toAdd[i]] = true;
-            unchecked { ++i; }
-        }
-        for (uint256 i; i < toRemove.length;) {
-            isAssigner[toRemove[i]] = false;
-            unchecked { ++i; }
-        }
-    }
-
-    function _flipPlayerDataBitBulk(address[] memory on, address[] memory off, uint256 bit) internal {
-        for (uint256 i; i < on.length;) {
-            playerData[on[i]] |= bit;
-            unchecked { ++i; }
-        }
-        for (uint256 i; i < off.length;) {
-            playerData[off[i]] &= ~bit;
-            unchecked { ++i; }
-        }
-    }
-
-    function isWhitelistedOpponent(address addr) public view returns (bool) {
-        return playerData[addr] & IS_CPU_BIT != 0;
-    }
-
-    function isHardCpu(address addr) public view returns (bool) {
-        return playerData[addr] & IS_HARD_CPU_BIT != 0;
     }
 
     // Phantom teams: duplicate mon ids allowed; phantom key truncated to uint16 to match
@@ -446,151 +287,6 @@ contract GachaTeamRegistry is
             facetIds[i] = uint8((packed >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK);
             unchecked { ++i; }
         }
-    }
-
-    function _createTeamForUser(address user, uint256[] memory monIndices) internal returns (uint256 slot) {
-        uint256 packed = teamOrderPacked[user];
-        uint256 liveBitmap = (packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK;
-        uint256 free = (~liveBitmap) & LIVE_BITMAP_MASK;
-        if (free == 0) revert TeamCapReached();
-        slot = _ctz(free);
-
-        _writeTeamLane(user, slot, _packTeam(monIndices));
-
-        // Position == popcount(liveBitmap); positions ≥ count are 0 by deleteTeam's splice invariant.
-        packed |= (slot << (_popcount(liveBitmap) * ORDER_ENTRY_BITS))
-                | (uint256(1) << (LIVE_BITMAP_SHIFT + slot));
-        teamOrderPacked[user] = packed;
-    }
-
-    // ----- Lane-level helpers (packed teamGroupsPacked I/O) -----
-
-    function _readTeamLane(address user, uint256 slot) internal view returns (uint256 packedTeam) {
-        uint256 group = teamGroupsPacked[user][slot >> 2];
-        packedTeam = (group >> ((slot & 0x3) * BITS_PER_LANE)) & LANE_MASK;
-    }
-
-    function _writeTeamLane(address user, uint256 slot, uint256 packedTeam) internal {
-        uint256 laneShift = (slot & 0x3) * BITS_PER_LANE;
-        uint256 group = teamGroupsPacked[user][slot >> 2];
-        teamGroupsPacked[user][slot >> 2] =
-            (group & ~(LANE_MASK << laneShift)) | ((packedTeam & LANE_MASK) << laneShift);
-    }
-
-    function _liveBitmap(address user) internal view returns (uint256) {
-        return (teamOrderPacked[user] >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK;
-    }
-
-    function _assertTeamLive(address player, uint256 teamIndex) internal view {
-        if (isWhitelistedOpponent(player)) return;
-        if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
-            revert InvalidTeamIndex();
-        }
-    }
-
-    /// @dev Count trailing zeros of a nonzero value (caller-bounded to LIVE_BITMAP_MASK).
-    function _ctz(uint256 x) internal pure returns (uint256 n) {
-        unchecked {
-            while ((x & 1) == 0) {
-                x >>= 1;
-                ++n;
-            }
-        }
-    }
-
-    // ----- Pack / unpack -----
-
-    function _packTeam(uint256[] memory monIndices) internal view returns (uint256 packed) {
-        packed = _packIndices(monIndices);
-        _checkForDuplicates(monIndices);
-    }
-
-    function _packIndices(uint256[] memory monIndices) internal view returns (uint256 packed) {
-        if (monIndices.length != MONS_PER_TEAM) {
-            revert InvalidTeamSize();
-        }
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256 id = monIndices[i];
-            if (id > ONES_MASK) revert MonIdTooLarge();
-            packed |= id << (i * BITS_PER_MON_INDEX);
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
-    function _unpackTeam(uint256 packed) internal view returns (uint256[] memory ids) {
-        ids = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            ids[i] = (packed >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
-    function updateTeam(uint256 teamIndex, uint256[] memory teamMonIndicesToOverride, uint256[] memory newMonIndices)
-        external
-    {
-        _validateOwnership(newMonIndices);
-        if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) revert TeamNotLive();
-        _checkForDuplicates(newMonIndices);
-
-        uint256 groupKey = teamIndex >> 2;
-        uint256 laneShift = (teamIndex & 0x3) * BITS_PER_LANE;
-        uint256 group = teamGroupsPacked[msg.sender][groupKey];
-        uint256 n = teamMonIndicesToOverride.length;
-        for (uint256 i; i < n;) {
-            uint256 monId = newMonIndices[i];
-            if (monId > ONES_MASK) revert MonIdTooLarge();
-            uint256 monShift = laneShift + teamMonIndicesToOverride[i] * BITS_PER_MON_INDEX;
-            group = (group & ~(ONES_MASK << monShift)) | (monId << monShift);
-            unchecked { ++i; }
-        }
-        teamGroupsPacked[msg.sender][groupKey] = group;
-    }
-
-    function _checkForDuplicates(uint256[] memory monIndices) internal view {
-        for (uint256 i; i < MONS_PER_TEAM - 1; i++) {
-            for (uint256 j = i + 1; j < MONS_PER_TEAM; j++) {
-                if (monIndices[i] == monIndices[j]) {
-                    revert DuplicateMonId();
-                }
-            }
-        }
-    }
-
-    function _getMonRegistryIndex(address player, uint256 teamIndex, uint256 position) internal view returns (uint256) {
-        return (_readTeamLane(player, teamIndex) >> (position * BITS_PER_MON_INDEX)) & ONES_MASK;
-    }
-
-    function getMonRegistryIndicesForTeam(address player, uint256 teamIndex) public view returns (uint256[] memory) {
-        _assertTeamLive(player, teamIndex);
-        return _unpackTeam(_readTeamLane(player, teamIndex));
-    }
-
-    function getTeam(address player, uint256 teamIndex) external view returns (Mon[] memory) {
-        _assertTeamLive(player, teamIndex);
-        Mon[] memory team = new Mon[](MONS_PER_TEAM);
-        uint256[] memory ids = _unpackTeam(_readTeamLane(player, teamIndex));
-
-        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
-
-        // Unpack into team
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256[] memory movesToUse = new uint256[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON;) {
-                movesToUse[j] = moves[i][j];
-                unchecked {
-                    ++j;
-                }
-            }
-            team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: movesToUse});
-            unchecked {
-                ++i;
-            }
-        }
-        return team;
     }
 
     // Returns each side's team with active-facet ±5% deltas folded into stats. Engine consumes
@@ -667,235 +363,9 @@ contract GachaTeamRegistry is
         if (d.speed != 0) stats.speed          = uint32(int32(stats.speed)          + int32(d.speed));
     }
 
-    function getTeamCount(address player) external view returns (uint256) {
-        return _popcount(_liveBitmap(player));
-    }
-
-    /// @dev Returns the player's live slot ids in display order.
-    function getOrderedLiveTeams(address player) external view returns (uint256[] memory slots) {
-        uint256 packed = teamOrderPacked[player];
-        uint256 count = _popcount((packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK);
-        slots = new uint256[](count);
-        for (uint256 i; i < count;) {
-            slots[i] = (packed >> (i * ORDER_ENTRY_BITS)) & ORDER_ENTRY_MASK;
-            unchecked { ++i; }
-        }
-    }
-
-    /// @dev Returns slot ids in display order + unpacked mon ids per slot. Single call for hydration.
-    function getPlayerTeams(address player)
-        external
-        view
-        returns (uint256[] memory slots, uint256[][] memory teamMonIds)
-    {
-        uint256 packed = teamOrderPacked[player];
-        uint256 count = _popcount((packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK);
-        slots = new uint256[](count);
-        teamMonIds = new uint256[][](count);
-        for (uint256 i; i < count;) {
-            uint256 slot = (packed >> (i * ORDER_ENTRY_BITS)) & ORDER_ENTRY_MASK;
-            slots[i] = slot;
-            teamMonIds[i] = _unpackTeam(_readTeamLane(player, slot));
-            unchecked { ++i; }
-        }
-    }
-
-    // =====================================================================
-    // Mon registry
-    // =====================================================================
-
-    function createMon(
-        uint256 monId,
-        MonStats memory _monStats,
-        uint256[] memory allowedMoves,
-        uint256[] memory allowedAbilities,
-        bytes32[] memory keys,
-        bytes32[] memory values
-    ) external onlyOwner {
-        // Sequential monIds required so packedExpForMon / facetData buckets stay dense.
-        if (monId != monIds.length()) revert NonSequentialMonId();
-        MonStats storage existingMon = monStats[monId];
-        // No mon has 0 hp and 0 stamina
-        if (existingMon.hp != 0 && existingMon.stamina != 0) {
-            revert MonAlreadyCreated();
-        }
-        monIds.add(monId);
-        monStats[monId] = _monStats;
-        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
-        uint256 numMoves = allowedMoves.length;
-        for (uint256 i; i < numMoves; ++i) {
-            moves.add(allowedMoves[i]);
-        }
-        EnumerableSetLib.Uint256Set storage abilities = monAbilities[monId];
-        uint256 numAbilities = allowedAbilities.length;
-        for (uint256 i; i < numAbilities; ++i) {
-            abilities.add(allowedAbilities[i]);
-        }
-        _modifyMonMetadata(monId, keys, values);
-    }
-
-    function modifyMon(
-        uint256 monId,
-        MonStats memory _monStats,
-        uint256[] memory movesToAdd,
-        uint256[] memory movesToRemove,
-        uint256[] memory abilitiesToAdd,
-        uint256[] memory abilitiesToRemove
-    ) external onlyOwner {
-        MonStats storage existingMon = monStats[monId];
-        if (existingMon.hp == 0 && existingMon.stamina == 0) {
-            revert MonNotyetCreated();
-        }
-        monStats[monId] = _monStats;
-        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
-        {
-            uint256 numMovesToAdd = movesToAdd.length;
-            for (uint256 i; i < numMovesToAdd; ++i) {
-                moves.add(movesToAdd[i]);
-            }
-        }
-        {
-            uint256 numMovesToRemove = movesToRemove.length;
-            for (uint256 i; i < numMovesToRemove; ++i) {
-                moves.remove(movesToRemove[i]);
-            }
-        }
-        EnumerableSetLib.Uint256Set storage abilities = monAbilities[monId];
-        {
-            uint256 numAbilitiesToAdd = abilitiesToAdd.length;
-            for (uint256 i; i < numAbilitiesToAdd; ++i) {
-                abilities.add(abilitiesToAdd[i]);
-            }
-        }
-        {
-            uint256 numAbilitiesToRemove = abilitiesToRemove.length;
-            for (uint256 i; i < numAbilitiesToRemove; ++i) {
-                abilities.remove(abilitiesToRemove[i]);
-            }
-        }
-    }
-
-    function modifyMonMetadata(uint256 monId, bytes32[] memory keys, bytes32[] memory values) external onlyOwner {
-        _modifyMonMetadata(monId, keys, values);
-    }
-
-    function _modifyMonMetadata(uint256 monId, bytes32[] memory keys, bytes32[] memory values) internal {
-        mapping(bytes32 => bytes32) storage metadata = monMetadata[monId];
-        for (uint256 i; i < keys.length; ++i) {
-            metadata[keys[i]] = values[i];
-        }
-    }
-
-    function getMonMetadata(uint256 monId, bytes32 key) external view returns (bytes32) {
-        return monMetadata[monId][key];
-    }
-
-    function validateMon(Mon memory m, uint256 monId) public view returns (bool) {
-        // No stat-equality check: getTeams now folds facet ±5% deltas into stats, so a passing team
-        // legitimately diverges from monStats[monId]. The Engine's only source of teams is this
-        // registry's getTeams, so caller-supplied stats can't be smuggled in here anyway.
-        // Check that the mon's moves are valid for the current mon ID
-        for (uint256 i; i < m.moves.length; ++i) {
-            if (!monMoves[monId].contains(m.moves[i])) {
-                return false;
-            }
-        }
-        // Check that the mon's ability is valid for the current mon ID
-        if (!monAbilities[monId].contains(m.ability)) {
-            return false;
-        }
-        return true;
-    }
-
-    function validateMonBatch(Mon[] calldata mons, uint256[] calldata ids) external view returns (bool) {
-        uint256 len = mons.length;
-        for (uint256 i; i < len;) {
-            if (!validateMon(mons[i], ids[i])) {
-                return false;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        return true;
-    }
-
-    function getMonData(uint256 monId)
-        external
-        view
-        returns (MonStats memory _monStats, uint256[] memory moves, uint256[] memory abilities)
-    {
-        _monStats = monStats[monId];
-        moves = monMoves[monId].values();
-        abilities = monAbilities[monId].values();
-    }
-
-    function getMonDataBatch(uint256[] calldata ids)
-        external
-        view
-        returns (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities)
-    {
-        return _getMonDataBatch(ids);
-    }
-
-    function _getMonDataBatch(uint256[] memory ids)
-        internal
-        view
-        returns (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities)
-    {
-        uint256 len = ids.length;
-        stats = new MonStats[](len);
-        moves = new uint256[][](len);
-        abilities = new uint256[][](len);
-        for (uint256 i; i < len;) {
-            uint256 monId = ids[i];
-            stats[i] = monStats[monId];
-            moves[i] = monMoves[monId].values();
-            abilities[i] = monAbilities[monId].values();
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
-    function getMonIds(uint256 start, uint256 end) external view returns (uint256[] memory) {
-        if (start == end) {
-            uint256[] memory allIds = new uint256[](monIds.length());
-            for (uint256 i; i < monIds.length(); ++i) {
-                allIds[i] = monIds.at(i);
-            }
-            return allIds;
-        }
-        uint256[] memory ids = new uint256[](end - start);
-        for (uint256 i; i < end - start; ++i) {
-            ids[i] = monIds.at(start + i);
-        }
-        return ids;
-    }
-
-    function getMonStats(uint256 monId) external view returns (MonStats memory) {
-        return monStats[monId];
-    }
-
-    function isValidMove(uint256 monId, uint256 moveSlot) external view returns (bool) {
-        return monMoves[monId].contains(moveSlot);
-    }
-
-    function isValidAbility(uint256 monId, uint256 ability) external view returns (bool) {
-        return monAbilities[monId].contains(ability);
-    }
-
-    function getMonCount() external view returns (uint256) {
-        return monIds.length();
-    }
-
     // =====================================================================
     // Gacha
     // =====================================================================
-
-    function pointsBalance(address player) public view returns (uint256) {
-        return uint128(playerData[player]);
-    }
 
     function firstRoll(uint256 starterId) external returns (uint256[] memory rolledIds) {
         if (monsOwned[msg.sender].length() > 0) revert AlreadyFirstRolled();
@@ -942,37 +412,6 @@ contract GachaTeamRegistry is
     // Default RNG implementation (used when constructed with address(0) RNG)
     function getRNG(bytes32 seed) public view returns (uint256) {
         return uint256(keccak256(abi.encode(blockhash(block.number - 1), seed)));
-    }
-
-    // ----- Ownership -----
-    function isOwner(address player, uint256 monId) external view returns (bool) {
-        return monsOwned[player].contains(monId);
-    }
-
-    function isOwnerBatch(address player, uint256[] calldata ids) external view returns (bool) {
-        return _isOwnerBatch(player, ids);
-    }
-
-    function _isOwnerBatch(address player, uint256[] memory ids) internal view returns (bool) {
-        EnumerableSetLib.Uint256Set storage owned = monsOwned[player];
-        uint256 len = ids.length;
-        for (uint256 i; i < len;) {
-            if (!owned.contains(ids[i])) {
-                return false;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        return true;
-    }
-
-    function balanceOf(address player) external view returns (uint256) {
-        return monsOwned[player].length();
-    }
-
-    function getOwned(address player) external view returns (uint256[] memory) {
-        return monsOwned[player].values();
     }
 
     // ----- IEngineHook -----
@@ -1161,218 +600,6 @@ contract GachaTeamRegistry is
         }
     }
 
-    /// @dev Handles the per-mon level-up + facet-draw step. Shared between the battle-end walk
-    /// and external `assignExp` so a level crossed via a gift draws facets identically.
-    /// Caller is responsible for SSTOREing the returned facetSlot. `facetLoaded` lets the caller
-    /// reuse a previously-loaded bucket so we don't re-SLOAD facetData on every mon.
-    function _processLevelUps(
-        address player,
-        uint256 monId,
-        uint256 bucket,
-        uint256 lane,
-        uint256 oldExp,
-        uint256 newExp,
-        uint256 facetSlot,
-        bool facetLoaded
-    ) internal view returns (uint256 newFacetSlot, uint256 drawnBitmap, bool drew) {
-        uint256 oldLevel = _levelForExp(oldExp);
-        uint256 newLevel = _levelForExp(newExp);
-        if (newLevel <= oldLevel) {
-            return (facetSlot, 0, false);
-        }
-        if (!facetLoaded) {
-            facetSlot = facetData[player][bucket];
-        }
-        (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
-        uint16 priorBitmap = unlockedBitmap;
-        for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
-            if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
-            uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
-            (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
-            unchecked { ++levelNum; }
-        }
-        // TOTAL_FACETS = 12 fits in GE_FACETS_BITS_PER_MON = 12; the mask is a safety net.
-        drawnBitmap = uint256(unlockedBitmap & ~priorBitmap) & GE_FACETS_LANE_MASK;
-        newFacetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
-        drew = true;
-    }
-
-    // =====================================================================
-    // Assigner API (IGachaPointsAssigner + IExpAssigner)
-    // =====================================================================
-
-    function assignPoints(address player, uint256 amount) external override {
-        if (!isAssigner[msg.sender]) revert NotAssigner();
-        uint256 data = playerData[player];
-        uint256 newPoints = (data & POINTS_MASK_128) + amount;
-        if (newPoints > POINTS_MASK_128) revert PointsOverflow();
-        playerData[player] = (data & ~POINTS_MASK_128) | newPoints;
-    }
-
-    /// @dev Mirrors the bucket-coalescing walk in _applyExpAndFacetDraws so externally-granted
-    /// exp behaves identically to battle exp (saturating cap, level-up facet draws). Unsorted
-    /// monIds work correctly but pay extra SLOAD/SSTORE per bucket revisit.
-    function assignExp(
-        address player,
-        uint256[] calldata monIds_,
-        uint256[] calldata amounts
-    ) external override {
-        if (!isAssigner[msg.sender]) revert NotAssigner();
-        if (monIds_.length != amounts.length) revert LengthMismatch();
-
-        uint256 monRegistrySize = monIds.length();
-        uint256 lastBucket = type(uint256).max;
-        uint256 expSlot;
-        uint256 facetSlot;
-        bool facetLoaded;
-        bool facetDirty;
-
-        for (uint256 i; i < monIds_.length;) {
-            uint256 monId = monIds_[i];
-            if (monId >= monRegistrySize) revert InvalidMonId();
-            uint256 bucket = monId / MONS_PER_EXP_BUCKET;
-            uint256 lane = monId % MONS_PER_EXP_BUCKET;
-
-            if (bucket != lastBucket) {
-                if (lastBucket != type(uint256).max) {
-                    packedExpForMon[player][lastBucket] = expSlot;
-                    if (facetDirty) facetData[player][lastBucket] = facetSlot;
-                }
-                expSlot = packedExpForMon[player][bucket];
-                facetLoaded = false;
-                facetDirty = false;
-                lastBucket = bucket;
-            }
-
-            uint256 oldExp = (expSlot >> (lane * EXP_BITS_PER_MON)) & EXP_PER_MON_MASK;
-            uint256 newExp = oldExp + amounts[i];
-            if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
-            expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
-                | (newExp << (lane * EXP_BITS_PER_MON));
-
-            (uint256 newFacetSlot,, bool drew) =
-                _processLevelUps(player, monId, bucket, lane, oldExp, newExp, facetSlot, facetLoaded);
-            if (drew) {
-                facetSlot = newFacetSlot;
-                facetLoaded = true;
-                facetDirty = true;
-            }
-
-            unchecked { ++i; }
-        }
-
-        if (lastBucket != type(uint256).max) {
-            packedExpForMon[player][lastBucket] = expSlot;
-            if (facetDirty) facetData[player][lastBucket] = facetSlot;
-        }
-    }
-
-    // =====================================================================
-    // Exp / Level public API
-    // =====================================================================
-
-    function getExp(address player, uint256 monId) external view returns (uint256) {
-        return _getExp(player, monId);
-    }
-
-    function getLevel(address player, uint256 monId) external view returns (uint256) {
-        return _levelForExp(_getExp(player, monId));
-    }
-
-    function levelForExp(uint256 exp) external pure returns (uint256) {
-        return _levelForExp(exp);
-    }
-
-    function _getExp(address player, uint256 monId) internal view returns (uint256) {
-        uint256 bucket = monId / MONS_PER_EXP_BUCKET;
-        uint256 lane = monId % MONS_PER_EXP_BUCKET;
-        return (packedExpForMon[player][bucket] >> (lane * EXP_BITS_PER_MON)) & EXP_PER_MON_MASK;
-    }
-
-    /// @dev Linear-gap curve: gap from level N-1 to level N is 2*(N-1) + 4 exp (= 2N+2).
-    /// Caps at level 12 — matches the 12 Facets, so no need to compute beyond.
-    /// Cumulative thresholds: lv1=4, lv2=10, lv3=18, lv4=28, lv5=40, lv6=54, lv7=70,
-    /// lv8=88, lv9=108, lv10=130, lv11=154, lv12=180.
-    function _levelForExp(uint256 exp) internal pure returns (uint256) {
-        if (exp < 4)   return 0;
-        if (exp < 10)  return 1;
-        if (exp < 18)  return 2;
-        if (exp < 28)  return 3;
-        if (exp < 40)  return 4;
-        if (exp < 54)  return 5;
-        if (exp < 70)  return 6;
-        if (exp < 88)  return 7;
-        if (exp < 108) return 8;
-        if (exp < 130) return 9;
-        if (exp < 154) return 10;
-        if (exp < 180) return 11;
-        return 12;
-    }
-
-    function getExpAndLevelsForMons(address player, uint256[] calldata ids)
-        external
-        view
-        returns (uint256[] memory exp, uint256[] memory levels)
-    {
-        uint256 len = ids.length;
-        exp = new uint256[](len);
-        levels = new uint256[](len);
-        for (uint256 i; i < len;) {
-            uint256 e = _getExp(player, ids[i]);
-            exp[i] = e;
-            levels[i] = _levelForExp(e);
-            unchecked { ++i; }
-        }
-    }
-
-    function getExpAndLevelsForTeam(address player, uint256 teamIndex)
-        external
-        view
-        returns (uint256[] memory ids, uint256[] memory exp, uint256[] memory levels)
-    {
-        _assertTeamLive(player, teamIndex);
-        ids = _unpackTeam(_readTeamLane(player, teamIndex));
-        exp = new uint256[](MONS_PER_TEAM);
-        levels = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256 e = _getExp(player, ids[i]);
-            exp[i] = e;
-            levels[i] = _levelForExp(e);
-            unchecked { ++i; }
-        }
-    }
-
-    function getExpAndLevelsForTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
-        external
-        view
-        returns (
-            uint256[] memory p0MonIds,
-            uint256[] memory p0Exp,
-            uint256[] memory p0Levels,
-            uint256[] memory p1MonIds,
-            uint256[] memory p1Exp,
-            uint256[] memory p1Levels
-        )
-    {
-        _assertTeamLive(p0, p0TeamIndex);
-        _assertTeamLive(p1, p1TeamIndex);
-        p0MonIds = _unpackTeam(_readTeamLane(p0, p0TeamIndex));
-        p1MonIds = _unpackTeam(_readTeamLane(p1, p1TeamIndex));
-        p0Exp = new uint256[](MONS_PER_TEAM);
-        p0Levels = new uint256[](MONS_PER_TEAM);
-        p1Exp = new uint256[](MONS_PER_TEAM);
-        p1Levels = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256 e0 = _getExp(p0, p0MonIds[i]);
-            uint256 e1 = _getExp(p1, p1MonIds[i]);
-            p0Exp[i] = e0;
-            p1Exp[i] = e1;
-            p0Levels[i] = _levelForExp(e0);
-            p1Levels[i] = _levelForExp(e1);
-            unchecked { ++i; }
-        }
-    }
-
     function _facetIdForMon(address player, uint256 monId) private view returns (uint8 facetId) {
         (, facetId) = _readFacetSlotForMon(
             facetData[player][monId / MONS_PER_FACET_BUCKET],
@@ -1381,7 +608,7 @@ contract GachaTeamRegistry is
     }
 
     // =====================================================================
-    // Facets / Quests subclass hooks
+    // Subclass hook wiring
     // =====================================================================
 
     function _isFacetMonOwned(address player, uint256 monId) internal view override returns (bool) {
@@ -1390,6 +617,31 @@ contract GachaTeamRegistry is
 
     function _getMonStatsForFacets(uint256 monId) internal view override returns (MonStats memory) {
         return monStats[monId];
+    }
+
+    function _packedTeamValidateOwnership(uint256[] memory monIndices) internal view override {
+        _validateOwnership(monIndices);
+    }
+
+    function _packedTeamIsCpuOpponent(address player) internal view override returns (bool) {
+        return isWhitelistedOpponent(player);
+    }
+
+    function _packedTeamGetMonData(uint256[] memory ids)
+        internal
+        view
+        override
+        returns (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities)
+    {
+        return _getMonDataBatch(ids);
+    }
+
+    function _assertExpAssigner() internal view override {
+        if (!isAssigner[msg.sender]) revert NotAssigner();
+    }
+
+    function _monRegistrySize() internal view override returns (uint256) {
+        return monIds.length();
     }
 
     /// @dev Quest opcode dispatch. Has direct access to registry storage and the engine.
@@ -1481,11 +733,13 @@ contract GachaTeamRegistry is
         revert InvalidOpcode();
     }
 
-    // ITeamRegistry redeclares these — required override stubs delegate to Facets.
+    // MonExp concretizes assignFacets / getFacetData / getFacetDeltaForMon; the leaf still
+    // needs these stubs because MonRegistry's ITeamRegistry inheritance brings parallel
+    // abstract declarations Solidity won't auto-resolve.
 
     function assignFacets(uint256[] calldata monIdsToAssign, uint8[] calldata facetIds)
         public
-        override(Facets, ITeamRegistry)
+        override(MonExp, ITeamRegistry)
     {
         super.assignFacets(monIdsToAssign, facetIds);
     }
@@ -1493,7 +747,7 @@ contract GachaTeamRegistry is
     function getFacetData(address player, uint256 monId)
         public
         view
-        override(Facets, ITeamRegistry)
+        override(MonExp, ITeamRegistry)
         returns (uint16, uint8)
     {
         return super.getFacetData(player, monId);
@@ -1502,7 +756,7 @@ contract GachaTeamRegistry is
     function getFacetDeltaForMon(address player, uint256 monId)
         public
         view
-        override(Facets, ITeamRegistry)
+        override(MonExp, ITeamRegistry)
         returns (StatDelta memory)
     {
         return super.getFacetDeltaForMon(player, monId);

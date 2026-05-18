@@ -11,6 +11,11 @@ import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {Facets} from "../src/game-layer/Facets.sol";
+import {MonExp} from "../src/game-layer/MonExp.sol";
+import {MonOwnership} from "../src/game-layer/MonOwnership.sol";
+import {MonRegistry} from "../src/game-layer/MonRegistry.sol";
+import {PackedTeamStore} from "../src/game-layer/PackedTeamStore.sol";
+import {PlayerProfile} from "../src/game-layer/PlayerProfile.sol";
 import {Quests} from "../src/game-layer/Quests.sol";
 import {IEngine} from "../src/IEngine.sol";
 
@@ -112,7 +117,7 @@ contract GachaTeamRegistryTest is Test {
         vm.startPrank(ALICE);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
         monIndices[0] = unownedMonId;
-        vm.expectRevert(GachaTeamRegistry.NotOwner.selector);
+        vm.expectRevert(MonOwnership.NotOwner.selector);
         gachaTeamRegistry.createTeam(monIndices);
     }
 
@@ -141,7 +146,7 @@ contract GachaTeamRegistryTest is Test {
         teamMonIndicesToOverride[0] = 0;
         uint256[] memory newMonIndices = new uint256[](1);
         newMonIndices[0] = unownedMonId;
-        vm.expectRevert(GachaTeamRegistry.NotOwner.selector);
+        vm.expectRevert(MonOwnership.NotOwner.selector);
         gachaTeamRegistry.updateTeam(0, teamMonIndicesToOverride, newMonIndices);
     }
 
@@ -748,7 +753,7 @@ contract GachaTeamRegistryTest is Test {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
 
-        vm.expectRevert(GachaTeamRegistry.NonSequentialMonId.selector);
+        vm.expectRevert(MonRegistry.NonSequentialMonId.selector);
         gachaTeamRegistry.createMon(8, stats, empty, empty, keys, values); // non-sequential
 
         // Sequential id (6) succeeds.
@@ -1572,13 +1577,13 @@ contract GachaTeamRegistryTest is Test {
     function test_deleteTeam_revertsOnNotLive() public {
         vm.startPrank(ALICE);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
-        vm.expectRevert(GachaTeamRegistry.TeamNotLive.selector);
+        vm.expectRevert(PackedTeamStore.TeamNotLive.selector);
         gachaTeamRegistry.deleteTeam(1);  // slot 1 was never created
     }
 
     function test_deleteTeam_revertsOnOutOfRange() public {
         vm.startPrank(ALICE);
-        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        vm.expectRevert(PackedTeamStore.InvalidTeamIndex.selector);
         gachaTeamRegistry.deleteTeam(16);
     }
 
@@ -1588,14 +1593,14 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
         gachaTeamRegistry.deleteTeam(1);
 
-        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        vm.expectRevert(PackedTeamStore.InvalidTeamIndex.selector);
         gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 1);
 
         uint256[] memory positions = new uint256[](1);
         positions[0] = 0;
         uint256[] memory newMons = new uint256[](1);
         newMons[0] = 5;
-        vm.expectRevert(GachaTeamRegistry.TeamNotLive.selector);
+        vm.expectRevert(PackedTeamStore.TeamNotLive.selector);
         gachaTeamRegistry.updateTeam(1, positions, newMons);
     }
 
@@ -1666,7 +1671,7 @@ contract GachaTeamRegistryTest is Test {
         for (uint256 i; i < 16; ++i) {
             gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
         }
-        vm.expectRevert(GachaTeamRegistry.TeamCapReached.selector);
+        vm.expectRevert(PackedTeamStore.TeamCapReached.selector);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
     }
 
@@ -1681,7 +1686,7 @@ contract GachaTeamRegistryTest is Test {
         assertEq(reused, 7);
 
         // Cap again.
-        vm.expectRevert(GachaTeamRegistry.TeamCapReached.selector);
+        vm.expectRevert(PackedTeamStore.TeamCapReached.selector);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 4));
     }
 
@@ -1731,7 +1736,7 @@ contract GachaTeamRegistryTest is Test {
 
     function test_assignPoints_revertsForNonAssigner() public {
         vm.prank(BOB);
-        vm.expectRevert(GachaTeamRegistry.NotAssigner.selector);
+        vm.expectRevert(PlayerProfile.NotAssigner.selector);
         gachaTeamRegistry.assignPoints(ALICE, 100);
     }
 
@@ -1774,7 +1779,7 @@ contract GachaTeamRegistryTest is Test {
 
         // Second grant overflows the 128-bit lane.
         vm.prank(ASSIGNER);
-        vm.expectRevert(GachaTeamRegistry.PointsOverflow.selector);
+        vm.expectRevert(PlayerProfile.PointsOverflow.selector);
         gachaTeamRegistry.assignPoints(ALICE, 2);
     }
 
@@ -1784,7 +1789,7 @@ contract GachaTeamRegistryTest is Test {
         monIdsArr[0] = 0;
         amounts[0] = 5;
         vm.prank(BOB);
-        vm.expectRevert(GachaTeamRegistry.NotAssigner.selector);
+        vm.expectRevert(PlayerProfile.NotAssigner.selector);
         gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
     }
 
@@ -1796,7 +1801,7 @@ contract GachaTeamRegistryTest is Test {
         monIdsArr[1] = 1;
         amounts[0] = 5;
         vm.prank(ASSIGNER);
-        vm.expectRevert(GachaTeamRegistry.LengthMismatch.selector);
+        vm.expectRevert(MonExp.LengthMismatch.selector);
         gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
     }
 
@@ -1808,7 +1813,7 @@ contract GachaTeamRegistryTest is Test {
         monIdsArr[0] = outOfRange;
         amounts[0] = 5;
         vm.prank(ASSIGNER);
-        vm.expectRevert(GachaTeamRegistry.InvalidMonId.selector);
+        vm.expectRevert(MonExp.InvalidMonId.selector);
         gachaTeamRegistry.assignExp(ALICE, monIdsArr, amounts);
     }
 
@@ -2039,7 +2044,7 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory ids = new uint256[](MONS_PER_TEAM);
         ids[0] = 0;
         ids[1] = 3;
-        vm.expectRevert(GachaTeamRegistry.InvalidTeamIndex.selector);
+        vm.expectRevert(PackedTeamStore.InvalidTeamIndex.selector);
         gachaTeamRegistry.setTeamForUser(BOB, 16, ids, new uint8[](MONS_PER_TEAM));
     }
 

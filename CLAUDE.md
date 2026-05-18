@@ -43,42 +43,61 @@ chomp/
 │   ├── commit-manager/     # Commit-reveal scheme for simultaneous moves
 │   │   ├── DefaultCommitManager.sol
 │   │   ├── SignedCommitManager.sol   # EIP-712 signed commits
+│   │   ├── SignedCommitLib.sol       # Shared signed-commit helpers
 │   │   └── ICommitManager.sol
 │   ├── cpu/                # AI opponents (CPU players)
-│   │   ├── CPU.sol         # Base CPU
-│   │   ├── BetterCPU.sol   # Smarter AI
-│   │   ├── OkayCPU.sol, RandomCPU.sol, PlayerCPU.sol
+│   │   ├── CPU.sol                # Base CPU
+│   │   ├── HeuristicCPUBase.sol   # Shared heuristic scaffolding for BetterCPU / FairCPU
+│   │   ├── BetterCPU.sol          # Smarter AI
+│   │   ├── FairCPU.sol            # Balanced opponent
+│   │   ├── OkayCPU.sol            # Mid-tier opponent
+│   │   ├── CPUMoveManager.sol     # Wraps Engine.execute for CPU-driven battles
 │   │   └── ICPU.sol
 │   ├── effects/            # Effect system (status effects, stat boosts, battlefield)
 │   │   ├── IEffect.sol     # Effect interface with lifecycle hooks
 │   │   ├── BasicEffect.sol
 │   │   ├── StaminaRegen.sol
 │   │   ├── StatBoosts.sol
-│   │   ├── status/         # Status effects (Burn, Frostbite, Panic, Sleep, Zap)
-│   │   └── battlefield/    # Battlefield effects (Overclock)
-│   ├── hooks/              # Engine hooks (BattleHistory)
-│   ├── lib/                # Utility libraries (ECDSA, EIP712, Ownable, etc.)
+│   │   ├── status/         # Status effects (Burn, Frostbite, Panic, Sleep, Zap) + StatusEffectLib
+│   │   ├── battlefield/    # Battlefield effects (Overclock)
+│   ├── game-layer/         # Team / mon registry, gacha, exp, facets, quests, gifts
+│   │   ├── GachaTeamRegistry.sol   # Concrete leaf: composes the abstracts below
+│   │   ├── MonOwnership.sol        # monsOwned set + ownership view/check helpers
+│   │   ├── MonRegistry.sol         # Owner-managed mon catalog (stats / moves / abilities / metadata)
+│   │   ├── PlayerProfile.sol       # Packed playerData slot, CPU/whitelist flags, assigner allowlist
+│   │   ├── PackedTeamStore.sol     # Bit-packed team CRUD (4 teams per slot, 16 slots per player)
+│   │   ├── Facets.sol              # 12-facet ± stat tradeoff system (abstract)
+│   │   ├── MonExp.sol              # Packed exp, level curve, level-up facet draws, assignExp
+│   │   ├── Quests.sol              # Daily quest pool + packed predicate evaluator (abstract)
+│   │   ├── ReturnerGift.sol        # Daily-return points + exp gift contract (assigner)
+│   │   ├── ITeamRegistry.sol       # Public read/write surface that the leaf exposes
+│   │   ├── IGachaPointsAssigner.sol / IExpAssigner.sol  # Owner-allowlisted off-band grants
+│   │   └── IPhantomTeamRegistry.sol  # CPU-relayer entry for writing user phantom team configs
+│   ├── hooks/              # Engine hooks (e.g. SimplePM)
+│   ├── lib/                # Utility libraries: ECDSA, EIP712, Ownable, EnumerableSetLib,
+│   │                       # MappingAllocator, MerkleProofLib, Multicall3, StaminaRegenLogic,
+│   │                       # SwitchTargetLib, ValidatorLogic
 │   ├── matchmaker/         # Battle matchmaking
 │   │   ├── DefaultMatchmaker.sol     # Propose/accept/confirm flow
-│   │   └── SignedMatchmaker.sol      # EIP-712 signed matchmaking
+│   │   ├── SignedMatchmaker.sol      # EIP-712 signed matchmaking
+│   │   ├── BattleOfferLib.sol        # Shared offer-hash + validation helpers
+│   │   └── IMatchmaker.sol
 │   ├── mons/               # Individual mon implementations (one dir per mon)
 │   │   ├── <monname>/      # Lowercase dir: 4 move .sol files + 1 ability .sol (+ optional libs)
 │   │   ├── aurox/          # e.g. BullRush.sol, GildedRecovery.sol, IronWall.sol, UpOnly.sol, ...
 │   │   ├── embursa/        # e.g. HeatBeacon.sol, SetAblaze.sol, Tinderclaws.sol, ...
-│   │   └── ...             # See drool/mons.csv for full roster
+│   │   └── ...             # ~13 mons total; see drool/mons.csv for the full roster
 │   ├── moves/              # Move system
-│   │   ├── IMoveSet.sol    # Move interface
-│   │   ├── StandardAttack.sol        # Base attack implementation
+│   │   ├── IMoveSet.sol               # Move interface
+│   │   ├── IMoveSetWithRange.sol      # Optional extension for variable-power / multi-hit moves
+│   │   ├── StandardAttack.sol         # Base attack implementation
 │   │   ├── StandardAttackFactory.sol
-│   │   ├── StandardAttackStructs.sol # ATTACK_PARAMS struct
-│   │   └── AttackCalculator.sol      # Damage calculation
-│   ├── rng/                # Randomness oracle interface
-│   ├── teams/              # Team registry (combined team + mon registry + gacha + progression)
-│   │   ├── ITeamRegistry.sol
-│   │   ├── GachaTeamRegistry.sol  # Roll, exp, daily multipliers, onBattleEnd hook
-│   │   ├── Facets.sol             # 12-facet ±5% stat tradeoff system (abstract)
-│   │   └── Quests.sol             # Daily quest pool + packed predicate evaluator (abstract)
-│   └── types/              # Type effectiveness calculator
+│   │   ├── StandardAttackStructs.sol  # ATTACK_PARAMS struct
+│   │   ├── AttackCalculator.sol       # Damage calculation
+│   │   └── MoveSlotLib.sol            # Move-index packing helpers
+│   ├── rng/                # Randomness oracle interfaces + DefaultRandomnessOracle
+│   │                       # (IRandomnessOracle for battles, ICPURNG, IGachaRNG)
+│   └── types/              # Type effectiveness calculator (TypeCalculator + TypeCalcLib)
 ├── test/                   # Foundry test suite
 │   ├── abstract/BattleHelper.sol  # Shared test helper (battle setup, commit-reveal)
 │   ├── mocks/              # Mock contracts for testing
@@ -94,16 +113,20 @@ chomp/
 │   ├── SetupCPU.s.sol      # Deploy CPU players
 │   └── Surgery.s.sol       # Maintenance/upgrade script
 ├── processing/             # Python build scripts
-│   ├── buildAll.py         # Master orchestrator (sprites, validation, codegen)
-│   ├── generateSolidity.py # Generate SetupMons.s.sol from CSV data
-│   ├── validateMoves.py    # Validate move contracts match CSV data
-│   ├── deploy.py           # Full deployment pipeline orchestrator
-│   ├── buildTypeChart.py   # Build type effectiveness chart
+│   ├── generateSolidity.py          # Generate SetupMons.s.sol from CSV data
+│   ├── generateSetupCPU.py          # Generate SetupCPU.s.sol team config from cpu-teams.json
+│   ├── generate_incremental.py      # Incremental codegen utility
+│   ├── validateMoves.py             # Validate move contracts match CSV data
+│   ├── deploy.py                    # Full deployment pipeline orchestrator
+│   ├── buildTypeChart.py            # Build type effectiveness chart
+│   ├── buildDamageGifs.py           # Render damage-preview GIFs
 │   ├── createAddressAndABIs.py      # Extract deployed addresses + ABIs
 │   ├── generateMonsTypeScript.py    # Generate TypeScript mon data
 │   ├── createMonSpritesheets.py     # Generate mon spritesheets
 │   ├── createAttackSpritesheets.py  # Generate attack spritesheets
-│   ├── inputToEnv.py       # Parse forge output to .env
+│   ├── packMoves.py                 # Pack move data for distribution
+│   ├── dep_graph.py                 # Solidity import-dependency analyzer
+│   ├── inputToEnv.py                # Parse forge output to .env
 │   └── removeUnusedImports.py       # Clean up unused Solidity imports
 ├── transpiler/             # Solidity-to-TypeScript transpiler (Python)
 │   ├── sol2ts.py           # Main entry point
@@ -157,11 +180,12 @@ chomp/
 | `IRuleset` | Initial battle configuration (global effects) |
 | `ICommitManager` | Commit-reveal move management |
 | `IMatchmaker` | Battle matchmaking validation |
-| `ITeamRegistry` | Team storage and retrieval |
-| `IMonRegistry` | Mon data storage (stats, moves, abilities) |
-| `IEngineHook` | Battle lifecycle hooks (OnBattleStart, OnRoundEnd, etc.) |
+| `ITeamRegistry` | Combined team CRUD + mon catalog + exp/level + facet getters (implemented by `GachaTeamRegistry` via its abstract bases) |
+| `IGachaPointsAssigner` / `IExpAssigner` | Owner-allowlisted off-band grants of points / exp (e.g. `ReturnerGift`) |
+| `IPhantomTeamRegistry` | CPU-relayer entry for writing a user's phantom team config from a whitelisted CPU |
+| `IEngineHook` | Battle lifecycle hooks (OnBattleStart, OnRoundEnd, OnBattleEnd, ...) |
 | `ICPU` | AI opponent interface |
-| `IRandomnessOracle` | RNG source |
+| `IRandomnessOracle` / `ICPURNG` / `IGachaRNG` | RNG sources, scoped by consumer |
 
 ### Move System
 
@@ -183,6 +207,8 @@ ATTACK_PARAMS({
 })
 ```
 
+These are then inlined into the Engine and stored only as JSON.
+
 Custom moves implement `IMoveSet` directly for complex behavior.
 
 ### Effect System
@@ -200,7 +226,19 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 
 ### Gacha & Progression System
 
-`GachaTeamRegistry` is also an `IEngineHook` (subscribes to `OnBattleEnd`) and inherits `Facets` + `Quests`. It owns the full progression loop: rolling, points, per-mon exp, daily multipliers, level-up facet draws, and quest evaluation.
+`GachaTeamRegistry` is the concrete leaf — it's an `IEngineHook` (subscribes to `OnBattleEnd`) and composes seven abstract bases that each own one slice of state and behavior:
+
+| Abstract | Owns |
+|---|---|
+| `MonOwnership` | `monsOwned` per-player set; ownership view + bulk-check helpers (`_isOwnerBatch`, `_validateOwnership`). Satisfies the `_isFacetMonOwned` hook on `Facets`. |
+| `MonRegistry` | Owner-managed mon catalog (`monStats`, `monMoves`, `monAbilities`, `monMetadata`, sequential `monIds` set). Inherits `ITeamRegistry` so its `createMon`/`modifyMon`/batched-getters bind directly. Backs the `_getMonStatsForFacets` hook used by facet delta computation. |
+| `PlayerProfile` | Packed `playerData[address]` (one uint256 per player) + the owner-managed `isAssigner` allowlist. Exposes `pointsBalance`, `isWhitelistedOpponent`, `isHardCpu`, the bulk admin flag setters, and `assignPoints` (IGachaPointsAssigner). |
+| `PackedTeamStore` | Bit-packed team CRUD: `teamGroupsPacked` (4 teams × 64 bits per slot), `teamOrderPacked` (16-slot live bitmap + display order). Constructor takes `MONS_PER_TEAM` / `MOVES_PER_MON` immutables. Subclass hooks: `_packedTeamValidateOwnership`, `_packedTeamIsCpuOpponent`, `_packedTeamGetMonData`. |
+| `Facets` | 12-facet ±5% stat tradeoff system (see below). Pure helpers, packed per-mon facet data, `assignFacets`. |
+| `MonExp` | Packed per-mon exp (`packedExpForMon`), level curve, level-up facet draws (`_processLevelUps`), public `getExp` / `getLevel` / `getExpAndLevelsFor*`, assigner-gated `assignExp`. Inherits `Facets` + `PackedTeamStore` because level-ups draw facets and team views need the lane helpers. Subclass hooks: `_assertExpAssigner`, `_monRegistrySize`. |
+| `Quests` | Daily quest pool + packed predicate evaluator. Subclass hook: `_extract` (opcode dispatch implemented by the leaf since it sees Engine + all sub-systems). |
+
+The leaf adds: the `onBattleEnd` orchestration (streak / quest / points / exp loop, plus a `_applyExpAndFacetDraws` walk that mirrors `assignExp` but with KO bitmap + streak + event packing), gacha rolling (`firstRoll`/`roll`/`_rollInto`), the per-(user, opponent) CPU phantom facet config, the `getTeams` variant that folds facet deltas in, the `_extract` quest opcode dispatch, and the wiring overrides for every subclass hook. With this split the leaf is ~750 LOC of integration and event-shape concerns; each base is independently auditable.
 
 **Rolling.** Mon ids are sequential starting at 0 (`createMon` enforces `monId == monIds.length()`). Ids `[0, NUM_STARTERS)` (= 3) are *starter* mons.
 
@@ -259,6 +297,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 - Effects stored in per-mon mappings with stride-based indexing (64 slots per mon)
 - Heavy use of bit packing for gas efficiency (KO bitmaps, effect counts, active mon indices)
 - Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`)
+- `GachaTeamRegistry`'s storage is the union of its abstract bases; each base owns its own mappings/constants so the leaf is integration-only. Reordering the inheritance list would shift slot layout — keep the order in `GachaTeamRegistry.sol` stable across deploys.
 
 ## Development Conventions
 
@@ -310,7 +349,7 @@ When implementing new features or refactors, follow a test-first approach:
 5. Implement 4 move contracts as `PascalCase.sol` files (see "Move Implementation Patterns" below)
 6. Implement 1 ability contract as `PascalCase.sol` (see "Ability Patterns" below)
 7. Run `python processing/validateMoves.py` to validate contracts match CSV data
-8. Run `python processing/buildAll.py --skip-sprites` to regenerate `SetupMons.s.sol`
+8. Run `python processing/generateSolidity.py` to regenerate `SetupMons.s.sol`
 9. Add tests in `test/mons/<MonName>Test.sol` extending `BattleHelper`
 
 ### Move Implementation Patterns
@@ -393,12 +432,9 @@ To implement a new effect:
 ### Processing Scripts (Python 3.11+)
 
 ```bash
-# Full build pipeline
-python processing/buildAll.py [--skip-sprites] [--skip-validation] [--color]
-
-# Individual scripts
 python processing/validateMoves.py          # Validate contracts vs CSV
 python processing/generateSolidity.py       # Generate SetupMons.s.sol
+python processing/generateSetupCPU.py       # Generate SetupCPU.s.sol from cpu-teams.json
 python processing/deploy.py --testnet       # Full deployment (forge scripts + codegen)
 python processing/deploy.py --mainnet       # Production deployment
 ```
