@@ -785,7 +785,7 @@ class ExpressionGenerator(BaseGenerator):
             if arg.member in ('sender', 'origin', '_contractAddress'):
                 return f'{expr} as `0x${{string}}`'
             if isinstance(arg.expression, Identifier):
-                if arg.expression.name == 'Enums':
+                if arg.expression.name in self._ctx.known_enums:
                     return f'Number({expr})'
                 var_name = arg.expression.name
                 if var_name in self._ctx.var_types:
@@ -843,6 +843,9 @@ class ExpressionGenerator(BaseGenerator):
             type_name = arg.type_name.name
             if type_name in ('address', 'bytes32'):
                 return f'{expr} as `0x${{string}}`'
+            if type_name in ('int8', 'int16', 'int24', 'int32', 'int40', 'int48',
+                             'uint8', 'uint16', 'uint24', 'uint32', 'uint40', 'uint48'):
+                return f'Number({expr})'
 
         return expr
 

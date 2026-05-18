@@ -154,7 +154,7 @@ class AbiTypeInferer:
         if arg.member == '_contractAddress':
             return "{type: 'address'}"
         if isinstance(arg.expression, Identifier):
-            if arg.expression.name == 'Enums':
+            if arg.expression.name in self.known_enums:
                 return "{type: 'uint8'}"
             if arg.expression.name in ('this', 'msg', 'tx'):
                 if arg.member in ('sender', 'origin', '_contractAddress'):
@@ -244,7 +244,7 @@ class AbiTypeInferer:
             if arg.member == '_contractAddress':
                 return 'address'
             if isinstance(arg.expression, Identifier):
-                if arg.expression.name == 'Enums':
+                if arg.expression.name in self.known_enums:
                     return 'uint8'
                 if arg.expression.name in ('this', 'msg', 'tx'):
                     if arg.member in ('sender', 'origin'):
