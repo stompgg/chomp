@@ -36,12 +36,12 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
         // Add effect to global effects
         engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+        if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
             HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
@@ -50,8 +50,8 @@ contract Q5 is IMoveSet, BasicEffect {
         return 2;
     }
 
-    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex);
     }
 
     function moveType(IEngine, bytes32) public pure returns (Type) {

@@ -89,7 +89,7 @@ contract HoneyBribe is IMoveSet {
         _increaseBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+        if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
             HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
@@ -98,8 +98,8 @@ contract HoneyBribe is IMoveSet {
         return 2;
     }
 
-    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex);
     }
 
     function moveType(IEngine, bytes32) public pure returns (Type) {

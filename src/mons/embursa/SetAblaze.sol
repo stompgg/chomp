@@ -50,13 +50,13 @@ contract SetAblaze is StandardAttack {
             critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
         );
         // Clear the priority boost
-        if (HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex) == 1) {
+        if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
             HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
     }
 
-    function priority(IEngine engine, bytes32, uint256 attackerPlayerIndex) public view override returns (uint32) {
-        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, attackerPlayerIndex);
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view override returns (uint32) {
+        return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex);
     }
     // Inherits StandardAttack.getMeta, which delegates to priority() / stamina() / etc. —
     // including this contract's overridden priority — so no override is needed here.

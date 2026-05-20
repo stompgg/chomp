@@ -737,14 +737,19 @@ contract Engine is IEngine, MappingAllocator {
     /// calls within the same transaction. Intended for foundry test harnesses that dispatch multiple turns
     /// in one test function (the EVM's per-tx transient-clear doesn't fire between `vm.prank`-delimited
     /// calls). Zero-cost in production since every call is its own tx and transient auto-clears at tx end.
-    /// @dev Intentionally does NOT clear `battleKeyForWrite` / `storageKeyForWrite`. Some contracts
-    /// (e.g. HeatBeacon) read `engine.battleKeyForWrite()` from view calls outside an active execute to
-    /// key into `getGlobalKV`; clearing those would break their "read priority between turns" pattern.
+    /// @dev Also clears `battleKeyForWrite` / `storageKeyForWrite` so view getters that fall back to the
+    /// persistent `battleKeyToStorageKey` mapping (e.g. `getBattle` for ended battles) behave the same in
+    /// tests as on a fresh-tx production call. Any subsequent `execute()` re-sets both at entry, and the
+    /// in-`execute` readers (StatBoosts, etc.) run after that — so this is safe to call between turns.
+    /// Note: this loses `setMove`'s `isForCurrentBattle` cache hit (Engine.sol:1454) on the next setMove,
+    /// adding one warm SLOAD per call. Production never calls this so the regression is test-only.
     function resetCallContext() external {
         _turnP0MoveEncoded = 0;
         _turnP1MoveEncoded = 0;
         _turnP0Salt = 0;
         _turnP1Salt = 0;
+        battleKeyForWrite = bytes32(0);
+        storageKeyForWrite = bytes32(0);
     }
 
     function end(bytes32 battleKey) external {
@@ -2421,22 +2426,13 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Frontend hydration: passthrough to registry for level/exp on both teams.
-        TeamLevelInfo memory p0Levels;
-        TeamLevelInfo memory p1Levels;
-        {
-            (
-                uint256[] memory p0MonIds,
-                uint256[] memory p0Exp,
-                uint256[] memory p0LevelArr,
-                uint256[] memory p1MonIds,
-                uint256[] memory p1Exp,
-                uint256[] memory p1LevelArr
-            ) = config.teamRegistry.getExpAndLevelsForTeams(
-                data.p0, data.p0TeamIndex, data.p1, data.p1TeamIndex
-            );
-            p0Levels = TeamLevelInfo({monIds: p0MonIds, exp: p0Exp, levels: p0LevelArr});
-            p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
-        }
+        // After _handleGameOver -> _freeStorageKey, the storageKey indirection is
+        // dropped and a subsequent getBattle(battleKey) reads an empty config row
+        // (since the battle had been using a recycled slot). battleData survives
+        // (keyed directly by battleKey), so we still return the final state — we
+        // just skip the registry call when teamRegistry has zeroed out.
+        (TeamLevelInfo memory p0Levels, TeamLevelInfo memory p1Levels) =
+            _getTeamLevels(config.teamRegistry, data.p0, data.p0TeamIndex, data.p1, data.p1TeamIndex);
 
         BattleConfigView memory configView = BattleConfigView({
             validator: config.validator,
@@ -2504,6 +2500,31 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         return result;
+    }
+
+    function _getTeamLevels(
+        ITeamRegistry registry,
+        address p0,
+        uint256 p0TeamIndex,
+        address p1,
+        uint256 p1TeamIndex
+    ) internal view returns (TeamLevelInfo memory p0Levels, TeamLevelInfo memory p1Levels) {
+        if (address(registry) == address(0)) {
+            uint256[] memory empty = new uint256[](0);
+            p0Levels = TeamLevelInfo({monIds: empty, exp: empty, levels: empty});
+            p1Levels = TeamLevelInfo({monIds: empty, exp: empty, levels: empty});
+            return (p0Levels, p1Levels);
+        }
+        (
+            uint256[] memory p0MonIds,
+            uint256[] memory p0Exp,
+            uint256[] memory p0LevelArr,
+            uint256[] memory p1MonIds,
+            uint256[] memory p1Exp,
+            uint256[] memory p1LevelArr
+        ) = registry.getExpAndLevelsForTeams(p0, p0TeamIndex, p1, p1TeamIndex);
+        p0Levels = TeamLevelInfo({monIds: p0MonIds, exp: p0Exp, levels: p0LevelArr});
+        p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
     }
 
     function getBattleValidator(bytes32 battleKey) external view returns (IValidator) {

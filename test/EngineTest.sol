@@ -203,6 +203,77 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getMonStateForStorageKey(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
     }
 
+    // Regression: getBattle must not revert when the battle has ended and its
+    // BattleConfig storage slot was a recycled one. _handleGameOver runs
+    // _freeStorageKey, which drops battleKeyToStorageKey[battleKey]. A later
+    // getBattle(battleKey) then falls through to battleConfig[battleKey] — an
+    // unwritten row whose teamRegistry reads as address(0). Pre-fix, the
+    // unconditional teamRegistry.getExpAndLevelsForTeams call dispatched to the
+    // zero address and reverted via the compiler-inserted extcodesize check.
+    function test_getBattleAfterGameOverDoesNotRevert_recycledSlot() public {
+        IMoveSet normalAttack = new CustomAttack(
+            typeCalc,
+            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+        );
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(normalAttack)));
+        Mon memory fastMon = Mon({
+            stats: MonStats({
+                hp: 10, stamina: 1, speed: 2,
+                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
+                type1: Type.Liquid, type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon memory slowMon = Mon({
+            stats: MonStats({
+                hp: 10, stamina: 1, speed: 1,
+                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
+                type1: Type.Liquid, type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon[] memory fastTeam = new Mon[](1);
+        fastTeam[0] = fastMon;
+        Mon[] memory slowTeam = new Mon[](1);
+        slowTeam[0] = slowMon;
+        defaultRegistry.setTeam(ALICE, fastTeam);
+        defaultRegistry.setTeam(BOB, slowTeam);
+
+        // Battle 1: free pool is empty, so storageKey == battleKey1.
+        bytes32 battleKey1 = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey1, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey1, 0, 0, 0, 0);
+        assertEq(engine.getWinner(battleKey1), ALICE);
+
+        // Battle 2: pops battleKey1 from the free pool and uses it as its storageKey.
+        // battleKeyToStorageKey[battleKey2] = battleKey1; battleConfig[battleKey2] stays untouched.
+        bytes32 battleKey2 = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey2, 0, 0, 0, 0);
+        assertEq(engine.getWinner(battleKey2), ALICE);
+        // _commitRevealExecuteForAliceAndBob's final resetCallContext() clears
+        // storageKeyForWrite, so getBattle falls through to _getStorageKey and
+        // hits the deleted mapping — mirroring fresh-tx production behavior.
+        // Pre-fix this reverted; post-fix the registry call is skipped and the
+        // call returns with empty TeamLevelInfo while BattleData survives.
+        (BattleConfigView memory cfg, BattleData memory data) = engine.getBattle(battleKey2);
+        assertEq(data.p0, ALICE);
+        assertEq(data.p1, BOB);
+        assertEq(data.winnerIndex, 0);
+        assertEq(address(cfg.validator), address(0), "config row should be empty");
+        assertEq(cfg.p0Levels.monIds.length, 0);
+        assertEq(cfg.p1Levels.monIds.length, 0);
+    }
+
     function test_fasterPriorityKOsGameOver() public {
         // Initialize fast and slow mons
         IMoveSet slowAttack = new CustomAttack(

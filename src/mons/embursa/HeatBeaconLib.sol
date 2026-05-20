@@ -12,8 +12,8 @@ library HeatBeaconLib {
         return uint64(uint256(keccak256(abi.encode(playerIndex, "HEAT_BEACON"))));
     }
 
-    function _getPriorityBoost(IEngine engine, uint256 playerIndex) internal view returns (uint32) {
-        uint192 value = engine.getGlobalKV(engine.battleKeyForWrite(), _getKey(playerIndex));
+    function _getPriorityBoost(IEngine engine, bytes32 battleKey, uint256 playerIndex) internal view returns (uint32) {
+        uint192 value = engine.getGlobalKV(battleKey, _getKey(playerIndex));
         return value == 1 ? 1 : 0;
     }
 
