@@ -144,6 +144,44 @@ class ContractGenerator(BaseGenerator):
         # Setup contract context
         self._setup_contract_context(contract)
 
+        # SCREAMING_SNAKE upper-case of the contract name — shared by the
+        # METHODS array (emitted after the class) and the ARG_NAMES const
+        # (emitted before, so the class's __argNames initializer can reference it).
+        upper_name = ''.join(f'_{c}' if c.isupper() else c for c in contract.name).lstrip('_').upper()
+
+        # __argNames metadata: positional parameter names per method, keyed by
+        # method name. Consumers (e.g. battle-action-mapper) read CallEntry args
+        # by name. Overloads collapse on name in TS, so we emit the
+        # longest-arity overload's parameter list (mirrors generate_overloaded
+        # _function's main_func selection).
+        method_to_longest_params: Dict[str, List[str]] = {}
+        for func in contract.functions:
+            if not func.name:
+                continue
+            param_names = [
+                p.name if p.name else f'_arg{i}'
+                for i, p in enumerate(func.parameters)
+            ]
+            existing = method_to_longest_params.get(func.name)
+            if existing is None or len(param_names) > len(existing):
+                method_to_longest_params[func.name] = param_names
+
+        # Emit the narrow ARG_NAMES literal + type alias BEFORE the class so:
+        #   - the class's __argNames initializer can reference the const
+        #   - downstream code can `import { type FooArgNames }` for compile-time
+        #     field-name validation in typed wrapper helpers
+        # The class's __argNames field itself is typed wide (Readonly<Record<...>>)
+        # so subclass overrides with different method sets don't conflict; the
+        # narrow type lives on the exported ARG_NAMES alias instead.
+        if method_to_longest_params:
+            arg_entries = ', '.join(
+                f"{method!r}: [{', '.join(repr(n) for n in names)}]"
+                for method, names in method_to_longest_params.items()
+            )
+            lines.append(f'export const {upper_name}_ARG_NAMES = {{ {arg_entries} }} as const;')
+            lines.append(f'export type {contract.name}ArgNames = typeof {upper_name}_ARG_NAMES;')
+            lines.append('')
+
         # Generate class declaration with extends clause
         extends = self._compute_extends_clause(contract)
         abstract = 'abstract ' if contract.kind == 'abstract' else ''
@@ -163,6 +201,18 @@ class ContractGenerator(BaseGenerator):
         ]
         var_list = ', '.join(f"'{v}'" for v in mutable_state_vars)
         lines.append(f"{self.indent()}static override readonly __stateVars = new Set([{var_list}]);")
+
+        # Widened __argNames — references the narrow const declared above.
+        if method_to_longest_params:
+            lines.append(
+                f"{self.indent()}static override readonly __argNames: "
+                f"Readonly<Record<string, readonly string[]>> = {upper_name}_ARG_NAMES;"
+            )
+        else:
+            lines.append(
+                f"{self.indent()}static override readonly __argNames: "
+                f"Readonly<Record<string, readonly string[]>> = {{}};"
+            )
 
         lines.append('')
 
@@ -209,7 +259,6 @@ class ContractGenerator(BaseGenerator):
         # validation: typeof ENGINE_METHODS[number] gives the union of method names.
         method_names = [func.name for func in contract.functions if func.name]
         if method_names:
-            upper_name = ''.join(f'_{c}' if c.isupper() else c for c in contract.name).lstrip('_').upper()
             method_list = ', '.join(f"'{m}'" for m in method_names)
             lines.append(f'export const {upper_name}_METHODS = [{method_list}] as const;')
             lines.append(f'export type {contract.name}Method = typeof {upper_name}_METHODS[number];')

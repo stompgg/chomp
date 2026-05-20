@@ -98,7 +98,9 @@
     "game-layer/IPhantomTeamRegistry.sol",
     "rng/ICPURNG.sol",
     "rng/IGachaRNG.sol",
-    "game-layer/ReturnerGift.sol"
+    "game-layer/ReturnerGift.sol",
+    "DefaultRuleset.sol",
+    "DefaultValidator.sol"
   ],
   "skipDirs": [
     "cpu"

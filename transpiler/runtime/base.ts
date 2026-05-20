@@ -404,6 +404,12 @@ export abstract class Contract {
    *  Used by the state-change tracking proxy to filter which property writes to log. */
   static readonly __stateVars: Set<string> = new Set();
 
+  /** Per-method positional argument names — overridden per contract by the
+   *  transpiler. Lets consumers (e.g. battle-action-mapper) read CallEntry.args
+   *  by name instead of by index, so engine arg reorders surface as compile
+   *  errors at call sites. */
+  static readonly __argNames: Readonly<Record<string, readonly string[]>> = {};
+
 
 
   // =========================================================================
@@ -634,7 +640,7 @@ export abstract class Contract {
         // Internal *Internal variants are preferred over public wrappers since
         // they catch both the public-API path AND direct internal callers
         // (e.g. _inlineStandardAttack bypasses public dispatchStandardAttack).
-        const LOGGED_METHODS = ['_dealDamageInternal', '_emitMonMoves', '_computePriorityPlayerIndex', 'updateMonState', '_addEffectInternal', '_dispatchStandardAttackInternal', '_calculateDamage', 'removeEffect', '_handleMove', '_handleSwitch'];
+        const LOGGED_METHODS = ['_dealDamageInternal', '_emitMonMoves', '_computePriorityPlayerIndex', 'updateMonState', '_addEffectInternal', '_dispatchStandardAttackInternal', '_calculateDamage', 'removeEffect', '_handleMove', '_handleSwitch', '_inlineStaminaRegen'];
         const forceLog = Contract._turnCallLog && LOGGED_METHODS.includes(propStr);
 
         // Skip private/internal helpers — except force-logged methods
