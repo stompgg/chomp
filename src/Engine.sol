@@ -750,6 +750,18 @@ contract Engine is IEngine, MappingAllocator {
         _turnP1Salt = 0;
         battleKeyForWrite = bytes32(0);
         storageKeyForWrite = bytes32(0);
+        // Per-turn transients that `_executeInternal` only conditionally resets — clearing
+        // them here keeps batched execution in one tx behavior-equivalent to legacy single-turn
+        // execution where each turn is its own tx and the EVM auto-clears all transients on tx
+        // entry. Specifically: `tempRNG` is only set on the two-player branch (a stale value
+        // could leak into a subsequent single-player switch turn's effect hooks), and
+        // `effectsDirtyBitmap` only clears the bit for the list currently being iterated.
+        // `koOccurredFlag` and `tempPreDamage` are zeroed at every use today; included for
+        // future-proofing.
+        tempRNG = 0;
+        koOccurredFlag = 0;
+        tempPreDamage = 0;
+        effectsDirtyBitmap = 0;
     }
 
     function end(bytes32 battleKey) external {

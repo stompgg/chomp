@@ -235,6 +235,23 @@ struct RevealedMove {
     uint104 salt;
 }
 
+// Per-turn submission accepted by `SignedCommitManager.submitTurnMoves`. The on-chain buffer
+// stores the packed (p0, p1) projection of this struct in a single 256-bit slot; (committer,
+// revealer) → (p0, p1) mapping happens at submission time based on `turnId % 2`.
+struct TurnSubmission {
+    uint64 turnId;
+    // Committer preimage (revealed in the same tx as submission, signed by committer over moveHash).
+    uint8 committerMoveIndex;
+    uint16 committerExtraData;
+    uint104 committerSalt;
+    // Revealer preimage (signed by revealer over the dual-reveal struct including the committer hash).
+    uint8 revealerMoveIndex;
+    uint16 revealerExtraData;
+    uint104 revealerSalt;
+    bytes committerSig;
+    bytes revealerSig;
+}
+
 // Used for StatBoosts
 struct StatBoostToApply {
     MonStateIndexName stat;

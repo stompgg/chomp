@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {IValidator} from "../IValidator.sol";
-import {CommitContext, PlayerDecisionData} from "../Structs.sol";
+import {CommitContext, PlayerDecisionData, TurnSubmission} from "../Structs.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {EIP712} from "../lib/EIP712.sol";
 import {DefaultCommitManager} from "./DefaultCommitManager.sol";
@@ -44,6 +44,39 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
     /// @notice Thrown when trying to use single-player flow on a two-player turn
     error NotSinglePlayerTurn();
+
+    /// @notice Thrown when `submitTurnMoves` is called with the wrong append-position turnId.
+    error WrongTurnId();
+
+    /// @notice Thrown when `executeBuffered` is called with nothing pending.
+    error EmptyBuffer();
+
+    // ---------------------------------------------------------------------
+    // Per-turn batched submission state (OPT_PLAN §3 / §4)
+    // ---------------------------------------------------------------------
+
+    /// @notice Packed per-turn move buffer keyed by `battleKey` (no storageKey reuse needed —
+    ///         battleKey is unique per game via pairHashNonce, and per-turn entries are small).
+    /// @dev Layout per OPT_PLAN §3 (one 256-bit slot per turn):
+    ///        bits   0-  7 : p0 stored move index (including IS_REAL_TURN_BIT + +1 offset rules)
+    ///        bits   8- 23 : p0 extra data (uint16)
+    ///        bits  24-127 : p0 salt (uint104)
+    ///        bits 128-135 : p1 stored move index
+    ///        bits 136-151 : p1 extra data
+    ///        bits 152-255 : p1 salt
+    mapping(bytes32 battleKey => mapping(uint64 turnId => uint256 packed)) public moveBuffer;
+
+    /// @notice Packed counters per battle:
+    ///         bits   0- 63 : numTurnsExecuted (cumulative across the lifetime of `battleKey`)
+    ///         bits  64-127 : numTurnsBuffered (current pending count, reset to 0 after executeBuffered)
+    ///         bits 128-191 : lastSubmitTimestamp (for timeout tracking; see OPT_PLAN §2.3)
+    mapping(bytes32 battleKey => uint256) public bufferCounters;
+
+    /// @notice Emitted on every `submitTurnMoves` so off-chain replay can reconstruct the buffer.
+    event TurnSubmitted(bytes32 indexed battleKey, uint64 indexed turnId, address submitter, uint256 packedEntry);
+
+    /// @notice Emitted on `executeBuffered` so off-chain observers can see how many turns drained.
+    event TurnsExecuted(bytes32 indexed battleKey, uint64 startTurnId, uint64 executedCount, address winner);
 
     constructor(IEngine engine) DefaultCommitManager(engine) {}
 
@@ -233,5 +266,253 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         _storeCommitment(battleKey, committerIndex, moveHash, turnId);
 
         emit MoveCommit(battleKey, committer);
+    }
+
+    // ---------------------------------------------------------------------
+    // Batched per-turn submission (OPT_PLAN §4.1, §4.2, §6.1)
+    // ---------------------------------------------------------------------
+
+    /// @notice Append a per-turn entry to the buffered move stream. No engine execution happens
+    ///         in this call — `executeBuffered` later drains every currently buffered turn in
+    ///         one transaction.
+    /// @dev Anyone can call: both player signatures are required so submission is relayer-friendly,
+    ///      matching the dual-signed security model in `executeWithDualSignedMoves`. Each call
+    ///      verifies (committer EIP-712 sig over `SignedCommit`, revealer EIP-712 sig over
+    ///      `DualSignedReveal`) and append-position equality (`entry.turnId == executed + buffered`).
+    ///      Switch-turn entries follow the same shape: the non-acting player signs a NO_OP move,
+    ///      which `executeBuffered` ignores by routing via the engine's live `playerSwitchForTurnFlag`.
+    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
+        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+
+        if (ctx.startTimestamp == 0) {
+            revert BattleNotYetStarted();
+        }
+        if (ctx.winnerIndex != 2) {
+            revert BattleAlreadyComplete();
+        }
+
+        // First-of-batch sync: if the buffer is empty, mirror engine's `turnId` into
+        // `numTurnsExecuted` so a legacy single-turn execute → batched-submit transition is seamless.
+        uint256 packedCounters = bufferCounters[battleKey];
+        uint64 numExecuted = uint64(packedCounters);
+        uint64 numBuffered = uint64(packedCounters >> 64);
+        if (numBuffered == 0) {
+            numExecuted = uint64(ctx.turnId);
+        }
+
+        if (entry.turnId != numExecuted + numBuffered) {
+            revert WrongTurnId();
+        }
+
+        // Per OPT_PLAN §6.1, both halves are signed every turn. Committer/revealer roles derive
+        // from parity; the engine reads the live `playerSwitchForTurnFlag` at execute time and
+        // skips the non-acting player's half. We do NOT project the flag here — that would require
+        // replaying every unprocessed turn.
+        (address committer, address revealer) =
+            entry.turnId % 2 == 0 ? (ctx.p0, ctx.p1) : (ctx.p1, ctx.p0);
+
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
+
+        {
+            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
+                moveHash: committerMoveHash,
+                battleKey: battleKey,
+                turnId: entry.turnId
+            });
+            bytes32 digest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
+            if (ECDSA.recoverCalldata(digest, entry.committerSig) != committer) {
+                revert InvalidSignature();
+            }
+        }
+
+        {
+            SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: entry.turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: entry.revealerMoveIndex,
+                revealerSalt: entry.revealerSalt,
+                revealerExtraData: entry.revealerExtraData
+            });
+            bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+            if (ECDSA.recoverCalldata(digest, entry.revealerSig) != revealer) {
+                revert InvalidSignature();
+            }
+        }
+
+        // Map (committer, revealer) → (p0, p1) by parity and pack into a single 256-bit slot.
+        uint256 packed;
+        if (entry.turnId % 2 == 0) {
+            packed = _packBufferedTurn(
+                entry.committerMoveIndex,
+                entry.committerExtraData,
+                entry.committerSalt,
+                entry.revealerMoveIndex,
+                entry.revealerExtraData,
+                entry.revealerSalt
+            );
+        } else {
+            packed = _packBufferedTurn(
+                entry.revealerMoveIndex,
+                entry.revealerExtraData,
+                entry.revealerSalt,
+                entry.committerMoveIndex,
+                entry.committerExtraData,
+                entry.committerSalt
+            );
+        }
+
+        moveBuffer[battleKey][entry.turnId] = packed;
+
+        unchecked {
+            bufferCounters[battleKey] =
+                uint256(numExecuted) | (uint256(numBuffered + 1) << 64) | (uint256(uint64(block.timestamp)) << 128);
+        }
+
+        emit TurnSubmitted(battleKey, entry.turnId, msg.sender, packed);
+    }
+
+    /// @notice Drain every currently buffered turn in one transaction.
+    /// @dev Loops `executeWithMoves` (two-player turn) and `executeWithSingleMove` (single-player
+    ///      switch turn, per §6.1) based on the engine's live `playerSwitchForTurnFlag`. Stops
+    ///      early on game-over; any remaining buffered entries become dead once `numTurnsBuffered`
+    ///      resets to 0 at the end of this call.
+    ///
+    ///      Anyone can call — signatures were checked at submission time. The shared-tx loop
+    ///      relies on the EVM's warm-storage discount across sub-turns for cold-SLOAD amortization
+    ///      (this is the v1 substitute for §5's transient shadow layer; see §12 Decision Log).
+    function executeBuffered(bytes32 battleKey) external {
+        uint256 packedCounters = bufferCounters[battleKey];
+        uint64 numExecuted = uint64(packedCounters);
+        uint64 numBuffered = uint64(packedCounters >> 64);
+
+        if (numBuffered == 0) {
+            revert EmptyBuffer();
+        }
+
+        uint64 executedThisBatch;
+        address winner;
+
+        for (uint64 i = 0; i < numBuffered; i++) {
+            uint64 turnId = numExecuted + i;
+            uint256 entry = moveBuffer[battleKey][turnId];
+
+            (
+                uint8 p0Move,
+                uint16 p0Extra,
+                uint104 p0Salt,
+                uint8 p1Move,
+                uint16 p1Extra,
+                uint104 p1Salt
+            ) = _unpackBufferedTurn(entry);
+
+            // Live flag read: the engine updated `playerSwitchForTurnFlag` at the end of the
+            // previous sub-turn (or it's the snapshot from before the batch started). Cheap SLOAD
+            // since this slot was just warmed.
+            uint8 flag = uint8(ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey));
+
+            if (flag == 2) {
+                winner = ENGINE.executeWithMoves(battleKey, p0Move, p0Salt, p0Extra, p1Move, p1Salt, p1Extra);
+            } else if (flag == 0) {
+                winner = ENGINE.executeWithSingleMove(battleKey, p0Move, p0Salt, p0Extra);
+            } else {
+                winner = ENGINE.executeWithSingleMove(battleKey, p1Move, p1Salt, p1Extra);
+            }
+
+            executedThisBatch++;
+
+            if (winner != address(0)) {
+                break;
+            }
+
+            // Reset per-turn transients so leaky slots (tempRNG, koOccurredFlag, tempPreDamage,
+            // effectsDirtyBitmap, _turnP*MoveEncoded, _turnP*Salt) don't carry into the next
+            // sub-turn within this tx. `executeWithMoves` / `executeWithSingleMove` re-set
+            // `battleKeyForWrite` / `storageKeyForWrite` at entry, so the cleared values here
+            // get repopulated next iteration. Skipped after the final iteration since the tx
+            // is about to end. See OPT_PLAN §12 Decision Log on transient resets.
+            if (i + 1 < numBuffered) {
+                ENGINE.resetCallContext();
+            }
+        }
+
+        // Flush counters: `numTurnsExecuted` advances by the actually-executed count;
+        // `numTurnsBuffered` resets to 0 regardless (post-game-over entries become dead).
+        unchecked {
+            bufferCounters[battleKey] =
+                uint256(numExecuted + executedThisBatch) | (uint256(0) << 64) | (uint256(uint64(block.timestamp)) << 128);
+        }
+
+        emit TurnsExecuted(battleKey, numExecuted, executedThisBatch, winner);
+    }
+
+    /// @notice External view: how many turns are currently pending vs cumulatively executed.
+    function getBufferStatus(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint64 numBuffered, uint64 lastSubmitTimestamp)
+    {
+        uint256 packed = bufferCounters[battleKey];
+        numExecuted = uint64(packed);
+        numBuffered = uint64(packed >> 64);
+        lastSubmitTimestamp = uint64(packed >> 128);
+    }
+
+    /// @notice Read a single buffered turn. Returns zero for unset slots.
+    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+        external
+        view
+        returns (
+            uint8 p0Move,
+            uint16 p0Extra,
+            uint104 p0Salt,
+            uint8 p1Move,
+            uint16 p1Extra,
+            uint104 p1Salt
+        )
+    {
+        return _unpackBufferedTurn(moveBuffer[battleKey][turnId]);
+    }
+
+    // ---------------------------------------------------------------------
+    // Internal packing helpers (OPT_PLAN §3)
+    // ---------------------------------------------------------------------
+
+    /// @dev Bit layout matches §3 exactly: [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104].
+    function _packBufferedTurn(
+        uint8 p0Move,
+        uint16 p0Extra,
+        uint104 p0Salt,
+        uint8 p1Move,
+        uint16 p1Extra,
+        uint104 p1Salt
+    ) internal pure returns (uint256 packed) {
+        packed = uint256(p0Move)
+            | (uint256(p0Extra) << 8)
+            | (uint256(p0Salt) << 24)
+            | (uint256(p1Move) << 128)
+            | (uint256(p1Extra) << 136)
+            | (uint256(p1Salt) << 152);
+    }
+
+    function _unpackBufferedTurn(uint256 packed)
+        internal
+        pure
+        returns (
+            uint8 p0Move,
+            uint16 p0Extra,
+            uint104 p0Salt,
+            uint8 p1Move,
+            uint16 p1Extra,
+            uint104 p1Salt
+        )
+    {
+        p0Move = uint8(packed);
+        p0Extra = uint16(packed >> 8);
+        p0Salt = uint104(packed >> 24);
+        p1Move = uint8(packed >> 128);
+        p1Extra = uint16(packed >> 136);
+        p1Salt = uint104(packed >> 152);
     }
 }
