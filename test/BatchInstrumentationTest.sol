@@ -25,10 +25,22 @@ import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
 import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
+import {EffectAttack} from "./mocks/EffectAttack.sol";
+import {PerTurnTickEffect} from "./mocks/PerTurnTickEffect.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
-/// Counts SLOAD / SSTORE access patterns on a warm steady-state turn, to ground the PLAN_OPT.md
+/// Counts SLOAD / SSTORE access patterns on a warm steady-state turn, to ground the OPT_PLAN.md
 /// gas math in real data instead of estimates.
+///
+/// Per-turn budgets (locked by §11 Phase 0.1; run forge test -vv --match-contract BatchInstrumentationTest):
+///   clean damage trade   : 16 cold SLOADs / 10 SSTOREs / 16 unique slots / 3 multi-write
+///   effect-heavy turn    : 20 cold SLOADs / 16 SSTOREs / 20 unique slots / 5 multi-write
+///   forced-switch turn   : 10 cold SLOADs /  5 SSTOREs / 10 unique slots / 1 multi-write
+///   multi-mon switch turn: 16 cold SLOADs /  8 SSTOREs / 16 unique slots / 2 multi-write
+///
+/// These four numbers are the per-turn gas budget the §5 shadow layer has to clear at B>=2.
+/// Multi-write slots (same slot written 2+ times in one turn) are the biggest amortization
+/// targets — at B=2 a previously-multi-written slot becomes one shadow read + one flush.
 contract BatchInstrumentationTest is SignedCommitHelper {
 
     uint256 constant MONS_PER_TEAM = 4;
@@ -319,5 +331,216 @@ contract BatchInstrumentationTest is SignedCommitHelper {
         console.log("    no-op (same value)         :", noop);
         console.log("Unique slots touched           :", unique);
         console.log("Slots written 2+ times in turn :", multiWrite);
+    }
+
+    /// @dev Shared log shape so all four scenarios produce comparable per-turn numbers.
+    function _logDiffsBlock(string memory label, Vm.AccountAccess[] memory diffs) internal {
+        (
+            uint256 totalSload,
+            uint256 totalSstore,
+            uint256 coldSload,
+            uint256 warmSload,
+            uint256 coldSstore,
+            uint256 warmSstore,
+            uint256 z2nz,
+            uint256 nz2nz,
+            uint256 noop,
+            uint256 unique,
+            uint256 multiWrite
+        ) = _summarizeAccesses(diffs);
+
+        console.log(label);
+        console.log("Total SLOADs                   :", totalSload);
+        console.log("  Cold (first-touch in tx)     :", coldSload);
+        console.log("  Warm                         :", warmSload);
+        console.log("Total SSTOREs                  :", totalSstore);
+        console.log("  Cold (first-touch in tx)     :", coldSstore);
+        console.log("  Warm                         :", warmSstore);
+        console.log("    zero -> nonzero            :", z2nz);
+        console.log("    nonzero -> nonzero (diff)  :", nz2nz);
+        console.log("    no-op (same value)         :", noop);
+        console.log("Unique slots touched           :", unique);
+        console.log("Slots written 2+ times in turn :", multiWrite);
+    }
+
+    /// @dev Records a state diff over a single `_fastTurn` call and prints the summary block.
+    function _profileTurn(
+        string memory label,
+        bytes32 battleKey,
+        uint8 p0Move,
+        uint8 p1Move,
+        uint16 p0Extra,
+        uint16 p1Extra
+    ) internal {
+        vm.startStateDiffRecording();
+        _fastTurn(battleKey, p0Move, p1Move, p0Extra, p1Extra);
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        _logDiffsBlock(label, diffs);
+    }
+
+    /// @notice Per-turn storage profile when both active mons carry a multi-step effect.
+    /// @dev Setup: ALICE & BOB each carry a PerTurnTickEffect attached to their active mon
+    ///      (added via EffectAttack in turn 1). Profiled turn is a normal damage trade with
+    ///      RoundStart, RoundEnd, and AfterDamage all firing the per-mon effect storage SLOADs.
+    function test_storageAccessProfile_effectHeavyTurn() public {
+        PerTurnTickEffect tickEffect = new PerTurnTickEffect();
+        IMoveSet applyTick = new EffectAttack(IEffect(address(tickEffect)),
+            EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+
+        IMoveSet damageMove = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 30, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "DMG", EFFECT: IEffect(address(0))
+            })
+        );
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.moves = new uint256[](MOVES_PER_MON);
+        mon.moves[0] = uint256(uint160(address(applyTick)));
+        mon.moves[1] = uint256(uint160(address(damageMove)));
+        mon.moves[2] = uint256(uint160(address(damageMove)));
+        mon.moves[3] = uint256(uint160(address(damageMove)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
+        bytes32 battleKey = _startBattle(ruleset);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch, then both players use EffectAttack so each side's mon
+        // ends up with the tick effect attached. Then a warm trade so all effect slots are
+        // already SSTOREd nonzero by the time we measure.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _fastTurn(battleKey, 0, 0, 0, 0); // both apply tick
+        _fastTurn(battleKey, 1, 1, 0, 0); // warm trade
+
+        _profileTurn("=== EFFECT-HEAVY TURN - STORAGE PROFILE ===", battleKey, 2, 2, 0, 0);
+    }
+
+    /// @dev Single-player forced-switch path: `_fastTurn` goes through `executeWithDualSignedMoves`
+    /// which reverts with `NotTwoPlayerTurn()` when `playerSwitchForTurnFlag != 2`. The switch turn
+    /// goes through `executeSinglePlayerMove`, which requires `msg.sender == acting player`.
+    function _fastSinglePlayerTurn(bytes32 battleKey, address actingPlayer, uint8 moveIndex, uint16 extraData)
+        internal
+    {
+        uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
+        uint104 salt = uint104(uint256(keccak256(abi.encode("single", battleKey, turnId))));
+
+        vm.prank(actingPlayer);
+        signedCommitManager.executeSinglePlayerMove(battleKey, moveIndex, salt, extraData);
+        engine.resetCallContext();
+    }
+
+    /// @notice Per-turn storage profile for the forced single-player switch turn that follows a KO.
+    /// @dev Setup: p0's active mon HP is tuned low so p1's first attack KOs it. The next turn has
+    ///      playerSwitchForTurnFlag == 0 (p0-only). Profile that switch turn — exercises the
+    ///      `flag != 2` early-return branch that batch dispatch will key off of in §6.1.
+    function test_storageAccessProfile_forcedSwitchTurn() public {
+        IMoveSet bigHit = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 200, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 5,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "Big", EFFECT: IEffect(address(0))
+            })
+        );
+        IMoveSet softHit = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 1, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "Soft", EFFECT: IEffect(address(0))
+            })
+        );
+
+        // Glass mon for p0; tough mon for p1. Both teams have 4 mons so a KO doesn't end the battle.
+        Mon memory glass = _createMon(Type.Fire);
+        glass.stats.hp = 5;
+        glass.moves = new uint256[](MOVES_PER_MON);
+        glass.moves[0] = uint256(uint160(address(softHit)));
+        glass.moves[1] = uint256(uint160(address(softHit)));
+        glass.moves[2] = uint256(uint160(address(softHit)));
+        glass.moves[3] = uint256(uint160(address(softHit)));
+
+        Mon memory tough = _createMon(Type.Fire);
+        tough.moves = new uint256[](MOVES_PER_MON);
+        tough.moves[0] = uint256(uint160(address(bigHit)));
+        tough.moves[1] = uint256(uint160(address(bigHit)));
+        tough.moves[2] = uint256(uint160(address(bigHit)));
+        tough.moves[3] = uint256(uint160(address(bigHit)));
+
+        Mon[] memory p0Team = new Mon[](MONS_PER_TEAM);
+        Mon[] memory p1Team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) {
+            p0Team[i] = glass;
+            p1Team[i] = tough;
+        }
+        defaultRegistry.setTeam(p0, p0Team);
+        defaultRegistry.setTeam(p1, p1Team);
+
+        IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
+        bytes32 battleKey = _startBattle(ruleset);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Lead-in switch.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        // KO turn: p1's big hit takes priority and KO's p0's glass mon. playerSwitchForTurnFlag
+        // becomes 0 for the next turn.
+        _fastTurn(battleKey, 0, 0, 0, 0);
+
+        // Now profile the single-player switch turn. p0 sends in mon 1 via executeSinglePlayerMove;
+        // the engine routes via `playerSwitchForTurnFlag == 0` and skips p1's half entirely.
+        vm.startStateDiffRecording();
+        _fastSinglePlayerTurn(battleKey, p0, SWITCH_MOVE_INDEX, uint16(1));
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        _logDiffsBlock("=== FORCED-SWITCH TURN - STORAGE PROFILE ===", diffs);
+    }
+
+    /// @notice Per-turn storage profile for a turn where one player switches mid-battle while the
+    ///         other attacks. Touches three distinct mon-state slots in a single turn (p0 mon 0
+    ///         out, p0 mon 1 in, p1 mon 0 attacking), exercising the sparse MonState read pattern
+    ///         that the shadow layer's lazy-load bookkeeping has to handle.
+    function test_storageAccessProfile_multiMonTurn() public {
+        IMoveSet hit = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 30, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "Hit", EFFECT: IEffect(address(0))
+            })
+        );
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.moves = new uint256[](MOVES_PER_MON);
+        mon.moves[0] = uint256(uint160(address(hit)));
+        mon.moves[1] = uint256(uint160(address(hit)));
+        mon.moves[2] = uint256(uint160(address(hit)));
+        mon.moves[3] = uint256(uint160(address(hit)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        IRuleset ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
+        bytes32 battleKey = _startBattle(ruleset);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch + one trade to warm Mon-0 slots on both sides.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _fastTurn(battleKey, 0, 0, 0, 0);
+
+        // Profile a turn where p0 switches to mon 1 while p1 attacks. p0 mon 1's MonState slot
+        // is cold — first touch in tx; p0 mon 0's slot is warmed but read again for switch-out
+        // bookkeeping; p1 mon 0's slot reads attacker state. Three distinct mon slots in one turn.
+        _profileTurn(
+            "=== MULTI-MON SWITCH TURN - STORAGE PROFILE ===",
+            battleKey,
+            SWITCH_MOVE_INDEX,
+            1,
+            uint16(1),
+            0
+        );
     }
 }
