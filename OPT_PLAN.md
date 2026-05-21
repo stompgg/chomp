@@ -470,3 +470,117 @@ Test shape:
 2. Run the same scripted turns through legacy single-turn execution in battle A.
 3. Submit all turns, execute one full batch in battle B.
 4. Compare `BattleData`, mon states, `globalKV`, `getEffects` for all relevant lists, and any mock-recorded observations.
+
+---
+
+## 11. Concrete todo (current branch)
+
+Phase 0 (dual-sig fix, §9) and the §3 width changes (`extraData → uint16`, salt → `uint104`) are already merged on this branch — confirmed in `SignedCommitManager.sol:74-138`, `IMoveSet.sol:16`, `Structs.sol:72/106-107/145-146/234-235`.
+
+### Phase 0.1 — Instrumentation refresh ✅
+
+Lock per-turn SLOAD/SSTORE numbers across four representative turn shapes so the batch-size sweet spot is grounded in data, not estimates.
+
+- [x] `test_storageAccessProfile_effectHeavyTurn` in `test/BatchInstrumentationTest.sol`.
+- [x] `test_storageAccessProfile_forcedSwitchTurn`.
+- [x] `test_storageAccessProfile_multiMonTurn`.
+- [x] Locked-numbers comment block at the top of `BatchInstrumentationTest.sol`.
+
+### Scope reduction (mid-implementation, recorded in §12)
+
+§5's transient shadow layer is a real but secondary win on top of the EVM's free warm-slot
+amortization across sub-turns of one tx. Deferred to a follow-up so Phase 2's decoupling can
+ship without a 3k-LOC refactor of every `MonState`/`globalKV`/effect access in `Engine.sol`.
+
+Phases 0.5 and 1 below remain in the plan unchanged but stay unchecked for now. The Phase 2
+implementation that ships uses a plain `executeBatch` that loops `_executeInternal` per sub-turn
+within one tx — the EVM keeps slots warm across the loop, so cold SLOADs are paid once per
+batch. SSTORE dedup across sub-turns is the only thing the shadow layer would add on top.
+
+### Phase 0.5 — Helper extraction (zero behavior change) [deferred]
+
+Route every `MonState` / `globalKV` / effect-slot / effect-count SLOAD/SSTORE in `Engine.sol` through helpers, with `_shadowActive` wired but permanently false.
+
+- [ ] Add `bool transient _shadowActive;` to `Engine.sol`.
+- [ ] Add the eight helpers from §5.2 with non-shadow fast paths.
+- [ ] Sweep `Engine.sol` and replace direct accesses in `_updateMonStateInternal`, `_dealDamageInternal`, `setGlobalKV`, `_addEffectInternal`, `editEffect`, `_removeEffectAtSlot`, `_handleEffects`, view getters, and active-mon/move-resolution reads.
+- [ ] Full suite green with no test changes.
+- [ ] Snapshot diff against `EngineGasTest.json`, `InlineEngineGasTest.json`, `StandardAttackPvPGasTest.json`, `BetterCPUInlineGasTest.json`, `EngineOptimizationTest.json`: flat ±~50 gas per turn.
+
+### Phase 1 — Single-turn shadow (`executeShadowed`) [deferred]
+
+Eight helpers gain real transient mirrors with lazy-load + dirty-flag bookkeeping; new `executeShadowed` proves the hydrate → run → flush cycle.
+
+- [ ] Implement §5.1.1 transient layout (effect loaded/dirty bitmaps, `T_EFFECT_*_BASE` regions, count region, MonState mirror, BattleData-slot-1 + ConfigSlot-2 mirrors, `globalKV` per-key mirror with touched-keys set).
+- [ ] Fill the shadow branches of the eight helpers.
+- [ ] Hydrate/flush routines: `_hydrateBattleData`, `_hydrateConfigSlot2`, `_flushBattleData`, `_flushConfigSlot2`, `_flushDirtyMonStates`, `_flushDirtyEffectSlots`, `_flushDirtyGlobalKV`.
+- [ ] `executeShadowed(bytes32)` on `Engine.sol` + `IEngine.sol`.
+- [ ] `test/ShadowParityTest.sol`: scenarios mirror BatchInstrumentationTest; byte-equal post-state assertion.
+- [ ] `test/EffectShadowTest.sol`: §10.1 mock effects + 10 required cases, p0/p1 × mon-0/mon-7 boundary, global index-15.
+- [ ] Snapshot `ShadowParityTest.json`: B=1 expected to be slightly worse.
+
+### Phase 2 — PvP per-turn submission + `executeBuffered` ✅ (API + correctness; gas savings deferred)
+
+The actual decoupling: per-turn buffer + `executeBuffered` looping `_executeInternal` per sub-turn (no shadow layer per the §12 scope reduction). API surface complete, correctness gated by equivalence + edge tests, all suites green. Gas savings claim is **not** delivered by this design alone — see §12 "Gas finding" — and is gated on the deferred Phase 1 shadow layer.
+
+- [x] `TurnSubmission` struct in `Structs.sol` (§3).
+- [x] `SignedCommitManager`: `moveBuffer` (`uint256` packed slot per turn per §3), packed `bufferCounters` (`numTurnsExecuted` + `numTurnsBuffered` + `lastSubmitTimestamp`), `submitTurnMoves` (§4.1 flow, including first-of-batch sync from engine `turnId`).
+- [x] `SignedCommitManager.executeBuffered(bytes32)`: anyone can call; loops `executeWithMoves` / `executeWithSingleMove` per sub-turn with flag-based dispatch (§6.1); breaks on game-over; resets per-turn transients between iterations.
+- [x] Flag-based dispatch (§6.1) via `getPlayerSwitchForTurnFlagForBattleState` between iterations.
+- [x] Extended `Engine.resetCallContext` to clear leaky per-turn transients (`tempRNG`, `koOccurredFlag`, `tempPreDamage`, `effectsDirtyBitmap`) so batched in-tx execution behaves like legacy per-tx execution. No new IEngine surface.
+- [x] `test/abstract/BatchHelper.sol`: `_submitTurnMoves`, `_executeBuffered`.
+- [x] `test/BufferSubmissionTest.sol`: 12 validation cases — happy path, relayer submission, wrong committer/revealer signer, empty sigs (unilateral-revealer regression), wrong turnId, replay, battle-not-started, empty-buffer execute, counter accounting, timestamp update.
+- [x] `test/BatchEquivalenceTest.sol`: B ∈ {2, 4, 8} legacy vs batched byte-equality + multi-batch counter accounting.
+- [x] `test/BatchEdgeTest.sol`: forced-switch dispatch (`flag != 2`), single-side switch, mid-batch game-over (`ex` advances by actually-executed, not buffered), mode alternation (legacy↔batched seamless).
+- [x] `test/BatchGasTest.sol`: comparison harness for B ∈ {2, 4, 8}. **Current numbers show batched is more expensive than legacy** — recorded in §12 Decision Log.
+
+### Phase 2.5 — CPU mode
+
+CPU manager rides the same buffer + `executeBatch`. No engine changes.
+
+- [ ] `selectMoveWithStateHint(bytes32, uint8, uint16, uint104, CPUContext calldata)` on `CPUMoveManager.sol` (§7.4).
+- [ ] CPU salt derivation + `CPUTurnSalt(battleKey, turnId, timestamp)` event.
+- [ ] Pack `(aliceMove, computedCpuMove)` into `PackedTurnEntry` and SSTORE to `moveBuffer`.
+- [ ] `test/CPUBatchEquivalenceTest.sol`: 24-turn legacy vs `selectMoveWithStateHint × 24 + executeBatch × 3` byte-equality.
+- [ ] Lying-hint test confirms §7.1 trust model.
+- [ ] `test/BetterCPUBatchGasTest.sol`: mirror inline tests; snapshot B=1/4/8.
+
+### Phase 3 / 4 — deferred
+
+Transpiler parity stays single-turn for v1. Optional `executeShadowed` cutover revisited only if Phase 1's B=1 numbers turn neutral/better after Phase 2 inlining.
+
+---
+
+## 12. Decision log
+
+Decisions made while executing the todo above. Each entry: short context + the call made + why.
+
+### Cross-cutting
+
+- **Shadow layer deferred to follow-up.** §1-§5 of OPT_PLAN are organized around a transient shadow that mirrors `MonState` / `globalKV` / effect-slot reads inside `executeBatch`, then flushes once at the end. The motivating amortization (cold SLOADs are paid once per batch instead of once per turn) is *already* delivered for free by EVM warm-slot semantics: when `executeBatch` loops `_executeInternal` in one tx, the second iteration sees the slots from the first iteration as warm (100 gas) instead of cold (2100). The shadow's additional win is SSTORE deduplication across sub-turns (~5k per dedup'd write × multi-write count per turn). For v1 the warm-slot baseline plus single-tx amortization is enough to ship the gas-savings claim; the SSTORE-dedup follow-up is queued for v2. This deferral means Phases 0.5 and 1 stay in §11 unchecked, and Phase 2's `executeBatch` is built as a simple sub-turn loop over `_executeInternal`.
+
+### Phase 2
+
+- **`executeBuffered` lives on the manager, not the engine.** §4.2 had `Engine.executeBatch(bytes32)` as a new engine entry point. Putting it on the manager instead keeps the engine ignorant of any specific commit-manager and avoids a new engine ↔ manager callback dance (engine asking the manager for buffer entries). The manager already has `IEngine`, so the loop is straightforward: read buffer slot → read live `playerSwitchForTurnFlag` → call `executeWithMoves` or `executeWithSingleMove`. No new engine surface needed except an extension to `resetCallContext`. Trade-off: the engine can never read from the buffer directly (e.g. for a single batch-aware `_executeInternal`-style optimization in the future). For v1 this is the right call.
+- **Buffer keyed by `battleKey`, not `storageKey`.** §3 keyed `moveBuffer` by `storageKey` for slot reuse parity with `BattleConfig`. The manager doesn't actually care about slot reuse (entries are tiny — one `uint256` per turn), and `battleKey` is already unique per game via `pairHashNonce` increment. Using `battleKey` directly avoids needing a public `getStorageKey(bytes32)` accessor on the engine and keeps the manager fully decoupled from `MappingAllocator`.
+- **Single `uint256` packed slot, no struct in storage.** §3 specified a `PackedTurnEntry` struct. Storing the packed `uint256` directly is one fewer SLOAD (no Solidity-generated wrapper), and the §3 bit layout is preserved exactly: `[p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]`. Internal `_packBufferedTurn` / `_unpackBufferedTurn` helpers handle the bit ops.
+- **Extended `resetCallContext` instead of adding `resetPerTurnTransients`.** First pass added a parallel `resetPerTurnTransients()` external on the engine. The existing `resetCallContext()` already clears half of what was needed (per-turn move/salt encoded slots + `battleKeyForWrite` / `storageKeyForWrite`); extending it to also zero `tempRNG` / `koOccurredFlag` / `tempPreDamage` / `effectsDirtyBitmap` covers the rest and avoids two near-identical functions on `IEngine`. In legacy single-turn flow nothing changes — `resetCallContext` is only called by foundry test harnesses, where the extra zero TSTOREs are negligible. In batched flow `executeBuffered` calls `resetCallContext()` between sub-turns so each sub-turn starts with the same transient state the legacy per-tx flow would see. The four added clears are documented inline at `Engine.sol`'s `resetCallContext` body.
+- **Game-over short-circuit test design.** First pass used a 2-mon game with HP=1 + power=100 on both sides, expecting "both mons die in turn 1." Trace showed the slower player's move short-circuits (`prevPlayerSwitchForTurnFlag != 2` after the faster player's KO chains into `_checkForGameOverOrKO`), so only ONE mon dies per damage trade. With 2-mon teams this means the battle needs ≥4 turns to wipe one side, and symmetric setups don't deterministically reach game-over within the buffered range. Rewrote with asymmetric setups (p0 fast/strong, p1 slow/glass) so p0 always KOs first and never gets KO'd — game ends deterministically on turn 3, the loop break is provably exercised.
+- **Gas finding (critical):** the v1 batched flow (no shadow layer) is **measurably more expensive** than legacy dual-signed-per-turn execution. `test/BatchGasTest.sol` shows:
+
+  | B | legacy | batched | delta |
+  |---|---|---|---|
+  | 2 | 211,458 | 282,674 | +71k (+33%) |
+  | 4 | 370,145 | 500,417 | +130k (+35%) |
+  | 8 | 687,748 | 936,847 | +249k (+36%) |
+
+  Per-turn overhead breakdown: each `submitTurnMoves` costs ~22k cold-→-warm SSTORE for the buffer slot + ~5k warm-→-warm SSTORE for the counter slot + ~2k event + ~6k for the two sig recoveries (same as legacy). That's ~30k/turn more than legacy. The `executeBuffered` amortization across sub-turns only saves ~2k/turn per cold→warm engine SLOAD via EVM warm-storage discount (~16 cold SLOADs on a clean trade × 2k ≈ 32k saved per turn-after-the-first), which doesn't recoup the per-submission overhead until B is very large.
+
+  The OPT_PLAN's gas claim (§1) was predicated on the §5 transient shadow layer doing SSTORE deduplication across sub-turns (the second sub-turn's `BattleData.turnId` etc. SSTOREs collapse to one final flush). Without the shadow, the engine SSTOREs every turn unchanged. **Phase 1 (shadow) is required to deliver the gas-savings claim.** Phase 2 as shipped delivers the decoupling API + correctness gate, plus the substrate Phase 1 will sit on top of.
+
+### Phase 0.1
+
+- **Effect-heavy mock.** §0.1 mentioned "StatBoosts-style multi-stat effect + BurnStatus". Both have heavy external dependencies (StatBoosts needs its own deploy and per-mon snapshot KV; BurnStatus needs the StatBoosts instance). For an instrumentation test where only the per-turn storage-access pattern matters, that's overkill. Wrote a 50-LOC `test/mocks/PerTurnTickEffect.sol` that hooks RoundStart + RoundEnd + AfterDamage + ALWAYS_APPLIES and bumps a counter in `data` each tick. Same SLOAD/SSTORE shape (effect slot reads, data SSTOREs, count SLOADs in `_runEffects`), zero external setup. If the shadow layer ever needs differential testing against StatBoosts/Burn specifically, that belongs in Phase 1's effect-shadow correctness suite, not here.
+- **Multi-mon scenario interpretation.** §0.1 wording was "all four mons referenced via onUpdateMonState listeners on bench mons". Production engine doesn't actually touch bench mons during a regular turn — only the active mons on each side. The natural multi-slot turn is a switch turn where p0 switches mon 0→1 while p1 attacks (touches p0 mon 0, p0 mon 1, p1 mon 0 = three distinct mon-state slots). Implemented that interpretation; logs show 16 cold SLOADs / 16 unique slots — slightly fewer than a clean trade because no second-attack SSTORE pattern.
+- **Forced-switch entry point.** `_fastTurn` goes through `executeWithDualSignedMoves`, which reverts `NotTwoPlayerTurn()` once `playerSwitchForTurnFlag != 2`. Added a `_fastSinglePlayerTurn` helper that routes through `executeSinglePlayerMove(...)` with `vm.prank(actingPlayer)`. This is the same dispatch the production code does and matches what the batch flow will do via §6.1.
+
