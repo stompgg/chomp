@@ -486,18 +486,7 @@ Lock per-turn SLOAD/SSTORE numbers across four representative turn shapes so the
 - [x] `test_storageAccessProfile_multiMonTurn`.
 - [x] Locked-numbers comment block at the top of `BatchInstrumentationTest.sol`.
 
-### Scope reduction (mid-implementation, recorded in §12)
-
-§5's transient shadow layer is a real but secondary win on top of the EVM's free warm-slot
-amortization across sub-turns of one tx. Deferred to a follow-up so Phase 2's decoupling can
-ship without a 3k-LOC refactor of every `MonState`/`globalKV`/effect access in `Engine.sol`.
-
-Phases 0.5 and 1 below remain in the plan unchanged but stay unchecked for now. The Phase 2
-implementation that ships uses a plain `executeBatch` that loops `_executeInternal` per sub-turn
-within one tx — the EVM keeps slots warm across the loop, so cold SLOADs are paid once per
-batch. SSTORE dedup across sub-turns is the only thing the shadow layer would add on top.
-
-### Phase 0.5 — Helper extraction (zero behavior change) [deferred]
+### Phase 0.5 — Helper extraction (zero behavior change) ✅ shipped
 
 Route every `MonState` / `globalKV` / effect-slot / effect-count SLOAD/SSTORE in `Engine.sol` through helpers, with `_shadowActive` wired but permanently false.
 
@@ -507,7 +496,7 @@ Route every `MonState` / `globalKV` / effect-slot / effect-count SLOAD/SSTORE in
 - [ ] Full suite green with no test changes.
 - [ ] Snapshot diff against `EngineGasTest.json`, `InlineEngineGasTest.json`, `StandardAttackPvPGasTest.json`, `BetterCPUInlineGasTest.json`, `EngineOptimizationTest.json`: flat ±~50 gas per turn.
 
-### Phase 1 — Single-turn shadow (`executeShadowed`) [deferred]
+### Phase 1 — Single-turn shadow ✅ shipped (executeBatchedTurns instead of executeShadowed)
 
 Eight helpers gain real transient mirrors with lazy-load + dirty-flag bookkeeping; new `executeShadowed` proves the hydrate → run → flush cycle.
 
@@ -577,6 +566,30 @@ Decisions made while executing the todo above. Each entry: short context + the c
   Per-turn overhead breakdown: each `submitTurnMoves` costs ~22k cold-→-warm SSTORE for the buffer slot + ~5k warm-→-warm SSTORE for the counter slot + ~2k event + ~6k for the two sig recoveries (same as legacy). That's ~30k/turn more than legacy. The `executeBuffered` amortization across sub-turns only saves ~2k/turn per cold→warm engine SLOAD via EVM warm-storage discount (~16 cold SLOADs on a clean trade × 2k ≈ 32k saved per turn-after-the-first), which doesn't recoup the per-submission overhead until B is very large.
 
   The OPT_PLAN's gas claim (§1) was predicated on the §5 transient shadow layer doing SSTORE deduplication across sub-turns (the second sub-turn's `BattleData.turnId` etc. SSTOREs collapse to one final flush). Without the shadow, the engine SSTOREs every turn unchanged. **Phase 1 (shadow) is required to deliver the gas-savings claim.** Phase 2 as shipped delivers the decoupling API + correctness gate, plus the substrate Phase 1 will sit on top of.
+
+### Phase 0.5 + Phase 1 (shadow layer fully implemented)
+
+- **Shadow infrastructure built.** §5.1's full slot inventory landed: MonState (per-mon, lazy-loaded), KO bitmaps (BattleConfig slot 2), BattleData slot 1 (helpers added but BattleData itself stayed on storage refs — see below), effect slots (per §5.1.1: 144 keys, two transient regions per slot), effect counts (3 packed mirrors), and globalKV (sparse 16-slot buffer). Eight §5.2 helpers added with both shadow and storage branches. `_flushShadow` walks dirty bits and SSTOREs once at end of batch. New engine entry `executeBatchedTurns(bytes32, uint256[])` activates shadow, loops sub-turns with flag-based dispatch, flushes, returns executed count + winner. Manager's `executeBuffered` now delegates to this entry.
+- **Helpers take `BattleConfig storage cfg` explicitly.** First pass had effect/KO helpers read `battleConfig[storageKeyForWrite]` internally. That broke when external view getters (`getEffects`, `getKOBitmap`) called helpers outside execute — `storageKeyForWrite` is `bytes32(0)` there, so helpers read an empty config and returned 0 effects. Fix: thread cfg through every helper signature. 53 tests failed before the fix; all 533 pass after.
+- **Reads are view-compatible (no TSTORE on read).** §5.2's spec implied lazy-load on first read (TSTORE to cache). That's incompatible with `view` callers — Solidity treats TSTORE as state mutation, breaking staticcall from external view getters. Redesigned reads to: check loaded bit (set only by writes), return shadow value if set, else fall back to direct SLOAD. Lazy-load happens only on writes (which are non-view anyway). External view getters can now call shadow read helpers during execute and see in-progress state correctly.
+- **External view getters route through shadow.** `getMonStateForBattle`, `getGlobalKV`, `getEffects` all consult shadow when called during execute (effects calling these as part of their hook see the latest values). Outside execute, shadow is inactive so they read storage as before.
+- **BattleData stayed on storage refs.** §5.1 lists BattleData slot 1 as shadowed, and I added `_shadowReadBattleData` / `_shadowWriteBattleData` / `_packBattleData` / `_unpackBattleData` / `_flushShadowBattleData`. But refactoring `_executeInternal` and its helpers from `BattleData storage battle = battleData[battleKey]` to the memory pattern would have rippled through ~13 function signatures and required careful checkpoint handling around every external callback (move/effect hooks that re-enter the engine and might mutate `battle.*`). For Phase 1 I left BattleData on the storage-ref pattern — it's still consistent (engine writes/reads via storage refs throughout `_executeInternal`), just not deduplicated across sub-turns. If the architectural finding below changes, this becomes the next optimization to land.
+- **Architectural finding (definitive): shadow layer does NOT deliver gas savings.** Measured with `test/BatchGasTest.sol` (8 sub-turn clean damage trade):
+
+  | Path | Before Phase 0.5/1 | After Phase 0.5/1 | Delta |
+  |---|---|---|---|
+  | legacy (per-turn) — B=8 total | 687,748 | 848,960 | **+161k** (+23%) |
+  | batched (submit + execute) — B=8 total | 936,847 | 1,172,164 | **+235k** (+25%) |
+  | batched − legacy gap — B=8 | +249k (+36%) | +323k (+38%) | gap grew |
+
+  The shadow layer:
+  - Adds ~20k/turn overhead to the legacy path (memory pattern instead of storage refs; helpers do a `_shadowActive` TLOAD check + memory pack/unpack on every read, paid even when shadow is inactive). This regresses every existing gas test by 1-7k.
+  - Saves ~24k/sub-turn on the executeBuffered path (within-batch SSTORE coalescing for MonState + effect slots + counts + KO bitmap + globalKV). That's roughly the per-sub-turn SSTORE work that gets deferred to the single final flush.
+  - The per-submission overhead (~85k each: sig recovery + buffer SSTORE + counter SSTORE) is unchanged by the shadow — it's submission infrastructure, not engine-state infrastructure. Eight submissions × 85k = 680k of overhead the shadow can't recover.
+
+  Conclusion: the gas-savings claim in OPT_PLAN §1 is **not architecturally achievable** with a per-turn buffer design. The 85k/turn submission cost is the floor, and engine-side savings from shadow (~24k/turn × N−1 amortized) don't close it. To beat dual-signed-per-turn execution, batching would need a fundamentally different submission scheme — Merkle-rooted batch claims, signature aggregation (BLS / SNARK), or off-chain ordering with on-chain finality proofs. None of those fit in the per-turn-SSTORE model.
+
+  The batched API still has real value (single-tx execution off-peak, flexibility for relayers, async submission UX), just not raw gas savings. The shadow layer remains in place because it's correct and the substrate is there if a future submission redesign closes the gap — but on its own, it's a net loss to ship.
 
 ### Phase 0.1
 

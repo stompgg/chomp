@@ -55,6 +55,9 @@ interface IEngine {
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
         returns (address winner);
+    function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner);
     function resetCallContext() external;
 
     // Getters
