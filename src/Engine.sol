@@ -29,6 +29,19 @@ contract Engine is IEngine, MappingAllocator {
     // Bitmap tracking which effect lists were modified (for caching effect counts)
     // Bit 0: global effects, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
     uint256 private transient effectsDirtyBitmap;
+
+    // -------- §5 shadow-storage transient state ----------------------------
+    // `_shadowActive` is set ON inside `executeBatch` (Phase 2) for the duration of the call.
+    // While ON, the §5.2 helpers read/write the transient mirror below instead of touching
+    // persistent storage. While OFF (the default in every other code path), they fall back to
+    // direct SLOAD/SSTORE — making this layer a no-op for legacy `execute()` calls.
+    bool private transient _shadowActive;
+    // MonState mirror: 16 entries (8 p0 mons + 8 p1 mons) keyed by playerIndex*8 + monIndex,
+    // stored at numeric transient key region `T_MON_STATE_BASE`. Each entry holds a packed
+    // MonState (the struct fits into one 256-bit slot today).
+    uint256 private transient monStateLoadedBitmap; // bit i = entry i has been hydrated from storage
+    uint256 private transient monStateDirtyBitmap;  // bit i = entry i has been written and must flush
+    // ------------------------------------------------------------------------
     mapping(bytes32 => uint256) public pairHashNonces; // imposes a global ordering across all matches
     mapping(address player => mapping(address maker => bool)) public isMatchmakerFor; // tracks approvals for matchmakers
 
@@ -858,7 +871,7 @@ contract Engine is IEngine, MappingAllocator {
     ) internal {
         bytes32 battleKey = battleKeyForWrite;
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
+        MonState memory monState = _shadowReadMonState(config, playerIndex, monIndex);
         if (stateVarIndex == MonStateIndexName.Hp) {
             monState.hpDelta =
                 (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.hpDelta + valueToAdd;
@@ -899,12 +912,16 @@ contract Engine is IEngine, MappingAllocator {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
 
+        // Flush the mutated (or unchanged, for unrecognized stateVarIndex) MonState exactly once
+        // before _runEffects fires OnUpdateMonState — the hook may re-read state via shadow helpers
+        // in Phase 1. Unchanged-write degrades to a warm no-op SSTORE, ~same cost as the prior
+        // storage-ref path's single mutating SSTORE.
+        _shadowWriteMonState(playerIndex, monIndex, monState);
+
         // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
         // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
         // OnUpdateMonState consumers are registered on this mon (the common case).
-        uint256 updateMonStateCount = playerIndex == 0
-            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        uint256 updateMonStateCount = _shadowReadEffectCount(config, playerIndex, monIndex);
         if (updateMonStateCount > 0) {
             _runEffects(
                 battleKey,
@@ -931,19 +948,10 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (bool)
     {
-        uint256 effectCount;
-        if (playerIndex == 0) {
-            effectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-            for (uint256 i; i < effectCount; i++) {
-                uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
-                if (address(config.p0Effects[slotIndex].effect) == effectAddr) return true;
-            }
-        } else {
-            effectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            for (uint256 i; i < effectCount; i++) {
-                uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
-                if (address(config.p1Effects[slotIndex].effect) == effectAddr) return true;
-            }
+        uint256 effectCount = _shadowReadEffectCount(config, playerIndex, monIndex);
+        for (uint256 i; i < effectCount; i++) {
+            uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
+            if (address(_shadowReadEffectSlot(config, playerIndex, monIndex, slotIndex).effect) == effectAddr) return true;
         }
         return false;
     }
@@ -1018,41 +1026,27 @@ contract Engine is IEngine, MappingAllocator {
                 );
             }
             if (!removeAfterRun) {
-                // Add to the appropriate effects mapping based on targetIndex
+                // Append to the appropriate list. Global effects use sequential indexing;
+                // player effects use per-mon stride (`_getEffectSlotIndex`).
                 BattleConfig storage config = battleConfig[storageKeyForWrite];
+                uint256 monEffectCount = _shadowReadEffectCount(config, targetIndex, monIndex);
+                uint256 slotIndex = targetIndex == 2
+                    ? monEffectCount
+                    : _getEffectSlotIndex(monIndex, monEffectCount);
+                _shadowWriteEffectSlot(
+                    targetIndex,
+                    monIndex,
+                    slotIndex,
+                    EffectInstance({effect: effect, stepsBitmap: stepsBitmap, data: extraDataToUse})
+                );
+                _shadowWriteEffectCount(targetIndex, monIndex, monEffectCount + 1);
 
+                // Dirty bitmap layout: bit 0 = global, bits 1..8 = p0 mons, bits 9..16 = p1 mons.
                 if (targetIndex == 2) {
-                    // Global effects use simple sequential indexing
-                    uint256 effectIndex = config.globalEffectsLength;
-                    EffectInstance storage effectSlot = config.globalEffects[effectIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
-                    config.globalEffectsLength = uint8(effectIndex + 1);
-                    // Set dirty bit 0 for global effects
                     effectsDirtyBitmap |= 1;
                 } else if (targetIndex == 0) {
-                    // Player effects use per-mon indexing: slot = MAX_EFFECTS_PER_MON * monIndex + count[monIndex]
-                    uint256 monEffectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-                    uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
-                    EffectInstance storage effectSlot = config.p0Effects[slotIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
-                    config.packedP0EffectsCount =
-                        _setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + 1);
-                    // Set dirty bit (1 + monIndex) for P0 effects
                     effectsDirtyBitmap |= (1 << (1 + monIndex));
                 } else {
-                    uint256 monEffectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-                    uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
-                    EffectInstance storage effectSlot = config.p1Effects[slotIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
-                    config.packedP1EffectsCount =
-                        _setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + 1);
-                    // Set dirty bit (9 + monIndex) for P1 effects
                     effectsDirtyBitmap |= (1 << (9 + monIndex));
                 }
             }
@@ -1067,23 +1061,15 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external {
-        bytes32 battleKey = battleKeyForWrite;
-        if (battleKey == bytes32(0)) {
+        if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
-
-        // Access the appropriate effects mapping based on targetIndex
-        BattleConfig storage config = battleConfig[storageKeyForWrite];
-        EffectInstance storage effectInstance;
-        if (targetIndex == 2) {
-            effectInstance = config.globalEffects[effectIndex];
-        } else if (targetIndex == 0) {
-            effectInstance = config.p0Effects[effectIndex];
-        } else {
-            effectInstance = config.p1Effects[effectIndex];
-        }
-
-        effectInstance.data = newExtraData;
+        // monIndex is 0 here — the helper currently ignores it; Phase 1's numeric-key shadow
+        // (§5.1.1) recovers it from slotIndex if needed.
+        EffectInstance memory eff =
+            _shadowReadEffectSlot(battleConfig[storageKeyForWrite], targetIndex, 0, effectIndex);
+        eff.data = newExtraData;
+        _shadowWriteEffectSlot(targetIndex, 0, effectIndex, eff);
     }
 
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 indexToRemove) public {
@@ -1101,15 +1087,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monIndex,
         uint256 slotIndex
     ) private {
-        EffectInstance storage eff;
-        if (targetIndex == 2) {
-            eff = config.globalEffects[slotIndex];
-        } else if (targetIndex == 0) {
-            eff = config.p0Effects[slotIndex];
-        } else {
-            eff = config.p1Effects[slotIndex];
-        }
-
+        EffectInstance memory eff = _shadowReadEffectSlot(config, targetIndex, monIndex, slotIndex);
         IEffect effect = eff.effect;
         if (address(effect) == TOMBSTONE_ADDRESS) return;
 
@@ -1121,35 +1099,14 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
+        _shadowWriteEffectSlot(targetIndex, monIndex, slotIndex, eff);
     }
 
     function setGlobalKV(uint64 key, uint192 value) external {
-        bytes32 battleKey = battleKeyForWrite;
-        if (battleKey == bytes32(0)) {
+        if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
-        bytes32 storageKey = storageKeyForWrite;
-        BattleConfig storage config = battleConfig[storageKey];
-        uint40 timestamp = config.startTimestamp;
-
-        // "Never written in THIS battle" ⇔ stored timestamp ≠ current battle's timestamp.
-        // Covers both first-ever write (packed == 0) and first-write after storageKey reuse.
-        uint64 existingTs = uint64(uint256(globalKV[storageKey][key]) >> 192);
-        if (existingTs != uint64(timestamp)) {
-            uint256 idx = config.globalKVCount;
-            uint256 slotIdx = idx >> 2;
-            uint256 shift = (idx & 3) * 64;
-            uint256 slot = globalKVKeySlots[storageKey][slotIdx];
-            // Clear the lane, then write the new key into it.
-            slot = (slot & ~(uint256(type(uint64).max) << shift)) | (uint256(key) << shift);
-            globalKVKeySlots[storageKey][slotIdx] = slot;
-            unchecked {
-                config.globalKVCount = uint8(idx + 1);
-            }
-        }
-
-        // Pack timestamp (upper 64 bits) with value (lower 192 bits)
-        globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
+        _shadowWriteKV(storageKeyForWrite, key, value);
     }
 
     /// @notice Check if the KO'd player's team is fully wiped and lock in the winner immediately
@@ -1186,8 +1143,7 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
-
+        MonState memory monState = _shadowReadMonState(config, playerIndex, monIndex);
         if (monState.isKnockedOut) {
             return;
         }
@@ -1195,9 +1151,7 @@ contract Engine is IEngine, MappingAllocator {
         // PreDamage pipeline: victim-side mon-local effects can mutate the in-flight damage by
         // calling engine.setPreDamage(). Reuses the standard _runEffects loop; running damage is
         // threaded through the transient `tempPreDamage` slot so the iteration logic doesn't change.
-        uint256 monEffectCount = playerIndex == 0
-            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        uint256 monEffectCount = _shadowReadEffectCount(config, playerIndex, monIndex);
         if (monEffectCount > 0) {
             tempPreDamage = damage;
             _runEffects(
@@ -1205,6 +1159,9 @@ contract Engine is IEngine, MappingAllocator {
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
+            // Re-read MonState since the hook could have mutated state through other entry points
+            // (preserves the original storage-ref semantics).
+            monState = _shadowReadMonState(config, playerIndex, monIndex);
         }
         if (damage <= 0) {
             return;
@@ -1215,11 +1172,18 @@ contract Engine is IEngine, MappingAllocator {
 
         // Set KO flag if the total hpDelta is greater than the original mon HP
         uint32 baseHp = _getTeamMon(config, playerIndex, monIndex).stats.hp;
-        if (monState.hpDelta + int32(baseHp) <= 0) {
+        bool nowKOed = (monState.hpDelta + int32(baseHp) <= 0);
+        if (nowKOed) {
             monState.isKnockedOut = true;
+        }
+
+        // Flush mutated MonState before any external observer (KO bitmap update, winner check,
+        // AfterDamage hook) might re-read state through shadow helpers.
+        _shadowWriteMonState(playerIndex, monIndex, monState);
+
+        if (nowKOed) {
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
-
             // Lock in winner immediately if this KO ends the game
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
@@ -1400,7 +1364,7 @@ contract Engine is IEngine, MappingAllocator {
         if (address(config.validator) == address(0)) {
             // Use inline validation (no external call)
             uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _shadowReadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             isValid = ValidatorLogic.validateSwitch(
                 battle.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -1551,12 +1515,12 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint256 currentActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-        MonState storage currentMonState = _getMonState(config, playerIndex, currentActiveMonIndex);
+        bool currentMonKnockedOut = _shadowReadMonState(config, playerIndex, currentActiveMonIndex).isKnockedOut;
 
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
-        if (!currentMonState.isKnockedOut) {
+        if (!currentMonKnockedOut) {
             _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
 
             // Then run the global on mon switch out hook as well
@@ -1573,7 +1537,7 @@ contract Engine is IEngine, MappingAllocator {
         _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
-        if (battle.turnId != 0 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+        if (battle.turnId != 0 && !_shadowReadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
             _activateAbility(
                 config,
                 battleKey,
@@ -1601,9 +1565,10 @@ contract Engine is IEngine, MappingAllocator {
 
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
-        MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
+        MonState memory currentMonState = _shadowReadMonState(config, playerIndex, activeMonIndex);
         if (currentMonState.shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
+            _shadowWriteMonState(playerIndex, activeMonIndex, currentMonState);
             return playerSwitchForTurnFlag;
         }
 
@@ -1633,7 +1598,7 @@ contract Engine is IEngine, MappingAllocator {
             if (monToSwitchIndex >= teamSize) {
                 return playerSwitchForTurnFlag;
             }
-            if (_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+            if (_shadowReadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
                 return playerSwitchForTurnFlag;
             }
             // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
@@ -1670,7 +1635,10 @@ contract Engine is IEngine, MappingAllocator {
                 }
 
                 // Deduct stamina and execute (MonMoves already emitted upfront in execute())
-                _deductStamina(currentMonState, staminaCost);
+                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                    ? -staminaCost
+                    : currentMonState.staminaDelta - staminaCost;
+                _shadowWriteMonState(playerIndex, activeMonIndex, currentMonState);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
                 _inlineStandardAttack(
@@ -1706,7 +1674,10 @@ contract Engine is IEngine, MappingAllocator {
                 if (!inlineValidation) {
                     staminaCost = int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 }
-                _deductStamina(currentMonState, staminaCost);
+                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                    ? -staminaCost
+                    : currentMonState.staminaDelta - staminaCost;
+                _shadowWriteMonState(playerIndex, activeMonIndex, currentMonState);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
                 moveSet.move(self, battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
@@ -1746,33 +1717,22 @@ contract Engine is IEngine, MappingAllocator {
         // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
         uint256 baseSlot;
         uint256 dirtyBit;
-        uint256 effectsCount;
+        uint256 effectsCount = _shadowReadEffectCount(config, effectIndex, monIndex);
         if (effectIndex == 2) {
             dirtyBit = 1;
-            effectsCount = config.globalEffectsLength;
         } else if (effectIndex == 0) {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (1 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
         } else {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (9 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
         }
 
-        // Iterate directly over storage, skipping tombstones
+        // Iterate over the (potentially shadow-mirrored) effect list, skipping tombstones.
         uint256 i = 0;
         while (i < effectsCount) {
-            // Read effect directly from storage (mapping ref can't be pre-resolved across branches)
-            EffectInstance storage eff;
             uint256 slotIndex = (effectIndex == 2) ? i : baseSlot + i;
-            if (effectIndex == 2) {
-                eff = config.globalEffects[slotIndex];
-            } else if (effectIndex == 0) {
-                eff = config.p0Effects[slotIndex];
-            } else {
-                eff = config.p1Effects[slotIndex];
-            }
+            EffectInstance memory eff = _shadowReadEffectSlot(config, effectIndex, monIndex, slotIndex);
 
             // Skip tombstoned effects
             if (address(eff.effect) != TOMBSTONE_ADDRESS) {
@@ -1794,7 +1754,7 @@ contract Engine is IEngine, MappingAllocator {
 
                 // Re-read count if a new effect was added during this iteration
                 if (effectsDirtyBitmap & dirtyBit != 0) {
-                    effectsCount = _loadEffectsCount(config, effectIndex, monIndex);
+                    effectsCount = _shadowReadEffectCount(config, effectIndex, monIndex);
                     effectsDirtyBitmap &= ~dirtyBit;
                 }
             }
@@ -1947,14 +1907,10 @@ contract Engine is IEngine, MappingAllocator {
         if (removeAfterRun) {
             removeEffect(effectIndex, monIndex, uint256(slotIndex));
         } else {
-            // Update the data at the slot
-            if (effectIndex == 2) {
-                config.globalEffects[slotIndex].data = updatedExtraData;
-            } else if (effectIndex == 0) {
-                config.p0Effects[slotIndex].data = updatedExtraData;
-            } else {
-                config.p1Effects[slotIndex].data = updatedExtraData;
-            }
+            EffectInstance memory eff =
+                _shadowReadEffectSlot(config, effectIndex, monIndex, uint256(slotIndex));
+            eff.data = updatedExtraData;
+            _shadowWriteEffectSlot(effectIndex, monIndex, uint256(slotIndex), eff);
         }
     }
 
@@ -1978,22 +1934,19 @@ contract Engine is IEngine, MappingAllocator {
         // Short-circuit if no effects exist for this target (skip both effects and KO check)
         bool hasEffects;
         if (effectIndex == 2) {
-            hasEffects = config.globalEffectsLength > 0;
+            hasEffects = _shadowReadEffectCount(config, 2, 0) > 0;
         } else {
             uint256 monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
             // Check if mon is KOed (reuse monIndex we already computed)
             if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
-                if (_getMonState(config, playerIndex, monIndex).isKnockedOut) {
+                if (_shadowReadMonState(config, playerIndex, monIndex).isKnockedOut) {
                     return playerSwitchForTurnFlag;
                 }
             }
 
             // Check effect count for this mon
-            uint256 effectCount = (effectIndex == 0)
-                ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            hasEffects = effectCount > 0;
+            hasEffects = _shadowReadEffectCount(config, effectIndex, monIndex) > 0;
         }
 
         if (hasEffects) {
@@ -2052,8 +2005,8 @@ contract Engine is IEngine, MappingAllocator {
         }
         // Calculate speeds by combining base stats with deltas
         // Note: speedDelta may be sentinel value (CLEARED_MON_STATE_SENTINEL) which should be treated as 0
-        int32 p0SpeedDelta = _getMonState(config, 0, p0ActiveMonIndex).speedDelta;
-        int32 p1SpeedDelta = _getMonState(config, 1, p1ActiveMonIndex).speedDelta;
+        int32 p0SpeedDelta = _shadowReadMonState(config, 0, p0ActiveMonIndex).speedDelta;
+        int32 p1SpeedDelta = _shadowReadMonState(config, 1, p1ActiveMonIndex).speedDelta;
         uint32 p0MonSpeed = uint32(
             int32(_getTeamMon(config, 0, p0ActiveMonIndex).stats.speed)
                 + (p0SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0SpeedDelta)
@@ -2180,12 +2133,13 @@ contract Engine is IEngine, MappingAllocator {
         uint256 playerIndex,
         uint256 monIndex
     ) private {
-        MonState storage monState = playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
+        MonState memory monState = _shadowReadMonState(config, playerIndex, monIndex);
         if (monState.staminaDelta >= 0) return;
         monState.staminaDelta += 1;
-        uint256 effectCount = playerIndex == 0
-            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-            : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        // Flush before _runEffects so OnUpdateMonState hooks (which can re-read MonState through
+        // shadow helpers / getMonStateForBattle) observe the +1 stamina.
+        _shadowWriteMonState(playerIndex, monIndex, monState);
+        uint256 effectCount = _shadowReadEffectCount(config, playerIndex, monIndex);
         if (effectCount > 0) {
             _runEffects(
                 battleKeyForWrite,
@@ -2198,16 +2152,121 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _getMonState(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
-        private
+    // -----------------------------------------------------------------
+    // Shadow-storage helper boundary (§5.2 of OPT_PLAN.md)
+    //
+    // Phase 0.5: helpers unconditionally do direct SLOAD/SSTORE — `_shadowActive`
+    // is implicitly always false. Behavior is identical to direct mapping access.
+    // Phase 1 will gate each helper on `_shadowActive` to read/write a transient
+    // mirror instead. The signatures here match §5.2 verbatim so Phase 1 only
+    // needs to add the shadow branch inside each helper.
+    // -----------------------------------------------------------------
+
+    function _shadowReadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
+        internal
         view
-        returns (MonState storage)
+        returns (MonState memory)
     {
-        return playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
+        return playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
     }
 
-    function _deductStamina(MonState storage state, int32 cost) private {
-        state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? -cost : state.staminaDelta - cost;
+    function _shadowWriteMonState(uint256 playerIndex, uint256 monIndex, MonState memory state) internal {
+        BattleConfig storage cfg = battleConfig[storageKeyForWrite];
+        if (playerIndex == 0) {
+            cfg.p0States[monIndex] = state;
+        } else {
+            cfg.p1States[monIndex] = state;
+        }
+    }
+
+    /// @dev Mirrors getGlobalKV's stale-gate so internal callers see the same view a transient
+    /// shadow read will return in Phase 1.
+    function _shadowReadKV(bytes32 storageKey, uint64 key) internal view returns (uint192) {
+        bytes32 packed = globalKV[storageKey][key];
+        uint64 storedTs = uint64(uint256(packed) >> 192);
+        uint64 currentTs = uint64(battleConfig[storageKey].startTimestamp);
+        if (storedTs != currentTs) return 0;
+        return uint192(uint256(packed));
+    }
+
+    /// @dev Wraps the existing setGlobalKV body: first-write tracks the key in the packed buffer,
+    /// then packs (timestamp | value) into the globalKV slot.
+    function _shadowWriteKV(bytes32 storageKey, uint64 key, uint192 value) internal {
+        BattleConfig storage cfg = battleConfig[storageKey];
+        uint40 timestamp = cfg.startTimestamp;
+
+        // First-write-in-this-battle detection: stored timestamp != current battle timestamp.
+        uint64 existingTs = uint64(uint256(globalKV[storageKey][key]) >> 192);
+        if (existingTs != uint64(timestamp)) {
+            uint256 idx = cfg.globalKVCount;
+            uint256 slotIdx = idx >> 2;
+            uint256 shift = (idx & 3) * 64;
+            uint256 slot = globalKVKeySlots[storageKey][slotIdx];
+            slot = (slot & ~(uint256(type(uint64).max) << shift)) | (uint256(key) << shift);
+            globalKVKeySlots[storageKey][slotIdx] = slot;
+            unchecked {
+                cfg.globalKVCount = uint8(idx + 1);
+            }
+        }
+
+        globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
+    }
+
+    /// @dev Reads one effect slot from the appropriate list. `effectList` matches the existing
+    /// targetIndex convention: 0 = p0Effects, 1 = p1Effects, 2 = globalEffects. For player
+    /// effects the caller is expected to have already resolved `slotIndex` via
+    /// `_getEffectSlotIndex(monIndex, localEffectIndex)`; `monIndex` is unused today but kept
+    /// in the signature so Phase 1's numeric-key shadow (§5.1.1) has the information it needs.
+    /// Caller passes `cfg` so external view paths (where `storageKeyForWrite` is unset) can use
+    /// the same helper.
+    function _shadowReadEffectSlot(
+        BattleConfig storage cfg,
+        uint256 effectList,
+        uint256, /*monIndex*/
+        uint256 slotIndex
+    ) internal view returns (EffectInstance memory) {
+        if (effectList == 2) return cfg.globalEffects[slotIndex];
+        if (effectList == 0) return cfg.p0Effects[slotIndex];
+        return cfg.p1Effects[slotIndex];
+    }
+
+    function _shadowWriteEffectSlot(
+        uint256 effectList,
+        uint256, /*monIndex*/
+        uint256 slotIndex,
+        EffectInstance memory eff
+    ) internal {
+        BattleConfig storage cfg = battleConfig[storageKeyForWrite];
+        if (effectList == 2) {
+            cfg.globalEffects[slotIndex] = eff;
+        } else if (effectList == 0) {
+            cfg.p0Effects[slotIndex] = eff;
+        } else {
+            cfg.p1Effects[slotIndex] = eff;
+        }
+    }
+
+    /// @dev Reads the live count for the requested effect list. For player effects, returns the
+    /// per-mon packed count; for global effects, returns the array length field.
+    function _shadowReadEffectCount(BattleConfig storage cfg, uint256 effectList, uint256 monIndex)
+        internal
+        view
+        returns (uint256)
+    {
+        if (effectList == 2) return cfg.globalEffectsLength;
+        if (effectList == 0) return _getMonEffectCount(cfg.packedP0EffectsCount, monIndex);
+        return _getMonEffectCount(cfg.packedP1EffectsCount, monIndex);
+    }
+
+    function _shadowWriteEffectCount(uint256 effectList, uint256 monIndex, uint256 count) internal {
+        BattleConfig storage cfg = battleConfig[storageKeyForWrite];
+        if (effectList == 2) {
+            cfg.globalEffectsLength = uint8(count);
+        } else if (effectList == 0) {
+            cfg.packedP0EffectsCount = _setMonEffectCount(cfg.packedP0EffectsCount, monIndex, count);
+        } else {
+            cfg.packedP1EffectsCount = _setMonEffectCount(cfg.packedP1EffectsCount, monIndex, count);
+        }
     }
 
     function _emitMonMoves(
@@ -2256,16 +2315,6 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function _loadEffectsCount(BattleConfig storage config, uint256 effectIndex, uint256 monIndex)
-        private
-        view
-        returns (uint256)
-    {
-        if (effectIndex == 2) return config.globalEffectsLength;
-        if (effectIndex == 0) return _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-        return _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-    }
-
     /**
      * - Effect filtering helper
      */
@@ -2276,45 +2325,17 @@ contract Engine is IEngine, MappingAllocator {
     {
         BattleConfig storage config = battleConfig[storageKey];
 
-        if (targetIndex == 2) {
-            // Global query - allocate max size and populate in single pass
-            uint256 globalEffectsLength = config.globalEffectsLength;
-            EffectInstance[] memory globalResult = new EffectInstance[](globalEffectsLength);
-            uint256[] memory globalIndices = new uint256[](globalEffectsLength);
-            uint256 globalIdx = 0;
-            for (uint256 i = 0; i < globalEffectsLength;) {
-                if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                    globalResult[globalIdx] = config.globalEffects[i];
-                    globalIndices[globalIdx] = i;
-                    unchecked {
-                        ++globalIdx;
-                    }
-                }
-                unchecked {
-                    ++i;
-                }
-            }
-            // Resize arrays to actual count
-            assembly ("memory-safe") {
-                mstore(globalResult, globalIdx)
-                mstore(globalIndices, globalIdx)
-            }
-            return (globalResult, globalIndices);
-        }
+        uint256 effectCount = _shadowReadEffectCount(config, targetIndex, monIndex);
+        uint256 baseSlot = targetIndex == 2 ? 0 : _getEffectSlotIndex(monIndex, 0);
 
-        // Player query - allocate max size and populate in single pass
-        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
-        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
-        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-
-        EffectInstance[] memory result = new EffectInstance[](monEffectCount);
-        uint256[] memory indices = new uint256[](monEffectCount);
+        EffectInstance[] memory result = new EffectInstance[](effectCount);
+        uint256[] memory indices = new uint256[](effectCount);
         uint256 idx = 0;
-        for (uint256 i = 0; i < monEffectCount;) {
+        for (uint256 i = 0; i < effectCount;) {
             uint256 slotIndex = baseSlot + i;
-            if (address(effects[slotIndex].effect) != TOMBSTONE_ADDRESS) {
-                result[idx] = effects[slotIndex];
+            EffectInstance memory eff = _shadowReadEffectSlot(config, targetIndex, monIndex, slotIndex);
+            if (address(eff.effect) != TOMBSTONE_ADDRESS) {
+                result[idx] = eff;
                 indices[idx] = slotIndex;
                 unchecked {
                     ++idx;
@@ -2342,12 +2363,13 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage data = battleData[battleKey];
 
         // Build global effects array (single pass, skip tombstones)
-        uint256 globalLen = config.globalEffectsLength;
+        uint256 globalLen = _shadowReadEffectCount(config, 2, 0);
         EffectInstance[] memory globalEffects = new EffectInstance[](globalLen);
         uint256 gIdx = 0;
         for (uint256 i = 0; i < globalLen;) {
-            if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                globalEffects[gIdx] = config.globalEffects[i];
+            EffectInstance memory eff = _shadowReadEffectSlot(config, 2, 0, i);
+            if (address(eff.effect) != TOMBSTONE_ADDRESS) {
+                globalEffects[gIdx] = eff;
                 unchecked {
                     ++gIdx;
                 }
@@ -2366,10 +2388,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 p0TeamSize = teamSizes & 0xF;
         uint256 p1TeamSize = (teamSizes >> 4) & 0xF;
 
-        EffectInstance[][] memory p0Effects =
-            _buildPlayerEffectsArray(config.p0Effects, config.packedP0EffectsCount, p0TeamSize);
-        EffectInstance[][] memory p1Effects =
-            _buildPlayerEffectsArray(config.p1Effects, config.packedP1EffectsCount, p1TeamSize);
+        EffectInstance[][] memory p0Effects = _buildPlayerEffectsArray(config, 0, p0TeamSize);
+        EffectInstance[][] memory p1Effects = _buildPlayerEffectsArray(config, 1, p1TeamSize);
 
         // Build teams array from mappings
         Mon[][] memory teams = new Mon[][](2);
@@ -2393,13 +2413,13 @@ contract Engine is IEngine, MappingAllocator {
         monStates[0] = new MonState[](p0TeamSize);
         monStates[1] = new MonState[](p1TeamSize);
         for (uint256 i = 0; i < p0TeamSize;) {
-            monStates[0][i] = config.p0States[i];
+            monStates[0][i] = _shadowReadMonState(config, 0, i);
             unchecked {
                 ++i;
             }
         }
         for (uint256 i = 0; i < p1TeamSize;) {
-            monStates[1][i] = config.p1States[i];
+            monStates[1][i] = _shadowReadMonState(config, 1, i);
             unchecked {
                 ++i;
             }
@@ -2462,24 +2482,26 @@ contract Engine is IEngine, MappingAllocator {
         return (configView, data);
     }
 
-    function _buildPlayerEffectsArray(
-        mapping(uint256 => EffectInstance) storage effects,
-        uint96 packedCounts,
-        uint256 teamSize
-    ) private view returns (EffectInstance[][] memory) {
+    function _buildPlayerEffectsArray(BattleConfig storage config, uint256 targetIndex, uint256 teamSize)
+        private
+        view
+        returns (EffectInstance[][] memory)
+    {
         // Allocate outer array for each mon
         EffectInstance[][] memory result = new EffectInstance[][](teamSize);
 
         for (uint256 m = 0; m < teamSize;) {
-            uint256 monCount = _getMonEffectCount(packedCounts, m);
+            uint256 monCount = _shadowReadEffectCount(config, targetIndex, m);
             uint256 baseSlot = _getEffectSlotIndex(m, 0);
 
             // Allocate max size for this mon's effects
             EffectInstance[] memory monEffects = new EffectInstance[](monCount);
             uint256 idx = 0;
             for (uint256 i = 0; i < monCount;) {
-                if (address(effects[baseSlot + i].effect) != TOMBSTONE_ADDRESS) {
-                    monEffects[idx] = effects[baseSlot + i];
+                EffectInstance memory eff =
+                    _shadowReadEffectSlot(config, targetIndex, m, baseSlot + i);
+                if (address(eff.effect) != TOMBSTONE_ADDRESS) {
+                    monEffects[idx] = eff;
                     unchecked {
                         ++idx;
                     }
@@ -2548,7 +2570,7 @@ contract Engine is IEngine, MappingAllocator {
         // Inline validation when validator is address(0)
         BattleData storage data = battleData[battleKey];
         uint256 activeMonIndex = _unpackActiveMonIndex(data.activeMonIndex, playerIndex);
-        MonState storage activeMonState = _getMonState(config, playerIndex, activeMonIndex);
+        MonState memory activeMonState = _shadowReadMonState(config, playerIndex, activeMonIndex);
 
         // Basic validation (bounds, forced switch checks)
         (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) = ValidatorLogic.validatePlayerMoveBasics(
@@ -2567,7 +2589,7 @@ contract Engine is IEngine, MappingAllocator {
         // Switch validation
         if (isSwitch) {
             uint256 monToSwitchIndex = uint256(extraData);
-            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _shadowReadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             return ValidatorLogic.validateSwitch(
                 data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -2693,7 +2715,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) private view returns (int32) {
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
+        MonState memory monState = _shadowReadMonState(config, playerIndex, monIndex);
         int32 value;
 
         if (stateVarIndex == MonStateIndexName.Hp) {
@@ -2739,16 +2761,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        bytes32 packed = globalKV[storageKey][key];
-        // Extract timestamp (upper 64 bits) and value (lower 192 bits)
-        uint64 storedTimestamp = uint64(uint256(packed) >> 192);
-        uint64 currentTimestamp = uint64(battleConfig[storageKey].startTimestamp);
-        // If timestamps don't match, return 0 (stale value from different battle)
-        if (storedTimestamp != currentTimestamp) {
-            return 0;
-        }
-        return uint192(uint256(packed));
+        return _shadowReadKV(_resolveStorageKey(battleKey), key);
     }
 
     function getEffects(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
@@ -2858,7 +2871,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Get attacker stats
         Mon storage attackerMon = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex);
-        MonState storage attackerState = _getMonState(config, attackerPlayerIndex, attackerMonIndex);
+        MonState memory attackerState = _shadowReadMonState(config, attackerPlayerIndex, attackerMonIndex);
         ctx.attackerAttack = attackerMon.stats.attack;
         ctx.attackerAttackDelta =
             attackerState.attackDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : attackerState.attackDelta;
@@ -2869,7 +2882,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Get defender stats and types
         Mon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-        MonState storage defenderState = _getMonState(config, defenderPlayerIndex, defenderMonIndex);
+        MonState memory defenderState = _shadowReadMonState(config, defenderPlayerIndex, defenderMonIndex);
         ctx.defenderDef = defenderMon.stats.defense;
         ctx.defenderDefDelta =
             defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.defenceDelta;
@@ -2911,8 +2924,8 @@ contract Engine is IEngine, MappingAllocator {
         ctx.p1ActiveMonIndex = uint8(p1MonIndex);
 
         // Get KO status for active mons
-        MonState storage p0State = config.p0States[p0MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
+        MonState memory p0State = _shadowReadMonState(config, 0, p0MonIndex);
+        MonState memory p1State = _shadowReadMonState(config, 1, p1MonIndex);
         ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
         ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
 
@@ -2973,7 +2986,7 @@ contract Engine is IEngine, MappingAllocator {
         ctx.p1KOBitmap = uint8(koBitmaps >> 8);
 
         Mon storage p1Active = config.p1Team[p1MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
+        MonState memory p1State = _shadowReadMonState(config, 1, p1MonIndex);
         ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
         ctx.cpuActiveMonStaminaDelta =
             p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
@@ -3001,16 +3014,9 @@ contract Engine is IEngine, MappingAllocator {
         uint8 teamSizes = config.teamSizes;
         uint256 size = playerIndex == 0 ? (teamSizes & 0xF) : (teamSizes >> 4);
         states = new MonState[](size);
-        if (playerIndex == 0) {
-            for (uint256 i; i < size;) {
-                states[i] = config.p0States[i];
-                unchecked { ++i; }
-            }
-        } else {
-            for (uint256 i; i < size;) {
-                states[i] = config.p1States[i];
-                unchecked { ++i; }
-            }
+        for (uint256 i; i < size;) {
+            states[i] = _shadowReadMonState(config, playerIndex, i);
+            unchecked { ++i; }
         }
     }
 

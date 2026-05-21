@@ -21,6 +21,12 @@ import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IValidator} from "../src/IValidator.sol";
 
+import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
+import {StatBoosts} from "../src/effects/StatBoosts.sol";
+import {EffectAttack} from "./mocks/EffectAttack.sol";
+import {StatBoostsMove} from "./mocks/StatBoostsMove.sol";
+import {MockKVWriterMove} from "./mocks/MockKVWriterMove.sol";
+
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
@@ -175,6 +181,81 @@ contract BatchInstrumentationTest is SignedCommitHelper {
         });
     }
 
+    /// @dev Mirrors BattleHelper._packStatBoost so this test stays self-contained while still
+    /// using the shared StatBoostsMove extraData layout.
+    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount)
+        internal
+        pure
+        returns (uint16)
+    {
+        return uint16(
+            (playerIndex & 0x1)
+            | ((monIndex & 0x7) << 1)
+            | ((statIndex & 0xF) << 4)
+            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
+        );
+    }
+
+    /// @dev Forced switch / single-player turn entry point. After a KO the engine sets
+    /// playerSwitchForTurnFlag to the player who must switch; the dual-signed path doesn't
+    /// apply, only `executeSinglePlayerMove`.
+    function _fastSinglePlayerTurn(bytes32 battleKey, uint8 moveIndex, uint16 extraData) internal {
+        (,, uint8 playerFlag,,,) = _getCommitContextLite(battleKey);
+        address acting = playerFlag == 0 ? p0 : p1;
+        uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
+        uint104 salt = uint104(uint256(keccak256(abi.encode("single", battleKey, turnId))));
+        vm.prank(acting);
+        signedCommitManager.executeSinglePlayerMove(battleKey, moveIndex, salt, extraData);
+        engine.resetCallContext();
+    }
+
+    /// @dev Just the slice of CommitContext we need to find the acting player on a forced-switch
+    /// turn. Defined here so the test doesn't pull in the whole struct surface.
+    function _getCommitContextLite(bytes32 battleKey)
+        internal
+        view
+        returns (
+            address pa,
+            address pb,
+            uint8 playerSwitchForTurnFlag,
+            uint8 winnerIndex,
+            uint48 startTimestamp,
+            uint64 turnId
+        )
+    {
+        CommitContext memory ctx = engine.getCommitContext(battleKey);
+        return (ctx.p0, ctx.p1, ctx.playerSwitchForTurnFlag, ctx.winnerIndex, ctx.startTimestamp, ctx.turnId);
+    }
+
+    function _printSummary(string memory label, Vm.AccountAccess[] memory diffs) internal pure {
+        (
+            uint256 totalSload,
+            uint256 totalSstore,
+            uint256 coldSload,
+            uint256 warmSload,
+            uint256 coldSstore,
+            uint256 warmSstore,
+            uint256 z2nz,
+            uint256 nz2nz,
+            uint256 noop,
+            uint256 unique,
+            uint256 multiWrite
+        ) = _summarizeAccesses(diffs);
+
+        console.log("===", label, "- STORAGE PROFILE ===");
+        console.log("Total SLOADs                   :", totalSload);
+        console.log("  Cold (first-touch in tx)     :", coldSload);
+        console.log("  Warm                         :", warmSload);
+        console.log("Total SSTOREs                  :", totalSstore);
+        console.log("  Cold (first-touch in tx)     :", coldSstore);
+        console.log("  Warm                         :", warmSstore);
+        console.log("    zero -> nonzero            :", z2nz);
+        console.log("    nonzero -> nonzero (diff)  :", nz2nz);
+        console.log("    no-op (same value)         :", noop);
+        console.log("Unique slots touched           :", unique);
+        console.log("Slots written 2+ times in turn :", multiWrite);
+    }
+
     /// @dev Iterates account accesses returned by stopAndReturnStateDiff and counts SLOAD/SSTORE
     /// per (account, slot) — distinguishing first-touch (cold) from subsequent (warm), and
     /// for SSTORE distinguishing zero→nonzero / nonzero→nonzero / no-op.
@@ -289,35 +370,187 @@ contract BatchInstrumentationTest is SignedCommitHelper {
         _fastTurn(battleKey, 0, 0, 0, 0);
 
         // Now profile a steady-state warm turn.
+        vm.startSnapshotGas("LegacyTurn_CleanDamageTrade");
         vm.startStateDiffRecording();
         _fastTurn(battleKey, 1, 1, 0, 0);
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        vm.stopSnapshotGas("LegacyTurn_CleanDamageTrade");
 
-        (
-            uint256 totalSload,
-            uint256 totalSstore,
-            uint256 coldSload,
-            uint256 warmSload,
-            uint256 coldSstore,
-            uint256 warmSstore,
-            uint256 z2nz,
-            uint256 nz2nz,
-            uint256 noop,
-            uint256 unique,
-            uint256 multiWrite
-        ) = _summarizeAccesses(diffs);
+        _printSummary("CLEAN DAMAGE-TRADE TURN", diffs);
+    }
 
-        console.log("=== CLEAN DAMAGE-TRADE TURN - STORAGE PROFILE ===");
-        console.log("Total SLOADs                   :", totalSload);
-        console.log("  Cold (first-touch in tx)     :", coldSload);
-        console.log("  Warm                         :", warmSload);
-        console.log("Total SSTOREs                  :", totalSstore);
-        console.log("  Cold (first-touch in tx)     :", coldSstore);
-        console.log("  Warm                         :", warmSstore);
-        console.log("    zero -> nonzero            :", z2nz);
-        console.log("    nonzero -> nonzero (diff)  :", nz2nz);
-        console.log("    no-op (same value)         :", noop);
-        console.log("Unique slots touched           :", unique);
-        console.log("Slots written 2+ times in turn :", multiWrite);
+    /// @notice Per-turn storage-access profile for a turn with BurnStatus DOT + StatBoosts active.
+    ///         Exercises the effect-list slots, status flag in globalKV (via StatusEffect), and
+    ///         the StatBoosts mirror slots.
+    function test_storageAccessProfile_effectHeavyTurn() public {
+        StatBoosts statBoosts = new StatBoosts();
+        BurnStatus burnStatus = new BurnStatus(statBoosts);
+
+        IMoveSet damage = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 30, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "Damage", EFFECT: IEffect(address(0))
+            })
+        );
+        IMoveSet burnMove = new EffectAttack(
+            burnStatus,
+            EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1})
+        );
+        IMoveSet boostMove = new StatBoostsMove(statBoosts);
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.moves = new uint256[](MOVES_PER_MON);
+        mon.moves[0] = uint256(uint160(address(damage)));
+        mon.moves[1] = uint256(uint160(address(burnMove)));
+        mon.moves[2] = uint256(uint160(address(boostMove)));
+        mon.moves[3] = uint256(uint160(address(damage)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        bytes32 battleKey = _startBattle(IRuleset(INLINE_STAMINA_REGEN_RULESET));
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch, then both sides apply burn + boost so the profiled turn is steady-state.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        // p0 applies burn to p1, p1 boosts own attack.
+        _fastTurn(
+            battleKey,
+            1,
+            2,
+            uint16(0),
+            _packStatBoost(1, 0, uint256(MonStateIndexName.Attack), int32(50))
+        );
+        // One full damage turn to fully warm effect slots / boosts.
+        _fastTurn(battleKey, 0, 0, 0, 0);
+
+        // Profile: warm damage trade with burn ticking + stat-boost stack consulted.
+        vm.startSnapshotGas("LegacyTurn_EffectHeavy");
+        vm.startStateDiffRecording();
+        _fastTurn(battleKey, 3, 3, 0, 0);
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        vm.stopSnapshotGas("LegacyTurn_EffectHeavy");
+
+        _printSummary("EFFECT-HEAVY TURN (Burn DOT + StatBoosts)", diffs);
+    }
+
+    /// @notice Per-turn storage-access profile for a forced single-player switch turn (post-KO).
+    ///         Exercises the `executeSinglePlayerMove` path and forced-switch dispatch (flag != 2).
+    function test_storageAccessProfile_forcedSwitchTurn() public {
+        // Cheap-to-KO mons: enough damage in one warm turn to KO the defender so the next turn
+        // is a forced single-player switch.
+        IMoveSet bigHit = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 200, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "BigHit", EFFECT: IEffect(address(0))
+            })
+        );
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.stats.hp = 50; // Low HP so a single bigHit KOs.
+        mon.stats.defense = 1;
+        mon.moves = new uint256[](MOVES_PER_MON);
+        for (uint256 i; i < MOVES_PER_MON; i++) mon.moves[i] = uint256(uint160(address(bigHit)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        bytes32 battleKey = _startBattle(IRuleset(INLINE_STAMINA_REGEN_RULESET));
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch, then a damage trade that KOs p1's active mon. p0 outspeeds via
+        // priority — both moves have PRIORITY 1, p0 (committer on turn 0 of damage) wins ties via parity.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        // After the next damage trade we expect at least one side KO'd because hp=50 vs 200 base power.
+        _fastTurn(battleKey, 0, 0, 0, 0);
+
+        // The forced switch could land on either side. Read the flag to confirm and execute.
+        (,, uint8 flag,,,) = _getCommitContextLite(battleKey);
+        require(flag == 0 || flag == 1, "expected single-player forced switch");
+
+        vm.startSnapshotGas("LegacyTurn_ForcedSwitch");
+        vm.startStateDiffRecording();
+        _fastSinglePlayerTurn(battleKey, SWITCH_MOVE_INDEX, uint16(1));
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        vm.stopSnapshotGas("LegacyTurn_ForcedSwitch");
+
+        _printSummary("FORCED-SWITCH TURN (single-player)", diffs);
+    }
+
+    /// @notice Per-turn storage-access profile for a normal two-player turn where one side opts
+    ///         to switch instead of attack. Covers the switch-first dispatch on the warm path.
+    function test_storageAccessProfile_multiMonTurn() public {
+        IMoveSet attack = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 30, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+                MOVE_TYPE: Type.Fire, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0, VOLATILITY: 0, NAME: "Attack", EFFECT: IEffect(address(0))
+            })
+        );
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.moves = new uint256[](MOVES_PER_MON);
+        for (uint256 i; i < MOVES_PER_MON; i++) mon.moves[i] = uint256(uint160(address(attack)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        bytes32 battleKey = _startBattle(IRuleset(INLINE_STAMINA_REGEN_RULESET));
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch + a damage trade to warm storage on the active mon pair.
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _fastTurn(battleKey, 0, 0, 0, 0);
+
+        // Profile: p0 attacks while p1 voluntarily switches in mon 2. Touches a second mon's
+        // MonState slot (cold for p1 mon 2), exercises switch-priority dispatch.
+        vm.startSnapshotGas("LegacyTurn_MultiMon");
+        vm.startStateDiffRecording();
+        _fastTurn(battleKey, 1, SWITCH_MOVE_INDEX, uint16(0), uint16(2));
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        vm.stopSnapshotGas("LegacyTurn_MultiMon");
+
+        _printSummary("MULTI-MON TURN (attack + switch)", diffs);
+    }
+
+    /// @notice Per-turn storage-access profile for a turn where both sides write to globalKV.
+    ///         Stresses the slot most relevant to the §5.1 lazy-load shadow path.
+    function test_storageAccessProfile_globalKVHeavyTurn() public {
+        IMoveSet kvWriter = new MockKVWriterMove();
+
+        Mon memory mon = _createMon(Type.Fire);
+        mon.moves = new uint256[](MOVES_PER_MON);
+        for (uint256 i; i < MOVES_PER_MON; i++) mon.moves[i] = uint256(uint160(address(kvWriter)));
+
+        Mon[] memory team = new Mon[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM; i++) team[i] = mon;
+        defaultRegistry.setTeam(p0, team);
+        defaultRegistry.setTeam(p1, team);
+
+        bytes32 battleKey = _startBattle(IRuleset(INLINE_STAMINA_REGEN_RULESET));
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Warm-up: lead-in switch + a globalKV write turn so the key entries / count slot are warm
+        // on the profiled turn (steady state, not first-write).
+        _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        // Both sides write to distinct keys to populate two globalKV slots.
+        _fastTurn(battleKey, 0, 0, uint16(1) | (uint16(5) << 10), uint16(2) | (uint16(7) << 10));
+
+        // Profile: both sides overwrite their respective KV slot. Tests warm globalKV touch only.
+        vm.startSnapshotGas("LegacyTurn_GlobalKVHeavy");
+        vm.startStateDiffRecording();
+        _fastTurn(battleKey, 1, 1, uint16(1) | (uint16(9) << 10), uint16(2) | (uint16(11) << 10));
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        vm.stopSnapshotGas("LegacyTurn_GlobalKVHeavy");
+
+        _printSummary("GLOBALKV-HEAVY TURN", diffs);
     }
 }
