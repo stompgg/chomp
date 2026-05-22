@@ -46,8 +46,8 @@ contract Engine is IEngine, MappingAllocator {
     // A non-zero encoded move is the "transient is populated for this call" signal.
     uint256 private transient _turnP0MoveEncoded;
     uint256 private transient _turnP1MoveEncoded;
-    uint104 private transient _turnP0Salt;
-    uint104 private transient _turnP1Salt;
+    uint96 private transient _turnP0Salt;
+    uint96 private transient _turnP1Salt;
 
     // ----- Batch-shadow infrastructure (OPT_PLAN tier-1 shadow) -----
     // Active only inside `executeBatchedTurns`. When set, per-turn writes to BattleData slot 1
@@ -102,8 +102,8 @@ contract Engine is IEngine, MappingAllocator {
     //   bits  40- 47  p1 packedMoveIndex (uint8, 0 = not submitted)
     //   bits  48- 63  p1 extraData       (uint16)
     // packedSalts layout:
-    //   bits   0-103  p0 salt (uint104)
-    //   bits 104-207  p1 salt (uint104)
+    //   bits   0-103  p0 salt (uint96)
+    //   bits 104-207  p1 salt (uint96)
     event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
@@ -343,10 +343,10 @@ contract Engine is IEngine, MappingAllocator {
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
-        uint104 p0Salt,
+        uint96 p0Salt,
         uint16 p0ExtraData,
         uint8 p1MoveIndex,
-        uint104 p1Salt,
+        uint96 p1Salt,
         uint16 p1ExtraData
     ) external returns (address winner) {
         bytes32 storageKey = _getStorageKey(battleKey);
@@ -402,12 +402,15 @@ contract Engine is IEngine, MappingAllocator {
 
         for (uint256 i = 0; i < entries.length; i++) {
             uint256 entry = entries[i];
+            // Tight pack (256 bits): [p0Move 8 | p0Extra 16 | p0Salt 96 | p1Move 8 | p1Extra 16 |
+            // p1Salt 96 | epoch 16]. Engine ignores the top-16-bit epoch tag — it's a manager-side
+            // liveness marker (see SignedCommitManager._battleEpoch).
             uint8 p0Move    = uint8(entry);
             uint16 p0Extra  = uint16(entry >> 8);
-            uint104 p0Salt  = uint104(entry >> 24);
-            uint8 p1Move    = uint8(entry >> 128);
-            uint16 p1Extra  = uint16(entry >> 136);
-            uint104 p1Salt  = uint104(entry >> 152);
+            uint96 p0Salt  = uint96(entry >> 24);
+            uint8 p1Move    = uint8(entry >> 120);
+            uint16 p1Extra  = uint16(entry >> 128);
+            uint96 p1Salt  = uint96(entry >> 144);
 
             // Flag-based dispatch (§6.1): read live `playerSwitchForTurnFlag` via shadow helper.
             uint8 flag = _getPlayerSwitchForTurnFlag(battleKey);
@@ -473,7 +476,7 @@ contract Engine is IEngine, MappingAllocator {
         _batchShadowActive = false;
     }
 
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint96 salt, uint16 extraData)
         external
         returns (address winner)
     {
@@ -528,7 +531,7 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     /// @dev Salt companion to `_getCurrentTurnMove`.
-    function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint104) {
+    function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint96) {
         uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
         if (encoded != 0) {
             return playerIndex == 0 ? _turnP0Salt : _turnP1Salt;
@@ -627,8 +630,8 @@ contract Engine is IEngine, MappingAllocator {
             // Update the temporary RNG to the newest value
             // Inline RNG computation when oracle is address(0) to avoid external call
             uint256 rng;
-            uint104 p0TurnSalt = _getCurrentTurnSalt(config, 0);
-            uint104 p1TurnSalt = _getCurrentTurnSalt(config, 1);
+            uint96 p0TurnSalt = _getCurrentTurnSalt(config, 0);
+            uint96 p1TurnSalt = _getCurrentTurnSalt(config, 1);
             if (address(config.rngOracle) == address(0)) {
                 rng = uint256(keccak256(abi.encode(p0TurnSalt, p1TurnSalt)));
             } else {
@@ -1615,7 +1618,7 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config,
         uint256 playerIndex,
         uint8 moveIndex,
-        uint104 salt,
+        uint96 salt,
         uint16 extraData
     ) internal {
         // Pack moveIndex with isRealTurn bit and apply +1 offset for regular moves
@@ -1633,7 +1636,7 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData)
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint96 salt, uint16 extraData)
         external
     {
         bool isInsideExecute = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;

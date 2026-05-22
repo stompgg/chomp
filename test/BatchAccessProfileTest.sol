@@ -130,8 +130,8 @@ contract BatchAccessProfileTest is BatchHelper {
     /// @dev One legacy per-turn execute (sigs built + executeWithDualSignedMoves).
     function _legacyTurn(bytes32 battleKey, uint8 p0Move, uint8 p1Move) internal {
         uint64 t = uint64(engine.getTurnIdForBattleState(battleKey));
-        uint104 cSalt = uint104(uint256(keccak256(abi.encode("c", battleKey, t))));
-        uint104 rSalt = uint104(uint256(keccak256(abi.encode("r", battleKey, t))));
+        uint96 cSalt = uint96(uint256(keccak256(abi.encode("c", battleKey, t))));
+        uint96 rSalt = uint96(uint256(keccak256(abi.encode("r", battleKey, t))));
         uint8 cMove; uint16 cExtra; uint8 rMove; uint16 rExtra;
         uint256 cPk; uint256 rPk;
         if (t % 2 == 0) {

@@ -132,8 +132,8 @@ contract BufferSubmissionTest is BatchHelper {
     function _validTurnZero() internal view returns (TurnSubmission memory) {
         return _buildTurnSubmission(
             address(mgr), battleKey, 0,
-            SWITCH_MOVE_INDEX, 0, uint104(0xC011),
-            SWITCH_MOVE_INDEX, 0, uint104(0xBABE),
+            SWITCH_MOVE_INDEX, 0, uint96(0xC011),
+            SWITCH_MOVE_INDEX, 0, uint96(0xBABE),
             P0_PK, P1_PK
         );
     }
@@ -171,8 +171,8 @@ contract BufferSubmissionTest is BatchHelper {
         // Build entry where committer slot was actually signed by Mallory (not p0).
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr), battleKey, 0,
-            SWITCH_MOVE_INDEX, 0, uint104(0xC011),
-            SWITCH_MOVE_INDEX, 0, uint104(0xBABE),
+            SWITCH_MOVE_INDEX, 0, uint96(0xC011),
+            SWITCH_MOVE_INDEX, 0, uint96(0xBABE),
             MALLORY_PK, // ← wrong committer key
             P1_PK
         );
@@ -183,8 +183,8 @@ contract BufferSubmissionTest is BatchHelper {
     function test_submitTurnMoves_wrongRevealerSigner() public {
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr), battleKey, 0,
-            SWITCH_MOVE_INDEX, 0, uint104(0xC011),
-            SWITCH_MOVE_INDEX, 0, uint104(0xBABE),
+            SWITCH_MOVE_INDEX, 0, uint96(0xC011),
+            SWITCH_MOVE_INDEX, 0, uint96(0xBABE),
             P0_PK,
             MALLORY_PK // ← wrong revealer key
         );
@@ -218,8 +218,8 @@ contract BufferSubmissionTest is BatchHelper {
         // Skip turn 0, try to submit turn 1 directly.
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr), battleKey, 1, // skip ahead
-            NO_OP_MOVE_INDEX, 0, uint104(1),
-            NO_OP_MOVE_INDEX, 0, uint104(2),
+            NO_OP_MOVE_INDEX, 0, uint96(1),
+            NO_OP_MOVE_INDEX, 0, uint96(2),
             P0_PK, P1_PK
         );
         vm.expectRevert(SignedCommitManager.WrongTurnId.selector);
@@ -242,8 +242,8 @@ contract BufferSubmissionTest is BatchHelper {
         bytes32 fakeKey = keccak256("nope");
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr), fakeKey, 0,
-            SWITCH_MOVE_INDEX, 0, uint104(1),
-            SWITCH_MOVE_INDEX, 0, uint104(2),
+            SWITCH_MOVE_INDEX, 0, uint96(1),
+            SWITCH_MOVE_INDEX, 0, uint96(2),
             P0_PK, P1_PK
         );
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
@@ -264,8 +264,8 @@ contract BufferSubmissionTest is BatchHelper {
 
         TurnSubmission memory turn1 = _buildTurnSubmission(
             address(mgr), battleKey, 1,
-            0, 0, uint104(100),
-            0, 0, uint104(200),
+            0, 0, uint96(100),
+            0, 0, uint96(200),
             P0_PK, P1_PK
         );
         mgr.submitTurnMoves(battleKey, turn1);
@@ -286,8 +286,8 @@ contract BufferSubmissionTest is BatchHelper {
         vm.warp(t1 + 100);
         TurnSubmission memory turn1 = _buildTurnSubmission(
             address(mgr), battleKey, 1,
-            0, 0, uint104(100),
-            0, 0, uint104(200),
+            0, 0, uint96(100),
+            0, 0, uint96(200),
             P0_PK, P1_PK
         );
         mgr.submitTurnMoves(battleKey, turn1);

@@ -126,7 +126,7 @@ contract InlineValidationTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithInlineValidation();
 
         // Both players switch in mon 0
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
 
         vm.startPrank(p0);
@@ -150,7 +150,7 @@ contract InlineValidationTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithInlineValidation();
 
         // Both players switch in mon 0
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
 
         vm.startPrank(p0);
@@ -180,7 +180,7 @@ contract InlineValidationTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithInlineValidation();
 
         // Both players switch in mon 0
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
 
         vm.startPrank(p0);
@@ -213,7 +213,7 @@ contract InlineValidationTest is Test, BattleHelper {
     /// @notice Test multiple turns with inline validation
     function test_inlineValidation_multipleRounds() public {
         bytes32 battleKey = _startBattleWithInlineValidation();
-        uint104 salt = 0;
+        uint96 salt = 0;
 
         // Turn 0: Both switch in mon 0
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
@@ -290,7 +290,7 @@ contract InlineValidationTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithInlineValidation();
 
         // Complete turn 0 switches
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
         vm.startPrank(p0);
         commitManager.commitMove(battleKey, p0MoveHash);
@@ -321,7 +321,7 @@ contract InlineValidationTest is Test, BattleHelper {
         bytes32 battleKey = _startBattleWithInlineValidation();
 
         // Complete turn 0 switches
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
         vm.startPrank(p0);
         commitManager.commitMove(battleKey, p0MoveHash);
@@ -419,7 +419,7 @@ contract InlineValidationTest is Test, BattleHelper {
         (bytes32 battleKey, DefaultValidator externalValidator) = _startBattleWithExternalValidator();
 
         // Complete turn 0 switches
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
         vm.startPrank(p0);
         commitManager.commitMove(battleKey, p0MoveHash);
@@ -489,7 +489,7 @@ contract InlineValidationTest is Test, BattleHelper {
 
         // P0 selects mon 0, CPU will randomly select (mockRNG returns 0, so mon 0)
         mockRNG.setRNG(0);
-        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), 0);
+        cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), 0);
 
         // Verify both players switched in
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 0, "P0 should have mon 0 active");
@@ -505,7 +505,7 @@ contract InlineValidationTest is Test, BattleHelper {
 
         // P0 uses attack, CPU will use attack (mockRNG selects index 1 which is the move)
         mockRNG.setRNG(1);
-        cpu.selectMove(battleKey, 0, uint104(0), 0);
+        cpu.selectMove(battleKey, 0, uint96(0), 0);
 
         // Battle should have advanced to turn 2
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);

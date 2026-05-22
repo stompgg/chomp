@@ -433,7 +433,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1));
         vm.stopPrank();
     }
 
@@ -447,7 +447,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         vm.startPrank(BOB);
         vm.expectRevert(SignedCommitManager.NotSinglePlayerTurn.selector);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1));
         vm.stopPrank();
     }
 
@@ -473,7 +473,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _forceP1Switch(testEngine, signedManager, battleKey);
 
         vm.prank(BOB);
-        signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
+        signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1), true);
         testEngine.resetCallContext();
 
         uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
@@ -531,7 +531,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         uint16 monIndex
     ) internal {
         vm.prank(player);
-        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), monIndex);
+        signedManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), monIndex);
         testEngine.resetCallContext();
     }
 

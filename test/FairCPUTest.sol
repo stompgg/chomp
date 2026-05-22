@@ -183,7 +183,7 @@ contract FairCPUTest is Test {
         cpu.selectMove(bk1, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
         mockCPURNG.setRNG(1);
-        cpu.selectMove(bk1, 0, uint104(0), 0); // Alice: move 0
+        cpu.selectMove(bk1, 0, uint96(0), 0); // Alice: move 0
         engine.resetCallContext();
         int32 cpuHp1 = engine.getMonStateForBattle(bk1, 1, 0, MonStateIndexName.Hp);
         int32 aliceHp1 = engine.getMonStateForBattle(bk1, 0, 0, MonStateIndexName.Hp);
@@ -194,7 +194,7 @@ contract FairCPUTest is Test {
         cpu.selectMove(bk2, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
         mockCPURNG.setRNG(1);
-        cpu.selectMove(bk2, NO_OP_MOVE_INDEX, uint104(0), 0); // Alice: no-op
+        cpu.selectMove(bk2, NO_OP_MOVE_INDEX, uint96(0), 0); // Alice: no-op
         engine.resetCallContext();
         int32 cpuHp2 = engine.getMonStateForBattle(bk2, 1, 0, MonStateIndexName.Hp);
 
@@ -272,7 +272,7 @@ contract FairCPUTest is Test {
         // Turn 1: Alice reveals the WEAK attack (slot 0). Worst-case pool damage from
         // slot 1 (250 BP) would obliterate the Fire CPU mon → FairCPU should switch.
         mockCPURNG.setRNG(1);
-        cpu.selectMove(battleKey, 0, uint104(0), 0);
+        cpu.selectMove(battleKey, 0, uint96(0), 0);
 
         activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
         if (cpuStartMon == 0) {
@@ -315,7 +315,7 @@ contract FairCPUTest is Test {
         cpu.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
         mockCPURNG.setRNG(1);
-        cpu.selectMove(battleKey, 0, uint104(0), 0); // Alice plays weak attack
+        cpu.selectMove(battleKey, 0, uint96(0), 0); // Alice plays weak attack
         engine.resetCallContext();
 
         // CPU should have stayed in and KO'd Alice's mon (we're faster, we go first).

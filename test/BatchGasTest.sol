@@ -140,8 +140,8 @@ contract BatchGasTest is BatchHelper {
         // Turn 0 send-in via legacy (fast) regardless of flow mode.
         {
             uint64 t = 0;
-            uint104 cSalt = uint104(uint256(keccak256(abi.encode("warm-c", wkey, t))));
-            uint104 rSalt = uint104(uint256(keccak256(abi.encode("warm-r", wkey, t))));
+            uint96 cSalt = uint96(uint256(keccak256(abi.encode("warm-c", wkey, t))));
+            uint96 rSalt = uint96(uint256(keccak256(abi.encode("warm-r", wkey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
             bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, wkey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, wkey, t, cHash,
@@ -156,8 +156,8 @@ contract BatchGasTest is BatchHelper {
         while (engine.getWinner(wkey) == address(0)) {
             uint8 flag = uint8(engine.getPlayerSwitchForTurnFlagForBattleState(wkey));
 
-            uint104 cSalt = uint104(uint256(keccak256(abi.encode("warm-c", wkey, turn))));
-            uint104 rSalt = uint104(uint256(keccak256(abi.encode("warm-r", wkey, turn))));
+            uint96 cSalt = uint96(uint256(keccak256(abi.encode("warm-c", wkey, turn))));
+            uint96 rSalt = uint96(uint256(keccak256(abi.encode("warm-r", wkey, turn))));
 
             if (flag == 2) {
                 if (useBatchedFlow) {
@@ -248,8 +248,8 @@ contract BatchGasTest is BatchHelper {
         // Lead-in switch — not counted in the steady-state measurement.
         {
             uint64 t = 0;
-            uint104 cSalt = uint104(uint256(keccak256(abi.encode("legacy-c", battleKey, t))));
-            uint104 rSalt = uint104(uint256(keccak256(abi.encode("legacy-r", battleKey, t))));
+            uint96 cSalt = uint96(uint256(keccak256(abi.encode("legacy-c", battleKey, t))));
+            uint96 rSalt = uint96(uint256(keccak256(abi.encode("legacy-r", battleKey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
             bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, t, cHash,
@@ -263,8 +263,8 @@ contract BatchGasTest is BatchHelper {
         uint256 startGas = gasleft();
         for (uint64 i = 1; i <= nTurns; i++) {
             uint64 t = i;
-            uint104 cSalt = uint104(uint256(keccak256(abi.encode("legacy-c", battleKey, t))));
-            uint104 rSalt = uint104(uint256(keccak256(abi.encode("legacy-r", battleKey, t))));
+            uint96 cSalt = uint96(uint256(keccak256(abi.encode("legacy-c", battleKey, t))));
+            uint96 rSalt = uint96(uint256(keccak256(abi.encode("legacy-r", battleKey, t))));
 
             uint8 cMove; uint16 cExtra; uint8 rMove; uint16 rExtra;
             uint256 cPk; uint256 rPk;
@@ -300,8 +300,8 @@ contract BatchGasTest is BatchHelper {
         // Lead-in switch via legacy single-turn (not counted).
         {
             uint64 t = 0;
-            uint104 cSalt = uint104(uint256(keccak256(abi.encode("batched-c", battleKey, t))));
-            uint104 rSalt = uint104(uint256(keccak256(abi.encode("batched-r", battleKey, t))));
+            uint96 cSalt = uint96(uint256(keccak256(abi.encode("batched-c", battleKey, t))));
+            uint96 rSalt = uint96(uint256(keccak256(abi.encode("batched-r", battleKey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
             bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, t, cHash,

@@ -523,7 +523,7 @@ contract InlineEngineGasTest is Test, BattleHelper {
         uint16 aliceExtraData,
         uint16 bobExtraData
     ) internal {
-        uint104 salt = 0;
+        uint96 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         uint256 turnId = eng.getTurnIdForBattleState(battleKey);
@@ -643,8 +643,8 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
         uint16 p1ExtraData
     ) internal {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-        uint104 committerSalt = uint104(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
-        uint104 revealerSalt = uint104(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
+        uint96 committerSalt = uint96(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
+        uint96 revealerSalt = uint96(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
 
         uint8 committerMoveIndex;
         uint16 committerExtraData;
@@ -695,7 +695,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
     ///      SignedCommitManager path because there is no hidden opponent move to reveal.
     function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint16 extraData) internal {
         vm.prank(isP0 ? p0 : p1);
-        signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), extraData);
+        signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), extraData);
         engine.resetCallContext();
     }
 
@@ -733,7 +733,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
         vm.prank(p1);
         uint256 gasBefore = gasleft();
-        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1), true);
         uint256 oldFlowGas = gasBefore - gasleft();
         engine.resetCallContext();
 
@@ -742,7 +742,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(2), true);
+        signedCommitManager.revealMove(oldFlowBattleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(2), true);
         uint256 oldFlowSecondGas = gasBefore - gasleft();
         engine.resetCallContext();
 
@@ -754,7 +754,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1));
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1));
         uint256 fastPathGas = gasBefore - gasleft();
         engine.resetCallContext();
 
@@ -763,7 +763,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
 
         vm.prank(p1);
         gasBefore = gasleft();
-        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(2));
+        signedCommitManager.executeSinglePlayerMove(fastPathBattleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(2));
         uint256 fastPathSecondGas = gasBefore - gasleft();
         engine.resetCallContext();
 

@@ -23,19 +23,19 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint64 turnId,
         uint8 p0MoveIndex,
         uint16 p0ExtraData,
-        uint104 p0Salt,
+        uint96 p0Salt,
         uint8 p1MoveIndex,
         uint16 p1ExtraData,
-        uint104 p1Salt,
+        uint96 p1Salt,
         uint256 p0Pk,
         uint256 p1Pk
     ) internal view returns (TurnSubmission memory entry) {
         uint8 committerMoveIndex;
         uint16 committerExtraData;
-        uint104 committerSalt;
+        uint96 committerSalt;
         uint8 revealerMoveIndex;
         uint16 revealerExtraData;
-        uint104 revealerSalt;
+        uint96 revealerSalt;
         uint256 committerPk;
         uint256 revealerPk;
 
@@ -97,8 +97,8 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint256 p1Pk
     ) internal {
         // Deterministic per-(turn, side) salts so tests are reproducible across runs.
-        uint104 p0Salt = uint104(uint256(keccak256(abi.encode("p0", battleKey, turnId))));
-        uint104 p1Salt = uint104(uint256(keccak256(abi.encode("p1", battleKey, turnId))));
+        uint96 p0Salt = uint96(uint256(keccak256(abi.encode("p0", battleKey, turnId))));
+        uint96 p1Salt = uint96(uint256(keccak256(abi.encode("p1", battleKey, turnId))));
 
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr),

@@ -41,18 +41,18 @@ interface IEngine {
         uint256 rng
     ) external returns (int32 damage, bytes32 eventType);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint96 salt, uint16 extraData) external;
     function execute(bytes32 battleKey) external returns (address winner);
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
-        uint104 p0Salt,
+        uint96 p0Salt,
         uint16 p0ExtraData,
         uint8 p1MoveIndex,
-        uint104 p1Salt,
+        uint96 p1Salt,
         uint16 p1ExtraData
     ) external returns (address winner);
-    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
+    function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint96 salt, uint16 extraData)
         external
         returns (address winner);
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
