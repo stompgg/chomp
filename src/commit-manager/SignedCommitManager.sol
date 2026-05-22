@@ -55,8 +55,11 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     // Per-turn batched submission state (OPT_PLAN §3 / §4)
     // ---------------------------------------------------------------------
 
-    /// @notice Packed per-turn move buffer keyed by `battleKey` (no storageKey reuse needed —
-    ///         battleKey is unique per game via pairHashNonce, and per-turn entries are small).
+    /// @notice Packed per-turn move buffer keyed by the engine's `storageKey` (NOT battleKey).
+    ///         Slots are reused across battles via the engine's `MappingAllocator`, so the
+    ///         steady-state (second-and-later game) submission cost is a warm nonzero→nonzero
+    ///         SSTORE (~5k) instead of a cold zero→nonzero SSTORE (~22k). This closes most of
+    ///         the per-turn submission overhead vs the legacy `executeWithDualSignedMoves` path.
     /// @dev Layout per OPT_PLAN §3 (one 256-bit slot per turn):
     ///        bits   0-  7 : p0 stored move index (including IS_REAL_TURN_BIT + +1 offset rules)
     ///        bits   8- 23 : p0 extra data (uint16)
@@ -64,13 +67,16 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///        bits 128-135 : p1 stored move index
     ///        bits 136-151 : p1 extra data
     ///        bits 152-255 : p1 salt
-    mapping(bytes32 battleKey => mapping(uint64 turnId => uint256 packed)) public moveBuffer;
+    mapping(bytes32 storageKey => mapping(uint64 turnId => uint256 packed)) public moveBuffer;
 
-    /// @notice Packed counters per battle:
-    ///         bits   0- 63 : numTurnsExecuted (cumulative across the lifetime of `battleKey`)
+    /// @notice Packed counters per storageKey (mirrors moveBuffer's keying so the counter slot
+    ///         also benefits from cross-battle slot reuse):
+    ///         bits   0- 63 : numTurnsExecuted (cumulative across the current battle's lifetime;
+    ///                        reset at startBattle via engine — managers should sync on first submit
+    ///                        of a new battle by mirroring engine's `turnId`)
     ///         bits  64-127 : numTurnsBuffered (current pending count, reset to 0 after executeBuffered)
     ///         bits 128-191 : lastSubmitTimestamp (for timeout tracking; see OPT_PLAN §2.3)
-    mapping(bytes32 battleKey => uint256) public bufferCounters;
+    mapping(bytes32 storageKey => uint256) public bufferCounters;
 
     /// @notice Emitted on every `submitTurnMoves` so off-chain replay can reconstruct the buffer.
     event TurnSubmitted(bytes32 indexed battleKey, uint64 indexed turnId, address submitter, uint256 packedEntry);
@@ -291,9 +297,14 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             revert BattleAlreadyComplete();
         }
 
+        // Resolve the engine's storageKey so our buffer/counter slots reuse across battles.
+        bytes32 storageKey = ENGINE.getStorageKey(battleKey);
+
         // First-of-batch sync: if the buffer is empty, mirror engine's `turnId` into
         // `numTurnsExecuted` so a legacy single-turn execute → batched-submit transition is seamless.
-        uint256 packedCounters = bufferCounters[battleKey];
+        // Also reset on first submission of a new battle so leftover counters from a prior battle's
+        // storageKey don't desync the append position.
+        uint256 packedCounters = bufferCounters[storageKey];
         uint64 numExecuted = uint64(packedCounters);
         uint64 numBuffered = uint64(packedCounters >> 64);
         if (numBuffered == 0) {
@@ -363,10 +374,10 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             );
         }
 
-        moveBuffer[battleKey][entry.turnId] = packed;
+        moveBuffer[storageKey][entry.turnId] = packed;
 
         unchecked {
-            bufferCounters[battleKey] =
+            bufferCounters[storageKey] =
                 uint256(numExecuted) | (uint256(numBuffered + 1) << 64) | (uint256(uint64(block.timestamp)) << 128);
         }
 
@@ -383,7 +394,8 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///      relies on the EVM's warm-storage discount across sub-turns for cold-SLOAD amortization
     ///      (this is the v1 substitute for §5's transient shadow layer; see §12 Decision Log).
     function executeBuffered(bytes32 battleKey) external {
-        uint256 packedCounters = bufferCounters[battleKey];
+        bytes32 storageKey = ENGINE.getStorageKey(battleKey);
+        uint256 packedCounters = bufferCounters[storageKey];
         uint64 numExecuted = uint64(packedCounters);
         uint64 numBuffered = uint64(packedCounters >> 64);
 
@@ -396,7 +408,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
         for (uint64 i = 0; i < numBuffered; i++) {
             uint64 turnId = numExecuted + i;
-            uint256 entry = moveBuffer[battleKey][turnId];
+            uint256 entry = moveBuffer[storageKey][turnId];
 
             (
                 uint8 p0Move,
@@ -440,7 +452,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         // Flush counters: `numTurnsExecuted` advances by the actually-executed count;
         // `numTurnsBuffered` resets to 0 regardless (post-game-over entries become dead).
         unchecked {
-            bufferCounters[battleKey] =
+            bufferCounters[storageKey] =
                 uint256(numExecuted + executedThisBatch) | (uint256(0) << 64) | (uint256(uint64(block.timestamp)) << 128);
         }
 
@@ -453,7 +465,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         view
         returns (uint64 numExecuted, uint64 numBuffered, uint64 lastSubmitTimestamp)
     {
-        uint256 packed = bufferCounters[battleKey];
+        uint256 packed = bufferCounters[ENGINE.getStorageKey(battleKey)];
         numExecuted = uint64(packed);
         numBuffered = uint64(packed >> 64);
         lastSubmitTimestamp = uint64(packed >> 128);
@@ -472,7 +484,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             uint104 p1Salt
         )
     {
-        return _unpackBufferedTurn(moveBuffer[battleKey][turnId]);
+        return _unpackBufferedTurn(moveBuffer[ENGINE.getStorageKey(battleKey)][turnId]);
     }
 
     // ---------------------------------------------------------------------

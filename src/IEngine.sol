@@ -62,6 +62,11 @@ interface IEngine {
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     function getMoveManager(bytes32 battleKey) external view returns (address);
+    /// @notice Resolves a `battleKey` to the storage key used by `BattleConfig` slot allocation.
+    /// @dev Returns the battleKey itself when no allocation has been recorded. Used by managers
+    ///      that want to key their own buffers on storageKey (so slots reuse across battles via
+    ///      `MappingAllocator`'s free-list and benefit from steady-state warm-SSTORE costs).
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
         bytes32 battleKey,

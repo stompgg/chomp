@@ -1496,6 +1496,14 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
+    /// @notice Public storageKey resolver so external move managers can key their per-turn
+    ///         buffers on the engine's slot-reused storageKey instead of the per-game battleKey.
+    ///         Lets them benefit from steady-state warm-SSTORE costs (~5k) on subsequent battles
+    ///         that land in slots populated by previous battles, instead of cold zero→nonzero (~22k).
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32) {
+        return _getStorageKey(battleKey);
+    }
+
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {
         pairHash = keccak256(abi.encode(p0, p1));
         if (uint256(uint160(p0)) > uint256(uint160(p1))) {
