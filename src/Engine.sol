@@ -728,7 +728,7 @@ contract Engine is IEngine, MappingAllocator {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-        battle.lastExecuteTimestamp = uint48(block.timestamp);
+        battle.lastExecuteTimestamp = uint40(block.timestamp);
 
         emit EngineExecute(battleKey);
     }
@@ -1502,6 +1502,28 @@ contract Engine is IEngine, MappingAllocator {
     ///         that land in slots populated by previous battles, instead of cold zero→nonzero (~22k).
     function getStorageKey(bytes32 battleKey) external view returns (bytes32) {
         return _getStorageKey(battleKey);
+    }
+
+    /// @notice Minimal context for the async-submit-then-batch-execute flow. Returns ONLY the
+    ///         fields `SignedCommitManager.submitTurnMoves` actually needs (p0/p1 for sig
+    ///         verification, turnId for first-of-batch sync, winnerIndex for the
+    ///         BattleAlreadyComplete check, storageKey for buffer keying).
+    /// @dev Saves vs `getCommitContext` + `getStorageKey` (2 external calls + 5 SLOADs) by
+    ///      collapsing into 1 external call + 3 SLOADs. Skips reading `startTimestamp`,
+    ///      `playerSwitchForTurnFlag`, and `validator` — none of those are needed at submission
+    ///      time in the async flow (engine handles flag-based dispatch at executeBuffered; an
+    ///      invalid battle / completed game will just be no-op at execute).
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey)
+    {
+        storageKey = _resolveStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        p0 = data.p0;
+        p1 = data.p1;
+        turnId = data.turnId;
+        winnerIndex = data.winnerIndex;
     }
 
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {

@@ -67,6 +67,10 @@ interface IEngine {
     ///      that want to key their own buffers on storageKey (so slots reuse across battles via
     ///      `MappingAllocator`'s free-list and benefit from steady-state warm-SSTORE costs).
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
         bytes32 battleKey,

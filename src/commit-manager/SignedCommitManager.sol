@@ -78,10 +78,10 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///         bits 128-191 : lastSubmitTimestamp (for timeout tracking; see OPT_PLAN §2.3)
     mapping(bytes32 storageKey => uint256) public bufferCounters;
 
-    /// @notice Emitted on every `submitTurnMoves` so off-chain replay can reconstruct the buffer.
-    event TurnSubmitted(bytes32 indexed battleKey, uint64 indexed turnId, address submitter, uint256 packedEntry);
-
     /// @notice Emitted on `executeBuffered` so off-chain observers can see how many turns drained.
+    /// @dev We don't emit a per-submission event — the SSTORE to `moveBuffer[storageKey][turnId]`
+    ///      is itself observable on-chain (anyone tracing storage diffs sees the new entry).
+    ///      Skipping the LOG3 saves ~2k gas per submission (~28k for a 14-turn game).
     event TurnsExecuted(bytes32 indexed battleKey, uint64 startTurnId, uint64 executedCount, address winner);
 
     constructor(IEngine engine) DefaultCommitManager(engine) {}
@@ -288,17 +288,14 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///      Switch-turn entries follow the same shape: the non-acting player signs a NO_OP move,
     ///      which `executeBuffered` ignores by routing via the engine's live `playerSwitchForTurnFlag`.
     function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
-        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        // Single combined getter: returns p0/p1/turnId/winnerIndex/storageKey in one call.
+        // Skips startTimestamp/validator/flag — none needed at submission time in the async flow.
+        (address ctxP0, address ctxP1, uint64 ctxTurnId, uint8 ctxWinnerIndex, bytes32 storageKey) =
+            ENGINE.getSubmitContext(battleKey);
 
-        if (ctx.startTimestamp == 0) {
-            revert BattleNotYetStarted();
-        }
-        if (ctx.winnerIndex != 2) {
+        if (ctxWinnerIndex != 2) {
             revert BattleAlreadyComplete();
         }
-
-        // Resolve the engine's storageKey so our buffer/counter slots reuse across battles.
-        bytes32 storageKey = ENGINE.getStorageKey(battleKey);
 
         // First-of-batch sync: if the buffer is empty, mirror engine's `turnId` into
         // `numTurnsExecuted` so a legacy single-turn execute → batched-submit transition is seamless.
@@ -308,7 +305,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint64 numExecuted = uint64(packedCounters);
         uint64 numBuffered = uint64(packedCounters >> 64);
         if (numBuffered == 0) {
-            numExecuted = uint64(ctx.turnId);
+            numExecuted = ctxTurnId;
         }
 
         if (entry.turnId != numExecuted + numBuffered) {
@@ -317,10 +314,9 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
         // Per OPT_PLAN §6.1, both halves are signed every turn. Committer/revealer roles derive
         // from parity; the engine reads the live `playerSwitchForTurnFlag` at execute time and
-        // skips the non-acting player's half. We do NOT project the flag here — that would require
-        // replaying every unprocessed turn.
+        // skips the non-acting player's half.
         (address committer, address revealer) =
-            entry.turnId % 2 == 0 ? (ctx.p0, ctx.p1) : (ctx.p1, ctx.p0);
+            entry.turnId % 2 == 0 ? (ctxP0, ctxP1) : (ctxP1, ctxP0);
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
@@ -380,8 +376,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             bufferCounters[storageKey] =
                 uint256(numExecuted) | (uint256(numBuffered + 1) << 64) | (uint256(uint64(block.timestamp)) << 128);
         }
-
-        emit TurnSubmitted(battleKey, entry.turnId, msg.sender, packed);
     }
 
     /// @notice Drain every currently buffered turn in one transaction.

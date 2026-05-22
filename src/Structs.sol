@@ -73,11 +73,19 @@ struct MoveDecision {
 }
 
 // Stored by the Engine, tracks immutable battle data and battle state.
-// Slot 0: p1 (160) + turnId (64) + p0TeamIndex (16) + p1TeamIndex (16) = 256 bits exactly.
-// teamIndices are narrowed from Battle.uint96 at startBattle; phantom-team writes truncate to match.
+// Slot 0 — IMMUTABLE during play (only written at startBattle):
+//   p1 (160) + p0TeamIndex (16) + p1TeamIndex (16) = 192 bits used, 64 bits free.
+// Slot 1 — every per-turn mutation goes here, so a single SSTORE per turn covers all of them:
+//   p0 (160) + winnerIndex (8) + prevPlayerSwitchForTurnFlag (8) + playerSwitchForTurnFlag (8) +
+//   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 256 bits exactly.
+//
+// Width trade-offs vs prior layout:
+//   - `turnId` shrunk uint64 → uint16. 65,535 turns per battle is far above any realistic
+//     game length (typical CHOMP games end in 5-30 turns; OPT_PLAN's worst case is in the
+//     hundreds, not thousands).
+//   - `lastExecuteTimestamp` shrunk uint48 → uint40. Year 36800 cap, plenty of headroom.
 struct BattleData {
     address p1;
-    uint64 turnId;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     address p0;
@@ -85,7 +93,8 @@ struct BattleData {
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
-    uint48 lastExecuteTimestamp; // Written at end of every execute() — packed with flags in slot 1 to avoid extra SSTORE
+    uint40 lastExecuteTimestamp; // Written at end of every execute() — packed with turnId in slot 1.
+    uint16 turnId;
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over

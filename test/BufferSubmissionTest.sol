@@ -234,8 +234,11 @@ contract BufferSubmissionTest is BatchHelper {
         mgr.submitTurnMoves(battleKey, entry);
     }
 
-    function test_submitTurnMoves_battleNotYetStarted() public {
-        // Use a different battleKey that hasn't started.
+    function test_submitTurnMoves_nonExistentBattle_reverts() public {
+        // Use a different battleKey that hasn't started. After the getCommitContext->
+        // getSubmitContext change, we no longer SLOAD `startTimestamp`; we rely on the
+        // `winnerIndex != 2` check to reject submissions, which fires for non-existent
+        // battles too (their BattleData is default-zero, so winnerIndex == 0 != 2).
         bytes32 fakeKey = keccak256("nope");
         TurnSubmission memory entry = _buildTurnSubmission(
             address(mgr), fakeKey, 0,
@@ -243,7 +246,7 @@ contract BufferSubmissionTest is BatchHelper {
             SWITCH_MOVE_INDEX, 0, uint104(2),
             P0_PK, P1_PK
         );
-        vm.expectRevert(DefaultCommitManager.BattleNotYetStarted.selector);
+        vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
         mgr.submitTurnMoves(fakeKey, entry);
     }
 
