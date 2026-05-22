@@ -143,11 +143,11 @@ contract BatchGasTest is BatchHelper {
             uint104 cSalt = uint104(uint256(keccak256(abi.encode("warm-c", wkey, t))));
             uint104 rSalt = uint104(uint256(keccak256(abi.encode("warm-r", wkey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
-            bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, wkey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, wkey, t, cHash,
                 SWITCH_MOVE_INDEX, rSalt, 0);
+            vm.prank(vm.addr(P0_PK));
             mgr.executeWithDualSignedMoves(wkey, SWITCH_MOVE_INDEX, cSalt, 0,
-                SWITCH_MOVE_INDEX, rSalt, 0, cSig, rSig);
+                SWITCH_MOVE_INDEX, rSalt, 0, rSig);
             engine.resetCallContext();
         }
 
@@ -170,10 +170,10 @@ contract BatchGasTest is BatchHelper {
                     uint256 cPk = committer == p0 ? P0_PK : P1_PK;
                     uint256 rPk = committer == p0 ? P1_PK : P0_PK;
                     bytes32 cHash = keccak256(abi.encodePacked(uint8(0), cSalt, uint16(0)));
-                    bytes memory cSig = _signCommit(address(mgr), cPk, cHash, wkey, turn);
                     bytes memory rSig = _signDualReveal(address(mgr), rPk, wkey, turn, cHash,
                         uint8(0), rSalt, 0);
-                    mgr.executeWithDualSignedMoves(wkey, uint8(0), cSalt, 0, uint8(0), rSalt, 0, cSig, rSig);
+                    vm.prank(vm.addr(cPk));
+                    mgr.executeWithDualSignedMoves(wkey, uint8(0), cSalt, 0, uint8(0), rSalt, 0, rSig);
                 }
             } else {
                 // Forced switch (single-player). Use the legacy single endpoint regardless of mode.
@@ -251,11 +251,11 @@ contract BatchGasTest is BatchHelper {
             uint104 cSalt = uint104(uint256(keccak256(abi.encode("legacy-c", battleKey, t))));
             uint104 rSalt = uint104(uint256(keccak256(abi.encode("legacy-r", battleKey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
-            bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, t, cHash,
                 SWITCH_MOVE_INDEX, rSalt, 0);
+            vm.prank(vm.addr(P0_PK));
             mgr.executeWithDualSignedMoves(battleKey, SWITCH_MOVE_INDEX, cSalt, 0,
-                SWITCH_MOVE_INDEX, rSalt, 0, cSig, rSig);
+                SWITCH_MOVE_INDEX, rSalt, 0, rSig);
             engine.resetCallContext();
         }
 
@@ -273,10 +273,10 @@ contract BatchGasTest is BatchHelper {
                 : (uint8(1), uint16(0), P1_PK, uint8(0), uint16(0), P0_PK);
 
             bytes32 cHash = keccak256(abi.encodePacked(cMove, cSalt, cExtra));
-            bytes memory cSig = _signCommit(address(mgr), cPk, cHash, battleKey, t);
             bytes memory rSig = _signDualReveal(address(mgr), rPk, battleKey, t, cHash, rMove, rSalt, rExtra);
 
-            mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, cSig, rSig);
+            vm.prank(vm.addr(cPk));
+            mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, rSig);
             engine.resetCallContext();
         }
         return startGas - gasleft();
@@ -303,11 +303,11 @@ contract BatchGasTest is BatchHelper {
             uint104 cSalt = uint104(uint256(keccak256(abi.encode("batched-c", battleKey, t))));
             uint104 rSalt = uint104(uint256(keccak256(abi.encode("batched-r", battleKey, t))));
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
-            bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, t);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, t, cHash,
                 SWITCH_MOVE_INDEX, rSalt, 0);
+            vm.prank(vm.addr(P0_PK));
             mgr.executeWithDualSignedMoves(battleKey, SWITCH_MOVE_INDEX, cSalt, 0,
-                SWITCH_MOVE_INDEX, rSalt, 0, cSig, rSig);
+                SWITCH_MOVE_INDEX, rSalt, 0, rSig);
             engine.resetCallContext();
         }
 

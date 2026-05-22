@@ -168,11 +168,11 @@ contract BatchEquivalenceTest is BatchHelper {
                 rMove = plan[i].p0Move; rExtra = plan[i].p0Extra; rPk = P0_PK;
             }
             bytes32 cHash = keccak256(abi.encodePacked(cMove, cSalt, cExtra));
-            bytes memory cSig = _signCommit(address(mgr), cPk, cHash, battleKey, turnId);
             bytes memory rSig =
                 _signDualReveal(address(mgr), rPk, battleKey, turnId, cHash, rMove, rSalt, rExtra);
 
-            mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, cSig, rSig);
+            vm.prank(vm.addr(cPk));
+            mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, rSig);
             engine.resetCallContext();
         }
     }

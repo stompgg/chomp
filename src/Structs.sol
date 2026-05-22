@@ -249,15 +249,18 @@ struct RevealedMove {
 // revealer) → (p0, p1) mapping happens at submission time based on `turnId % 2`.
 struct TurnSubmission {
     uint64 turnId;
-    // Committer preimage (revealed in the same tx as submission, signed by committer over moveHash).
+    // Committer preimage. The committer (msg.sender at submission time) reveals the preimage
+    // directly; their commitment is implicit in the act of submitting (only the committer
+    // knows their secret preimage). No separate committer signature is needed because the
+    // manager enforces `msg.sender == committer` at submission time.
     uint8 committerMoveIndex;
     uint16 committerExtraData;
     uint104 committerSalt;
-    // Revealer preimage (signed by revealer over the dual-reveal struct including the committer hash).
+    // Revealer preimage + signature. Revealer signs `DualSignedReveal` (committer hash +
+    // revealer move data) off-chain; committer carries the sig into their submission.
     uint8 revealerMoveIndex;
     uint16 revealerExtraData;
     uint104 revealerSalt;
-    bytes committerSig;
     bytes revealerSig;
 }
 

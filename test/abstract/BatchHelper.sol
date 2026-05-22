@@ -15,8 +15,8 @@ import {SignedCommitHelper} from "./SignedCommitHelper.sol";
 abstract contract BatchHelper is SignedCommitHelper {
     /// @notice Build + sign a `TurnSubmission` for the given (turnId, p0Move, p1Move).
     ///         Roles (committer/revealer) are derived from `turnId % 2`, matching the manager.
-    /// @dev `committerPk` and `revealerPk` are the private keys for whichever player is the
-    ///      committer/revealer at this turnId. Caller picks salts; default to `keccak(turnId, side)`.
+    /// @dev Returns the entry AND the committer's address so the caller can `vm.prank` it
+    ///      (single-sig design requires msg.sender == committer).
     function _buildTurnSubmission(
         address signedCommitManagerAddr,
         bytes32 battleKey,
@@ -29,7 +29,7 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint104 p1Salt,
         uint256 p0Pk,
         uint256 p1Pk
-    ) internal view returns (TurnSubmission memory entry) {
+    ) internal view returns (TurnSubmission memory entry, address committerAddr) {
         uint8 committerMoveIndex;
         uint16 committerExtraData;
         uint104 committerSalt;
@@ -70,7 +70,6 @@ abstract contract BatchHelper is SignedCommitHelper {
             revealerMoveIndex: revealerMoveIndex,
             revealerExtraData: revealerExtraData,
             revealerSalt: revealerSalt,
-            committerSig: _signCommit(signedCommitManagerAddr, committerPk, committerMoveHash, battleKey, turnId),
             revealerSig: _signDualReveal(
                 signedCommitManagerAddr,
                 revealerPk,
@@ -82,6 +81,7 @@ abstract contract BatchHelper is SignedCommitHelper {
                 revealerExtraData
             )
         });
+        committerAddr = vm.addr(committerPk);
     }
 
     /// @notice Submit a single turn into the buffer. No execute happens.
@@ -100,7 +100,7 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint104 p0Salt = uint104(uint256(keccak256(abi.encode("p0", battleKey, turnId))));
         uint104 p1Salt = uint104(uint256(keccak256(abi.encode("p1", battleKey, turnId))));
 
-        TurnSubmission memory entry = _buildTurnSubmission(
+        (TurnSubmission memory entry, address committerAddr) = _buildTurnSubmission(
             address(mgr),
             battleKey,
             turnId,
@@ -114,6 +114,7 @@ abstract contract BatchHelper is SignedCommitHelper {
             p1Pk
         );
 
+        vm.prank(committerAddr);
         mgr.submitTurnMoves(battleKey, entry);
     }
 

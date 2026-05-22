@@ -142,10 +142,10 @@ contract BatchAccessProfileTest is BatchHelper {
             rMove = p0Move; rExtra = 0; rPk = P0_PK;
         }
         bytes32 cHash = keccak256(abi.encodePacked(cMove, cSalt, cExtra));
-        bytes memory cSig = _signCommit(address(mgr), cPk, cHash, battleKey, t);
         bytes memory rSig =
             _signDualReveal(address(mgr), rPk, battleKey, t, cHash, rMove, rSalt, rExtra);
-        mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, cSig, rSig);
+        vm.prank(vm.addr(cPk));
+        mgr.executeWithDualSignedMoves(battleKey, cMove, cSalt, cExtra, rMove, rSalt, rExtra, rSig);
         engine.resetCallContext();
     }
 

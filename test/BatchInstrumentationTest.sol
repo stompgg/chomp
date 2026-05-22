@@ -146,8 +146,6 @@ contract BatchInstrumentationTest is SignedCommitHelper {
 
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-        bytes memory committerSig =
-            _signCommit(address(signedCommitManager), committerPk, committerMoveHash, battleKey, turnId);
         bytes memory revealerSig = _signDualReveal(
             address(signedCommitManager),
             revealerPk,
@@ -159,11 +157,11 @@ contract BatchInstrumentationTest is SignedCommitHelper {
             revealerExtraData
         );
 
+        vm.prank(vm.addr(committerPk));
         signedCommitManager.executeWithDualSignedMoves(
             battleKey,
             committerMoveIndex, committerSalt, committerExtraData,
             revealerMoveIndex, revealerSalt, revealerExtraData,
-            committerSig,
             revealerSig
         );
         engine.resetCallContext();

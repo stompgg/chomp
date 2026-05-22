@@ -129,7 +129,7 @@ contract BufferSubmissionTest is BatchHelper {
         return key;
     }
 
-    function _validTurnZero() internal view returns (TurnSubmission memory) {
+    function _validTurnZero() internal view returns (TurnSubmission memory entry, address committerAddr) {
         return _buildTurnSubmission(
             address(mgr), battleKey, 0,
             SWITCH_MOVE_INDEX, 0, uint104(0xC011),
@@ -143,7 +143,8 @@ contract BufferSubmissionTest is BatchHelper {
     // -----------------------------------------------------------------
 
     function test_submitTurnMoves_happyPath_turn0() public {
-        TurnSubmission memory entry = _validTurnZero();
+        (TurnSubmission memory entry, address committerAddr) = _validTurnZero();
+        vm.prank(committerAddr);
         mgr.submitTurnMoves(battleKey, entry);
 
         (uint64 ex, uint64 buf,) = mgr.getBufferStatus(battleKey);
@@ -151,61 +152,39 @@ contract BufferSubmissionTest is BatchHelper {
         assertEq(buf, 1);
     }
 
-    function test_submitTurnMoves_relayerCanSubmit() public {
-        // Mallory (a third party) submits an entry signed by p0+p1. Should succeed — sigs are
-        // the binding, not msg.sender.
-        TurnSubmission memory entry = _validTurnZero();
+    /// @notice Single-sig design: only the committer (msg.sender) can submit their own move.
+    ///         A third party (relayer/opponent) cannot, even with valid signatures, because the
+    ///         committer's preimage is the binding — only the committer should have it. The
+    ///         msg.sender == committer check closes the unilateral-revealer attack without
+    ///         needing a committer signature.
+    function test_submitTurnMoves_nonCommitterCannotSubmit() public {
+        (TurnSubmission memory entry,) = _validTurnZero();
         vm.prank(mallory);
+        vm.expectRevert(DefaultCommitManager.PlayerNotAllowed.selector);
         mgr.submitTurnMoves(battleKey, entry);
-
-        (uint64 ex, uint64 buf,) = mgr.getBufferStatus(battleKey);
-        assertEq(ex, 0);
-        assertEq(buf, 1);
     }
 
     // -----------------------------------------------------------------
     // signature failures
     // -----------------------------------------------------------------
 
-    function test_submitTurnMoves_wrongCommitterSigner() public {
-        // Build entry where committer slot was actually signed by Mallory (not p0).
-        TurnSubmission memory entry = _buildTurnSubmission(
-            address(mgr), battleKey, 0,
-            SWITCH_MOVE_INDEX, 0, uint104(0xC011),
-            SWITCH_MOVE_INDEX, 0, uint104(0xBABE),
-            MALLORY_PK, // ← wrong committer key
-            P1_PK
-        );
-        vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
-        mgr.submitTurnMoves(battleKey, entry);
-    }
-
     function test_submitTurnMoves_wrongRevealerSigner() public {
-        TurnSubmission memory entry = _buildTurnSubmission(
+        (TurnSubmission memory entry, address committerAddr) = _buildTurnSubmission(
             address(mgr), battleKey, 0,
             SWITCH_MOVE_INDEX, 0, uint104(0xC011),
             SWITCH_MOVE_INDEX, 0, uint104(0xBABE),
             P0_PK,
             MALLORY_PK // ← wrong revealer key
         );
+        vm.prank(committerAddr);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         mgr.submitTurnMoves(battleKey, entry);
     }
 
-    /// @notice Regression for the §9 unilateral-revealer attack: revealer cannot fabricate the
-    ///         committer's preimage by signing only the revealer half.
-    function test_submitTurnMoves_unilateralRevealerAttack_blocked() public {
-        // Mallory wants to play p0's move as if it were a chosen preimage. Forge a TurnSubmission
-        // with the committer slot filled in (arbitrary values) but with an EMPTY committer sig.
-        TurnSubmission memory entry = _validTurnZero();
-        entry.committerSig = bytes(""); // strip committer sig
-        vm.expectRevert(); // ECDSA library reverts on bad length — any revert is fine.
-        mgr.submitTurnMoves(battleKey, entry);
-    }
-
     function test_submitTurnMoves_emptyRevealerSig() public {
-        TurnSubmission memory entry = _validTurnZero();
+        (TurnSubmission memory entry, address committerAddr) = _validTurnZero();
         entry.revealerSig = bytes("");
+        vm.prank(committerAddr);
         vm.expectRevert();
         mgr.submitTurnMoves(battleKey, entry);
     }
@@ -216,20 +195,23 @@ contract BufferSubmissionTest is BatchHelper {
 
     function test_submitTurnMoves_wrongTurnId_gap() public {
         // Skip turn 0, try to submit turn 1 directly.
-        TurnSubmission memory entry = _buildTurnSubmission(
+        (TurnSubmission memory entry, address committerAddr) = _buildTurnSubmission(
             address(mgr), battleKey, 1, // skip ahead
             NO_OP_MOVE_INDEX, 0, uint104(1),
             NO_OP_MOVE_INDEX, 0, uint104(2),
             P0_PK, P1_PK
         );
+        vm.prank(committerAddr);
         vm.expectRevert(SignedCommitManager.WrongTurnId.selector);
         mgr.submitTurnMoves(battleKey, entry);
     }
 
     function test_submitTurnMoves_replay_sameSlot() public {
-        TurnSubmission memory entry = _validTurnZero();
+        (TurnSubmission memory entry, address committerAddr) = _validTurnZero();
+        vm.prank(committerAddr);
         mgr.submitTurnMoves(battleKey, entry);
         // Resubmitting the same entry should fail append-position check (next slot is 1, not 0).
+        vm.prank(committerAddr);
         vm.expectRevert(SignedCommitManager.WrongTurnId.selector);
         mgr.submitTurnMoves(battleKey, entry);
     }
@@ -240,12 +222,13 @@ contract BufferSubmissionTest is BatchHelper {
         // `winnerIndex != 2` check to reject submissions, which fires for non-existent
         // battles too (their BattleData is default-zero, so winnerIndex == 0 != 2).
         bytes32 fakeKey = keccak256("nope");
-        TurnSubmission memory entry = _buildTurnSubmission(
+        (TurnSubmission memory entry, address committerAddr) = _buildTurnSubmission(
             address(mgr), fakeKey, 0,
             SWITCH_MOVE_INDEX, 0, uint104(1),
             SWITCH_MOVE_INDEX, 0, uint104(2),
             P0_PK, P1_PK
         );
+        vm.prank(committerAddr);
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
         mgr.submitTurnMoves(fakeKey, entry);
     }
@@ -260,14 +243,17 @@ contract BufferSubmissionTest is BatchHelper {
     // -----------------------------------------------------------------
 
     function test_submitTurnMoves_advancesBuffered() public {
-        mgr.submitTurnMoves(battleKey, _validTurnZero());
+        (TurnSubmission memory entry0, address committer0) = _validTurnZero();
+        vm.prank(committer0);
+        mgr.submitTurnMoves(battleKey, entry0);
 
-        TurnSubmission memory turn1 = _buildTurnSubmission(
+        (TurnSubmission memory turn1, address committer1) = _buildTurnSubmission(
             address(mgr), battleKey, 1,
             0, 0, uint104(100),
             0, 0, uint104(200),
             P0_PK, P1_PK
         );
+        vm.prank(committer1);
         mgr.submitTurnMoves(battleKey, turn1);
 
         (uint64 ex, uint64 buf, uint64 ts) = mgr.getBufferStatus(battleKey);
@@ -277,19 +263,22 @@ contract BufferSubmissionTest is BatchHelper {
     }
 
     function test_submitTurnMoves_lastSubmitTimestampUpdates() public {
-        mgr.submitTurnMoves(battleKey, _validTurnZero());
+        (TurnSubmission memory entry0, address committer0) = _validTurnZero();
+        vm.prank(committer0);
+        mgr.submitTurnMoves(battleKey, entry0);
 
         uint256 t1 = block.timestamp;
         (,, uint64 ts1) = mgr.getBufferStatus(battleKey);
         assertEq(ts1, uint64(t1));
 
         vm.warp(t1 + 100);
-        TurnSubmission memory turn1 = _buildTurnSubmission(
+        (TurnSubmission memory turn1, address committer1) = _buildTurnSubmission(
             address(mgr), battleKey, 1,
             0, 0, uint104(100),
             0, 0, uint104(200),
             P0_PK, P1_PK
         );
+        vm.prank(committer1);
         mgr.submitTurnMoves(battleKey, turn1);
 
         (,, uint64 ts2) = mgr.getBufferStatus(battleKey);

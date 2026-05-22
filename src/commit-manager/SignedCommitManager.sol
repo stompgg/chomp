@@ -92,13 +92,14 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         version = "1";
     }
 
-    /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
-    /// @dev Both players sign off-chain — committer over `SignedCommit{committerMoveHash, …}`
-    ///      and revealer over `DualSignedReveal{committerMoveHash, …, revealerMove…}`. Anyone
-    ///      can submit (relayer-friendly) since both signatures are required and bind each
-    ///      player independently. Without the explicit committer signature, a malicious
-    ///      revealer could pick any preimage `P*`, sign `DualSignedReveal{keccak(P*), …}`
-    ///      and play `P*` as the committer's move — the committer signature closes that.
+    /// @notice Executes a turn using the committer's preimage + revealer's signature in one tx.
+    /// @dev Single-signature design: only the revealer signs off-chain
+    ///      (`DualSignedReveal{committerMoveHash, …, revealerMove…}`). The committer is the
+    ///      msg.sender — their commitment is implicit in the act of submitting (only the
+    ///      committer knows their secret preimage). msg.sender is enforced to equal the
+    ///      expected committer for this turn (parity-determined), which closes the
+    ///      "malicious revealer picks any P* and signs keccak(P*) as the committer's hash"
+    ///      attack that a pure preimage-only design would leave open.
     /// @param battleKey The battle identifier
     /// @param committerMoveIndex The committer's move index
     /// @param committerSalt The committer's salt
@@ -106,8 +107,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @param revealerMoveIndex The revealer's move index
     /// @param revealerSalt The revealer's salt
     /// @param revealerExtraData The revealer's extra data
-    /// @param committerSignature EIP-712 signature from the committer over
-    ///        SignedCommit(committerMoveHash, battleKey, turnId)
     /// @param revealerSignature EIP-712 signature from the revealer over
     ///        DualSignedReveal(battleKey, turnId, committerMoveHash, revealerMove…)
     function executeWithDualSignedMoves(
@@ -118,25 +117,16 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint8 revealerMoveIndex,
         uint104 revealerSalt,
         uint16 revealerExtraData,
-        bytes calldata committerSignature,
         bytes calldata revealerSignature
     ) external {
         (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-
-        // Scoped to keep `commit`/`reveal` structs from sharing stack space across recoveries.
-        {
-            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
-                moveHash: committerMoveHash,
-                battleKey: battleKey,
-                turnId: turnId
-            });
-            bytes32 commitDigest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
-            if (ECDSA.recoverCalldata(commitDigest, committerSignature) != committer) {
-                revert InvalidSignature();
-            }
+        // The committer must be msg.sender (single-sig design — see function docstring).
+        if (msg.sender != committer) {
+            revert PlayerNotAllowed();
         }
+
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
@@ -312,26 +302,17 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             revert WrongTurnId();
         }
 
-        // Per OPT_PLAN §6.1, both halves are signed every turn. Committer/revealer roles derive
-        // from parity; the engine reads the live `playerSwitchForTurnFlag` at execute time and
-        // skips the non-acting player's half.
+        // Single-sig design (matches `executeWithDualSignedMoves`): committer = msg.sender,
+        // only the revealer signs. Committer/revealer roles derive from turnId parity.
         (address committer, address revealer) =
             entry.turnId % 2 == 0 ? (ctxP0, ctxP1) : (ctxP1, ctxP0);
 
+        if (msg.sender != committer) {
+            revert PlayerNotAllowed();
+        }
+
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
-
-        {
-            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
-                moveHash: committerMoveHash,
-                battleKey: battleKey,
-                turnId: entry.turnId
-            });
-            bytes32 digest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
-            if (ECDSA.recoverCalldata(digest, entry.committerSig) != committer) {
-                revert InvalidSignature();
-            }
-        }
 
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({

@@ -291,11 +291,11 @@ contract BatchEdgeTest is BatchHelper {
             uint104 cSalt = uint104(1);
             uint104 rSalt = uint104(2);
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
-            bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, turnId);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, turnId, cHash,
                 SWITCH_MOVE_INDEX, rSalt, 0);
+            vm.prank(vm.addr(P0_PK));
             mgr.executeWithDualSignedMoves(battleKey, SWITCH_MOVE_INDEX, cSalt, 0,
-                SWITCH_MOVE_INDEX, rSalt, 0, cSig, rSig);
+                SWITCH_MOVE_INDEX, rSalt, 0, rSig);
             engine.resetCallContext();
         }
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "engine turnId after legacy");
@@ -332,11 +332,11 @@ contract BatchEdgeTest is BatchHelper {
         uint104 cSalt = uint104(100);
         uint104 rSalt = uint104(200);
         bytes32 cHash = keccak256(abi.encodePacked(uint8(0), cSalt, uint16(0)));
-        bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, turnId);
         bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, turnId, cHash,
             uint8(1), rSalt, 0);
 
-        mgr.executeWithDualSignedMoves(battleKey, 0, cSalt, 0, 1, rSalt, 0, cSig, rSig);
+        vm.prank(vm.addr(P0_PK));
+        mgr.executeWithDualSignedMoves(battleKey, 0, cSalt, 0, 1, rSalt, 0, rSig);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 3, "engine turnId after batched+legacy");
     }

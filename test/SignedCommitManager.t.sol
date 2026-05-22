@@ -160,14 +160,12 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
         uint8 moveIndex = turnId == 0 ? SWITCH_MOVE_INDEX : NO_OP_MOVE_INDEX;
         bytes32 committerMoveHash = keccak256(abi.encodePacked(moveIndex, committerSalt, uint16(0)));
 
-        (uint256 committerPk, uint256 revealerPk) = turnId % 2 == 0 ? (P0_PK, P1_PK) : (P1_PK, P0_PK);
-        bytes memory committerSignature =
-            _signCommit(address(signedCommitManager), committerPk, committerMoveHash, battleKey, uint64(turnId));
+        (, uint256 revealerPk) = turnId % 2 == 0 ? (P0_PK, P1_PK) : (P1_PK, P0_PK);
         bytes memory revealerSignature = _signDualReveal(address(signedCommitManager),
             revealerPk, battleKey, uint64(turnId), committerMoveHash, moveIndex, revealerSalt, 0
         );
 
-        // Caller can be anyone; pick committer for parity with old test setup.
+        // Single-sig design: committer (msg.sender) submits, revealer signs.
         vm.startPrank(turnId % 2 == 0 ? p0 : p1);
         signedCommitManager.executeWithDualSignedMoves(
             battleKey,
@@ -177,7 +175,6 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
             moveIndex,
             revealerSalt,
             0,
-            committerSignature,
             revealerSignature
         );
         vm.stopPrank();
