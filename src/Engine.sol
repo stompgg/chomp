@@ -49,6 +49,31 @@ contract Engine is IEngine, MappingAllocator {
     uint104 private transient _turnP0Salt;
     uint104 private transient _turnP1Salt;
 
+    // ----- Batch-shadow infrastructure (OPT_PLAN tier-1 shadow) -----
+    // Active only inside `executeBatchedTurns`. When set, per-turn writes to BattleData slot 1
+    // and active MonState slots are deferred to transient; one flush per dirty slot runs at end
+    // of batch. Saves SSTORE traffic on slots that are mutated every sub-turn (turnId, flags,
+    // activeMonIndex, lastExecuteTimestamp on slot 1; hpDelta/staminaDelta on MonState).
+    //
+    // For the LEGACY path (executeWithMoves / executeWithDualSignedMoves), the helpers do one
+    // TLOAD check and fall straight through to direct storage — no struct copies, no per-field
+    // overhead beyond the TLOAD (~100 gas/helper call).
+    bool private transient _batchShadowActive;
+
+    // BattleData slot 1 mirror. Packed value:
+    //   p0 (160) + winnerIndex (8) + prevPlayerSwitchForTurnFlag (8) + playerSwitchForTurnFlag (8) +
+    //   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 256.
+    uint256 private transient _shadowBattleSlot1;
+    bool    private transient _shadowBattleSlot1Loaded;
+    bool    private transient _shadowBattleSlot1Dirty;
+
+    // Active MonState mirror per (playerIndex, monIndex). Key = playerIndex * 8 + monIndex
+    // (matches OPT_PLAN §5.1.1 layout). Up to 16 mons total (8 per side).
+    // Loaded/dirty tracked via bitmaps; values live at transient slots `_T_MONSTATE_BASE + key`.
+    uint256 private transient _shadowMonStateLoaded;
+    uint256 private transient _shadowMonStateDirty;
+    uint256 private constant _T_MONSTATE_BASE = 0x100000;
+
     // Errors
     error NoWriteAllowed();
     error WrongCaller();
@@ -2177,6 +2202,188 @@ contract Engine is IEngine, MappingAllocator {
 
     function _getEffectSlotIndex(uint256 monIndex, uint256 effectIndex) private pure returns (uint256) {
         return EFFECT_SLOTS_PER_MON * monIndex + effectIndex;
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Batch-shadow read/write helpers
+    //
+    // Two paths in each helper, gated by `_batchShadowActive`:
+    //   - inactive (legacy executeWithMoves / executeWithDualSignedMoves): direct SLOAD/SSTORE
+    //     via assembly on the storage slot. One TLOAD overhead per call (~100 gas) and no
+    //     struct copies. Legacy path is unchanged on the wire.
+    //   - active (inside `executeBatchedTurns`): read/write the transient mirror with a
+    //     lazy-load-on-first-write pattern. Dirty bit drives the final flush.
+    //
+    // Field-level bit packing matches `BattleData` slot 1 layout (see Structs.sol comment).
+    // -----------------------------------------------------------------------------------------
+
+    function _readBattleSlot1Packed(bytes32 battleKey) internal view returns (uint256 packed) {
+        if (_batchShadowActive && _shadowBattleSlot1Loaded) {
+            return _shadowBattleSlot1;
+        }
+        BattleData storage battle = battleData[battleKey];
+        assembly {
+            // BattleData.slot is the mapping base; slot 1 is `slot + 1`.
+            // We compute the actual storage slot for the struct: keccak256(key, mapping_slot).
+            // But `battle.slot` already gives us the struct base — slot 1 is +1 from it.
+            packed := sload(add(battle.slot, 1))
+        }
+    }
+
+    function _writeBattleSlot1Packed(bytes32 battleKey, uint256 packed) internal {
+        if (_batchShadowActive) {
+            _shadowBattleSlot1 = packed;
+            _shadowBattleSlot1Loaded = true;
+            _shadowBattleSlot1Dirty = true;
+            return;
+        }
+        BattleData storage battle = battleData[battleKey];
+        assembly {
+            sstore(add(battle.slot, 1), packed)
+        }
+    }
+
+    // Bit-layout helpers for BattleData slot 1 (matches Structs.sol):
+    //   bits   0-159 : p0 address (immutable during play)
+    //   bits 160-167 : winnerIndex
+    //   bits 168-175 : prevPlayerSwitchForTurnFlag
+    //   bits 176-183 : playerSwitchForTurnFlag
+    //   bits 184-199 : activeMonIndex
+    //   bits 200-239 : lastExecuteTimestamp (uint40)
+    //   bits 240-255 : turnId (uint16)
+
+    function _getWinnerIndex(bytes32 battleKey) internal view returns (uint8) {
+        return uint8(_readBattleSlot1Packed(battleKey) >> 160);
+    }
+
+    function _setWinnerIndex(bytes32 battleKey, uint8 value) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey);
+        packed = (packed & ~(uint256(0xFF) << 160)) | (uint256(value) << 160);
+        _writeBattleSlot1Packed(battleKey, packed);
+    }
+
+    function _getPrevPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
+        return uint8(_readBattleSlot1Packed(battleKey) >> 168);
+    }
+
+    function _setPrevPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey);
+        packed = (packed & ~(uint256(0xFF) << 168)) | (uint256(value) << 168);
+        _writeBattleSlot1Packed(battleKey, packed);
+    }
+
+    function _getPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
+        return uint8(_readBattleSlot1Packed(battleKey) >> 176);
+    }
+
+    function _setPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey);
+        packed = (packed & ~(uint256(0xFF) << 176)) | (uint256(value) << 176);
+        _writeBattleSlot1Packed(battleKey, packed);
+    }
+
+    function _getActiveMonIndex(bytes32 battleKey) internal view returns (uint16) {
+        return uint16(_readBattleSlot1Packed(battleKey) >> 184);
+    }
+
+    function _setActiveMonIndexPacked(bytes32 battleKey, uint16 value) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey);
+        packed = (packed & ~(uint256(0xFFFF) << 184)) | (uint256(value) << 184);
+        _writeBattleSlot1Packed(battleKey, packed);
+    }
+
+    function _getTurnId(bytes32 battleKey) internal view returns (uint16) {
+        return uint16(_readBattleSlot1Packed(battleKey) >> 240);
+    }
+
+    function _setLastExecAndIncrementTurnId(bytes32 battleKey, uint8 newFlag, uint40 newTimestamp) internal {
+        // Combined writer used at the end of `_executeInternal`: bumps turnId by 1,
+        // writes playerSwitchForTurnFlag + lastExecuteTimestamp in a single packed update.
+        uint256 packed = _readBattleSlot1Packed(battleKey);
+        uint256 currentTurnId = uint256(uint16(packed >> 240));
+        uint256 nextTurnId = (currentTurnId + 1) & 0xFFFF;
+        packed = (packed & ~(uint256(0xFF) << 176)) | (uint256(newFlag) << 176);
+        packed = (packed & ~(uint256(uint40(type(uint40).max)) << 200)) | (uint256(newTimestamp) << 200);
+        packed = (packed & ~(uint256(0xFFFF) << 240)) | (nextTurnId << 240);
+        _writeBattleSlot1Packed(battleKey, packed);
+    }
+
+    /// @notice Flush the shadow BattleData slot 1 back to storage. Called at end of
+    /// `executeBatchedTurns` if any sub-turn dirtied the slot.
+    function _flushShadowBattleSlot1(bytes32 battleKey) internal {
+        if (!_shadowBattleSlot1Dirty) return;
+        BattleData storage battle = battleData[battleKey];
+        uint256 packed = _shadowBattleSlot1;
+        assembly {
+            sstore(add(battle.slot, 1), packed)
+        }
+        _shadowBattleSlot1Dirty = false;
+        _shadowBattleSlot1Loaded = false;
+    }
+
+    // ----- MonState shadow (per active mon) -----
+
+    function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
+        internal
+        view
+        returns (uint256 packed)
+    {
+        uint256 key = playerIndex * 8 + monIndex;
+        if (_batchShadowActive && (_shadowMonStateLoaded & (1 << key)) != 0) {
+            uint256 tkey = _T_MONSTATE_BASE + key;
+            assembly { packed := tload(tkey) }
+            return packed;
+        }
+        MonState storage state = playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
+        assembly { packed := sload(state.slot) }
+    }
+
+    function _writeMonStatePacked(
+        BattleConfig storage cfg,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint256 packed
+    ) internal {
+        uint256 key = playerIndex * 8 + monIndex;
+        if (_batchShadowActive) {
+            uint256 tkey = _T_MONSTATE_BASE + key;
+            assembly { tstore(tkey, packed) }
+            _shadowMonStateLoaded |= (1 << key);
+            _shadowMonStateDirty  |= (1 << key);
+            return;
+        }
+        MonState storage state = playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
+        assembly { sstore(state.slot, packed) }
+    }
+
+    function _flushShadowMonStates(bytes32 storageKey) internal {
+        uint256 dirty = _shadowMonStateDirty;
+        if (dirty == 0) return;
+        BattleConfig storage cfg = battleConfig[storageKey];
+        while (dirty != 0) {
+            uint256 lsb = dirty & uint256(-int256(dirty));
+            uint256 key = _shadowBitLog2(lsb);
+            uint256 tkey = _T_MONSTATE_BASE + key;
+            uint256 packed;
+            assembly { packed := tload(tkey) }
+            uint256 playerIndex = key >> 3;
+            uint256 monIndex = key & 7;
+            MonState storage state = playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
+            assembly { sstore(state.slot, packed) }
+            dirty ^= lsb;
+        }
+        _shadowMonStateDirty = 0;
+        _shadowMonStateLoaded = 0;
+    }
+
+    function _shadowBitLog2(uint256 x) private pure returns (uint256 r) {
+        // Returns the bit index of the lowest set bit of x (assumes x is a power of two).
+        unchecked {
+            if (x >= 1 <<   8) { x >>=   8; r +=   8; }
+            if (x >= 1 <<   4) { x >>=   4; r +=   4; }
+            if (x >= 1 <<   2) { x >>=   2; r +=   2; }
+            if (x >= 1 <<   1) { r +=   1; }
+        }
     }
 
     // Helper functions for accessing team and monState mappings
