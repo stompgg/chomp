@@ -590,6 +590,72 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
         }
     }
 
+    /// @notice Gas measurement counterpart to `test_realisticGameAccessProfile_steadyState`.
+    ///         Same 14-turn plan, same warmup-then-measure structure, but uses `gasleft()`
+    ///         before/after each turn instead of `vm.startStateDiffRecording`. Note that
+    ///         legacy gas here is INFLATED for production — in real deployment each legacy
+    ///         turn is its own tx (cold storage at each turn start). Within this single
+    ///         foundry tx, storage stays warm across turns, so legacy looks artificially
+    ///         cheap. Batched is one tx in production AND in the test, so its number is
+    ///         representative. Use the access-tally test for the cold-pessimal estimate.
+    function test_realisticGameSteadyStateGas() public {
+        TurnPlan[] memory plan = _buildBattlePlan();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // ---- LEGACY ----
+        bytes32 lKey1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _runLegacyWithoutMeasurement(lKey1, plan);
+        require(engine.getWinner(lKey1) != address(0), "PRECONDITION: legacy battle 1 must end");
+
+        bytes32 lKey2 = _startBattle();
+        require(engine.getStorageKey(lKey1) == engine.getStorageKey(lKey2), "PRECONDITION: storageKey reuse");
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        uint256 legacyGasTotal;
+        for (uint256 i; i < plan.length; i++) {
+            uint256 g = gasleft();
+            _legacyTurn(lKey2, plan[i]);
+            legacyGasTotal += g - gasleft();
+        }
+
+        // ---- BATCHED ----
+        _resetForBatched();
+        bytes32 bKey1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _runBatchedWithoutMeasurement(bKey1, plan);
+        require(engine.getWinner(bKey1) != address(0), "PRECONDITION: batched battle 1 must end");
+
+        bytes32 bKey2 = _startBattle();
+        require(engine.getStorageKey(bKey1) == engine.getStorageKey(bKey2), "PRECONDITION: storageKey reuse");
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        uint256 batchedSubmitGas;
+        for (uint64 i; i < plan.length; i++) {
+            uint256 g = gasleft();
+            _submitTurn(bKey2, uint64(i), plan[i]);
+            batchedSubmitGas += g - gasleft();
+        }
+        uint256 g0 = gasleft();
+        mgr.executeBuffered(bKey2);
+        uint256 batchedExecuteGas = g0 - gasleft();
+        engine.resetCallContext();
+
+        console.log("");
+        console.log("===============================================================");
+        console.log("  REALISTIC GAME (14 turns, steady-state, gas measurement)");
+        console.log("===============================================================");
+        console.log("LEGACY total gas (14 turns)         :", legacyGasTotal);
+        console.log("BATCHED submit gas (14 submits)     :", batchedSubmitGas);
+        console.log("BATCHED execute gas (1 executeBuf)  :", batchedExecuteGas);
+        console.log("BATCHED total gas                   :", batchedSubmitGas + batchedExecuteGas);
+        if (legacyGasTotal > batchedSubmitGas + batchedExecuteGas) {
+            console.log("BATCHED saves                       :", legacyGasTotal - (batchedSubmitGas + batchedExecuteGas));
+        } else {
+            console.log("BATCHED REGRESSION (within-tx warm) :", (batchedSubmitGas + batchedExecuteGas) - legacyGasTotal);
+        }
+    }
+
     /// @notice Diagnostic test: re-runs the realistic batched flow with state-diff recording
     ///         and bucketing by storage region. Use to spot which slots are still hot after
     ///         the BattleData / MonState shadows landed.
