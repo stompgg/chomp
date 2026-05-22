@@ -349,8 +349,19 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
         _runLegacyWithoutMeasurement(lKey1, plan);
 
-        // Battle 2 (steady state): measure.
+        // Verify battle 1 actually ended (game-over fired -> _freeStorageKey was called).
+        // Without this, battle 2 wouldn't reuse battle 1's storageKey and the "steady state"
+        // measurement would actually be measuring cold slots.
+        require(engine.getWinner(lKey1) != address(0), "STEADY-STATE PRECONDITION: battle 1 must end");
+
+        // Battle 2 (steady state): measure. Assert storageKey reuse — battle 2 should land in
+        // the same storage slots battle 1 freed at game-over, so SSTORE writes hit warm
+        // nonzero->nonzero (~2.9k) instead of cold zero->nonzero (~22.1k).
         bytes32 lKey2 = _startBattle();
+        require(
+            engine.getStorageKey(lKey1) == engine.getStorageKey(lKey2),
+            "STEADY-STATE PRECONDITION: legacy battle 2 should reuse battle 1's storageKey"
+        );
         vm.warp(vm.getBlockTimestamp() + 1);
         Tally memory legacy = _measureLegacyGame(lKey2, plan);
 
@@ -362,7 +373,13 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
         _runBatchedWithoutMeasurement(bKey1, plan);
 
+        require(engine.getWinner(bKey1) != address(0), "STEADY-STATE PRECONDITION: batched battle 1 must end");
+
         bytes32 bKey2 = _startBattle();
+        require(
+            engine.getStorageKey(bKey1) == engine.getStorageKey(bKey2),
+            "STEADY-STATE PRECONDITION: batched battle 2 should reuse battle 1's storageKey"
+        );
         vm.warp(vm.getBlockTimestamp() + 1);
         (Tally memory submit, Tally memory exec) = _measureBatchedGame(bKey2, plan);
         Tally memory batchedTotal = _addTally(submit, exec);

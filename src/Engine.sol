@@ -447,6 +447,9 @@ contract Engine is IEngine, MappingAllocator {
 
         // Flush the deferred slot-1 write back to storage exactly once, even if we executed N turns.
         _flushShadowBattleSlot1(battleKey);
+        // Flush any dirty MonState slots (mirror of slot-1 pattern: writes during the batch went
+        // to transient via `_writeMonStatePacked`; here we SSTORE each dirty packed value once).
+        _flushShadowMonStates(storageKey);
         _batchShadowActive = false;
     }
 
@@ -984,7 +987,7 @@ contract Engine is IEngine, MappingAllocator {
     ) internal {
         bytes32 battleKey = battleKeyForWrite;
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
         if (stateVarIndex == MonStateIndexName.Hp) {
             monState.hpDelta =
                 (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.hpDelta + valueToAdd;
@@ -1014,16 +1017,36 @@ contract Engine is IEngine, MappingAllocator {
             monState.isKnockedOut = newKOState;
             // Update KO bitmap if state changed
             if (newKOState && !wasKOed) {
+                // Store the memory copy now so the winner-check + KO bitmap logic sees the
+                // updated isKnockedOut bit if they query via getMonStateForBattle.
+                _storeMonState(config, playerIndex, monIndex, monState);
                 _setMonKO(config, playerIndex, monIndex);
                 koOccurredFlag = 1;
                 // Lock in winner immediately if this KO ends the game
                 _checkAndSetWinnerIfGameOver(config, playerIndex);
+                // Trigger OnUpdateMonState below; the early return on the KO path skips the
+                // (deferred) write-back since we already wrote.
+                uint256 updateMonStateCountKO = playerIndex == 0
+                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+                if (updateMonStateCountKO > 0) {
+                    _runEffects(
+                        battleKey,
+                        tempRNG,
+                        playerIndex,
+                        playerIndex,
+                        EffectStep.OnUpdateMonState,
+                        abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd)
+                    );
+                }
+                return;
             } else if (!newKOState && wasKOed) {
                 _clearMonKO(config, playerIndex, monIndex);
             }
         } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
+        _storeMonState(config, playerIndex, monIndex, monState);
 
         // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
         // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
@@ -1314,7 +1337,9 @@ contract Engine is IEngine, MappingAllocator {
             return;
         }
 
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
+        // Load MonState into a memory copy via the shadow helper. In legacy mode this is one
+        // SLOAD of the packed slot; in shadow mode it may TLOAD if a prior write already cached.
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
 
         if (monState.isKnockedOut) {
             return;
@@ -1333,6 +1358,12 @@ contract Engine is IEngine, MappingAllocator {
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
+            // PreDamage hooks may have mutated MonState via external callbacks (engine.dealDamage,
+            // engine.updateMonState). Reload from shadow/storage to pick up their writes.
+            monState = _loadMonState(config, playerIndex, monIndex);
+            if (monState.isKnockedOut) {
+                return;
+            }
         }
         if (damage <= 0) {
             return;
@@ -1345,11 +1376,16 @@ contract Engine is IEngine, MappingAllocator {
         uint32 baseHp = _getTeamMon(config, playerIndex, monIndex).stats.hp;
         if (monState.hpDelta + int32(baseHp) <= 0) {
             monState.isKnockedOut = true;
+            // Write back BEFORE the winner-check + AfterDamage callbacks so any nested reads
+            // (e.g., effects calling `getMonStateForBattle`) see the post-damage values.
+            _storeMonState(config, playerIndex, monIndex, monState);
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
 
             // Lock in winner immediately if this KO ends the game
             _checkAndSetWinnerIfGameOver(config, playerIndex);
+        } else {
+            _storeMonState(config, playerIndex, monIndex, monState);
         }
         // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
         if (monEffectCount > 0) {
@@ -1528,7 +1564,7 @@ contract Engine is IEngine, MappingAllocator {
         if (address(config.validator) == address(0)) {
             // Use inline validation (no external call)
             uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),playerIndex);
-            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             isValid = ValidatorLogic.validateSwitch(
                 _getTurnId(battleKey), activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -1706,15 +1742,13 @@ contract Engine is IEngine, MappingAllocator {
         // will all resolve before checking for KOs or winners
         // (could break this up even more, but that's for a later version / PR)
 
-        BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint256 currentActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),playerIndex);
-        MonState storage currentMonState = _getMonState(config, playerIndex, currentActiveMonIndex);
 
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
-        if (!currentMonState.isKnockedOut) {
+        if (!_loadMonState(config, playerIndex, currentActiveMonIndex).isKnockedOut) {
             _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
 
             // Then run the global on mon switch out hook as well
@@ -1734,7 +1768,7 @@ contract Engine is IEngine, MappingAllocator {
         _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
-        if (_getTurnId(battleKey) != 0 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+        if (_getTurnId(battleKey) != 0 && !_loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
             _activateAbility(
                 config,
                 battleKey,
@@ -1762,9 +1796,10 @@ contract Engine is IEngine, MappingAllocator {
 
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),playerIndex);
-        MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
+        MonState memory currentMonState = _loadMonState(config, playerIndex, activeMonIndex);
         if (currentMonState.shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
+            _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
             return playerSwitchForTurnFlag;
         }
 
@@ -1794,7 +1829,7 @@ contract Engine is IEngine, MappingAllocator {
             if (monToSwitchIndex >= teamSize) {
                 return playerSwitchForTurnFlag;
             }
-            if (_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+            if (_loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
                 return playerSwitchForTurnFlag;
             }
             // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
@@ -1831,7 +1866,10 @@ contract Engine is IEngine, MappingAllocator {
                 }
 
                 // Deduct stamina and execute (MonMoves already emitted upfront in execute())
-                _deductStamina(currentMonState, staminaCost);
+                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                    ? -staminaCost
+                    : currentMonState.staminaDelta - staminaCost;
+                _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1 - playerIndex);
                 _inlineStandardAttack(
@@ -1867,7 +1905,10 @@ contract Engine is IEngine, MappingAllocator {
                 if (!inlineValidation) {
                     staminaCost = int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 }
-                _deductStamina(currentMonState, staminaCost);
+                currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
+                    ? -staminaCost
+                    : currentMonState.staminaDelta - staminaCost;
+                _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
 
                 uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1 - playerIndex);
                 moveSet.move(self, battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
@@ -2145,7 +2186,7 @@ contract Engine is IEngine, MappingAllocator {
 
             // Check if mon is KOed (reuse monIndex we already computed)
             if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
-                if (_getMonState(config, playerIndex, monIndex).isKnockedOut) {
+                if (_loadMonState(config, playerIndex, monIndex).isKnockedOut) {
                     return playerSwitchForTurnFlag;
                 }
             }
@@ -2213,8 +2254,8 @@ contract Engine is IEngine, MappingAllocator {
         }
         // Calculate speeds by combining base stats with deltas
         // Note: speedDelta may be sentinel value (CLEARED_MON_STATE_SENTINEL) which should be treated as 0
-        int32 p0SpeedDelta = _getMonState(config, 0, p0ActiveMonIndex).speedDelta;
-        int32 p1SpeedDelta = _getMonState(config, 1, p1ActiveMonIndex).speedDelta;
+        int32 p0SpeedDelta = _loadMonState(config, 0, p0ActiveMonIndex).speedDelta;
+        int32 p1SpeedDelta = _loadMonState(config, 1, p1ActiveMonIndex).speedDelta;
         uint32 p0MonSpeed = uint32(
             int32(_getTeamMon(config, 0, p0ActiveMonIndex).stats.speed)
                 + (p0SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0SpeedDelta)
@@ -2470,6 +2511,48 @@ contract Engine is IEngine, MappingAllocator {
         _shadowMonStateLoaded = 0;
     }
 
+    /// @dev MonState struct layout (one storage slot per mon):
+    ///   bits   0- 31 : hpDelta             (int32)
+    ///   bits  32- 63 : staminaDelta        (int32)
+    ///   bits  64- 95 : speedDelta          (int32)
+    ///   bits  96-127 : attackDelta         (int32)
+    ///   bits 128-159 : defenceDelta        (int32)
+    ///   bits 160-191 : specialAttackDelta  (int32)
+    ///   bits 192-223 : specialDefenceDelta (int32)
+    ///   bits 224-231 : isKnockedOut        (bool packed as uint8)
+    ///   bits 232-239 : shouldSkipTurn      (bool packed as uint8)
+    function _loadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
+        internal
+        view
+        returns (MonState memory s)
+    {
+        uint256 packed = _readMonStatePacked(cfg, playerIndex, monIndex);
+        s.hpDelta = int32(uint32(packed));
+        s.staminaDelta = int32(uint32(packed >> 32));
+        s.speedDelta = int32(uint32(packed >> 64));
+        s.attackDelta = int32(uint32(packed >> 96));
+        s.defenceDelta = int32(uint32(packed >> 128));
+        s.specialAttackDelta = int32(uint32(packed >> 160));
+        s.specialDefenceDelta = int32(uint32(packed >> 192));
+        s.isKnockedOut = (uint8(packed >> 224) & 1) != 0;
+        s.shouldSkipTurn = (uint8(packed >> 232) & 1) != 0;
+    }
+
+    function _storeMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, MonState memory s)
+        internal
+    {
+        uint256 packed = uint256(uint32(s.hpDelta))
+            | (uint256(uint32(s.staminaDelta)) << 32)
+            | (uint256(uint32(s.speedDelta)) << 64)
+            | (uint256(uint32(s.attackDelta)) << 96)
+            | (uint256(uint32(s.defenceDelta)) << 128)
+            | (uint256(uint32(s.specialAttackDelta)) << 160)
+            | (uint256(uint32(s.specialDefenceDelta)) << 192)
+            | (uint256(s.isKnockedOut ? 1 : 0) << 224)
+            | (uint256(s.shouldSkipTurn ? 1 : 0) << 232);
+        _writeMonStatePacked(cfg, playerIndex, monIndex, packed);
+    }
+
     function _shadowBitLog2(uint256 x) private pure returns (uint256 r) {
         // Returns the bit index of the lowest set bit of x (assumes x is a power of two).
         unchecked {
@@ -2523,9 +2606,10 @@ contract Engine is IEngine, MappingAllocator {
         uint256 playerIndex,
         uint256 monIndex
     ) private {
-        MonState storage monState = playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
         if (monState.staminaDelta >= 0) return;
         monState.staminaDelta += 1;
+        _storeMonState(config, playerIndex, monIndex, monState);
         uint256 effectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
@@ -2539,18 +2623,6 @@ contract Engine is IEngine, MappingAllocator {
                 abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
             );
         }
-    }
-
-    function _getMonState(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
-        private
-        view
-        returns (MonState storage)
-    {
-        return playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
-    }
-
-    function _deductStamina(MonState storage state, int32 cost) private {
-        state.staminaDelta = (state.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? -cost : state.staminaDelta - cost;
     }
 
     function _emitMonMoves(
@@ -2731,18 +2803,18 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // Build monStates array from mappings
+        // Build monStates array from mappings (shadow-aware so external views observe in-flight state)
         MonState[][] memory monStates = new MonState[][](2);
         monStates[0] = new MonState[](p0TeamSize);
         monStates[1] = new MonState[](p1TeamSize);
         for (uint256 i = 0; i < p0TeamSize;) {
-            monStates[0][i] = config.p0States[i];
+            monStates[0][i] = _loadMonState(config, 0, i);
             unchecked {
                 ++i;
             }
         }
         for (uint256 i = 0; i < p1TeamSize;) {
-            monStates[1][i] = config.p1States[i];
+            monStates[1][i] = _loadMonState(config, 1, i);
             unchecked {
                 ++i;
             }
@@ -2891,7 +2963,7 @@ contract Engine is IEngine, MappingAllocator {
         // Inline validation when validator is address(0)
         BattleData storage data = battleData[battleKey];
         uint256 activeMonIndex = _unpackActiveMonIndex(data.activeMonIndex, playerIndex);
-        MonState storage activeMonState = _getMonState(config, playerIndex, activeMonIndex);
+        MonState memory activeMonState = _loadMonState(config, playerIndex, activeMonIndex);
 
         // Basic validation (bounds, forced switch checks)
         (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) = ValidatorLogic.validatePlayerMoveBasics(
@@ -2910,7 +2982,7 @@ contract Engine is IEngine, MappingAllocator {
         // Switch validation
         if (isSwitch) {
             uint256 monToSwitchIndex = uint256(extraData);
-            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             return ValidatorLogic.validateSwitch(
                 data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -3036,7 +3108,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) private view returns (int32) {
-        MonState storage monState = _getMonState(config, playerIndex, monIndex);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
         int32 value;
 
         if (stateVarIndex == MonStateIndexName.Hp) {
@@ -3201,7 +3273,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Get attacker stats
         Mon storage attackerMon = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex);
-        MonState storage attackerState = _getMonState(config, attackerPlayerIndex, attackerMonIndex);
+        MonState memory attackerState = _loadMonState(config, attackerPlayerIndex, attackerMonIndex);
         ctx.attackerAttack = attackerMon.stats.attack;
         ctx.attackerAttackDelta =
             attackerState.attackDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : attackerState.attackDelta;
@@ -3212,7 +3284,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Get defender stats and types
         Mon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-        MonState storage defenderState = _getMonState(config, defenderPlayerIndex, defenderMonIndex);
+        MonState memory defenderState = _loadMonState(config, defenderPlayerIndex, defenderMonIndex);
         ctx.defenderDef = defenderMon.stats.defense;
         ctx.defenderDefDelta =
             defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.defenceDelta;
@@ -3253,9 +3325,9 @@ contract Engine is IEngine, MappingAllocator {
         ctx.p0ActiveMonIndex = uint8(p0MonIndex);
         ctx.p1ActiveMonIndex = uint8(p1MonIndex);
 
-        // Get KO status for active mons
-        MonState storage p0State = config.p0States[p0MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
+        // Get KO status for active mons (shadow-aware so external views observe in-flight state)
+        MonState memory p0State = _loadMonState(config, 0, p0MonIndex);
+        MonState memory p1State = _loadMonState(config, 1, p1MonIndex);
         ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
         ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
 
@@ -3316,7 +3388,7 @@ contract Engine is IEngine, MappingAllocator {
         ctx.p1KOBitmap = uint8(koBitmaps >> 8);
 
         Mon storage p1Active = config.p1Team[p1MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
+        MonState memory p1State = _loadMonState(config, 1, p1MonIndex);
         ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
         ctx.cpuActiveMonStaminaDelta =
             p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
@@ -3344,16 +3416,9 @@ contract Engine is IEngine, MappingAllocator {
         uint8 teamSizes = config.teamSizes;
         uint256 size = playerIndex == 0 ? (teamSizes & 0xF) : (teamSizes >> 4);
         states = new MonState[](size);
-        if (playerIndex == 0) {
-            for (uint256 i; i < size;) {
-                states[i] = config.p0States[i];
-                unchecked { ++i; }
-            }
-        } else {
-            for (uint256 i; i < size;) {
-                states[i] = config.p1States[i];
-                unchecked { ++i; }
-            }
+        for (uint256 i; i < size;) {
+            states[i] = _loadMonState(config, playerIndex, i);
+            unchecked { ++i; }
         }
     }
 
