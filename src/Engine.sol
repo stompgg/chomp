@@ -437,8 +437,9 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
-        // Check for game over
-        if (battle.winnerIndex != 2) {
+        // Check for game over (shadow-aware: when batched, reads the in-progress packed slot 1
+        // value from transient if a previous sub-turn already mutated it).
+        if (_getWinnerIndex(battleKey) != 2) {
             revert GameAlreadyOver();
         }
 
@@ -448,12 +449,12 @@ contract Engine is IEngine, MappingAllocator {
         bool cameFromDirectMoveInput = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
 
         // Set up turn / player vars
-        uint256 turnId = battle.turnId;
+        uint256 turnId = _getTurnId(battleKey);
         uint256 playerSwitchForTurnFlag = 2;
         uint256 priorityPlayerIndex;
 
-        // Store the prev player switch for turn flag
-        battle.prevPlayerSwitchForTurnFlag = battle.playerSwitchForTurnFlag;
+        // Store the prev player switch for turn flag (one packed-slot RMW via helpers).
+        _setPrevPlayerSwitchForTurnFlag(battleKey, _getPlayerSwitchForTurnFlag(battleKey));
 
         // Set the battle key for the stack frame
         // (gets cleared at the end of the transaction)
@@ -481,9 +482,10 @@ contract Engine is IEngine, MappingAllocator {
 
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
-        if (battle.playerSwitchForTurnFlag == 0 || battle.playerSwitchForTurnFlag == 1) {
+        uint8 entryFlag = _getPlayerSwitchForTurnFlag(battleKey);
+        if (entryFlag == 0 || entryFlag == 1) {
             // Get the player index that needs to switch for this turn
-            uint256 playerIndex = battle.playerSwitchForTurnFlag;
+            uint256 playerIndex = uint256(entryFlag);
 
             // Run the move (trust that the validator only lets valid single player moves happen as a switch action)
             // Running the move will set the winner flag if valid
@@ -729,9 +731,10 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // If a winner has been set, handle the game over
-        if (battle.winnerIndex != 2) {
-            winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
+        // If a winner has been set, handle the game over (shadow-aware read).
+        uint8 endWinnerIndex = _getWinnerIndex(battleKey);
+        if (endWinnerIndex != 2) {
+            winner = (endWinnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
             // Still emit execute event
@@ -739,13 +742,17 @@ contract Engine is IEngine, MappingAllocator {
             return winner;
         }
 
-        // End of turn cleanup:
-        // - Progress turn index
-        // - Set the player switch for turn flag on battle data
-        // - Clear move flags for next turn (clear isRealTurn bit by setting packedMoveIndex to 0)
-        // - Update lastExecuteTimestamp for timeout tracking
-        battle.turnId += 1;
-        battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
+        // End of turn cleanup. All three slot-1 fields (turnId++, playerSwitchForTurnFlag,
+        // lastExecuteTimestamp) packed into a single shadow-aware write. When shadow is active
+        // (executeBatchedTurns), the new packed value lands in transient — flushed once at end
+        // of batch — and the cross-sub-turn reads pick it up via the same helpers. Otherwise
+        // SSTORE direct. Solidity coalesced these into one SSTORE in the legacy path already,
+        // so the cost there is unchanged modulo one TLOAD of the shadow flag.
+        _setLastExecAndIncrementTurnId(
+            battleKey,
+            uint8(playerSwitchForTurnFlag),
+            uint40(block.timestamp)
+        );
         // Clear storage move slots only when they were actually written via setMove (execute() path).
         // executeWithMoves never writes, so the slots stay zero and a clear here would burn ~4.4k on
         // a cold-access SSTORE 0→0.
@@ -753,7 +760,6 @@ contract Engine is IEngine, MappingAllocator {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-        battle.lastExecuteTimestamp = uint40(block.timestamp);
 
         emit EngineExecute(battleKey);
     }
@@ -1190,12 +1196,14 @@ contract Engine is IEngine, MappingAllocator {
     }
 
     /// @notice Check if the KO'd player's team is fully wiped and lock in the winner immediately
-    /// @dev Called after each KO to ensure winner is determined by order of KOs, not bitmap check order
+    /// @dev Called after each KO to ensure winner is determined by order of KOs, not bitmap check order.
+    ///      Routes through shadow helpers so the winnerIndex write defers to transient when running
+    ///      inside `executeBatchedTurns`, and the read picks up that deferred value on the next sub-turn.
     function _checkAndSetWinnerIfGameOver(BattleConfig storage config, uint256 koPlayerIndex) internal {
-        BattleData storage battle = battleData[battleKeyForWrite];
+        bytes32 battleKey = battleKeyForWrite;
 
         // If winner already set, don't overwrite
-        if (battle.winnerIndex != 2) {
+        if (_getWinnerIndex(battleKey) != 2) {
             return;
         }
 
@@ -1206,7 +1214,7 @@ contract Engine is IEngine, MappingAllocator {
 
         if (koBitmap == fullMask) {
             // This player's team is fully wiped, other player wins
-            battle.winnerIndex = uint8((koPlayerIndex + 1) % 2);
+            _setWinnerIndex(battleKey, uint8((koPlayerIndex + 1) % 2));
         }
     }
 
@@ -1217,9 +1225,9 @@ contract Engine is IEngine, MappingAllocator {
         int32 damage,
         uint256 source
     ) internal {
-        // If game is already over, skip all damage
-        BattleData storage battle = battleData[battleKeyForWrite];
-        if (battle.winnerIndex != 2) {
+        // If game is already over, skip all damage (shadow-aware so mid-batch KOs propagate
+        // across sub-turns without round-tripping storage).
+        if (_getWinnerIndex(battleKeyForWrite) != 2) {
             return;
         }
 
