@@ -619,6 +619,13 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
 
         Bucket memory b = _bucket(storageKey, bKey2);
         _printSlotBuckets("SLOT BUCKETS (executeBuffered, steady state):", execDiffs, b);
+
+        console.log("");
+        console.log("Battle 2 final state:");
+        console.log("  winner       :", uint256(uint160(engine.getWinner(bKey2))));
+        console.log("  turnId       :", engine.getTurnIdForBattleState(bKey2));
+        console.log("  p0KO bitmap  :", engine.getKOBitmap(bKey2, 0));
+        console.log("  p1KO bitmap  :", engine.getKOBitmap(bKey2, 1));
     }
 
     function _runLegacyWithoutMeasurement(bytes32 battleKey, TurnPlan[] memory plan) internal {

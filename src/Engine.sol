@@ -446,10 +446,21 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         // Flush the deferred slot-1 write back to storage exactly once, even if we executed N turns.
+        // BD.slot1 must always flush — `getWinner` reads it directly post-batch.
         _flushShadowBattleSlot1(battleKey);
-        // Flush any dirty MonState slots (mirror of slot-1 pattern: writes during the batch went
-        // to transient via `_writeMonStatePacked`; here we SSTORE each dirty packed value once).
-        _flushShadowMonStates(storageKey);
+        // MonState flush is skipped on game-over: the next `startBattle` at this storageKey runs
+        // the sentinel-clear loop which overwrites every prior slot anyway, so the un-flushed
+        // values are recycled either way. External `getMonStateForBattle` returns stale values in
+        // the gap between batch-end and next-battle-start — accepted trade-off per OPT_PLAN §12.
+        if (winner == address(0)) {
+            _flushShadowMonStates(storageKey);
+        } else {
+            // Even when we skip the flush, we must clear the loaded/dirty bitmaps so a
+            // subsequent `executeBatchedTurns` in the same tx doesn't read stale TLOAD values
+            // for slots whose `_shadowMonStateLoaded` bits leaked from this batch.
+            _shadowMonStateLoaded = 0;
+            _shadowMonStateDirty = 0;
+        }
         _batchShadowActive = false;
     }
 
