@@ -418,6 +418,209 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
         }
     }
 
+    // -------- Slot bucketing diagnostic --------
+    //
+    // Buckets the raw `vm.startStateDiffRecording` accesses by which Engine storage region
+    // they target, so we can see where the SSTOREs/SLOADs in the BATCHED EXECUTE column
+    // actually land. Bucket boundaries are derived from Engine.sol's storage layout:
+    //   slot 3 = battleData mapping        -> battleData[battleKey] data lives at H(battleKey, 3)
+    //   slot 4 = battleConfig mapping      -> battleConfig[storageKey] data lives at H(storageKey, 4) + struct offset
+    //     +0  validator + p0EffectsCount
+    //     +1  rngOracle + p1EffectsCount
+    //     +2  moveManager + teamSizes + KO bitmaps + startTimestamp + ... (slot 2 of struct)
+    //     +3  p0Salt + p1Salt
+    //     +4  p0Move (MoveDecision)
+    //     +5  p1Move (MoveDecision)
+    //     +6  teamRegistry
+    //     +7,8  p0Team, p1Team (mapping anchors; data hashed at H(monIdx, anchor))
+    //     +9,10 p0States, p1States (mapping anchors)
+    //     +11,12,13 globalEffects, p0Effects, p1Effects (mapping anchors; stride layout)
+    //     +14  engineHooks (mapping anchor)
+    //   slot 5 = globalKV nested mapping (data at H(uint64key, H(storageKey, 5)))
+    //   slot 6 = globalKVKeySlots (data at H(slotIdx, H(storageKey, 6)))
+    struct Bucket {
+        bytes32 storageKey;
+        bytes32 battleKey;
+        bytes32 bdAnchor;     // H(battleKey, 3)
+        bytes32 bcAnchor;     // H(storageKey, 4)
+        bytes32 kvAnchor;     // H(storageKey, 5)
+        bytes32 kvSlotsAnchor;// H(storageKey, 6)
+    }
+
+    function _bucket(bytes32 storageKey, bytes32 battleKey) internal pure returns (Bucket memory b) {
+        b.storageKey = storageKey;
+        b.battleKey = battleKey;
+        // Engine storage slot layout (MappingAllocator has 2 state vars: freeStorageKeys + battleKeyToStorageKey):
+        //   0 freeStorageKeys, 1 battleKeyToStorageKey, 2 pairHashNonces, 3 isMatchmakerFor,
+        //   4 battleData, 5 battleConfig, 6 globalKV, 7 globalKVKeySlots
+        b.bdAnchor = keccak256(abi.encode(battleKey, uint256(4)));
+        b.bcAnchor = keccak256(abi.encode(storageKey, uint256(5)));
+        b.kvAnchor = keccak256(abi.encode(storageKey, uint256(6)));
+        b.kvSlotsAnchor = keccak256(abi.encode(storageKey, uint256(7)));
+    }
+
+    /// @dev Returns a region label for a raw slot. Best-effort: matches BattleData / BattleConfig
+    ///      fixed fields exactly, and probes mapping anchors for small index ranges (mon 0..7).
+    function _labelSlot(Bucket memory b, bytes32 slot) internal pure returns (string memory) {
+        uint256 s = uint256(slot);
+
+        // Fixed BattleData slots (only 2 used today).
+        if (s == uint256(b.bdAnchor)) return "BD.slot0 (p0/p1/teamIndices)";
+        if (s == uint256(b.bdAnchor) + 1) return "BD.slot1 (SHADOW: turnId/flags/winner)";
+
+        // Fixed BattleConfig slots (struct offsets 0..6 are scalar fields).
+        for (uint256 i; i < 7; i++) {
+            if (s == uint256(b.bcAnchor) + i) {
+                if (i == 0) return "BC.slot0 (validator + p0EffCount)";
+                if (i == 1) return "BC.slot1 (rngOracle + p1EffCount)";
+                if (i == 2) return "BC.slot2 (moveManager + KO bitmap + teamSizes + startTs)";
+                if (i == 3) return "BC.slot3 (p0Salt + p1Salt)";
+                if (i == 4) return "BC.slot4 (p0Move)";
+                if (i == 5) return "BC.slot5 (p1Move)";
+                if (i == 6) return "BC.slot6 (teamRegistry)";
+            }
+        }
+
+        // Mapping data: probe small mon indices (0..7) against each anchor.
+        // For `mapping(uint256 => V) X;` at struct offset N in BattleConfig:
+        //   X[key] lives at keccak256(abi.encode(key, bcAnchor + N)). If V is a struct of M slots,
+        //   the slots span [keccak256(...), keccak256(...) + M).
+        for (uint256 monIdx; monIdx < 8; monIdx++) {
+            // p0Team / p1Team (Mon struct, multi-slot). We only flag the FIRST slot of each Mon.
+            if (s == uint256(keccak256(abi.encode(monIdx, uint256(b.bcAnchor) + 7)))) return "BC.p0Team[i].slot0";
+            if (s == uint256(keccak256(abi.encode(monIdx, uint256(b.bcAnchor) + 8)))) return "BC.p1Team[i].slot0";
+            // MonState (single slot each).
+            if (s == uint256(keccak256(abi.encode(monIdx, uint256(b.bcAnchor) + 9)))) return "BC.p0States[i] (MonState)";
+            if (s == uint256(keccak256(abi.encode(monIdx, uint256(b.bcAnchor) + 10)))) return "BC.p1States[i] (MonState)";
+        }
+        // Effects: each EffectInstance is 2 slots. Engine uses stride-64 per mon
+        // (see _getMonEffectCount / Constants), so per-mon effect entries are at
+        // keccak256(abi.encode(monIdx * 64 + effIdx, bcAnchor + offset)).
+        for (uint256 monIdx; monIdx < 8; monIdx++) {
+            for (uint256 effIdx; effIdx < 16; effIdx++) {
+                uint256 key = monIdx * 64 + effIdx;
+                if (s == uint256(keccak256(abi.encode(key, uint256(b.bcAnchor) + 12)))) return "BC.p0Effects[mon][eff].slot0 (effect+steps)";
+                if (s == uint256(keccak256(abi.encode(key, uint256(b.bcAnchor) + 12))) + 1) return "BC.p0Effects[mon][eff].slot1 (data)";
+                if (s == uint256(keccak256(abi.encode(key, uint256(b.bcAnchor) + 13)))) return "BC.p1Effects[mon][eff].slot0 (effect+steps)";
+                if (s == uint256(keccak256(abi.encode(key, uint256(b.bcAnchor) + 13))) + 1) return "BC.p1Effects[mon][eff].slot1 (data)";
+            }
+        }
+        // Global effects (single flat mapping; small indices).
+        for (uint256 effIdx; effIdx < 32; effIdx++) {
+            if (s == uint256(keccak256(abi.encode(effIdx, uint256(b.bcAnchor) + 11)))) return "BC.globalEffects[i].slot0";
+            if (s == uint256(keccak256(abi.encode(effIdx, uint256(b.bcAnchor) + 11))) + 1) return "BC.globalEffects[i].slot1";
+        }
+        // engineHooks at offset 14 — single slot per hook.
+        for (uint256 hookIdx; hookIdx < 16; hookIdx++) {
+            if (s == uint256(keccak256(abi.encode(hookIdx, uint256(b.bcAnchor) + 14)))) return "BC.engineHooks[i]";
+        }
+
+        // GlobalKV: H(uint64key, kvAnchor). Probe small keys.
+        for (uint256 k; k < 32; k++) {
+            if (s == uint256(keccak256(abi.encode(uint64(k), b.kvAnchor)))) return "GlobalKV[i]";
+            if (s == uint256(keccak256(abi.encode(k, b.kvSlotsAnchor)))) return "GlobalKVKeySlots[i]";
+        }
+
+        // Unmatched: dump the raw slot for manual inspection.
+        return "(unmatched)";
+    }
+
+    function _printSlotBuckets(string memory label, Vm.AccountAccess[] memory accesses, Bucket memory b) internal {
+        console.log("");
+        console.log(label);
+        console.log("  ANCHORS:");
+        console.log("    bdAnchor      =", uint256(b.bdAnchor));
+        console.log("    bcAnchor      =", uint256(b.bcAnchor));
+        console.log("    kvAnchor      =", uint256(b.kvAnchor));
+        console.log("    kvSlotsAnchor =", uint256(b.kvSlotsAnchor));
+        console.log("    bdSlot1       =", uint256(b.bdAnchor) + 1);
+        console.log("    bcSlot0       =", uint256(b.bcAnchor) + 0);
+        console.log("    bcSlot2 (KO)  =", uint256(b.bcAnchor) + 2);
+        console.log("    p0States anch =", uint256(keccak256(abi.encode(uint256(0), uint256(b.bcAnchor) + 9))));
+        console.log("    p1States anch =", uint256(keccak256(abi.encode(uint256(0), uint256(b.bcAnchor) + 10))));
+        console.log("");
+        // Aggregate by label: writes, no-op writes, reads.
+        string[] memory labels = new string[](512);
+        uint256[] memory writes = new uint256[](512);
+        uint256[] memory noops = new uint256[](512);
+        uint256[] memory reads = new uint256[](512);
+        bytes32[] memory unmatchedSlots = new bytes32[](512);
+        uint256[] memory unmatchedHits = new uint256[](512);
+        uint256 unmatchedN;
+        uint256 n;
+        for (uint256 i; i < accesses.length; i++) {
+            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
+            for (uint256 j; j < sa.length; j++) {
+                Vm.StorageAccess memory a = sa[j];
+                string memory lbl = _labelSlot(b, a.slot);
+                if (keccak256(bytes(lbl)) == keccak256(bytes("(unmatched)"))) {
+                    // Track unique unmatched slots.
+                    bool found;
+                    for (uint256 u; u < unmatchedN; u++) {
+                        if (unmatchedSlots[u] == a.slot) { unmatchedHits[u]++; found = true; break; }
+                    }
+                    if (!found) { unmatchedSlots[unmatchedN] = a.slot; unmatchedHits[unmatchedN] = 1; unmatchedN++; }
+                    continue;
+                }
+                uint256 idx = n;
+                for (uint256 k; k < n; k++) {
+                    if (keccak256(bytes(labels[k])) == keccak256(bytes(lbl))) { idx = k; break; }
+                }
+                if (idx == n) { labels[n] = lbl; n++; }
+                if (a.isWrite) {
+                    if (a.previousValue == a.newValue) noops[idx]++;
+                    else writes[idx]++;
+                } else {
+                    reads[idx]++;
+                }
+            }
+        }
+        for (uint256 k; k < n; k++) {
+            console.log(string.concat("  ", labels[k]));
+            console.log("    reads :", reads[k]);
+            console.log("    writes:", writes[k]);
+            console.log("    noops :", noops[k]);
+        }
+        if (unmatchedN > 0) {
+            console.log("  (unmatched slots -- likely effects past probe range)");
+            for (uint256 u; u < unmatchedN; u++) {
+                console.log("    slot", uint256(unmatchedSlots[u]));
+                console.log("    hits :", unmatchedHits[u]);
+            }
+        }
+    }
+
+    /// @notice Diagnostic test: re-runs the realistic batched flow with state-diff recording
+    ///         and bucketing by storage region. Use to spot which slots are still hot after
+    ///         the BattleData / MonState shadows landed.
+    function test_realisticGameSlotBuckets() public {
+        TurnPlan[] memory plan = _buildBattlePlan();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Battle 1 to warm storageKey, then battle 2 measured (steady state).
+        bytes32 bKey1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _runBatchedWithoutMeasurement(bKey1, plan);
+        require(engine.getWinner(bKey1) != address(0), "PRECONDITION: battle 1 must end");
+
+        bytes32 bKey2 = _startBattle();
+        bytes32 storageKey = engine.getStorageKey(bKey2);
+        require(engine.getStorageKey(bKey1) == storageKey, "PRECONDITION: storageKey reuse");
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Submit all turns, then record only the executeBuffered call (the hot path).
+        for (uint64 i; i < plan.length; i++) {
+            _submitTurn(bKey2, i, plan[i]);
+        }
+        vm.startStateDiffRecording();
+        mgr.executeBuffered(bKey2);
+        engine.resetCallContext();
+        Vm.AccountAccess[] memory execDiffs = vm.stopAndReturnStateDiff();
+
+        Bucket memory b = _bucket(storageKey, bKey2);
+        _printSlotBuckets("SLOT BUCKETS (executeBuffered, steady state):", execDiffs, b);
+    }
+
     function _runLegacyWithoutMeasurement(bytes32 battleKey, TurnPlan[] memory plan) internal {
         for (uint256 i; i < plan.length; i++) {
             _legacyTurn(battleKey, plan[i]);
