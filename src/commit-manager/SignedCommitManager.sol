@@ -391,15 +391,51 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
             revert EmptyBuffer();
         }
 
-        // Build the entries array for the engine in one pass.
-        uint256[] memory entries = new uint256[](numBuffered);
-        for (uint64 i = 0; i < numBuffered; i++) {
-            entries[i] = moveBuffer[battleKey][numExecuted + i];
-        }
+        uint64 executedThisBatch;
+        address winner;
 
-        // Engine handles the loop + flag-based dispatch (§6.1) + shadow activation (§5.3) +
-        // game-over short-circuit + flush. Single tx, single external call.
-        (uint64 executedThisBatch, address winner) = ENGINE.executeBatchedTurns(battleKey, entries);
+        for (uint64 i = 0; i < numBuffered; i++) {
+            uint64 turnId = numExecuted + i;
+            uint256 entry = moveBuffer[battleKey][turnId];
+
+            (
+                uint8 p0Move,
+                uint16 p0Extra,
+                uint104 p0Salt,
+                uint8 p1Move,
+                uint16 p1Extra,
+                uint104 p1Salt
+            ) = _unpackBufferedTurn(entry);
+
+            // Live flag read: the engine updated `playerSwitchForTurnFlag` at the end of the
+            // previous sub-turn (or it's the snapshot from before the batch started). Cheap SLOAD
+            // since this slot was just warmed.
+            uint8 flag = uint8(ENGINE.getPlayerSwitchForTurnFlagForBattleState(battleKey));
+
+            if (flag == 2) {
+                winner = ENGINE.executeWithMoves(battleKey, p0Move, p0Salt, p0Extra, p1Move, p1Salt, p1Extra);
+            } else if (flag == 0) {
+                winner = ENGINE.executeWithSingleMove(battleKey, p0Move, p0Salt, p0Extra);
+            } else {
+                winner = ENGINE.executeWithSingleMove(battleKey, p1Move, p1Salt, p1Extra);
+            }
+
+            executedThisBatch++;
+
+            if (winner != address(0)) {
+                break;
+            }
+
+            // Reset per-turn transients so leaky slots (tempRNG, koOccurredFlag, tempPreDamage,
+            // effectsDirtyBitmap, _turnP*MoveEncoded, _turnP*Salt) don't carry into the next
+            // sub-turn within this tx. `executeWithMoves` / `executeWithSingleMove` re-set
+            // `battleKeyForWrite` / `storageKeyForWrite` at entry, so the cleared values here
+            // get repopulated next iteration. Skipped after the final iteration since the tx
+            // is about to end. See OPT_PLAN §12 Decision Log on transient resets.
+            if (i + 1 < numBuffered) {
+                ENGINE.resetCallContext();
+            }
+        }
 
         // Flush counters: `numTurnsExecuted` advances by the actually-executed count;
         // `numTurnsBuffered` resets to 0 regardless (post-game-over entries become dead).
