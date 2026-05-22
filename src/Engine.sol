@@ -74,6 +74,11 @@ contract Engine is IEngine, MappingAllocator {
     uint256 private transient _shadowMonStateDirty;
     uint256 private constant _T_MONSTATE_BASE = 0x100000;
 
+    // koBitmaps shadow (narrow — just the 16-bit field within BC.slot2; see `_setMonKO`).
+    uint16 private transient _shadowKoBitmaps;
+    bool   private transient _shadowKoBitmapsLoaded;
+    bool   private transient _shadowKoBitmapsDirty;
+
     // Errors
     error NoWriteAllowed();
     error WrongCaller();
@@ -448,6 +453,10 @@ contract Engine is IEngine, MappingAllocator {
         // Flush the deferred slot-1 write back to storage exactly once, even if we executed N turns.
         // BD.slot1 must always flush — `getWinner` reads it directly post-batch.
         _flushShadowBattleSlot1(battleKey);
+        // Flush the shadowed koBitmaps too — same rule: `getKOBitmap`, `getBattleEndContext`, and
+        // the OnBattleEnd hook (fires in this same tx for game-ending batches) all read it
+        // directly from storage.
+        _flushShadowKoBitmaps(storageKey);
         // MonState flush is skipped on game-over: the next `startBattle` at this storageKey runs
         // the sentinel-clear loop which overwrites every prior slot anyway, so the un-flushed
         // values are recycled either way. External `getMonStateForBattle` returns stale values in
@@ -2659,27 +2668,84 @@ contract Engine is IEngine, MappingAllocator {
         emit MonMoves(battleKey, packedMoves, packedSalts);
     }
 
-    // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1)
+    // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1).
+    //
+    // KO bitmaps live in BC.slot2 (alongside moveManager / teamSizes / startTimestamp / etc.) and
+    // are the only field in that slot that mutates frequently during a batch (one write per KO).
+    // To coalesce those writes, we shadow JUST the koBitmaps uint16 into a transient slot —
+    // narrower than the BD.slot1 / MonState shadows because we don't want every read of an
+    // immutable BC.slot2 field (moveManager, teamSizes, ...) to pay a TLOAD-check in legacy mode.
+    //
+    // Reads of koBitmaps go through `_getKOBitmap` (shadow-aware). Reads of OTHER BC.slot2 fields
+    // continue to use direct storage refs — they're not changed in the batch, so storage value is
+    // always current. Writes of OTHER fields (e.g., `globalKVCount` bump) read-modify-write the
+    // packed slot with whatever koBitmaps value is in STORAGE (which may be stale relative to
+    // shadow); we fix this at flush time by SLOADing the latest slot value and OR'ing in the
+    // shadowed koBitmaps before writing back.
+    function _readKoBitmaps(BattleConfig storage config) internal view returns (uint16) {
+        if (_batchShadowActive && _shadowKoBitmapsLoaded) {
+            return _shadowKoBitmaps;
+        }
+        return config.koBitmaps;
+    }
+
+    function _loadShadowKoBitmaps(BattleConfig storage config) private returns (uint16) {
+        if (!_shadowKoBitmapsLoaded) {
+            _shadowKoBitmaps = config.koBitmaps;
+            _shadowKoBitmapsLoaded = true;
+        }
+        return _shadowKoBitmaps;
+    }
+
+    function _writeKoBitmaps(BattleConfig storage config, uint16 value) private {
+        if (_batchShadowActive) {
+            _shadowKoBitmaps = value;
+            _shadowKoBitmapsLoaded = true;
+            _shadowKoBitmapsDirty = true;
+            return;
+        }
+        config.koBitmaps = value;
+    }
+
     function _getKOBitmap(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
-        return playerIndex == 0 ? (config.koBitmaps & 0xFF) : (config.koBitmaps >> 8);
+        uint16 bitmaps = _readKoBitmaps(config);
+        return playerIndex == 0 ? (bitmaps & 0xFF) : (bitmaps >> 8);
     }
 
     function _setMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
+        uint16 bitmaps = _batchShadowActive ? _loadShadowKoBitmaps(config) : config.koBitmaps;
         uint256 bit = 1 << monIndex;
         if (playerIndex == 0) {
-            config.koBitmaps = config.koBitmaps | uint16(bit);
+            bitmaps = bitmaps | uint16(bit);
         } else {
-            config.koBitmaps = config.koBitmaps | uint16(bit << 8);
+            bitmaps = bitmaps | uint16(bit << 8);
         }
+        _writeKoBitmaps(config, bitmaps);
     }
 
     function _clearMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
+        uint16 bitmaps = _batchShadowActive ? _loadShadowKoBitmaps(config) : config.koBitmaps;
         uint256 bit = 1 << monIndex;
         if (playerIndex == 0) {
-            config.koBitmaps = config.koBitmaps & uint16(~bit);
+            bitmaps = bitmaps & uint16(~bit);
         } else {
-            config.koBitmaps = config.koBitmaps & uint16(~(bit << 8));
+            bitmaps = bitmaps & uint16(~(bit << 8));
         }
+        _writeKoBitmaps(config, bitmaps);
+    }
+
+    /// @notice Flushes the shadowed koBitmaps back into BC.slot2. Always called at end of
+    ///         `executeBatchedTurns` — koBitmaps is part of public API (`getKOBitmap`,
+    ///         `getBattleEndContext`, `getCPUContext`) and the onBattleEnd hook runs in the
+    ///         same tx, so storage must be coherent before we return.
+    function _flushShadowKoBitmaps(bytes32 storageKey) internal {
+        if (!_shadowKoBitmapsDirty) return;
+        // Read-modify-write the live BC.slot2: other field writes during the batch (e.g.,
+        // globalKVCount bumps) may have updated the slot with a stale koBitmaps value baked in;
+        // we override just the koBitmap bits with the shadowed value here.
+        battleConfig[storageKey].koBitmaps = _shadowKoBitmaps;
+        _shadowKoBitmapsDirty = false;
+        _shadowKoBitmapsLoaded = false;
     }
 
     function _loadEffectsCount(BattleConfig storage config, uint256 effectIndex, uint256 monIndex)

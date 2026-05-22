@@ -624,8 +624,13 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
         console.log("Battle 2 final state:");
         console.log("  winner       :", uint256(uint160(engine.getWinner(bKey2))));
         console.log("  turnId       :", engine.getTurnIdForBattleState(bKey2));
-        console.log("  p0KO bitmap  :", engine.getKOBitmap(bKey2, 0));
-        console.log("  p1KO bitmap  :", engine.getKOBitmap(bKey2, 1));
+        // NOTE: after _freeStorageKey runs at game-over, getKOBitmap(battleKey, ...) returns 0
+        // because battleKeyToStorageKey was deleted; read via the cached storageKey directly.
+        uint256 koSlot = uint256(vm.load(address(engine), bytes32(uint256(b.bcAnchor) + 2)));
+        uint256 koBitmaps = (koSlot >> 184) & 0xFFFF;
+        console.log("  p0KO bitmap  :", koBitmaps & 0xFF);
+        console.log("  p1KO bitmap  :", koBitmaps >> 8);
+        console.log("  raw slot 2   :", koSlot);
     }
 
     function _runLegacyWithoutMeasurement(bytes32 battleKey, TurnPlan[] memory plan) internal {
