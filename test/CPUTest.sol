@@ -283,7 +283,7 @@ contract CPUTest is Test {
         engine.resetCallContext();
         // Turn 1, player rests, CPU should select no op because the move costs too much stamina
         mockCPURNG.setRNG(1);
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
     }
 
@@ -336,13 +336,13 @@ contract CPUTest is Test {
         engine.resetCallContext();
         // Turn 1, player rests, CPU should select move index 0
         mockCPURNG.setRNG(1); // This triggers the OkayCPU to select a move, which should set its stamina delta to be -3
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert the stamina delta for P1's active mon is -3
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
 
         // Turn 2, player rests, CPU should rest as well
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert the stamina delta for P1's active mon is still -3 (it didn't go down more)
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
@@ -397,7 +397,7 @@ contract CPUTest is Test {
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
         // Turn 1, p0 rests, CPU should select move index 1 (self move)
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert that the stamina delta is -1 for p1's active mon
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
@@ -454,7 +454,7 @@ contract CPUTest is Test {
         okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
         engine.resetCallContext();
         // Turn 1, p0 rests, CPU should select move index 1 (self move)
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert that the stamina delta is -1 for p1's active mon
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
@@ -515,7 +515,7 @@ contract CPUTest is Test {
         // 257 satisfies all: 257 % 6 = 5, 257 % 3 = 2, (257 >> 8) = 1
         // So both mons should take 1 damage, as p0 also selects the damage move
         mockCPURNG.setRNG(257);
-        okayCPU.selectMove(battleKey, 1, uint96(0), 0);
+        okayCPU.selectMove(battleKey, 1, uint104(0), 0);
         engine.resetCallContext();
         // Assert that the hp delta is -1 for p0's active mon and p1's active mon
         int32 hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -526,7 +526,7 @@ contract CPUTest is Test {
         // Turn 2, set RNG to be 0 (do not trigger short circuit)
         // CPU should select no-op because no type advantage is currently set
         mockCPURNG.setRNG(0);
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert that the hp delta is still -1 for p0's active mon
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -536,7 +536,7 @@ contract CPUTest is Test {
         typeCalc.setTypeEffectiveness(Type.Liquid, Type.Liquid, 2);
 
         // Now the CPU should select the damage move (move index 1) because it has a type advantage
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0);
+        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
         engine.resetCallContext();
         // Assert that the hp delta is -2 for p0's active mon
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);

@@ -50,7 +50,7 @@ abstract contract SignedCommitHelper is Test {
         uint64 turnId,
         bytes32 committerMoveHash,
         uint8 revealerMoveIndex,
-        uint96 revealerSalt,
+        uint104 revealerSalt,
         uint16 revealerExtraData
     ) internal view returns (bytes memory) {
         bytes32 structHash = SignedCommitLib.hashDualSignedReveal(

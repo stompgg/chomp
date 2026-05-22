@@ -22,7 +22,7 @@ abstract contract CPUMoveManager {
         engine.updateMatchmakers(self, empty);
     }
 
-    function selectMove(bytes32 battleKey, uint8 moveIndex, uint96 salt, uint16 extraData) external {
+    function selectMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
         // Cheap routing staticcall: one SLOAD for p0 / winnerIndex / playerSwitchForTurnFlag.
         // When the turn is "p0 forced switch" (flag == 0) or the game is already over we return
         // without ever paying for the full CPUContext (which would load team sizes, KO bitmaps,
@@ -47,7 +47,7 @@ abstract contract CPUMoveManager {
                 ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
             // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
             // RNG source within the seconds-to-minutes commit-reveal window.
-            uint96 p1Salt = uint96(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
+            uint104 p1Salt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
 
             if (playerSwitchForTurnFlag == 1) {
                 winner = ENGINE.executeWithSingleMove(battleKey, uint8(cpuMoveIndex), p1Salt, cpuExtraData);

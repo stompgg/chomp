@@ -444,7 +444,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Reveal Alice's move, and advance game state
         vm.startPrank(ALICE);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), false);
         engine.execute(battleKey);
         engine.resetCallContext();
 
@@ -470,7 +470,7 @@ contract EngineTest is Test, BattleHelper {
         // Attempt to reveal Alice's move, and assert that we cannot advance the game state
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(0), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(0), false);
 
         // Attempt to forcibly advance the game state
         vm.expectRevert();
@@ -976,13 +976,13 @@ contract EngineTest is Test, BattleHelper {
         // Commit move index 0 for Bob
         uint8 moveIndex = 0;
         vm.startPrank(BOB);
-        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, uint96(0), uint16(0)));
+        bytes32 bobMoveHash = keccak256(abi.encodePacked(moveIndex, uint104(0), uint16(0)));
         commitManager.commitMove(battleKey, bobMoveHash);
 
         // Assert that Alice cannot reveal anything because of the stamina cost (she has the high stamina cost mon)
         vm.startPrank(ALICE);
         vm.expectRevert(abi.encodeWithSignature("InvalidMove(address)", ALICE));
-        commitManager.revealMove(battleKey, moveIndex, uint96(0), uint16(0), false);
+        commitManager.revealMove(battleKey, moveIndex, uint104(0), uint16(0), false);
     }
 
     // Ensure that we cannot write to mon state when there is no active execute() call in the call stack
@@ -1159,7 +1159,7 @@ contract EngineTest is Test, BattleHelper {
         vm.startPrank(ALICE);
 
         // Alice should be able to reveal because she is the only player (player flag should be set)
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(1), false);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), false);
 
         // Execute the switch
         engine.execute(battleKey);
@@ -1371,7 +1371,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Now if Alice tries to pick a non-switch move, the engine should revert
         vm.startPrank(ALICE);
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint8 aliceMoveIndex = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, extraData));
         commitManager.commitMove(battleKey, aliceMoveHash);
@@ -1771,7 +1771,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Bob commit and reveal to attack (move index 0)
         uint16 extraData = 0;
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint8 moveIndex = 0;
         vm.startPrank(BOB);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(moveIndex, salt, extraData)));
@@ -1863,7 +1863,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Let Bob commit and reveal to attack (move index 0)
         uint16 extraData = 0;
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint8 moveIndex = 0;
         vm.startPrank(BOB);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(moveIndex, salt, extraData)));
@@ -2593,7 +2593,7 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startBattle(twoMoveValidator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice commits to swapping in mon index 1
-        uint96 salt = 0;
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(1)));
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, aliceMoveHash);
@@ -2696,7 +2696,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Alice commits to switch to mon index 0
         vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint96(0), uint16(0))));
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint104(0), uint16(0))));
 
         // Attempt to end the battle immediately (same block as start)
         // Bob hasn't committed and timeout is 0, so Bob loses, but game should revert
@@ -2750,7 +2750,7 @@ contract EngineTest is Test, BattleHelper {
         uint16 aliceExtraData,
         uint16 bobExtraData
     ) internal {
-        uint96 salt = 0;
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         // Decide which player commits
@@ -2855,7 +2855,7 @@ contract EngineTest is Test, BattleHelper {
     */
     function test_turn0DefaultCommitManagerValidPreimage() public {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint16 extraData = uint16(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
 
@@ -2914,7 +2914,7 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
 
         // Let Alice commit to choosing switch
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint16 extraData = uint16(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
 
@@ -2996,7 +2996,7 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
 
         // Let Alice commit to choosing switch
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint16 extraData = uint16(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
         vm.startPrank(ALICE);
@@ -3016,7 +3016,7 @@ contract EngineTest is Test, BattleHelper {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
 
         // Let Alice commit to choosing switch
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint16 extraData = uint16(0);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
         vm.startPrank(ALICE);

@@ -112,8 +112,8 @@ struct BattleConfig {
     uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
     bool hasInlineStaminaRegen; //   8
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
-    uint96 p0Salt;
-    uint96 p1Salt;
+    uint104 p0Salt;
+    uint104 p1Salt;
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
@@ -151,8 +151,8 @@ struct BattleConfigView {
     uint96 packedP1EffectsCount;
     uint8 teamSizes;
     uint40 startTimestamp; // Needed client-side for the getGlobalKV freshness gate
-    uint96 p0Salt;
-    uint96 p1Salt;
+    uint104 p0Salt;
+    uint104 p1Salt;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     MoveDecision p0Move;
@@ -241,7 +241,7 @@ struct PlayerDecisionData {
 struct RevealedMove {
     uint8 moveIndex;
     uint16 extraData;
-    uint96 salt;
+    uint104 salt;
 }
 
 // Per-turn submission accepted by `SignedCommitManager.submitTurnMoves`. The on-chain buffer
@@ -252,11 +252,11 @@ struct TurnSubmission {
     // Committer preimage (revealed in the same tx as submission, signed by committer over moveHash).
     uint8 committerMoveIndex;
     uint16 committerExtraData;
-    uint96 committerSalt;
+    uint104 committerSalt;
     // Revealer preimage (signed by revealer over the dual-reveal struct including the committer hash).
     uint8 revealerMoveIndex;
     uint16 revealerExtraData;
-    uint96 revealerSalt;
+    uint104 revealerSalt;
     bytes committerSig;
     bytes revealerSig;
 }

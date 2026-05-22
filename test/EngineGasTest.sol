@@ -754,7 +754,7 @@ contract EngineGasTest is Test, BattleHelper {
         uint16 aliceExtraData,
         uint16 bobExtraData
     ) internal {
-        uint96 salt = 0;
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         uint256 turnId = eng.getTurnIdForBattleState(battleKey);

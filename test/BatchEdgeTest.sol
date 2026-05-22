@@ -288,8 +288,8 @@ contract BatchEdgeTest is BatchHelper {
         // Turn 0: legacy dual-signed execute.
         {
             uint64 turnId = 0;
-            uint96 cSalt = uint96(1);
-            uint96 rSalt = uint96(2);
+            uint104 cSalt = uint104(1);
+            uint104 rSalt = uint104(2);
             bytes32 cHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, cSalt, uint16(0)));
             bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, turnId);
             bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, turnId, cHash,
@@ -329,8 +329,8 @@ contract BatchEdgeTest is BatchHelper {
 
         // Follow up with a legacy dual-signed turn at turnId = 2.
         uint64 turnId = 2;
-        uint96 cSalt = uint96(100);
-        uint96 rSalt = uint96(200);
+        uint104 cSalt = uint104(100);
+        uint104 rSalt = uint104(200);
         bytes32 cHash = keccak256(abi.encodePacked(uint8(0), cSalt, uint16(0)));
         bytes memory cSig = _signCommit(address(mgr), P0_PK, cHash, battleKey, turnId);
         bytes memory rSig = _signDualReveal(address(mgr), P1_PK, battleKey, turnId, cHash,

@@ -165,22 +165,22 @@ contract BetterCPUInlineGasTest is Test {
 
         // Turns 1-4: both attack with move 1. Every one is flag == 2, no KOs.
         vm.startSnapshotGas("Turn1_BothAttack");
-        cpu.selectMove(battleKey, 1, uint96(0), 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn1Gas = vm.stopSnapshotGas("Turn1_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn2_BothAttack");
-        cpu.selectMove(battleKey, 1, uint96(0), 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn2Gas = vm.stopSnapshotGas("Turn2_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn3_BothAttack");
-        cpu.selectMove(battleKey, 1, uint96(0), 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn3Gas = vm.stopSnapshotGas("Turn3_BothAttack");
         engine.resetCallContext();
 
         vm.startSnapshotGas("Turn4_BothAttack");
-        cpu.selectMove(battleKey, 1, uint96(0), 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         uint256 turn4Gas = vm.stopSnapshotGas("Turn4_BothAttack");
         engine.resetCallContext();
 
@@ -229,7 +229,7 @@ contract BetterCPUInlineGasTest is Test {
         engine.resetCallContext();
 
         // Turn 1: both attack. CPU's move 1 (BP=40, attack=200, defense=10) should KO Alice.
-        cpu.selectMove(battleKey, 1, uint96(0), 0);
+        cpu.selectMove(battleKey, 1, uint104(0), 0);
         engine.resetCallContext();
 
         // After the KO we should be in flag==0 (Alice forced switch).

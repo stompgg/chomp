@@ -28,7 +28,7 @@ abstract contract BattleHelper is Test {
         uint16 aliceExtraData,
         uint16 bobExtraData
     ) internal {
-        uint96 salt = 0;
+        uint104 salt = 0;
         bytes32 aliceMoveHash = keccak256(abi.encodePacked(aliceMoveIndex, salt, aliceExtraData));
         bytes32 bobMoveHash = keccak256(abi.encodePacked(bobMoveIndex, salt, bobExtraData));
         // Decide which player commits
@@ -64,7 +64,7 @@ abstract contract BattleHelper is Test {
         DefaultCommitManager commitManager,
         bytes32 battleKey,
         uint8 moveIndex,
-        uint96 salt,
+        uint104 salt,
         uint16 extraData
     ) internal {
         commitManager.revealMove(battleKey, moveIndex, salt, extraData, true);

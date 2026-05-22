@@ -118,8 +118,8 @@ contract BatchInstrumentationTest is SignedCommitHelper {
         uint16 p1ExtraData
     ) internal {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-        uint96 committerSalt = uint96(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
-        uint96 revealerSalt = uint96(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
+        uint104 committerSalt = uint104(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
+        uint104 revealerSalt = uint104(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
 
         uint8 committerMoveIndex;
         uint16 committerExtraData;
@@ -428,7 +428,7 @@ contract BatchInstrumentationTest is SignedCommitHelper {
         internal
     {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-        uint96 salt = uint96(uint256(keccak256(abi.encode("single", battleKey, turnId))));
+        uint104 salt = uint104(uint256(keccak256(abi.encode("single", battleKey, turnId))));
 
         vm.prank(actingPlayer);
         signedCommitManager.executeSinglePlayerMove(battleKey, moveIndex, salt, extraData);

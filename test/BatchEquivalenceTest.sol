@@ -155,8 +155,8 @@ contract BatchEquivalenceTest is BatchHelper {
     function _runLegacy(bytes32 battleKey, TurnPlan[] memory plan) internal {
         for (uint256 i = 0; i < plan.length; i++) {
             uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
-            uint96 cSalt = uint96(uint256(keccak256(abi.encode("legacy-c", battleKey, turnId))));
-            uint96 rSalt = uint96(uint256(keccak256(abi.encode("legacy-r", battleKey, turnId))));
+            uint104 cSalt = uint104(uint256(keccak256(abi.encode("legacy-c", battleKey, turnId))));
+            uint104 rSalt = uint104(uint256(keccak256(abi.encode("legacy-r", battleKey, turnId))));
 
             uint8 cMove; uint16 cExtra; uint8 rMove; uint16 rExtra;
             uint256 cPk; uint256 rPk;

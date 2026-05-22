@@ -651,7 +651,7 @@ contract PengymTest is Test, BattleHelper {
 
         // Bob sends in mon index 3
         vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), uint16(3), true);
+        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(3), true);
         engine.resetCallContext();
         // Alice tries to force a switch, but active mon should not change
         _commitRevealExecuteForAliceAndBob(

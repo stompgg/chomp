@@ -26,7 +26,7 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
     function test_gasBenchmark_normalFlow_cold() public {
         bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
-        bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint96(1), uint16(0)));
+        bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint104(1), uint16(0)));
 
         vm.startPrank(p0);
         uint256 gasBefore = gasleft();
@@ -35,12 +35,12 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         vm.startPrank(p1);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(0), 0, false);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), 0, false);
         gasUsed_normalFlow_cold_reveal1 = gasBefore - gasleft();
 
         vm.startPrank(p0);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint96(1), 0, true);
+        signedCommitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(1), 0, true);
         gasUsed_normalFlow_cold_reveal2 = gasBefore - gasleft();
 
         emit log_named_uint("Normal Flow (Cold) - Commit (Alice)", gasUsed_normalFlow_cold_commit);
@@ -55,8 +55,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         bytes32 battleKey = _startBattleWith(address(signedCommitManager));
 
         // Prepare move data
-        uint96 p0Salt = uint96(1);
-        uint96 p1Salt = uint96(2);
+        uint104 p0Salt = uint104(1);
+        uint104 p1Salt = uint104(2);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Both players sign off-chain
@@ -92,7 +92,7 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         _completeTurnNormal(battleKey, 1);
 
         // Turn 2 (warm storage - p0 commits again)
-        bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, uint96(100), uint16(0)));
+        bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, uint104(100), uint16(0)));
 
         vm.startPrank(p0);
         uint256 gasBefore = gasleft();
@@ -101,12 +101,12 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         vm.startPrank(p1);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, uint96(0), 0, false);
+        signedCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0, false);
         gasUsed_normalFlow_warm_reveal1 = gasBefore - gasleft();
 
         vm.startPrank(p0);
         gasBefore = gasleft();
-        signedCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, uint96(100), 0, true);
+        signedCommitManager.revealMove(battleKey, NO_OP_MOVE_INDEX, uint104(100), 0, true);
         gasUsed_normalFlow_warm_reveal2 = gasBefore - gasleft();
 
         emit log_named_uint("Normal Flow (Warm) - Commit (Alice)", gasUsed_normalFlow_warm_commit);
@@ -124,8 +124,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         _completeTurnNormal(battleKey, 1);
 
         // Turn 2 with dual-signed flow (warm storage)
-        uint96 p0Salt = uint96(100);
-        uint96 p1Salt = uint96(101);
+        uint104 p0Salt = uint104(100);
+        uint104 p1Salt = uint104(101);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
         bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey, 2);
@@ -160,7 +160,7 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         // Normal flow cold (3 TXs)
         {
-            bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint96(1), uint16(0)));
+            bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint104(1), uint16(0)));
 
             vm.startPrank(p0);
             uint256 gasBefore = gasleft();
@@ -169,12 +169,12 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
             vm.startPrank(p1);
             gasBefore = gasleft();
-            signedCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, uint96(0), 0, false);
+            signedCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, uint104(0), 0, false);
             gasUsed_normalFlow_cold_reveal1 = gasBefore - gasleft();
 
             vm.startPrank(p0);
             gasBefore = gasleft();
-            signedCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, uint96(1), 0, true);
+            signedCommitManager.revealMove(battleKey1, SWITCH_MOVE_INDEX, uint104(1), 0, true);
             gasUsed_normalFlow_cold_reveal2 = gasBefore - gasleft();
         }
 
@@ -182,8 +182,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         // Reset transient first so a stale execute from battleKey1 above doesn't pollute battleKey2's measurement.
         engine.resetCallContext();
         {
-            uint96 p0Salt = uint96(1);
-            uint96 p1Salt = uint96(2);
+            uint104 p0Salt = uint104(1);
+            uint104 p1Salt = uint104(2);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
             bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey2, 0);
@@ -216,7 +216,7 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         // Normal flow warm (turn 2)
         {
-            bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, uint96(100), uint16(0)));
+            bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, uint104(100), uint16(0)));
 
             vm.startPrank(p0);
             uint256 gasBefore = gasleft();
@@ -225,19 +225,19 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
             vm.startPrank(p1);
             gasBefore = gasleft();
-            signedCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, uint96(0), 0, false);
+            signedCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, uint104(0), 0, false);
             gasUsed_normalFlow_warm_reveal1 = gasBefore - gasleft();
 
             vm.startPrank(p0);
             gasBefore = gasleft();
-            signedCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, uint96(100), 0, true);
+            signedCommitManager.revealMove(battleKey1, NO_OP_MOVE_INDEX, uint104(100), 0, true);
             gasUsed_normalFlow_warm_reveal2 = gasBefore - gasleft();
         }
 
         // Dual-signed flow warm (turn 2)
         {
-            uint96 p0Salt = uint96(100);
-            uint96 p1Salt = uint96(101);
+            uint104 p0Salt = uint104(100);
+            uint104 p1Salt = uint104(101);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
             bytes memory p0CommitSig = _signCommit(address(signedCommitManager), P0_PK, p0MoveHash, battleKey2, 2);

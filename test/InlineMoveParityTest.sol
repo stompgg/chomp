@@ -111,7 +111,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
     }
 
     function _doSwitchTurn(bytes32 battleKey) internal {
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, uint16(0)));
         if (turnId % 2 == 0) {
@@ -134,7 +134,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
     }
 
     function _doAttackTurn(bytes32 battleKey, uint8 aliceMove, uint8 bobMove) internal {
-        uint96 salt = 0;
+        uint104 salt = 0;
         uint256 turnId = engine.getTurnIdForBattleState(battleKey);
         if (turnId % 2 == 0) {
             bytes32 moveHash = keccak256(abi.encodePacked(aliceMove, salt, uint16(0)));

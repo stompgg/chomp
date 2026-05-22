@@ -199,13 +199,13 @@ contract BatchAccessProfileRealisticTest is BatchHelper {
     /// @dev Run one turn via legacy single-tx flow.
     function _legacyTurn(bytes32 battleKey, TurnPlan memory plan) internal {
         uint64 t = uint64(engine.getTurnIdForBattleState(battleKey));
-        uint96 cSalt = uint96(uint256(keccak256(abi.encode("c", battleKey, t))));
-        uint96 rSalt = uint96(uint256(keccak256(abi.encode("r", battleKey, t))));
+        uint104 cSalt = uint104(uint256(keccak256(abi.encode("c", battleKey, t))));
+        uint104 rSalt = uint104(uint256(keccak256(abi.encode("r", battleKey, t))));
 
         if (plan.isSinglePlayer) {
             uint8 move = plan.actingPlayer == 0 ? plan.p0Move : plan.p1Move;
             uint16 extra = plan.actingPlayer == 0 ? plan.p0Extra : plan.p1Extra;
-            uint96 salt = plan.actingPlayer == 0 ? cSalt : rSalt;
+            uint104 salt = plan.actingPlayer == 0 ? cSalt : rSalt;
             address player = plan.actingPlayer == 0 ? p0 : p1;
             vm.prank(player);
             mgr.executeSinglePlayerMove(battleKey, move, salt, extra);
