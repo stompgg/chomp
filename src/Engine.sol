@@ -79,41 +79,6 @@ contract Engine is IEngine, MappingAllocator {
     bool   private transient _shadowKoBitmapsLoaded;
     bool   private transient _shadowKoBitmapsDirty;
 
-    // ----- Gas profiling (transient counters accumulated across executeBatchedTurns) -----
-    // Emit one `GasProfile` event at end of batch carrying these totals. Adds ~200 gas/region
-    // overhead per turn but lets a single 14-turn batch produce a full per-section breakdown.
-    uint256 private constant _T_GAS_BASE                  = 0x200000;
-    uint256 private constant _T_GAS_B1_ENTRY              = 0x200001; // executeBatchedTurns entry overhead (once)
-    uint256 private constant _T_GAS_B2_DECODE             = 0x200002; // per-iter decode + transient setup
-    uint256 private constant _T_GAS_B3_RESET              = 0x200003; // per-iter transient reset
-    uint256 private constant _T_GAS_B4_FLUSH              = 0x200004; // final flushes (once)
-    uint256 private constant _T_GAS_R1_SETUP              = 0x200005; // _executeInternal top: vars, hooks, MonMoves
-    uint256 private constant _T_GAS_R2_PRIORITY_RNG       = 0x200006; // RNG compute + priority resolution
-    uint256 private constant _T_GAS_R3_ROUND_START        = 0x200007; // RoundStart effects (3 _handleEffects)
-    uint256 private constant _T_GAS_R4_PRIO_MOVE          = 0x200008; // Priority player's _handleMove
-    uint256 private constant _T_GAS_R5_PRIO_AFTERMOVE     = 0x200009; // Priority AfterMove effects + stamina regen
-    uint256 private constant _T_GAS_R6_OTHER_MOVE         = 0x20000A; // Other player's _handleMove + turn-0 ability
-    uint256 private constant _T_GAS_R7_OTHER_AFTERMOVE    = 0x20000B; // Other AfterMove effects + stamina regen
-    uint256 private constant _T_GAS_R8_ROUND_END          = 0x20000C; // RoundEnd effects (3) + stamina regen
-    uint256 private constant _T_GAS_R9_TURN_END           = 0x20000D; // RoundEnd hooks, game-over check, slot-1 update
-    uint256 private constant _T_GAS_SINGLE_PLAYER         = 0x20000E; // single-player branch (entryFlag != 2)
-
-    event GasProfile(
-        bytes32 indexed battleKey,
-        uint256 total,
-        uint256 b1Entry, uint256 b2Decode, uint256 b3Reset, uint256 b4Flush,
-        uint256 r1Setup, uint256 r2PriorityRng, uint256 r3RoundStart,
-        uint256 r4PrioMove, uint256 r5PrioAfter, uint256 r6OtherMove,
-        uint256 r7OtherAfter, uint256 r8RoundEnd, uint256 r9TurnEnd,
-        uint256 singlePlayer
-    );
-
-    function _accGas(uint256 slot, uint256 delta) internal {
-        uint256 cur;
-        assembly { cur := tload(slot) }
-        unchecked { cur += delta; }
-        assembly { tstore(slot, cur) }
-    }
 
     // Errors
     error NoWriteAllowed();
@@ -423,8 +388,6 @@ contract Engine is IEngine, MappingAllocator {
         external
         returns (uint64 executed, address winner)
     {
-        uint256 _gTotalStart = gasleft();
-        uint256 _gB1Start = gasleft();
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
         BattleConfig storage config = battleConfig[storageKey];
@@ -437,10 +400,7 @@ contract Engine is IEngine, MappingAllocator {
         // `_executeInternal` and its callees go to transient via the shadow helpers; the final
         // flush below SSTOREs the coalesced value once.
         _batchShadowActive = true;
-        _accGas(_T_GAS_B1_ENTRY, _gB1Start - gasleft());
-
         for (uint256 i = 0; i < entries.length; i++) {
-            uint256 _gB2 = gasleft();
             uint256 entry = entries[i];
             uint8 p0Move    = uint8(entry);
             uint16 p0Extra  = uint16(entry >> 8);
@@ -470,8 +430,6 @@ contract Engine is IEngine, MappingAllocator {
                 _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
                 _turnP1Salt = p1Salt;
             }
-            _accGas(_T_GAS_B2_DECODE, _gB2 - gasleft());
-
             winner = _executeInternal(battleKey, storageKey);
             executed++;
 
@@ -481,7 +439,6 @@ contract Engine is IEngine, MappingAllocator {
 
             // Reset per-turn transients for next iteration (mirrors what `resetCallContext`
             // does between calls in the manager-side loop).
-            uint256 _gB3 = gasleft();
             _turnP0MoveEncoded = 0;
             _turnP1MoveEncoded = 0;
             _turnP0Salt = 0;
@@ -490,10 +447,7 @@ contract Engine is IEngine, MappingAllocator {
             koOccurredFlag = 0;
             tempPreDamage = 0;
             effectsDirtyBitmap = 0;
-            _accGas(_T_GAS_B3_RESET, _gB3 - gasleft());
         }
-
-        uint256 _gB4Start = gasleft();
         // Flush the deferred slot-1 write back to storage exactly once, even if we executed N turns.
         // BD.slot1 must always flush — `getWinner` reads it directly post-batch.
         _flushShadowBattleSlot1(battleKey);
@@ -514,32 +468,7 @@ contract Engine is IEngine, MappingAllocator {
             _shadowMonStateLoaded = 0;
             _shadowMonStateDirty = 0;
         }
-        _batchShadowActive = false;
-        _accGas(_T_GAS_B4_FLUSH, _gB4Start - gasleft());
-
-        // Emit one event with the accumulated per-region gas totals. Sub-event slot reads tally
-        // ~14 TLOADs at ~100 gas each = ~1.4k of self-instrumentation overhead at the end; per-
-        // region markers add ~300 gas each call site (TLOAD + ADD + TSTORE). The numbers here are
-        // INCLUSIVE of the marker overhead, so absolute totals are slightly inflated, but the
-        // RELATIVE distribution across regions is the useful signal.
-        uint256 _b1; uint256 _b2; uint256 _b3; uint256 _b4;
-        uint256 _r1; uint256 _r2; uint256 _r3; uint256 _r4; uint256 _r5;
-        uint256 _r6; uint256 _r7; uint256 _r8; uint256 _r9;
-        uint256 _sp;
-        assembly {
-            _b1 := tload(0x200001) _b2 := tload(0x200002) _b3 := tload(0x200003) _b4 := tload(0x200004)
-            _r1 := tload(0x200005) _r2 := tload(0x200006) _r3 := tload(0x200007) _r4 := tload(0x200008)
-            _r5 := tload(0x200009) _r6 := tload(0x20000A) _r7 := tload(0x20000B) _r8 := tload(0x20000C)
-            _r9 := tload(0x20000D) _sp := tload(0x20000E)
-        }
-        emit GasProfile(
-            battleKey, _gTotalStart - gasleft(),
-            _b1, _b2, _b3, _b4,
-            _r1, _r2, _r3, _r4, _r5,
-            _r6, _r7, _r8, _r9,
-            _sp
-        );
-    }
+        _batchShadowActive = false;    }
 
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
@@ -607,7 +536,6 @@ contract Engine is IEngine, MappingAllocator {
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
     function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal returns (address winner) {
-        uint256 _gR1 = gasleft();
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -654,20 +582,16 @@ contract Engine is IEngine, MappingAllocator {
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
         _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
-        _accGas(_T_GAS_R1_SETUP, _gR1 - gasleft());
-
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
         uint8 entryFlag = _getPlayerSwitchForTurnFlag(battleKey);
         if (entryFlag == 0 || entryFlag == 1) {
-            uint256 _gSP = gasleft();
             // Get the player index that needs to switch for this turn
             uint256 playerIndex = uint256(entryFlag);
 
             // Run the move (trust that the validator only lets valid single player moves happen as a switch action)
             // Running the move will set the winner flag if valid
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, playerIndex, playerSwitchForTurnFlag);
-            _accGas(_T_GAS_SINGLE_PLAYER, _gSP - gasleft());
         }
         // Otherwise, we need to run priority calculations and update the game state for both players
         /*
@@ -696,7 +620,6 @@ contract Engine is IEngine, MappingAllocator {
             - Set player switch for turn flag
         */
         else {
-            uint256 _gR2 = gasleft();
             // Update the temporary RNG to the newest value
             // Inline RNG computation when oracle is address(0) to avoid external call
             uint256 rng;
@@ -716,26 +639,17 @@ contract Engine is IEngine, MappingAllocator {
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
             priorityPlayerIndex = _computePriorityPlayerIndex(config, battle, battleKey, rng, p0TurnMove, p1TurnMove);
             uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
-            _accGas(_T_GAS_R2_PRIORITY_RNG, _gR2 - gasleft());
-
             // Run beginning of round effects (fused: global + priority + other in one frame)
-            uint256 _gR3 = gasleft();
             playerSwitchForTurnFlag = _handleEffectsTriple(
                 battleKey, config, battle, rng,
                 priorityPlayerIndex, otherPlayerIndex,
                 EffectStep.RoundStart,
                 playerSwitchForTurnFlag
             );
-            _accGas(_T_GAS_R3_ROUND_START, _gR3 - gasleft());
-
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
-            uint256 _gR4 = gasleft();
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
-            _accGas(_T_GAS_R4_PRIO_MOVE, _gR4 - gasleft());
-
             // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s)
-            uint256 _gR5 = gasleft();
             playerSwitchForTurnFlag = _handleEffects(
                 battleKey,
                 config,
@@ -771,10 +685,7 @@ contract Engine is IEngine, MappingAllocator {
                     0
                 );
             }
-            _accGas(_T_GAS_R5_PRIO_AFTERMOVE, _gR5 - gasleft());
-
             // Run the non priority player's move
-            uint256 _gR6 = gasleft();
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
@@ -797,10 +708,7 @@ contract Engine is IEngine, MappingAllocator {
                     otherMonIndex
                 );
             }
-            _accGas(_T_GAS_R6_OTHER_MOVE, _gR6 - gasleft());
-
             // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s)
-            uint256 _gR7 = gasleft();
             playerSwitchForTurnFlag = _handleEffects(
                 battleKey,
                 config,
@@ -836,11 +744,8 @@ contract Engine is IEngine, MappingAllocator {
                     0
                 );
             }
-            _accGas(_T_GAS_R7_OTHER_AFTERMOVE, _gR7 - gasleft());
-
             // Always run global effects at the end of the round, then the priority and other
             // players' per-mon roundEnd effects (fused: global + priority + other in one frame).
-            uint256 _gR8 = gasleft();
             playerSwitchForTurnFlag = _handleEffectsTriple(
                 battleKey, config, battle, rng,
                 priorityPlayerIndex, otherPlayerIndex,
@@ -853,10 +758,7 @@ contract Engine is IEngine, MappingAllocator {
                 uint256 p1Mon = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
                 _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
             }
-            _accGas(_T_GAS_R8_ROUND_END, _gR8 - gasleft());
         }
-
-        uint256 _gR9 = gasleft();
         // Run the round end hooks
         for (uint256 i = 0; i < numHooks;) {
             if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
@@ -872,8 +774,6 @@ contract Engine is IEngine, MappingAllocator {
         if (endWinnerIndex != 2) {
             winner = (endWinnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
-            _accGas(_T_GAS_R9_TURN_END, _gR9 - gasleft());
-
             // Still emit execute event
             emit EngineExecute(battleKey);
             return winner;
@@ -890,7 +790,6 @@ contract Engine is IEngine, MappingAllocator {
             uint8(playerSwitchForTurnFlag),
             uint40(block.timestamp)
         );
-        _accGas(_T_GAS_R9_TURN_END, _gR9 - gasleft());
         // Clear storage move slots only when they were actually written via setMove (execute() path).
         // executeWithMoves never writes, so the slots stay zero and a clear here would burn ~4.4k on
         // a cold-access SSTORE 0→0.
