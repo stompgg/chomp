@@ -95,18 +95,6 @@ contract Engine is IEngine, MappingAllocator {
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
-    // packedMoves layout (per-lane sentinel: lane bytes all zero == player did not submit):
-    //   bits   0-  7  p0 monIndex        (uint8)
-    //   bits   8- 15  p0 packedMoveIndex (uint8, 0 = not submitted)
-    //   bits  16- 31  p0 extraData       (uint16)
-    //   bits  32- 39  p1 monIndex        (uint8)
-    //   bits  40- 47  p1 packedMoveIndex (uint8, 0 = not submitted)
-    //   bits  48- 63  p1 extraData       (uint16)
-    // packedSalts layout:
-    //   bits   0-103  p0 salt (uint104)
-    //   bits 104-207  p1 salt (uint104)
-    event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
-    event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
 
     /// @notice Constructor to set default validator config for inline validation
@@ -319,9 +307,10 @@ contract Engine is IEngine, MappingAllocator {
 
     // THE IMPORTANT FUNCTION
     function execute(bytes32 battleKey) external returns (address winner) {
-        // Cache storage key in transient storage for the duration of the call
+        // Cache storage key + battle key in transient storage for the duration of the call.
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -333,7 +322,7 @@ contract Engine is IEngine, MappingAllocator {
             revert MovesNotSet();
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, config.engineHooksLength, config.hasInlineStaminaRegen);
     }
 
     /// @notice Combined setMove + setMove + execute for gas optimization
@@ -352,6 +341,7 @@ contract Engine is IEngine, MappingAllocator {
     ) external returns (address winner) {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -368,7 +358,7 @@ contract Engine is IEngine, MappingAllocator {
         _turnP0Salt = p0Salt;
         _turnP1Salt = p1Salt;
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, config.engineHooksLength, config.hasInlineStaminaRegen);
     }
 
     /// @notice Combined single-player setMove + execute for forced switch turns
@@ -390,6 +380,9 @@ contract Engine is IEngine, MappingAllocator {
     {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        // Set battleKey ONCE for the whole batch — `_executeInternal` no longer touches this
+        // transient slot, saving N-1 TSTOREs vs the legacy per-turn assignment.
+        battleKeyForWrite = battleKey;
         BattleConfig storage config = battleConfig[storageKey];
 
         if (msg.sender != config.moveManager) {
@@ -400,6 +393,12 @@ contract Engine is IEngine, MappingAllocator {
         // `_executeInternal` and its callees go to transient via the shadow helpers; the final
         // flush below SSTOREs the coalesced value once.
         _batchShadowActive = true;
+
+        // Hoist battle-constant config fields out of the loop. These are set at startBattle and
+        // never change during play, so reading them once amortizes the SLOAD across all turns.
+        uint256 numHooks = config.engineHooksLength;
+        bool inlineStaminaRegen = config.hasInlineStaminaRegen;
+
         for (uint256 i = 0; i < entries.length; i++) {
             uint256 entry = entries[i];
             uint8 p0Move    = uint8(entry);
@@ -430,7 +429,7 @@ contract Engine is IEngine, MappingAllocator {
                 _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
                 _turnP1Salt = p1Salt;
             }
-            winner = _executeInternal(battleKey, storageKey);
+            winner = _executeInternal(battleKey, storageKey, numHooks, inlineStaminaRegen);
             executed++;
 
             if (winner != address(0)) {
@@ -476,6 +475,7 @@ contract Engine is IEngine, MappingAllocator {
     {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -483,7 +483,6 @@ contract Engine is IEngine, MappingAllocator {
             revert WrongCaller();
         }
 
-        // `battleKeyForWrite` isn't set yet at this entry point — pass the param directly.
         uint256 playerIndex = _getPlayerSwitchForTurnFlag(battleKey);
         if (playerIndex > 1) {
             revert NotSinglePlayerTurn();
@@ -499,7 +498,7 @@ contract Engine is IEngine, MappingAllocator {
             _turnP1Salt = salt;
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, config.engineHooksLength, config.hasInlineStaminaRegen);
     }
 
     /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
@@ -535,7 +534,15 @@ contract Engine is IEngine, MappingAllocator {
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal returns (address winner) {
+    /// @param numHooks Pre-resolved `config.engineHooksLength`. Hoisted by caller so the value
+    ///                 is read once per call (legacy) or once per batch (executeBatchedTurns).
+    /// @param inlineStaminaRegen Pre-resolved `config.hasInlineStaminaRegen`. Same hoist rationale.
+    function _executeInternal(
+        bytes32 battleKey,
+        bytes32 storageKey,
+        uint256 numHooks,
+        bool inlineStaminaRegen
+    ) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -559,11 +566,10 @@ contract Engine is IEngine, MappingAllocator {
         // Store the prev player switch for turn flag (one packed-slot RMW via helpers).
         _setPrevPlayerSwitchForTurnFlag(battleKey, _getPlayerSwitchForTurnFlag(battleKey));
 
-        // Set the battle key for the stack frame
-        // (gets cleared at the end of the transaction)
-        battleKeyForWrite = battleKey;
+        // `battleKeyForWrite` is set by the external entry point (execute / executeWithMoves /
+        // executeWithSingleMove / executeBatchedTurns) before this is reached. In batched mode
+        // it's set once before the loop, saving N-1 TSTOREs across a batch.
 
-        uint256 numHooks = config.engineHooksLength;
         for (uint256 i = 0; i < numHooks;) {
             if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
                 config.engineHooks[i].hook.onRoundStart(battleKey);
@@ -573,15 +579,12 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // Emit MonMoves upfront with both players' moves + salts packed into one event.
-        // This guarantees clients always receive each player's move + salt, regardless
-        // of any early returns (mid-turn KO, shouldSkipTurn, stamina/validator failure)
-        // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
-        // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
-        // are zero the emit is skipped entirely.
+        // Off-chain consumers reconstruct per-turn moves from the manager-side `moveBuffer`
+        // SSTOREs (observable via storage diffs) for batched flow, or from the calldata of
+        // executeWithDualSignedMoves / executeWithMoves for the legacy flow. No on-chain
+        // MonMoves event needed in either case; saves ~2k gas/turn.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
         uint8 entryFlag = _getPlayerSwitchForTurnFlag(battleKey);
@@ -632,8 +635,8 @@ contract Engine is IEngine, MappingAllocator {
             }
             tempRNG = rng;
 
-            // Cache `hasInlineStaminaRegen` once instead of re-reading config slot 2 three times below.
-            bool inlineStaminaRegen = config.hasInlineStaminaRegen;
+            // `inlineStaminaRegen` was hoisted to a function param by the caller — was previously
+            // a per-call `config.hasInlineStaminaRegen` SLOAD here.
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
@@ -774,8 +777,6 @@ contract Engine is IEngine, MappingAllocator {
         if (endWinnerIndex != 2) {
             winner = (endWinnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
-            // Still emit execute event
-            emit EngineExecute(battleKey);
             return winner;
         }
 
@@ -797,8 +798,6 @@ contract Engine is IEngine, MappingAllocator {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-
-        emit EngineExecute(battleKey);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
@@ -2641,29 +2640,6 @@ contract Engine is IEngine, MappingAllocator {
                 abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
             );
         }
-    }
-
-    function _emitMonMoves(
-        bytes32 battleKey,
-        BattleConfig storage config,
-        BattleData storage battle,
-        MoveDecision memory p0Move,
-        MoveDecision memory p1Move
-    ) private {
-        // Skip the emit entirely if neither player submitted this turn.
-        if (p0Move.packedMoveIndex == 0 && p1Move.packedMoveIndex == 0) return;
-
-        uint256 p0MonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-        uint256 p1MonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
-
-        uint256 packedMoves = uint256(uint8(p0MonIndex)) | (uint256(p0Move.packedMoveIndex) << 8)
-            | (uint256(p0Move.extraData) << 16) | (uint256(uint8(p1MonIndex)) << 32)
-            | (uint256(p1Move.packedMoveIndex) << 40) | (uint256(p1Move.extraData) << 48);
-
-        uint256 packedSalts =
-            uint256(_getCurrentTurnSalt(config, 0)) | (uint256(_getCurrentTurnSalt(config, 1)) << 104);
-
-        emit MonMoves(battleKey, packedMoves, packedSalts);
     }
 
     // Helper functions for KO bitmap management (packed: lower 8 bits = p0, upper 8 bits = p1).
