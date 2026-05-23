@@ -694,7 +694,8 @@ contract Engine is IEngine, MappingAllocator {
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
             // Happens immediately after both mons are sent in, before any other effects
             if (turnId == 0) {
-                uint256 priorityMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),priorityPlayerIndex);
+                uint16 packedActiveMonIndexT0 = _getActiveMonIndex(battleKeyForWrite);
+                uint256 priorityMonIndex = _unpackActiveMonIndex(packedActiveMonIndexT0, priorityPlayerIndex);
                 _activateAbility(
                     config,
                     battleKey,
@@ -702,7 +703,7 @@ contract Engine is IEngine, MappingAllocator {
                     priorityPlayerIndex,
                     priorityMonIndex
                 );
-                uint256 otherMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),otherPlayerIndex);
+                uint256 otherMonIndex = _unpackActiveMonIndex(packedActiveMonIndexT0, otherPlayerIndex);
                 _activateAbility(
                     config,
                     battleKey,
@@ -757,8 +758,9 @@ contract Engine is IEngine, MappingAllocator {
             );
 
             if (inlineStaminaRegen) {
-                uint256 p0Mon = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-                uint256 p1Mon = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+                uint16 packedActiveMonIndexRE = _getActiveMonIndex(battleKeyForWrite);
+                uint256 p0Mon = _unpackActiveMonIndex(packedActiveMonIndexRE, 0);
+                uint256 p1Mon = _unpackActiveMonIndex(packedActiveMonIndexRE, 1);
                 _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
             }
         }
@@ -1102,8 +1104,9 @@ contract Engine is IEngine, MappingAllocator {
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
                 // Get active mon indices for both players
                 BattleData storage battle = battleData[battleKey];
-                uint256 p0ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-                uint256 p1ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+                uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
+                uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
+                uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(
                     IEngine(address(this)),
@@ -1214,8 +1217,9 @@ contract Engine is IEngine, MappingAllocator {
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             BattleData storage battle = battleData[battleKey];
-            uint256 p0Active = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-            uint256 p1Active = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+            uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
+            uint256 p0Active = _unpackActiveMonIndex(packedActiveMonIndex, 0);
+            uint256 p1Active = _unpackActiveMonIndex(packedActiveMonIndex, 1);
             effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, p0Active, p1Active);
         }
 
@@ -1655,11 +1659,12 @@ contract Engine is IEngine, MappingAllocator {
 
         uint256 p0KOBitmap = _getKOBitmap(config, 0);
         uint256 p1KOBitmap = _getKOBitmap(config, 1);
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
 
         // Global effect context (priorityPlayerIndex == 2): check both players explicitly
         if (priorityPlayerIndex >= 2) {
-            uint256 p0ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-            uint256 p1ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+            uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
+            uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
             bool isP0KO = (p0KOBitmap & (1 << p0ActiveMonIndex)) != 0;
             bool isP1KO = (p1KOBitmap & (1 << p1ActiveMonIndex)) != 0;
             if (isP0KO && !isP1KO) playerSwitchForTurnFlag = 0;
@@ -1668,8 +1673,8 @@ contract Engine is IEngine, MappingAllocator {
         }
 
         uint256 otherPlayerIndex = (priorityPlayerIndex + 1) % 2;
-        uint256 priorityActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),priorityPlayerIndex);
-        uint256 otherActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),otherPlayerIndex);
+        uint256 priorityActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, priorityPlayerIndex);
+        uint256 otherActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, otherPlayerIndex);
         uint256 priorityKOBitmap = priorityPlayerIndex == 0 ? p0KOBitmap : p1KOBitmap;
         uint256 otherKOBitmap = priorityPlayerIndex == 0 ? p1KOBitmap : p0KOBitmap;
         bool isPriorityPlayerActiveMonKnockedOut = (priorityKOBitmap & (1 << priorityActiveMonIndex)) != 0;
@@ -1888,11 +1893,13 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
 
-        // Get active mon indices for both players (passed to all effect hooks)
-        uint256 p0ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-        uint256 p1ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+        // Get active mon indices for both players (passed to all effect hooks).
+        // Read the packed slot once; unpack thrice (pure).
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
+        uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
+        uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
 
-        uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),playerIndex);
+        uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(packedActiveMonIndex, playerIndex);
 
         // Pre-compute loop metadata once (baseSlot, dirtyBit, effectsCount)
         // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
@@ -2191,10 +2198,14 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
+        // Active mon indices can only change via switchActiveMon, which is reachable only from
+        // IMoveSet.move() — effect / ability lifecycle hooks never switch — so a single packed
+        // read covers both per-mon branches below.
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
+
         // --- Priority player's per-mon effects (SkipIfGameOverOrMonKO) ---
         if (_getWinnerIndex(battleKeyForWrite) == 2) {
-            uint256 priorityMonIndex =
-                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), priorityPlayerIndex);
+            uint256 priorityMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, priorityPlayerIndex);
             if (!_loadMonState(config, priorityPlayerIndex, priorityMonIndex).isKnockedOut) {
                 uint256 priorityCount = (priorityPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, priorityMonIndex)
@@ -2211,8 +2222,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // --- Other player's per-mon effects (SkipIfGameOverOrMonKO) ---
         if (_getWinnerIndex(battleKeyForWrite) == 2) {
-            uint256 otherMonIndex =
-                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), otherPlayerIndex);
+            uint256 otherMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, otherPlayerIndex);
             if (!_loadMonState(config, otherPlayerIndex, otherMonIndex).isKnockedOut) {
                 uint256 otherCount = (otherPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, otherMonIndex)
@@ -2254,8 +2264,9 @@ contract Engine is IEngine, MappingAllocator {
         uint8 p0MoveIndex = p0StoredIndex >= SWITCH_MOVE_INDEX ? p0StoredIndex : p0StoredIndex - MOVE_INDEX_OFFSET;
         uint8 p1MoveIndex = p1StoredIndex >= SWITCH_MOVE_INDEX ? p1StoredIndex : p1StoredIndex - MOVE_INDEX_OFFSET;
 
-        uint256 p0ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),0);
-        uint256 p1ActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),1);
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
+        uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
+        uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
 
         uint256 p0Priority = _getMovePriority(config, battleKey, 0, p0MoveIndex, p0ActiveMonIndex);
         uint256 p1Priority = _getMovePriority(config, battleKey, 1, p1MoveIndex, p1ActiveMonIndex);
