@@ -240,9 +240,13 @@ contract Engine is IEngine, MappingAllocator {
             uint256 numEffects = effects.length;
             if (numEffects > 0) {
                 for (uint256 i = 0; i < numEffects;) {
-                    uint16 bm =
-                        address(effects[i]) == address(0) ? uint16(0x8084) : effects[i].getStepsBitmap();
-                    _writeEffect(config.globalEffects[i], effects[i], bm, data[i]);
+                    config.globalEffects[i].effect = effects[i];
+                    if (address(effects[i]) == address(0)) {
+                        config.globalEffects[i].stepsBitmap = 0x8084;
+                    } else {
+                        config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
+                    }
+                    config.globalEffects[i].data = data[i];
                     unchecked {
                         ++i;
                     }
@@ -1135,7 +1139,10 @@ contract Engine is IEngine, MappingAllocator {
                 if (targetIndex == 2) {
                     // Global effects use simple sequential indexing
                     uint256 effectIndex = config.globalEffectsLength;
-                    _writeEffect(config.globalEffects[effectIndex], effect, stepsBitmap, extraDataToUse);
+                    EffectInstance storage effectSlot = config.globalEffects[effectIndex];
+                    effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
+                    effectSlot.data = extraDataToUse;
                     config.globalEffectsLength = uint8(effectIndex + 1);
                     // Set dirty bit 0 for global effects
                     effectsDirtyBitmap |= 1;
@@ -1143,7 +1150,10 @@ contract Engine is IEngine, MappingAllocator {
                     // Player effects use per-mon indexing: slot = MAX_EFFECTS_PER_MON * monIndex + count[monIndex]
                     uint256 monEffectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
-                    _writeEffect(config.p0Effects[slotIndex], effect, stepsBitmap, extraDataToUse);
+                    EffectInstance storage effectSlot = config.p0Effects[slotIndex];
+                    effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
+                    effectSlot.data = extraDataToUse;
                     config.packedP0EffectsCount =
                         _setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + 1);
                     // Set dirty bit (1 + monIndex) for P0 effects
@@ -1151,7 +1161,10 @@ contract Engine is IEngine, MappingAllocator {
                 } else {
                     uint256 monEffectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
-                    _writeEffect(config.p1Effects[slotIndex], effect, stepsBitmap, extraDataToUse);
+                    EffectInstance storage effectSlot = config.p1Effects[slotIndex];
+                    effectSlot.effect = effect;
+                    effectSlot.stepsBitmap = stepsBitmap;
+                    effectSlot.data = extraDataToUse;
                     config.packedP1EffectsCount =
                         _setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + 1);
                     // Set dirty bit (9 + monIndex) for P1 effects
@@ -1185,7 +1198,7 @@ contract Engine is IEngine, MappingAllocator {
             effectInstance = config.p1Effects[effectIndex];
         }
 
-        _writeEffectData(effectInstance, newExtraData);
+        effectInstance.data = newExtraData;
     }
 
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 indexToRemove) public {
@@ -1212,20 +1225,16 @@ contract Engine is IEngine, MappingAllocator {
             eff = config.p1Effects[slotIndex];
         }
 
-        // One SLOAD of slot 0 for effect address + bitmap + (maybe) inline data.
-        uint256 slot0 = _readEffectSlot0(eff);
-        IEffect effect = IEffect(address(uint160(slot0)));
+        IEffect effect = eff.effect;
         if (address(effect) == TOMBSTONE_ADDRESS) return;
 
-        uint16 effBitmap = uint16(slot0 >> 160);
-        if ((effBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
+        if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             BattleData storage battle = battleData[battleKey];
             // battleKey is the function param (= battleKeyForWrite at the caller site)
             uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
             uint256 p0Active = _unpackActiveMonIndex(packedActiveMonIndex, 0);
             uint256 p1Active = _unpackActiveMonIndex(packedActiveMonIndex, 1);
-            bytes32 effData = _resolveEffectData(eff, slot0);
-            effect.onRemove(IEngine(address(this)), battleKey, effData, targetIndex, monIndex, p0Active, p1Active);
+            effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, p0Active, p1Active);
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
@@ -1950,17 +1959,8 @@ contract Engine is IEngine, MappingAllocator {
                 eff = config.p1Effects[slotIndex];
             }
 
-            // Single SLOAD of slot 0: address + bitmap + (maybe) inline data.
-            // Fall back to slot 1 only when the inline flag is unset.
-            // Inlined assembly + branch to avoid function-call overhead inside this hot loop.
-            uint256 effSlot0;
-            assembly { effSlot0 := sload(eff.slot) }
-            address effAddr = address(uint160(effSlot0));
             // Skip tombstoned effects
-            if (effAddr != TOMBSTONE_ADDRESS) {
-                bytes32 effData = (effSlot0 & EFFECT_INLINE_FLAG_BIT != 0)
-                    ? bytes32((effSlot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK)
-                    : eff.data;
+            if (address(eff.effect) != TOMBSTONE_ADDRESS) {
                 _runSingleEffect(
                     config,
                     rng,
@@ -1969,9 +1969,9 @@ contract Engine is IEngine, MappingAllocator {
                     monIndex,
                     round,
                     extraEffectsData,
-                    IEffect(effAddr),
-                    uint16(effSlot0 >> 160),
-                    effData,
+                    eff.effect,
+                    eff.stepsBitmap,
+                    eff.data,
                     uint96(slotIndex),
                     p0ActiveMonIndex,
                     p1ActiveMonIndex
@@ -2132,13 +2132,13 @@ contract Engine is IEngine, MappingAllocator {
         if (removeAfterRun) {
             removeEffect(effectIndex, monIndex, uint256(slotIndex));
         } else {
-            // Update the data at the slot (tiered: inline in slot 0 if it fits in 79 bits)
+            // Update the data at the slot
             if (effectIndex == 2) {
-                _writeEffectData(config.globalEffects[slotIndex], updatedExtraData);
+                config.globalEffects[slotIndex].data = updatedExtraData;
             } else if (effectIndex == 0) {
-                _writeEffectData(config.p0Effects[slotIndex], updatedExtraData);
+                config.p0Effects[slotIndex].data = updatedExtraData;
             } else {
-                _writeEffectData(config.p1Effects[slotIndex], updatedExtraData);
+                config.p1Effects[slotIndex].data = updatedExtraData;
             }
         }
     }
@@ -2512,140 +2512,6 @@ contract Engine is IEngine, MappingAllocator {
         _shadowBattleSlot1Loaded = false;
     }
 
-    // ----- EffectInstance tiered storage -----
-    //
-    // EffectInstance is laid out as:
-    //   slot 0: address effect (160 bits) | uint16 stepsBitmap (16 bits) | 80 bits unused
-    //   slot 1: bytes32 data (256 bits)
-    //
-    // Tiered storage: when an effect's `data` fits in 79 bits (uint256(data) <= 2^79 - 1),
-    // encode it inline in slot 0's free 80 bits along with a flag bit. When it doesn't,
-    // fall back to slot 1. This saves the slot 1 SSTORE on every add (~5k warm, ~22k cold
-    // first-touch) and the slot 1 SLOAD on every dispatch (~100g warm) for all production
-    // status effects whose data fits — currently every effect except StatBoosts (which packs
-    // a 168-bit identity key + flags + stat data into a full 256 bits, never fits).
-    //
-    // Slot 0 inline layout:
-    //   bits  [0..159]   = address effect (unchanged)
-    //   bits  [160..175] = uint16 stepsBitmap (unchanged)
-    //   bits  [176..254] = inline data when isInline=1 (79 bits)
-    //   bit   [255]      = isInline flag (1 = inline in slot 0; 0 = external in slot 1)
-    //
-    // External readers (`getEffects` etc.) reconstruct the public `EffectInstance.data` field
-    // from inline or external storage so the API ABI stays unchanged.
-
-    uint256 private constant EFFECT_INLINE_FLAG_BIT = 1 << 255;
-    uint256 private constant EFFECT_INLINE_DATA_MASK = (uint256(1) << 79) - 1;
-    uint256 private constant EFFECT_INLINE_DATA_SHIFT = 176;
-    uint256 private constant EFFECT_SLOT0_BASE_MASK = (uint256(1) << 176) - 1;  // address + bitmap
-
-    function _readEffectSlot0(EffectInstance storage eff) internal view returns (uint256 slot0) {
-        assembly {
-            slot0 := sload(eff.slot)
-        }
-    }
-
-    function _writeEffectSlot0(EffectInstance storage eff, uint256 slot0) internal {
-        assembly {
-            sstore(eff.slot, slot0)
-        }
-    }
-
-    /// @dev Reads the full effect record. If the inline flag is set, reconstructs `data` from
-    ///      slot 0's inline bits; otherwise SLOADs slot 1. Single-SLOAD fast path for inline-data
-    ///      effects (the common case for status DOTs / counter effects).
-    function _readEffectFull(EffectInstance storage eff)
-        internal
-        view
-        returns (IEffect effect, uint16 bitmap, bytes32 data)
-    {
-        uint256 slot0 = _readEffectSlot0(eff);
-        effect = IEffect(address(uint160(slot0)));
-        bitmap = uint16(slot0 >> 160);
-        if (slot0 & EFFECT_INLINE_FLAG_BIT != 0) {
-            data = bytes32((slot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK);
-        } else {
-            data = eff.data;
-        }
-    }
-
-    /// @dev Reads just the `data` field, following the tiered layout. Use when effect+bitmap
-    ///      were already obtained via a separate slot 0 SLOAD that the caller can't easily share.
-    function _readEffectData(EffectInstance storage eff) internal view returns (bytes32 data) {
-        uint256 slot0 = _readEffectSlot0(eff);
-        if (slot0 & EFFECT_INLINE_FLAG_BIT != 0) {
-            data = bytes32((slot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK);
-        } else {
-            data = eff.data;
-        }
-    }
-
-    /// @dev Reconstructs `data` from a pre-read slot 0 + the effect storage ref (in case fallback
-    ///      to slot 1 is needed). Lets the caller fuse the slot 0 SLOAD that they were doing
-    ///      anyway with the data resolution.
-    function _resolveEffectData(EffectInstance storage eff, uint256 slot0) internal view returns (bytes32 data) {
-        if (slot0 & EFFECT_INLINE_FLAG_BIT != 0) {
-            data = bytes32((slot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK);
-        } else {
-            data = eff.data;
-        }
-    }
-
-    /// @dev Initializes a new effect slot with the inline-if-fits decision. Used by addEffect and
-    ///      the initial-globals seed path in startBattle.
-    function _writeEffect(EffectInstance storage eff, IEffect effect, uint16 bitmap, bytes32 data) internal {
-        uint256 dataAsUint = uint256(data);
-        if (dataAsUint <= EFFECT_INLINE_DATA_MASK) {
-            uint256 slot0 = uint256(uint160(address(effect)))
-                | (uint256(bitmap) << 160)
-                | (dataAsUint << EFFECT_INLINE_DATA_SHIFT)
-                | EFFECT_INLINE_FLAG_BIT;
-            _writeEffectSlot0(eff, slot0);
-            // Slot 1 stays untouched (whatever leftover value; harmless since isInline=1).
-        } else {
-            uint256 slot0 = uint256(uint160(address(effect))) | (uint256(bitmap) << 160);
-            _writeEffectSlot0(eff, slot0);
-            eff.data = data;
-        }
-    }
-
-    /// @dev Loads an `EffectInstance memory` for external return, reconstructing `data` from
-    ///      tiered storage. Used by getEffects-style API functions so the public ABI stays the
-    ///      same regardless of inline-vs-external storage choice.
-    function _loadEffectMem(EffectInstance storage eff) internal view returns (EffectInstance memory mem) {
-        uint256 slot0 = _readEffectSlot0(eff);
-        mem.effect = IEffect(address(uint160(slot0)));
-        mem.stepsBitmap = uint16(slot0 >> 160);
-        if (slot0 & EFFECT_INLINE_FLAG_BIT != 0) {
-            mem.data = bytes32((slot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK);
-        } else {
-            mem.data = eff.data;
-        }
-    }
-
-    /// @dev Updates only the data field of an existing effect, preserving effect+bitmap. Re-decides
-    ///      inline-vs-external based on the new value. Idempotent — skips the slot 0 SSTORE if the
-    ///      packed value didn't change (e.g. inline-mode write of the same data value).
-    function _writeEffectData(EffectInstance storage eff, bytes32 newData) internal {
-        uint256 oldSlot0 = _readEffectSlot0(eff);
-        uint256 base = oldSlot0 & EFFECT_SLOT0_BASE_MASK;  // address + bitmap
-        uint256 dataAsUint = uint256(newData);
-        if (dataAsUint <= EFFECT_INLINE_DATA_MASK) {
-            uint256 newSlot0 = base | (dataAsUint << EFFECT_INLINE_DATA_SHIFT) | EFFECT_INLINE_FLAG_BIT;
-            if (newSlot0 != oldSlot0) {
-                _writeEffectSlot0(eff, newSlot0);
-            }
-            // If transitioning external→inline, slot 1 retains its old value — harmless since
-            // isInline=1 means slot 1 is never read.
-        } else {
-            // Doesn't fit inline. Clear inline flag + data bits in slot 0 if previously inline.
-            if (oldSlot0 != base) {
-                _writeEffectSlot0(eff, base);
-            }
-            eff.data = newData;
-        }
-    }
-
     // ----- MonState shadow (per active mon) -----
 
     function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
@@ -2923,7 +2789,7 @@ contract Engine is IEngine, MappingAllocator {
             uint256 globalIdx = 0;
             for (uint256 i = 0; i < globalEffectsLength;) {
                 if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                    globalResult[globalIdx] = _loadEffectMem(config.globalEffects[i]);
+                    globalResult[globalIdx] = config.globalEffects[i];
                     globalIndices[globalIdx] = i;
                     unchecked {
                         ++globalIdx;
@@ -2953,7 +2819,7 @@ contract Engine is IEngine, MappingAllocator {
         for (uint256 i = 0; i < monEffectCount;) {
             uint256 slotIndex = baseSlot + i;
             if (address(effects[slotIndex].effect) != TOMBSTONE_ADDRESS) {
-                result[idx] = _loadEffectMem(effects[slotIndex]);
+                result[idx] = effects[slotIndex];
                 indices[idx] = slotIndex;
                 unchecked {
                     ++idx;
@@ -2986,7 +2852,7 @@ contract Engine is IEngine, MappingAllocator {
         uint256 gIdx = 0;
         for (uint256 i = 0; i < globalLen;) {
             if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                globalEffects[gIdx] = _loadEffectMem(config.globalEffects[i]);
+                globalEffects[gIdx] = config.globalEffects[i];
                 unchecked {
                     ++gIdx;
                 }
@@ -3118,7 +2984,7 @@ contract Engine is IEngine, MappingAllocator {
             uint256 idx = 0;
             for (uint256 i = 0; i < monCount;) {
                 if (address(effects[baseSlot + i].effect) != TOMBSTONE_ADDRESS) {
-                    monEffects[idx] = _loadEffectMem(effects[baseSlot + i]);
+                    monEffects[idx] = effects[baseSlot + i];
                     unchecked {
                         ++idx;
                     }

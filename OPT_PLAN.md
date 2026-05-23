@@ -650,24 +650,3 @@ Decisions made while executing the todo above. Each entry: short context + the c
 
   **Cumulative vs original baseline (pre-H, pre-batched-decoupling-sweep):** batched 1,762,241 → 1,590,098 = **-172,143 gas (-9.8%)**; legacy 1,867,567 → 1,712,843 = **-154,724 gas (-8.3%)**.
 
-### Phase 1 (tiered EffectInstance storage)
-
-- **Inline-data-when-fits for `EffectInstance.data`.** Each EffectInstance occupies 2 storage slots: slot 0 packs `address effect` (160 bits) + `uint16 stepsBitmap` (16 bits) + 80 unused bits; slot 1 holds the `bytes32 data` field. Most production effects (BurnStatus / SleepStatus / PanicStatus / ZapStatus / Overclock / mon-local degree counters / HardReset's 3-bit ed flag) use only 1-8 bits of `data`. StatBoosts is the exception — its 256-bit packed layout (168-bit identity key + 80-bit stat data + 8-bit flag) never fits.
-
-  Decision is **per-write** (not per-effect-type) via a runtime check `uint256(data) <= 2^79 - 1`. New layout uses slot 0's free 80 bits:
-  - bit [255] = isInline flag (1 = data is inline; 0 = data lives in slot 1)
-  - bits [176..254] = inline data (79 bits) when flag is set
-
-  Public `EffectInstance` struct ABI is unchanged — external getters reconstruct the full `bytes32 data` from inline or external storage via `_loadEffectMem`. Tombstoned slots leak no correctness because the tombstone check at `eff.effect == TOMBSTONE_ADDRESS` runs first; the stale inline bits are ignored. Transitioning external→inline leaves slot 1 with stale data — harmless since `isInline=1` means we don't read slot 1.
-
-- **Helper boundary.** `_readEffectSlot0` / `_writeEffectSlot0` (assembly), `_readEffectFull`, `_resolveEffectData` (resolves data from a pre-read slot 0 — lets callers fuse the slot 0 SLOAD with data extraction), `_writeEffect` (initial write), `_writeEffectData` (data-only update preserving effect+bitmap), `_loadEffectMem` (storage→memory copy with reconstruction). Hot `_runEffects` site uses inlined assembly + branch instead of the helper to avoid function-call frame overhead.
-
-- **Measured impact.**
-  - Realistic 14-turn steady-state execute: batched -2,738 gas, legacy -2,738. Modest in execute because the storage savings (~14 fewer warm SSTOREs, ~105 fewer warm SLOADs in batched execute — see access tally) are offset by the bytecode/branch overhead of the dispatch check on every effect read.
-  - **Setup-phase wins are larger** (where addEffect actually happens): `FirstBattle` -26,138 gas, `SecondBattle` -23,563 gas, `B1_Execute` -5,509 gas, `B1_Setup` -2,491 gas. These come from eliminating the slot 1 cold first-touch SSTORE per inline-fitting effect at registration time (~5-22k per add depending on cold/warm status).
-  - Access tally (batched execute steady state): SSTOREs 51 → 42 (-9, of which 9 are no-op eliminations), SLOADs 972 → 859 (-113). Cold SLOADs -8, warm SLOADs -105.
-
-- **Cumulative vs original baseline:** batched 1,762,241 → 1,587,360 = **-174,881 gas (-9.9%)**; legacy 1,867,567 → 1,710,105 = **-157,462 gas (-8.4%)**. Setup-heavy battles save another 20-26k each.
-
-- **StatBoosts behavior.** StatBoosts data is always 256 bits (168-bit identity key dominates), so its writes always hit the external slot 1 path. No regression: the runtime check costs ~10g per write, dwarfed by the 5k SSTORE itself.
-
