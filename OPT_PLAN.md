@@ -622,3 +622,13 @@ Decisions made while executing the todo above. Each entry: short context + the c
 
 - **Net post-trace deltas to the realistic batched steady-state production estimate:** legacy ~2.78M → ~2.78M (unchanged), batched-total ~2.42M → ~2.33M (~3.7% additional savings from single-sig + fusion). Batched saves ~430-450k vs sequential legacy per 14-turn game (~16% production gap).
 
+### Phase 1 (post-H sweep: more `_readBattleSlot1Packed` coalescing)
+
+- **`_executeInternal` BD-slot-1 top-of-frame coalesce.** Replaced 3 separate `_getWinnerIndex` / `_getTurnId` / `_getPlayerSwitchForTurnFlag` calls + the `_setPrevPlayerSwitchForTurnFlag(... _getPlayerSwitchForTurnFlag(...))` RMW with one `_readBattleSlot1Packed` + local extracts + one combined RMW write. Each helper internally re-reads the packed slot (3 TLOADs in shadow mode + stack frame), so coalescing saves ~3 reads per `_executeInternal` invocation. Safe to cache here: no external calls run between this block and the setPrev write (just a `_turnP0/P1MoveEncoded` transient check and the `cameFromDirectMoveInput` derivation). The line-590 `_getPlayerSwitchForTurnFlag` (after the engineHooks loop) stays as a fresh read since hooks could mutate slot 1.
+
+- **`_handleMove` turnId cache.** `_handleMove` reads `_getTurnId(battleKey)` twice (lines 1774, 1794). turnId is only bumped at the end of `_executeInternal` after every `_handleMove` call has returned, so it's invariant across the entire `_handleMove` frame. Cached once at function entry. ~2 calls/turn × 14 turns × ~1 saved read each.
+
+- **Combined incremental measurement on realistic 14-turn steady state:** batched -19,757 gas (-1.2% incremental, -8.3% cumulative from the original 1,762,241 baseline → 1,615,722); legacy -16,598 gas (-0.9% incremental, -6.9% cumulative from 1,867,567 → 1,738,467). All snapshot suites improved another ~1k-18k per scenario. All 533 tests pass including HardReset's 4 switch-effect tests.
+
+- **Audit pass exhausted for `_readBattleSlot1Packed`.** Remaining call sites are either single-call-per-function-frame (no in-frame coalesce target) or cross-effect-call boundaries where re-reading is required for correctness (e.g. `_handleEffectsTriple` per-branch `_getWinnerIndex` — effects can KO mons and change the winner mid-call; `_executeInternal` line 590 — engineHooks can mutate slot 1).
+

@@ -547,9 +547,13 @@ contract Engine is IEngine, MappingAllocator {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
-        // Check for game over (shadow-aware: when batched, reads the in-progress packed slot 1
-        // value from transient if a previous sub-turn already mutated it).
-        if (_getWinnerIndex(battleKey) != 2) {
+        // Read BD slot 1 once and extract all needed fields (winner, turnId, current flag).
+        // The setPrev step below also rides on this same cached value, so we replace
+        // ~3 separate slot reads + 1 RMW (each helper re-reads the packed slot) with one
+        // read + one write. Safe to cache here: no external calls run between this block
+        // and the setPrev write below.
+        uint256 packedSlot1 = _readBattleSlot1Packed(battleKey);
+        if (uint8(packedSlot1 >> 160) != 2) {
             revert GameAlreadyOver();
         }
 
@@ -559,12 +563,18 @@ contract Engine is IEngine, MappingAllocator {
         bool cameFromDirectMoveInput = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
 
         // Set up turn / player vars
-        uint256 turnId = _getTurnId(battleKey);
+        uint256 turnId = uint16(packedSlot1 >> 240);
         uint256 playerSwitchForTurnFlag = 2;
         uint256 priorityPlayerIndex;
 
-        // Store the prev player switch for turn flag (one packed-slot RMW via helpers).
-        _setPrevPlayerSwitchForTurnFlag(battleKey, _getPlayerSwitchForTurnFlag(battleKey));
+        // Store the prev player switch for turn flag: copy bits 176-183 (current) into 168-175
+        // (prev) in the cached value, then flush. Single RMW for this step rather than the helper's
+        // internal re-read.
+        {
+            uint8 currentFlag = uint8(packedSlot1 >> 176);
+            packedSlot1 = (packedSlot1 & ~(uint256(0xFF) << 168)) | (uint256(currentFlag) << 168);
+            _writeBattleSlot1Packed(battleKey, packedSlot1);
+        }
 
         // `battleKeyForWrite` is set by the external entry point (execute / executeWithMoves /
         // executeWithSingleMove / executeBatchedTurns) before this is reached. In batched mode
@@ -1752,6 +1762,10 @@ contract Engine is IEngine, MappingAllocator {
         uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
         uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
 
+        // Cache turnId for the duration of _handleMove. turnId is only bumped at the end of
+        // _executeInternal (after every _handleMove call has returned), so it's invariant here.
+        uint16 turnIdCached = _getTurnId(battleKey);
+
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite),playerIndex);
         MonState memory currentMonState = _loadMonState(config, playerIndex, activeMonIndex);
@@ -1771,7 +1785,7 @@ contract Engine is IEngine, MappingAllocator {
         // If the submitted move is not a switch, force a switch to mon index 0 so the battle can
         // progress instead of reverting. If mon 0 is itself invalid (KO'd), the switch-target
         // check below silently no-ops and timeout handles the stuck player.
-        if ((_getTurnId(battleKey) == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
+        if ((turnIdCached == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
             moveIndex = SWITCH_MOVE_INDEX;
             move.extraData = uint16(0);
         }
@@ -1791,7 +1805,7 @@ contract Engine is IEngine, MappingAllocator {
                 return playerSwitchForTurnFlag;
             }
             // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
-            if (_getTurnId(battleKey) != 0 && monToSwitchIndex == activeMonIndex) {
+            if (turnIdCached != 0 && monToSwitchIndex == activeMonIndex) {
                 return playerSwitchForTurnFlag;
             }
             _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
