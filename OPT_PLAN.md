@@ -534,22 +534,16 @@ The actual decoupling: per-turn buffer + `executeBuffered` looping `_executeInte
 - [x] `test/BatchEdgeTest.sol`: forced-switch dispatch (`flag != 2`), single-side switch, mid-batch game-over (`ex` advances by actually-executed, not buffered), mode alternation (legacy↔batched seamless).
 - [x] `test/BatchGasTest.sol`: comparison harness for B ∈ {2, 4, 8}. **Current numbers show batched is more expensive than legacy** — recorded in §12 Decision Log.
 
-### Phase 2.5 — CPU mode ✅ (API + correctness)
+### Phase 2.5 — CPU mode
 
-CPU manager rides the same buffer + `executeBatchedTurns`. No engine changes.
+CPU manager rides the same buffer + `executeBatch`. No engine changes.
 
-- [x] `selectMoveWithStateHint(bytes32, uint8, uint16, uint104, CPUContext calldata)` on `CPUMoveManager.sol` (§7.4).
-- [x] CPU salt derivation per §7.4 (`keccak(timestamp, aliceSalt, turnId)`) + `CPUTurnSalt(battleKey, turnId, timestamp)` event.
-- [x] Pack `(aliceMove, computedCpuMove)` into the shared 256-bit buffer layout (matches `SignedCommitManager._packBufferedTurn` so the engine consumes either interchangeably) and SSTORE to `moveBuffer`.
-- [x] `executeBuffered(bytes32)` on `CPUMoveManager.sol` — anyone can call; drains the buffer via `engine.executeBatchedTurns`. Fires `_afterTurn(battleKey, p0, winner)` on game-over.
-- [x] `test/CPUBatchTest.sol`: 7 tests covering single-submit-execute, multi-batch counter accounting, legacy→batched mode alternation, empty-buffer revert, non-p0 revert, game-over revert (cleanly orchestrated with HP=20 1-hit-KOs), and the lying-hint scenario (engine state stays consistent under deliberately-wrong `CPUContext`).
-- [x] `test/mocks/MockBatchedCPU.sol`: deterministic scripted-move CPU so tests don't depend on real CPU heuristic decisions.
-- **Equivalence vs legacy single-turn** explicitly NOT byte-equivalent: legacy salt is `keccak(battleKey, msg.sender, timestamp)` while batched is `keccak(timestamp, aliceSalt, turnId)` (per §7.4 turnId in the hash defends against in-block collisions). RNG differs → engine RNG output differs → damage rolls differ. Lockstep equivalence would require either matching salt formulas (breaks the production legacy ABI) or eliminating all RNG-sensitive ops from the test moves. Behavioural equivalence (battle completes, state is consistent, counters track correctly) is what's verified.
-- [ ] `test/BetterCPUBatchGasTest.sol`: mirror inline tests; snapshot B=1/4/8. Not blocking — the gas savings model is identical to PvP batched (same buffer layout, same `executeBatchedTurns`), and `BatchGasTest` already covers the engine-side amortization.
-
-**Coexistence note:** legacy `selectMove` and batched `selectMoveWithStateHint` both live on `CPUMoveManager` and write to disjoint state (legacy hits the engine directly; batched writes to `moveBuffer`). Battles can alternate between them turn-by-turn — first batched submission syncs `numExecuted` to engine's current `turnId` so the transition is seamless (verified by `test_batched_modeAlternation_legacyThenBatched`).
-
-**Caveat on real-CPU calculateMove in batched mode:** all 3 production CPU implementations (`OkayCPU`, `FairCPU`, `BetterCPU`) make multiple `ENGINE.X` calls inside `calculateMove` (e.g. `getMoveDecisionForBattleState`, `getMonStateForBattle`, `getDamageCalcContext`). In batched mode those reads return STALE state (engine hasn't advanced past prior buffered turns yet), so the CPU may make objectively-worse decisions. This is the spec'd trade-off — per §7.1, "Lying never benefits Alice — it makes the CPU's chosen move suboptimal against her." If future profiling shows the CPU quality drop matters for UX, the fix is to migrate each CPU to use only `ctx` + parameters (no engine calls); the CPUContext already carries enough info for most decisions.
+- [ ] `selectMoveWithStateHint(bytes32, uint8, uint16, uint104, CPUContext calldata)` on `CPUMoveManager.sol` (§7.4).
+- [ ] CPU salt derivation + `CPUTurnSalt(battleKey, turnId, timestamp)` event.
+- [ ] Pack `(aliceMove, computedCpuMove)` into `PackedTurnEntry` and SSTORE to `moveBuffer`.
+- [ ] `test/CPUBatchEquivalenceTest.sol`: 24-turn legacy vs `selectMoveWithStateHint × 24 + executeBatch × 3` byte-equality.
+- [ ] Lying-hint test confirms §7.1 trust model.
+- [ ] `test/BetterCPUBatchGasTest.sol`: mirror inline tests; snapshot B=1/4/8.
 
 ### Phase 3 / 4 — deferred
 
