@@ -692,7 +692,10 @@ contract Engine is IEngine, MappingAllocator {
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
-            // Happens immediately after both mons are sent in, before any other effects
+            // Happens immediately after both mons are sent in, before any other effects.
+            // Safe to cache the packed slot across both activations: no IAbility implementation
+            // calls switchActiveMon in activateOnSwitch (the only switching effect, HardReset,
+            // is an IMoveSet, not an IAbility, and runs via _handleMove rather than here).
             if (turnId == 0) {
                 uint16 packedActiveMonIndexT0 = _getActiveMonIndex(battleKeyForWrite);
                 uint256 priorityMonIndex = _unpackActiveMonIndex(packedActiveMonIndexT0, priorityPlayerIndex);
@@ -1894,7 +1897,11 @@ contract Engine is IEngine, MappingAllocator {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
 
         // Get active mon indices for both players (passed to all effect hooks).
-        // Read the packed slot once; unpack thrice (pure).
+        // Read the packed slot once; unpack thrice (pure). The passed-in values are a per-call
+        // snapshot — an effect whose hook calls switchActiveMon (e.g. HardReset) invalidates
+        // them for subsequent iterations in this same loop, matching the legacy contract.
+        // Effects MUST NOT rely on these args staying fresh across iterations; if an effect
+        // needs the live index after a switch, it should re-read via getActiveMonIndex.
         uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
@@ -2198,14 +2205,15 @@ contract Engine is IEngine, MappingAllocator {
             }
         }
 
-        // Active mon indices can only change via switchActiveMon, which is reachable only from
-        // IMoveSet.move() — effect / ability lifecycle hooks never switch — so a single packed
-        // read covers both per-mon branches below.
-        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKeyForWrite);
-
         // --- Priority player's per-mon effects (SkipIfGameOverOrMonKO) ---
+        // Re-read active-mon index per branch. Defensive vs future regressions: only HardReset
+        // currently calls switchActiveMon from a lifecycle hook, and only on AfterMove, so the
+        // triple (RoundStart / RoundEnd only) is safe today — but a future effect bitmapped to
+        // RoundStart / RoundEnd that calls switchActiveMon would silently break a cached value
+        // carried across branches. Fresh per-branch reads cost ~1 TLOAD vs. ~7k debug time.
         if (_getWinnerIndex(battleKeyForWrite) == 2) {
-            uint256 priorityMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, priorityPlayerIndex);
+            uint256 priorityMonIndex =
+                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), priorityPlayerIndex);
             if (!_loadMonState(config, priorityPlayerIndex, priorityMonIndex).isKnockedOut) {
                 uint256 priorityCount = (priorityPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, priorityMonIndex)
@@ -2222,7 +2230,8 @@ contract Engine is IEngine, MappingAllocator {
 
         // --- Other player's per-mon effects (SkipIfGameOverOrMonKO) ---
         if (_getWinnerIndex(battleKeyForWrite) == 2) {
-            uint256 otherMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, otherPlayerIndex);
+            uint256 otherMonIndex =
+                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), otherPlayerIndex);
             if (!_loadMonState(config, otherPlayerIndex, otherMonIndex).isKnockedOut) {
                 uint256 otherCount = (otherPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, otherMonIndex)
