@@ -632,3 +632,21 @@ Decisions made while executing the todo above. Each entry: short context + the c
 
 - **Audit pass exhausted for `_readBattleSlot1Packed`.** Remaining call sites are either single-call-per-function-frame (no in-frame coalesce target) or cross-effect-call boundaries where re-reading is required for correctness (e.g. `_handleEffectsTriple` per-branch `_getWinnerIndex` — effects can KO mons and change the winner mid-call; `_executeInternal` line 590 — engineHooks can mutate slot 1).
 
+### Phase 1 (post-H sweep #2: cache `battleKeyForWrite` per frame)
+
+- **TLOAD-coalescing for `battleKeyForWrite`.** Every `_getActiveMonIndex(battleKeyForWrite)`, `_getWinnerIndex(battleKeyForWrite)`, and similar BD-slot-1 helper invocation re-TLOADs the transient `battleKeyForWrite` field (~100 gas) before doing its own slot read. Across the hot path that adds up. `battleKeyForWrite` is set exactly once per external entry and never re-written by internal code (only the external entry points mutate it, and we're past entry), so caching as a local at function top is safe. Where the function already has `battleKey` as a parameter (set to `battleKeyForWrite` at the entry site), substituted directly without an extra local.
+
+  Coalesced sites:
+  - `_executeInternal` (4 redundant battleKeyForWrite reads → use the `battleKey` function param).
+  - `_handleMove` (3 reads in different code paths → 1 local `bkw`).
+  - `_dealDamageInternal` (3 reads across game-over check, PreDamage dispatch, AfterDamage dispatch → 1 local `bkw`).
+  - `_checkForGameOverOrKO` (2 reads → 1 local `bkw`).
+  - `_handleEffectsTriple` (5 reads across global + priority + other branches → 1 local `bkw`).
+  - `_handleEffects` (2 reads → 1 local `bkw`).
+  - `_runEffects` (1 read → use `battleKey` param).
+  - `_handleSwitch`, `_addEffectInternal`, `_removeEffectAtSlot`, `dispatchStandardAttack`, `switchActiveMon`, `_computePriorityPlayerIndex` (1 redundant read each after their existing battleKey cache).
+
+  Realistic 14-turn steady-state incremental: batched -25,624 (-1.6%), legacy -25,624 (-1.5%). All 533 tests pass including the 4 HardReset tests.
+
+  **Cumulative vs original baseline (pre-H, pre-batched-decoupling-sweep):** batched 1,762,241 → 1,590,098 = **-172,143 gas (-9.8%)**; legacy 1,867,567 → 1,712,843 = **-154,724 gas (-8.3%)**.
+
