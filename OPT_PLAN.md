@@ -650,3 +650,18 @@ Decisions made while executing the todo above. Each entry: short context + the c
 
   **Cumulative vs original baseline (pre-H, pre-batched-decoupling-sweep):** batched 1,762,241 → 1,590,098 = **-172,143 gas (-9.8%)**; legacy 1,867,567 → 1,712,843 = **-154,724 gas (-8.3%)**.
 
+### Explored and reverted: tiered `EffectInstance.data` storage
+
+`EffectInstance` lays out as `address effect (160b) | uint16 stepsBitmap (16b) | 80 unused bits` in slot 0, plus `bytes32 data` in slot 1. The "tiered" idea: when `uint256(data) <= 2^79 - 1`, encode data inline in slot 0's free bits (with a 1-bit `isInline` flag at bit 255) and skip the slot 1 SSTORE/SLOAD entirely. StatBoosts (always 256 bits because of its 168-bit identity key) takes the external slot 1 path; everything else fits inline.
+
+Implementation prototype (commits `0bfea95` + `6ba4a9a`) used inline assembly for the hot dispatch read in `_runEffects` (Yul `switch` gating the slot 1 SLOAD) and helper functions for writes. Realistic 14-turn steady-state delivered:
+
+- Storage access tally improvement: SLOADs 972 → 859 (-113, of which -8 cold + -105 warm), SSTOREs 51 → 42 (-9, mostly no-op eliminations). +5 cold SSTOREs offset by -8 cold SLOADs — the cold penalty just moved from SLOAD to SSTORE (same 2100g cost).
+- **Theoretical storage savings: ~17.7k.** Measured total savings: ~3.5k.
+- **Implied runtime compute overhead: ~14k**, despite Engine bytecode actually *shrinking* by 174 bytes. Sources: branch + bit-extract in dispatch (~3k), function-call frames in write helpers (~1.5k), casts/wraps that pre-tiered struct field access optimized away (~1-3k), unattributed IR-optimizer global re-balancing (~5-9k).
+- Bucket inspection of the realistic profile showed **zero real writes to effect slots during execute** (all SSTOREs were no-ops via MappingAllocator slot reuse since battle 2 reruns battle 1's plan), and **~50% of dispatched effects were StatBoosts** (external path, no inline benefit). The write-side savings — the largest theoretical win of tiered storage — was completely unmeasured.
+
+Reverted because the ~3k/game execute-side benefit didn't justify ~150 LOC of assembly + helpers, especially when most of the production-realistic profile (StatBoosts-heavy) doesn't benefit. The cleaner caching/coalescing wins from the previous phases are the right shape for this codebase: they remove redundant TLOADs at zero compute cost. Tiered storage trades storage cost for compute, and on this profile compute already dominates.
+
+Don't redo this without first changing the profile (status-DOT-heavy games, or shrinking StatBoosts' identity key to fit in 79 bits) or finding a way to dispatch without the per-effect branch (only feasible if all effects' data fits inline).
+
