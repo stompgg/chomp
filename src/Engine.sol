@@ -1950,17 +1950,26 @@ contract Engine is IEngine, MappingAllocator {
                 eff = config.p1Effects[slotIndex];
             }
 
-            // Single SLOAD of slot 0: address + bitmap + (maybe) inline data.
-            // Fall back to slot 1 only when the inline flag is unset.
-            // Inlined assembly + branch to avoid function-call overhead inside this hot loop.
+            // Single SLOAD of slot 0; skip tombstones before resolving data. Yul `switch` keeps
+            // the slot 1 SLOAD gated on the inline flag (vs branchless bit-select, measured
+            // ~15k worse on the realistic 14-turn steady state — the unconditional slot 1 SLOAD
+            // outweighs the JUMPI cost). Constants must be literals in inline assembly:
+            // 1 << 255 = inline flag, 176 = data shift, (1 << 79) - 1 = inline data mask.
             uint256 effSlot0;
             assembly { effSlot0 := sload(eff.slot) }
             address effAddr = address(uint160(effSlot0));
             // Skip tombstoned effects
             if (effAddr != TOMBSTONE_ADDRESS) {
-                bytes32 effData = (effSlot0 & EFFECT_INLINE_FLAG_BIT != 0)
-                    ? bytes32((effSlot0 >> EFFECT_INLINE_DATA_SHIFT) & EFFECT_INLINE_DATA_MASK)
-                    : eff.data;
+                bytes32 effData;
+                assembly {
+                    switch and(effSlot0, 0x8000000000000000000000000000000000000000000000000000000000000000)
+                    case 0 {
+                        effData := sload(add(eff.slot, 1))
+                    }
+                    default {
+                        effData := and(shr(176, effSlot0), 0x7fffffffffffffffffff)
+                    }
+                }
                 _runSingleEffect(
                     config,
                     rng,
