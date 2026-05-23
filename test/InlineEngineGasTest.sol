@@ -686,7 +686,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
             battleKey,
             committerMoveIndex, committerSalt, committerExtraData,
             revealerMoveIndex, revealerSalt, revealerExtraData,
-            committerSig, revealerSig
+            revealerSig
         );
         engine.resetCallContext();
     }

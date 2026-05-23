@@ -165,7 +165,6 @@ contract StandardAttackPvPGasTest is SignedCommitHelper {
             revealerMoveIndex,
             revealerSalt,
             revealerExtraData,
-            committerSig,
             revealerSig
         );
         engine.resetCallContext();

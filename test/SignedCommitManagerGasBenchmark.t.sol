@@ -76,7 +76,6 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             SWITCH_MOVE_INDEX,
             p1Salt,
             0,
-            p0CommitSig,
             p1Signature
         );
         gasUsed_dualSignedFlow_cold = gasBefore - gasleft();
@@ -143,7 +142,6 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             NO_OP_MOVE_INDEX,
             p1Salt,
             0,
-            p0CommitSig,
             p1Signature
         );
         gasUsed_dualSignedFlow_warm = gasBefore - gasleft();
@@ -201,7 +199,6 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
                 SWITCH_MOVE_INDEX,
                 p1Salt,
                 0,
-                p0CommitSig,
                 p1Signature
             );
             gasUsed_dualSignedFlow_cold = gasBefore - gasleft();
@@ -255,7 +252,6 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
                 NO_OP_MOVE_INDEX,
                 p1Salt,
                 0,
-                p0CommitSig,
                 p1Signature
             );
             gasUsed_dualSignedFlow_warm = gasBefore - gasleft();
