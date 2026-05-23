@@ -718,39 +718,12 @@ contract Engine is IEngine, MappingAllocator {
             uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
             _accGas(_T_GAS_R2_PRIORITY_RNG, _gR2 - gasleft());
 
-            // Run beginning of round effects
+            // Run beginning of round effects (fused: global + priority + other in one frame)
             uint256 _gR3 = gasleft();
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                2,
+            playerSwitchForTurnFlag = _handleEffectsTriple(
+                battleKey, config, battle, rng,
+                priorityPlayerIndex, otherPlayerIndex,
                 EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                priorityPlayerIndex,
-                priorityPlayerIndex,
-                EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                otherPlayerIndex,
-                otherPlayerIndex,
-                EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
                 playerSwitchForTurnFlag
             );
             _accGas(_T_GAS_R3_ROUND_START, _gR3 - gasleft());
@@ -865,43 +838,13 @@ contract Engine is IEngine, MappingAllocator {
             }
             _accGas(_T_GAS_R7_OTHER_AFTERMOVE, _gR7 - gasleft());
 
-            // Always run global effects at the end of the round
+            // Always run global effects at the end of the round, then the priority and other
+            // players' per-mon roundEnd effects (fused: global + priority + other in one frame).
             uint256 _gR8 = gasleft();
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                2,
+            playerSwitchForTurnFlag = _handleEffectsTriple(
+                battleKey, config, battle, rng,
+                priorityPlayerIndex, otherPlayerIndex,
                 EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
-
-            // If priority mon is not KOed, run roundEnd effects for the priority mon
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                priorityPlayerIndex,
-                priorityPlayerIndex,
-                EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
-
-            // If non priority mon is not KOed, run roundEnd effects for the non priority mon
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                otherPlayerIndex,
-                otherPlayerIndex,
-                EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
                 playerSwitchForTurnFlag
             );
 
@@ -2318,6 +2261,73 @@ contract Engine is IEngine, MappingAllocator {
             (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
         }
         return playerSwitchForTurnFlag;
+    }
+
+    /// @dev Fused triple-target equivalent of three back-to-back `_handleEffects` calls for a
+    /// single lifecycle `round` (used at RoundStart and RoundEnd). Runs:
+    ///   - Global effects (effectIndex = 2)               — gated by SkipIfGameOver
+    ///   - Priority player's per-mon effects               — gated by SkipIfGameOverOrMonKO
+    ///   - Other player's per-mon effects                  — gated by SkipIfGameOverOrMonKO
+    /// Semantics MUST match three sequential `_handleEffects` calls in order, with the same
+    /// inter-call game-over / KO checks. The win here is purely compiler-level: fewer internal
+    /// function-call frames for the IR optimizer to chew through.
+    function _handleEffectsTriple(
+        bytes32 battleKey,
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rng,
+        uint256 priorityPlayerIndex,
+        uint256 otherPlayerIndex,
+        EffectStep round,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+
+        // --- Global effects (SkipIfGameOver) ---
+        if (_getWinnerIndex(battleKeyForWrite) != 2) return playerSwitchForTurnFlag;
+        if (config.globalEffectsLength > 0) {
+            _runEffects(battleKey, rng, 2, 2, round, "");
+            if (koOccurredFlag != 0) {
+                koOccurredFlag = 0;
+                (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, 2);
+            }
+        }
+
+        // --- Priority player's per-mon effects (SkipIfGameOverOrMonKO) ---
+        if (_getWinnerIndex(battleKeyForWrite) == 2) {
+            uint256 priorityMonIndex =
+                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), priorityPlayerIndex);
+            if (!_loadMonState(config, priorityPlayerIndex, priorityMonIndex).isKnockedOut) {
+                uint256 priorityCount = (priorityPlayerIndex == 0)
+                    ? _getMonEffectCount(config.packedP0EffectsCount, priorityMonIndex)
+                    : _getMonEffectCount(config.packedP1EffectsCount, priorityMonIndex);
+                if (priorityCount > 0) {
+                    _runEffects(battleKey, rng, priorityPlayerIndex, priorityPlayerIndex, round, "");
+                    if (koOccurredFlag != 0) {
+                        koOccurredFlag = 0;
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, priorityPlayerIndex);
+                    }
+                }
+            }
+        }
+
+        // --- Other player's per-mon effects (SkipIfGameOverOrMonKO) ---
+        if (_getWinnerIndex(battleKeyForWrite) == 2) {
+            uint256 otherMonIndex =
+                _unpackActiveMonIndex(_getActiveMonIndex(battleKeyForWrite), otherPlayerIndex);
+            if (!_loadMonState(config, otherPlayerIndex, otherMonIndex).isKnockedOut) {
+                uint256 otherCount = (otherPlayerIndex == 0)
+                    ? _getMonEffectCount(config.packedP0EffectsCount, otherMonIndex)
+                    : _getMonEffectCount(config.packedP1EffectsCount, otherMonIndex);
+                if (otherCount > 0) {
+                    _runEffects(battleKey, rng, otherPlayerIndex, otherPlayerIndex, round, "");
+                    if (koOccurredFlag != 0) {
+                        koOccurredFlag = 0;
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, otherPlayerIndex);
+                    }
+                }
+            }
+        }
     }
 
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
