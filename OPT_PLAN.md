@@ -715,6 +715,39 @@ Decisions made while executing the todo above. Each entry: short context + the c
 
   **Cumulative vs original baseline (pre-H, pre-batched-decoupling-sweep):** batched 1,762,241 → 1,590,098 = **-172,143 gas (-9.8%)**; legacy 1,867,567 → 1,712,843 = **-154,724 gas (-8.3%)**.
 
+### Phase 1 (post-H sweep #3: pack per-turn move/salt transients into one slot)
+
+Four separate transient slots (`_turnP0MoveEncoded`, `_turnP1MoveEncoded`, `_turnP0Salt`, `_turnP1Salt`) each took their own TSTORE on write and TLOAD on read. They're always set/cleared together so they can share one packed `uint256 _turnTransient` slot:
+
+```
+[0..7]    p0 packedMoveIndex (storedMoveIndex | IS_REAL_TURN_BIT)
+[8..23]   p0 extraData
+[24..127] p0 salt
+[128..135] p1 packedMoveIndex
+[136..151] p1 extraData
+[152..255] p1 salt
+```
+
+Exactly 256 bits. Per-side `IS_REAL_TURN_BIT` preserved so `_getCurrentTurnMove` / `_getCurrentTurnSalt` can still detect "this side's transient is populated" and fall back to storage when not — DefaultCommitManager's `execute(battleKey)` flow keeps working unchanged.
+
+Per-call effect:
+- `executeWithMoves`, `executeWithSingleMove`, `executeBatchedTurns` per iter: 4 TSTOREs → 1 TSTORE. -300g/call.
+- `executeBatchedTurns` inter-iter reset: 4 → 1 TSTORE. -300g/iter.
+- `setMove` mid-execute (Sleep override): now TLOAD + RMW + TSTORE instead of plain TSTORE. +200g per sleep-tick. Rare; net positive.
+- The IR optimizer now inlines and packs the read paths tighter, yielding additional bytecode-level wins on top.
+
+**Measured (realistic 14-turn steady-state + B=14 CPU batched):**
+
+| | Pre-pack | Post-pack | Δ |
+|---|---|---|---|
+| PvP batched execute | 1,590,098 | 1,565,215 | **-24,883 (-1.6%)** |
+| PvP legacy single-tx | 1,712,843 | 1,687,503 | **-25,340 (-1.5%)** |
+| CPU batched (B=14, BatchedCPUMoveManager vs OkayCPU) | 2,030,352 batched / 2,637,557 legacy | 1,997,760 batched / 2,608,227 legacy | **-32,592 batched / -29,330 legacy** |
+
+Snapshot suites improved across the board: `Inline_Execute` -4,573, `FirstBattle/ThirdBattle` -17,275, `SecondBattle` -18,561, `StandardAttackPvP` -2,124 per turn, `BetterCPU` various -500g to -2k per scenario. **No regressions.**
+
+**Cumulative vs original baseline:** batched 1,762,241 → 1,565,215 = **-197,026 gas (-11.2%)**; legacy 1,867,567 → 1,687,503 = **-180,064 gas (-9.6%)**.
+
 ### Explored and reverted: tiered `EffectInstance.data` storage
 
 `EffectInstance` lays out as `address effect (160b) | uint16 stepsBitmap (16b) | 80 unused bits` in slot 0, plus `bytes32 data` in slot 1. The "tiered" idea: when `uint256(data) <= 2^79 - 1`, encode data inline in slot 0's free bits (with a 1-bit `isInline` flag at bit 255) and skip the slot 1 SSTORE/SLOAD entirely. StatBoosts (always 256 bits because of its 168-bit identity key) takes the external slot 1 path; everything else fits inline.
