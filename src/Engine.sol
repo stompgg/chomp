@@ -1673,7 +1673,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (address(config.validator) == address(0)) {
             // Use inline validation (no external call) — use cached battleKey local
             uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKey), playerIndex);
-            bool isTargetKnockedOut = _loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex);
             isValid = ValidatorLogic.validateSwitch(
                 _getTurnId(battleKey), activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -1852,7 +1852,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
-        if (!_loadMonState(config, playerIndex, currentActiveMonIndex).isKnockedOut) {
+        if (!_isMonKnockedOut(config, playerIndex, currentActiveMonIndex)) {
             _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
 
             // Then run the global on mon switch out hook as well
@@ -1872,7 +1872,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
-        if (_getTurnId(battleKey) != 0 && !_loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+        if (_getTurnId(battleKey) != 0 && !_isMonKnockedOut(config, playerIndex, monToSwitchIndex)) {
             _activateAbility(
                 config,
                 battleKey,
@@ -1938,7 +1938,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (monToSwitchIndex >= teamSize) {
                 return playerSwitchForTurnFlag;
             }
-            if (_loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
+            if (_isMonKnockedOut(config, playerIndex, monToSwitchIndex)) {
                 return playerSwitchForTurnFlag;
             }
             // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
@@ -2302,7 +2302,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check if mon is KOed (reuse monIndex we already computed)
             if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
-                if (_loadMonState(config, playerIndex, monIndex).isKnockedOut) {
+                if (_isMonKnockedOut(config, playerIndex, monIndex)) {
                     return playerSwitchForTurnFlag;
                 }
             }
@@ -2366,7 +2366,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // carried across branches. Fresh per-branch reads cost ~1 TLOAD vs. ~7k debug time.
         if (_getWinnerIndex(bkw) == 2) {
             uint256 priorityMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), priorityPlayerIndex);
-            if (!_loadMonState(config, priorityPlayerIndex, priorityMonIndex).isKnockedOut) {
+            if (!_isMonKnockedOut(config, priorityPlayerIndex, priorityMonIndex)) {
                 uint256 priorityCount = (priorityPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, priorityMonIndex)
                     : _getMonEffectCount(config.packedP1EffectsCount, priorityMonIndex);
@@ -2383,7 +2383,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // --- Other player's per-mon effects (SkipIfGameOverOrMonKO) ---
         if (_getWinnerIndex(bkw) == 2) {
             uint256 otherMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), otherPlayerIndex);
-            if (!_loadMonState(config, otherPlayerIndex, otherMonIndex).isKnockedOut) {
+            if (!_isMonKnockedOut(config, otherPlayerIndex, otherMonIndex)) {
                 uint256 otherCount = (otherPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, otherMonIndex)
                     : _getMonEffectCount(config.packedP1EffectsCount, otherMonIndex);
@@ -2438,17 +2438,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else if (p0Priority < p1Priority) {
             return 1;
         }
-        // Calculate speeds by combining base stats with deltas
-        // Note: speedDelta may be sentinel value (CLEARED_MON_STATE_SENTINEL) which should be treated as 0
-        int32 p0SpeedDelta = _loadMonState(config, 0, p0ActiveMonIndex).speedDelta;
-        int32 p1SpeedDelta = _loadMonState(config, 1, p1ActiveMonIndex).speedDelta;
+        // _readMonStateDelta sanitizes sentinel → 0 internally, so the +delta math is direct.
         uint32 p0MonSpeed = uint32(
             int32(_getTeamMon(config, 0, p0ActiveMonIndex).stats.speed)
-                + (p0SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0SpeedDelta)
+                + _readMonStateDelta(config, 0, p0ActiveMonIndex, MonStateIndexName.Speed)
         );
         uint32 p1MonSpeed = uint32(
             int32(_getTeamMon(config, 1, p1ActiveMonIndex).stats.speed)
-                + (p1SpeedDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1SpeedDelta)
+                + _readMonStateDelta(config, 1, p1ActiveMonIndex, MonStateIndexName.Speed)
         );
         if (p0MonSpeed > p1MonSpeed) {
             return 0;
@@ -3198,7 +3195,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Switch validation
         if (isSwitch) {
             uint256 monToSwitchIndex = uint256(extraData);
-            bool isTargetKnockedOut = _loadMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex);
             return ValidatorLogic.validateSwitch(
                 data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -3309,39 +3306,43 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
     }
 
+    /// @dev Reads the requested field directly off the packed slot — skips the full 9-field
+    ///      unpack that `_loadMonState` does. Saves ~220g per single-field read on the legacy
+    ///      path (which dominates `EngineGasTest`/PvP scenarios); same shadow routing as
+    ///      `_loadMonState` since both go through `_readMonStatePacked`.
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) private view returns (int32) {
-        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
-        int32 value;
-
-        if (stateVarIndex == MonStateIndexName.Hp) {
-            value = monState.hpDelta;
-        } else if (stateVarIndex == MonStateIndexName.Stamina) {
-            value = monState.staminaDelta;
-        } else if (stateVarIndex == MonStateIndexName.Speed) {
-            value = monState.speedDelta;
-        } else if (stateVarIndex == MonStateIndexName.Attack) {
-            value = monState.attackDelta;
-        } else if (stateVarIndex == MonStateIndexName.Defense) {
-            value = monState.defenceDelta;
-        } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
-            value = monState.specialAttackDelta;
-        } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
-            value = monState.specialDefenceDelta;
-        } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
-            return monState.isKnockedOut ? int32(1) : int32(0);
-        } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
-            return monState.shouldSkipTurn ? int32(1) : int32(0);
-        } else {
-            return int32(0);
+        uint256 packed = _readMonStatePacked(config, playerIndex, monIndex);
+        if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
+            return (uint8(packed >> 224) & 1) != 0 ? int32(1) : int32(0);
         }
+        if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
+            return (uint8(packed >> 232) & 1) != 0 ? int32(1) : int32(0);
+        }
+        int32 value;
+        if (stateVarIndex == MonStateIndexName.Hp) value = int32(uint32(packed));
+        else if (stateVarIndex == MonStateIndexName.Stamina) value = int32(uint32(packed >> 32));
+        else if (stateVarIndex == MonStateIndexName.Speed) value = int32(uint32(packed >> 64));
+        else if (stateVarIndex == MonStateIndexName.Attack) value = int32(uint32(packed >> 96));
+        else if (stateVarIndex == MonStateIndexName.Defense) value = int32(uint32(packed >> 128));
+        else if (stateVarIndex == MonStateIndexName.SpecialAttack) value = int32(uint32(packed >> 160));
+        else if (stateVarIndex == MonStateIndexName.SpecialDefense) value = int32(uint32(packed >> 192));
+        else return int32(0);
+        return value == CLEARED_MON_STATE_SENTINEL ? int32(0) : value;
+    }
 
-        // Return 0 if sentinel value is encountered
-        return (value == CLEARED_MON_STATE_SENTINEL) ? int32(0) : value;
+    /// @notice Hot-path single-bit check that skips the full MonState unpack. The 8 in-engine
+    ///         KO-guard sites use this; saves the ~220g per call vs `_loadMonState(...).isKnockedOut`.
+    function _isMonKnockedOut(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
+        internal
+        view
+        returns (bool)
+    {
+        return (uint8(_readMonStatePacked(cfg, playerIndex, monIndex) >> 224) & 1) != 0;
     }
 
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256) {
