@@ -105,13 +105,11 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
             if (msg.sender != ctxP0) revert NotP0();
             if (ctxWinnerIndex != 2) revert BattleAlreadyComplete();
             storageKeyOf[battleKey] = storageKey;
-            packed = bufferState[storageKey];
-            // First-of-batch sync: mirror engine's `turnId` into `numExecuted`. Only happens on
-            // cache miss (first submit) so we lazily pick up the engine's current state.
-            if ((packed >> NUM_BUFFERED_SHIFT) & NUM_BUFFERED_MASK == 0) {
-                // Reset counters carrying the new p0 + clear stale gameOver.
-                packed = uint256(ctxTurnId) | (uint256(uint160(ctxP0)) << P0_SHIFT);
-            }
+            // Skip the bufferState SLOAD: cache miss implies first submit of this battle, so we
+            // always reset `packed` to (ctxTurnId, ctxP0). Any prior battle's leftover state
+            // (gameOver flag, old numExecuted) at this storageKey is intentionally overwritten —
+            // the new battle's first submit owns the slot.
+            packed = uint256(ctxTurnId) | (uint256(uint160(ctxP0)) << P0_SHIFT);
         }
 
         uint64 numExecuted = uint64(packed & NUM_EXECUTED_MASK);
@@ -166,7 +164,9 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
         emit TurnsExecuted(battleKey, numExecuted, executedThisBatch, winner);
 
         if (winner != address(0)) {
-            _afterBattle(battleKey, ENGINE.getPlayersForBattle(battleKey)[0], winner);
+            // Use cached p0 (high 160 bits of `packed`) instead of an extra STATICCALL into
+            // `engine.getPlayersForBattle` — saves ~3k on game-end transitions.
+            _afterBattle(battleKey, address(uint160(packed >> P0_SHIFT)), winner);
         }
     }
 
