@@ -292,7 +292,7 @@ struct BattleContext {
     address moveManager;
 }
 
-// Lightweight context for commit manager (fewer SLOADs than BattleContext)
+// Lightweight context for commit manager (fewer encoded fields than BattleContext)
 struct CommitContext {
     uint48 startTimestamp;
     address p0;

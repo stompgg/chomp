@@ -3225,10 +3225,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
     }
 
-    function getBattleValidator(bytes32 battleKey) external view returns (IValidator) {
-        return battleConfig[_resolveStorageKey(battleKey)].validator;
-    }
-
     /// @notice Validates a player move, handling both inline validation (when validator is address(0)) and external validators
     /// @dev This allows callers like CPU to validate moves without needing to handle the address(0) case themselves
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
@@ -3481,10 +3477,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
         return battleData[battleKey].prevPlayerSwitchForTurnFlag;
-    }
-
-    function getMoveManager(bytes32 battleKey) external view returns (address) {
-        return battleConfig[_resolveStorageKey(battleKey)].moveManager;
     }
 
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory ctx) {
