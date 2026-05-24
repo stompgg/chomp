@@ -320,55 +320,96 @@ Submission validates only cheap invariants (battle exists, not over at last flus
 
 ---
 
-## 7. CPU mode (trusted-state batched)
+## 7. CPU mode (off-chain decisions, batched submit)
 
-Same per-turn buffer + `executeBatch` as PvP. CPU manager packs `(Alice move, computed CPU move)` into the same `PackedTurnEntry` layout. **Zero engine changes.**
+Same per-turn buffer + `executeBatchedTurns` as PvP. The "CPU" is a phantom opponent address;
+all decision logic lives off-chain. The player runs the transpiled engine locally to pick the
+CPU's response, then submits both moves on-chain. No on-chain `calculateMove`, no `CPUContext`
+calldata hint, no per-submit event. The per-submit cost drops to roughly `getSubmitContext +
+2 × SSTORE`.
 
-### 7.1 Trusted state hint
+### 7.1 Trust model
 
-Alice supplies the projected post-prior-turn `CPUContext` in calldata. Not verified. Lying never benefits Alice — it makes the CPU's chosen move suboptimal against her, which she absorbs. This replaces the dozen-plus cold SLOADs `engine.getCPUContext(battleKey)` does today with a single calldata struct.
+There's no counterparty to cheat. The player can submit any CPU move she wants — misrepresenting
+the CPU's "ideal" response just produces a worse experience for the player herself. Since the
+CPU has no stake, no balance, no opinion, there's nothing to defend against. This eliminates
+the entire on-chain CPU compute path that legacy `CPUMoveManager.selectMove` pays for per turn.
 
 ### 7.2 No signature
 
-Alice calls directly from her wallet. Manager checks `msg.sender == alice` (same as today's `CPUMoveManager.selectMove`). The tx is the proof — no relay path needed for a single-human flow.
+Player calls directly from her wallet. Manager checks `msg.sender == p0`. The tx is the proof
+— no relay path needed for a single-human flow.
 
 ### 7.3 Off-chain protocol
 
-Each turn, locally on Alice's client:
-1. Hold current `CPUContext`-shaped state. Turn 0 = post-`startBattle` state; later turns = output of last local sim.
-2. Pick Alice's move.
-3. Run the transpiled engine locally to produce the post-turn state, used as next turn's hint.
-4. Submit on-chain with the **current-turn** hint.
+Each turn, locally on the player's client:
+1. Hold current engine state (post-prior-turn snapshot from local sim).
+2. Pick the player's move.
+3. Run her chosen CPU strategy off-chain to pick the CPU's response.
+4. Submit both moves on-chain via `submitTurn`.
+5. Locally simulate the turn outcome via the transpiled engine for next-turn state.
+
+When ready (game-over, user pauses, gas-saving checkpoint), call `executeBuffered` to drain
+the buffer in one tx.
 
 ### 7.4 Submission
 
 ```solidity
-function selectMoveWithStateHint(
+function submitTurn(
     bytes32 battleKey,
-    uint8   aliceMoveIndex,
-    uint16  aliceExtraData,
-    uint104 aliceSalt,
-    CPUContext calldata projectedState
+    uint8   playerMove,
+    uint16  playerExtra,
+    uint104 playerSalt,
+    uint8   cpuMove,
+    uint16  cpuExtra,
+    uint104 cpuSalt
 ) external;
 ```
 
-1. Read/sync the next append `turnId` from `numTurnsExecuted + numTurnsBuffered` using the same buffer counter rules as PvP.
-2. Require `msg.sender == alice`.
-3. Route on `projectedState.playerSwitchForTurnFlag` (single-player vs two-player CPU branch).
-4. `ICPU(cpuAddr).calculateMove(projectedState, aliceMoveIndex, aliceExtraData)` → `(cpuMove, cpuExtra)`. CPU reads from calldata only.
-5. Derive CPU salt: `uint104(uint256(keccak256(abi.encode(block.timestamp, aliceSalt, turnId))))`. Emit `CPUTurnSalt(battleKey, turnId, timestamp)` so off-chain replay can reconstruct it. `turnId` in the hash prevents collision when Alice submits multiple CPU turns in the same block.
-6. Pack into `PackedTurnEntry` and SSTORE into `moveBuffer[storageKey][turnId]`.
+1. `ENGINE.getSubmitContext(battleKey)` → `(p0, _, turnId, winnerIndex, storageKey)`.
+2. Require `msg.sender == p0`.
+3. Require `winnerIndex == 2`.
+4. First-of-batch sync: if `numBuffered == 0`, mirror engine `turnId` into `numExecuted`.
+5. `nextTurnId = numExecuted + numBuffered`.
+6. Pack both halves into a single 256-bit slot (same layout as `SignedCommitManager`).
+7. SSTORE `moveBuffer[storageKey][nextTurnId]`.
+8. Update `bufferCounters[storageKey]` (numBuffered++ + timestamp).
 
-`executeBatch` is shared with PvP — the engine doesn't know whether the buffer came from PvP or CPU submissions.
+`executeBuffered(battleKey)` drains the buffer via `engine.executeBatchedTurns`. The engine
+doesn't know whether the buffer came from PvP or CPU submissions — same layout, same dispatch.
 
 ### 7.5 Coexistence
 
 Battles select via the `moveManager` they're started with:
-- `signedCommitManager` (extended) → PvP batched
-- `cpuMoveManager` (extended) → CPU batched
-- Today's unmodified managers → legacy single-turn paths
+- `SignedCommitManager` → PvP batched.
+- `BatchedCPUMoveManager` (new) → off-chain CPU batched.
+- Legacy `CPUMoveManager` + `OkayCPU` / `FairCPU` / `BetterCPU` → on-chain CPU single-turn.
 
-Today's `CPUMoveManager.selectMove` stays callable for any battle that doesn't opt into batching.
+The legacy and batched CPU paths are **separate contracts** (no inheritance overlap). Battles
+choose one model at start time; mid-battle alternation is not supported between the two CPU
+contracts (the engine's `moveManager` field is set once at `startBattle`).
+
+### 7.6 Measured savings (B=14, 2-mon teams, no RNG-sensitive moves)
+
+| | Legacy (`OkayCPU`) | Off-chain batched |
+|---|---|---|
+| In-harness gas | 2,637,557 | **2,030,352** (-607k / -23.0%) |
+| Per-turn cost | ~188k | ~145k (~75k submit + ~70k execute share) |
+| Per-tx cold first-touches (production) | 279 (~20/tx) | 92 (~4/submit + 36 in execute) |
+| Production estimate | ~3.49M | ~2.53M (-960k / **~-28%**) |
+
+Production estimate adds back per-tx cold penalty (≈ cold first-touches × 2000g) + intrinsic
+tx cost (21k × N txs). Numbers from `test/BatchedCPUGasTest.sol`.
+
+The savings come from two sources:
+- **Eliminating on-chain `calculateMove`**: legacy `OkayCPU.selectMove` does ~10-15 `ENGINE.X`
+  STATICCALLs per turn (mon stats, mon states, damage calc context, move slots), each paying
+  cold penalty in production. Off-chain batched does zero — both moves arrive in calldata.
+- **Execute amortization**: per-turn engine work in `executeBuffered` runs warm after the
+  first sub-turn (no cold-SLOAD per turn).
+
+The per-submit overhead is ~22k (vs the prior hint-based design at ~43k), so even at small
+B the cold-tx saving outweighs the per-submit fixed cost.
 
 ---
 
@@ -534,16 +575,40 @@ The actual decoupling: per-turn buffer + `executeBuffered` looping `_executeInte
 - [x] `test/BatchEdgeTest.sol`: forced-switch dispatch (`flag != 2`), single-side switch, mid-batch game-over (`ex` advances by actually-executed, not buffered), mode alternation (legacy↔batched seamless).
 - [x] `test/BatchGasTest.sol`: comparison harness for B ∈ {2, 4, 8}. **Current numbers show batched is more expensive than legacy** — recorded in §12 Decision Log.
 
-### Phase 2.5 — CPU mode
+### Phase 2.5 — Off-chain CPU batched ✅ (shipped as `BatchedCPUMoveManager`)
 
-CPU manager rides the same buffer + `executeBatch`. No engine changes.
+Player supplies both her move AND the CPU's move per turn; on-chain decision logic deleted.
+See §7 (rewritten) for the trust model and protocol. Implementation lives in
+`src/cpu/BatchedCPUMoveManager.sol` — completely separate from legacy `src/cpu/CPUMoveManager.sol`
++ the existing `OkayCPU` / `FairCPU` / `BetterCPU` family. Existing CPU contracts and tests
+are unchanged.
 
-- [ ] `selectMoveWithStateHint(bytes32, uint8, uint16, uint104, CPUContext calldata)` on `CPUMoveManager.sol` (§7.4).
-- [ ] CPU salt derivation + `CPUTurnSalt(battleKey, turnId, timestamp)` event.
-- [ ] Pack `(aliceMove, computedCpuMove)` into `PackedTurnEntry` and SSTORE to `moveBuffer`.
-- [ ] `test/CPUBatchEquivalenceTest.sol`: 24-turn legacy vs `selectMoveWithStateHint × 24 + executeBatch × 3` byte-equality.
-- [ ] Lying-hint test confirms §7.1 trust model.
-- [ ] `test/BetterCPUBatchGasTest.sol`: mirror inline tests; snapshot B=1/4/8.
+- [x] `submitTurn(battleKey, playerMove/extra/salt, cpuMove/extra/salt)` on `BatchedCPUMoveManager`.
+      No `CPUContext` calldata, no `ICPU.calculateMove` dispatch, no per-submit event.
+      Per-submit cost ≈ `getSubmitContext + 2 × SSTORE` ≈ ~22k.
+- [x] `executeBuffered(battleKey)` drains the buffer via `engine.executeBatchedTurns` — same
+      shared layout as PvP's `SignedCommitManager.moveBuffer`.
+- [x] Single batch-end event `TurnsExecuted` + virtual `_afterBattle` hook for subclasses.
+- [x] `test/BatchedCPUTest.sol`: 6 functional tests (submit-execute, multi-batch counter
+      accounting, empty-buffer / non-p0 / post-game-over reverts, buffered-turn readback).
+- [x] `test/BatchedCPUGasTest.sol`: B ∈ {4, 8, 14} comparison vs `OkayCPU.selectMove × N`,
+      plus per-tx access tally for production cold-touch counts.
+- [x] `test/mocks/SimpleBatchedCPU.sol`: minimal concrete leaf (adds `startBattle`).
+
+**Equivalence vs legacy explicitly NOT verified** — different model (off-chain vs on-chain
+decision), different salts, different engine RNG. The two are alternative products, not
+mode-flips of one. The functional tests assert behavioural correctness (battle progresses,
+counters track, state ends consistently); §7.6 reports the gas delta.
+
+**Measured at B=14** (`test/BatchedCPUGasTest.sol`):
+- Legacy `OkayCPU`: 2,637,557 in-harness gas.
+- Off-chain batched: 2,030,352 in-harness gas (**-23.0% / -607k**).
+- Production cold delta: -187 cold first-touches (~-374k cold penalty).
+- Production estimate: legacy ~3.49M vs batched ~2.53M (**~-28% / -960k**).
+
+The big win came from killing the on-chain `ICPU.calculateMove` STATICCALL chain — every legacy
+CPU does ~10-15 `ENGINE.X` calls per turn (mon stats, mon states, damage calc), each paying
+cold penalty in production. Off-chain CPU does zero engine calls per submit.
 
 ### Phase 3 / 4 — deferred
 
