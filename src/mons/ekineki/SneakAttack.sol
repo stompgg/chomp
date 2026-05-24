@@ -50,24 +50,31 @@ contract SneakAttack is IMoveSet, BasicEffect {
         // Get effective crit rate (checks 999 buff)
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);
 
-        // One batched read covers both sides' stats + the four damage-relevant deltas.
-        // Targets any opponent mon (not just active) — getMoveContext accepts arbitrary mon indices.
-        MoveContext memory mctx =
-            engine.getMoveContext(battleKey, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, targetMonIndex);
+        // Build DamageCalcContext manually to target any opponent mon (not just active)
+        MonStats memory attackerStats = engine.getMonStatsForBattle(battleKey, attackerPlayerIndex, attackerMonIndex);
+        MonStats memory defenderStats = engine.getMonStatsForBattle(battleKey, defenderPlayerIndex, targetMonIndex);
 
         DamageCalcContext memory ctx = DamageCalcContext({
             attackerMonIndex: uint8(attackerMonIndex),
             defenderMonIndex: uint8(targetMonIndex),
-            attackerAttack: mctx.attackerStats.attack,
-            attackerAttackDelta: mctx.attackerState.attackDelta,
-            attackerSpAtk: mctx.attackerStats.specialAttack,
-            attackerSpAtkDelta: mctx.attackerState.specialAttackDelta,
-            defenderDef: mctx.defenderStats.defense,
-            defenderDefDelta: mctx.defenderState.defenceDelta,
-            defenderSpDef: mctx.defenderStats.specialDefense,
-            defenderSpDefDelta: mctx.defenderState.specialDefenceDelta,
-            defenderType1: mctx.defenderStats.type1,
-            defenderType2: mctx.defenderStats.type2
+            attackerAttack: attackerStats.attack,
+            attackerAttackDelta: engine.getMonStateForBattle(
+                battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Attack
+            ),
+            attackerSpAtk: attackerStats.specialAttack,
+            attackerSpAtkDelta: engine.getMonStateForBattle(
+                battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.SpecialAttack
+            ),
+            defenderDef: defenderStats.defense,
+            defenderDefDelta: engine.getMonStateForBattle(
+                battleKey, defenderPlayerIndex, targetMonIndex, MonStateIndexName.Defense
+            ),
+            defenderSpDef: defenderStats.specialDefense,
+            defenderSpDefDelta: engine.getMonStateForBattle(
+                battleKey, defenderPlayerIndex, targetMonIndex, MonStateIndexName.SpecialDefense
+            ),
+            defenderType1: defenderStats.type1,
+            defenderType2: defenderStats.type2
         });
 
         (int32 damage,) = AttackCalculator._calculateDamageFromContext(

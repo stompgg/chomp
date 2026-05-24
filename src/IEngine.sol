@@ -132,18 +132,6 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
-    /// @notice Batched read of both sides' base stats, deltas, and live effect lists for an
-    ///         attacker/defender pair. Lets custom moves consume one STATICCALL instead of the
-    ///         4–7 individual `getMonStatsForBattle` / `getMonStateForBattle` / `getEffects`
-    ///         callbacks the worst offenders do today. Sentinel deltas are returned as 0;
-    ///         tombstoned effect slots are filtered out.
-    function getMoveContext(
-        bytes32 battleKey,
-        uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
-        uint256 defenderPlayerIndex,
-        uint256 defenderMonIndex
-    ) external view returns (MoveContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
     function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
     function getCPURouteContext(bytes32 battleKey)

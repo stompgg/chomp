@@ -3539,37 +3539,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         );
     }
 
-    function getMoveContext(
-        bytes32 battleKey,
-        uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
-        uint256 defenderPlayerIndex,
-        uint256 defenderMonIndex
-    ) external view returns (MoveContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.attackerStats = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex).stats;
-        ctx.defenderStats = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex).stats;
-        ctx.attackerState = _sanitizeMonState(_loadMonState(config, attackerPlayerIndex, attackerMonIndex));
-        ctx.defenderState = _sanitizeMonState(_loadMonState(config, defenderPlayerIndex, defenderMonIndex));
-        (ctx.attackerEffects,) = _getEffectsForTarget(storageKey, attackerPlayerIndex, attackerMonIndex);
-        (ctx.defenderEffects,) = _getEffectsForTarget(storageKey, defenderPlayerIndex, defenderMonIndex);
-    }
-
-    /// @dev Mirror the sentinel-to-zero conversion that `getMonStateForBattle` performs per-field,
-    ///      so callers reading deltas off the batched context don't have to know about the sentinel.
-    function _sanitizeMonState(MonState memory s) private pure returns (MonState memory) {
-        if (s.hpDelta == CLEARED_MON_STATE_SENTINEL) s.hpDelta = 0;
-        if (s.staminaDelta == CLEARED_MON_STATE_SENTINEL) s.staminaDelta = 0;
-        if (s.speedDelta == CLEARED_MON_STATE_SENTINEL) s.speedDelta = 0;
-        if (s.attackDelta == CLEARED_MON_STATE_SENTINEL) s.attackDelta = 0;
-        if (s.defenceDelta == CLEARED_MON_STATE_SENTINEL) s.defenceDelta = 0;
-        if (s.specialAttackDelta == CLEARED_MON_STATE_SENTINEL) s.specialAttackDelta = 0;
-        if (s.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL) s.specialDefenceDelta = 0;
-        return s;
-    }
-
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleData storage data = battleData[battleKey];
