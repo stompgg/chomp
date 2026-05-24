@@ -19,9 +19,8 @@ import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @notice Coverage for the new coalesced move-facing APIs:
-///         - `addEffectIfNotPresent`     (Pattern 2: 17 ability dedup sites)
-///         - `getAndInitGlobalKV`        (Pattern 3: 9 once-per-battle flag sites)
-///         - `getMoveContext`            (Pattern 1: stats + state + effects in one read)
+///         - `addEffectIfNotPresent` (ability dedup sites)
+///         - `getMoveContext`        (stats + state + effects in one read)
 contract EngineMoveAPITest is Test, BattleHelper {
     Engine engine;
     DefaultCommitManager commitManager;
@@ -32,8 +31,6 @@ contract EngineMoveAPITest is Test, BattleHelper {
     DefaultValidator validator;
 
     uint64 internal constant OP_ADD_RESULT = 2001;
-    uint64 internal constant OP_KV_RESULT = 2002;
-    uint64 internal constant KV_KEY = 2003;
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
@@ -98,50 +95,6 @@ contract EngineMoveAPITest is Test, BattleHelper {
         // No active execute — battleKeyForWrite is 0.
         vm.expectRevert(Engine.NoWriteAllowed.selector);
         engine.addEffectIfNotPresent(0, 0, IEffect(address(apiMove)), bytes32(0));
-    }
-
-    // ==================== getAndInitGlobalKV ====================
-
-    function test_getAndInitGlobalKV_firstCallInits_secondCallNoOps() public {
-        bytes32 battleKey = _initBattle();
-
-        // Turn 1: Alice fires op=2 (getAndInitGlobalKV with valueIfZero=42).
-        // The KV slot was untouched in this battle, so previous == 0 and the slot becomes 42.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
-        );
-        assertEq(uint256(engine.getGlobalKV(battleKey, OP_KV_RESULT)), 0, "first call returns previous=0");
-        assertEq(uint256(engine.getGlobalKV(battleKey, KV_KEY)), 42, "slot is initialized to valueIfZero");
-
-        // Turn 2: same op — previous is now 42, so no overwrite happens and the call returns 42.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
-        );
-        assertEq(uint256(engine.getGlobalKV(battleKey, OP_KV_RESULT)), 42, "second call returns previous=42");
-        assertEq(uint256(engine.getGlobalKV(battleKey, KV_KEY)), 42, "slot value preserved across calls");
-    }
-
-    function test_getAndInitGlobalKV_revertsOutsideWriteContext() public {
-        vm.expectRevert(Engine.NoWriteAllowed.selector);
-        engine.getAndInitGlobalKV(KV_KEY, 42);
-    }
-
-    function test_getAndInitGlobalKV_initRegistersKeyInLiveBuffer() public {
-        bytes32 battleKey = _initBattle();
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
-        );
-        // KV_KEY + OP_KV_RESULT are both registered (the move always writes OP_KV_RESULT).
-        // Confirm KV_KEY is enumerated in the live globalKVEntries buffer.
-        (BattleConfigView memory view_,) = engine.getBattle(battleKey);
-        bool foundKey = false;
-        for (uint256 i; i < view_.globalKVEntries.length; ++i) {
-            if (view_.globalKVEntries[i].key == KV_KEY) {
-                foundKey = true;
-                break;
-            }
-        }
-        assertTrue(foundKey, "initialized key must appear in live globalKVEntries");
     }
 
     // ==================== getMoveContext ====================

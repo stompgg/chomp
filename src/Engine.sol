@@ -1429,40 +1429,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
     }
 
-    function getAndInitGlobalKV(uint64 key, uint192 valueIfZero) external returns (uint192 previousValue) {
-        bytes32 battleKey = battleKeyForWrite;
-        if (battleKey == bytes32(0)) {
-            revert NoWriteAllowed();
-        }
-        bytes32 storageKey = storageKeyForWrite;
-        BattleConfig storage config = battleConfig[storageKey];
-        uint64 timestamp = uint64(config.startTimestamp);
-
-        bytes32 packed = globalKV[storageKey][key];
-        uint64 storedTs = uint64(uint256(packed) >> 192);
-        // Stale-from-prior-battle slots read as 0 here, matching `getGlobalKV` semantics — and the
-        // write-path below correctly registers the key in the new battle's buffer when storedTs
-        // doesn't match.
-        previousValue = (storedTs == timestamp) ? uint192(uint256(packed)) : uint192(0);
-
-        if (previousValue == 0) {
-            // Key registration: only when the slot has never been touched in THIS battle
-            // (mirrors setGlobalKV).
-            if (storedTs != timestamp) {
-                uint256 idx = config.globalKVCount;
-                uint256 slotIdx = idx >> 2;
-                uint256 shift = (idx & 3) * 64;
-                uint256 slot = globalKVKeySlots[storageKey][slotIdx];
-                slot = (slot & ~(uint256(type(uint64).max) << shift)) | (uint256(key) << shift);
-                globalKVKeySlots[storageKey][slotIdx] = slot;
-                unchecked {
-                    config.globalKVCount = uint8(idx + 1);
-                }
-            }
-            globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(valueIfZero));
-        }
-    }
-
     /// @notice Check if the KO'd player's team is fully wiped and lock in the winner immediately
     /// @dev Called after each KO to ensure winner is determined by order of KOs, not bitmap check order.
     ///      Routes through shadow helpers so the winnerIndex write defers to transient when running

@@ -10,21 +10,12 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {MoveMeta} from "../../src/Structs.sol";
 
-/// @notice Test move + effect hybrid that drives the new write-side APIs from inside an Engine
-///         execute() so the write context is active. Encodes the action it should take in
-///         `extraData` so a single mon's "move" can be reused across multiple test cases:
-///
-///         bits 0..1 = op
-///           0: noop
-///           1: addEffectIfNotPresent(player=self, mon=self, IEffect(this), data=0)
-///              → writes returned `added` bool into globalKV key OP_ADD_RESULT
-///           2: getAndInitGlobalKV(key=KV_KEY, valueIfZero=42)
-///              → writes returned previousValue into globalKV key OP_KV_RESULT
-///         bits 2..15 = unused
+/// @notice Test move + effect hybrid that drives the new write-side API from inside an Engine
+///         execute() so the write context is active. extraData==1 triggers an
+///         addEffectIfNotPresent call against self, and the returned `added` bool is
+///         written into globalKV key OP_ADD_RESULT for the test to read back.
 contract MockNewAPIMove is IMoveSet, BasicEffect {
     uint64 internal constant OP_ADD_RESULT = 2001;
-    uint64 internal constant OP_KV_RESULT = 2002;
-    uint64 internal constant KV_KEY = 2003;
 
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "MockNewAPI";
@@ -33,15 +24,11 @@ contract MockNewAPIMove is IMoveSet, BasicEffect {
     function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256, uint16 extraData, uint256)
         external
     {
-        uint8 op = uint8(extraData & 0x3);
-        if (op == 1) {
+        if (extraData == 1) {
             bool added = engine.addEffectIfNotPresent(
                 attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0)
             );
             engine.setGlobalKV(OP_ADD_RESULT, added ? uint192(1) : uint192(0));
-        } else if (op == 2) {
-            uint192 prev = engine.getAndInitGlobalKV(KV_KEY, 42);
-            engine.setGlobalKV(OP_KV_RESULT, prev);
         }
     }
 

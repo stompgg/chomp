@@ -33,12 +33,6 @@ interface IEngine {
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
-    /// @notice Read the current value at `key` and, if it was zero, store `valueIfZero` in the same call.
-    ///         Coalesces the "if (getGlobalKV(key) == 0) { …; setGlobalKV(key, v); }" once-per-battle
-    ///         flag pattern. Callers that need to mutate conditionally on an unrelated runtime check
-    ///         should keep using `getGlobalKV` + `setGlobalKV` — this primitive eagerly initializes.
-    /// @return previousValue The value read before any write was applied.
-    function getAndInitGlobalKV(uint64 key, uint192 valueIfZero) external returns (uint192 previousValue);
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
