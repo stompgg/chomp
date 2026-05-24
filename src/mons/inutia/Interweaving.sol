@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -36,16 +36,8 @@ contract Interweaving is IAbility, BasicEffect {
         });
         STAT_BOOST.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
 
-        // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        // Otherwise, add this effect to the mon when it switches in
-        // This way we can trigger on switch out
-        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        // Mark the mon so onMonSwitchOut fires (no-op if the effect was already added on a prior switch-in)
+        engine.addEffectIfNotPresent(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: OnApply, OnMonSwitchOut

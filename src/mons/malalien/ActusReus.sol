@@ -6,7 +6,7 @@ pragma solidity ^0.8.0;
 
 import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -27,15 +27,8 @@ contract ActusReus is IAbility, BasicEffect {
         return "Actus Reus";
     }
 
-    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
-        // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+    function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external {
+        engine.addEffectIfNotPresent(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: AfterDamage, AfterMove

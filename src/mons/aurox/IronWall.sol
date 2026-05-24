@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
 import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance, MoveMeta} from "../../Structs.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -28,16 +28,10 @@ contract IronWall is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        // Check to see if the effect is already active
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Effect lasts until Aurox switches out; bail early if it's already up to skip the initial heal too
+        if (!engine.addEffectIfNotPresent(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0))) {
+            return;
         }
-
-        // The effect will last until Aurox switches out
-        engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
 
         // Also, heal for INITIAL_HEAL_PERCENT
         int32 maxHp =

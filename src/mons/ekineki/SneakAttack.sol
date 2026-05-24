@@ -38,12 +38,10 @@ contract SneakAttack is IMoveSet, BasicEffect {
         uint16 extraData,
         uint256 rng
     ) external {
-        // Check if already used this switch-in (effect present = already used)
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Add the per-switch-in marker first; bail if it was already present (already used).
+        // Adding eagerly is safe: the marker is consulted nowhere in the damage path below.
+        if (!engine.addEffectIfNotPresent(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0))) {
+            return;
         }
 
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
@@ -86,9 +84,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         if (damage != 0) {
             engine.dealDamage(defenderPlayerIndex, targetMonIndex, damage);
         }
-
-        // Mark as used by adding local effect on the attacker's mon
-        engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {

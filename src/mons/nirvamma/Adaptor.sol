@@ -4,8 +4,6 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {EffectInstance} from "../../Structs.sol";
-
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -23,14 +21,8 @@ contract Adaptor is IAbility, BasicEffect {
         return "Adaptor";
     }
 
-    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+    function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external {
+        engine.addEffectIfNotPresent(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: AfterDamage, PreDamage

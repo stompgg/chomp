@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY, MOVE_INDEX_MASK} from "../../Constants.sol";
 import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
-import { MoveDecision, MonStateIndexName, EffectInstance, MoveMeta } from "../../Structs.sol";
+import { MoveDecision, MonStateIndexName, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
@@ -18,15 +18,8 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return "Somniphobia";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
-        // Add effect globally for 6 turns (only if it's not already in global effects)
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 2);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        engine.addEffect(2, attackerPlayerIndex, this, bytes32(DURATION));
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+        engine.addEffectIfNotPresent(2, attackerPlayerIndex, this, bytes32(DURATION));
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {

@@ -5,7 +5,6 @@ pragma solidity ^0.8.0;
 // @inline-ability: singleton-local
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
@@ -21,15 +20,8 @@ contract Angery is IAbility, BasicEffect {
         return "Angery";
     }
 
-    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
-        // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+    function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external {
+        engine.addEffectIfNotPresent(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // IEffect implementation

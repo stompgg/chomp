@@ -5,7 +5,6 @@ pragma solidity ^0.8.0;
 // @inline-ability: singleton-local
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
@@ -20,18 +19,11 @@ contract CarrotHarvest is IAbility, BasicEffect {
         return "Carrot Harvest";
     }
 
-    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+    function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex)
         external
         override
     {
-        // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
-        }
-        engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
+        engine.addEffectIfNotPresent(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
     // Steps: RoundEnd
