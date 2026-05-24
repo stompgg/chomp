@@ -352,18 +352,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     error InvalidRevealerSignature();
     error MoveManagerSet();
 
-    /// @notice Direct-call equivalent of `SignedCommitManager.executeWithDualSignedMoves` for
-    ///         battles started with `moveManager = address(0)` — skips the manager STATICCALL +
-    ///         redundant `getCommitAuthForDualSigned` STATICCALL by doing the EIP-712 sig
-    ///         verification and auth inline. Caller must be the committer (turn parity decides
-    ///         who that is); revealer must have signed a `DualSignedReveal` over the engine's
-    ///         own EIP-712 domain (NOT the manager's — sigs don't cross-contaminate).
-    /// @dev Only usable when `config.moveManager == address(0)`. Battles started with a
-    ///      moveManager go through that manager unchanged.
-    /// @dev Timeout / stall ending (`Engine.end`) requires a `validator` set on the battle —
-    ///      the `_validateTimeoutInline` path calls into the commit manager which doesn't
-    ///      exist here. Set a validator if you need stall-timeout semantics; otherwise stuck
-    ///      battles only resolve via `MAX_BATTLE_DURATION` (hard cap).
+    /// @notice Manager-less equivalent of `SignedCommitManager.executeWithDualSignedMoves`,
+    ///         opt-in via `moveManager = address(0)`. Inlines EIP-712 reveal-sig verification +
+    ///         auth, skipping the manager STATICCALL. Caller must be the committer (turn parity
+    ///         decides who); revealer signs `DualSignedReveal` over the engine's own EIP-712
+    ///         domain (sigs don't cross with the manager's).
+    /// @dev Without a validator, only `MAX_BATTLE_DURATION` can end a stalled battle.
     function executeWithDualSignedMovesDirect(
         bytes32 battleKey,
         uint8 committerMoveIndex,
@@ -775,7 +769,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
-            priorityPlayerIndex = _computePriorityPlayerIndex(config, battle, battleKey, rng, p0TurnMove, p1TurnMove);
+            priorityPlayerIndex = _computePriorityPlayerIndex(config, battleKey, rng, p0TurnMove, p1TurnMove);
             uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
             // Run beginning of round effects (fused: global + priority + other in one frame)
             playerSwitchForTurnFlag = _handleEffectsTriple(
@@ -1237,8 +1231,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check if we have to run an onApply state update (use bitmap instead of external call)
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
-                // Get active mon indices for both players (cached battleKey local — same value as battleKeyForWrite)
-                BattleData storage battle = battleData[battleKey];
                 uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
                 uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
                 uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
@@ -1307,32 +1299,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         external
         returns (bool added)
     {
-        if (battleKeyForWrite == bytes32(0)) {
-            revert NoWriteAllowed();
-        }
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-
-        // Storage-side scan against live + tombstoned slots. TOMBSTONE_ADDRESS is distinct from any
-        // real effect address so the comparison is safe even past resurrected slots.
+        uint256 count = _loadEffectsCount(config, targetIndex, monIndex);
         address effectAddr = address(effect);
+
         if (targetIndex == 2) {
-            uint256 len = config.globalEffectsLength;
-            for (uint256 i = 0; i < len;) {
+            for (uint256 i = 0; i < count;) {
                 if (address(config.globalEffects[i].effect) == effectAddr) return false;
                 unchecked { ++i; }
             }
-        } else if (targetIndex == 0) {
-            uint256 count = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
-            uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
-            for (uint256 i = 0; i < count;) {
-                if (address(config.p0Effects[baseSlot + i].effect) == effectAddr) return false;
-                unchecked { ++i; }
-            }
         } else {
-            uint256 count = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+            mapping(uint256 => EffectInstance) storage effects =
+                targetIndex == 0 ? config.p0Effects : config.p1Effects;
             uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
             for (uint256 i = 0; i < count;) {
-                if (address(config.p1Effects[baseSlot + i].effect) == effectAddr) return false;
+                if (address(effects[baseSlot + i].effect) == effectAddr) return false;
                 unchecked { ++i; }
             }
         }
@@ -1389,8 +1371,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (address(effect) == TOMBSTONE_ADDRESS) return;
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
-            BattleData storage battle = battleData[battleKey];
-            // battleKey is the function param (= battleKeyForWrite at the caller site)
             uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
             uint256 p0Active = _unpackActiveMonIndex(packedActiveMonIndex, 0);
             uint256 p1Active = _unpackActiveMonIndex(packedActiveMonIndex, 1);
@@ -1657,7 +1637,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert NoWriteAllowed();
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        BattleData storage battle = battleData[bkw];
         uint256 defenderPlayerIndex = 1 - attackerPlayerIndex;
         uint256 attackerMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), attackerPlayerIndex);
 
@@ -1707,7 +1686,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
 
             // Check for game over and/or KOs
-            (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, battle, playerIndex);
+            (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, playerIndex);
             if (isGameOver) return;
 
             // Set the player switch for turn flag
@@ -1785,15 +1764,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _getStorageKey(battleKey);
     }
 
-    /// @notice Minimal context for the async-submit-then-batch-execute flow. Returns ONLY the
-    ///         fields `SignedCommitManager.submitTurnMoves` actually needs (p0/p1 for sig
-    ///         verification, turnId for first-of-batch sync, winnerIndex for the
-    ///         BattleAlreadyComplete check, storageKey for buffer keying).
-    /// @dev Saves vs `getCommitContext` + `getStorageKey` (2 external calls + 5 SLOADs) by
-    ///      collapsing into 1 external call + 3 SLOADs. Skips reading `startTimestamp`,
-    ///      `playerSwitchForTurnFlag`, and `validator` — none of those are needed at submission
-    ///      time in the async flow (engine handles flag-based dispatch at executeBuffered; an
-    ///      invalid battle / completed game will just be no-op at execute).
+    /// @notice Minimal context for async submission: p0/p1 (sig auth), turnId (first-of-batch
+    ///         sync), winnerIndex (early reject), storageKey (buffer keying). 1 call + 3 SLOADs
+    ///         vs `getCommitContext` + `getStorageKey`'s 2 calls + 5 SLOADs.
     function getSubmitContext(bytes32 battleKey)
         external
         view
@@ -1819,7 +1792,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @notice Check for game over and determine which player(s) need to switch next turn
     /// @dev Game-over detection is now handled immediately at KO time by _checkAndSetWinnerIfGameOver.
     ///      This function only checks if winner was already set, then handles switch flags for KO'd mons.
-    function _checkForGameOverOrKO(BattleConfig storage config, BattleData storage battle, uint256 priorityPlayerIndex)
+    function _checkForGameOverOrKO(BattleConfig storage config, uint256 priorityPlayerIndex)
         internal
         view
         returns (uint256 playerSwitchForTurnFlag, bool isGameOver)
@@ -2054,7 +2027,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Only check for Game Over / KO if a KO occurred during the move
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex);
         }
         return playerSwitchForTurnFlag;
     }
@@ -2349,7 +2322,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Only check for Game Over / KO if a KO actually occurred since last check
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, playerIndex);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex);
         }
         return playerSwitchForTurnFlag;
     }
@@ -2381,7 +2354,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _runEffects(battleKey, rng, 2, 2, round, "");
             if (koOccurredFlag != 0) {
                 koOccurredFlag = 0;
-                (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, 2);
+                (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, 2);
             }
         }
 
@@ -2401,7 +2374,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     _runEffects(battleKey, rng, priorityPlayerIndex, priorityPlayerIndex, round, "");
                     if (koOccurredFlag != 0) {
                         koOccurredFlag = 0;
-                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, priorityPlayerIndex);
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, priorityPlayerIndex);
                     }
                 }
             }
@@ -2418,7 +2391,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     _runEffects(battleKey, rng, otherPlayerIndex, otherPlayerIndex, round, "");
                     if (koOccurredFlag != 0) {
                         koOccurredFlag = 0;
-                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, otherPlayerIndex);
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, otherPlayerIndex);
                     }
                 }
             }
@@ -2428,9 +2401,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
-        BattleData storage battle = battleData[battleKey];
         return _computePriorityPlayerIndex(
-            config, battle, battleKey, rng, _getCurrentTurnMove(config, 0), _getCurrentTurnMove(config, 1)
+            config, battleKey, rng, _getCurrentTurnMove(config, 0), _getCurrentTurnMove(config, 1)
         );
     }
 
@@ -2440,7 +2412,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      transient/storage via _getCurrentTurnMove.
     function _computePriorityPlayerIndex(
         BattleConfig storage config,
-        BattleData storage battle,
         bytes32 battleKey,
         uint256 rng,
         MoveDecision memory p0TurnMove,

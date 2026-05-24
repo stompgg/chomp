@@ -23,9 +23,7 @@ interface IEngine {
     function updateMonState(uint256 playerIndex, uint256 monIndex, MonStateIndexName stateVarIndex, int32 valueToAdd)
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
-    /// @notice Add `effect` to (`targetIndex`, `monIndex`) only if no live slot already holds it.
-    ///         Coalesces the canonical ability "iterate getEffects to dedup, then addEffect" pattern
-    ///         into a single CALL with an internal storage-side scan.
+    /// @notice Add `effect` only if no live slot at (`targetIndex`, `monIndex`) already holds it.
     /// @return added True if newly added; false if a live slot already held this effect.
     function addEffectIfNotPresent(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData)
         external
@@ -71,10 +69,9 @@ interface IEngine {
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
-    /// @notice Resolves a `battleKey` to the storage key used by `BattleConfig` slot allocation.
-    /// @dev Returns the battleKey itself when no allocation has been recorded. Used by managers
-    ///      that want to key their own buffers on storageKey (so slots reuse across battles via
-    ///      `MappingAllocator`'s free-list and benefit from steady-state warm-SSTORE costs).
+    /// @notice Resolve `battleKey` to its `BattleConfig` storage key. Returns `battleKey` itself
+    ///         if no allocation is recorded. Managers key their buffers on the result to share
+    ///         `MappingAllocator`'s slot reuse.
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getSubmitContext(bytes32 battleKey)
         external
