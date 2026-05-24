@@ -10,31 +10,14 @@ import {DefaultCommitManager} from "./DefaultCommitManager.sol";
 import {SignedCommitLib} from "./SignedCommitLib.sol";
 
 /// @title SignedCommitManager
-/// @notice Extends DefaultCommitManager with optimistic dual-signed commit flow
-/// @dev Allows both players to sign their moves off-chain, enabling the committer
-///      to submit both moves and execute in a single transaction.
-///
-///      Normal flow (3 transactions):
-///        1. Alice commits (TX 1)
-///        2. Bob reveals (TX 2)
-///        3. Alice reveals (TX 3)
-///
-///      Dual-signed flow (1 transaction):
-///        1. Alice signs her move hash off-chain (SignedCommit), sends to Bob
-///        2. Bob signs his move + Alice's hash off-chain (DualSignedReveal), sends back
-///        3. Anyone (Alice, Bob, or a relayer) calls executeWithDualSignedMoves with
-///           both signatures + Alice's preimage (TX 1)
-///
-///      Security: Alice commits to her hash before seeing Bob's move (binding Alice
-///      cryptographically via her SignedCommit). Bob signs over Alice's hash (binding
-///      Bob via his DualSignedReveal). Both signatures together prove both players'
-///      intent without trusting msg.sender — submission can be relayed without
-///      reopening any unilateral-revealer attack.
-///
-///      Fallback if Alice stalls: Bob can use commitWithSignature() to publish Alice's
-///      signed commitment on-chain, then continue with the normal reveal flow.
-///
-///      Fallback if Bob doesn't cooperate: Alice can use the normal commitMove() flow.
+/// @notice Extends `DefaultCommitManager` with an optimistic dual-signed flow:
+///         both players sign their moves off-chain, anyone (committer or relayer)
+///         submits both moves + signatures in one tx via `executeWithDualSignedMoves`.
+///         Adds a buffered submission path (`submitTurnMoves` + `executeBuffered`)
+///         for amortized batched execution. Falls back to the 3-tx commit/reveal
+///         flow if either player stalls.
+/// @dev Both signatures are required so a malicious revealer can't pick an arbitrary
+///      committer preimage and submit unilaterally. See `SignedCommitLib` for typehashes.
 contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when the signature verification fails
     error InvalidSignature();

@@ -8,19 +8,13 @@ import {IEngine} from "../IEngine.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 
 /// @title BatchedCPUMoveManager
-/// @notice Single-player batched commit-and-execute manager for CPU-style battles.
-///         The "CPU" is a phantom opponent address; ALL decision logic lives off-chain
-///         (the player runs the engine locally via the transpiler to pick the CPU's
-///         response). On-chain the contract just buffers `(playerMove, cpuMove)` tuples
-///         and drains them into `engine.executeBatchedTurns` on demand.
-///
-/// @dev OPT_PLAN §7 trust model: this works because there's no counterparty to cheat.
-///      The player can submit any CPU move she wants; misrepresenting the CPU's "ideal"
-///      response just produces a worse experience for the player herself. Since the
-///      CPU has no stake, no balance, no opinion, there's nothing to defend against.
-///      This eliminates the per-submit `ICPU.calculateMove` STATICCALL, `CPUContext`
-///      calldata overhead, salt derivation, and per-turn event that earlier designs
-///      paid for — getting per-submit cost to roughly `1 × SLOAD + 2 × SSTORE`.
+/// @notice Single-player batched commit-and-execute for CPU battles. The "CPU" is a
+///         phantom opponent; the player computes its move off-chain (via the transpiled
+///         engine) and submits `(playerMove, cpuMove)` tuples to a buffer drained by
+///         `engine.executeBatchedTurns`.
+/// @dev Works because there's no counterparty to cheat — misrepresenting the CPU's
+///      response just gives the player a worse experience. See OPT_PLAN §7. Per-submit
+///      cost: ~1 SLOAD + 2 SSTORE (no STATICCALL, no salt, no event).
 abstract contract BatchedCPUMoveManager is IMatchmaker {
     IEngine internal immutable ENGINE;
 
@@ -29,23 +23,17 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
     /// @dev [ p0Move (8) | p0Extra (16) | p0Salt (104) | p1Move (8) | p1Extra (16) | p1Salt (104) ]
     mapping(bytes32 storageKey => mapping(uint64 turnId => uint256 packed)) public moveBuffer;
 
-    /// @notice Combined per-battle slot keyed by `storageKey` (so it benefits from the engine's
-    ///         MappingAllocator reuse pattern in steady state). Carries both the counters and a
-    ///         cache of the immutable `p0` + an observed `gameOverFlag` — folding what was
-    ///         previously a separate `engine.getSubmitContext` STATICCALL per `submitTurn` into
-    ///         a single SLOAD of this slot.
+    /// @notice Per-battle counters + cached `p0` + observed `gameOverFlag` packed into one slot.
+    ///         Keyed by `storageKey` so `MappingAllocator` slot reuse keeps writes warm.
     /// @dev Layout (256 bits):
-    ///   [0..30]   numExecuted     (uint31, ~2B turns max — plenty)
-    ///   [31]      gameOverFlag    (1 bit — set by `executeBuffered` on game-end)
+    ///   [0..30]   numExecuted     (uint31)
+    ///   [31]      gameOverFlag    (set by `executeBuffered` on game-end)
     ///   [32..63]  numBuffered     (uint32)
     ///   [64..95]  lastSubmitTs    (uint32, year 2106 overflow)
-    ///   [96..255] p0              (address, 160 bits — cached on first submit)
+    ///   [96..255] p0              (cached on first submit)
     mapping(bytes32 storageKey => uint256 packed) public bufferState;
 
-    /// @notice Per-battle storageKey cache. Saves the engine STATICCALL on subsequent submits.
-    ///         Keyed by battleKey (storageKey isn't known yet at the start of submit). Cold
-    ///         first-touch in production, but the value is immutable per battle so subsequent
-    ///         submits in the same tx (impossible today, but logically) would be warm.
+    /// @notice battleKey → storageKey cache so subsequent submits skip the engine STATICCALL.
     mapping(bytes32 battleKey => bytes32 storageKey) public storageKeyOf;
 
     event TurnsExecuted(bytes32 indexed battleKey, uint64 startTurn, uint64 count, address winner);
@@ -74,9 +62,8 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
         engine.updateMatchmakers(self, empty);
     }
 
-    /// @notice Append one turn to the buffer. The player supplies both her own move AND the
-    ///         CPU's move (computed off-chain via the transpiled engine + any strategy she
-    ///         wants). See OPT_PLAN §7 for the trust model.
+    /// @notice Append one turn to the buffer. Player supplies both her own move AND the CPU's
+    ///         (computed off-chain). See OPT_PLAN §7 for the trust model.
     function submitTurn(
         bytes32 battleKey,
         uint8 playerMove,
@@ -86,8 +73,6 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
         uint16 cpuExtra,
         uint104 cpuSalt
     ) external {
-        // Cache hit path: single SLOAD of bufferState + storageKeyOf gives us p0, gameOver,
-        // counters, and storageKey — no engine STATICCALL needed.
         bytes32 storageKey = storageKeyOf[battleKey];
         uint256 packed;
         address ctxP0;
@@ -97,18 +82,14 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
             ctxP0 = address(uint160(packed >> P0_SHIFT));
             if (msg.sender != ctxP0) revert NotP0();
         } else {
-            // Cache miss (first submit per battle): one-time STATICCALL to populate caches.
-            // Engine's winnerIndex == 2 guard still runs here.
+            // First submit per battle: one-time STATICCALL to populate caches. Any prior
+            // battle's leftover state at this storageKey is intentionally overwritten below.
             uint64 ctxTurnId;
             uint8 ctxWinnerIndex;
             (ctxP0,, ctxTurnId, ctxWinnerIndex, storageKey) = ENGINE.getSubmitContext(battleKey);
             if (msg.sender != ctxP0) revert NotP0();
             if (ctxWinnerIndex != 2) revert BattleAlreadyComplete();
             storageKeyOf[battleKey] = storageKey;
-            // Skip the bufferState SLOAD: cache miss implies first submit of this battle, so we
-            // always reset `packed` to (ctxTurnId, ctxP0). Any prior battle's leftover state
-            // (gameOver flag, old numExecuted) at this storageKey is intentionally overwritten —
-            // the new battle's first submit owns the slot.
             packed = uint256(ctxTurnId) | (uint256(uint160(ctxP0)) << P0_SHIFT);
         }
 
@@ -121,13 +102,10 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
         );
 
         unchecked {
-            // Update counters: numBuffered++, lastTs=now, keep gameOver=0 (it stays 0 in the
-            // submit path), keep p0 from the cached/freshly-set value.
-            uint256 newPacked = uint256(numExecuted)
+            bufferState[storageKey] = uint256(numExecuted)
                 | (uint256(numBuffered + 1) << NUM_BUFFERED_SHIFT)
                 | (uint256(uint32(block.timestamp)) << LAST_TS_SHIFT)
                 | (uint256(uint160(ctxP0)) << P0_SHIFT);
-            bufferState[storageKey] = newPacked;
         }
     }
 
@@ -152,20 +130,16 @@ abstract contract BatchedCPUMoveManager is IMatchmaker {
         (uint64 executedThisBatch, address winner) = ENGINE.executeBatchedTurns(battleKey, entries);
 
         unchecked {
-            // Preserve p0, set gameOver if game ended, advance numExecuted, clear numBuffered.
-            uint256 p0Bits = packed & (P0_MASK << P0_SHIFT);
-            uint256 newPacked = uint256(numExecuted + executedThisBatch)
+            bufferState[storageKey] = uint256(numExecuted + executedThisBatch)
                 | (winner != address(0) ? GAME_OVER_BIT : 0)
                 | (uint256(uint32(block.timestamp)) << LAST_TS_SHIFT)
-                | p0Bits;
-            bufferState[storageKey] = newPacked;
+                | (packed & (P0_MASK << P0_SHIFT));
         }
 
         emit TurnsExecuted(battleKey, numExecuted, executedThisBatch, winner);
 
         if (winner != address(0)) {
-            // Use cached p0 (high 160 bits of `packed`) instead of an extra STATICCALL into
-            // `engine.getPlayersForBattle` — saves ~3k on game-end transitions.
+            // Cached p0 from the SLOAD above; avoids an extra getPlayersForBattle STATICCALL.
             _afterBattle(battleKey, address(uint160(packed >> P0_SHIFT)), winner);
         }
     }
