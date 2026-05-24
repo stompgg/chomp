@@ -7,7 +7,6 @@ import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
 import {IPhantomTeamRegistry} from "../game-layer/IPhantomTeamRegistry.sol";
 import {ValidatorLogic} from "../lib/ValidatorLogic.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
-import {IMoveSet} from "../moves/IMoveSet.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
 import {CPUMoveManager} from "./CPUMoveManager.sol";

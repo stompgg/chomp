@@ -373,19 +373,19 @@ abstract contract HeuristicCPUBase is CPU {
             Type oppType2 = oppStats.type2;
 
             int256 bestScore = type(int256).min;
-            uint256 bestIdx = 0;
+            uint256 aggBestIdx = 0;
             for (uint256 i; i < switches.length;) {
                 MonStats memory candStats = ENGINE.getMonStatsForBattle(battleKey, 1, uint256(switches[i].extraData));
                 int256 score = _offensiveMatchupScore(candStats.type1, candStats.type2, oppType1, oppType2);
                 if (score > bestScore) {
                     bestScore = score;
-                    bestIdx = i;
+                    aggBestIdx = i;
                 }
                 unchecked {
                     ++i;
                 }
             }
-            return (switches[bestIdx].moveIndex, switches[bestIdx].extraData);
+            return (switches[aggBestIdx].moveIndex, switches[aggBestIdx].extraData);
         }
 
         if (opponentMoveIndex >= SWITCH_MOVE_INDEX) {

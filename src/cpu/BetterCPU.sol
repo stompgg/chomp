@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {CLEARED_MON_STATE_SENTINEL, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../Constants.sol";
-import {MonStateIndexName, MoveClass, Type} from "../Enums.sol";
+import {MonStateIndexName, MoveClass} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
 import {CPUContext, DamageCalcContext, MoveMeta, RevealedMove} from "../Structs.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";

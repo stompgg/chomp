@@ -7,7 +7,6 @@ import "../src/Constants.sol";
 // Fundamental entities
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {FairCPU} from "../src/cpu/FairCPU.sol";
@@ -16,7 +15,6 @@ import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
-import {SimplePM} from "../src/hooks/SimplePM.sol";
 import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 // Shared effects
@@ -94,9 +92,6 @@ contract EngineAndPeriphery is Script {
 
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
-
-        // SimplePM simplePM = new SimplePM(engine);
-        // deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
         ReturnerGift returnerGift = new ReturnerGift(address(gachaTeamRegistry));
         deployedContracts.push(DeployData({name: "RETURNER GIFT", contractAddress: address(returnerGift)}));
