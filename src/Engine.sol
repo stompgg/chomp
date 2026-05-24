@@ -1303,6 +1303,44 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _addEffectInternal(targetIndex, monIndex, effect, extraData);
     }
 
+    function addEffectIfNotPresent(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData)
+        external
+        returns (bool added)
+    {
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+
+        // Storage-side scan against live + tombstoned slots. TOMBSTONE_ADDRESS is distinct from any
+        // real effect address so the comparison is safe even past resurrected slots.
+        address effectAddr = address(effect);
+        if (targetIndex == 2) {
+            uint256 len = config.globalEffectsLength;
+            for (uint256 i = 0; i < len;) {
+                if (address(config.globalEffects[i].effect) == effectAddr) return false;
+                unchecked { ++i; }
+            }
+        } else if (targetIndex == 0) {
+            uint256 count = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+            uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+            for (uint256 i = 0; i < count;) {
+                if (address(config.p0Effects[baseSlot + i].effect) == effectAddr) return false;
+                unchecked { ++i; }
+            }
+        } else {
+            uint256 count = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+            uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+            for (uint256 i = 0; i < count;) {
+                if (address(config.p1Effects[baseSlot + i].effect) == effectAddr) return false;
+                unchecked { ++i; }
+            }
+        }
+
+        _addEffectInternal(targetIndex, monIndex, effect, extraData);
+        return true;
+    }
+
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external {
         bytes32 battleKey = battleKeyForWrite;
         if (battleKey == bytes32(0)) {
@@ -1389,6 +1427,40 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Pack timestamp (upper 64 bits) with value (lower 192 bits)
         globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(value));
+    }
+
+    function getAndInitGlobalKV(uint64 key, uint192 valueIfZero) external returns (uint192 previousValue) {
+        bytes32 battleKey = battleKeyForWrite;
+        if (battleKey == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        bytes32 storageKey = storageKeyForWrite;
+        BattleConfig storage config = battleConfig[storageKey];
+        uint64 timestamp = uint64(config.startTimestamp);
+
+        bytes32 packed = globalKV[storageKey][key];
+        uint64 storedTs = uint64(uint256(packed) >> 192);
+        // Stale-from-prior-battle slots read as 0 here, matching `getGlobalKV` semantics — and the
+        // write-path below correctly registers the key in the new battle's buffer when storedTs
+        // doesn't match.
+        previousValue = (storedTs == timestamp) ? uint192(uint256(packed)) : uint192(0);
+
+        if (previousValue == 0) {
+            // Key registration: only when the slot has never been touched in THIS battle
+            // (mirrors setGlobalKV).
+            if (storedTs != timestamp) {
+                uint256 idx = config.globalKVCount;
+                uint256 slotIdx = idx >> 2;
+                uint256 shift = (idx & 3) * 64;
+                uint256 slot = globalKVKeySlots[storageKey][slotIdx];
+                slot = (slot & ~(uint256(type(uint64).max) << shift)) | (uint256(key) << shift);
+                globalKVKeySlots[storageKey][slotIdx] = slot;
+                unchecked {
+                    config.globalKVCount = uint8(idx + 1);
+                }
+            }
+            globalKV[storageKey][key] = bytes32((uint256(timestamp) << 192) | uint256(valueIfZero));
+        }
     }
 
     /// @notice Check if the KO'd player's team is fully wiped and lock in the winner immediately
@@ -3520,6 +3592,37 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _getDamageCalcContextInternal(
             config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
         );
+    }
+
+    function getMoveContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex
+    ) external view returns (MoveContext memory ctx) {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        BattleConfig storage config = battleConfig[storageKey];
+
+        ctx.attackerStats = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex).stats;
+        ctx.defenderStats = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex).stats;
+        ctx.attackerState = _sanitizeMonState(_loadMonState(config, attackerPlayerIndex, attackerMonIndex));
+        ctx.defenderState = _sanitizeMonState(_loadMonState(config, defenderPlayerIndex, defenderMonIndex));
+        (ctx.attackerEffects,) = _getEffectsForTarget(storageKey, attackerPlayerIndex, attackerMonIndex);
+        (ctx.defenderEffects,) = _getEffectsForTarget(storageKey, defenderPlayerIndex, defenderMonIndex);
+    }
+
+    /// @dev Mirror the sentinel-to-zero conversion that `getMonStateForBattle` performs per-field,
+    ///      so callers reading deltas off the batched context don't have to know about the sentinel.
+    function _sanitizeMonState(MonState memory s) private pure returns (MonState memory) {
+        if (s.hpDelta == CLEARED_MON_STATE_SENTINEL) s.hpDelta = 0;
+        if (s.staminaDelta == CLEARED_MON_STATE_SENTINEL) s.staminaDelta = 0;
+        if (s.speedDelta == CLEARED_MON_STATE_SENTINEL) s.speedDelta = 0;
+        if (s.attackDelta == CLEARED_MON_STATE_SENTINEL) s.attackDelta = 0;
+        if (s.defenceDelta == CLEARED_MON_STATE_SENTINEL) s.defenceDelta = 0;
+        if (s.specialAttackDelta == CLEARED_MON_STATE_SENTINEL) s.specialAttackDelta = 0;
+        if (s.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL) s.specialDefenceDelta = 0;
+        return s;
     }
 
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {

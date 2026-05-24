@@ -379,6 +379,21 @@ struct CPUContext {
     uint256[4] cpuActiveMonMoveSlots;
 }
 
+// Fat context returned by `Engine.getMoveContext` so external IMoveSet/IAbility
+// contracts can collapse the canonical "get stats + get state + get effects" callback
+// fan-out (often 4–7 round trips on custom moves) into a single staticcall. Sentinel
+// deltas are sanitized to 0 on the way out to match `getMonStateForBattle` semantics;
+// tombstoned effect slots are filtered out to match `getEffects` semantics. Holds both
+// "attacker" and "defender" sides — the caller picks which side maps to which.
+struct MoveContext {
+    MonStats attackerStats;
+    MonState attackerState;
+    MonStats defenderStats;
+    MonState defenderState;
+    EffectInstance[] attackerEffects;
+    EffectInstance[] defenderEffects;
+}
+
 // Batched context for the registry's onBattleEnd hook — replaces the older split of
 // getPlayersForBattle + getWinner + getKOBitmap×2.
 struct BattleEndContext {

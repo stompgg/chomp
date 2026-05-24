@@ -23,9 +23,22 @@ interface IEngine {
     function updateMonState(uint256 playerIndex, uint256 monIndex, MonStateIndexName stateVarIndex, int32 valueToAdd)
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
+    /// @notice Add `effect` to (`targetIndex`, `monIndex`) only if no live slot already holds it.
+    ///         Coalesces the canonical ability "iterate getEffects to dedup, then addEffect" pattern
+    ///         into a single CALL with an internal storage-side scan.
+    /// @return added True if newly added; false if a live slot already held this effect.
+    function addEffectIfNotPresent(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData)
+        external
+        returns (bool added);
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
+    /// @notice Read the current value at `key` and, if it was zero, store `valueIfZero` in the same call.
+    ///         Coalesces the "if (getGlobalKV(key) == 0) { …; setGlobalKV(key, v); }" once-per-battle
+    ///         flag pattern. Callers that need to mutate conditionally on an unrelated runtime check
+    ///         should keep using `getGlobalKV` + `setGlobalKV` — this primitive eagerly initializes.
+    /// @return previousValue The value read before any write was applied.
+    function getAndInitGlobalKV(uint64 key, uint192 valueIfZero) external returns (uint192 previousValue);
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
@@ -134,6 +147,18 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
+    /// @notice Batched read of both sides' base stats, deltas, and live effect lists for an
+    ///         attacker/defender pair. Lets custom moves consume one STATICCALL instead of the
+    ///         4–7 individual `getMonStatsForBattle` / `getMonStateForBattle` / `getEffects`
+    ///         callbacks the worst offenders do today. Sentinel deltas are returned as 0;
+    ///         tombstoned effect slots are filtered out.
+    function getMoveContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex
+    ) external view returns (MoveContext memory);
     function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
     function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
     function getCPURouteContext(bytes32 battleKey)
