@@ -103,12 +103,6 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32);
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view
@@ -134,7 +128,6 @@ interface IEngine {
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
-    function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
     function getCommitAuthForDualSigned(bytes32 battleKey)

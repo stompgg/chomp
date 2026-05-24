@@ -3372,15 +3372,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
     }
 
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32) {
-        return _readMonStateDelta(battleConfig[storageKey], playerIndex, monIndex, stateVarIndex);
-    }
-
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,
@@ -3473,10 +3464,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
         return _getKOBitmap(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
-    }
-
-    function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
-        return battleData[battleKey].prevPlayerSwitchForTurnFlag;
     }
 
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory ctx) {

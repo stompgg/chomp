@@ -198,8 +198,9 @@ contract BatchEquivalenceTest is BatchHelper {
         assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(keyA),
                  engine.getPlayerSwitchForTurnFlagForBattleState(keyB),
             string.concat(label, ": playerSwitchForTurnFlag"));
-        assertEq(engine.getPrevPlayerSwitchForTurnFlagForBattleState(keyA),
-                 engine.getPrevPlayerSwitchForTurnFlagForBattleState(keyB),
+        (, BattleData memory dataA) = engine.getBattle(keyA);
+        (, BattleData memory dataB) = engine.getBattle(keyB);
+        assertEq(dataA.prevPlayerSwitchForTurnFlag, dataB.prevPlayerSwitchForTurnFlag,
             string.concat(label, ": prevPlayerSwitchForTurnFlag"));
         assertEq(engine.getKOBitmap(keyA, 0), engine.getKOBitmap(keyB, 0),
             string.concat(label, ": p0 KO bitmap"));
