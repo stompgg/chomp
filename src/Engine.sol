@@ -10,6 +10,9 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
+import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
+import {ECDSA} from "./lib/ECDSA.sol";
+import {EIP712} from "./lib/EIP712.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {TimeoutCheckParams, ValidatorLogic} from "./lib/ValidatorLogic.sol";
@@ -17,7 +20,7 @@ import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
-contract Engine is IEngine, MappingAllocator {
+contract Engine is IEngine, MappingAllocator, EIP712 {
     // Default validator config (immutable, for inline validation when validator is address(0))
     uint256 public immutable DEFAULT_MONS_PER_TEAM;
     uint256 public immutable DEFAULT_MOVES_PER_MON;
@@ -339,6 +342,110 @@ contract Engine is IEngine, MappingAllocator {
     /// Writes move/salt data to transient storage instead of the per-battle storage slots.
     /// _executeInternal reads from transient when populated and skips the mirror, and
     /// `setMove` during execute also targets transient.
+
+    /// @inheritdoc EIP712
+    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
+        name = "Engine";
+        version = "1";
+    }
+
+    error InvalidRevealerSignature();
+    error MoveManagerSet();
+
+    /// @notice Direct-call equivalent of `SignedCommitManager.executeWithDualSignedMoves` for
+    ///         battles started with `moveManager = address(0)` — skips the manager STATICCALL +
+    ///         redundant `getCommitAuthForDualSigned` STATICCALL by doing the EIP-712 sig
+    ///         verification and auth inline. Caller must be the committer (turn parity decides
+    ///         who that is); revealer must have signed a `DualSignedReveal` over the engine's
+    ///         own EIP-712 domain (NOT the manager's — sigs don't cross-contaminate).
+    /// @dev Only usable when `config.moveManager == address(0)`. Battles started with a
+    ///      moveManager go through that manager unchanged.
+    /// @dev Timeout / stall ending (`Engine.end`) requires a `validator` set on the battle —
+    ///      the `_validateTimeoutInline` path calls into the commit manager which doesn't
+    ///      exist here. Set a validator if you need stall-timeout semantics; otherwise stuck
+    ///      battles only resolve via `MAX_BATTLE_DURATION` (hard cap).
+    function executeWithDualSignedMovesDirect(
+        bytes32 battleKey,
+        uint8 committerMoveIndex,
+        uint104 committerSalt,
+        uint16 committerExtraData,
+        uint8 revealerMoveIndex,
+        uint104 revealerSalt,
+        uint16 revealerExtraData,
+        bytes calldata revealerSignature
+    ) external returns (address winner) {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
+
+        BattleConfig storage config = battleConfig[storageKey];
+        if (config.moveManager != address(0)) revert MoveManagerSet();
+        if (config.startTimestamp == 0) revert BattleNotStarted();
+
+        BattleData storage data = battleData[battleKey];
+        if (data.winnerIndex != 2) revert GameAlreadyOver();
+        if (data.playerSwitchForTurnFlag != 2) revert NotTwoPlayerTurn();
+
+        uint64 turnId = data.turnId;
+        address committer;
+        address revealer;
+        if (turnId % 2 == 0) {
+            committer = data.p0;
+            revealer = data.p1;
+        } else {
+            committer = data.p1;
+            revealer = data.p0;
+        }
+        if (msg.sender != committer) revert WrongCaller();
+
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        {
+            SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: revealerMoveIndex,
+                revealerSalt: revealerSalt,
+                revealerExtraData: revealerExtraData
+            });
+            bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+            if (ECDSA.recoverCalldata(digest, revealerSignature) != revealer) {
+                revert InvalidRevealerSignature();
+            }
+        }
+
+        // Populate the packed transient slot — same shape as `executeWithMoves` produces.
+        uint8 p0StoredMoveIndex;
+        uint8 p1StoredMoveIndex;
+        uint128 p0Half;
+        uint128 p1Half;
+        if (turnId % 2 == 0) {
+            // committer = p0
+            p0StoredMoveIndex = committerMoveIndex < SWITCH_MOVE_INDEX
+                ? committerMoveIndex + MOVE_INDEX_OFFSET
+                : committerMoveIndex;
+            p1StoredMoveIndex = revealerMoveIndex < SWITCH_MOVE_INDEX
+                ? revealerMoveIndex + MOVE_INDEX_OFFSET
+                : revealerMoveIndex;
+            p0Half = _packTurnHalf(p0StoredMoveIndex | IS_REAL_TURN_BIT, committerExtraData, committerSalt);
+            p1Half = _packTurnHalf(p1StoredMoveIndex | IS_REAL_TURN_BIT, revealerExtraData, revealerSalt);
+        } else {
+            // committer = p1
+            p0StoredMoveIndex = revealerMoveIndex < SWITCH_MOVE_INDEX
+                ? revealerMoveIndex + MOVE_INDEX_OFFSET
+                : revealerMoveIndex;
+            p1StoredMoveIndex = committerMoveIndex < SWITCH_MOVE_INDEX
+                ? committerMoveIndex + MOVE_INDEX_OFFSET
+                : committerMoveIndex;
+            p0Half = _packTurnHalf(p0StoredMoveIndex | IS_REAL_TURN_BIT, revealerExtraData, revealerSalt);
+            p1Half = _packTurnHalf(p1StoredMoveIndex | IS_REAL_TURN_BIT, committerExtraData, committerSalt);
+        }
+        _turnTransient = uint256(p0Half) | (uint256(p1Half) << 128);
+
+        return _executeInternal(battleKey, storageKey, config.engineHooksLength, config.hasInlineStaminaRegen);
+    }
+
     function executeWithMoves(
         bytes32 battleKey,
         uint8 p0MoveIndex,
