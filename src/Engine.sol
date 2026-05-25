@@ -1068,25 +1068,45 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) internal {
         bytes32 battleKey = battleKeyForWrite;
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-
-        if (uint256(stateVarIndex) <= uint256(MonStateIndexName.SpecialDefense)) {
-            // Numeric delta field (Hp..SpecialDefense map to shifts 0..192 in 32-bit lanes).
-            _addToMonStateDeltaField(config, playerIndex, monIndex, uint256(stateVarIndex) * 32, valueToAdd);
-        } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
-            _setShouldSkipTurn(config, playerIndex, monIndex, (valueToAdd % 2) == 1);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
+        if (stateVarIndex == MonStateIndexName.Hp) {
+            monState.hpDelta =
+                (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.hpDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.Stamina) {
+            monState.staminaDelta =
+                (monState.staminaDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.staminaDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.Speed) {
+            monState.speedDelta =
+                (monState.speedDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.speedDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.Attack) {
+            monState.attackDelta =
+                (monState.attackDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.attackDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.Defense) {
+            monState.defenceDelta =
+                (monState.defenceDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.defenceDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
+            monState.specialAttackDelta = (monState.specialAttackDelta == CLEARED_MON_STATE_SENTINEL)
+                ? valueToAdd
+                : monState.specialAttackDelta + valueToAdd;
+        } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
+            monState.specialDefenceDelta = (monState.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL)
+                ? valueToAdd
+                : monState.specialDefenceDelta + valueToAdd;
         } else if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
-            // KO has bitmap + winner side effects; keep the full unpack/repack path.
-            MonState memory monState = _loadMonState(config, playerIndex, monIndex);
             bool newKOState = (valueToAdd % 2) == 1;
             bool wasKOed = monState.isKnockedOut;
             monState.isKnockedOut = newKOState;
+            // Update KO bitmap if state changed
             if (newKOState && !wasKOed) {
-                // Store before the winner-check + OnUpdateMonState callbacks so any nested reads
-                // (e.g. effects calling getMonStateForBattle) see the post-KO flag.
+                // Store the memory copy now so the winner-check + KO bitmap logic sees the
+                // updated isKnockedOut bit if they query via getMonStateForBattle.
                 _storeMonState(config, playerIndex, monIndex, monState);
                 _setMonKO(config, playerIndex, monIndex);
                 koOccurredFlag = 1;
+                // Lock in winner immediately if this KO ends the game
                 _checkAndSetWinnerIfGameOver(config, playerIndex);
+                // Trigger OnUpdateMonState below; the early return on the KO path skips the
+                // (deferred) write-back since we already wrote.
                 uint256 updateMonStateCountKO = playerIndex == 0
                     ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
                     : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
@@ -1104,8 +1124,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             } else if (!newKOState && wasKOed) {
                 _clearMonKO(config, playerIndex, monIndex);
             }
-            _storeMonState(config, playerIndex, monIndex, monState);
+        } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
+            monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
+        _storeMonState(config, playerIndex, monIndex, monState);
 
         // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
         // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
@@ -3321,34 +3343,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         returns (bool)
     {
         return (uint8(_readMonStatePacked(cfg, playerIndex, monIndex) >> 224) & 1) != 0;
-    }
-
-    /// @dev Direct packed RMW for a numeric int32 delta field (Hp/Stamina/Speed/Atk/Def/SpAtk/SpDef).
-    ///      Skips the 9-field unpack+repack vs the _loadMonState/_storeMonState dance. Sentinel
-    ///      becomes the delta (matches the existing add-with-sentinel-zero semantics in updateMonState).
-    function _addToMonStateDeltaField(
-        BattleConfig storage cfg,
-        uint256 playerIndex,
-        uint256 monIndex,
-        uint256 fieldShift,
-        int32 delta
-    ) internal {
-        uint256 packed = _readMonStatePacked(cfg, playerIndex, monIndex);
-        int32 current = int32(uint32(packed >> fieldShift));
-        int32 updated = current == CLEARED_MON_STATE_SENTINEL ? delta : current + delta;
-        packed = (packed & ~(uint256(type(uint32).max) << fieldShift))
-            | (uint256(uint32(updated)) << fieldShift);
-        _writeMonStatePacked(cfg, playerIndex, monIndex, packed);
-    }
-
-    /// @dev Direct packed bit-flip for shouldSkipTurn (bit 232). Skips the 9-field unpack/repack.
-    function _setShouldSkipTurn(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool value)
-        internal
-    {
-        uint256 packed = _readMonStatePacked(cfg, playerIndex, monIndex);
-        if (value) packed |= (uint256(1) << 232);
-        else packed &= ~(uint256(1) << 232);
-        _writeMonStatePacked(cfg, playerIndex, monIndex, packed);
     }
 
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256) {

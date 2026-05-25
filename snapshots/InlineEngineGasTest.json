@@ -1,16 +1,16 @@
 {
-  "B1_Execute": "934699",
+  "B1_Execute": "936501",
   "B1_Setup": "783478",
-  "B2_Execute": "658459",
+  "B2_Execute": "660261",
   "B2_Setup": "288189",
   "Battle1_Execute": "417315",
   "Battle1_Setup": "758674",
   "Battle2_Execute": "336574",
   "Battle2_Setup": "227271",
-  "FirstBattle": "2760764",
-  "SecondBattle": "2768922",
+  "FirstBattle": "2770951",
+  "SecondBattle": "2781914",
   "Setup 1": "1637310",
   "Setup 2": "322245",
   "Setup 3": "318451",
-  "ThirdBattle": "2133157"
+  "ThirdBattle": "2143284"
 }
