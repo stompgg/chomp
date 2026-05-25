@@ -666,12 +666,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
 
+        // Cache shadow-active flag once for the entire execute frame. Reused via the bool
+        // overloads of slot-1 / MonState / KO helpers. Eliminates the per-call TLOAD
+        // (~100g each × dozens of calls/turn) on both legacy and batched flows.
+        bool isBatched = _batchShadowActive;
+
         // Read BD slot 1 once and extract all needed fields (winner, turnId, current flag).
         // The setPrev step below also rides on this same cached value, so we replace
         // ~3 separate slot reads + 1 RMW (each helper re-reads the packed slot) with one
         // read + one write. Safe to cache here: no external calls run between this block
         // and the setPrev write below.
-        uint256 packedSlot1 = _readBattleSlot1Packed(battleKey);
+        uint256 packedSlot1 = _readBattleSlot1Packed(battleKey, isBatched);
         if (uint8(packedSlot1 >> 160) != 2) {
             revert GameAlreadyOver();
         }
@@ -692,7 +697,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         {
             uint8 currentFlag = uint8(packedSlot1 >> 176);
             packedSlot1 = (packedSlot1 & ~(uint256(0xFF) << 168)) | (uint256(currentFlag) << 168);
-            _writeBattleSlot1Packed(battleKey, packedSlot1);
+            _writeBattleSlot1Packed(battleKey, packedSlot1, isBatched);
         }
 
         // `battleKeyForWrite` is set by the external entry point (execute / executeWithMoves /
@@ -716,14 +721,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
-        uint8 entryFlag = _getPlayerSwitchForTurnFlag(battleKey);
+        uint8 entryFlag = _getPlayerSwitchForTurnFlag(battleKey, isBatched);
         if (entryFlag == 0 || entryFlag == 1) {
             // Get the player index that needs to switch for this turn
             uint256 playerIndex = uint256(entryFlag);
 
             // Run the move (trust that the validator only lets valid single player moves happen as a switch action)
             // Running the move will set the winner flag if valid
-            playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, playerIndex, playerSwitchForTurnFlag);
+            playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, playerIndex, playerSwitchForTurnFlag, isBatched);
         }
         // Otherwise, we need to run priority calculations and update the game state for both players
         /*
@@ -769,18 +774,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
-            priorityPlayerIndex = _computePriorityPlayerIndex(config, battleKey, rng, p0TurnMove, p1TurnMove);
+            priorityPlayerIndex = _computePriorityPlayerIndex(config, battleKey, rng, p0TurnMove, p1TurnMove, isBatched);
             uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
             // Run beginning of round effects (fused: global + priority + other in one frame)
             playerSwitchForTurnFlag = _handleEffectsTriple(
                 battleKey, config, battle, rng,
                 priorityPlayerIndex, otherPlayerIndex,
                 EffectStep.RoundStart,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
             playerSwitchForTurnFlag =
-                _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
+                _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag, isBatched);
             // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s)
             playerSwitchForTurnFlag = _handleEffects(
                 battleKey,
@@ -791,7 +797,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 priorityPlayerIndex,
                 EffectStep.AfterMove,
                 EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
 
             // Always run the global effect's afterMove hook(s)
@@ -804,7 +811,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 priorityPlayerIndex,
                 EffectStep.AfterMove,
                 EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
 
             if (inlineStaminaRegen) {
@@ -812,13 +820,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     config,
                     EffectStep.AfterMove,
                     priorityPlayerIndex,
-                    _unpackActiveMonIndex(_getActiveMonIndex(battleKey), priorityPlayerIndex),
+                    _unpackActiveMonIndex(_getActiveMonIndex(battleKey, isBatched), priorityPlayerIndex),
                     0,
-                    0
+                    0,
+                    isBatched
                 );
             }
             // Run the non priority player's move
-            playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
+            playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag, isBatched);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
             // Happens immediately after both mons are sent in, before any other effects.
@@ -826,14 +835,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // calls switchActiveMon in activateOnSwitch (the only switching effect, HardReset,
             // is an IMoveSet, not an IAbility, and runs via _handleMove rather than here).
             if (turnId == 0) {
-                uint16 packedActiveMonIndexT0 = _getActiveMonIndex(battleKey);
+                uint16 packedActiveMonIndexT0 = _getActiveMonIndex(battleKey, isBatched);
                 uint256 priorityMonIndex = _unpackActiveMonIndex(packedActiveMonIndexT0, priorityPlayerIndex);
                 _activateAbility(
                     config,
                     battleKey,
                     _getTeamMon(config, priorityPlayerIndex, priorityMonIndex).ability,
                     priorityPlayerIndex,
-                    priorityMonIndex
+                    priorityMonIndex,
+                    isBatched
                 );
                 uint256 otherMonIndex = _unpackActiveMonIndex(packedActiveMonIndexT0, otherPlayerIndex);
                 _activateAbility(
@@ -841,7 +851,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     battleKey,
                     _getTeamMon(config, otherPlayerIndex, otherMonIndex).ability,
                     otherPlayerIndex,
-                    otherMonIndex
+                    otherMonIndex,
+                    isBatched
                 );
             }
             // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s)
@@ -854,7 +865,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 otherPlayerIndex,
                 EffectStep.AfterMove,
                 EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
 
             // Always run the global effect's afterMove hook(s)
@@ -867,7 +879,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 otherPlayerIndex,
                 EffectStep.AfterMove,
                 EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
 
             if (inlineStaminaRegen) {
@@ -875,9 +888,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     config,
                     EffectStep.AfterMove,
                     otherPlayerIndex,
-                    _unpackActiveMonIndex(_getActiveMonIndex(battleKey), otherPlayerIndex),
+                    _unpackActiveMonIndex(_getActiveMonIndex(battleKey, isBatched), otherPlayerIndex),
                     0,
-                    0
+                    0,
+                    isBatched
                 );
             }
             // Always run global effects at the end of the round, then the priority and other
@@ -886,14 +900,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 battleKey, config, battle, rng,
                 priorityPlayerIndex, otherPlayerIndex,
                 EffectStep.RoundEnd,
-                playerSwitchForTurnFlag
+                playerSwitchForTurnFlag,
+                isBatched
             );
 
             if (inlineStaminaRegen) {
-                uint16 packedActiveMonIndexRE = _getActiveMonIndex(battleKey);
+                uint16 packedActiveMonIndexRE = _getActiveMonIndex(battleKey, isBatched);
                 uint256 p0Mon = _unpackActiveMonIndex(packedActiveMonIndexRE, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(packedActiveMonIndexRE, 1);
-                _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
+                _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, isBatched);
             }
         }
         // Run the round end hooks
@@ -907,7 +922,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // If a winner has been set, handle the game over (shadow-aware read).
-        uint8 endWinnerIndex = _getWinnerIndex(battleKey);
+        uint8 endWinnerIndex = _getWinnerIndex(battleKey, isBatched);
         if (endWinnerIndex != 2) {
             winner = (endWinnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
@@ -918,12 +933,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // lastExecuteTimestamp) packed into a single shadow-aware write. When shadow is active
         // (executeBatchedTurns), the new packed value lands in transient — flushed once at end
         // of batch — and the cross-sub-turn reads pick it up via the same helpers. Otherwise
-        // SSTORE direct. Solidity coalesced these into one SSTORE in the legacy path already,
-        // so the cost there is unchanged modulo one TLOAD of the shadow flag.
+        // SSTORE direct.
         _setLastExecAndIncrementTurnId(
             battleKey,
             uint8(playerSwitchForTurnFlag),
-            uint40(block.timestamp)
+            uint40(block.timestamp),
+            isBatched
         );
         // Clear storage move slots only when they were actually written via setMove (execute() path).
         // executeWithMoves never writes, so the slots stay zero and a clear here would burn ~4.4k on
@@ -1064,11 +1079,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         uint256 monIndex,
         MonStateIndexName stateVarIndex,
-        int32 valueToAdd
+        int32 valueToAdd,
+        bool isBatched
     ) internal {
         bytes32 battleKey = battleKeyForWrite;
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex, isBatched);
         if (stateVarIndex == MonStateIndexName.Hp) {
             monState.hpDelta =
                 (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.hpDelta + valueToAdd;
@@ -1100,11 +1116,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (newKOState && !wasKOed) {
                 // Store the memory copy now so the winner-check + KO bitmap logic sees the
                 // updated isKnockedOut bit if they query via getMonStateForBattle.
-                _storeMonState(config, playerIndex, monIndex, monState);
-                _setMonKO(config, playerIndex, monIndex);
+                _storeMonState(config, playerIndex, monIndex, monState, isBatched);
+                _setMonKO(config, playerIndex, monIndex, isBatched);
                 koOccurredFlag = 1;
                 // Lock in winner immediately if this KO ends the game
-                _checkAndSetWinnerIfGameOver(config, playerIndex);
+                _checkAndSetWinnerIfGameOver(config, playerIndex, isBatched);
                 // Trigger OnUpdateMonState below; the early return on the KO path skips the
                 // (deferred) write-back since we already wrote.
                 uint256 updateMonStateCountKO = playerIndex == 0
@@ -1117,17 +1133,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         playerIndex,
                         playerIndex,
                         EffectStep.OnUpdateMonState,
-                        abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd)
+                        abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd),
+                        isBatched
                     );
                 }
                 return;
             } else if (!newKOState && wasKOed) {
-                _clearMonKO(config, playerIndex, monIndex);
+                _clearMonKO(config, playerIndex, monIndex, isBatched);
             }
         } else if (stateVarIndex == MonStateIndexName.ShouldSkipTurn) {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
-        _storeMonState(config, playerIndex, monIndex, monState);
+        _storeMonState(config, playerIndex, monIndex, monState, isBatched);
 
         // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
         // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
@@ -1142,7 +1159,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd)
+                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd),
+                isBatched
             );
         }
     }
@@ -1153,7 +1171,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
-        _updateMonStateInternal(playerIndex, monIndex, stateVarIndex, valueToAdd);
+        _updateMonStateInternal(playerIndex, monIndex, stateVarIndex, valueToAdd, _batchShadowActive);
     }
 
     function _isEffectRegistered(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, address effectAddr)
@@ -1182,7 +1200,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleConfig storage config,
         uint256 rawAbilitySlot,
         uint256 playerIndex,
-        uint256 monIndex
+        uint256 monIndex,
+        bool isBatched
     ) internal {
         uint8 abilityTypeId = uint8(rawAbilitySlot >> 248);
         address effectAddr = address(uint160(rawAbilitySlot));
@@ -1191,7 +1210,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // Singleton self-register, mon-local:
             // Idempotency check + addEffect(playerIndex, monIndex, effectAddr, bytes32(0))
             if (!_isEffectRegistered(config, playerIndex, monIndex, effectAddr)) {
-                _addEffectInternal(playerIndex, monIndex, IEffect(effectAddr), bytes32(0));
+                _addEffectInternal(playerIndex, monIndex, IEffect(effectAddr), bytes32(0), isBatched);
             }
         }
     }
@@ -1201,18 +1220,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 battleKey,
         uint256 rawAbility,
         uint256 playerIndex,
-        uint256 monIndex
+        uint256 monIndex,
+        bool isBatched
     ) internal {
         if (rawAbility == 0) return;
         if (rawAbility >> 160 != 0) {
-            _inlineAbilityActivation(config, rawAbility, playerIndex, monIndex);
+            _inlineAbilityActivation(config, rawAbility, playerIndex, monIndex, isBatched);
         } else {
             IAbility(address(uint160(rawAbility)))
                 .activateOnSwitch(IEngine(address(this)), battleKey, playerIndex, monIndex);
         }
     }
 
-    function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) internal {
+    function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData, bool isBatched) internal {
         bytes32 battleKey = battleKeyForWrite;
         // Fetch steps bitmap once (reused for storage and ALWAYS_APPLIES check)
         uint16 stepsBitmap = effect.getStepsBitmap();
@@ -1231,7 +1251,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check if we have to run an onApply state update (use bitmap instead of external call)
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
-                uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
+                uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey, isBatched);
                 uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
                 uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
                 // If so, we run the effect first, and get updated extraData if necessary
@@ -1292,7 +1312,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
-        _addEffectInternal(targetIndex, monIndex, effect, extraData);
+        _addEffectInternal(targetIndex, monIndex, effect, extraData, _batchShadowActive);
     }
 
     function addEffectIfNotPresent(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData)
@@ -1319,7 +1339,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
         }
 
-        _addEffectInternal(targetIndex, monIndex, effect, extraData);
+        _addEffectInternal(targetIndex, monIndex, effect, extraData, _batchShadowActive);
         return true;
     }
 
@@ -1348,7 +1368,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
-        _removeEffectAtSlot(battleConfig[storageKeyForWrite], battleKey, targetIndex, monIndex, indexToRemove);
+        _removeEffectAtSlot(battleConfig[storageKeyForWrite], battleKey, targetIndex, monIndex, indexToRemove, _batchShadowActive);
     }
 
     function _removeEffectAtSlot(
@@ -1356,7 +1376,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 battleKey,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 slotIndex
+        uint256 slotIndex,
+        bool isBatched
     ) private {
         EffectInstance storage eff;
         if (targetIndex == 2) {
@@ -1371,7 +1392,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (address(effect) == TOMBSTONE_ADDRESS) return;
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
-            uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
+            uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey, isBatched);
             uint256 p0Active = _unpackActiveMonIndex(packedActiveMonIndex, 0);
             uint256 p1Active = _unpackActiveMonIndex(packedActiveMonIndex, 1);
             effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, p0Active, p1Active);
@@ -1414,21 +1435,27 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      Routes through shadow helpers so the winnerIndex write defers to transient when running
     ///      inside `executeBatchedTurns`, and the read picks up that deferred value on the next sub-turn.
     function _checkAndSetWinnerIfGameOver(BattleConfig storage config, uint256 koPlayerIndex) internal {
+        _checkAndSetWinnerIfGameOver(config, koPlayerIndex, _batchShadowActive);
+    }
+
+    function _checkAndSetWinnerIfGameOver(BattleConfig storage config, uint256 koPlayerIndex, bool isBatched)
+        internal
+    {
         bytes32 battleKey = battleKeyForWrite;
 
         // If winner already set, don't overwrite
-        if (_getWinnerIndex(battleKey) != 2) {
+        if (_getWinnerIndex(battleKey, isBatched) != 2) {
             return;
         }
 
         // Check if KO'd player's team is fully wiped
-        uint256 koBitmap = _getKOBitmap(config, koPlayerIndex);
+        uint256 koBitmap = _getKOBitmap(config, koPlayerIndex, isBatched);
         uint256 teamSize = (koPlayerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
         uint256 fullMask = (1 << teamSize) - 1;
 
         if (koBitmap == fullMask) {
             // This player's team is fully wiped, other player wins
-            _setWinnerIndex(battleKey, uint8((koPlayerIndex + 1) % 2));
+            _setWinnerIndex(battleKey, uint8((koPlayerIndex + 1) % 2), isBatched);
         }
     }
 
@@ -1437,18 +1464,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         uint256 monIndex,
         int32 damage,
-        uint256 source
+        uint256 source,
+        bool isBatched
     ) internal {
         bytes32 bkw = battleKeyForWrite;
         // If game is already over, skip all damage (shadow-aware so mid-batch KOs propagate
         // across sub-turns without round-tripping storage).
-        if (_getWinnerIndex(bkw) != 2) {
+        if (_getWinnerIndex(bkw, isBatched) != 2) {
             return;
         }
 
         // Load MonState into a memory copy via the shadow helper. In legacy mode this is one
         // SLOAD of the packed slot; in shadow mode it may TLOAD if a prior write already cached.
-        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex, isBatched);
 
         if (monState.isKnockedOut) {
             return;
@@ -1463,13 +1491,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (monEffectCount > 0) {
             tempPreDamage = damage;
             _runEffects(
-                bkw, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source)
+                bkw, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source), isBatched
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
             // PreDamage hooks may have mutated MonState via external callbacks (engine.dealDamage,
             // engine.updateMonState). Reload from shadow/storage to pick up their writes.
-            monState = _loadMonState(config, playerIndex, monIndex);
+            monState = _loadMonState(config, playerIndex, monIndex, isBatched);
             if (monState.isKnockedOut) {
                 return;
             }
@@ -1487,14 +1515,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             monState.isKnockedOut = true;
             // Write back BEFORE the winner-check + AfterDamage callbacks so any nested reads
             // (e.g., effects calling `getMonStateForBattle`) see the post-damage values.
-            _storeMonState(config, playerIndex, monIndex, monState);
-            _setMonKO(config, playerIndex, monIndex);
+            _storeMonState(config, playerIndex, monIndex, monState, isBatched);
+            _setMonKO(config, playerIndex, monIndex, isBatched);
             koOccurredFlag = 1;
 
             // Lock in winner immediately if this KO ends the game
-            _checkAndSetWinnerIfGameOver(config, playerIndex);
+            _checkAndSetWinnerIfGameOver(config, playerIndex, isBatched);
         } else {
-            _storeMonState(config, playerIndex, monIndex, monState);
+            _storeMonState(config, playerIndex, monIndex, monState, isBatched);
         }
         // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
         if (monEffectCount > 0) {
@@ -1504,7 +1532,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 playerIndex,
                 playerIndex,
                 EffectStep.AfterDamage,
-                abi.encode(damage, source)
+                abi.encode(damage, source),
+                isBatched
             );
         }
     }
@@ -1515,7 +1544,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert NoWriteAllowed();
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        _dealDamageInternal(config, playerIndex, monIndex, damage, uint256(uint160(msg.sender)));
+        _dealDamageInternal(
+            config, playerIndex, monIndex, damage, uint256(uint160(msg.sender)), _batchShadowActive
+        );
     }
 
     function getPreDamage() external view returns (int32) {
@@ -1544,7 +1575,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint8 effectAccuracy,
         IEffect effect,
         uint256 rng,
-        uint256 source
+        uint256 source,
+        bool isBatched
     ) internal returns (int32 damage, bytes32 eventType) {
         // Per-attacker rng mix: mirror mons using the same move against each other must roll differently.
         // See AttackCalculator.mixRngForAttacker for rationale; matches StandardAttack._move's external path.
@@ -1558,7 +1590,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Build DamageCalcContext from internal storage (no external callback)
             DamageCalcContext memory ctx = _getDamageCalcContextInternal(
-                config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
+                config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex, isBatched
             );
 
             // Type effectiveness via TypeCalcLib (internal pure, no external call)
@@ -1573,7 +1605,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rngToUse, critRate);
 
             if (damage > 0 && scaledBasePower > 0) {
-                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source);
+                _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source, isBatched);
             }
         }
 
@@ -1581,7 +1613,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Uses a rerolled rng so effect trigger is uncorrelated with the accuracy/crit/volatility rolls.
         if (address(effect) != address(0) && AttackCalculator.shouldApplyEffect(rng, basePower, damage, effectAccuracy))
         {
-            _addEffectInternal(defenderPlayerIndex, defenderMonIndex, effect, "");
+            _addEffectInternal(defenderPlayerIndex, defenderMonIndex, effect, "", isBatched);
         }
     }
 
@@ -1592,7 +1624,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 attackerMonIndex,
         uint256 defenderPlayerIndex,
         uint256 defenderMonIndex,
-        uint256 rng
+        uint256 rng,
+        bool isBatched
     ) internal {
         uint32 basePower = uint32((rawMoveSlot >> 248) & 0xFF);
         uint8 moveClassRaw = uint8((rawMoveSlot >> 246) & 0x3);
@@ -1615,7 +1648,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effectAccuracy,
             IEffect(effectAddr),
             rng,
-            rawMoveSlot
+            rawMoveSlot,
+            isBatched
         );
     }
 
@@ -1638,7 +1672,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint256 defenderPlayerIndex = 1 - attackerPlayerIndex;
-        uint256 attackerMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), attackerPlayerIndex);
+        bool isBatched = _batchShadowActive;
+        uint256 attackerMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), attackerPlayerIndex);
 
         return _dispatchStandardAttackInternal(
             config,
@@ -1655,7 +1690,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effectAccuracy,
             effect,
             rng,
-            uint256(uint160(msg.sender))
+            uint256(uint160(msg.sender)),
+            isBatched
         );
     }
 
@@ -1664,6 +1700,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
+        bool isBatched = _batchShadowActive;
 
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKey];
@@ -1672,10 +1709,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bool isValid;
         if (address(config.validator) == address(0)) {
             // Use inline validation (no external call) — use cached battleKey local
-            uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKey), playerIndex);
-            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex);
+            uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKey, isBatched), playerIndex);
+            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex, isBatched);
             isValid = ValidatorLogic.validateSwitch(
-                _getTurnId(battleKey), activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
+                _getTurnId(battleKey, isBatched), activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
         } else {
             // Use external validator
@@ -1683,14 +1720,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         if (isValid) {
             // Only call the internal switch function if the switch is valid
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, isBatched);
 
             // Check for game over and/or KOs
-            (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, playerIndex);
+            (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, playerIndex, isBatched);
             if (isGameOver) return;
 
             // Set the player switch for turn flag
-            _setPlayerSwitchForTurnFlag(battleKey, uint8(playerSwitchForTurnFlag));
+            _setPlayerSwitchForTurnFlag(battleKey, uint8(playerSwitchForTurnFlag), isBatched);
 
             // TODO:
             // Also upstreaming more updates from `_handleSwitch` and change it to also add `_handleEffects`
@@ -1797,18 +1834,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         view
         returns (uint256 playerSwitchForTurnFlag, bool isGameOver)
     {
+        return _checkForGameOverOrKO(config, priorityPlayerIndex, _batchShadowActive);
+    }
+
+    function _checkForGameOverOrKO(BattleConfig storage config, uint256 priorityPlayerIndex, bool isBatched)
+        internal
+        view
+        returns (uint256 playerSwitchForTurnFlag, bool isGameOver)
+    {
         bytes32 bkw = battleKeyForWrite;
         // Winner is set immediately in _dealDamageInternal when a KO results in game over
-        if (_getWinnerIndex(bkw) != 2) {
+        if (_getWinnerIndex(bkw, isBatched) != 2) {
             return (playerSwitchForTurnFlag, true);
         }
 
         // Not a game over - check for KOs and set the player switch for turn flag
         playerSwitchForTurnFlag = 2;
 
-        uint256 p0KOBitmap = _getKOBitmap(config, 0);
-        uint256 p1KOBitmap = _getKOBitmap(config, 1);
-        uint16 packedActiveMonIndex = _getActiveMonIndex(bkw);
+        uint256 p0KOBitmap = _getKOBitmap(config, 0, isBatched);
+        uint256 p1KOBitmap = _getKOBitmap(config, 1, isBatched);
+        uint16 packedActiveMonIndex = _getActiveMonIndex(bkw, isBatched);
 
         // Global effect context (priorityPlayerIndex == 2): check both players explicitly
         if (priorityPlayerIndex >= 2) {
@@ -1840,45 +1885,47 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) internal {
+    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex, bool isBatched) internal {
         // NOTE: We will check for game over after the switch in the engine for two player turns, so we don't do it here
         // But this also means that the current flow of OnMonSwitchOut effects -> OnMonSwitchIn effects -> ability activateOnSwitch
         // will all resolve before checking for KOs or winners
         // (could break this up even more, but that's for a later version / PR)
 
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint256 currentActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKey), playerIndex);
+        uint256 currentActiveMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(battleKey, isBatched), playerIndex);
 
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
-        if (!_isMonKnockedOut(config, playerIndex, currentActiveMonIndex)) {
-            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
+        if (!_isMonKnockedOut(config, playerIndex, currentActiveMonIndex, isBatched)) {
+            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", isBatched);
 
             // Then run the global on mon switch out hook as well
-            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "");
+            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", isBatched);
         }
 
         // Update to new active mon (we assume validateSwitch already resolved and gives us a valid target)
         _setActiveMonIndexPacked(
             battleKey,
-            _setActiveMonIndex(_getActiveMonIndex(battleKey), playerIndex, monToSwitchIndex)
+            _setActiveMonIndex(_getActiveMonIndex(battleKey, isBatched), playerIndex, monToSwitchIndex),
+            isBatched
         );
 
         // Run onMonSwitchIn hook for local effects
-        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", isBatched);
 
         // Run onMonSwitchIn hook for global effects
-        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "", isBatched);
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
-        if (_getTurnId(battleKey) != 0 && !_isMonKnockedOut(config, playerIndex, monToSwitchIndex)) {
+        if (_getTurnId(battleKey, isBatched) != 0 && !_isMonKnockedOut(config, playerIndex, monToSwitchIndex, isBatched)) {
             _activateAbility(
                 config,
                 battleKey,
                 _getTeamMon(config, playerIndex, monToSwitchIndex).ability,
                 playerIndex,
-                monToSwitchIndex
+                monToSwitchIndex,
+                isBatched
             );
         }
     }
@@ -1888,7 +1935,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleConfig storage config,
         BattleData storage battle,
         uint256 playerIndex,
-        uint256 prevPlayerSwitchForTurnFlag
+        uint256 prevPlayerSwitchForTurnFlag,
+        bool isBatched
     ) internal returns (uint256 playerSwitchForTurnFlag) {
         MoveDecision memory move = _getCurrentTurnMove(config, playerIndex);
         int32 staminaCost;
@@ -1901,14 +1949,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Cache battleKeyForWrite + turnId for the duration of _handleMove. turnId is bumped only
         // at the end of _executeInternal (after every _handleMove returns), so it's invariant here.
         bytes32 bkw = battleKeyForWrite;
-        uint16 turnIdCached = _getTurnId(battleKey);
+        uint16 turnIdCached = _getTurnId(battleKey, isBatched);
 
         // Handle shouldSkipTurn flag first and toggle it off if set
-        uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), playerIndex);
-        MonState memory currentMonState = _loadMonState(config, playerIndex, activeMonIndex);
+        uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), playerIndex);
+        MonState memory currentMonState = _loadMonState(config, playerIndex, activeMonIndex, isBatched);
         if (currentMonState.shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
-            _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
+            _storeMonState(config, playerIndex, activeMonIndex, currentMonState, isBatched);
             return playerSwitchForTurnFlag;
         }
 
@@ -1938,14 +1986,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (monToSwitchIndex >= teamSize) {
                 return playerSwitchForTurnFlag;
             }
-            if (_isMonKnockedOut(config, playerIndex, monToSwitchIndex)) {
+            if (_isMonKnockedOut(config, playerIndex, monToSwitchIndex, isBatched)) {
                 return playerSwitchForTurnFlag;
             }
             // Disallow switching to the same mon except on turn 0 (initial send-in allows both players to pick mon 0).
             if (turnIdCached != 0 && monToSwitchIndex == activeMonIndex) {
                 return playerSwitchForTurnFlag;
             }
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
+            _handleSwitch(battleKey, playerIndex, monToSwitchIndex, isBatched);
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // No-op: do nothing (e.g. just recover stamina)
         } else {
@@ -1978,11 +2026,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
                     ? -staminaCost
                     : currentMonState.staminaDelta - staminaCost;
-                _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
+                _storeMonState(config, playerIndex, activeMonIndex, currentMonState, isBatched);
 
-                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), 1 - playerIndex);
+                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), 1 - playerIndex);
                 _inlineStandardAttack(
-                    config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG
+                    config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG, isBatched
                 );
             } else {
                 // === EXTERNAL PATH ===
@@ -2017,9 +2065,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 currentMonState.staminaDelta = (currentMonState.staminaDelta == CLEARED_MON_STATE_SENTINEL)
                     ? -staminaCost
                     : currentMonState.staminaDelta - staminaCost;
-                _storeMonState(config, playerIndex, activeMonIndex, currentMonState);
+                _storeMonState(config, playerIndex, activeMonIndex, currentMonState, isBatched);
 
-                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), 1 - playerIndex);
+                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), 1 - playerIndex);
                 moveSet.move(self, battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
             }
         }
@@ -2027,7 +2075,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Only check for Game Over / KO if a KO occurred during the move
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex, isBatched);
         }
         return playerSwitchForTurnFlag;
     }
@@ -2042,7 +2090,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 effectIndex,
         uint256 playerIndex,
         EffectStep round,
-        bytes memory extraEffectsData
+        bytes memory extraEffectsData,
+        bool isBatched
     ) internal {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
@@ -2053,7 +2102,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // them for subsequent iterations in this same loop, matching the legacy contract.
         // Effects MUST NOT rely on these args staying fresh across iterations; if an effect
         // needs the live index after a switch, it should re-read via getActiveMonIndex.
-        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey, isBatched);
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
 
@@ -2106,7 +2155,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     eff.data,
                     uint96(slotIndex),
                     p0ActiveMonIndex,
-                    p1ActiveMonIndex
+                    p1ActiveMonIndex,
+                    isBatched
                 );
 
                 // Re-read count if a new effect was added during this iteration
@@ -2135,7 +2185,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 data,
         uint96 slotIndex,
         uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 p1ActiveMonIndex,
+        bool isBatched
     ) private {
         // Use stored bitmap instead of external call to shouldRunAtStep()
         if ((stepsBitmap & (1 << uint8(round))) == 0) {
@@ -2144,7 +2195,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Inline execution for address(0) effects (StaminaRegen)
         if (address(effect) == address(0)) {
-            _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex, isBatched);
             return;
         }
 
@@ -2284,12 +2335,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         EffectStep round,
         EffectRunCondition condition,
-        uint256 prevPlayerSwitchForTurnFlag
+        uint256 prevPlayerSwitchForTurnFlag,
+        bool isBatched
     ) private returns (uint256 playerSwitchForTurnFlag) {
         bytes32 bkw = battleKeyForWrite;
         // Check for Game Over and return early if so
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
-        if (_getWinnerIndex(bkw) != 2) {
+        if (_getWinnerIndex(bkw, isBatched) != 2) {
             return playerSwitchForTurnFlag;
         }
 
@@ -2298,11 +2350,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (effectIndex == 2) {
             hasEffects = config.globalEffectsLength > 0;
         } else {
-            uint256 monIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), playerIndex);
+            uint256 monIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), playerIndex);
 
             // Check if mon is KOed (reuse monIndex we already computed)
             if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
-                if (_isMonKnockedOut(config, playerIndex, monIndex)) {
+                if (_isMonKnockedOut(config, playerIndex, monIndex, isBatched)) {
                     return playerSwitchForTurnFlag;
                 }
             }
@@ -2316,13 +2368,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         if (hasEffects) {
             // Run the effects
-            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "", isBatched);
         }
 
         // Only check for Game Over / KO if a KO actually occurred since last check
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, playerIndex, isBatched);
         }
         return playerSwitchForTurnFlag;
     }
@@ -2343,18 +2395,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 priorityPlayerIndex,
         uint256 otherPlayerIndex,
         EffectStep round,
-        uint256 prevPlayerSwitchForTurnFlag
+        uint256 prevPlayerSwitchForTurnFlag,
+        bool isBatched
     ) private returns (uint256 playerSwitchForTurnFlag) {
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
         bytes32 bkw = battleKeyForWrite;
 
         // --- Global effects (SkipIfGameOver) ---
-        if (_getWinnerIndex(bkw) != 2) return playerSwitchForTurnFlag;
+        if (_getWinnerIndex(bkw, isBatched) != 2) return playerSwitchForTurnFlag;
         if (config.globalEffectsLength > 0) {
-            _runEffects(battleKey, rng, 2, 2, round, "");
+            _runEffects(battleKey, rng, 2, 2, round, "", isBatched);
             if (koOccurredFlag != 0) {
                 koOccurredFlag = 0;
-                (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, 2);
+                (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, 2, isBatched);
             }
         }
 
@@ -2364,34 +2417,34 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // triple (RoundStart / RoundEnd only) is safe today — but a future effect bitmapped to
         // RoundStart / RoundEnd that calls switchActiveMon would silently break a cached value
         // carried across branches. Fresh per-branch reads cost ~1 TLOAD vs. ~7k debug time.
-        if (_getWinnerIndex(bkw) == 2) {
-            uint256 priorityMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), priorityPlayerIndex);
-            if (!_isMonKnockedOut(config, priorityPlayerIndex, priorityMonIndex)) {
+        if (_getWinnerIndex(bkw, isBatched) == 2) {
+            uint256 priorityMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), priorityPlayerIndex);
+            if (!_isMonKnockedOut(config, priorityPlayerIndex, priorityMonIndex, isBatched)) {
                 uint256 priorityCount = (priorityPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, priorityMonIndex)
                     : _getMonEffectCount(config.packedP1EffectsCount, priorityMonIndex);
                 if (priorityCount > 0) {
-                    _runEffects(battleKey, rng, priorityPlayerIndex, priorityPlayerIndex, round, "");
+                    _runEffects(battleKey, rng, priorityPlayerIndex, priorityPlayerIndex, round, "", isBatched);
                     if (koOccurredFlag != 0) {
                         koOccurredFlag = 0;
-                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, priorityPlayerIndex);
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, priorityPlayerIndex, isBatched);
                     }
                 }
             }
         }
 
         // --- Other player's per-mon effects (SkipIfGameOverOrMonKO) ---
-        if (_getWinnerIndex(bkw) == 2) {
-            uint256 otherMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw), otherPlayerIndex);
-            if (!_isMonKnockedOut(config, otherPlayerIndex, otherMonIndex)) {
+        if (_getWinnerIndex(bkw, isBatched) == 2) {
+            uint256 otherMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), otherPlayerIndex);
+            if (!_isMonKnockedOut(config, otherPlayerIndex, otherMonIndex, isBatched)) {
                 uint256 otherCount = (otherPlayerIndex == 0)
                     ? _getMonEffectCount(config.packedP0EffectsCount, otherMonIndex)
                     : _getMonEffectCount(config.packedP1EffectsCount, otherMonIndex);
                 if (otherCount > 0) {
-                    _runEffects(battleKey, rng, otherPlayerIndex, otherPlayerIndex, round, "");
+                    _runEffects(battleKey, rng, otherPlayerIndex, otherPlayerIndex, round, "", isBatched);
                     if (koOccurredFlag != 0) {
                         koOccurredFlag = 0;
-                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, otherPlayerIndex);
+                        (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, otherPlayerIndex, isBatched);
                     }
                 }
             }
@@ -2402,7 +2455,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         return _computePriorityPlayerIndex(
-            config, battleKey, rng, _getCurrentTurnMove(config, 0), _getCurrentTurnMove(config, 1)
+            config, battleKey, rng, _getCurrentTurnMove(config, 0), _getCurrentTurnMove(config, 1), _batchShadowActive
         );
     }
 
@@ -2415,14 +2468,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 battleKey,
         uint256 rng,
         MoveDecision memory p0TurnMove,
-        MoveDecision memory p1TurnMove
+        MoveDecision memory p1TurnMove,
+        bool isBatched
     ) private view returns (uint256) {
         uint8 p0StoredIndex = p0TurnMove.packedMoveIndex & MOVE_INDEX_MASK;
         uint8 p1StoredIndex = p1TurnMove.packedMoveIndex & MOVE_INDEX_MASK;
         uint8 p0MoveIndex = p0StoredIndex >= SWITCH_MOVE_INDEX ? p0StoredIndex : p0StoredIndex - MOVE_INDEX_OFFSET;
         uint8 p1MoveIndex = p1StoredIndex >= SWITCH_MOVE_INDEX ? p1StoredIndex : p1StoredIndex - MOVE_INDEX_OFFSET;
 
-        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey);
+        uint16 packedActiveMonIndex = _getActiveMonIndex(battleKey, isBatched);
         uint256 p0ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 0);
         uint256 p1ActiveMonIndex = _unpackActiveMonIndex(packedActiveMonIndex, 1);
 
@@ -2441,11 +2495,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // _readMonStateDelta sanitizes sentinel → 0 internally, so the +delta math is direct.
         uint32 p0MonSpeed = uint32(
             int32(_getTeamMon(config, 0, p0ActiveMonIndex).stats.speed)
-                + _readMonStateDelta(config, 0, p0ActiveMonIndex, MonStateIndexName.Speed)
+                + _readMonStateDelta(config, 0, p0ActiveMonIndex, MonStateIndexName.Speed, isBatched)
         );
         uint32 p1MonSpeed = uint32(
             int32(_getTeamMon(config, 1, p1ActiveMonIndex).stats.speed)
-                + _readMonStateDelta(config, 1, p1ActiveMonIndex, MonStateIndexName.Speed)
+                + _readMonStateDelta(config, 1, p1ActiveMonIndex, MonStateIndexName.Speed, isBatched)
         );
         if (p0MonSpeed > p1MonSpeed) {
             return 0;
@@ -2535,21 +2589,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // Field-level bit packing matches `BattleData` slot 1 layout (see Structs.sol comment).
     // -----------------------------------------------------------------------------------------
 
-    function _readBattleSlot1Packed(bytes32 battleKey) internal view returns (uint256 packed) {
-        if (_batchShadowActive && _shadowBattleSlot1Loaded) {
+    function _readBattleSlot1Packed(bytes32 battleKey) internal view returns (uint256) {
+        return _readBattleSlot1Packed(battleKey, _batchShadowActive);
+    }
+
+    function _readBattleSlot1Packed(bytes32 battleKey, bool isBatched) internal view returns (uint256 packed) {
+        if (isBatched && _shadowBattleSlot1Loaded) {
             return _shadowBattleSlot1;
         }
         BattleData storage battle = battleData[battleKey];
         assembly {
-            // BattleData.slot is the mapping base; slot 1 is `slot + 1`.
-            // We compute the actual storage slot for the struct: keccak256(key, mapping_slot).
-            // But `battle.slot` already gives us the struct base — slot 1 is +1 from it.
             packed := sload(add(battle.slot, 1))
         }
     }
 
     function _writeBattleSlot1Packed(bytes32 battleKey, uint256 packed) internal {
-        if (_batchShadowActive) {
+        _writeBattleSlot1Packed(battleKey, packed, _batchShadowActive);
+    }
+
+    function _writeBattleSlot1Packed(bytes32 battleKey, uint256 packed, bool isBatched) internal {
+        if (isBatched) {
             _shadowBattleSlot1 = packed;
             _shadowBattleSlot1Loaded = true;
             _shadowBattleSlot1Dirty = true;
@@ -2571,13 +2630,21 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     //   bits 240-255 : turnId (uint16)
 
     function _getWinnerIndex(bytes32 battleKey) internal view returns (uint8) {
-        return uint8(_readBattleSlot1Packed(battleKey) >> 160);
+        return _getWinnerIndex(battleKey, _batchShadowActive);
+    }
+
+    function _getWinnerIndex(bytes32 battleKey, bool isBatched) internal view returns (uint8) {
+        return uint8(_readBattleSlot1Packed(battleKey, isBatched) >> 160);
     }
 
     function _setWinnerIndex(bytes32 battleKey, uint8 value) internal {
-        uint256 packed = _readBattleSlot1Packed(battleKey);
+        _setWinnerIndex(battleKey, value, _batchShadowActive);
+    }
+
+    function _setWinnerIndex(bytes32 battleKey, uint8 value, bool isBatched) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
         packed = (packed & ~(uint256(0xFF) << 160)) | (uint256(value) << 160);
-        _writeBattleSlot1Packed(battleKey, packed);
+        _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
     function _getPrevPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
@@ -2585,45 +2652,78 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     function _setPrevPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
-        uint256 packed = _readBattleSlot1Packed(battleKey);
+        _setPrevPlayerSwitchForTurnFlag(battleKey, value, _batchShadowActive);
+    }
+
+    function _setPrevPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value, bool isBatched) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
         packed = (packed & ~(uint256(0xFF) << 168)) | (uint256(value) << 168);
-        _writeBattleSlot1Packed(battleKey, packed);
+        _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
     function _getPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
-        return uint8(_readBattleSlot1Packed(battleKey) >> 176);
+        return _getPlayerSwitchForTurnFlag(battleKey, _batchShadowActive);
+    }
+
+    function _getPlayerSwitchForTurnFlag(bytes32 battleKey, bool isBatched) internal view returns (uint8) {
+        return uint8(_readBattleSlot1Packed(battleKey, isBatched) >> 176);
     }
 
     function _setPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
-        uint256 packed = _readBattleSlot1Packed(battleKey);
+        _setPlayerSwitchForTurnFlag(battleKey, value, _batchShadowActive);
+    }
+
+    function _setPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value, bool isBatched) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
         packed = (packed & ~(uint256(0xFF) << 176)) | (uint256(value) << 176);
-        _writeBattleSlot1Packed(battleKey, packed);
+        _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
     function _getActiveMonIndex(bytes32 battleKey) internal view returns (uint16) {
-        return uint16(_readBattleSlot1Packed(battleKey) >> 184);
+        return _getActiveMonIndex(battleKey, _batchShadowActive);
+    }
+
+    function _getActiveMonIndex(bytes32 battleKey, bool isBatched) internal view returns (uint16) {
+        return uint16(_readBattleSlot1Packed(battleKey, isBatched) >> 184);
     }
 
     function _setActiveMonIndexPacked(bytes32 battleKey, uint16 value) internal {
-        uint256 packed = _readBattleSlot1Packed(battleKey);
+        _setActiveMonIndexPacked(battleKey, value, _batchShadowActive);
+    }
+
+    function _setActiveMonIndexPacked(bytes32 battleKey, uint16 value, bool isBatched) internal {
+        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
         packed = (packed & ~(uint256(0xFFFF) << 184)) | (uint256(value) << 184);
-        _writeBattleSlot1Packed(battleKey, packed);
+        _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
     function _getTurnId(bytes32 battleKey) internal view returns (uint16) {
-        return uint16(_readBattleSlot1Packed(battleKey) >> 240);
+        return _getTurnId(battleKey, _batchShadowActive);
+    }
+
+    function _getTurnId(bytes32 battleKey, bool isBatched) internal view returns (uint16) {
+        return uint16(_readBattleSlot1Packed(battleKey, isBatched) >> 240);
     }
 
     function _setLastExecAndIncrementTurnId(bytes32 battleKey, uint8 newFlag, uint40 newTimestamp) internal {
+        _setLastExecAndIncrementTurnId(battleKey, newFlag, newTimestamp, _batchShadowActive);
+    }
+
+    function _setLastExecAndIncrementTurnId(
+        bytes32 battleKey,
+        uint8 newFlag,
+        uint40 newTimestamp,
+        bool isBatched
+    ) internal {
         // Combined writer used at the end of `_executeInternal`: bumps turnId by 1,
         // writes playerSwitchForTurnFlag + lastExecuteTimestamp in a single packed update.
-        uint256 packed = _readBattleSlot1Packed(battleKey);
+        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
         uint256 currentTurnId = uint256(uint16(packed >> 240));
         uint256 nextTurnId = (currentTurnId + 1) & 0xFFFF;
         packed = (packed & ~(uint256(0xFF) << 176)) | (uint256(newFlag) << 176);
         packed = (packed & ~(uint256(uint40(type(uint40).max)) << 200)) | (uint256(newTimestamp) << 200);
         packed = (packed & ~(uint256(0xFFFF) << 240)) | (nextTurnId << 240);
-        _writeBattleSlot1Packed(battleKey, packed);
+        _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
     /// @notice Flush the shadow BattleData slot 1 back to storage. Called at end of
@@ -2644,13 +2744,23 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
         internal
         view
+        returns (uint256)
+    {
+        return _readMonStatePacked(cfg, playerIndex, monIndex, _batchShadowActive);
+    }
+
+    function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
+        internal
+        view
         returns (uint256 packed)
     {
-        uint256 key = playerIndex * 8 + monIndex;
-        if (_batchShadowActive && (_shadowMonStateLoaded & (1 << key)) != 0) {
-            uint256 tkey = _T_MONSTATE_BASE + key;
-            assembly { packed := tload(tkey) }
-            return packed;
+        if (isBatched) {
+            uint256 key = playerIndex * 8 + monIndex;
+            if ((_shadowMonStateLoaded & (1 << key)) != 0) {
+                uint256 tkey = _T_MONSTATE_BASE + key;
+                assembly { packed := tload(tkey) }
+                return packed;
+            }
         }
         MonState storage state = playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
         assembly { packed := sload(state.slot) }
@@ -2662,8 +2772,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 monIndex,
         uint256 packed
     ) internal {
-        uint256 key = playerIndex * 8 + monIndex;
-        if (_batchShadowActive) {
+        _writeMonStatePacked(cfg, playerIndex, monIndex, packed, _batchShadowActive);
+    }
+
+    function _writeMonStatePacked(
+        BattleConfig storage cfg,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint256 packed,
+        bool isBatched
+    ) internal {
+        if (isBatched) {
+            uint256 key = playerIndex * 8 + monIndex;
             uint256 tkey = _T_MONSTATE_BASE + key;
             assembly { tstore(tkey, packed) }
             _shadowMonStateLoaded |= (1 << key);
@@ -2707,9 +2827,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _loadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
         internal
         view
+        returns (MonState memory)
+    {
+        return _loadMonState(cfg, playerIndex, monIndex, _batchShadowActive);
+    }
+
+    function _loadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
+        internal
+        view
         returns (MonState memory s)
     {
-        uint256 packed = _readMonStatePacked(cfg, playerIndex, monIndex);
+        uint256 packed = _readMonStatePacked(cfg, playerIndex, monIndex, isBatched);
         s.hpDelta = int32(uint32(packed));
         s.staminaDelta = int32(uint32(packed >> 32));
         s.speedDelta = int32(uint32(packed >> 64));
@@ -2724,6 +2852,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _storeMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, MonState memory s)
         internal
     {
+        _storeMonState(cfg, playerIndex, monIndex, s, _batchShadowActive);
+    }
+
+    function _storeMonState(
+        BattleConfig storage cfg,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonState memory s,
+        bool isBatched
+    ) internal {
         uint256 packed = uint256(uint32(s.hpDelta))
             | (uint256(uint32(s.staminaDelta)) << 32)
             | (uint256(uint32(s.speedDelta)) << 64)
@@ -2733,7 +2871,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             | (uint256(uint32(s.specialDefenceDelta)) << 192)
             | (uint256(s.isKnockedOut ? 1 : 0) << 224)
             | (uint256(s.shouldSkipTurn ? 1 : 0) << 232);
-        _writeMonStatePacked(cfg, playerIndex, monIndex, packed);
+        _writeMonStatePacked(cfg, playerIndex, monIndex, packed, isBatched);
     }
 
     function _shadowBitLog2(uint256 x) private pure returns (uint256 r) {
@@ -2767,17 +2905,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         uint256 monIndex,
         uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 p1ActiveMonIndex,
+        bool isBatched
     ) private {
         if (round == EffectStep.RoundEnd) {
             if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) return;
-            _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
-            _inlineRegenStaminaForMon(config, 1, p1ActiveMonIndex);
+            _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex, isBatched);
+            _inlineRegenStaminaForMon(config, 1, p1ActiveMonIndex, isBatched);
         } else if (round == EffectStep.AfterMove) {
             // Fetch packedMoveIndex via helper - resolves to transient during executeWithMoves, storage otherwise.
             uint8 packedMoveIndex = _getCurrentTurnMove(config, playerIndex).packedMoveIndex;
             if (!StaminaRegenLogic._isRestingMove(packedMoveIndex)) return;
-            _inlineRegenStaminaForMon(config, playerIndex, monIndex);
+            _inlineRegenStaminaForMon(config, playerIndex, monIndex, isBatched);
         }
     }
 
@@ -2787,12 +2926,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _inlineRegenStaminaForMon(
         BattleConfig storage config,
         uint256 playerIndex,
-        uint256 monIndex
+        uint256 monIndex,
+        bool isBatched
     ) private {
-        MonState memory monState = _loadMonState(config, playerIndex, monIndex);
+        MonState memory monState = _loadMonState(config, playerIndex, monIndex, isBatched);
         if (monState.staminaDelta >= 0) return;
         monState.staminaDelta += 1;
-        _storeMonState(config, playerIndex, monIndex, monState);
+        _storeMonState(config, playerIndex, monIndex, monState, isBatched);
         uint256 effectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
@@ -2803,7 +2943,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
+                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1)),
+                isBatched
             );
         }
     }
@@ -2823,7 +2964,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // shadow); we fix this at flush time by SLOADing the latest slot value and OR'ing in the
     // shadowed koBitmaps before writing back.
     function _readKoBitmaps(BattleConfig storage config) internal view returns (uint16) {
-        if (_batchShadowActive && _shadowKoBitmapsLoaded) {
+        return _readKoBitmaps(config, _batchShadowActive);
+    }
+
+    function _readKoBitmaps(BattleConfig storage config, bool isBatched) internal view returns (uint16) {
+        if (isBatched && _shadowKoBitmapsLoaded) {
             return _shadowKoBitmaps;
         }
         return config.koBitmaps;
@@ -2838,7 +2983,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     function _writeKoBitmaps(BattleConfig storage config, uint16 value) private {
-        if (_batchShadowActive) {
+        _writeKoBitmaps(config, value, _batchShadowActive);
+    }
+
+    function _writeKoBitmaps(BattleConfig storage config, uint16 value, bool isBatched) private {
+        if (isBatched) {
             _shadowKoBitmaps = value;
             _shadowKoBitmapsLoaded = true;
             _shadowKoBitmapsDirty = true;
@@ -2848,30 +2997,48 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     function _getKOBitmap(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
-        uint16 bitmaps = _readKoBitmaps(config);
+        return _getKOBitmap(config, playerIndex, _batchShadowActive);
+    }
+
+    function _getKOBitmap(BattleConfig storage config, uint256 playerIndex, bool isBatched)
+        private
+        view
+        returns (uint256)
+    {
+        uint16 bitmaps = _readKoBitmaps(config, isBatched);
         return playerIndex == 0 ? (bitmaps & 0xFF) : (bitmaps >> 8);
     }
 
     function _setMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
-        uint16 bitmaps = _batchShadowActive ? _loadShadowKoBitmaps(config) : config.koBitmaps;
+        _setMonKO(config, playerIndex, monIndex, _batchShadowActive);
+    }
+
+    function _setMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, bool isBatched) private {
+        uint16 bitmaps = isBatched ? _loadShadowKoBitmaps(config) : config.koBitmaps;
         uint256 bit = 1 << monIndex;
         if (playerIndex == 0) {
             bitmaps = bitmaps | uint16(bit);
         } else {
             bitmaps = bitmaps | uint16(bit << 8);
         }
-        _writeKoBitmaps(config, bitmaps);
+        _writeKoBitmaps(config, bitmaps, isBatched);
     }
 
     function _clearMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
-        uint16 bitmaps = _batchShadowActive ? _loadShadowKoBitmaps(config) : config.koBitmaps;
+        _clearMonKO(config, playerIndex, monIndex, _batchShadowActive);
+    }
+
+    function _clearMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, bool isBatched)
+        private
+    {
+        uint16 bitmaps = isBatched ? _loadShadowKoBitmaps(config) : config.koBitmaps;
         uint256 bit = 1 << monIndex;
         if (playerIndex == 0) {
             bitmaps = bitmaps & uint16(~bit);
         } else {
             bitmaps = bitmaps & uint16(~(bit << 8));
         }
-        _writeKoBitmaps(config, bitmaps);
+        _writeKoBitmaps(config, bitmaps, isBatched);
     }
 
     /// @notice Flushes the shadowed koBitmaps back into BC.slot2. Always called at end of
@@ -3024,14 +3191,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         MonState[][] memory monStates = new MonState[][](2);
         monStates[0] = new MonState[](p0TeamSize);
         monStates[1] = new MonState[](p1TeamSize);
+        bool isBatched = _batchShadowActive;
         for (uint256 i = 0; i < p0TeamSize;) {
-            monStates[0][i] = _loadMonState(config, 0, i);
+            monStates[0][i] = _loadMonState(config, 0, i, isBatched);
             unchecked {
                 ++i;
             }
         }
         for (uint256 i = 0; i < p1TeamSize;) {
-            monStates[1][i] = _loadMonState(config, 1, i);
+            monStates[1][i] = _loadMonState(config, 1, i, isBatched);
             unchecked {
                 ++i;
             }
@@ -3175,8 +3343,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Inline validation when validator is address(0)
         BattleData storage data = battleData[battleKey];
+        bool isBatched = _batchShadowActive;
         uint256 activeMonIndex = _unpackActiveMonIndex(data.activeMonIndex, playerIndex);
-        MonState memory activeMonState = _loadMonState(config, playerIndex, activeMonIndex);
+        MonState memory activeMonState = _loadMonState(config, playerIndex, activeMonIndex, isBatched);
 
         // Basic validation (bounds, forced switch checks)
         (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) = ValidatorLogic.validatePlayerMoveBasics(
@@ -3195,7 +3364,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Switch validation
         if (isSwitch) {
             uint256 monToSwitchIndex = uint256(extraData);
-            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex);
+            bool isTargetKnockedOut = _isMonKnockedOut(config, playerIndex, monToSwitchIndex, isBatched);
             return ValidatorLogic.validateSwitch(
                 data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
             );
@@ -3316,7 +3485,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) private view returns (int32) {
-        uint256 packed = _readMonStatePacked(config, playerIndex, monIndex);
+        return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex, _batchShadowActive);
+    }
+
+    function _readMonStateDelta(
+        BattleConfig storage config,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonStateIndexName stateVarIndex,
+        bool isBatched
+    ) private view returns (int32) {
+        uint256 packed = _readMonStatePacked(config, playerIndex, monIndex, isBatched);
         if (stateVarIndex == MonStateIndexName.IsKnockedOut) {
             return (uint8(packed >> 224) & 1) != 0 ? int32(1) : int32(0);
         }
@@ -3342,7 +3521,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         view
         returns (bool)
     {
-        return (uint8(_readMonStatePacked(cfg, playerIndex, monIndex) >> 224) & 1) != 0;
+        return _isMonKnockedOut(cfg, playerIndex, monIndex, _batchShadowActive);
+    }
+
+    function _isMonKnockedOut(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
+        internal
+        view
+        returns (bool)
+    {
+        return (uint8(_readMonStatePacked(cfg, playerIndex, monIndex, isBatched) >> 224) & 1) != 0;
     }
 
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256) {
@@ -3466,14 +3653,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 defenderPlayerIndex,
-        uint256 defenderMonIndex
+        uint256 defenderMonIndex,
+        bool isBatched
     ) internal view returns (DamageCalcContext memory ctx) {
         ctx.attackerMonIndex = uint8(attackerMonIndex);
         ctx.defenderMonIndex = uint8(defenderMonIndex);
 
         // Get attacker stats
         Mon storage attackerMon = _getTeamMon(config, attackerPlayerIndex, attackerMonIndex);
-        MonState memory attackerState = _loadMonState(config, attackerPlayerIndex, attackerMonIndex);
+        MonState memory attackerState = _loadMonState(config, attackerPlayerIndex, attackerMonIndex, isBatched);
         ctx.attackerAttack = attackerMon.stats.attack;
         ctx.attackerAttackDelta =
             attackerState.attackDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : attackerState.attackDelta;
@@ -3484,7 +3672,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Get defender stats and types
         Mon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-        MonState memory defenderState = _loadMonState(config, defenderPlayerIndex, defenderMonIndex);
+        MonState memory defenderState = _loadMonState(config, defenderPlayerIndex, defenderMonIndex, isBatched);
         ctx.defenderDef = defenderMon.stats.defense;
         ctx.defenderDefDelta =
             defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.defenceDelta;
@@ -3507,7 +3695,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 attackerMonIndex = _unpackActiveMonIndex(data.activeMonIndex, attackerPlayerIndex);
         uint256 defenderMonIndex = _unpackActiveMonIndex(data.activeMonIndex, defenderPlayerIndex);
         return _getDamageCalcContextInternal(
-            config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
+            config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex, _batchShadowActive
         );
     }
 
@@ -3526,8 +3714,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.p1ActiveMonIndex = uint8(p1MonIndex);
 
         // Get KO status for active mons (shadow-aware so external views observe in-flight state)
-        MonState memory p0State = _loadMonState(config, 0, p0MonIndex);
-        MonState memory p1State = _loadMonState(config, 1, p1MonIndex);
+        bool isBatched = _batchShadowActive;
+        MonState memory p0State = _loadMonState(config, 0, p0MonIndex, isBatched);
+        MonState memory p1State = _loadMonState(config, 1, p1MonIndex, isBatched);
         ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
         ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
 
@@ -3588,7 +3777,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.p1KOBitmap = uint8(koBitmaps >> 8);
 
         Mon storage p1Active = config.p1Team[p1MonIndex];
-        MonState memory p1State = _loadMonState(config, 1, p1MonIndex);
+        MonState memory p1State = _loadMonState(config, 1, p1MonIndex, _batchShadowActive);
         ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
         ctx.cpuActiveMonStaminaDelta =
             p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
@@ -3616,8 +3805,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint8 teamSizes = config.teamSizes;
         uint256 size = playerIndex == 0 ? (teamSizes & 0xF) : (teamSizes >> 4);
         states = new MonState[](size);
+        bool isBatched = _batchShadowActive;
         for (uint256 i; i < size;) {
-            states[i] = _loadMonState(config, playerIndex, i);
+            states[i] = _loadMonState(config, playerIndex, i, isBatched);
             unchecked { ++i; }
         }
     }
