@@ -1948,13 +1948,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint8 storedMoveIndex = move.packedMoveIndex & MOVE_INDEX_MASK;
         uint8 moveIndex = storedMoveIndex >= SWITCH_MOVE_INDEX ? storedMoveIndex : storedMoveIndex - MOVE_INDEX_OFFSET;
 
-        // Cache battleKeyForWrite + turnId for the duration of _handleMove. turnId is bumped only
-        // at the end of _executeInternal (after every _handleMove returns), so it's invariant here.
-        bytes32 bkw = battleKeyForWrite;
-        uint16 turnIdCached = _getTurnId(battleKey, isBatched);
+        // Cache slot1 (turnId + activeMonIndex) once. Reused for both attacker and defender mon
+        // reads. Safe because the only mutation barrier inside _handleMove is the external move
+        // call itself (moveSet.move / _inlineStandardAttack → PreDamage effects), and the cached
+        // values are only used pre-call. moveSet.stamina() and validator are read-only by contract.
+        uint256 slot1Packed = _readBattleSlot1Packed(battleKey, isBatched);
+        uint16 turnIdCached = uint16(slot1Packed >> 240);
+        uint16 cachedPackedActiveMon = uint16(slot1Packed >> 184);
 
         // Handle shouldSkipTurn flag first and toggle it off if set
-        uint256 activeMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), playerIndex);
+        uint256 activeMonIndex = _unpackActiveMonIndex(cachedPackedActiveMon, playerIndex);
         MonState memory currentMonState = _loadMonState(config, playerIndex, activeMonIndex, isBatched);
         if (currentMonState.shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
@@ -2030,7 +2033,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     : currentMonState.staminaDelta - staminaCost;
                 _storeMonState(config, playerIndex, activeMonIndex, currentMonState, isBatched);
 
-                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), 1 - playerIndex);
+                // Reuse cached slot1 from function entry: no external call has run between then
+                // and now in the inline path (line 2014-2031 is pure local code).
+                uint256 defenderMonIndex = _unpackActiveMonIndex(cachedPackedActiveMon, 1 - playerIndex);
                 _inlineStandardAttack(
                     config, rawMoveSlot, playerIndex, activeMonIndex, 1 - playerIndex, defenderMonIndex, tempRNG, isBatched
                 );
@@ -2069,7 +2074,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     : currentMonState.staminaDelta - staminaCost;
                 _storeMonState(config, playerIndex, activeMonIndex, currentMonState, isBatched);
 
-                uint256 defenderMonIndex = _unpackActiveMonIndex(_getActiveMonIndex(bkw, isBatched), 1 - playerIndex);
+                // moveSet.stamina() and validator.validateSpecificMoveSelection() are both
+                // treated as read-only by interface contract; reuse the cached slot1.
+                uint256 defenderMonIndex = _unpackActiveMonIndex(cachedPackedActiveMon, 1 - playerIndex);
                 moveSet.move(self, battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
             }
         }
