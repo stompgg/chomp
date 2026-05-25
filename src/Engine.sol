@@ -519,7 +519,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint104 p1Salt  = uint104(entry >> 152);
 
             // Flag-based dispatch (§6.1): read live `playerSwitchForTurnFlag` via shadow helper.
-            uint8 flag = _getPlayerSwitchForTurnFlag(battleKey);
+            uint8 flag = _getPlayerSwitchForTurnFlag(battleKey, true);
 
             // Populate the packed per-turn transient slot in one TSTORE per iteration.
             // For single-player turns (flag != 2), only the acting side's half gets its
@@ -592,7 +592,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert WrongCaller();
         }
 
-        uint256 playerIndex = _getPlayerSwitchForTurnFlag(battleKey);
+        // executeWithSingleMove is a fresh external entry — `_batchShadowActive` is always
+        // false here (only `executeBatchedTurns` sets it). Skip the TLOAD by hardcoding.
+        uint256 playerIndex = _getPlayerSwitchForTurnFlag(battleKey, false);
         if (playerIndex > 1) {
             revert NotSinglePlayerTurn();
         }
@@ -2589,10 +2591,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // Field-level bit packing matches `BattleData` slot 1 layout (see Structs.sol comment).
     // -----------------------------------------------------------------------------------------
 
-    function _readBattleSlot1Packed(bytes32 battleKey) internal view returns (uint256) {
-        return _readBattleSlot1Packed(battleKey, _batchShadowActive);
-    }
-
     function _readBattleSlot1Packed(bytes32 battleKey, bool isBatched) internal view returns (uint256 packed) {
         if (isBatched && _shadowBattleSlot1Loaded) {
             return _shadowBattleSlot1;
@@ -2601,10 +2599,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         assembly {
             packed := sload(add(battle.slot, 1))
         }
-    }
-
-    function _writeBattleSlot1Packed(bytes32 battleKey, uint256 packed) internal {
-        _writeBattleSlot1Packed(battleKey, packed, _batchShadowActive);
     }
 
     function _writeBattleSlot1Packed(bytes32 battleKey, uint256 packed, bool isBatched) internal {
@@ -2629,16 +2623,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     //   bits 200-239 : lastExecuteTimestamp (uint40)
     //   bits 240-255 : turnId (uint16)
 
-    function _getWinnerIndex(bytes32 battleKey) internal view returns (uint8) {
-        return _getWinnerIndex(battleKey, _batchShadowActive);
-    }
-
     function _getWinnerIndex(bytes32 battleKey, bool isBatched) internal view returns (uint8) {
         return uint8(_readBattleSlot1Packed(battleKey, isBatched) >> 160);
-    }
-
-    function _setWinnerIndex(bytes32 battleKey, uint8 value) internal {
-        _setWinnerIndex(battleKey, value, _batchShadowActive);
     }
 
     function _setWinnerIndex(bytes32 battleKey, uint8 value, bool isBatched) internal {
@@ -2647,30 +2633,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
-    function _getPrevPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
-        return uint8(_readBattleSlot1Packed(battleKey) >> 168);
-    }
-
-    function _setPrevPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
-        _setPrevPlayerSwitchForTurnFlag(battleKey, value, _batchShadowActive);
-    }
-
-    function _setPrevPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value, bool isBatched) internal {
-        uint256 packed = _readBattleSlot1Packed(battleKey, isBatched);
-        packed = (packed & ~(uint256(0xFF) << 168)) | (uint256(value) << 168);
-        _writeBattleSlot1Packed(battleKey, packed, isBatched);
-    }
-
-    function _getPlayerSwitchForTurnFlag(bytes32 battleKey) internal view returns (uint8) {
-        return _getPlayerSwitchForTurnFlag(battleKey, _batchShadowActive);
-    }
-
     function _getPlayerSwitchForTurnFlag(bytes32 battleKey, bool isBatched) internal view returns (uint8) {
         return uint8(_readBattleSlot1Packed(battleKey, isBatched) >> 176);
-    }
-
-    function _setPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value) internal {
-        _setPlayerSwitchForTurnFlag(battleKey, value, _batchShadowActive);
     }
 
     function _setPlayerSwitchForTurnFlag(bytes32 battleKey, uint8 value, bool isBatched) internal {
@@ -2679,16 +2643,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
-    function _getActiveMonIndex(bytes32 battleKey) internal view returns (uint16) {
-        return _getActiveMonIndex(battleKey, _batchShadowActive);
-    }
-
     function _getActiveMonIndex(bytes32 battleKey, bool isBatched) internal view returns (uint16) {
         return uint16(_readBattleSlot1Packed(battleKey, isBatched) >> 184);
-    }
-
-    function _setActiveMonIndexPacked(bytes32 battleKey, uint16 value) internal {
-        _setActiveMonIndexPacked(battleKey, value, _batchShadowActive);
     }
 
     function _setActiveMonIndexPacked(bytes32 battleKey, uint16 value, bool isBatched) internal {
@@ -2697,16 +2653,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _writeBattleSlot1Packed(battleKey, packed, isBatched);
     }
 
-    function _getTurnId(bytes32 battleKey) internal view returns (uint16) {
-        return _getTurnId(battleKey, _batchShadowActive);
-    }
-
     function _getTurnId(bytes32 battleKey, bool isBatched) internal view returns (uint16) {
         return uint16(_readBattleSlot1Packed(battleKey, isBatched) >> 240);
-    }
-
-    function _setLastExecAndIncrementTurnId(bytes32 battleKey, uint8 newFlag, uint40 newTimestamp) internal {
-        _setLastExecAndIncrementTurnId(battleKey, newFlag, newTimestamp, _batchShadowActive);
     }
 
     function _setLastExecAndIncrementTurnId(
@@ -2741,14 +2689,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     // ----- MonState shadow (per active mon) -----
 
-    function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
-        internal
-        view
-        returns (uint256)
-    {
-        return _readMonStatePacked(cfg, playerIndex, monIndex, _batchShadowActive);
-    }
-
     function _readMonStatePacked(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
         internal
         view
@@ -2764,15 +2704,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         MonState storage state = playerIndex == 0 ? cfg.p0States[monIndex] : cfg.p1States[monIndex];
         assembly { packed := sload(state.slot) }
-    }
-
-    function _writeMonStatePacked(
-        BattleConfig storage cfg,
-        uint256 playerIndex,
-        uint256 monIndex,
-        uint256 packed
-    ) internal {
-        _writeMonStatePacked(cfg, playerIndex, monIndex, packed, _batchShadowActive);
     }
 
     function _writeMonStatePacked(
@@ -2824,14 +2755,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///   bits 192-223 : specialDefenceDelta (int32)
     ///   bits 224-231 : isKnockedOut        (bool packed as uint8)
     ///   bits 232-239 : shouldSkipTurn      (bool packed as uint8)
-    function _loadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
-        internal
-        view
-        returns (MonState memory)
-    {
-        return _loadMonState(cfg, playerIndex, monIndex, _batchShadowActive);
-    }
-
     function _loadMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
         internal
         view
@@ -2847,12 +2770,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         s.specialDefenceDelta = int32(uint32(packed >> 192));
         s.isKnockedOut = (uint8(packed >> 224) & 1) != 0;
         s.shouldSkipTurn = (uint8(packed >> 232) & 1) != 0;
-    }
-
-    function _storeMonState(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, MonState memory s)
-        internal
-    {
-        _storeMonState(cfg, playerIndex, monIndex, s, _batchShadowActive);
     }
 
     function _storeMonState(
@@ -3009,10 +2926,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return playerIndex == 0 ? (bitmaps & 0xFF) : (bitmaps >> 8);
     }
 
-    function _setMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
-        _setMonKO(config, playerIndex, monIndex, _batchShadowActive);
-    }
-
     function _setMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, bool isBatched) private {
         uint16 bitmaps = isBatched ? _loadShadowKoBitmaps(config) : config.koBitmaps;
         uint256 bit = 1 << monIndex;
@@ -3022,10 +2935,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             bitmaps = bitmaps | uint16(bit << 8);
         }
         _writeKoBitmaps(config, bitmaps, isBatched);
-    }
-
-    function _clearMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
-        _clearMonKO(config, playerIndex, monIndex, _batchShadowActive);
     }
 
     function _clearMonKO(BattleConfig storage config, uint256 playerIndex, uint256 monIndex, bool isBatched)
@@ -3472,22 +3381,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         MonStateIndexName stateVarIndex
     ) external view returns (int32) {
         BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
-        return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
+        return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex, _batchShadowActive);
     }
 
     /// @dev Reads the requested field directly off the packed slot — skips the full 9-field
     ///      unpack that `_loadMonState` does. Saves ~220g per single-field read on the legacy
     ///      path (which dominates `EngineGasTest`/PvP scenarios); same shadow routing as
     ///      `_loadMonState` since both go through `_readMonStatePacked`.
-    function _readMonStateDelta(
-        BattleConfig storage config,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) private view returns (int32) {
-        return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex, _batchShadowActive);
-    }
-
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,
@@ -3516,14 +3416,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @notice Hot-path single-bit check that skips the full MonState unpack. The 8 in-engine
     ///         KO-guard sites use this; saves the ~220g per call vs `_loadMonState(...).isKnockedOut`.
-    function _isMonKnockedOut(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex)
-        internal
-        view
-        returns (bool)
-    {
-        return _isMonKnockedOut(cfg, playerIndex, monIndex, _batchShadowActive);
-    }
-
     function _isMonKnockedOut(BattleConfig storage cfg, uint256 playerIndex, uint256 monIndex, bool isBatched)
         internal
         view
