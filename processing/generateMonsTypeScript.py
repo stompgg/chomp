@@ -119,8 +119,18 @@ def build_sprites(
             loop=loops,
         )
 
-    # 16x16 micro sprite (looping idle) lives on the *_mini.gif entry
+    # 32x32 mini sprite (looping idle) lives at the top level of the
+    # *_mini.gif entry; the 16x16 micro sprite lives under its `micro` sub-key.
     mini_data = spritesheet_data.get(f"{mon_name_lower}_mini.gif", {})
+    if mini_data and "frames" in mini_data:
+        sprites["mini"] = build_sprite_config(
+            "/assets/mons/all/mon_mini.png",
+            mini_data,
+            frame_width=32,
+            frame_height=32,
+            loop=True,
+        )
+
     micro_source = mini_data.get("micro") if mini_data else None
     if micro_source and "frames" in micro_source:
         sprites["micro"] = build_sprite_config(
@@ -372,6 +382,7 @@ export type Mon = {{
     readonly backSwitchIn: SpriteAnimationConfig;
     readonly backSwitchOut: SpriteAnimationConfig;
     readonly backHurt?: SpriteAnimationConfig;
+    readonly mini: SpriteAnimationConfig;
     readonly micro?: SpriteAnimationConfig;
   }};
   readonly stats: {{

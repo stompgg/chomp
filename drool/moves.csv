@@ -8,7 +8,7 @@ Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,none
 Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,none
 Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,none
 Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to deal 130 damage at 1 stamina cost. Otherwise, deals 80 damage at 2 stamina cost.",,none
-Loop,Iblivion,0,1,100,0,Yang,Self,"Raises all stats by 15/30/40% based on Baselight level.".,,none
+Loop,Iblivion,0,1,100,0,Yang,Self,"Sets all stats to +15/30/40% based on Baselight level. Does not stack".,,none
 Brightback,Iblivion,70,2,100,0,Yang,Physical,"Deals damage. Consume 1 Baselight stack to heal for 50% of damage dealt.",,none
 Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none
 Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up long-lasting battlefield effect. Triggers on switch ins. Damages opponent and heals self for 1/8 of max HP. Has 4 charges.,,none

@@ -364,78 +364,104 @@
     }
   },
   "aurox_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[0, 0], [32, 0]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[0, 0], [16, 0]]
     }
   },
   "ekineki_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[64, 0], [96, 0]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[32, 0], [48, 0]]
     }
   },
   "embursa_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[128, 0], [160, 0]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[64, 0], [80, 0]]
     }
   },
   "ghouliath_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[0, 32], [32, 32]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[0, 16], [16, 16]]
     }
   },
   "gorillax_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[64, 32], [96, 32]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[32, 16], [48, 16]]
     }
   },
   "iblivion_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[128, 32], [160, 32]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[64, 16], [80, 16]]
     }
   },
   "inutia_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[0, 64], [32, 64]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[0, 32], [16, 32]]
     }
   },
   "malalien_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[64, 64], [96, 64]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[32, 32], [48, 32]]
     }
   },
   "nirvamma_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[128, 64], [160, 64]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[64, 32], [80, 32]]
     }
   },
   "pengym_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[0, 96], [32, 96]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[0, 48], [16, 48]]
     }
   },
   "sofabbi_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[64, 96], [96, 96]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[32, 48], [48, 48]]
     }
   },
   "volthare_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[128, 96], [160, 96]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[64, 48], [80, 48]]
     }
   },
   "xmon_mini.gif": {
+    "msPerFrame": 200,
+    "frames": [[0, 128], [32, 128]],
     "micro": {
       "msPerFrame": 200,
       "frames": [[0, 64], [16, 64]]

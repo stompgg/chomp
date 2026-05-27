@@ -10,6 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 FRAME_SIZE = 96
+MINI_FRAME_SIZE = 32
 MICRO_FRAME_SIZE = 16
 MORPH_FRAMES = 8
 
@@ -126,6 +127,60 @@ def save_and_compress_png(sheet: Image.Image, path: Path, description: str) -> N
     sheet.save(path, "PNG")
     print(f"✅ {description} saved: {sheet.size[0]}x{sheet.size[1]} -> {path}")
     run_pngout(path)
+
+
+def create_mini_spritesheet(
+    imgs_dir: Path,
+    munch_assets_dir: Path,
+    metadata: dict,
+) -> None:
+    """Pack every frame of every 32x32 *_mini.gif into one shared sheet.
+
+    Attaches top-level `frames` / `msPerFrame` to each `<mon>_mini.gif` entry in
+    metadata (creating the entry if needed). The existing `micro` sub-key for
+    the 16x16 downscale is left untouched and gets written by
+    create_micro_spritesheet.
+    """
+    print("\n" + "=" * 50)
+    print(f"Generating {MINI_FRAME_SIZE}x{MINI_FRAME_SIZE} mini spritesheet")
+
+    mini_gifs = sorted(imgs_dir.glob("*_mini.gif"))
+    if not mini_gifs:
+        print(f"⚠ No *_mini.gif files in {imgs_dir}, skipping")
+        return
+
+    all_frames: list[Image.Image] = []
+    mini_entries: list[tuple[str, int, int, int]] = []
+
+    for mini_path in mini_gifs:
+        with Image.open(mini_path) as probe:
+            if probe.size != (MINI_FRAME_SIZE, MINI_FRAME_SIZE):
+                print(f"⚠ {mini_path.name} is {probe.size}, expected "
+                      f"{MINI_FRAME_SIZE}x{MINI_FRAME_SIZE}, skipping")
+                continue
+        frames, frame_rate = extract_frames(str(mini_path))
+        start = len(all_frames)
+        all_frames.extend(frames)
+        mini_entries.append((mini_path.name, start, len(frames), frame_rate))
+        print(f"Extracted {len(frames)} mini frames from {mini_path.name} (rate: {frame_rate}ms)")
+
+    if not all_frames:
+        print("⚠ No valid mini frames, skipping")
+        return
+
+    sheet, positions = build_spritesheet(all_frames, frame_size=MINI_FRAME_SIZE)
+    drool_mini_path = imgs_dir / "mon_mini.png"
+    save_and_compress_png(sheet, drool_mini_path, "Mini spritesheet")
+
+    if munch_assets_dir.exists():
+        munch_mini_path = munch_assets_dir / "mon_mini.png"
+        save_and_compress_png(sheet, munch_mini_path, "Munch mini spritesheet")
+
+    for mini_key, start, count, rate in mini_entries:
+        frames_list = [list(positions[start + i]) for i in range(count)]
+        entry = metadata.setdefault(mini_key, {})
+        entry["msPerFrame"] = rate
+        entry["frames"] = frames_list
 
 
 def create_micro_spritesheet(
@@ -289,7 +344,12 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
                 "frames": [list(positions[d_start + i]) for i in range(d_count)],
             }
 
-    # Build 16x16 micro spritesheet (icons) and attach to *_mini.gif entries
+    # Build 32x32 mini spritesheet (raw *_mini.gif frames) and attach top-level
+    # frames / msPerFrame to each *_mini.gif entry.
+    create_mini_spritesheet(Path(output_dir), munch_assets_dir, metadata)
+
+    # Build 16x16 micro spritesheet (downscaled icons) and attach a `micro`
+    # sub-key on each *_mini.gif entry.
     create_micro_spritesheet(Path(output_dir), munch_assets_dir, metadata)
 
     # Save JSON with compact coordinate arrays
