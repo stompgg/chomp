@@ -61,6 +61,52 @@ abstract contract CPUMoveManager {
         _afterTurn(battleKey, p0, winner);
     }
 
+    /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move (computed
+    ///         client-side) in one tx, and the engine executes them directly — NO on-chain
+    ///         `getCPUContext` load and NO `calculateMove`. This removes the dozen-plus cold SLOADs
+    ///         + the heuristic compute the engine would otherwise pay every CPU turn.
+    /// @dev Trust model: the CPU move is not verified. Lying only makes the CPU play worse against
+    ///      p0 (a self-inflicted handicap), so there's no on-chain incentive to cheat in PvE; an
+    ///      off-chain server/replay can still validate the CPU move if rewards depend on it. The
+    ///      committer binding is the same as `selectMove`: `msg.sender == p0`.
+    function selectMoveWithCpuMove(
+        bytes32 battleKey,
+        uint8 playerMoveIndex,
+        uint104 playerSalt,
+        uint16 playerExtraData,
+        uint8 cpuMoveIndex,
+        uint16 cpuExtraData
+    ) external {
+        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) = ENGINE.getCPURouteContext(battleKey);
+
+        if (msg.sender != p0) {
+            revert NotP0();
+        }
+        if (winnerIndex != 2) {
+            return;
+        }
+
+        address winner;
+        if (playerSwitchForTurnFlag == 0) {
+            // p0 forced switch — CPU doesn't act.
+            winner = ENGINE.executeWithSingleMove(battleKey, playerMoveIndex, playerSalt, playerExtraData);
+        } else {
+            // Derive the CPU's salt deterministically (no client input needed; off-chain replay
+            // reconstructs it from the same inputs).
+            uint104 cpuSalt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
+            if (playerSwitchForTurnFlag == 1) {
+                // CPU forced switch — p0 doesn't act.
+                winner = ENGINE.executeWithSingleMove(battleKey, cpuMoveIndex, cpuSalt, cpuExtraData);
+            } else {
+                winner = ENGINE.executeWithMoves(
+                    battleKey, playerMoveIndex, playerSalt, playerExtraData, cpuMoveIndex, cpuSalt, cpuExtraData
+                );
+            }
+        }
+
+        _afterTurn(battleKey, p0, winner);
+    }
+
     /// @notice Post-execute hook. `winner == address(0)` means the battle is still ongoing;
     ///         otherwise it's the winning player's address. Subclasses override to react.
     function _afterTurn(bytes32 battleKey, address p0, address winner) internal virtual {}
