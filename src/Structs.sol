@@ -73,11 +73,15 @@ struct MoveDecision {
 }
 
 // Stored by the Engine, tracks immutable battle data and battle state.
-// Slot 0: p1 (160) + turnId (64) + p0TeamIndex (16) + p1TeamIndex (16) = 256 bits exactly.
-// teamIndices are narrowed from Battle.uint96 at startBattle; phantom-team writes truncate to match.
+// Slot 0 — IMMUTABLE during play (only written at startBattle):
+//   p1 (160) + p0TeamIndex (16) + p1TeamIndex (16) = 192 bits used.
+// Slot 1 — EVERY per-turn mutation lands here, so a single SSTORE/turn covers all of them:
+//   p0 (160) + winnerIndex (8) + prevPlayerSwitchForTurnFlag (8) + playerSwitchForTurnFlag (8) +
+//   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 256 bits exactly.
+//   turnId narrowed uint64->uint16 (65,535 turns is far beyond any real game); timestamp
+//   uint48->uint40 (year 36800 cap) to make room in slot 1.
 struct BattleData {
     address p1;
-    uint64 turnId;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     address p0;
@@ -85,7 +89,8 @@ struct BattleData {
     uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
-    uint48 lastExecuteTimestamp; // Written at end of every execute() — packed with flags in slot 1 to avoid extra SSTORE
+    uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
+    uint16 turnId;
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over

@@ -728,7 +728,7 @@ contract Engine is IEngine, MappingAllocator {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-        battle.lastExecuteTimestamp = uint48(block.timestamp);
+        battle.lastExecuteTimestamp = uint40(block.timestamp);
 
         emit EngineExecute(battleKey);
     }
