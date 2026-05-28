@@ -55,12 +55,20 @@ interface IEngine {
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
         returns (address winner);
+    function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner);
     function resetCallContext() external;
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32);
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey);
     function getMoveManager(bytes32 battleKey) external view returns (address);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(

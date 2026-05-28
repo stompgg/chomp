@@ -374,6 +374,91 @@ contract Engine is IEngine, MappingAllocator {
         return _executeInternal(battleKey, storageKey);
     }
 
+    /// @notice Execute every buffered turn in `entries` in one tx by looping `_executeInternal`
+    ///         with DIRECT storage. The EVM keeps each slot warm across sub-turns, so cold SLOADs
+    ///         are paid once per batch and amortized for free — no transient shadow layer.
+    /// @dev Only callable by the registered moveManager. Each `entries[i]` packs:
+    ///        [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]
+    ///      Flag-based dispatch reads the live `playerSwitchForTurnFlag` to pick the acting half
+    ///      (the non-acting player's half is a NO_OP the engine ignores). Returns the number of
+    ///      sub-turns actually executed and the winner (zero address if the game continues).
+    function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner)
+    {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        BattleConfig storage config = battleConfig[storageKey];
+        if (msg.sender != config.moveManager) {
+            revert WrongCaller();
+        }
+
+        for (uint256 i = 0; i < entries.length; i++) {
+            uint256 entry = entries[i];
+            uint8 p0Move = uint8(entry);
+            uint16 p0Extra = uint16(entry >> 8);
+            uint104 p0Salt = uint104(entry >> 24);
+            uint8 p1Move = uint8(entry >> 128);
+            uint16 p1Extra = uint16(entry >> 136);
+            uint104 p1Salt = uint104(entry >> 152);
+
+            // Live flag read (direct storage, warm after the first sub-turn).
+            uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+            if (flag == 2) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP0MoveEncoded = (uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8);
+                _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
+                _turnP0Salt = p0Salt;
+                _turnP1Salt = p1Salt;
+            } else if (flag == 0) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                _turnP0MoveEncoded = (uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8);
+                _turnP0Salt = p0Salt;
+            } else {
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
+                _turnP1Salt = p1Salt;
+            }
+
+            winner = _executeInternal(battleKey, storageKey);
+            executed++;
+            if (winner != address(0)) {
+                break;
+            }
+
+            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx.
+            _turnP0MoveEncoded = 0;
+            _turnP1MoveEncoded = 0;
+            _turnP0Salt = 0;
+            _turnP1Salt = 0;
+            tempRNG = 0;
+            koOccurredFlag = 0;
+            tempPreDamage = 0;
+            effectsDirtyBitmap = 0;
+        }
+    }
+
+    /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
+    ///         the engine's slot-reused storageKey (warm SSTOREs on subsequent battles).
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32) {
+        return _getStorageKey(battleKey);
+    }
+
+    /// @notice Minimal context for the batched submit flow: only the fields submitTurnMoves needs.
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey)
+    {
+        storageKey = _resolveStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        p0 = data.p0;
+        p1 = data.p1;
+        turnId = data.turnId;
+        winnerIndex = data.winnerIndex;
+    }
+
     /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
     /// MoveDecision. Encoded == 0 means "no current turn move" since packedMoveIndex always has
     /// IS_REAL_TURN_BIT set for a real move.
@@ -750,6 +835,12 @@ contract Engine is IEngine, MappingAllocator {
         _turnP1Salt = 0;
         battleKeyForWrite = bytes32(0);
         storageKeyForWrite = bytes32(0);
+        // Per-turn transients that `executeBatchedTurns` resets between sub-turns; cleared here too
+        // so each call starts like a fresh tx (these auto-clear at tx end in prod).
+        tempRNG = 0;
+        koOccurredFlag = 0;
+        tempPreDamage = 0;
+        effectsDirtyBitmap = 0;
     }
 
     function end(bytes32 battleKey) external {
