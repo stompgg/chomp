@@ -51,15 +51,26 @@ def build_sprite_config(
     }
 
 
-def build_attack_sprite(
-    move_name: str,
+# Moves whose animation depends on the runtime branch taken.
+# Maps move name → { variant key → spritesheet key }. The variant key is what
+# the renderer picks by; the spritesheet key is looked up in attack/non_standard
+# data the same way a normal move's lookup runs. All variants share a single
+# spritesheet (currently attack_spritesheet.png).
+MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
+    "Gachachacha": {
+        "normal": "gachachacha_carrots",
+        "oppKO": "gachachacha_bunnies",
+        "selfKO": "gachachacha_skulls",
+    },
+}
+
+
+def _resolve_sprite_for_key(
+    key: str,
     attack_spritesheet_data: Dict[str, Any],
     non_standard_spritesheet_data: Dict[str, Any],
 ) -> Dict[str, Any] | None:
-    """Build sprite config for an attack move, or None if no sprite data exists."""
-    key = to_spritesheet_key(move_name)
-
-    # Check standard spritesheet first (96x96)
+    """Resolve a single spritesheet key to a SpriteAnimationConfig dict."""
     if key in attack_spritesheet_data:
         source_data = attack_spritesheet_data[key]
         return build_sprite_config(
@@ -69,8 +80,6 @@ def build_attack_sprite(
             frame_height=source_data.get("height", 96),
             loop=False,
         )
-
-    # Check non-standard spritesheet (variable sizes)
     if key in non_standard_spritesheet_data:
         source_data = non_standard_spritesheet_data[key]
         return build_sprite_config(
@@ -80,8 +89,44 @@ def build_attack_sprite(
             frame_height=source_data.get("height", 106),
             loop=False,
         )
-
     return None
+
+
+def build_attack_sprite(
+    move_name: str,
+    attack_spritesheet_data: Dict[str, Any],
+    non_standard_spritesheet_data: Dict[str, Any],
+) -> tuple[Dict[str, Any] | None, set[str]]:
+    """Build sprite config for an attack move.
+
+    Returns (config, matched_keys). config is either a single SpriteAnimationConfig
+    or a MoveSpriteVariants dict; matched_keys is the set of spritesheet keys
+    consumed (so find_non_standard_sprites can exclude them).
+    """
+    matched: set[str] = set()
+
+    # Multi-variant moves take precedence — exact name match, not slugified.
+    variants_cfg = MOVE_SPRITE_VARIANTS.get(move_name)
+    if variants_cfg:
+        variants: Dict[str, Any] = {}
+        for variant_key, sheet_key in variants_cfg.items():
+            sprite = _resolve_sprite_for_key(
+                sheet_key, attack_spritesheet_data, non_standard_spritesheet_data
+            )
+            if sprite is None:
+                print(f"⚠ {move_name}: variant '{variant_key}' missing spritesheet entry '{sheet_key}'")
+                continue
+            variants[variant_key] = sprite
+            matched.add(sheet_key)
+        return (variants or None, matched)
+
+    key = to_spritesheet_key(move_name)
+    sprite = _resolve_sprite_for_key(
+        key, attack_spritesheet_data, non_standard_spritesheet_data
+    )
+    if sprite is not None:
+        matched.add(key)
+    return sprite, matched
 
 
 def build_sprites(
@@ -210,11 +255,14 @@ def read_moves_data(
             "description": row["DevDescription"],
             "inputType": row.get("InputType", "none").strip() or "none",
         }
-        sprite = build_attack_sprite(
+        sprite, matched_keys = build_attack_sprite(
             move_name, attack_spritesheet_data, non_standard_spritesheet_data
         )
         if sprite:
             move_data["sprite"] = sprite
+        # Variants consume keys other than to_spritesheet_key(move_name); mark
+        # them matched so find_non_standard_sprites won't re-emit them.
+        all_move_keys.update(matched_keys)
         moves_by_mon.setdefault(mon_name, []).append(move_data)
 
     return moves_by_mon, all_move_keys
@@ -354,6 +402,15 @@ export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon' | 'mode-select'
 
 export const MonMetadata = {json_str} as const;
 
+// Moves with runtime-branching outcomes (currently just Gachachacha) emit
+// this shape on `sprite` instead of a single SpriteAnimationConfig; the
+// renderer picks by branch.
+export type MoveSpriteVariants = {{
+  readonly normal: SpriteAnimationConfig;
+  readonly oppKO: SpriteAnimationConfig;
+  readonly selfKO: SpriteAnimationConfig;
+}};
+
 export type Move = {{
   readonly address: LowercaseHex;
   readonly name: string;
@@ -365,7 +422,7 @@ export type Move = {{
   readonly class: MoveClass;
   readonly description: string;
   readonly inputType: MoveInputType;
-  readonly sprite?: SpriteAnimationConfig;
+  readonly sprite?: SpriteAnimationConfig | MoveSpriteVariants;
 }};
 
 export type Mon = {{
