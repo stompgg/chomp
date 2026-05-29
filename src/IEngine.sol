@@ -69,7 +69,6 @@ interface IEngine {
         external
         view
         returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey);
-    function getMoveManager(bytes32 battleKey) external view returns (address);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
         bytes32 battleKey,
@@ -107,7 +106,6 @@ interface IEngine {
     function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
     function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
-    function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
         returns (bool);
@@ -123,7 +121,6 @@ interface IEngine {
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
-    function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
     function getCommitAuthForDualSigned(bytes32 battleKey)
