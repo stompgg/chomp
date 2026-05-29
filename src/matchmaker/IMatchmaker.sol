@@ -2,5 +2,5 @@
 pragma solidity ^0.8.0;
 
 interface IMatchmaker {
-    function validateMatch(bytes32 battleKey, address player) external returns (bool);
+    function validateMatch(bytes32 battleKey, address p0, address p1) external returns (bool);
 }

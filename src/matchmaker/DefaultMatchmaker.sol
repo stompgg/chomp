@@ -190,7 +190,7 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         delete preP1FillBattleKey[battleKey];
     }
 
-    function validateMatch(bytes32 battleKey, address player) external view returns (bool) {
+    function validateMatch(bytes32 battleKey, address p0, address p1) external view returns (bool) {
         bytes32 battleKeyToUse = battleKey;
         bytes32 battleKeyOverride = preP1FillBattleKey[battleKey];
         if (battleKeyOverride != bytes32(0)) {
@@ -199,7 +199,9 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         // This line will fail if we haven't called `proposeBattle()` beforehand (e.g. if someone tries to accept an already accepted battle where p1 = address(0))
         // We won't get the right storage key
         ProposedBattle storage proposal = proposals[_getStorageKey(battleKeyToUse)];
-        bool isPlayer = player == proposal.p0 || player == proposal.p1;
-        return isPlayer;
+        // Read the proposal pair once and validate both players (batched: was two calls + two reads).
+        address pp0 = proposal.p0;
+        address pp1 = proposal.p1;
+        return (p0 == pp0 || p0 == pp1) && (p1 == pp0 || p1 == pp1);
     }
 }

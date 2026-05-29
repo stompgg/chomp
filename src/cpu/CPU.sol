@@ -318,7 +318,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         );
     }
 
-    function validateMatch(bytes32, address) external pure returns (bool) {
+    function validateMatch(bytes32, address, address) external pure returns (bool) {
         return true;
     }
 }

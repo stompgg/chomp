@@ -116,7 +116,7 @@ contract Engine is IEngine, MappingAllocator {
         pairHashNonces[pairHash] += 1;
 
         // Ensure that the matchmaker validates the match for both players
-        if (!matchmaker.validateMatch(battleKey, battle.p0) || !matchmaker.validateMatch(battleKey, battle.p1)) {
+        if (!matchmaker.validateMatch(battleKey, battle.p0, battle.p1)) {
             revert MatchmakerError();
         }
 
