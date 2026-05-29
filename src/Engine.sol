@@ -437,10 +437,9 @@ contract Engine is IEngine, MappingAllocator {
             tempPreDamage = 0;
             effectsDirtyBitmap = 0;
         }
-
-        // One EngineExecute per batch instead of one per sub-turn: clients reconstruct per-turn detail
-        // from the N MonMoves logs in this same tx. Emit only if at least one sub-turn ran.
-        if (executed > 0) emit EngineExecute(battleKey);
+        // The batched flow emits NO EngineExecute (each sub-turn passes emitExecuteEvent=false to
+        // _executeInternal, and there's no batch-level emit); clients reconstruct the batch's
+        // per-turn detail from its N MonMoves logs in this same tx.
     }
 
     /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
@@ -798,8 +797,8 @@ contract Engine is IEngine, MappingAllocator {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
-            // Single-execute paths emit here; the batched path emits one EngineExecute after the
-            // whole batch (the client gets per-turn detail from the MonMoves logs in the same tx).
+            // Single-execute paths emit EngineExecute; the batched flow passes false (no per-turn
+            // and no batch-level emit — clients use the MonMoves logs there).
             if (emitExecuteEvent) emit EngineExecute(battleKey);
             return winner;
         }

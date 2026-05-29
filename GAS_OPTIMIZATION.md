@@ -21,10 +21,10 @@ between the legacy and batched paths.
 | Flow (prod config: inline regen + repack + single-sig + validateMatch batch + 1-EngineExecute/batch) | total gas | |
 |---|---|---|
 | clean-legacy (per-turn execute) | 4,560,142 | |
-| **clean-batched** (submit ×26 + 1 execute) | **3,988,426** | batching saves **571,716 (~12.5%)** |
+| **clean-batched** (submit ×26 + 1 execute) | **3,987,258** | batching saves **572,884 (~12.6%)** |
 
-> Totals refreshed at commit `fdb60d9` (current branch tip). The earlier 4,624,316 / 4,106,467
-> figures predated the `validateMatch(p0,p1)` batch and the once-per-batch `EngineExecute` trim.
+> Totals current as of the no-EngineExecute-in-batched change. The earlier 4,624,316 / 4,106,467
+> figures predated the `validateMatch(p0,p1)` batch and the `EngineExecute` changes.
 
 Two wins compound, in order of impact:
 
@@ -53,7 +53,7 @@ Two wins compound, in order of impact:
 | **Batching**: `submitTurnMoves` + `executeBuffered` + `Engine.executeBatchedTurns` (direct storage, **no shadow**) | ~11% execute-side cold-read amortization |
 | **Single-sig submit** | Revealer sig pins the committer move hash; `msg.sender == committer`. Drops one ecrecover + one 65-byte sig vs dual-sig (~2% on submit). Applied to the legacy `executeWithDualSignedMoves` too. |
 | **`validateMatch(battleKey, p0, p1)` batch** | One bundled matchmaker validation call (reads the proposal pair once) instead of two per-player calls |
-| **1 `EngineExecute` per batch** | `executeBatchedTurns` emits one `EngineExecute` after the loop instead of per sub-turn; clients get per-turn detail from the `MonMoves` logs. −28,085/batched game (~0.7%). Single-execute paths unchanged. |
+| **No `EngineExecute` in the batched flow** | `executeBatchedTurns` emits zero `EngineExecute` (single-execute / legacy paths still emit it per turn); batched clients use the per-turn `MonMoves` logs in the same tx. −29,253/batched game (~0.7%). |
 | **Offchain-CPU** `selectMoveWithCpuMove` | Player submits both their move and the CPU's move in one tx; skips `getCPUContext` (dozen+ cold SLOADs) + on-chain `calculateMove` every CPU turn |
 | **`RealMonReplayGasTest` + `parse_desync_report.py`** | Desync log → replay test (equivalence + prod-faithful gas). Any real game becomes a gas + equivalence regression. |
 | **`FullyOptimizedInlineGasTest` + `GasMeasure`** | Per-tx cold-access + deterministic storage-access tally; the canonical inline gas tracker |
