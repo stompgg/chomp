@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {CommitContext} from "../../src/Structs.sol";
+
 contract MockSimplePMEngine {
     mapping(bytes32 => uint256) public turnIds;
     mapping(bytes32 => address) public winners;
@@ -37,7 +39,9 @@ contract MockSimplePMEngine {
         return playersList[battleKey];
     }
 
-    function getStartTimestamp(bytes32 battleKey) external view returns (uint256) {
-        return startTimestamps[battleKey];
+    /// @notice SimplePM reads startTimestamp + turnId via the batched CommitContext.
+    function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory ctx) {
+        ctx.startTimestamp = uint48(startTimestamps[battleKey]);
+        ctx.turnId = uint64(turnIds[battleKey]);
     }
 }

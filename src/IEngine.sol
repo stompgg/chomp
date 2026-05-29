@@ -86,12 +86,6 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32);
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view
@@ -104,7 +98,6 @@ interface IEngine {
     function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
     function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
-    function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
@@ -118,7 +111,6 @@ interface IEngine {
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
     function getWinner(bytes32 battleKey) external view returns (address);
-    function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
@@ -131,12 +123,6 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
-    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
-    function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
-    function getCPURouteContext(bytes32 battleKey)
-        external
-        view
-        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag);
     function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
     function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
         external

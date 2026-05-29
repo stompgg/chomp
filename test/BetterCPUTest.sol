@@ -1745,7 +1745,7 @@ contract BetterCPUTest is Test {
     }
 
     function _cpuActive(bytes32 battleKey) internal view returns (uint256) {
-        return engine.getCPUContext(battleKey).p1ActiveMonIndex;
+        return engine.getActiveMonIndexForBattleState(battleKey)[1];
     }
 
     /// @dev Mirror of `_startBattleWithCPU` but instantiates `TestBetterCPU` (with exposed

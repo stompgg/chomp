@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {Ownable} from "../lib/Ownable.sol";
+import {CommitContext} from "../Structs.sol";
 
 struct PMEntry {
     uint96 p0Shares;
@@ -38,10 +39,13 @@ contract SimplePM is Ownable {
     }
 
     function buyShares(bytes32 battleKey, bool isP0) payable public {
-        if (ENGINE.getStartTimestamp(battleKey) == 0) {
+        // One batched read covers both the existence guard and the turnId (getStartTimestamp was
+        // removed from the engine surface). startTimestamp == 0 means the battle was never started.
+        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        if (ctx.startTimestamp == 0) {
             revert InvalidBattle(battleKey);
         }
-        uint256 turnId = ENGINE.getTurnIdForBattleState(battleKey);
+        uint256 turnId = ctx.turnId;
         if (turnId > LAST_TURN_TO_JOIN) {
             revert TooLate(turnId);
         }

@@ -200,7 +200,7 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), ALICE);
 
         // Assert that the staminaDelta was set correctly
-        assertEq(engine.getMonStateForStorageKey(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
     }
 
     // Regression: getBattle must not revert when the battle has ended and its
@@ -346,7 +346,7 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), BOB);
 
         // Assert that the staminaDelta was set correctly for Bob's mon
-        assertEq(engine.getMonStateForStorageKey(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
     }
 
     function _setup2v2FasterPriorityBattleAndForceSwitch() internal returns (bytes32) {
@@ -456,7 +456,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that the staminaDelta was set correctly for Bob's mon
         // (we used two attacks of 1 stamina, so -2)
-        assertEq(engine.getMonStateForStorageKey(battleKey, 1, 0, MonStateIndexName.Stamina), -2);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -2);
     }
 
     function test_fasterPriorityKOsForcesSwitchCorrectlyFailsOnInvalidSwitchReveal() public {
@@ -560,7 +560,7 @@ contract EngineTest is Test, BattleHelper {
         (, BattleData memory state) = engine.getBattle(battleKey);
 
         // Assert that the staminaDelta was set correctly (2 moves spent) for the winning mon
-        assertEq(engine.getMonStateForStorageKey(battleKey, state.winnerIndex, 0, MonStateIndexName.Stamina), -2);
+        assertEq(engine.getMonStateForBattle(battleKey, state.winnerIndex, 0, MonStateIndexName.Stamina), -2);
     }
 
     function test_switchPriorityIsFasterThanMove() public {

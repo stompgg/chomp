@@ -54,7 +54,10 @@ library StaminaRegenLogic {
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) internal {
-        uint256 playerSwitchForTurnFlag = engine.getPlayerSwitchForTurnFlagForBattleState(battleKey);
+        // Reads the flag off the batched BattleContext (the dedicated getPlayerSwitchForTurnFlagForBattleState
+        // getter was removed); this external-regen path is not the production hot path, so the extra
+        // SLOADs are acceptable.
+        uint256 playerSwitchForTurnFlag = engine.getBattleContext(battleKey).playerSwitchForTurnFlag;
         if (!_shouldRegenOnRoundEnd(playerSwitchForTurnFlag)) return;
         _regenStaminaExternal(engine, battleKey, 0, p0ActiveMonIndex);
         _regenStaminaExternal(engine, battleKey, 1, p1ActiveMonIndex);

@@ -242,7 +242,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         vm.warp(vm.getBlockTimestamp() + 1);
         _fastTurn(oldFlowBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
-        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
+        assertEq(uint256(engine.getBattleContext(oldFlowBattleKey).playerSwitchForTurnFlag), 1);
 
         vm.prank(p1);
         uint256 gasBefore = gasleft();
@@ -251,7 +251,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         engine.resetCallContext();
 
         _fastTurn(oldFlowBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
-        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(oldFlowBattleKey), 1);
+        assertEq(uint256(engine.getBattleContext(oldFlowBattleKey).playerSwitchForTurnFlag), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();
@@ -263,7 +263,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         vm.warp(vm.getBlockTimestamp() + 1);
         _fastTurn(fastPathBattleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
-        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
+        assertEq(uint256(engine.getBattleContext(fastPathBattleKey).playerSwitchForTurnFlag), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();
@@ -272,7 +272,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         engine.resetCallContext();
 
         _fastTurn(fastPathBattleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
-        assertEq(engine.getPlayerSwitchForTurnFlagForBattleState(fastPathBattleKey), 1);
+        assertEq(uint256(engine.getBattleContext(fastPathBattleKey).playerSwitchForTurnFlag), 1);
 
         vm.prank(p1);
         gasBefore = gasleft();

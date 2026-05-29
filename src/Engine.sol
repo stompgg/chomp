@@ -2765,15 +2765,6 @@ contract Engine is IEngine, MappingAllocator {
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
     }
 
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32) {
-        return _readMonStateDelta(battleConfig[storageKey], playerIndex, monIndex, stateVarIndex);
-    }
-
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,
@@ -2819,10 +2810,6 @@ contract Engine is IEngine, MappingAllocator {
         result[0] = _unpackActiveMonIndex(packed, 0);
         result[1] = _unpackActiveMonIndex(packed, 1);
         return result;
-    }
-
-    function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
-        return battleData[battleKey].playerSwitchForTurnFlag;
     }
 
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {
@@ -2888,10 +2875,6 @@ contract Engine is IEngine, MappingAllocator {
             return address(0);
         }
         return (winnerIndex == 0) ? data.p0 : data.p1;
-    }
-
-    function getStartTimestamp(bytes32 battleKey) external view returns (uint256) {
-        return battleConfig[_resolveStorageKey(battleKey)].startTimestamp;
     }
 
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
@@ -3007,97 +2990,6 @@ contract Engine is IEngine, MappingAllocator {
         return _getDamageCalcContextInternal(
             config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
         );
-    }
-
-    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.turnId = data.turnId;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-
-        // Get active mon indices
-        uint256 p0MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 0);
-        uint256 p1MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 1);
-        ctx.p0ActiveMonIndex = uint8(p0MonIndex);
-        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
-
-        // Get KO status for active mons
-        MonState storage p0State = config.p0States[p0MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
-        ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
-        ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
-
-        // Get stamina info for active mons
-        Mon storage p0Mon = config.p0Team[p0MonIndex];
-        Mon storage p1Mon = config.p1Team[p1MonIndex];
-        ctx.p0ActiveMonBaseStamina = p0Mon.stats.stamina;
-        ctx.p0ActiveMonStaminaDelta =
-            p0State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0State.staminaDelta;
-        ctx.p1ActiveMonBaseStamina = p1Mon.stats.stamina;
-        ctx.p1ActiveMonStaminaDelta =
-            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
-    }
-
-    /// @notice Cheap route-only getter for CPUMoveManager.selectMove. Returns just the fields
-    ///         needed to authenticate the caller, detect game-over, and route on the switch flag.
-    ///         One SLOAD (p0/winnerIndex/playerSwitchForTurnFlag all live in the same BattleData
-    ///         slot) — skips the storage-key hash, config pointer, team-sizes/KO-bitmap unpacks,
-    ///         and p1's active-mon + move-slot reads that the full CPUContext performs.
-    function getCPURouteContext(bytes32 battleKey)
-        external
-        view
-        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag)
-    {
-        BattleData storage data = battleData[battleKey];
-        p0 = data.p0;
-        winnerIndex = data.winnerIndex;
-        playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-    }
-
-    /// @notice Batch getter for the CPU move-selection hot path. Assumes the CPU is p1.
-    /// @dev Consolidates everything CPUMoveManager.selectMove and CPU.calculateValidMoves need,
-    ///      including p1's active mon move slots, in a single staticcall.
-    function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.battleKey = battleKey;
-        ctx.p0 = data.p0;
-        ctx.p1 = data.p1;
-        ctx.validator = address(config.validator);
-        ctx.winnerIndex = data.winnerIndex;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.turnId = data.turnId;
-
-        uint256 p0MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 0);
-        uint256 p1MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 1);
-        ctx.p0ActiveMonIndex = uint8(p0MonIndex);
-        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
-
-        uint8 teamSizes = config.teamSizes;
-        ctx.p0TeamSize = teamSizes & 0x0F;
-        ctx.p1TeamSize = teamSizes >> 4;
-
-        uint16 koBitmaps = config.koBitmaps;
-        ctx.p0KOBitmap = uint8(koBitmaps & 0xFF);
-        ctx.p1KOBitmap = uint8(koBitmaps >> 8);
-
-        Mon storage p1Active = config.p1Team[p1MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
-        ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
-        ctx.cpuActiveMonStaminaDelta =
-            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
-        ctx.cpuActiveMonKnockedOut = p1State.isKnockedOut;
-
-        uint256[] storage moves = p1Active.moves;
-        uint256 len = moves.length;
-        if (len > 4) len = 4;
-        for (uint256 i; i < len; ++i) {
-            ctx.cpuActiveMonMoveSlots[i] = moves[i];
-        }
     }
 
     /// @notice Returns the MonState array for one side of a battle. Used by registry-side

@@ -23,11 +23,12 @@ abstract contract CPUMoveManager {
     }
 
     function selectMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
-        // Cheap routing staticcall: one SLOAD for p0 / winnerIndex / playerSwitchForTurnFlag.
-        // When the turn is "p0 forced switch" (flag == 0) or the game is already over we return
-        // without ever paying for the full CPUContext (which would load team sizes, KO bitmaps,
-        // p1's active mon state, and all four move slots — none of which we'd use).
-        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) = ENGINE.getCPURouteContext(battleKey);
+        // Routing read: p0 / winnerIndex / playerSwitchForTurnFlag off the BattleContext (the dedicated
+        // getCPURouteContext getter was removed to shrink the engine surface). When the turn is "p0
+        // forced switch" (flag == 0) or the game is already over we return without building the full CPUContext.
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) =
+            (rctx.p0, rctx.winnerIndex, rctx.playerSwitchForTurnFlag);
 
         if (msg.sender != p0) {
             revert NotP0();
@@ -42,7 +43,7 @@ abstract contract CPUMoveManager {
             winner = ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);
         } else {
             // P1's turn or both players move: CPU calculates its move. Fetch the full context now.
-            CPUContext memory ctx = ENGINE.getCPUContext(battleKey);
+            CPUContext memory ctx = _buildCPUContext(battleKey);
             (uint128 cpuMoveIndex, uint16 cpuExtraData) =
                 ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
             // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
@@ -77,7 +78,9 @@ abstract contract CPUMoveManager {
         uint8 cpuMoveIndex,
         uint16 cpuExtraData
     ) external {
-        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) = ENGINE.getCPURouteContext(battleKey);
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) =
+            (rctx.p0, rctx.winnerIndex, rctx.playerSwitchForTurnFlag);
 
         if (msg.sender != p0) {
             revert NotP0();
@@ -105,6 +108,48 @@ abstract contract CPUMoveManager {
         }
 
         _afterTurn(battleKey, p0, winner);
+    }
+
+    /// @notice Assemble the CPU decision context from granular engine reads. Replaces the removed
+    ///         `Engine.getCPUContext` batch getter (to be revisited in the CPU-flow overhaul). Assumes
+    ///         the CPU is p1. `getBattle()` is the faithful source for the active mon's move-slot array
+    ///         *with its length* (per-slot `getMoveForMonForBattle` reverts past `moves.length`, which
+    ///         breaks <4-move mons); KO bitmaps come from the dedicated getter rather than being
+    ///         reconstructed from monStates.
+    function _buildCPUContext(bytes32 battleKey) internal view returns (CPUContext memory ctx) {
+        (BattleConfigView memory cfg, BattleData memory data) = ENGINE.getBattle(battleKey);
+
+        ctx.battleKey = battleKey;
+        ctx.p0 = data.p0;
+        ctx.p1 = data.p1;
+        ctx.validator = address(cfg.validator);
+        ctx.winnerIndex = data.winnerIndex;
+        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
+        ctx.turnId = data.turnId;
+
+        // activeMonIndex packs p0 in the low byte, p1 in the high byte.
+        uint256 p1MonIndex = uint8(data.activeMonIndex >> 8);
+        ctx.p0ActiveMonIndex = uint8(data.activeMonIndex);
+        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
+
+        ctx.p0TeamSize = cfg.teamSizes & 0x0F;
+        ctx.p1TeamSize = cfg.teamSizes >> 4;
+
+        ctx.p0KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 0));
+        ctx.p1KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 1));
+
+        Mon memory p1Active = cfg.teams[1][p1MonIndex];
+        MonState memory p1State = cfg.monStates[1][p1MonIndex];
+        ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
+        ctx.cpuActiveMonStaminaDelta =
+            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
+        ctx.cpuActiveMonKnockedOut = p1State.isKnockedOut;
+
+        uint256 len = p1Active.moves.length;
+        if (len > 4) len = 4;
+        for (uint256 i; i < len; ++i) {
+            ctx.cpuActiveMonMoveSlots[i] = p1Active.moves[i];
+        }
     }
 
     /// @notice Post-execute hook. `winner == address(0)` means the battle is still ongoing;

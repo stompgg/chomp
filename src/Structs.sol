@@ -313,22 +313,6 @@ struct DamageCalcContext {
     Type defenderType2;
 }
 
-// Batch context for move validation to reduce external calls (5+ -> 1)
-struct ValidationContext {
-    uint64 turnId;
-    uint8 playerSwitchForTurnFlag;
-    // Per-player data
-    uint8 p0ActiveMonIndex;
-    uint8 p1ActiveMonIndex;
-    bool p0ActiveMonKnockedOut;
-    bool p1ActiveMonKnockedOut;
-    // Stamina info for move validation (for active mons)
-    uint32 p0ActiveMonBaseStamina;
-    int32 p0ActiveMonStaminaDelta;
-    uint32 p1ActiveMonBaseStamina;
-    int32 p1ActiveMonStaminaDelta;
-}
-
 // Bundled move metadata returned by IMoveSet.getMeta. Batches the five separate
 // getters (moveType / moveClass / priority / stamina / basePower) + extraDataType into
 // one staticcall. MoveSlotLib.decodeMeta handles both inline moves (pure bit ops) and
@@ -343,7 +327,8 @@ struct MoveMeta {
 }
 
 // Batch context for CPU move selection. The CPU is always p1 in this codebase,
-// so `cpuActiveMon*` fields mirror p1's active mon state. Returned by Engine.getCPUContext.
+// so `cpuActiveMon*` fields mirror p1's active mon state. Assembled CPU-side by
+// CPUMoveManager._buildCPUContext from granular engine getters.
 //
 // MoveMeta is intentionally NOT included here — only BetterCPU needs decoded metadata, and
 // even BetterCPU doesn't need it on turn 0 / flag==0 paths. Putting it in the shared

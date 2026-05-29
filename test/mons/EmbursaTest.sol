@@ -518,7 +518,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         // After turn ends, only Bob has a forced switch pending.
         assertEq(
-            uint256(engine.getPlayerSwitchForTurnFlagForBattleState(battleKey)),
+            uint256(engine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             1,
             "Next turn should be Bob's single-player forced switch"
         );
