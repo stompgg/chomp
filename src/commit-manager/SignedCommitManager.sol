@@ -241,14 +241,28 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///   bits 0-63 numTurnsExecuted | bits 64-127 numTurnsBuffered | bits 128-191 lastSubmitTimestamp
     mapping(bytes32 storageKey => uint256) public bufferCounters;
 
-    event TurnsExecuted(bytes32 indexed battleKey, uint64 startTurnId, uint64 executedCount, address winner);
-
     /// @notice Append a per-turn entry to the buffer. The committer (msg.sender) supplies their
     ///         preimage directly; the revealer's signature pins the committer's move hash. No
     ///         engine execution — `executeBuffered` later drains the whole buffer in one tx.
     function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
-        (address ctxP0, address ctxP1, uint64 ctxTurnId, uint8 ctxWinnerIndex, bytes32 storageKey) =
-            ENGINE.getSubmitContext(battleKey);
+        _submitTurnMoves(battleKey, entry);
+    }
+
+    /// @notice Append a per-turn entry and drain the whole buffer in the same transaction.
+    /// @dev Convenience for the final submission of a batch: the committer (msg.sender) submits
+    ///      their entry and pays for execution in one call, saving a standalone `executeBuffered`
+    ///      transaction (one fewer 21k base cost + one fewer engine context lookup).
+    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external {
+        bytes32 storageKey = _submitTurnMoves(battleKey, entry);
+        _executeBuffered(battleKey, storageKey);
+    }
+
+    function _submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) internal returns (bytes32 storageKey) {
+        address ctxP0;
+        address ctxP1;
+        uint64 ctxTurnId;
+        uint8 ctxWinnerIndex;
+        (ctxP0, ctxP1, ctxTurnId, ctxWinnerIndex, storageKey) = ENGINE.getSubmitContext(battleKey);
 
         if (ctxWinnerIndex != 2) {
             revert BattleAlreadyComplete();
@@ -314,7 +328,10 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
     /// @notice Drain every currently buffered turn in one transaction. Anyone can call.
     function executeBuffered(bytes32 battleKey) external {
-        bytes32 storageKey = ENGINE.getStorageKey(battleKey);
+        _executeBuffered(battleKey, ENGINE.getStorageKey(battleKey));
+    }
+
+    function _executeBuffered(bytes32 battleKey, bytes32 storageKey) internal {
         uint256 packedCounters = bufferCounters[storageKey];
         uint64 numExecuted = uint64(packedCounters);
         uint64 numBuffered = uint64(packedCounters >> 64);
@@ -326,13 +343,12 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         for (uint64 i = 0; i < numBuffered; i++) {
             entries[i] = moveBuffer[storageKey][numExecuted + i];
         }
-        (uint64 executedThisBatch, address winner) = ENGINE.executeBatchedTurns(battleKey, entries);
+        (uint64 executedThisBatch,) = ENGINE.executeBatchedTurns(battleKey, entries);
 
         unchecked {
             bufferCounters[storageKey] =
                 uint256(numExecuted + executedThisBatch) | (uint256(uint64(block.timestamp)) << 128);
         }
-        emit TurnsExecuted(battleKey, numExecuted, executedThisBatch, winner);
     }
 
     function getBufferStatus(bytes32 battleKey)

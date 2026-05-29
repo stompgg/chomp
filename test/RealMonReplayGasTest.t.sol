@@ -35,7 +35,8 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @notice Faithful replay of a REAL prod battle (26 turns, switch/no-op heavy): real mon loadouts
 ///         via SetupMons' canonical deployX() recipes + the log's per-turn moveIndex/salt/extraData,
-///         run through LEGACY (per-turn execute) and BATCHED (single-sig submit x N + executeBuffered).
+///         run through LEGACY (per-turn execute) and BATCHED (single-sig submit x N-1 + a final
+///         submitTurnMovesAndExecute that buffers the last turn and drains in the same tx).
 ///         Asserts byte-equal end state (equivalence) and reports production-faithful (vm.cool,
 ///         steady-state) total gas. Batching uses direct storage (no shadow) + single-sig submit.
 contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
@@ -206,7 +207,9 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     // ---- BATCHED (single-sig submit: committer = msg.sender) ----
-    function _submitTurn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool measure) internal returns (uint256 gasUsed) {
+    function _submitTurn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
+        internal returns (uint256 gasUsed)
+    {
         uint8 p0m = tn.p0Present ? tn.p0Move : NO_OP_MOVE_INDEX;
         uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
         uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, turnId))));
@@ -218,7 +221,12 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         if (measure) _coolEngineAndMgr();
         vm.prank(committer);
         uint256 g0 = gasleft();
-        mgr.submitTurnMoves(battleKey, entry);
+        // Final submission drains the whole buffer in the same tx; the rest only buffer.
+        if (combined) {
+            mgr.submitTurnMovesAndExecute(battleKey, entry);
+        } else {
+            mgr.submitTurnMoves(battleKey, entry);
+        }
         gasUsed = g0 - gasleft();
     }
 
@@ -227,11 +235,10 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     function _runBatched(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 submitExec, uint256 execExec) {
-        for (uint64 i; i < plan.length; i++) submitExec += _submitTurn(battleKey, i, plan[i], measure);
-        if (measure) _coolEngineAndMgr();
-        uint256 g0 = gasleft();
-        mgr.executeBuffered(battleKey);
-        if (measure) execExec = g0 - gasleft();
+        uint64 lastIdx = uint64(plan.length - 1);
+        for (uint64 i; i < lastIdx; i++) submitExec += _submitTurn(battleKey, i, plan[i], false, measure);
+        // Final turn submits AND drains the buffer in one tx (submit + executeBuffered combined).
+        execExec = _submitTurn(battleKey, lastIdx, plan[lastIdx], true, measure);
         engine.resetCallContext();
     }
 
@@ -277,7 +284,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         require(engine.getStorageKey(bKey1) == engine.getStorageKey(bKey2), "batched storageKey reuse");
         vm.warp(vm.getBlockTimestamp() + 1);
         (uint256 submitExec, uint256 execExec) = _runBatched(bKey2, plan, true);
-        uint256 batchedTotal = submitExec + execExec + (plan.length + 1) * TX_BASE;
+        // plan.length transactions total: (plan.length - 1) buffer-only submits + 1 combined submit+execute.
+        uint256 batchedTotal = submitExec + execExec + plan.length * TX_BASE;
 
         assertEq(legacyState, batchedState, "legacy and batched must reach identical end state");
 
