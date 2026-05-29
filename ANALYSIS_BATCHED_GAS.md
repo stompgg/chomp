@@ -13,13 +13,13 @@ mon contracts):
 
 | Flow | total gas | vs `main` |
 |---|---|---|
-| `main` legacy (baseline) | 5,277,953 | — |
-| clean-legacy (repack, dual-sig) | 5,296,078 | ≈ parity |
-| **clean-batched** (repack, single-sig, no shadow) | **4,584,625** | **−693,328 (−13.1%)** |
+| `main` legacy (baseline, 2-sig) | 5,277,953 | — |
+| clean-legacy (repack + single-sig) | 5,201,946 | −75,907 (−1.4%) |
+| **clean-batched** (repack + single-sig + batching, no shadow) | **4,583,171** | **−694,782 (−13.2%)** |
 
-**Batching reduces gas ~13% vs `main` on a real game.** The win = ~11% cold-read amortization
-(one execute tx keeps every slot warm across sub-turns, for free) + ~2% single-sig submit + the
-BattleData repack.
+**Batching reduces gas ~13% vs `main` on a real game**, and even the legacy fallback is now below
+`main` (single-sig + repack). The batched win = ~11% cold-read amortization (one execute tx keeps
+every slot warm across sub-turns, for free) + ~2% single-sig submit + the BattleData repack.
 
 ## The key finding: the transient shadow was *counterproductive*
 
@@ -62,16 +62,24 @@ this test's data, so real games are reusable gas + equivalence regressions.
 | C | `vm.cool` production-faithful harness + real-mon replay (equivalence + gas) | (measurement) |
 | D | **Offchain-CPU** `selectMoveWithCpuMove`: p0 submits both moves; skips `getCPUContext` (dozen+ cold SLOADs) + `calculateMove` every CPU turn | large, CPU games |
 | E | `parse_desync_report.py`: desync log → replay test data | (tooling) |
+| A2 | Legacy `executeWithDualSignedMoves` → single-sig (`msg.sender==committer`, drop committer sig) | ~3.6k/turn legacy |
 
-Full suite green at each step (507 tests).
+Full suite green (506 tests).
 
-## Remaining / deliberate follow-ups
+## Security model (single-sig)
 
-- **A2 — legacy `executeWithDualSignedMoves` single-sig.** `main` ships the relayer-friendly dual-sig
-  (committer + revealer). Reverting it to `msg.sender==committer` saves ~4k/turn on the *legacy*
-  (fallback) path but is a security-model change with churn across ~15 test sites (some assert
-  committer-sig behavior). Deferred as a deliberate decision — the **primary** single-sig win (the
-  batched submit) is already in. The CPU passthrough (D) is `msg.sender==p0`, also single-sig.
+Replay protection is unchanged from the dual-sig design — it lives in the **revealer signature**,
+which is over `DualSignedReveal{battleKey, turnId, committerMoveHash, revealerMove…}`:
+
+- **Cross-turn / cross-battle replay:** the signature binds `(battleKey, turnId)`, so a signature
+  for turn N can't be replayed on turn N+1 or another battle (the digest differs → recovery fails).
+- **Committer can't change their move:** the revealer's sig binds `committerMoveHash`. If the
+  committer submits a different preimage, the recomputed hash differs → the revealer sig recovers
+  the wrong address → `InvalidSignature`.
+- **Committer can't be impersonated / unilateral-revealer attack:** `msg.sender == committer`. A
+  revealer (or any third party) submitting a forged committer move reverts `NotCommitter` before
+  any execution. (This is the load-bearing check; the trade-off is no relaying — the committer must
+  send their own turn's tx.) The CPU passthrough (D) uses the same `msg.sender == p0` binding.
 
 ## The floor (how much further can gas go?)
 

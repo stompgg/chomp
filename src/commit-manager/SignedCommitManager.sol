@@ -53,13 +53,14 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         version = "1";
     }
 
-    /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
-    /// @dev Both players sign off-chain — committer over `SignedCommit{committerMoveHash, …}`
-    ///      and revealer over `DualSignedReveal{committerMoveHash, …, revealerMove…}`. Anyone
-    ///      can submit (relayer-friendly) since both signatures are required and bind each
-    ///      player independently. Without the explicit committer signature, a malicious
-    ///      revealer could pick any preimage `P*`, sign `DualSignedReveal{keccak(P*), …}`
-    ///      and play `P*` as the committer's move — the committer signature closes that.
+    /// @notice Executes a turn in one transaction (gas-optimized, SINGLE-SIG): the committer is
+    ///         `msg.sender` and the revealer's signature carries their move.
+    /// @dev No committer signature — the committer is bound by `msg.sender == committer`. The
+    ///      revealer signs `DualSignedReveal{committerMoveHash, …}`, which pins the committer's move
+    ///      hash, so the committer is locked to this exact move (a different preimage would break the
+    ///      revealer's signature) and a malicious revealer cannot play a forged committer move (they
+    ///      are not `msg.sender == committer`). Saves one ecrecover + one 65-byte signature vs the
+    ///      dual-sig variant. Trade-off: NOT relayer-friendly — the committer must send their own tx.
     /// @param battleKey The battle identifier
     /// @param committerMoveIndex The committer's move index
     /// @param committerSalt The committer's salt
@@ -67,8 +68,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @param revealerMoveIndex The revealer's move index
     /// @param revealerSalt The revealer's salt
     /// @param revealerExtraData The revealer's extra data
-    /// @param committerSignature EIP-712 signature from the committer over
-    ///        SignedCommit(committerMoveHash, battleKey, turnId)
     /// @param revealerSignature EIP-712 signature from the revealer over
     ///        DualSignedReveal(battleKey, turnId, committerMoveHash, revealerMove…)
     function executeWithDualSignedMoves(
@@ -79,25 +78,15 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint8 revealerMoveIndex,
         uint104 revealerSalt,
         uint16 revealerExtraData,
-        bytes calldata committerSignature,
         bytes calldata revealerSignature
     ) external {
         (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-
-        // Scoped to keep `commit`/`reveal` structs from sharing stack space across recoveries.
-        {
-            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
-                moveHash: committerMoveHash,
-                battleKey: battleKey,
-                turnId: turnId
-            });
-            bytes32 commitDigest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
-            if (ECDSA.recoverCalldata(commitDigest, committerSignature) != committer) {
-                revert InvalidSignature();
-            }
+        if (msg.sender != committer) {
+            revert NotCommitter();
         }
+
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({

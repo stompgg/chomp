@@ -675,7 +675,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
         bytes32 committerMoveHash =
             keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
         address mgr = address(signedCommitManager);
-        bytes memory committerSig = _signCommit(mgr, committerPk, committerMoveHash, battleKey, turnId);
+        committerPk; // single-sig: no committer signature; committer is msg.sender
         bytes memory revealerSig = _signDualReveal(
             mgr, revealerPk, battleKey, turnId, committerMoveHash,
             revealerMoveIndex, revealerSalt, revealerExtraData
@@ -686,7 +686,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper {
             battleKey,
             committerMoveIndex, committerSalt, committerExtraData,
             revealerMoveIndex, revealerSalt, revealerExtraData,
-            committerSig, revealerSig
+            revealerSig
         );
         engine.resetCallContext();
     }

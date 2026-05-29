@@ -187,17 +187,18 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
         bool twoPlayer = tn.p0Present && tn.p1Present;
         if (twoPlayer) {
-            (uint8 cM, uint16 cE, uint104 cS, uint256 cPk, uint8 rM, uint16 rE, uint104 rS, uint256 rPk) =
+            (uint8 cM, uint16 cE, uint104 cS, uint8 rM, uint16 rE, uint104 rS, uint256 rPk) =
                 turnId % 2 == 0
-                    ? (tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK, tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK)
-                    : (tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK, tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK);
+                    ? (tn.p0Move, tn.p0Extra, tn.p0Salt, tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK)
+                    : (tn.p1Move, tn.p1Extra, tn.p1Salt, tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK);
+            // Single-sig: committer (msg.sender, by parity) submits; only the revealer signs.
+            address committer = turnId % 2 == 0 ? p0 : p1;
             bytes32 cHash = keccak256(abi.encodePacked(cM, cS, cE));
-            bytes memory cSig = _signCommit(address(mgr), cPk, cHash, battleKey, turnId);
             bytes memory rSig = _signDualReveal(address(mgr), rPk, battleKey, turnId, cHash, rM, rS, rE);
-            if (measure) { _coolEngineAndMgr(); uint256 g0 = gasleft();
-                mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, cSig, rSig);
+            if (measure) { _coolEngineAndMgr(); vm.prank(committer); uint256 g0 = gasleft();
+                mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, rSig);
                 gasUsed = g0 - gasleft();
-            } else { mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, cSig, rSig); }
+            } else { vm.prank(committer); mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, rSig); }
         } else {
             (uint8 m, uint16 e, uint104 s, address actor) = tn.p0Present
                 ? (tn.p0Move, tn.p0Extra, tn.p0Salt, p0) : (tn.p1Move, tn.p1Extra, tn.p1Salt, p1);
@@ -287,7 +288,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
         console.log("");
         console.log("=== CLEAN BRANCH: REAL game (26 turns) steady-state, production-faithful ===");
-        console.log("  LEGACY (repack, 2-sig) total :", legacyTotal);
+        console.log("  LEGACY (repack, 1-sig) total :", legacyTotal);
         console.log("  BATCHED (repack, 1-sig) total:", batchedTotal);
         console.log("  MAIN baseline (measured)     : 5277953");
         if (batchedTotal < legacyTotal) console.log("  batched < clean-legacy by    :", legacyTotal - batchedTotal);
