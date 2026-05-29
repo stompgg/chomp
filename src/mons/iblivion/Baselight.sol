@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.0;
 
-import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";

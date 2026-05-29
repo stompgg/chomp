@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
 import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance, MoveMeta} from "../../Structs.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -28,12 +28,10 @@ contract IronWall is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        // Check to see if the effect is already active
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Check to see if the effect is already active (targeted lookup, no full-array build)
+        (bool exists,,) = engine.getEffectData(battleKey, attackerPlayerIndex, attackerMonIndex, address(this));
+        if (exists) {
+            return;
         }
 
         // The effect will last until Aurox switches out

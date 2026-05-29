@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import {EffectInstance, MoveMeta} from "../../Structs.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
@@ -37,14 +37,12 @@ contract GildedRecovery is IMoveSet {
         // If the mon has a status effect, remove it and heal
         if (statusFlag != 0) {
             // Find and remove the status effect
-            (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, attackerPlayerIndex, targetMonIndex);
+            // Targeted lookup: engine scans for the status effect internally, no full-array build.
             address statusEffectAddress = address(uint160(statusFlag));
-
-            for (uint256 i = 0; i < effects.length; i++) {
-                if (address(effects[i].effect) == statusEffectAddress) {
-                    engine.removeEffect(attackerPlayerIndex, targetMonIndex, indices[i]);
-                    break;
-                }
+            (bool exists, uint256 idx,) =
+                engine.getEffectData(battleKey, attackerPlayerIndex, targetMonIndex, statusEffectAddress);
+            if (exists) {
+                engine.removeEffect(attackerPlayerIndex, targetMonIndex, idx);
             }
             // Give +1 stamina
             engine.updateMonState(attackerPlayerIndex, targetMonIndex, MonStateIndexName.Stamina, STAMINA_BONUS);

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_CRIT_RATE} from "../../Constants.sol";
 import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import { EffectInstance, MoveMeta } from "../../Structs.sol";
+import { MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -41,21 +41,12 @@ contract NightTerrors is IMoveSet, BasicEffect {
     ) external {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
-        // Check if the effect is already applied to the attacker
-        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, attackerPlayerIndex, attackerMonIndex);
-        bool found = false;
-        uint256 effectIndex = 0;
+        // Check if the effect is already applied to the attacker (targeted lookup, no full-array build)
+        (bool found, uint256 effectIndex, bytes32 effectData) =
+            engine.getEffectData(battleKey, attackerPlayerIndex, attackerMonIndex, address(this));
         uint64 currentTerrorCount = 0;
-
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                found = true;
-                effectIndex = indices[i];
-                // Decode existing extraData
-                (, uint64 storedTerrorCount) = _unpackExtraData(effects[i].data);
-                currentTerrorCount = storedTerrorCount;
-                break;
-            }
+        if (found) {
+            (, currentTerrorCount) = _unpackExtraData(effectData);
         }
 
         // Increment terror count
@@ -129,15 +120,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // Get the defender's active mon index
         uint256 defenderMonIndex = defenderPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
 
-        // Check if opponent (defender) is asleep by iterating through their effects
-        (EffectInstance[] memory defenderEffects, ) = engine.getEffects(battleKey, defenderPlayerIndex, defenderMonIndex);
-        bool isAsleep = false;
-        for (uint256 i = 0; i < defenderEffects.length; i++) {
-            if (address(defenderEffects[i].effect) == address(SLEEP_STATUS)) {
-                isAsleep = true;
-                break;
-            }
-        }
+        // Check if opponent (defender) is asleep (targeted lookup, no full-array build)
+        (bool isAsleep,,) = engine.getEffectData(battleKey, defenderPlayerIndex, defenderMonIndex, address(SLEEP_STATUS));
 
         // Determine damage per stack based on sleep status
         uint32 damagePerStack = isAsleep ? ASLEEP_DAMAGE_PER_STACK : BASE_DAMAGE_PER_STACK;
