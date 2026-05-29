@@ -28,9 +28,13 @@ abstract contract GasMeasure is CommonBase {
     ///      subsequent touches warm. Call once per prod-tx-equivalent unit (e.g. once per turn)
     ///      so cold/warm reflects a fresh cold-start access list.
     function _tally(Vm.AccountAccess[] memory accesses) internal pure returns (Tally memory t) {
-        bytes32[] memory keys = new bytes32[](8192);
-        uint16[] memory writes = new uint16[](8192);
-        bool[] memory reads = new bool[](8192);
+        // Size the dedup scratch to the actual access count in THIS window (not a fixed large
+        // array), so calling _tally once per turn doesn't blow up cumulative memory across a battle.
+        uint256 cap;
+        for (uint256 i; i < accesses.length; i++) cap += accesses[i].storageAccesses.length;
+        bytes32[] memory keys = new bytes32[](cap);
+        uint16[] memory writes = new uint16[](cap);
+        bool[] memory reads = new bool[](cap);
         uint256 keyCount;
         for (uint256 i; i < accesses.length; i++) {
             Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
