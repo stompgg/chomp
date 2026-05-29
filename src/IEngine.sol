@@ -115,6 +115,10 @@ interface IEngine {
         external
         view
         returns (EffectInstance[] memory, uint256[] memory);
+    function getEffectData(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, address effectAddr)
+        external
+        view
+        returns (bool exists, uint256 effectIndex, bytes32 data);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);

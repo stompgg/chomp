@@ -2851,6 +2851,40 @@ contract Engine is IEngine, MappingAllocator {
         return _getEffectsForTarget(storageKey, targetIndex, monIndex);
     }
 
+    /// @notice Targeted single-effect lookup. Scans a mon's (or the global) effect list for
+    ///         `effectAddr` and returns its slot index + data, WITHOUT materializing the full
+    ///         `EffectInstance[]` array. For abilities / move-effects that only need one known
+    ///         effect (idempotency guards, reading own state) this avoids the array build + ABI
+    ///         round-trip that dominates `getEffects()`. `effectIndex` matches the index that
+    ///         `editEffect` expects (absolute slot for players, list index for global).
+    function getEffectData(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, address effectAddr)
+        external
+        view
+        returns (bool exists, uint256 effectIndex, bytes32 data)
+    {
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        if (targetIndex == 2) {
+            uint256 len = config.globalEffectsLength;
+            for (uint256 i; i < len;) {
+                EffectInstance storage e = config.globalEffects[i];
+                if (address(e.effect) == effectAddr) return (true, i, e.data);
+                unchecked { ++i; }
+            }
+            return (false, 0, bytes32(0));
+        }
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        for (uint256 i; i < monEffectCount;) {
+            uint256 slotIndex = baseSlot + i;
+            EffectInstance storage e = effects[slotIndex];
+            if (address(e.effect) == effectAddr) return (true, slotIndex, e.data);
+            unchecked { ++i; }
+        }
+        return (false, 0, bytes32(0));
+    }
+
     function getWinner(bytes32 battleKey) external view returns (address) {
         BattleData storage data = battleData[battleKey];
         uint8 winnerIndex = data.winnerIndex;
