@@ -302,7 +302,7 @@ contract Engine is IEngine, MappingAllocator {
             revert MovesNotSet();
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @notice Combined setMove + setMove + execute for gas optimization
@@ -337,7 +337,7 @@ contract Engine is IEngine, MappingAllocator {
         _turnP0Salt = p0Salt;
         _turnP1Salt = p1Salt;
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @notice Combined single-player setMove + execute for forced switch turns
@@ -371,7 +371,7 @@ contract Engine is IEngine, MappingAllocator {
             _turnP1Salt = salt;
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @notice Execute every buffered turn in `entries` in one tx by looping `_executeInternal`
@@ -421,7 +421,7 @@ contract Engine is IEngine, MappingAllocator {
                 _turnP1Salt = p1Salt;
             }
 
-            winner = _executeInternal(battleKey, storageKey);
+            winner = _executeInternal(battleKey, storageKey, false);
             executed++;
             if (winner != address(0)) {
                 break;
@@ -437,6 +437,10 @@ contract Engine is IEngine, MappingAllocator {
             tempPreDamage = 0;
             effectsDirtyBitmap = 0;
         }
+
+        // One EngineExecute per batch instead of one per sub-turn: clients reconstruct per-turn detail
+        // from the N MonMoves logs in this same tx. Emit only if at least one sub-turn ran.
+        if (executed > 0) emit EngineExecute(battleKey);
     }
 
     /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
@@ -492,7 +496,7 @@ contract Engine is IEngine, MappingAllocator {
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal returns (address winner) {
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitExecuteEvent) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -794,8 +798,9 @@ contract Engine is IEngine, MappingAllocator {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
-            // Still emit execute event
-            emit EngineExecute(battleKey);
+            // Single-execute paths emit here; the batched path emits one EngineExecute after the
+            // whole batch (the client gets per-turn detail from the MonMoves logs in the same tx).
+            if (emitExecuteEvent) emit EngineExecute(battleKey);
             return winner;
         }
 
@@ -815,7 +820,7 @@ contract Engine is IEngine, MappingAllocator {
         }
         battle.lastExecuteTimestamp = uint40(block.timestamp);
 
-        emit EngineExecute(battleKey);
+        if (emitExecuteEvent) emit EngineExecute(battleKey);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
