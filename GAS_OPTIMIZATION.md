@@ -162,15 +162,24 @@ actual production config before ranking optimizations.**
 The two big wins (inline, batching) are banked. What's left is marginal, conditional, or
 architectural — listed for completeness:
 
-1. **CPU / single-player one-tx batch-submit — the biggest remaining lever, but a CONSTRAINT
-   QUESTION.** The "no batching submissions" rule exists for **commit-reveal fairness** (PvP). In
-   single-player vs CPU there is no adversary to hide moves from — the CPU is deterministic/RNG-seeded
-   and (with the ported offchain-CPU) already computed off-chain. So a single-player game has *no
-   fairness reason* for per-turn submission: the player could submit the entire move list and execute
-   the whole game in **one tx**, collapsing ~27 txs → 1 (~546k tx-base + ~1.25M submit execution) —
-   roughly **halving single-player cost**, more than every micro-lever combined. **Gated on: does the
-   no-batch-submission constraint apply to single-player, or is it purely a PvP-fairness rule?** If
-   PvP-only, this is the win to pursue.
+1. **CPU / single-player one-tx batch-submit — the biggest remaining lever (MEASURED), PARKED on a
+   farm/grind decision.** A single-player game has no adversary, so no fairness reason for per-turn
+   submission: the player passes the entire move list via **calldata** to `executeBatchedTurns` (which
+   decodes each turn into transient storage — no per-turn move SSTORE, no commit buffer, no commitment
+   storage) and the whole game executes in **one tx**. Measured in `RealMonReplayGasTest` (option 3,
+   26-turn game, prod inline): **ONE-TX 2,878,407 vs BATCHED 3,987,258 (−1,108,851, −28%) vs LEGACY
+   4,560,376 (−1,681,969, −37%)**; end-state asserted byte-identical to legacy. ~525k of the win is
+   just the `25 × 21k` tx-base collapse.
+   **Parked because it is intrinsically grindable.** With `rngOracle == address(0)` (prod), the RNG is
+   `keccak256(p0Salt, p1Salt)` — fully player-controlled (salts are in the calldata). The one-tx flow
+   *requires* predictable RNG (the player must pre-compute the on-chain-verified CPU moves), so
+   **one-tx ⟺ predictable RNG ⟺ grindable** — a nonce can't break this (the salt already *is* the
+   player-chosen nonce). Options when revisited: (a) ship it and rely on the daily-gated reward economy
+   (the per-turn flow is already grindable — one-tx only changes cost, not the security model); or
+   (b) compute CPU moves on-chain in the batch + seed RNG from `block.prevrandao` (unknown at submit) so
+   off-chain grinding dies (each attempt becomes a real gas-costed tx) — at the cost of giving back the
+   offchain-CPU optimization. The measurement (option 3) calls `executeBatchedTurns` directly; no
+   production `CPUMoveManager` entry was wired (nothing farm-enabling shipped).
 2. **`getSubmitContext` (~182k/batched-game, ~7k/submit)** — the biggest submit-side bucket, but
    ~irreducible: it's already a single bundled engine call (one cold account access + the p0/p1/
    storageKey/winnerIndex reads, all genuinely needed — p0/p1 are load-bearing for the anti-grief
