@@ -21,14 +21,11 @@ import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
 import {SleepStatus} from "../src/effects/status/SleepStatus.sol";
 import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
-import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
 
-import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IEffect} from "../src/effects/IEffect.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IValidator} from "../src/IValidator.sol";
@@ -53,7 +50,6 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     SignedMatchmaker maker;
     GachaTeamRegistry gachaReg;
     TestTeamRegistry registry;
-    DefaultRuleset ruleset;
 
     uint256[4] P0_IDS = [uint256(6), 3, 9, 8];
     uint256[4] P1_IDS = [uint256(0), 3, 10, 5];
@@ -97,9 +93,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         mgr = new SignedCommitManager(IEngine(address(engine)));
         maker = new SignedMatchmaker(engine);
         registry = new TestTeamRegistry();
-        IEffect[] memory globals = new IEffect[](1);
-        globals[0] = new StaminaRegen();
-        ruleset = new DefaultRuleset(IEngine(address(engine)), globals);
+        // Production uses the inline stamina-regen path (INLINE_STAMINA_REGEN_RULESET sentinel),
+        // handled internally by the engine — no external StaminaRegen effect / ruleset deployed.
     }
 
     function _buildTeam(uint256[4] memory ids, MonStats[4] memory logStats) internal view returns (Mon[] memory team) {
@@ -169,7 +164,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
             battle: Battle({
                 p0: p0, p0TeamIndex: 0, p1: p1, p1TeamIndex: 0,
                 teamRegistry: registry, validator: IValidator(address(0)),
-                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(address(ruleset)),
+                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
                 moveManager: address(mgr), matchmaker: maker, engineHooks: new IEngineHook[](0)
             }),
             pairHashNonce: nonce
@@ -287,12 +282,11 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         assertEq(legacyState, batchedState, "legacy and batched must reach identical end state");
 
         console.log("");
-        console.log("=== CLEAN BRANCH: REAL game (26 turns) steady-state, production-faithful ===");
-        console.log("  LEGACY (repack, 1-sig) total :", legacyTotal);
-        console.log("  BATCHED (repack, 1-sig) total:", batchedTotal);
-        console.log("  MAIN baseline (measured)     : 5277953");
-        if (batchedTotal < legacyTotal) console.log("  batched < clean-legacy by    :", legacyTotal - batchedTotal);
-        if (batchedTotal < 5277953) console.log("  batched < MAIN by            :", 5277953 - batchedTotal);
-        else console.log("  batched > MAIN by            :", batchedTotal - 5277953);
+        console.log("=== CLEAN BRANCH: REAL game (26 turns), PROD config (inline regen), production-faithful ===");
+        console.log("  LEGACY  (inline regen, repack, 1-sig):", legacyTotal);
+        console.log("  BATCHED (inline regen, repack, 1-sig):", batchedTotal);
+        if (batchedTotal < legacyTotal) console.log("  batching saves vs clean-legacy       :", legacyTotal - batchedTotal);
+        // NOTE: the old external-StaminaRegen main baseline (5,277,953) is NOT comparable — it
+        // measured the slow ruleset. A fair main comparison needs main itself re-measured under inline.
     }
 }
