@@ -542,4 +542,77 @@ contract CPUTest is Test {
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hpDelta, -2);
     }
+
+    // One-tx PvE: p0 submits the whole game (their moves + CPU's moves) + a per-turn player salt in one
+    // call; CPU salt is always 0. Verifies the 19-byte/turn decode by checking the emitted MonMoves
+    // salts match what was packed into calldata (low 104 bits = player salt, high bits = CPU salt 0).
+    function test_executeGame_decodesPerTurnSalts() public {
+        TestMoveFactory moveFactory = new TestMoveFactory();
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 1))));
+        Mon memory mon = _createMon(Type.Liquid);
+        mon.stats.hp = 100;
+        mon.stats.stamina = 10;
+        mon.moves = moves;
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+
+        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
+        teamRegistry.setTeam(address(okayCPU), team);
+        teamRegistry.setTeam(ALICE, team);
+        DefaultValidator v = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: keccak256(
+                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
+            ),
+            p1: address(okayCPU),
+            p1TeamIndex: 0,
+            validator: v,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            teamRegistry: teamRegistry,
+            engineHooks: new IEngineHook[](0),
+            moveManager: address(okayCPU),
+            matchmaker: okayCPU
+        });
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(okayCPU);
+        engine.updateMatchmakers(makersToAdd, new address[](0));
+        bytes32 battleKey = okayCPU.startBattle(proposal);
+        vm.stopPrank();
+
+        // Turn plan: [switch-to-0, attack, attack] with distinct player salts; CPU salt always 0.
+        uint8[3] memory p0m = [uint8(SWITCH_MOVE_INDEX), uint8(1), uint8(1)];
+        uint8[3] memory p1m = [uint8(SWITCH_MOVE_INDEX), uint8(1), uint8(1)];
+        uint104[3] memory p0s = [uint104(0xAAAA1), uint104(0xBBBB2), uint104(0xCCCC3)];
+        bytes memory stream;
+        for (uint256 i; i < 3; i++) {
+            // [p0Move 1 | p0Extra 2 | p0Salt 13 | p1Move 1 | p1Extra 2]
+            stream = abi.encodePacked(stream, p0m[i], uint16(0), p0s[i], p1m[i], uint16(0));
+        }
+        assertEq(stream.length, 3 * 19, "19 bytes per turn");
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        okayCPU.executeGame(battleKey, stream);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bytes32 sig = keccak256("MonMoves(bytes32,uint256,uint256)");
+        uint256 seen;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(engine) || logs[i].topics[0] != sig) continue;
+            (, uint256 packedSalts) = abi.decode(logs[i].data, (uint256, uint256));
+            assertEq(uint104(packedSalts), p0s[seen], "player salt decoded from stream");
+            assertEq(packedSalts >> 104, 0, "CPU salt is 0");
+            seen++;
+        }
+        assertEq(seen, 3, "all 3 turns emitted MonMoves");
+        assertGt(engine.getTurnIdForBattleState(battleKey), 0, "game advanced");
+    }
 }
