@@ -111,6 +111,44 @@ actual production config before ranking optimizations.**
   SLOAD to collapse; delegatecall would only save the warm cross-contract CALL (~100–700), not the
   SLOAD. (b) Running curated/user move code in the engine's storage context is arbitrary state
   corruption (`winnerIndex`, balances) — a hard no for a game built on user-created moves.
+- **Shared mon-instance cache for `startBattle`** (the big one we chased and dropped). **Idea:** store
+  each mon's base catalog *once* in the engine (`engineMon[monId] = {stats, ability, moves}`, shared
+  across all teams), have teams reference mons by id + per-slot facet, freeze the ids/facets into the
+  battle config at start, and **skip storing the per-battle `Mon[]` entirely** — no 56-slot team store
+  (8 mons × 7 slots), no `getTeams` fold. `execute` would rebuild each mon from `engineMon[monId]` +
+  the frozen facet at read time. **Why we thought it'd win:** `StartBattleGasTest` showed warm-steady
+  `startBattle` ≈ 268k and is **slot-touch-bound** (≈ distinct slots first-touched × ~2.1k; SSTORE
+  *value* tier is irrelevant warm — WARM-SAME == WARM-DIFF). The per-battle team store looked like a
+  free ~160–180k to delete.
+  **Why it doesn't pay (measured, `TeamMonReadGasTest`, faithful layout, cold-started per turn):** the
+  per-battle `Mon[]` is **not write-once** — `execute` reads it ~16×/turn via `_getTeamMon`, which
+  today returns a **storage ref to a pre-folded `Mon`** (≈1 SLOAD/field, cheap). The cache replaces
+  that with monId indirection (read frozen ids) + `engineMon[monId]` re-resolution (keccak) + facet
+  fold on *every* read, and every `execute()` is its own cold-start tx (EIP-2929 resets warmth):
+
+  | read model | gas/turn | Δ |
+  |---|---|---|
+  | current — storage ref, pre-folded | 21,581 | — |
+  | full cache, field accessors | 32,896 | **+11,315** |
+  | full cache, resolve-once + thread | 27,658 | +6,077 |
+  | hybrid — pre-fold+store stats, dedup only moves/ability | 20,750 | −831 (neutral) |
+
+  `net/battle = startBattle saving − execute Δ × turns`. The full cache regresses `execute`
+  +11.3k/turn → ~+136k over a 12-turn battle against a ~180k `startBattle` saving → net only ~+44k,
+  and **net-negative on long battles** — and it violates the hard "gas-neutral on hot paths" rule. The
+  only execute-neutral variant is the **hybrid** (keep pre-folded stats stored per battle so stats
+  reads are unchanged; dedup only the facet-*independent* moves/ability via `engineMon`), but it still
+  stores 8 stat slots + a monId slot/battle, so its `startBattle` saving shrinks to ~135–160k and it
+  buys a single-digit-% battle-cost cut for permanent hot-path complexity (split read path, registry
+  push hooks, set-once `ENGINE`, deploy-order + backfill). Not worth it.
+  **Root cause of the misjudgment:** we priced the per-battle `Mon[]` as pure write-once storage, so
+  "store once + dedup" looked free — but it's **read-hot**, and the dedup's `startBattle` SSTORE saving
+  is paid back (and then some) by per-read indirection on the `execute` hot path. "Slot-touch-bound
+  `startBattle`" was true but only *half* the equation; the `execute` read-path delta only showed up
+  once we micro-benchmarked it. If ever revisited, only the hybrid is viable and it must be gated on a
+  full-battle RealMonReplay (start + execute over all turns), not the `startBattle` number alone.
+  *(The abandoned 4-commit arc — tip `4da60a2` — is in the reflog. Per-team facets, commit `2125e22`,
+  was a cache enabler reverted here back to per-mon; cherry-pick it if wanted as a standalone feature.)*
 
 ---
 
