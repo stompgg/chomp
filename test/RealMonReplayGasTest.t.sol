@@ -242,6 +242,34 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         engine.resetCallContext();
     }
 
+    // ---- ONE-TX (single-player / CPU): all moves provided up front and executed in ONE tx via
+    //      engine.executeBatchedTurns (the same loop the batched drain runs). No per-turn
+    //      commit-reveal — single-player has no adversary to hide moves from — so the (plan.length-1)
+    //      submit txs and their sig/getSubmitContext overhead collapse into this single call. ----
+    function _oneTxEntries(bytes32 battleKey, Turn[] memory plan) internal pure returns (uint256[] memory entries) {
+        entries = new uint256[](plan.length);
+        for (uint256 i; i < plan.length; i++) {
+            Turn memory tn = plan[i];
+            uint8 p0m = tn.p0Present ? tn.p0Move : NO_OP_MOVE_INDEX;
+            uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
+            uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, i))));
+            uint104 p1s = tn.p1Present ? tn.p1Salt : uint104(uint256(keccak256(abi.encode("noop1", battleKey, i))));
+            // executeBatchedTurns entry layout: p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104
+            entries[i] = uint256(p0m) | (uint256(tn.p0Extra) << 8) | (uint256(p0s) << 24)
+                | (uint256(p1m) << 128) | (uint256(tn.p1Extra) << 136) | (uint256(p1s) << 152);
+        }
+    }
+
+    function _runOneTx(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 execGas) {
+        uint256[] memory entries = _oneTxEntries(battleKey, plan);
+        if (measure) _coolEngineAndMgr();
+        vm.prank(address(mgr)); // executeBatchedTurns is moveManager-gated
+        uint256 g0 = gasleft();
+        engine.executeBatchedTurns(battleKey, entries);
+        if (measure) execGas = g0 - gasleft();
+        engine.resetCallContext();
+    }
+
     function _stateHash(bytes32 battleKey) internal view returns (bytes32) {
         (, BattleData memory data) = engine.getBattle(battleKey);
         MonState[] memory p0s = engine.getMonStatesForSide(battleKey, 0);
@@ -289,11 +317,31 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
         assertEq(legacyState, batchedState, "legacy and batched must reach identical end state");
 
+        // ONE-TX (single-player/CPU): all moves up front, executed in one tx. Fresh stack, same pattern.
+        _deployStack();
+        registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
+        registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
+        bytes32 oKey1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _runOneTx(oKey1, plan, false);
+        bytes32 oneTxState = _stateHash(oKey1);
+        _endViaTimeout(oKey1);
+        bytes32 oKey2 = _startBattle();
+        require(engine.getStorageKey(oKey1) == engine.getStorageKey(oKey2), "one-tx storageKey reuse");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256 oneTxExec = _runOneTx(oKey2, plan, true);
+        uint256 oneTxTotal = oneTxExec + TX_BASE; // submit + execute everything in ONE tx
+
+        assertEq(legacyState, oneTxState, "legacy and one-tx must reach identical end state");
+
         console.log("");
         console.log("=== CLEAN BRANCH: REAL game (26 turns), PROD config (inline regen), production-faithful ===");
         console.log("  LEGACY  (inline regen, repack, 1-sig):", legacyTotal);
         console.log("  BATCHED (inline regen, repack, 1-sig):", batchedTotal);
         if (batchedTotal < legacyTotal) console.log("  batching saves vs clean-legacy       :", legacyTotal - batchedTotal);
+        console.log("  ONE-TX  (CPU: all moves + execute, 1 tx):", oneTxTotal);
+        if (oneTxTotal < batchedTotal) console.log("  one-tx saves vs batched              :", batchedTotal - oneTxTotal);
+        if (oneTxTotal < legacyTotal) console.log("  one-tx saves vs legacy               :", legacyTotal - oneTxTotal);
         // NOTE: the old external-StaminaRegen main baseline (5,277,953) is NOT comparable — it
         // measured the slow ruleset. A fair main comparison needs main itself re-measured under inline.
     }
