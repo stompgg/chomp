@@ -1,0 +1,16 @@
+{
+  "StartBattle_Cold_coldGas": "1445787",
+  "StartBattle_Cold_coldSload": "119",
+  "StartBattle_Cold_noop": "13",
+  "StartBattle_Cold_nzToNz": "6",
+  "StartBattle_Cold_totalSload": "163",
+  "StartBattle_Cold_totalSstore": "83",
+  "StartBattle_Cold_zToNz": "64",
+  "StartBattle_Steady_coldGas": "290586",
+  "StartBattle_Steady_coldSload": "129",
+  "StartBattle_Steady_noop": "69",
+  "StartBattle_Steady_nzToNz": "5",
+  "StartBattle_Steady_totalSload": "172",
+  "StartBattle_Steady_totalSstore": "83",
+  "StartBattle_Steady_zToNz": "6"
+}
