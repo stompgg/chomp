@@ -1009,7 +1009,8 @@ contract Engine is IEngine, MappingAllocator {
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd)
+                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd),
+                type(uint256).max
             );
         }
     }
@@ -1298,7 +1299,7 @@ contract Engine is IEngine, MappingAllocator {
         if (monEffectCount > 0) {
             tempPreDamage = damage;
             _runEffects(
-                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source)
+                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source), type(uint256).max
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
@@ -1328,7 +1329,8 @@ contract Engine is IEngine, MappingAllocator {
                 playerIndex,
                 playerIndex,
                 EffectStep.AfterDamage,
-                abi.encode(damage, source)
+                abi.encode(damage, source),
+                type(uint256).max
             );
         }
     }
@@ -1652,20 +1654,20 @@ contract Engine is IEngine, MappingAllocator {
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
         if (!currentMonState.isKnockedOut) {
-            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
+            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
 
             // Then run the global on mon switch out hook as well
-            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "");
+            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
         }
 
         // Update to new active mon (we assume validateSwitch already resolved and gives us a valid target)
         battle.activeMonIndex = _setActiveMonIndex(battle.activeMonIndex, playerIndex, monToSwitchIndex);
 
         // Run onMonSwitchIn hook for local effects
-        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
 
         // Run onMonSwitchIn hook for global effects
-        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
         if (battle.turnId != 0 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
@@ -1826,7 +1828,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 effectIndex,
         uint256 playerIndex,
         EffectStep round,
-        bytes memory extraEffectsData
+        bytes memory extraEffectsData,
+        uint256 effectsCountHint
     ) internal {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
@@ -1837,22 +1840,27 @@ contract Engine is IEngine, MappingAllocator {
 
         uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
-        // Pre-compute loop metadata once (baseSlot, dirtyBit, effectsCount)
+        // Pre-compute loop metadata once (baseSlot, dirtyBit)
         // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
         uint256 baseSlot;
         uint256 dirtyBit;
-        uint256 effectsCount;
         if (effectIndex == 2) {
             dirtyBit = 1;
-            effectsCount = config.globalEffectsLength;
         } else if (effectIndex == 0) {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (1 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
         } else {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (9 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        }
+
+        // Callers whose resolved count is for THIS list (the active mon, or the global list) thread it
+        // in to skip the initial read; everyone else passes the sentinel and we resolve it here. Note:
+        // callers like updateMonState/dealDamage hold a count for a possibly-benched mon, so they MUST
+        // pass the sentinel — the count below is always for `monIndex` (this player's active mon).
+        uint256 effectsCount = effectsCountHint;
+        if (effectsCount == type(uint256).max) {
+            effectsCount = _loadEffectsCount(config, effectIndex, monIndex);
         }
 
         // Iterate directly over storage, skipping tombstones
@@ -2070,10 +2078,12 @@ contract Engine is IEngine, MappingAllocator {
             return playerSwitchForTurnFlag;
         }
 
-        // Short-circuit if no effects exist for this target (skip both effects and KO check)
-        bool hasEffects;
+        // Short-circuit if no effects exist for this target (skip both effects and KO check).
+        // The count we resolve here is for the active mon (or the global list), which is exactly
+        // the list _runEffects iterates — so we thread it in to skip _runEffects' own initial read.
+        uint256 effectsCount;
         if (effectIndex == 2) {
-            hasEffects = config.globalEffectsLength > 0;
+            effectsCount = config.globalEffectsLength;
         } else {
             uint256 monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
@@ -2085,15 +2095,14 @@ contract Engine is IEngine, MappingAllocator {
             }
 
             // Check effect count for this mon
-            uint256 effectCount = (effectIndex == 0)
+            effectsCount = (effectIndex == 0)
                 ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
                 : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            hasEffects = effectCount > 0;
         }
 
-        if (hasEffects) {
-            // Run the effects
-            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+        if (effectsCount > 0) {
+            // Run the effects (thread the resolved count so _runEffects skips its own initial read)
+            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "", effectsCount);
         }
 
         // Only check for Game Over / KO if a KO actually occurred since last check
@@ -2288,7 +2297,8 @@ contract Engine is IEngine, MappingAllocator {
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
+                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1)),
+                type(uint256).max
             );
         }
     }
