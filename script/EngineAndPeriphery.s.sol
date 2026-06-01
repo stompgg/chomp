@@ -20,7 +20,6 @@ import {SimplePM} from "../src/hooks/SimplePM.sol";
 import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 // Shared effects
-import {StatBoosts} from "../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
@@ -117,10 +116,9 @@ contract EngineAndPeriphery is Script {
 
     function deployGameFundamentals() public {
 
-        StatBoosts statBoosts = new StatBoosts();
-        deployedContracts.push(DeployData({name: "STAT BOOSTS", contractAddress: address(statBoosts)}));
+        // Stat boosts are now inlined into the Engine (no standalone StatBoosts contract to deploy).
 
-        Overclock overclock = new Overclock(statBoosts);
+        Overclock overclock = new Overclock();
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
 
         SleepStatus sleepStatus = new SleepStatus();
@@ -129,10 +127,10 @@ contract EngineAndPeriphery is Script {
         PanicStatus panicStatus = new PanicStatus();
         deployedContracts.push(DeployData({name: "PANIC STATUS", contractAddress: address(panicStatus)}));
 
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus();
         deployedContracts.push(DeployData({name: "FROSTBITE STATUS", contractAddress: address(frostbiteStatus)}));
 
-        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        BurnStatus burnStatus = new BurnStatus();
         deployedContracts.push(DeployData({name: "BURN STATUS", contractAddress: address(burnStatus)}));
 
         ZapStatus zapStatus = new ZapStatus();

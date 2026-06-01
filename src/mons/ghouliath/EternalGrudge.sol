@@ -7,18 +7,11 @@ import "../../Enums.sol";
 import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract EternalGrudge is IMoveSet {
     uint8 public constant ATTACK_DEBUFF_PERCENT = 50;
     uint8 public constant SP_ATTACK_DEBUFF_PERCENT = 50;
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "Eternal Grudge";
@@ -46,7 +39,7 @@ contract EternalGrudge is IMoveSet {
             boostPercent: SP_ATTACK_DEBUFF_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOSTS.addStatBoosts(engine, defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // KO self by dealing just enough damage
         int32 currentDamage =

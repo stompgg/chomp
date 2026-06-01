@@ -13,7 +13,6 @@ import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
 import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
@@ -40,7 +39,6 @@ contract NirvammaTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     DefaultMatchmaker matchmaker;
     StandardAttackFactory attackFactory;
-    StatBoosts statBoosts;
 
     function setUp() public {
         typeCalc = new TestTypeCalculator();
@@ -50,7 +48,6 @@ contract NirvammaTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
-        statBoosts = new StatBoosts();
     }
 
     function _ping(uint32 power) internal returns (StandardAttack) {
@@ -270,7 +267,7 @@ contract NirvammaTest is Test, BattleHelper {
     // ===== Chronoffense =====
 
     function _setupChronoffense() internal returns (bytes32 battleKey, Chronoffense chrono) {
-        chrono = new Chronoffense(statBoosts);
+        chrono = new Chronoffense();
         StandardAttack ping = _ping(10);
 
         uint256[] memory nirvammaMoves = new uint256[](2);
@@ -433,8 +430,8 @@ contract NirvammaTest is Test, BattleHelper {
     }
 
     function test_modalBolt_perModeDispatchAndTracking() public {
-        BurnStatus burn = new BurnStatus(statBoosts);
-        FrostbiteStatus frost = new FrostbiteStatus(statBoosts);
+        BurnStatus burn = new BurnStatus();
+        FrostbiteStatus frost = new FrostbiteStatus();
         ZapStatus zap = new ZapStatus();
         (bytes32 battleKey, ModalBolt modalBolt) = _setupModalBolt(burn, frost, zap);
 
@@ -458,8 +455,8 @@ contract NirvammaTest is Test, BattleHelper {
     }
 
     function test_modalBolt_lockoutBehavior() public {
-        BurnStatus burn = new BurnStatus(statBoosts);
-        FrostbiteStatus frost = new FrostbiteStatus(statBoosts);
+        BurnStatus burn = new BurnStatus();
+        FrostbiteStatus frost = new FrostbiteStatus();
         ZapStatus zap = new ZapStatus();
         (bytes32 battleKey, ModalBolt modalBolt) = _setupModalBolt(burn, frost, zap);
 

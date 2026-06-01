@@ -21,7 +21,6 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 
 import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 import {Overclock} from "../../src/effects/battlefield/Overclock.sol";
@@ -45,7 +44,6 @@ contract VolthareTest is Test, BattleHelper {
     DefaultValidator validator;
     PreemptiveShock preemptiveShock;
     Overclock overclock;
-    StatBoosts statBoost;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -58,8 +56,7 @@ contract VolthareTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts();
-        overclock = new Overclock(statBoost);
+        overclock = new Overclock();
         preemptiveShock = new PreemptiveShock(ITypeCalculator(address(typeCalc)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);

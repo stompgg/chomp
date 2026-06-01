@@ -12,7 +12,6 @@ import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import "../../src/Structs.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -34,7 +33,6 @@ contract InutiaTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     Interweaving interweaving;
-    StatBoosts statBoost;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -44,8 +42,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts();
-        interweaving = new Interweaving(statBoost);
+        interweaving = new Interweaving();
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
@@ -141,7 +138,7 @@ contract InutiaTest is Test, BattleHelper {
     }
 
     function test_initialize() public {
-        Initialize initialize = new Initialize(statBoost);
+        Initialize initialize = new Initialize();
 
         // Create a validator with 2 mons and 1 move per mon
         DefaultValidator validator = new DefaultValidator(

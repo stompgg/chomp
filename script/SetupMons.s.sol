@@ -8,7 +8,6 @@ import {MonStats} from "../src/Structs.sol";
 import {Type} from "../src/Enums.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
-import {StatBoosts} from "../src/effects/StatBoosts.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
 import {BullRush} from "../src/mons/aurox/BullRush.sol";
 import {GildedRecovery} from "../src/mons/aurox/GildedRecovery.sol";
@@ -123,7 +122,7 @@ contract SetupMons is Script {
         address[4] memory addrs;
 
         {
-            addrs[0] = address(new EternalGrudge(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[0] = address(new EternalGrudge());
             deployedContracts[0] = DeployData({name: "Eternal Grudge", contractAddress: addrs[0]});
         }
         {
@@ -172,7 +171,6 @@ contract SetupMons is Script {
         DeployData[] memory deployedContracts = new DeployData[](4);
 
         // Cache commonly used addresses
-        address statboosts = vm.envAddress("STAT_BOOSTS");
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
         address[4] memory addrs;
@@ -182,7 +180,7 @@ contract SetupMons is Script {
             deployedContracts[0] = DeployData({name: "Chain Expansion", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new Initialize(StatBoosts(statboosts)));
+            addrs[1] = address(new Initialize());
             deployedContracts[1] = DeployData({name: "Initialize", contractAddress: addrs[1]});
         }
         {
@@ -190,7 +188,7 @@ contract SetupMons is Script {
             deployedContracts[2] = DeployData({name: "Hit And Dip", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Interweaving(StatBoosts(statboosts)));
+            addrs[3] = address(new Interweaving());
             deployedContracts[3] = DeployData({name: "Interweaving", contractAddress: addrs[3]});
         }
 
@@ -226,17 +224,14 @@ contract SetupMons is Script {
     function deployMalalien(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
         DeployData[] memory deployedContracts = new DeployData[](2);
 
-        // Cache commonly used addresses
-        address statboosts = vm.envAddress("STAT_BOOSTS");
-
         address[2] memory addrs;
 
         {
-            addrs[0] = address(new TripleThink(StatBoosts(statboosts)));
+            addrs[0] = address(new TripleThink());
             deployedContracts[0] = DeployData({name: "Triple Think", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new ActusReus(StatBoosts(statboosts)));
+            addrs[1] = address(new ActusReus());
             deployedContracts[1] = DeployData({name: "Actus Reus", contractAddress: addrs[1]});
         }
 
@@ -273,7 +268,6 @@ contract SetupMons is Script {
         DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
-        address statboosts = vm.envAddress("STAT_BOOSTS");
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
         address[5] memory addrs;
@@ -287,7 +281,7 @@ contract SetupMons is Script {
             deployedContracts[1] = DeployData({name: "Unbounded Strike", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new Loop(Baselight(addrs[0]), StatBoosts(statboosts)));
+            addrs[2] = address(new Loop(Baselight(addrs[0])));
             deployedContracts[2] = DeployData({name: "Loop", contractAddress: addrs[2]});
         }
         {
@@ -295,7 +289,7 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Brightback", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Renormalize(Baselight(addrs[0]), StatBoosts(statboosts), Loop(addrs[2])));
+            addrs[4] = address(new Renormalize(Baselight(addrs[0]), Loop(addrs[2])));
             deployedContracts[4] = DeployData({name: "Renormalize", contractAddress: addrs[4]});
         }
 
@@ -434,7 +428,7 @@ contract SetupMons is Script {
         address[4] memory addrs;
 
         {
-            addrs[0] = address(new Deadlift(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[0] = address(new Deadlift());
             deployedContracts[0] = DeployData({name: "Deadlift", contractAddress: addrs[0]});
         }
         {
@@ -484,13 +478,12 @@ contract SetupMons is Script {
 
         // Cache commonly used addresses
         address burnstatus = vm.envAddress("BURN_STATUS");
-        address statboosts = vm.envAddress("STAT_BOOSTS");
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new HoneyBribe(StatBoosts(statboosts)));
+            addrs[0] = address(new HoneyBribe());
             deployedContracts[0] = DeployData({name: "Honey Bribe", contractAddress: addrs[0]});
         }
         {
@@ -506,7 +499,7 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Q5", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Tinderclaws(IEffect(burnstatus), StatBoosts(statboosts)));
+            addrs[4] = address(new Tinderclaws(IEffect(burnstatus)));
             deployedContracts[4] = DeployData({name: "Tinderclaws", contractAddress: addrs[4]});
         }
 
@@ -619,7 +612,7 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Bull Rush", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new UpOnly(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[4] = address(new UpOnly());
             deployedContracts[4] = DeployData({name: "Up Only", contractAddress: addrs[4]});
         }
 
@@ -736,7 +729,7 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Overflow", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new SaviorComplex(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[4] = address(new SaviorComplex());
             deployedContracts[4] = DeployData({name: "Savior Complex", contractAddress: addrs[4]});
         }
 
@@ -779,7 +772,7 @@ contract SetupMons is Script {
             deployedContracts[0] = DeployData({name: "Hard Reset", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new Chronoffense(StatBoosts(vm.envAddress("STAT_BOOSTS"))));
+            addrs[1] = address(new Chronoffense());
             deployedContracts[1] = DeployData({name: "Chronoffense", contractAddress: addrs[1]});
         }
         {

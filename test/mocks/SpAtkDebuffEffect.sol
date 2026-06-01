@@ -6,16 +6,9 @@ import {IEngine} from "../../src/IEngine.sol";
 import {StatBoostToApply} from "../../src/Structs.sol";
 
 import {StatusEffect} from "../../src/effects/status/StatusEffect.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 
 contract SpAtkDebuffEffect is StatusEffect {
     uint8 constant SP_ATTACK_PERCENT = 50;
-
-    StatBoosts immutable STAT_BOOST;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOST = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "SpAtk Debuff";
@@ -50,7 +43,7 @@ contract SpAtkDebuffEffect is StatusEffect {
             boostPercent: SP_ATTACK_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+        engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
         // Do not update data
         return (extraData, false);
@@ -68,6 +61,6 @@ contract SpAtkDebuffEffect is StatusEffect {
         super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the special attack reduction
-        STAT_BOOST.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
+        engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
     }
 }

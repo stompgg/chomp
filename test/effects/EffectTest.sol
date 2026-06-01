@@ -24,7 +24,6 @@ import {BattleHelper} from "../abstract/BattleHelper.sol";
 // Import effects
 import {DefaultRuleset} from "../../src/DefaultRuleset.sol";
 import {StaminaRegen} from "../../src/effects/StaminaRegen.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
@@ -49,7 +48,6 @@ contract EffectTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
 
-    StatBoosts statBoosts;
     StandardAttackFactory standardAttackFactory;
     FrostbiteStatus frostbiteStatus;
     SleepStatus sleepStatus;
@@ -88,11 +86,10 @@ contract EffectTest is Test, BattleHelper {
         standardAttackFactory = new StandardAttackFactory(typeCalc);
 
         // Deploy all effects
-        statBoosts = new StatBoosts();
-        frostbiteStatus = new FrostbiteStatus(statBoosts);
+        frostbiteStatus = new FrostbiteStatus();
         sleepStatus = new SleepStatus();
         panicStatus = new PanicStatus();
-        burnStatus = new BurnStatus(statBoosts);
+        burnStatus = new BurnStatus();
         zapStatus = new ZapStatus();
         matchmaker = new DefaultMatchmaker(engine);
     }

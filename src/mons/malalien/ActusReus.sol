@@ -10,18 +10,11 @@ import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract ActusReus is IAbility, BasicEffect {
 
     uint8 public constant SPEED_DEBUFF_PERCENT = 50;
     bytes32 public constant INDICTMENT = bytes32("INDICTMENT");
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Actus Reus";
@@ -83,7 +76,7 @@ contract ActusReus is IAbility, BasicEffect {
                     boostPercent: SPEED_DEBUFF_PERCENT,
                     boostType: StatBoostType.Divide
                 });
-                STAT_BOOSTS.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+                engine.addStatBoost(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
                 return (bytes32(0), false);
             }
         }

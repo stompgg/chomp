@@ -14,7 +14,6 @@ import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {IEngine} from "../src/IEngine.sol";
 
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
-import {StatBoosts} from "../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
@@ -71,16 +70,14 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     function _deployStack() internal {
         engine = new Engine(4, 4, 1);
         TypeCalculator tc = new TypeCalculator();
-        StatBoosts sb = new StatBoosts();
-        Overclock oc = new Overclock(sb);
+        Overclock oc = new Overclock();
         SleepStatus sleepStatus = new SleepStatus();
         PanicStatus panicStatus = new PanicStatus();
-        FrostbiteStatus frost = new FrostbiteStatus(sb);
-        BurnStatus burn = new BurnStatus(sb);
+        FrostbiteStatus frost = new FrostbiteStatus();
+        BurnStatus burn = new BurnStatus();
         ZapStatus zap = new ZapStatus();
         gachaReg = new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)));
         vm.setEnv("TYPE_CALCULATOR", vm.toString(address(tc)));
-        vm.setEnv("STAT_BOOSTS", vm.toString(address(sb)));
         vm.setEnv("OVERCLOCK", vm.toString(address(oc)));
         vm.setEnv("SLEEP_STATUS", vm.toString(address(sleepStatus)));
         vm.setEnv("PANIC_STATUS", vm.toString(address(panicStatus)));

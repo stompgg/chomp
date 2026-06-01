@@ -10,7 +10,6 @@ import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 
 contract Tinderclaws is IAbility, BasicEffect {
@@ -18,11 +17,8 @@ contract Tinderclaws is IAbility, BasicEffect {
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
     IEffect immutable BURN_STATUS;
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(IEffect _BURN_STATUS, StatBoosts _STAT_BOOSTS) {
+    constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
-        STAT_BOOSTS = _STAT_BOOSTS;
     }
 
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
@@ -100,11 +96,11 @@ contract Tinderclaws is IAbility, BasicEffect {
                 boostPercent: SP_ATTACK_BOOST_PERCENT,
                 boostType: StatBoostType.Multiply
             });
-            STAT_BOOSTS.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+            engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
             return (bytes32(uint256(1)), false);
         } else if (!isBurned && hasBoost) {
             // Remove SpATK boost
-            STAT_BOOSTS.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
+            engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
             return (bytes32(0), false);
         }
 

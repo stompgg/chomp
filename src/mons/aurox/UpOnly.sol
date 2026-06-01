@@ -10,17 +10,10 @@ import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract UpOnly is IAbility, BasicEffect {
 
     uint8 public constant ATTACK_BOOST_PERCENT = 10; // 10% attack boost per hit
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     // IAbility implementation
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
@@ -56,7 +49,7 @@ contract UpOnly is IAbility, BasicEffect {
             boostPercent: ATTACK_BOOST_PERCENT,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+        engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
         return (extraData, false);
     }

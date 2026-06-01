@@ -11,7 +11,6 @@ import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
 import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -39,7 +38,6 @@ contract IblivionTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     DefaultValidator validator;
-    StatBoosts statBoost;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -59,7 +57,6 @@ contract IblivionTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoost = new StatBoosts();
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
 
@@ -67,8 +64,8 @@ contract IblivionTest is Test, BattleHelper {
         baselight = new Baselight();
         brightback = new Brightback(ITypeCalculator(address(typeCalc)), baselight);
         unboundedStrike = new UnboundedStrike(ITypeCalculator(address(typeCalc)), baselight);
-        loop = new Loop(baselight, statBoost);
-        renormalize = new Renormalize(baselight, statBoost, loop);
+        loop = new Loop(baselight);
+        renormalize = new Renormalize(baselight, loop);
     }
 
     // ============ Baselight Ability Tests ============
@@ -864,7 +861,7 @@ contract IblivionTest is Test, BattleHelper {
      * 5. Verify: stats remain at base values (no change from the failed removal attempt)
      */
     function test_renormalizeClearsStatusEffectStatBoosts() public {
-        BurnStatus burnStatus = new BurnStatus(statBoost);
+        BurnStatus burnStatus = new BurnStatus();
         MockEffectRemover effectRemover = new MockEffectRemover();
 
         // Create a 0-damage attack that inflicts burn with 100% accuracy

@@ -8,7 +8,6 @@ import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 import {Baselight} from "./Baselight.sol";
 import {MoveMeta} from "../../Structs.sol";
@@ -29,11 +28,8 @@ contract Loop is IMoveSet {
     uint8 public constant BOOST_PERCENT_LEVEL_3 = 40;
 
     Baselight immutable BASELIGHT;
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(Baselight _BASELIGHT, StatBoosts _STAT_BOOSTS) {
+    constructor(Baselight _BASELIGHT) {
         BASELIGHT = _BASELIGHT;
-        STAT_BOOSTS = _STAT_BOOSTS;
     }
 
     function name() public pure override returns (string memory) {
@@ -119,7 +115,7 @@ contract Loop is IMoveSet {
         });
 
         // Use Temp flag so boosts are removed on switch out
-        STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
