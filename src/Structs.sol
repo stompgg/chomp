@@ -76,8 +76,8 @@ struct MoveDecision {
 // Slot 0 — IMMUTABLE during play (only written at startBattle):
 //   p1 (160) + p0TeamIndex (16) + p1TeamIndex (16) = 192 bits used.
 // Slot 1 — EVERY per-turn mutation lands here, so a single SSTORE/turn covers all of them:
-//   p0 (160) + winnerIndex (8) + prevPlayerSwitchForTurnFlag (8) + playerSwitchForTurnFlag (8) +
-//   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 256 bits exactly.
+//   p0 (160) + winnerIndex (8) + playerSwitchForTurnFlag (8) +
+//   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 248 bits (8 bits slack).
 //   turnId narrowed uint64->uint16 (65,535 turns is far beyond any real game); timestamp
 //   uint48->uint40 (year 36800 cap) to make room in slot 1.
 struct BattleData {
@@ -86,7 +86,6 @@ struct BattleData {
     uint16 p1TeamIndex;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
-    uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
     uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
@@ -276,7 +275,6 @@ struct BattleContext {
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint64 turnId;
     uint8 playerSwitchForTurnFlag;
-    uint8 prevPlayerSwitchForTurnFlag;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
     address validator;

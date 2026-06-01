@@ -544,9 +544,10 @@ contract CPUTest is Test {
     }
 
     // One-tx PvE: p0 submits the whole game (their moves + CPU's moves) + a per-turn player salt in one
-    // call; CPU salt is always 0. Verifies the 19-byte/turn decode by checking the emitted MonMoves
-    // salts match what was packed into calldata (low 104 bits = player salt, high bits = CPU salt 0).
-    function test_executeGame_decodesPerTurnSalts() public {
+    // call; CPU salt is always 0. Batched execution skips the per-turn MonMoves event (the submitter
+    // already holds every move + salt from the executeGame calldata), so we verify the 19-byte/turn
+    // decode end-to-end via deterministic final state, and assert no MonMoves logs are emitted.
+    function test_executeGame_decodesStreamWithoutMonMovesEvents() public {
         TestMoveFactory moveFactory = new TestMoveFactory();
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0))));
@@ -603,16 +604,20 @@ contract CPUTest is Test {
         okayCPU.executeGame(battleKey, stream);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        bytes32 sig = keccak256("MonMoves(bytes32,uint256,uint256)");
-        uint256 seen;
+        // Batched execution must NOT emit per-turn MonMoves events (the submitter already holds every
+        // move + salt from the executeGame calldata, so the log would be pure overhead).
+        bytes32 monMovesSig = keccak256("MonMoves(bytes32,uint256,uint256)");
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter != address(engine) || logs[i].topics[0] != sig) continue;
-            (, uint256 packedSalts) = abi.decode(logs[i].data, (uint256, uint256));
-            assertEq(uint104(packedSalts), p0s[seen], "player salt decoded from stream");
-            assertEq(packedSalts >> 104, 0, "CPU salt is 0");
-            seen++;
+            if (logs[i].emitter == address(engine)) {
+                assertTrue(logs[i].topics[0] != monMovesSig, "batched mode must not emit MonMoves");
+            }
         }
-        assertEq(seen, 3, "all 3 turns emitted MonMoves");
-        assertGt(engine.getTurnIdForBattleState(battleKey), 0, "game advanced");
+
+        // The 19-byte/turn stream decoded correctly: after the turn-0 send-in, both mons used move 1
+        // (deal-1 damage) on turns 1 and 2, so each active mon took exactly 2 deterministic points of
+        // damage. A misframed decode would corrupt the move bytes and diverge this final state.
+        assertEq(engine.getTurnIdForBattleState(battleKey), 3, "all 3 turns executed");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -2, "p0 mon0 took 2 dmg");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2, "cpu mon0 took 2 dmg");
     }
 }

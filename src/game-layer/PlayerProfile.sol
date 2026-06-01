@@ -11,8 +11,12 @@ import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
 ///   bit 254         : isWhitelistedAsOpponent (CPU flag)
 ///   bit 253         : isHardCpu (only meaningful when bit 254 is set)
 ///   bits 250-252    : streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
+///   bits 224-249    : (reserved)
 ///   bits 192-223    : lastQuestCompletedDay (uint32 calendar day)
-///   bits 128-159    : lastFirstGameTimestamp (uint32 seconds since epoch)
+///   bits 160-191    : lastSeenTimestamp (uint32 seconds — last battle of ANY kind;
+///                     drives the streak grace/reset so sub-24h plays still count as activity)
+///   bits 128-159    : lastFirstGameTimestamp (uint32 seconds — last streak-bonus game;
+///                     gates the rolling 24h cooldown)
 ///   bits 0-127      : pointsBalance (uint128)
 abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     error NotAssigner();
@@ -24,6 +28,7 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     uint256 internal constant STREAK_DAY_SHIFT = 250;
     uint256 internal constant STREAK_DAY_MASK = 0x7;
     uint256 internal constant LAST_FIRST_GAME_TS_SHIFT = 128;
+    uint256 internal constant LAST_SEEN_TS_SHIFT = 160;
     uint256 internal constant LAST_QUEST_DAY_SHIFT = 192;
     uint256 internal constant FIRST_GAME_OF_DAY_COOLDOWN = 1 days;
     uint256 internal constant POINTS_MASK_128 = (1 << 128) - 1;

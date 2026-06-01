@@ -254,8 +254,10 @@ playerData[address] (1 slot per player):
   bit 254       isWhitelistedAsOpponent (admin-set; replaces a separate mapping)
   bit 253       isHardCpu (only meaningful when bit 254 is set)
   bits 250-252  streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
+  bits 224-249  (reserved)
   bits 192-223  lastQuestCompletedDay (uint32 calendar day)
-  bits 128-159  lastFirstGameTimestamp (uint32 seconds since epoch)
+  bits 160-191  lastSeenTimestamp (uint32 seconds; last battle of ANY kind — drives streak grace/reset)
+  bits 128-159  lastFirstGameTimestamp (uint32 seconds; last streak-bonus game — gates the 24h cooldown)
   bits 0-127    pointsBalance (uint128)
 
 packedExpForMon[player][monId / 16]: 16 mons × 16 bits each, capped at 65535.
@@ -263,10 +265,15 @@ facetData[player][monId / 16]:        16 mons × 16 bits each
                                        (bits 0-11 unlockedBitmap, bits 12-15 assignedFacetId).
 ```
 
-Streak is timestamp-driven (not calendar-day): a battle counts as "first of day"
-when ≥24h have passed since `lastFirstGameTimestamp`. A gap >36h
-(`STREAK_GRACE_WINDOW`) resets `streakDay` to 1; otherwise it ratchets up
-toward the cap of `STREAK_FLAT_BONUS_MAX` (= 5).
+Streak is timestamp-driven (not calendar-day): a battle qualifies for the streak bonus
+when ≥24h have passed since `lastFirstGameTimestamp` (the last *bonus-earning* game). On a
+qualifying battle the ratchet-vs-reset decision is measured from `lastSeenTimestamp` (the
+last battle of *any* kind, advanced every battle): a gap >36h (`STREAK_GRACE_WINDOW`) of
+genuine inactivity resets `streakDay` to 1, otherwise it ratchets up toward the cap of
+`STREAK_FLAT_BONUS_MAX` (= 5). Splitting the two anchors is deliberate — measuring the
+reset from the bonus anchor instead would strand players who play slightly more often than
+once per 24h (their sub-24h plays advance no anchor, so the next day reads a phantom ~46h
+gap and resets the streak forever).
 
 Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws` walks the team in one pass and coalesces SSTOREs by bucket.
 

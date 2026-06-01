@@ -42,12 +42,13 @@ contract Engine is IEngine, MappingAllocator {
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
     int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
-    // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
-    // A non-zero encoded move is the "transient is populated for this call" signal.
-    uint256 private transient _turnP0MoveEncoded;
-    uint256 private transient _turnP1MoveEncoded;
-    uint104 private transient _turnP0Salt;
-    uint104 private transient _turnP1Salt;
+    // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.).
+    // Packed per player into ONE transient slot: [salt: bits 0-103 | encoded move: bits 104-127].
+    // The encoded move is always nonzero when populated (it carries IS_REAL_TURN_BIT) and salt is only
+    // ever written paired with it, so `packed != 0` is exactly the "transient is populated this call"
+    // signal — and the salt read collapses from two transient loads to one.
+    uint256 private transient _turnP0Packed;
+    uint256 private transient _turnP1Packed;
 
     // Errors
     error NoWriteAllowed();
@@ -182,7 +183,6 @@ contract Engine is IEngine, MappingAllocator {
             p0TeamIndex: uint16(battle.p0TeamIndex),
             p1TeamIndex: uint16(battle.p1TeamIndex),
             winnerIndex: 2, // Initialize to 2 (uninitialized/no winner)
-            prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
             activeMonIndex: 0, // Defaults to 0 (both players start with mon index 0)
             turnId: 0,
@@ -328,14 +328,14 @@ contract Engine is IEngine, MappingAllocator {
             revert WrongCaller();
         }
 
-        // Populate transient directly. _executeInternal sees non-zero _turnP0MoveEncoded and skips the
+        // Populate transient directly. _executeInternal sees non-zero _turnP0Packed and skips the
         // mirror-from-storage step. No SSTORE happens; transient auto-clears at tx end in prod.
         uint8 p0StoredMoveIndex = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
         uint8 p1StoredMoveIndex = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
-        _turnP0MoveEncoded = (uint256(p0StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0ExtraData) << 8);
-        _turnP1MoveEncoded = (uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8);
-        _turnP0Salt = p0Salt;
-        _turnP1Salt = p1Salt;
+        _turnP0Packed =
+            _packTurn((uint256(p0StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0ExtraData) << 8), p0Salt);
+        _turnP1Packed =
+            _packTurn((uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8), p1Salt);
 
         return _executeInternal(battleKey, storageKey, true);
     }
@@ -364,11 +364,9 @@ contract Engine is IEngine, MappingAllocator {
         uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
         uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
         if (playerIndex == 0) {
-            _turnP0MoveEncoded = encoded;
-            _turnP0Salt = salt;
+            _turnP0Packed = _packTurn(encoded, salt);
         } else {
-            _turnP1MoveEncoded = encoded;
-            _turnP1Salt = salt;
+            _turnP1Packed = _packTurn(encoded, salt);
         }
 
         return _executeInternal(battleKey, storageKey, true);
@@ -407,18 +405,14 @@ contract Engine is IEngine, MappingAllocator {
             if (flag == 2) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
-                _turnP0MoveEncoded = (uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8);
-                _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
-                _turnP0Salt = p0Salt;
-                _turnP1Salt = p1Salt;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             } else if (flag == 0) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
-                _turnP0MoveEncoded = (uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8);
-                _turnP0Salt = p0Salt;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
             } else {
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
-                _turnP1MoveEncoded = (uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8);
-                _turnP1Salt = p1Salt;
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             }
 
             winner = _executeInternal(battleKey, storageKey, false);
@@ -428,18 +422,17 @@ contract Engine is IEngine, MappingAllocator {
             }
 
             // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx.
-            _turnP0MoveEncoded = 0;
-            _turnP1MoveEncoded = 0;
-            _turnP0Salt = 0;
-            _turnP1Salt = 0;
+            _turnP0Packed = 0;
+            _turnP1Packed = 0;
             tempRNG = 0;
             koOccurredFlag = 0;
             tempPreDamage = 0;
             effectsDirtyBitmap = 0;
         }
-        // The batched flow emits NO EngineExecute (each sub-turn passes emitExecuteEvent=false to
-        // _executeInternal, and there's no batch-level emit); clients reconstruct the batch's
-        // per-turn detail from its N MonMoves logs in this same tx.
+        // The batched flow emits NO per-turn events (each sub-turn passes emitEvents=false to
+        // _executeInternal: no EngineExecute, no MonMoves). The submitter already holds every
+        // move + salt from the batch calldata, so the per-turn logs would be pure overhead
+        // (~1.6k gas/turn for MonMoves). Indexers reconstruct from the call's calldata.
     }
 
     /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
@@ -470,6 +463,13 @@ contract Engine is IEngine, MappingAllocator {
         m.extraData = uint16(encoded >> 8);
     }
 
+    /// @dev Packs a current-turn (encoded move, salt) pair into one transient word:
+    /// [salt: bits 0-103 | encoded move: bits 104-127]. Companion to the unpacks in
+    /// _getCurrentTurnMove / _getCurrentTurnSalt.
+    function _packTurn(uint256 encoded, uint104 salt) private pure returns (uint256) {
+        return uint256(salt) | (encoded << 104);
+    }
+
     /// @dev Returns the current turn's MoveDecision for `playerIndex`. During an active
     /// execute, reads from transient storage (populated at the start of _executeInternal).
     function _getCurrentTurnMove(BattleConfig storage config, uint256 playerIndex)
@@ -477,25 +477,26 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (MoveDecision memory)
     {
-        uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
+        uint256 encoded = (playerIndex == 0 ? _turnP0Packed : _turnP1Packed) >> 104;
         if (encoded != 0) {
             return _decodeMove(encoded);
         }
         return playerIndex == 0 ? config.p0Move : config.p1Move;
     }
 
-    /// @dev Salt companion to `_getCurrentTurnMove`.
+    /// @dev Salt companion to `_getCurrentTurnMove`. One transient load covers both the
+    /// "populated?" check and the salt extraction.
     function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint104) {
-        uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
-        if (encoded != 0) {
-            return playerIndex == 0 ? _turnP0Salt : _turnP1Salt;
+        uint256 packed = playerIndex == 0 ? _turnP0Packed : _turnP1Packed;
+        if (packed != 0) {
+            return uint104(packed);
         }
         return playerIndex == 0 ? config.p0Salt : config.p1Salt;
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitExecuteEvent) internal returns (address winner) {
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitEvents) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -508,15 +509,12 @@ contract Engine is IEngine, MappingAllocator {
         // `cameFromDirectMoveInput` detects whether transient was pre-populated by executeWithMoves
         // or executeWithSingleMove
         // (non-zero at entry) vs. a plain execute() call (transient is zero, helpers fall back to storage).
-        bool cameFromDirectMoveInput = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
+        bool cameFromDirectMoveInput = _turnP0Packed != 0 || _turnP1Packed != 0;
 
         // Set up turn / player vars
         uint256 turnId = battle.turnId;
         uint256 playerSwitchForTurnFlag = 2;
         uint256 priorityPlayerIndex;
-
-        // Store the prev player switch for turn flag
-        battle.prevPlayerSwitchForTurnFlag = battle.playerSwitchForTurnFlag;
 
         // Set the battle key for the stack frame
         // (gets cleared at the end of the transaction)
@@ -538,9 +536,14 @@ contract Engine is IEngine, MappingAllocator {
         // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
         // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
         // are zero the emit is skipped entirely.
+        // Batched flows (executeBatchedTurns) pass emitEvents=false: the submitter already
+        // holds every move + salt (they're in the batch/submit calldata), so the per-turn
+        // MonMoves log is pure overhead there (~1.6k gas/turn) and is skipped.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
+        if (emitEvents) {
+            _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
+        }
 
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
@@ -797,9 +800,10 @@ contract Engine is IEngine, MappingAllocator {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
-            // Single-execute paths emit EngineExecute; the batched flow passes false (no per-turn
-            // and no batch-level emit — clients use the MonMoves logs there).
-            if (emitExecuteEvent) emit EngineExecute(battleKey);
+            // Single-execute paths emit EngineExecute + MonMoves; the batched flow passes
+            // emitEvents=false (no per-turn and no batch-level emit — the submitter already
+            // holds the full move list from the batch calldata).
+            if (emitEvents) emit EngineExecute(battleKey);
             return winner;
         }
 
@@ -819,7 +823,7 @@ contract Engine is IEngine, MappingAllocator {
         }
         battle.lastExecuteTimestamp = uint40(block.timestamp);
 
-        if (emitExecuteEvent) emit EngineExecute(battleKey);
+        if (emitEvents) emit EngineExecute(battleKey);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
@@ -833,10 +837,8 @@ contract Engine is IEngine, MappingAllocator {
     /// Note: this loses `setMove`'s `isForCurrentBattle` cache hit (Engine.sol:1454) on the next setMove,
     /// adding one warm SLOAD per call. Production never calls this so the regression is test-only.
     function resetCallContext() external {
-        _turnP0MoveEncoded = 0;
-        _turnP1MoveEncoded = 0;
-        _turnP0Salt = 0;
-        _turnP1Salt = 0;
+        _turnP0Packed = 0;
+        _turnP1Packed = 0;
         battleKeyForWrite = bytes32(0);
         storageKeyForWrite = bytes32(0);
         // Per-turn transients that `executeBatchedTurns` resets between sub-turns; cleared here too
@@ -1547,7 +1549,7 @@ contract Engine is IEngine, MappingAllocator {
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
     {
-        bool isInsideExecute = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
+        bool isInsideExecute = _turnP0Packed != 0 || _turnP1Packed != 0;
 
         bool isForCurrentBattle = battleKeyForWrite == battleKey;
         bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
@@ -1566,11 +1568,9 @@ contract Engine is IEngine, MappingAllocator {
             uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
             uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
             if (playerIndex == 0) {
-                _turnP0MoveEncoded = encoded;
-                _turnP0Salt = salt;
+                _turnP0Packed = _packTurn(encoded, salt);
             } else {
-                _turnP1MoveEncoded = encoded;
-                _turnP1Salt = salt;
+                _turnP1Packed = _packTurn(encoded, salt);
             }
         } else {
             // Out-of-execute setMove (commit manager revealing across txs) - must persist to storage
@@ -2900,7 +2900,6 @@ contract Engine is IEngine, MappingAllocator {
         ctx.winnerIndex = data.winnerIndex;
         ctx.turnId = data.turnId;
         ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.prevPlayerSwitchForTurnFlag = data.prevPlayerSwitchForTurnFlag;
         ctx.p0ActiveMonIndex = uint8(data.activeMonIndex & 0xFF);
         ctx.p1ActiveMonIndex = uint8(data.activeMonIndex >> 8);
         ctx.validator = address(config.validator);
