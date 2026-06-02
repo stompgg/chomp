@@ -54,6 +54,10 @@ contract Engine is IEngine, MappingAllocator {
     // Errors
     error NoWriteAllowed();
     error WrongCaller();
+    // The 5 stat deltas (Speed/Attack/Defense/SpecialAttack/SpecialDefense) are owned exclusively by
+    // the inlined stat-boost system; they can only be written via add/removeStatBoost so the boost
+    // aggregation (which telescopes off the live delta) can't be silently clobbered.
+    error StatRequiresStatBoost();
     error MatchmakerNotAuthorized();
     error MatchmakerError();
     error MovesNotSet();
@@ -1021,6 +1025,13 @@ contract Engine is IEngine, MappingAllocator {
     {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
+        }
+        // Speed(2)..SpecialDefense(6) are the stat-boost-owned deltas — reject direct writes so they
+        // can only change through add/removeStatBoost (the internal stat-boost path bypasses this by
+        // calling _updateMonStateInternal directly). Hp/Stamina/IsKnockedOut/ShouldSkipTurn stay open.
+        uint256 idx = uint256(stateVarIndex);
+        if (idx >= uint256(MonStateIndexName.Speed) && idx <= uint256(MonStateIndexName.SpecialDefense)) {
+            revert StatRequiresStatBoost();
         }
         _updateMonStateInternal(playerIndex, monIndex, stateVarIndex, valueToAdd);
     }

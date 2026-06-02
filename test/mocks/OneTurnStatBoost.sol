@@ -19,23 +19,30 @@ contract OneTurnStatBoost is BasicEffect {
         return 0x05;
     }
 
-    // Adds a bonus
+    // Adds a bonus. Both hooks apply the same-keyed +100% Attack multiply, so they merge: one
+    // application takes base 1 -> 2 (delta +1), the second -> 4 (delta +3). The test asserts +3,
+    // distinguishing "both hooks ran" from "only onApply ran" (+1).
+    function _boost() private pure returns (StatBoostToApply[] memory boosts) {
+        boosts = new StatBoostToApply[](1);
+        boosts[0] = StatBoostToApply({stat: MonStateIndexName.Attack, boostPercent: 100, boostType: StatBoostType.Multiply});
+    }
+
     function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Attack, 1);
+        engine.addStatBoost(targetIndex, monIndex, _boost(), StatBoostFlag.Perm);
         return (bytes32(0), false);
     }
 
-    // Adds another bonus
+    // Adds another bonus (merges with the onApply boost), then removes this effect.
     function onRoundEnd(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Attack, 1);
+        engine.addStatBoost(targetIndex, monIndex, _boost(), StatBoostFlag.Perm);
         return (bytes32(0), true);
     }
 }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
-
 pragma solidity ^0.8.0;
 
-import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
@@ -10,27 +8,20 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 /**
- * @title ReduceSpAtkMove
- * @notice Simple move that reduces the opposing mon's SpecialAttack stat by 1
- * @dev Used to test the OnUpdateMonState lifecycle hook
+ * @title DirectStatWriteMove
+ * @notice Move that attempts to write a stat delta directly via updateMonState. Used to assert the
+ *         Engine rejects direct stat writes (stats are owned by the inlined stat-boost system).
  */
-contract ReduceSpAtkMove is IMoveSet {
-
+contract DirectStatWriteMove is IMoveSet {
     function name() external pure returns (string memory) {
-        return "Reduce SpAtk";
+        return "Direct Stat Write";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
-        // Get the opposing player's index
-        uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
-
-        // Reduce the opposing mon's SpecialAttack via the stat-boost system. Stats can only be
-        // written through stat boosts now; a 10% divide on a base of 10 lands exactly -1, matching
-        // the legacy direct updateMonState(SpecialAttack, -1), and still fires OnUpdateMonState.
-        StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
-        boosts[0] =
-            StatBoostToApply({stat: MonStateIndexName.SpecialAttack, boostPercent: 10, boostType: StatBoostType.Divide});
-        engine.addStatBoost(opposingPlayerIndex, defenderMonIndex, boosts, StatBoostFlag.Temp);
+    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256, uint16, uint256)
+        external
+    {
+        // Forbidden: stat deltas may only be changed through add/removeStatBoost.
+        engine.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Attack, 1);
     }
 
     function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
@@ -71,5 +62,4 @@ contract ReduceSpAtkMove is IMoveSet {
             basePower: 0
         });
     }
-
 }

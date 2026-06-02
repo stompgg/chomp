@@ -39,6 +39,7 @@ import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {OnUpdateMonStateHealEffect} from "../mocks/OnUpdateMonStateHealEffect.sol";
 import {EffectAbility} from "../mocks/EffectAbility.sol";
 import {ReduceSpAtkMove} from "../mocks/ReduceSpAtkMove.sol";
+import {DirectStatWriteMove} from "../mocks/DirectStatWriteMove.sol";
 
 contract EffectTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -828,5 +829,55 @@ contract EffectTest is Test, BattleHelper {
 
         // Verify that the OnUpdateMonState effect triggered and healed Bob by 5 HP
         assertEq(bobHpAfter, 5, "Bob should be healed by 5 HP when SpATK is reduced");
+    }
+
+    // Stats are owned by the inlined stat-boost system: a direct updateMonState on a stat delta
+    // (here Attack, via a move) must revert so it can't silently clobber the boost aggregation.
+    function test_directStatWriteIsRejected() public {
+        DirectStatWriteMove badMove = new DirectStatWriteMove();
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(badMove)));
+        Mon memory mon = Mon({
+            stats: MonStats({
+                hp: 20,
+                stamina: 10,
+                speed: 5,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Math,
+                type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        bytes32 battleKey =
+            _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        // Switch both mons in (turnId 0 -> 1).
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Move turn (turnId 1, odd): BOB commits, ALICE reveals, then BOB's reveal auto-executes —
+        // the move's direct stat write makes execute revert with StatRequiresStatBoost.
+        uint8 mv = 0;
+        uint104 salt = 0;
+        uint16 ed = 0;
+        vm.startPrank(BOB);
+        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(mv, salt, ed)));
+        vm.startPrank(ALICE);
+        commitManager.revealMove(battleKey, mv, salt, ed, true);
+        vm.startPrank(BOB);
+        vm.expectRevert(Engine.StatRequiresStatBoost.selector);
+        commitManager.revealMove(battleKey, mv, salt, ed, true);
+        vm.stopPrank();
+        engine.resetCallContext();
     }
 }
