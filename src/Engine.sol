@@ -1305,7 +1305,7 @@ contract Engine is IEngine, MappingAllocator {
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
         uint32[5] memory numBoostsPerStat;
         uint256[5] memory accumulatedNumeratorPerStat;
-        _applyStatBoostSnapshot(targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
     function _getStatBoostBaseStats(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -1387,7 +1387,7 @@ contract Engine is IEngine, MappingAllocator {
             _addStatBoostEffectSlot(config, targetIndex, monIndex, packedCounts, effects, monEffectCount, newData);
         }
 
-        _applyStatBoostSnapshot(targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
     function _removeStatBoostWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, bool isPerm) private {
@@ -1420,7 +1420,7 @@ contract Engine is IEngine, MappingAllocator {
 
         if (!found) return;
         effects[foundSlot].effect = IEffect(TOMBSTONE_ADDRESS);
-        _applyStatBoostSnapshot(targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
     /// @dev Write a fresh stat-boost source into the next free per-mon effect slot. Mirrors the
@@ -1450,45 +1450,52 @@ contract Engine is IEngine, MappingAllocator {
         }
     }
 
-    /// @dev Telescope the mon's stat deltas from the previous aggregated snapshot to the new one and
-    ///      persist the new snapshot. Each changed stat goes through _updateMonStateInternal so
-    ///      OnUpdateMonState listeners fire exactly as they did via the legacy updateMonState path.
-    function _applyStatBoostSnapshot(
+    /// @dev Re-apply a mon's aggregated stat boosts by telescoping its monState deltas. The
+    ///      stat-boost system is the sole writer of the 5 stat-delta fields, so the current delta
+    ///      *is* the previous boost contribution (cleared == sentinel == 0): old boosted stat =
+    ///      base + currentDelta. We compute the new boosted stat and feed the difference through
+    ///      _updateMonStateInternal, which fires OnUpdateMonState for listeners exactly as before.
+    ///      No globalKV snapshot is kept — being inside the Engine we read the delta back directly.
+    function _applyStatBoosts(
+        BattleConfig storage config,
         uint256 targetIndex,
         uint256 monIndex,
         uint32[5] memory baseStats,
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) private {
-        uint64 snapKey = StatBoostLib.snapshotKey(targetIndex, monIndex);
-        uint192 prevSnapshot = _getGlobalKVValue(storageKeyForWrite, snapKey);
-        uint32[5] memory oldBoostedStats = StatBoostLib.unpackBoostSnapshot(prevSnapshot, baseStats);
         uint32[5] memory newBoostedStats =
             StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
 
         for (uint256 i; i < 5; ++i) {
-            int32 delta = int32(newBoostedStats[i]) - int32(oldBoostedStats[i]);
-            if (delta != 0) {
-                _updateMonStateInternal(
-                    targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), delta
-                );
+            // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
+            int32 valueToAdd = int32(newBoostedStats[i]) - int32(baseStats[i]) - _statBoostCurrentDelta(st, i);
+            if (valueToAdd != 0) {
+                _updateMonStateInternal(targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd);
             }
         }
-        _setGlobalKV(snapKey, StatBoostLib.packBoostSnapshot(newBoostedStats));
     }
 
-    /// @dev Switch-out handling for a temp stat-boost entry: tombstone it, then recompute the mon's
-    ///      boosted stats from its remaining PERMANENT sources only (all temp sources are being
-    ///      dropped this switch-out). Idempotent across the multiple temp entries a mon may hold.
-    function _inlineStatBoostSwitchOut(
-        BattleConfig storage config,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 slotIndex
-    ) private {
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-        effects[slotIndex].effect = IEffect(TOMBSTONE_ADDRESS);
+    /// @dev Current stat-boost delta for boost-index i (0:atk,1:def,2:spatk,3:spdef,4:speed),
+    ///      treating the cleared sentinel as 0.
+    function _statBoostCurrentDelta(MonState storage st, uint256 i) private view returns (int32) {
+        int32 d;
+        if (i == 0) d = st.attackDelta;
+        else if (i == 1) d = st.defenceDelta;
+        else if (i == 2) d = st.specialAttackDelta;
+        else if (i == 3) d = st.specialDefenceDelta;
+        else d = st.speedDelta;
+        return d == CLEARED_MON_STATE_SENTINEL ? int32(0) : d;
+    }
 
+    /// @dev Switch-out handling for stat-boost entries: in a single pass drop EVERY temp source on
+    ///      the mon (they all expire on switch-out) and re-aggregate the surviving permanent sources,
+    ///      applying the result once. _runEffects only routes here when it hits a temp entry; that
+    ///      first hit does all the work and tombstones its siblings, so the remaining temp slots are
+    ///      skipped by the loop's tombstone guard (collapses the legacy per-instance O(n^2) recompute).
+    function _inlineStatBoostSwitchOut(BattleConfig storage config, uint256 targetIndex, uint256 monIndex) private {
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
         uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
         uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
         uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
@@ -1501,11 +1508,14 @@ contract Engine is IEngine, MappingAllocator {
             if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
             (bool effIsPerm, , uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
                 StatBoostLib.unpackBoostData(eff.data);
-            if (!effIsPerm) continue; // temp sources are all being removed
+            if (!effIsPerm) {
+                eff.effect = IEffect(TOMBSTONE_ADDRESS); // temp sources all expire on switch-out
+                continue;
+            }
             StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
         }
 
-        _applyStatBoostSnapshot(targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
     function setGlobalKV(uint64 key, uint192 value) external {
@@ -2231,7 +2241,7 @@ contract Engine is IEngine, MappingAllocator {
         // remaining permanent sources (mirrors the legacy StatBoosts.onMonSwitchOut path).
         if (address(effect) == STAT_BOOST_ADDRESS) {
             if (!StatBoostLib.isPerm(data)) {
-                _inlineStatBoostSwitchOut(config, effectIndex, monIndex, slotIndex);
+                _inlineStatBoostSwitchOut(config, effectIndex, monIndex);
             }
             return;
         }

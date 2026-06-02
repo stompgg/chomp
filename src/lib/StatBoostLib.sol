@@ -3,21 +3,19 @@ pragma solidity ^0.8.0;
 
 import {MonStateIndexName, StatBoostType} from "../Enums.sol";
 import {StatBoostToApply} from "../Structs.sol";
-import {STAT_BOOST_ADDRESS} from "../Constants.sol";
 
 /**
  * @notice Pure math + packing helpers for the Engine's inlined stat-boost system. This is the
  *         former StatBoosts effect contract's stateless core, lifted into a library so the Engine
- *         can apply boosts natively (no external call round-trips). The packed data layout and
- *         aggregation semantics are byte-for-byte identical to the legacy effect, so on-chain
- *         behavior (merge, clamp, snapshot telescoping) is preserved.
+ *         can apply boosts natively (no external call round-trips). The packed per-source data
+ *         layout and multiplicative aggregation/clamp semantics are identical to the legacy effect.
  *
  *  Per-source packed boost data (bytes32):
  *  [8 bits isPerm | 168 bits key | 80 bits stat data]
  *  stat data = 5 stats × 16 bits: [8 boostPercent | 7 boostCount | 1 isMultiply]
  *
- *  Aggregated snapshot stored in globalKV (uint192 of a uint256):
- *  [32 atk (223-192) | 32 def (191-160) | 32 spatk (159-128) | 32 spdef (127-96) | 32 speed (95-64)]
+ *  The legacy aggregated globalKV snapshot is gone: the Engine telescopes off the live monState
+ *  stat deltas instead (it is the sole writer of those fields), so no separate snapshot is stored.
  */
 library StatBoostLib {
     uint256 internal constant DENOM = 100;
@@ -34,13 +32,6 @@ library StatBoostLib {
 
     function isPerm(bytes32 data) internal pure returns (bool) {
         return uint8(uint256(data) >> PERM_FLAG_OFFSET) != 0;
-    }
-
-    // The snapshot key historically mixed in address(this) of the StatBoosts contract. The inlined
-    // version uses the STAT_BOOST_ADDRESS sentinel as the stable identity so keys are deterministic
-    // and don't collide with any other globalKV consumer.
-    function snapshotKey(uint256 targetIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(targetIndex, monIndex, STAT_BOOST_ADDRESS))));
     }
 
     // Pack a fresh boost instance from the caller-supplied boosts.
@@ -181,32 +172,6 @@ library StatBoostLib {
                 }
             } else {
                 newBoostedStats[i] = baseStats[i];
-            }
-        }
-    }
-
-    function packBoostSnapshot(uint32[5] memory unpackedSnapshot) internal pure returns (uint192) {
-        return uint192(
-            (uint256(unpackedSnapshot[0]) << 160) | (uint256(unpackedSnapshot[1]) << 128)
-                | (uint256(unpackedSnapshot[2]) << 96) | (uint256(unpackedSnapshot[3]) << 64)
-                | (uint256(unpackedSnapshot[4]) << 32)
-        );
-    }
-
-    // Unpack snapshot, using provided base stats to fill in zeros (the "no snapshot" sentinel).
-    function unpackBoostSnapshot(uint192 boostSnapshot, uint32[5] memory baseStats)
-        internal
-        pure
-        returns (uint32[5] memory snapshotPerStat)
-    {
-        snapshotPerStat[0] = uint32((boostSnapshot >> 160) & 0xFFFFFFFF);
-        snapshotPerStat[1] = uint32((boostSnapshot >> 128) & 0xFFFFFFFF);
-        snapshotPerStat[2] = uint32((boostSnapshot >> 96) & 0xFFFFFFFF);
-        snapshotPerStat[3] = uint32((boostSnapshot >> 64) & 0xFFFFFFFF);
-        snapshotPerStat[4] = uint32((boostSnapshot >> 32) & 0xFFFFFFFF);
-        for (uint256 i; i < 5; i++) {
-            if (snapshotPerStat[i] == 0) {
-                snapshotPerStat[i] = baseStats[i];
             }
         }
     }
