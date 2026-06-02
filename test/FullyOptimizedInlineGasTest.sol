@@ -25,7 +25,6 @@ import {StatBoostsMove} from "./mocks/StatBoostsMove.sol";
 
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
-import {StatBoosts} from "../src/effects/StatBoosts.sol";
 
 import {IEngineHook} from "../src/IEngineHook.sol";
 
@@ -300,10 +299,9 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         mon.stats.specialAttack = 10;
 
         mon.moves = new uint256[](4);
-        StatBoosts statBoosts = new StatBoosts();
-        IMoveSet burnMove = new EffectAttack(new BurnStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(statBoosts), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet statBoostMove = new StatBoostsMove(statBoosts);
+        IMoveSet burnMove = new EffectAttack(new BurnStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet statBoostMove = new StatBoostsMove();
         IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
         mon.moves[0] = uint256(uint160(address(burnMove)));
         mon.moves[1] = uint256(uint160(address(frostbiteMove)));

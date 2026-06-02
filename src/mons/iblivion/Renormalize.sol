@@ -8,7 +8,6 @@ import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 import {Baselight} from "./Baselight.sol";
 import {Loop} from "./Loop.sol";
@@ -23,12 +22,10 @@ import {MoveMeta} from "../../Structs.sol";
  */
 contract Renormalize is IMoveSet {
     Baselight immutable BASELIGHT;
-    StatBoosts immutable STAT_BOOSTS;
     Loop immutable LOOP;
 
-    constructor(Baselight _BASELIGHT, StatBoosts _STAT_BOOSTS, Loop _LOOP) {
+    constructor(Baselight _BASELIGHT, Loop _LOOP) {
         BASELIGHT = _BASELIGHT;
-        STAT_BOOSTS = _STAT_BOOSTS;
         LOOP = _LOOP;
     }
 
@@ -52,7 +49,7 @@ contract Renormalize is IMoveSet {
         LOOP.clearLoopActive(engine, attackerPlayerIndex, attackerMonIndex);
 
         // Clear all StatBoost effects and reset stats to base values
-        STAT_BOOSTS.clearAllBoostsForMon(engine, attackerPlayerIndex, attackerMonIndex);
+        engine.clearAllStatBoosts(attackerPlayerIndex, attackerMonIndex);
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {

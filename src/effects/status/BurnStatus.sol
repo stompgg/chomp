@@ -5,7 +5,6 @@ import "../../Enums.sol";
 import {StatBoostToApply, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 
-import {StatBoosts} from "../StatBoosts.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
 
@@ -18,12 +17,6 @@ contract BurnStatus is StatusEffect {
     int32 public constant DEG1_DAMAGE_DENOM = 16;
     int32 public constant DEG2_DAMAGE_DENOM = 8;
     int32 public constant DEG3_DAMAGE_DENOM = 4;
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts statBoosts) {
-        STAT_BOOSTS = statBoosts;
-    }
 
     function name() public pure override returns (string memory) {
         return "Burn";
@@ -83,7 +76,7 @@ contract BurnStatus is StatusEffect {
                 boostPercent: ATTACK_PERCENT,
                 boostType: StatBoostType.Divide
             });
-            STAT_BOOSTS.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+            engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
         } else {
             (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
             uint256 indexOfBurnEffect;
@@ -118,7 +111,7 @@ contract BurnStatus is StatusEffect {
         super.onRemove(engine, battleKey, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the attack reduction
-        STAT_BOOSTS.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
+        engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
 
         // Reset the burn degree
         engine.setGlobalKV(getKeyForMonIndex(targetIndex, monIndex), 0);

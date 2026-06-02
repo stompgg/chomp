@@ -13,7 +13,6 @@ import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
@@ -49,7 +48,6 @@ contract EkinekiTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    StatBoosts statBoosts;
     DefaultMatchmaker matchmaker;
     StandardAttackFactory attackFactory;
 
@@ -59,7 +57,6 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
@@ -166,7 +163,7 @@ contract EkinekiTest is Test, BattleHelper {
         uint32 maxHp = 100;
 
         SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(sneakAttack)));
@@ -213,7 +210,7 @@ contract EkinekiTest is Test, BattleHelper {
         uint32 maxHp = 100;
 
         SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(sneakAttack)));
@@ -265,7 +262,7 @@ contract EkinekiTest is Test, BattleHelper {
         uint32 maxHp = 200;
 
         SneakAttack sneakAttack = new SneakAttack(ITypeCalculator(address(typeCalc)));
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(sneakAttack)));
@@ -316,7 +313,7 @@ contract EkinekiTest is Test, BattleHelper {
         uint32 maxHp = 200;
 
         NineNineNine nineNineNine = new NineNineNine();
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         // Create a predictable attack (0 vol, 0 default crit) to isolate crit boost
         StandardAttack testAttack = attackFactory.createAttack(
@@ -385,7 +382,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexBoostsOnKO() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         // Create a strong attack that will KO in one hit
         StandardAttack koAttack = attackFactory.createAttack(
@@ -487,7 +484,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexTriggersOncePerGame() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -598,7 +595,7 @@ contract EkinekiTest is Test, BattleHelper {
     function test_saviorComplexNoBoostWithZeroKOs() public {
         uint32 maxHp = 100;
 
-        SaviorComplex saviorComplex = new SaviorComplex(statBoosts);
+        SaviorComplex saviorComplex = new SaviorComplex();
 
         StandardAttack koAttack = attackFactory.createAttack(
             ATTACK_PARAMS({

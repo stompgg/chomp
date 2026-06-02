@@ -7,19 +7,12 @@ import "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../BasicEffect.sol";
 import {IEffect} from "../IEffect.sol";
-import {StatBoosts} from "../StatBoosts.sol";
 
 contract Overclock is BasicEffect {
     uint256 public constant DEFAULT_DURATION = 3;
 
     uint8 public constant SPEED_PERCENT = 25;
     uint8 public constant SP_DEF_PERCENT = 25;
-
-    StatBoosts immutable STAT_BOOST;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOST = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "Overclock";
@@ -67,12 +60,12 @@ contract Overclock is BasicEffect {
             boostPercent: SP_DEF_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function _removeStatChange(IEngine engine, uint256 playerIndex, uint256 monIndex) internal {
         // Reset stat boosts (speed buff / sp def debuff)
-        STAT_BOOST.removeStatBoosts(engine, playerIndex, monIndex, StatBoostFlag.Temp);
+        engine.removeStatBoost(playerIndex, monIndex, StatBoostFlag.Temp);
     }
 
     function onApply(

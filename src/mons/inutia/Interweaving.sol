@@ -8,17 +8,10 @@ import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract Interweaving is IAbility, BasicEffect {
     
     uint8 public constant DECREASE_PERCENTAGE = 15;
-    StatBoosts immutable STAT_BOOST;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOST = _STAT_BOOSTS;
-    }
-
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Interweaving";
     }
@@ -34,7 +27,7 @@ contract Interweaving is IAbility, BasicEffect {
             boostPercent: DECREASE_PERCENTAGE,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
@@ -66,7 +59,7 @@ contract Interweaving is IAbility, BasicEffect {
             boostPercent: DECREASE_PERCENTAGE,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(engine, otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
         return (bytes32(0), false);
     }
 }

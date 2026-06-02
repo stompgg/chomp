@@ -21,7 +21,6 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
@@ -37,7 +36,6 @@ contract MalalienTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     ActusReus actusReus;
     StandardAttackFactory attackFactory;
-    StatBoosts statBoosts;
     DefaultMatchmaker matchmaker;
 
     function setUp() public {
@@ -46,8 +44,7 @@ contract MalalienTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts();
-        actusReus = new ActusReus(statBoosts);
+        actusReus = new ActusReus();
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
@@ -180,7 +177,7 @@ contract MalalienTest is Test, BattleHelper {
             IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
         );
         uint256[] memory moves = new uint256[](1);
-        TripleThink tripleThink = new TripleThink(statBoosts);
+        TripleThink tripleThink = new TripleThink();
         moves[0] = uint256(uint160(address(tripleThink)));
         Mon memory mon = Mon({
             stats: MonStats({

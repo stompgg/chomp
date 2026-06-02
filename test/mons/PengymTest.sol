@@ -25,7 +25,6 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
@@ -46,7 +45,6 @@ contract PengymTest is Test, BattleHelper {
     PostWorkout postWorkout;
     PanicStatus panicStatus;
     FrostbiteStatus frostbiteStatus;
-    StatBoosts statBoost;
     DefaultMatchmaker matchmaker;
 
     function setUp() public {
@@ -61,8 +59,7 @@ contract PengymTest is Test, BattleHelper {
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         postWorkout = new PostWorkout();
         panicStatus = new PanicStatus();
-        statBoost = new StatBoosts();
-        frostbiteStatus = new FrostbiteStatus(statBoost);
+        frostbiteStatus = new FrostbiteStatus();
         matchmaker = new DefaultMatchmaker(engine);
     }
 

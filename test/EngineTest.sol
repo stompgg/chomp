@@ -1213,8 +1213,10 @@ contract EngineTest is Test, BattleHelper {
         // (We have a check for 2 instead of 1 to avoid confusing it with the base case state)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint16(1), 0);
 
-        // Assert that the temporary stat boost effect is updated to 2 because the roundEnd hook also runs
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Attack), 2);
+        // Both hooks apply the same-keyed +100% Attack multiply (they merge): onApply takes base 1
+        // -> 2 (delta +1), onRoundEnd -> 4 (delta +3). The +3 confirms BOTH hooks ran on the
+        // post-switch mon (delta would be +1 if only onApply had run).
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Attack), 3);
     }
 
     function test_moveKOSupersedesRoundEndEffectKOForGameEnd() public {

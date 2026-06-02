@@ -26,6 +26,28 @@ interface IEngine {
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
+    // Inlined stat boosts (formerly the StatBoosts effect contract). Keyed by msg.sender.
+    function addStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag
+    ) external;
+    function addKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external;
+    function removeStatBoost(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) external;
+    function removeKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external;
+    function clearAllStatBoosts(uint256 targetIndex, uint256 monIndex) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,

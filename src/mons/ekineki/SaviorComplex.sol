@@ -6,18 +6,11 @@ import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 
 contract SaviorComplex is IAbility {
     uint8 public constant STAGE_1_BOOST = 15; // 1 KO'd
     uint8 public constant STAGE_2_BOOST = 25; // 2 KO'd
     uint8 public constant STAGE_3_BOOST = 30; // 3+ KO'd
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() external pure returns (string memory) {
         return "Savior Complex";
@@ -58,7 +51,7 @@ contract SaviorComplex is IAbility {
             boostPercent: boostPercent,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
 
         // Mark as triggered (once per game)
         engine.setGlobalKV(_getSaviorComplexKey(playerIndex), 1);

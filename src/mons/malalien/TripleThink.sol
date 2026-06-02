@@ -7,17 +7,10 @@ import "../../Enums.sol";
 import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract TripleThink is IMoveSet {
     uint8 public constant SP_ATTACK_BUFF_PERCENT = 75;
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "Triple Think";
@@ -39,7 +32,7 @@ contract TripleThink is IMoveSet {
             boostPercent: SP_ATTACK_BUFF_PERCENT,
             boostType: StatBoostType.Multiply
         });
-        STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {

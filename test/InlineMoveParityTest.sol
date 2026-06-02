@@ -16,7 +16,6 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
-import {StatBoosts} from "../src/effects/StatBoosts.sol";
 
 /// @title Inline Move Parity Tests
 /// @notice Verifies that inline packed moves work correctly in the Engine
@@ -26,7 +25,6 @@ contract InlineMoveParityTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     DefaultMatchmaker matchmaker;
-    StatBoosts statBoosts;
 
     // Inline validation constants
     uint256 constant MONS_PER_TEAM = 1;
@@ -38,7 +36,6 @@ contract InlineMoveParityTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
-        statBoosts = new StatBoosts();
     }
 
     /// @notice Pack an inline move value from components
@@ -246,7 +243,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
 
     /// @notice Test inline move with effect: effect is applied when RNG hits
     function test_inlineMoveWithEffect_appliesEffect() public {
-        BurnStatus burnStatus = new BurnStatus(statBoosts);
+        BurnStatus burnStatus = new BurnStatus();
 
         // Pack: basePower=50, Special(1), default priority, Fire(4), stamina=1, effectAccuracy=100, effect=burn
         uint256 inlineMove = _packMove(50, 1, 0, 4, 1, 100, address(burnStatus));
@@ -294,7 +291,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
 
     /// @notice Test basePower=0 inline move (like ChillOut) deals no damage but applies effect
     function test_inlineBasePowerZero_noEffectDamage_appliesEffect() public {
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus();
 
         // Pack ChillOut: basePower=0, Other(3), default priority, Ice(6), stamina=0, effectAccuracy=100, effect=frostbite
         uint256 chillOutPacked = _packMove(0, 3, 0, 6, 0, 100, address(frostbiteStatus));

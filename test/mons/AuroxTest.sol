@@ -13,7 +13,6 @@ import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
@@ -52,7 +51,6 @@ contract AuroxTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    StatBoosts statBoosts;
     DefaultMatchmaker matchmaker;
     StandardAttackFactory attackFactory;
 
@@ -62,7 +60,6 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
-        statBoosts = new StatBoosts();
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
@@ -97,7 +94,7 @@ contract AuroxTest is Test, BattleHelper {
     }
 
     function test_gildedRecoveryHealsWithStatus() public {
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus();
         GildedRecovery gildedRecovery = new GildedRecovery();
 
         uint32 maxHp = 100;
@@ -573,7 +570,7 @@ contract AuroxTest is Test, BattleHelper {
         uint32 maxAtk = 100;
         uint32 maxDef = 100;
 
-        UpOnly upOnly = new UpOnly(statBoosts);
+        UpOnly upOnly = new UpOnly();
         StandardAttack attack = attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: maxHp / 2,
@@ -735,8 +732,8 @@ contract AuroxTest is Test, BattleHelper {
     function test_volatilePunchDealsDamageAndTriggersStatusEffects() public {
         uint32 maxHp = 100;
 
-        BurnStatus burnStatus = new BurnStatus(statBoosts);
-        FrostbiteStatus frostbiteStatus = new FrostbiteStatus(statBoosts);
+        BurnStatus burnStatus = new BurnStatus();
+        FrostbiteStatus frostbiteStatus = new FrostbiteStatus();
         VolatilePunch volatilePunch = new VolatilePunch(
             typeCalc, burnStatus, frostbiteStatus
         );

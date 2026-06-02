@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import "../../Enums.sol";
 import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
-import {StatBoosts} from "../StatBoosts.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
@@ -12,12 +11,6 @@ contract FrostbiteStatus is StatusEffect {
 
     int32 constant DAMAGE_DENOM = 16;
     uint8 constant SP_ATTACK_PERCENT = 50;
-
-    StatBoosts immutable STAT_BOOST;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOST = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "Frostbite";
@@ -52,7 +45,7 @@ contract FrostbiteStatus is StatusEffect {
             boostPercent: SP_ATTACK_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOST.addStatBoosts(engine, targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
+        engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
         // Do not update data
         return (extraData, false);
@@ -70,7 +63,7 @@ contract FrostbiteStatus is StatusEffect {
         super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Reset the special attack reduction
-        STAT_BOOST.removeStatBoosts(engine, targetIndex, monIndex, StatBoostFlag.Perm);
+        engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
     }
 
     function onRoundEnd(
