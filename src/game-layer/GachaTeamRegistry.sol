@@ -97,14 +97,24 @@ contract GachaTeamRegistry is
     error InvalidStarterId();
     error NoMoreStock();
     error NotEngine();
+    error NoPreviousRegistry();
+    error AlreadyMigrated();
 
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
     event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
+    event Migrated(address indexed player);
 
     // ----- Immutables -----
     IEngine public immutable ENGINE;
     IGachaRNG immutable RNG;
+    /// @notice Prior registry to import player state from via `migrate()`. Assumed to share
+    /// this contract's storage layout (same ABI). `address(0)` on the genesis deploy disables
+    /// migration. Set once at construction.
+    GachaTeamRegistry public immutable PREVIOUS_REGISTRY;
+
+    /// @notice One-shot guard: true once a player has imported their state from PREVIOUS_REGISTRY.
+    mapping(address => bool) public migrated;
 
     // ----- Per-(user, opponent) CPU team facet config -----
     // Each user picks any facet (0-12) for each slot of a whitelisted opponent's phantom team.
@@ -115,11 +125,18 @@ contract GachaTeamRegistry is
     uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
     mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
-    constructor(uint256 _MONS_PER_TEAM, uint256 _MOVES_PER_MON, IEngine _ENGINE, IGachaRNG _RNG)
+    constructor(
+        uint256 _MONS_PER_TEAM,
+        uint256 _MOVES_PER_MON,
+        IEngine _ENGINE,
+        IGachaRNG _RNG,
+        GachaTeamRegistry _PREVIOUS_REGISTRY
+    )
         PackedTeamStore(_MONS_PER_TEAM, _MOVES_PER_MON)
     {
         ENGINE = _ENGINE;
         RNG = address(_RNG) == address(0) ? IGachaRNG(address(this)) : _RNG;
+        PREVIOUS_REGISTRY = _PREVIOUS_REGISTRY;
         _initializeOwner(msg.sender);
         _seedInitialQuests();
     }
@@ -412,6 +429,59 @@ contract GachaTeamRegistry is
     // Default RNG implementation (used when constructed with address(0) RNG)
     function getRNG(bytes32 seed) public view returns (uint256) {
         return uint256(keccak256(abi.encode(blockhash(block.number - 1), seed)));
+    }
+
+    // =====================================================================
+    // Migration
+    // =====================================================================
+
+    /// @notice Self-service, one-shot import of the caller's progression state from
+    /// `PREVIOUS_REGISTRY`. Copies, for `msg.sender`:
+    ///   - the packed profile slot verbatim (points, streak, quest day, first-game bonus,
+    ///     timestamps — and the CPU/whitelist flags, since the whole word is copied),
+    ///   - mon ownership,
+    ///   - per-mon exp and facet buckets (unlocked bitmaps + assigned facet),
+    ///   - team slots (packed mon ids + the order/live-bitmap word).
+    ///
+    /// @dev Relies on `PREVIOUS_REGISTRY` sharing this contract's storage layout and on the
+    /// new mon catalog using the same sequential ids, so packed mon-id data resolves to the
+    /// same mons. The guard makes this idempotent-by-revert: a second call (or a call after
+    /// the player has progressed on this registry) reverts rather than re-importing or
+    /// clobbering. Run catalog setup (createMon) before players migrate.
+    function migrate() external {
+        GachaTeamRegistry prev = PREVIOUS_REGISTRY;
+        if (address(prev) == address(0)) revert NoPreviousRegistry();
+        address player = msg.sender;
+        if (migrated[player]) revert AlreadyMigrated();
+        migrated[player] = true;
+
+        // Profile slot — verbatim whole word.
+        playerData[player] = prev.playerData(player);
+
+        // Ownership — monsOwned is an EnumerableSet, so re-add each id (no slot copy).
+        uint256[] memory owned = prev.getOwned(player);
+        for (uint256 i; i < owned.length;) {
+            monsOwned[player].add(owned[i]);
+            unchecked { ++i; }
+        }
+
+        // Exp + facets share the same 16-mon bucketing, so one loop copies both.
+        uint256 numBuckets = (prev.getMonCount() + MONS_PER_EXP_BUCKET - 1) / MONS_PER_EXP_BUCKET;
+        for (uint256 b; b < numBuckets;) {
+            packedExpForMon[player][b] = prev.packedExpForMon(player, b);
+            facetData[player][b] = prev.facetData(player, b);
+            unchecked { ++b; }
+        }
+
+        // Teams — packed group words (4 teams × 64 bits each) plus the order/live-bitmap word.
+        uint256 numGroups = (MAX_TEAMS_PER_PLAYER * BITS_PER_LANE + 255) / 256;
+        for (uint256 g; g < numGroups;) {
+            teamGroupsPacked[player][g] = prev.teamGroupsPacked(player, g);
+            unchecked { ++g; }
+        }
+        teamOrderPacked[player] = prev.teamOrderPacked(player);
+
+        emit Migrated(player);
     }
 
     // ----- IEngineHook -----

@@ -60,7 +60,7 @@ contract GachaTeamRegistryTest is Test {
         engine = new Engine(0, 0, 0);
         mockRNG = new MockGachaRNG();
 
-        gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
+        gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // Constructor seeds 12 production quests; wipe so each test starts with an empty
         // pool and gets length 1 (mod 1 == 0) the moment it adds its own quest. Keeps
@@ -1025,7 +1025,7 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_constructorSeedsPool() public {
         // Fresh registry — constructor must seed the production quest pool.
-        GachaTeamRegistry fresh = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
+        GachaTeamRegistry fresh = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
         assertEq(fresh.getQuestPoolLength(), 12, "constructor seeds 12 quests");
     }
 

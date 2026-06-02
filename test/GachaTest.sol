@@ -35,7 +35,7 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_firstRoll() public {
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // Need NUM_STARTERS starters + (INITIAL_ROLLS - 1) non-starters = 6 mons minimum.
         uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
@@ -75,7 +75,7 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_firstRoll_invalidStarter_reverts() public {
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
         uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
         for (uint256 i = 0; i < poolSize; i++) {
             gachaRegistry.createMon(
@@ -96,7 +96,7 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_firstRoll_emitsRollWithZeroSpend() public {
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
         uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
         for (uint256 i = 0; i < poolSize; i++) {
             gachaRegistry.createMon(
@@ -130,7 +130,7 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_assignPoints() public {
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // Set up mon IDs 0 to INITIAL ROLLS
         for (uint256 i = 0; i < gachaRegistry.INITIAL_ROLLS(); i++) {
@@ -203,7 +203,7 @@ contract GachaTest is Test, BattleHelper {
     }
 
     function test_spendPoints() public {
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // Minimum pool for firstRoll: NUM_STARTERS + INITIAL_ROLLS - 1 = 6.
         uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
@@ -284,7 +284,7 @@ contract GachaTest is Test, BattleHelper {
     function test_firstGameBonusNotReawardedAfterRoll() public {
         // Repro: first battle → roll → second battle. The ROLL_COST first-game
         // bonus must only fire once, even though a roll happens in between.
-        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG);
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // One mon in the registry is enough for a single regular roll.
         gachaRegistry.createMon(

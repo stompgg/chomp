@@ -55,7 +55,7 @@ contract StartBattleGasTest is Test, GasMeasure {
         engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, TIMEOUT);
         mockOracle = new MockRandomnessOracle();
         mockRNG = new MockGachaRNG();
-        registry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG);
+        registry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
         commitManager = new DefaultCommitManager(engine);
         matchmaker = new DefaultMatchmaker(engine);
 

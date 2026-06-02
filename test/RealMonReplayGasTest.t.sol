@@ -76,7 +76,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         FrostbiteStatus frost = new FrostbiteStatus();
         BurnStatus burn = new BurnStatus();
         ZapStatus zap = new ZapStatus();
-        gachaReg = new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)));
+        gachaReg = new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)), GachaTeamRegistry(address(0)));
         vm.setEnv("TYPE_CALCULATOR", vm.toString(address(tc)));
         vm.setEnv("OVERCLOCK", vm.toString(address(oc)));
         vm.setEnv("SLEEP_STATUS", vm.toString(address(sleepStatus)));
