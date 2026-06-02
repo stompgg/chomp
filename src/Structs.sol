@@ -109,6 +109,12 @@ struct BattleConfig {
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
     uint104 p0Salt;
     uint104 p1Salt;
+    // OR of every player (per-mon) effect's stepsBitmap added this battle. Lets the hot step
+    // pipelines (PreDamage / AfterDamage / OnUpdateMonState) skip the whole _runEffects shell when
+    // NO player effect listens at that step — e.g. battles without a Dreamcatcher (OnUpdateMonState)
+    // or Adaptor (PreDamage) listener, which is the common case. Over-approximate: never cleared on
+    // removal (safe — at worst runs a pipeline that finds nothing, as today). Packs into slot 3.
+    uint16 playerEffectStepsUnion; //  16
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.

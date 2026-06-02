@@ -180,6 +180,7 @@ contract Engine is IEngine, MappingAllocator {
         config.packedP1EffectsCount = 0;
         config.koBitmaps = 0;
         config.globalKVCount = 0;
+        config.playerEffectStepsUnion = 0;
 
         // teamIndices narrowed from Battle.uint96; phantom-team writes truncate to match.
         battleData[battleKey] = BattleData({
@@ -1001,13 +1002,15 @@ contract Engine is IEngine, MappingAllocator {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
 
-        // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
-        // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
-        // OnUpdateMonState consumers are registered on this mon (the common case).
+        // Trigger OnUpdateMonState lifecycle hook only if some player effect actually listens at it
+        // (battle-wide union) AND this mon has effects. OnUpdateMonState has a single listener in the
+        // whole game (Dreamcatcher), so the union bit is unset in almost every battle — skipping the
+        // abi.encode(4-tuple) + _runEffects shell entirely. Stat-boost delta writes hit this path a lot.
         uint256 updateMonStateCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (updateMonStateCount > 0) {
+        if (updateMonStateCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0) {
             _runEffects(
                 battleKey,
                 tempRNG,
@@ -1130,6 +1133,12 @@ contract Engine is IEngine, MappingAllocator {
             if (!removeAfterRun) {
                 // Add to the appropriate effects mapping based on targetIndex
                 BattleConfig storage config = battleConfig[storageKeyForWrite];
+
+                // Record which steps any PLAYER effect now listens at, so the per-mon step pipelines
+                // can skip the _runEffects shell when nothing listens (see playerEffectStepsUnion).
+                if (targetIndex != 2) {
+                    config.playerEffectStepsUnion |= stepsBitmap;
+                }
 
                 if (targetIndex == 2) {
                     // Global effects use simple sequential indexing
@@ -1609,7 +1618,10 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monEffectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (monEffectCount > 0) {
+        // PreDamage has a single listener game-wide (Adaptor), so the union bit is unset in almost
+        // every battle — skip the pipeline (and the tempPreDamage round-trip) entirely.
+        if (monEffectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.PreDamage))) != 0) {
             tempPreDamage = damage;
             _runEffects(
                 battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source), type(uint256).max
@@ -1634,8 +1646,10 @@ contract Engine is IEngine, MappingAllocator {
             // Lock in winner immediately if this KO ends the game
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
-        // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
-        if (monEffectCount > 0) {
+        // Only run the AfterDamage hook pipeline if some player effect listens at it AND this mon
+        // has effects.
+        if (monEffectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterDamage))) != 0) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
@@ -2613,7 +2627,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 effectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (effectCount > 0) {
+        if (effectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
