@@ -17,7 +17,6 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StatBoostsMove} from "../mocks/StatBoostsMove.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
@@ -34,7 +33,6 @@ contract StatBoostsTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     IValidator validator;
-    StatBoosts statBoosts;
     StatBoostsMove statBoostMove;
     DefaultMatchmaker matchmaker;
 
@@ -49,8 +47,7 @@ contract StatBoostsTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Create the StatBoosts effect and move
-        statBoosts = new StatBoosts();
-        statBoostMove = new StatBoostsMove(statBoosts);
+        statBoostMove = new StatBoostsMove();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -151,7 +148,7 @@ contract StatBoostsTest is Test, BattleHelper {
         (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
         bool foundEffect = false;
         for (uint256 i = 0; i < effects.length; i++) {
-            if (keccak256(abi.encodePacked(effects[i].effect.name())) == keccak256(abi.encodePacked("Stat Boost"))) {
+            if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
                 foundEffect = true;
                 break;
             }
@@ -196,7 +193,7 @@ contract StatBoostsTest is Test, BattleHelper {
         (effects, ) = engine.getEffects(battleKey, 0, 1);
         foundEffect = false;
         for (uint256 i = 0; i < effects.length; i++) {
-            if (keccak256(abi.encodePacked(effects[i].effect.name())) == keccak256(abi.encodePacked("Stat Boost"))) {
+            if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
                 foundEffect = true;
                 break;
             }
@@ -313,8 +310,7 @@ contract StatBoostsTest is Test, BattleHelper {
             bool foundStatEffect = false;
             for (uint256 j = 0; j < statEffects.length; j++) {
                 if (
-                    keccak256(abi.encodePacked(statEffects[j].effect.name()))
-                        == keccak256(abi.encodePacked("Stat Boost"))
+                    address(statEffects[j].effect) == STAT_BOOST_ADDRESS
                 ) {
                     foundStatEffect = true;
                     break;
@@ -338,7 +334,7 @@ contract StatBoostsTest is Test, BattleHelper {
         (EffectInstance[] memory effectsAfterSwitch, ) = engine.getEffects(battleKey, 0, 1);
         for (uint256 i = 0; i < effectsAfterSwitch.length; i++) {
             assertFalse(
-                keccak256(abi.encodePacked(effectsAfterSwitch[i].effect.name())) == keccak256(abi.encodePacked("Stat Boost")),
+                address(effectsAfterSwitch[i].effect) == STAT_BOOST_ADDRESS,
                 "No Stat Boost effects should remain after switching out"
             );
         }
@@ -346,7 +342,7 @@ contract StatBoostsTest is Test, BattleHelper {
     
     function test_permanentTempStatBoostInteraction() public {
         StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
-        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect(statBoosts);
+        SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect();
 
         // Create teams with two mons each
         uint256[] memory moves = new uint256[](2);

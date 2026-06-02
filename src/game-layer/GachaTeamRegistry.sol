@@ -463,6 +463,7 @@ contract GachaTeamRegistry is
             uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT | IS_HARD_CPU_BIT);
             uint256 points = packed & POINTS_MASK_128;
             uint32 lastFirstGameTs = uint32(packed >> LAST_FIRST_GAME_TS_SHIFT);
+            uint32 lastSeenTs = uint32(packed >> LAST_SEEN_TS_SHIFT);
             uint256 streakDay = (packed >> STREAK_DAY_SHIFT) & STREAK_DAY_MASK;
             uint32 lastQuestCompletedDay = uint32(packed >> LAST_QUEST_DAY_SHIFT);
 
@@ -478,11 +479,16 @@ contract GachaTeamRegistry is
                 bonusFlags |= BONUS_HARD_CPU;
             }
 
-            // Rolling 24h cooldown gates the streak bonus; 36h grace decides whether to
-            // ratchet or reset. Pure timestamp delta avoids a UTC-midnight cliff.
-            uint256 gap = lastFirstGameTs == 0 ? type(uint256).max : currentTime - lastFirstGameTs;
-            if (gap >= FIRST_GAME_OF_DAY_COOLDOWN) {
-                if (gap > STREAK_GRACE_WINDOW) {
+            // The rolling 24h cooldown (measured from the last bonus-earning game) gates the
+            // streak bonus to once per day. The 36h grace decides ratchet-vs-reset, but is
+            // measured from the last battle of ANY kind (lastSeenTs) rather than the last
+            // bonus: a sub-24h "early" play still counts as activity, so it can't strand the
+            // anchor into a phantom multi-day gap that wrongly resets an active player's
+            // streak. Pure timestamp delta avoids a UTC-midnight cliff.
+            uint256 bonusGap = lastFirstGameTs == 0 ? type(uint256).max : currentTime - lastFirstGameTs;
+            if (bonusGap >= FIRST_GAME_OF_DAY_COOLDOWN) {
+                uint256 seenGap = lastSeenTs == 0 ? type(uint256).max : currentTime - lastSeenTs;
+                if (seenGap > STREAK_GRACE_WINDOW) {
                     streakDay = 1;
                 } else if (streakDay < STREAK_FLAT_BONUS_MAX) {
                     streakDay += 1;
@@ -491,6 +497,7 @@ contract GachaTeamRegistry is
                 lastFirstGameTs = currentTime;
                 bonusFlags |= BONUS_FIRST_GAME;
             }
+            lastSeenTs = currentTime; // every counted battle marks activity for the grace window
 
             if (
                 ctx.winner == player
@@ -517,6 +524,7 @@ contract GachaTeamRegistry is
             playerData[player] = preservedFlags
                 | (streakDay << STREAK_DAY_SHIFT)
                 | (uint256(lastQuestCompletedDay) << LAST_QUEST_DAY_SHIFT)
+                | (uint256(lastSeenTs) << LAST_SEEN_TS_SHIFT)
                 | (uint256(lastFirstGameTs) << LAST_FIRST_GAME_TS_SHIFT)
                 | points;
 

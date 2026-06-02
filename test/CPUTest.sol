@@ -542,4 +542,82 @@ contract CPUTest is Test {
         hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(hpDelta, -2);
     }
+
+    // One-tx PvE: p0 submits the whole game (their moves + CPU's moves) + a per-turn player salt in one
+    // call; CPU salt is always 0. Batched execution skips the per-turn MonMoves event (the submitter
+    // already holds every move + salt from the executeGame calldata), so we verify the 19-byte/turn
+    // decode end-to-end via deterministic final state, and assert no MonMoves logs are emitted.
+    function test_executeGame_decodesStreamWithoutMonMovesEvents() public {
+        TestMoveFactory moveFactory = new TestMoveFactory();
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 1))));
+        Mon memory mon = _createMon(Type.Liquid);
+        mon.stats.hp = 100;
+        mon.stats.stamina = 10;
+        mon.moves = moves;
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+
+        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
+        teamRegistry.setTeam(address(okayCPU), team);
+        teamRegistry.setTeam(ALICE, team);
+        DefaultValidator v = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: keccak256(
+                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
+            ),
+            p1: address(okayCPU),
+            p1TeamIndex: 0,
+            validator: v,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            teamRegistry: teamRegistry,
+            engineHooks: new IEngineHook[](0),
+            moveManager: address(okayCPU),
+            matchmaker: okayCPU
+        });
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(okayCPU);
+        engine.updateMatchmakers(makersToAdd, new address[](0));
+        bytes32 battleKey = okayCPU.startBattle(proposal);
+        vm.stopPrank();
+
+        // Turn plan: [switch-to-0, attack, attack] with distinct player salts; CPU salt always 0.
+        uint8[3] memory p0m = [uint8(SWITCH_MOVE_INDEX), uint8(1), uint8(1)];
+        uint8[3] memory p1m = [uint8(SWITCH_MOVE_INDEX), uint8(1), uint8(1)];
+        uint104[3] memory p0s = [uint104(0xAAAA1), uint104(0xBBBB2), uint104(0xCCCC3)];
+        bytes memory stream;
+        for (uint256 i; i < 3; i++) {
+            // [p0Move 1 | p0Extra 2 | p0Salt 13 | p1Move 1 | p1Extra 2]
+            stream = abi.encodePacked(stream, p0m[i], uint16(0), p0s[i], p1m[i], uint16(0));
+        }
+        assertEq(stream.length, 3 * 19, "19 bytes per turn");
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        okayCPU.executeGame(battleKey, stream);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Batched execution must NOT emit per-turn MonMoves events (the submitter already holds every
+        // move + salt from the executeGame calldata, so the log would be pure overhead).
+        bytes32 monMovesSig = keccak256("MonMoves(bytes32,uint256,uint256)");
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(engine)) {
+                assertTrue(logs[i].topics[0] != monMovesSig, "batched mode must not emit MonMoves");
+            }
+        }
+
+        // The 19-byte/turn stream decoded correctly: after the turn-0 send-in, both mons used move 1
+        // (deal-1 damage) on turns 1 and 2, so each active mon took exactly 2 deterministic points of
+        // damage. A misframed decode would corrupt the move bytes and diverge this final state.
+        assertEq(engine.getTurnIdForBattleState(battleKey), 3, "all 3 turns executed");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -2, "p0 mon0 took 2 dmg");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2, "cpu mon0 took 2 dmg");
+    }
 }

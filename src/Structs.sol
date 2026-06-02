@@ -73,19 +73,23 @@ struct MoveDecision {
 }
 
 // Stored by the Engine, tracks immutable battle data and battle state.
-// Slot 0: p1 (160) + turnId (64) + p0TeamIndex (16) + p1TeamIndex (16) = 256 bits exactly.
-// teamIndices are narrowed from Battle.uint96 at startBattle; phantom-team writes truncate to match.
+// Slot 0 — IMMUTABLE during play (only written at startBattle):
+//   p1 (160) + p0TeamIndex (16) + p1TeamIndex (16) = 192 bits used.
+// Slot 1 — EVERY per-turn mutation lands here, so a single SSTORE/turn covers all of them:
+//   p0 (160) + winnerIndex (8) + playerSwitchForTurnFlag (8) +
+//   activeMonIndex (16) + lastExecuteTimestamp (40) + turnId (16) = 248 bits (8 bits slack).
+//   turnId narrowed uint64->uint16 (65,535 turns is far beyond any real game); timestamp
+//   uint48->uint40 (year 36800 cap) to make room in slot 1.
 struct BattleData {
     address p1;
-    uint64 turnId;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
-    uint8 prevPlayerSwitchForTurnFlag;
     uint8 playerSwitchForTurnFlag;
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
-    uint48 lastExecuteTimestamp; // Written at end of every execute() — packed with flags in slot 1 to avoid extra SSTORE
+    uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
+    uint16 turnId;
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
@@ -105,6 +109,12 @@ struct BattleConfig {
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
     uint104 p0Salt;
     uint104 p1Salt;
+    // OR of every player (per-mon) effect's stepsBitmap added this battle. Lets the hot step
+    // pipelines (PreDamage / AfterDamage / OnUpdateMonState) skip the whole _runEffects shell when
+    // NO player effect listens at that step — e.g. battles without a Dreamcatcher (OnUpdateMonState)
+    // or Adaptor (PreDamage) listener, which is the common case. Over-approximate: never cleared on
+    // removal (safe — at worst runs a pipeline that finds nothing, as today). Packs into slot 3.
+    uint16 playerEffectStepsUnion; //  16
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
@@ -235,6 +245,21 @@ struct RevealedMove {
     uint104 salt;
 }
 
+// Per-turn submission for `SignedCommitManager.submitTurnMoves` (batched flow). SINGLE-SIG model:
+// the committer is `msg.sender` (no committer signature), and the revealer signs `DualSignedReveal`
+// which pins the committer's move hash — so the committer can't change their move post-hoc and
+// can't be impersonated (msg.sender == committer). On-chain stores the packed (p0,p1) projection.
+struct TurnSubmission {
+    uint64 turnId;
+    uint8 committerMoveIndex;
+    uint16 committerExtraData;
+    uint104 committerSalt;
+    uint8 revealerMoveIndex;
+    uint16 revealerExtraData;
+    uint104 revealerSalt;
+    bytes revealerSig;
+}
+
 // Used for StatBoosts
 struct StatBoostToApply {
     MonStateIndexName stat;
@@ -256,7 +281,6 @@ struct BattleContext {
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint64 turnId;
     uint8 playerSwitchForTurnFlag;
-    uint8 prevPlayerSwitchForTurnFlag;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
     address validator;
@@ -293,22 +317,6 @@ struct DamageCalcContext {
     Type defenderType2;
 }
 
-// Batch context for move validation to reduce external calls (5+ -> 1)
-struct ValidationContext {
-    uint64 turnId;
-    uint8 playerSwitchForTurnFlag;
-    // Per-player data
-    uint8 p0ActiveMonIndex;
-    uint8 p1ActiveMonIndex;
-    bool p0ActiveMonKnockedOut;
-    bool p1ActiveMonKnockedOut;
-    // Stamina info for move validation (for active mons)
-    uint32 p0ActiveMonBaseStamina;
-    int32 p0ActiveMonStaminaDelta;
-    uint32 p1ActiveMonBaseStamina;
-    int32 p1ActiveMonStaminaDelta;
-}
-
 // Bundled move metadata returned by IMoveSet.getMeta. Batches the five separate
 // getters (moveType / moveClass / priority / stamina / basePower) + extraDataType into
 // one staticcall. MoveSlotLib.decodeMeta handles both inline moves (pure bit ops) and
@@ -323,7 +331,8 @@ struct MoveMeta {
 }
 
 // Batch context for CPU move selection. The CPU is always p1 in this codebase,
-// so `cpuActiveMon*` fields mirror p1's active mon state. Returned by Engine.getCPUContext.
+// so `cpuActiveMon*` fields mirror p1's active mon state. Assembled CPU-side by
+// CPUMoveManager._buildCPUContext from granular engine getters.
 //
 // MoveMeta is intentionally NOT included here — only BetterCPU needs decoded metadata, and
 // even BetterCPU doesn't need it on turn 0 / flag==0 paths. Putting it in the shared

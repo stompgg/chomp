@@ -48,7 +48,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         public
         returns (RevealedMove[] memory noOp, RevealedMove[] memory moves, RevealedMove[] memory switches)
     {
-        (noOp, moves, switches,) = _calculateValidMoves(ENGINE.getCPUContext(battleKey));
+        (noOp, moves, switches,) = _calculateValidMoves(_buildCPUContext(battleKey));
     }
 
     /**
@@ -318,7 +318,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         );
     }
 
-    function validateMatch(bytes32, address) external pure returns (bool) {
+    function validateMatch(bytes32, address, address) external pure returns (bool) {
         return true;
     }
 }

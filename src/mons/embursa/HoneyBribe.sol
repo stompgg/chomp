@@ -7,7 +7,6 @@ import "../../Enums.sol";
 import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
 
@@ -15,12 +14,6 @@ contract HoneyBribe is IMoveSet {
     uint256 public constant DEFAULT_HEAL_DENOM = 2;
     uint256 public constant MAX_DIVISOR = 3;
     uint8 public constant SP_DEF_PERCENT = 50;
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() public pure override returns (string memory) {
         return "Honey Bribe";
@@ -83,7 +76,7 @@ contract HoneyBribe is IMoveSet {
             boostPercent: SP_DEF_PERCENT,
             boostType: StatBoostType.Divide
         });
-        STAT_BOOSTS.addStatBoosts(engine, defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
         // Update the bribe level
         _increaseBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);

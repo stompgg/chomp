@@ -660,6 +660,64 @@ contract GachaTeamRegistryTest is Test {
         assertEq(gachaTeamRegistry.getExp(ALICE, 0), 9, "+4 from streak day 2");
     }
 
+    // Regression: a player who plays slightly more often than once per 24h must still
+    // build a streak. The bonus anchor (lastFirstGameTs) only advances on a qualifying
+    // (>=24h) game, so a sub-24h "early" play used to be dropped without recording any
+    // activity — the next day then measured a phantom ~46h gap from the stale anchor and
+    // reset the streak to 1 forever. lastSeenTs (advanced on every battle) decouples the
+    // 36h reset from the bonus anchor, so the ~23h cadence below ratchets 1 -> 2 -> 3.
+    function test_streak_subDayCadenceDoesNotStrandAnchor() public {
+        _whitelist(CPU);
+        uint256 teamIdx = _aliceTeamIndex();
+
+        // t0: first-ever game. streak = 1.
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), _winPts(1, false, true), "B1: streak 1 (first ever)");
+        uint256 prev = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // +23h: under the 24h cooldown → no bonus (streakFlat 0), but activity is recorded.
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE) - prev, _winPts(0, false, false), "B2: no bonus within 24h");
+        prev = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // +23h (t0+46h): >=24h since last bonus, and only 23h since last activity (<=36h grace)
+        // → ratchet to 2. Pre-fix this measured 46h from the stale anchor and reset to 1.
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE) - prev, _winPts(2, false, false), "B3: ratchet to 2");
+        prev = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // +23h (t0+69h): under cooldown again → no bonus, activity recorded.
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE) - prev, _winPts(0, false, false), "B4: no bonus within 24h");
+        prev = gachaTeamRegistry.pointsBalance(ALICE);
+
+        // +23h (t0+92h): qualifies again, still within grace of last activity → ratchet to 3.
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE) - prev, _winPts(3, false, false), "B5: ratchet to 3");
+    }
+
+    // A genuine absence (no activity for longer than the 36h grace) must still reset to 1.
+    function test_streak_genuineAbsenceStillResets() public {
+        _whitelist(CPU);
+        uint256 teamIdx = _aliceTeamIndex();
+
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // streak 1
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // no bonus, activity recorded
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx))); // ratchet to 2
+
+        // Now disappear for >36h since the last activity → next game resets to 1.
+        uint256 prev = gachaTeamRegistry.pointsBalance(ALICE);
+        vm.warp(vm.getBlockTimestamp() + 40 hours);
+        _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE) - prev, _winPts(1, false, false), "absence resets to 1");
+    }
+
     function test_exp_skipsCPUSide() public {
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();

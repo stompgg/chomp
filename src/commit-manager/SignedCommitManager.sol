@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {IValidator} from "../IValidator.sol";
-import {CommitContext, PlayerDecisionData} from "../Structs.sol";
+import {CommitContext, PlayerDecisionData, TurnSubmission} from "../Structs.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {EIP712} from "../lib/EIP712.sol";
 import {DefaultCommitManager} from "./DefaultCommitManager.sol";
@@ -53,13 +53,14 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         version = "1";
     }
 
-    /// @notice Executes a turn using dual-signed moves from both players (gas-optimized)
-    /// @dev Both players sign off-chain — committer over `SignedCommit{committerMoveHash, …}`
-    ///      and revealer over `DualSignedReveal{committerMoveHash, …, revealerMove…}`. Anyone
-    ///      can submit (relayer-friendly) since both signatures are required and bind each
-    ///      player independently. Without the explicit committer signature, a malicious
-    ///      revealer could pick any preimage `P*`, sign `DualSignedReveal{keccak(P*), …}`
-    ///      and play `P*` as the committer's move — the committer signature closes that.
+    /// @notice Executes a turn in one transaction (gas-optimized, SINGLE-SIG): the committer is
+    ///         `msg.sender` and the revealer's signature carries their move.
+    /// @dev No committer signature — the committer is bound by `msg.sender == committer`. The
+    ///      revealer signs `DualSignedReveal{committerMoveHash, …}`, which pins the committer's move
+    ///      hash, so the committer is locked to this exact move (a different preimage would break the
+    ///      revealer's signature) and a malicious revealer cannot play a forged committer move (they
+    ///      are not `msg.sender == committer`). Saves one ecrecover + one 65-byte signature vs the
+    ///      dual-sig variant. Trade-off: NOT relayer-friendly — the committer must send their own tx.
     /// @param battleKey The battle identifier
     /// @param committerMoveIndex The committer's move index
     /// @param committerSalt The committer's salt
@@ -67,8 +68,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @param revealerMoveIndex The revealer's move index
     /// @param revealerSalt The revealer's salt
     /// @param revealerExtraData The revealer's extra data
-    /// @param committerSignature EIP-712 signature from the committer over
-    ///        SignedCommit(committerMoveHash, battleKey, turnId)
     /// @param revealerSignature EIP-712 signature from the revealer over
     ///        DualSignedReveal(battleKey, turnId, committerMoveHash, revealerMove…)
     function executeWithDualSignedMoves(
@@ -79,25 +78,15 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint8 revealerMoveIndex,
         uint104 revealerSalt,
         uint16 revealerExtraData,
-        bytes calldata committerSignature,
         bytes calldata revealerSignature
     ) external {
         (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
 
-        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
-
-        // Scoped to keep `commit`/`reveal` structs from sharing stack space across recoveries.
-        {
-            SignedCommitLib.SignedCommit memory commit = SignedCommitLib.SignedCommit({
-                moveHash: committerMoveHash,
-                battleKey: battleKey,
-                turnId: turnId
-            });
-            bytes32 commitDigest = _hashTypedData(SignedCommitLib.hashSignedCommit(commit));
-            if (ECDSA.recoverCalldata(commitDigest, committerSignature) != committer) {
-                revert InvalidSignature();
-            }
+        if (msg.sender != committer) {
+            revert NotCommitter();
         }
+
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
@@ -233,5 +222,171 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         _storeCommitment(battleKey, committerIndex, moveHash, turnId);
 
         emit MoveCommit(battleKey, committer);
+    }
+
+    // ---------------------------------------------------------------------
+    // Batched per-turn submission (single-sig: msg.sender == committer)
+    // ---------------------------------------------------------------------
+
+    error WrongTurnId();
+    error EmptyBuffer();
+    error NotCommitter();
+
+    /// @notice Packed per-turn move buffer keyed by the engine's `storageKey` (slot reuse across
+    ///         battles → steady-state warm nz->nz SSTOREs). Layout per slot:
+    ///   [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]
+    mapping(bytes32 storageKey => mapping(uint64 turnId => uint256 packed)) public moveBuffer;
+
+    /// @notice Packed counters per storageKey:
+    ///   bits 0-63 numTurnsExecuted | bits 64-127 numTurnsBuffered | bits 128-191 lastSubmitTimestamp
+    mapping(bytes32 storageKey => uint256) public bufferCounters;
+
+    /// @notice Append a per-turn entry to the buffer. The committer (msg.sender) supplies their
+    ///         preimage directly; the revealer's signature pins the committer's move hash. No
+    ///         engine execution — `executeBuffered` later drains the whole buffer in one tx.
+    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
+        _submitTurnMoves(battleKey, entry);
+    }
+
+    /// @notice Append a per-turn entry and drain the whole buffer in the same transaction.
+    /// @dev Convenience for the final submission of a batch: the committer (msg.sender) submits
+    ///      their entry and pays for execution in one call, saving a standalone `executeBuffered`
+    ///      transaction (one fewer 21k base cost + one fewer engine context lookup).
+    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external {
+        bytes32 storageKey = _submitTurnMoves(battleKey, entry);
+        _executeBuffered(battleKey, storageKey);
+    }
+
+    function _submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) internal returns (bytes32 storageKey) {
+        address ctxP0;
+        address ctxP1;
+        uint64 ctxTurnId;
+        uint8 ctxWinnerIndex;
+        (ctxP0, ctxP1, ctxTurnId, ctxWinnerIndex, storageKey) = ENGINE.getSubmitContext(battleKey);
+
+        if (ctxWinnerIndex != 2) {
+            revert BattleAlreadyComplete();
+        }
+
+        uint256 packedCounters = bufferCounters[storageKey];
+        uint64 numExecuted = uint64(packedCounters);
+        uint64 numBuffered = uint64(packedCounters >> 64);
+        if (numBuffered == 0) {
+            // First of a new batch: sync to the engine's live turnId (seamless legacy<->batched).
+            numExecuted = ctxTurnId;
+        }
+        if (entry.turnId != numExecuted + numBuffered) {
+            revert WrongTurnId();
+        }
+
+        (address committer, address revealer) = entry.turnId % 2 == 0 ? (ctxP0, ctxP1) : (ctxP1, ctxP0);
+
+        // SINGLE-SIG: committer is msg.sender (no committer signature). Cheaper than dual-sig by
+        // one ecrecover + one 65-byte sig; the revealer sig below still pins committerMoveHash so
+        // the committer cannot change their move and cannot be impersonated.
+        if (msg.sender != committer) {
+            revert NotCommitter();
+        }
+
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
+
+        {
+            SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: entry.turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: entry.revealerMoveIndex,
+                revealerSalt: entry.revealerSalt,
+                revealerExtraData: entry.revealerExtraData
+            });
+            bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+            if (ECDSA.recoverCalldata(digest, entry.revealerSig) != revealer) {
+                revert InvalidSignature();
+            }
+        }
+
+        uint256 packed;
+        if (entry.turnId % 2 == 0) {
+            packed = _packBufferedTurn(
+                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt,
+                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt
+            );
+        } else {
+            packed = _packBufferedTurn(
+                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt,
+                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt
+            );
+        }
+
+        moveBuffer[storageKey][entry.turnId] = packed;
+        unchecked {
+            bufferCounters[storageKey] =
+                uint256(numExecuted) | (uint256(numBuffered + 1) << 64) | (uint256(uint64(block.timestamp)) << 128);
+        }
+    }
+
+    /// @notice Drain every currently buffered turn in one transaction. Anyone can call.
+    function executeBuffered(bytes32 battleKey) external {
+        _executeBuffered(battleKey, ENGINE.getStorageKey(battleKey));
+    }
+
+    function _executeBuffered(bytes32 battleKey, bytes32 storageKey) internal {
+        uint256 packedCounters = bufferCounters[storageKey];
+        uint64 numExecuted = uint64(packedCounters);
+        uint64 numBuffered = uint64(packedCounters >> 64);
+        if (numBuffered == 0) {
+            revert EmptyBuffer();
+        }
+
+        uint256[] memory entries = new uint256[](numBuffered);
+        for (uint64 i = 0; i < numBuffered; i++) {
+            entries[i] = moveBuffer[storageKey][numExecuted + i];
+        }
+        (uint64 executedThisBatch,) = ENGINE.executeBatchedTurns(battleKey, entries);
+
+        unchecked {
+            bufferCounters[storageKey] =
+                uint256(numExecuted + executedThisBatch) | (uint256(uint64(block.timestamp)) << 128);
+        }
+    }
+
+    function getBufferStatus(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint64 numBuffered, uint64 lastSubmitTimestamp)
+    {
+        uint256 packed = bufferCounters[ENGINE.getStorageKey(battleKey)];
+        numExecuted = uint64(packed);
+        numBuffered = uint64(packed >> 64);
+        lastSubmitTimestamp = uint64(packed >> 128);
+    }
+
+    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+        external
+        view
+        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+    {
+        return _unpackBufferedTurn(moveBuffer[ENGINE.getStorageKey(battleKey)][turnId]);
+    }
+
+    function _packBufferedTurn(
+        uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt
+    ) internal pure returns (uint256 packed) {
+        packed = uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p0Salt) << 24)
+            | (uint256(p1Move) << 128) | (uint256(p1Extra) << 136) | (uint256(p1Salt) << 152);
+    }
+
+    function _unpackBufferedTurn(uint256 packed)
+        internal
+        pure
+        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+    {
+        p0Move = uint8(packed);
+        p0Extra = uint16(packed >> 8);
+        p0Salt = uint104(packed >> 24);
+        p1Move = uint8(packed >> 128);
+        p1Extra = uint16(packed >> 136);
+        p1Salt = uint104(packed >> 152);
     }
 }

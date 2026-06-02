@@ -8,19 +8,12 @@ import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {StatBoosts} from "../../effects/StatBoosts.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract Chronoffense is IMoveSet {
     uint32 public constant BP_COEFFICIENT = 20;
     uint32 public constant BP_CAP = 999;
     uint8 public constant BOOST_PERCENT = 25;
-
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
 
     function name() public pure returns (string memory) {
         return "Chronoffense";
@@ -59,7 +52,7 @@ contract Chronoffense is IMoveSet {
                 boostPercent: BOOST_PERCENT,
                 boostType: StatBoostType.Multiply
             });
-            STAT_BOOSTS.addStatBoosts(engine, attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Temp);
+            engine.addStatBoost(attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Temp);
             return;
         }
 

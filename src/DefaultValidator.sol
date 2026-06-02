@@ -126,14 +126,17 @@ contract DefaultValidator is IValidator {
         view
         returns (bool)
     {
-        // Use batch context to minimize external calls (reduces SLOADs significantly)
-        ValidationContext memory vctx = ENGINE.getValidationContext(battleKey);
-        uint256 activeMonIndex = (playerIndex == 0) ? vctx.p0ActiveMonIndex : vctx.p1ActiveMonIndex;
-        bool isActiveMonKnockedOut = (playerIndex == 0) ? vctx.p0ActiveMonKnockedOut : vctx.p1ActiveMonKnockedOut;
+        // Inline validation is the production path; the default validator is no longer perf-critical,
+        // so it reads granular getters directly (the batched getValidationContext was removed to shrink
+        // the engine's external surface). Only the acting player's data is needed.
+        uint64 turnId = uint64(ENGINE.getTurnIdForBattleState(battleKey));
+        uint256 activeMonIndex = ENGINE.getActiveMonIndexForBattleState(battleKey)[playerIndex];
+        bool isActiveMonKnockedOut =
+            ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.IsKnockedOut) == 1;
 
         // Use library for basic validation
         (, bool isNoOp, bool isSwitch, bool isRegularMove, bool basicValid) =
-            ValidatorLogic.validatePlayerMoveBasics(moveIndex, vctx.turnId, isActiveMonKnockedOut, MOVES_PER_MON);
+            ValidatorLogic.validatePlayerMoveBasics(moveIndex, turnId, isActiveMonKnockedOut, MOVES_PER_MON);
 
         if (!basicValid) {
             return false;
@@ -147,65 +150,23 @@ contract DefaultValidator is IValidator {
         // Switch validation
         if (isSwitch) {
             uint256 monToSwitchIndex = uint256(extraData);
-            return _validateSwitchInternalWithContext(battleKey, playerIndex, monToSwitchIndex, vctx);
+            bool isTargetKnockedOut =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
+            return ValidatorLogic.validateSwitch(turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, MONS_PER_TEAM);
         }
 
         // Regular move validation
         if (isRegularMove) {
-            return _validateSpecificMoveSelectionWithContext(battleKey, moveIndex, playerIndex, extraData, activeMonIndex, vctx);
+            uint32 baseStamina = ENGINE.getMonStatsForBattle(battleKey, playerIndex, activeMonIndex).stamina;
+            int32 staminaDelta =
+                ENGINE.getMonStateForBattle(battleKey, playerIndex, activeMonIndex, MonStateIndexName.Stamina);
+            uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
+            return ValidatorLogic.validateSpecificMoveSelection(
+                ENGINE, battleKey, rawMoveSlot, playerIndex, activeMonIndex, extraData, baseStamina, staminaDelta
+            );
         }
 
         return true;
-    }
-
-    // Internal version using ValidationContext to avoid redundant SLOADs
-    function _validateSwitchInternalWithContext(
-        bytes32 battleKey,
-        uint256 playerIndex,
-        uint256 monToSwitchIndex,
-        ValidationContext memory vctx
-    ) internal view returns (bool) {
-        uint256 activeMonIndex = (playerIndex == 0) ? vctx.p0ActiveMonIndex : vctx.p1ActiveMonIndex;
-
-        // Still need external call to check if switch target is KO'd (not in context)
-        bool isTargetKnockedOut =
-            ENGINE.getMonStateForBattle(battleKey, playerIndex, monToSwitchIndex, MonStateIndexName.IsKnockedOut) == 1;
-
-        return ValidatorLogic.validateSwitch(
-            vctx.turnId,
-            activeMonIndex,
-            monToSwitchIndex,
-            isTargetKnockedOut,
-            MONS_PER_TEAM
-        );
-    }
-
-    // Internal version using ValidationContext for stamina check
-    function _validateSpecificMoveSelectionWithContext(
-        bytes32 battleKey,
-        uint256 moveIndex,
-        uint256 playerIndex,
-        uint16 extraData,
-        uint256 activeMonIndex,
-        ValidationContext memory vctx
-    ) internal view returns (bool) {
-        // Use pre-fetched stamina values from context
-        uint32 baseStamina = (playerIndex == 0) ? vctx.p0ActiveMonBaseStamina : vctx.p1ActiveMonBaseStamina;
-        int32 staminaDelta = (playerIndex == 0) ? vctx.p0ActiveMonStaminaDelta : vctx.p1ActiveMonStaminaDelta;
-
-        // Still need external call to get the move (can't batch all moves)
-        uint256 rawMoveSlot = ENGINE.getMoveForMonForBattle(battleKey, playerIndex, activeMonIndex, moveIndex);
-
-        return ValidatorLogic.validateSpecificMoveSelection(
-            ENGINE,
-            battleKey,
-            rawMoveSlot,
-            playerIndex,
-            activeMonIndex,
-            extraData,
-            baseStamina,
-            staminaDelta
-        );
     }
 
     /*

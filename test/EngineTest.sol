@@ -200,7 +200,7 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), ALICE);
 
         // Assert that the staminaDelta was set correctly
-        assertEq(engine.getMonStateForStorageKey(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
     }
 
     // Regression: getBattle must not revert when the battle has ended and its
@@ -346,7 +346,7 @@ contract EngineTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), BOB);
 
         // Assert that the staminaDelta was set correctly for Bob's mon
-        assertEq(engine.getMonStateForStorageKey(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
     }
 
     function _setup2v2FasterPriorityBattleAndForceSwitch() internal returns (bytes32) {
@@ -456,7 +456,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that the staminaDelta was set correctly for Bob's mon
         // (we used two attacks of 1 stamina, so -2)
-        assertEq(engine.getMonStateForStorageKey(battleKey, 1, 0, MonStateIndexName.Stamina), -2);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -2);
     }
 
     function test_fasterPriorityKOsForcesSwitchCorrectlyFailsOnInvalidSwitchReveal() public {
@@ -560,7 +560,7 @@ contract EngineTest is Test, BattleHelper {
         (, BattleData memory state) = engine.getBattle(battleKey);
 
         // Assert that the staminaDelta was set correctly (2 moves spent) for the winning mon
-        assertEq(engine.getMonStateForStorageKey(battleKey, state.winnerIndex, 0, MonStateIndexName.Stamina), -2);
+        assertEq(engine.getMonStateForBattle(battleKey, state.winnerIndex, 0, MonStateIndexName.Stamina), -2);
     }
 
     function test_switchPriorityIsFasterThanMove() public {
@@ -1213,8 +1213,10 @@ contract EngineTest is Test, BattleHelper {
         // (We have a check for 2 instead of 1 to avoid confusing it with the base case state)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint16(1), 0);
 
-        // Assert that the temporary stat boost effect is updated to 2 because the roundEnd hook also runs
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Attack), 2);
+        // Both hooks apply the same-keyed +100% Attack multiply (they merge): onApply takes base 1
+        // -> 2 (delta +1), onRoundEnd -> 4 (delta +3). The +3 confirms BOTH hooks ran on the
+        // post-switch mon (delta would be +1 if only onApply had run).
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Attack), 3);
     }
 
     function test_moveKOSupersedesRoundEndEffectKOForGameEnd() public {

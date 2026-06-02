@@ -53,13 +53,14 @@ chomp/
 │   │   ├── OkayCPU.sol            # Mid-tier opponent
 │   │   ├── CPUMoveManager.sol     # Wraps Engine.execute for CPU-driven battles
 │   │   └── ICPU.sol
-│   ├── effects/            # Effect system (status effects, stat boosts, battlefield)
+│   ├── effects/            # Effect system (status effects, battlefield)
 │   │   ├── IEffect.sol     # Effect interface with lifecycle hooks
 │   │   ├── BasicEffect.sol
 │   │   ├── StaminaRegen.sol
-│   │   ├── StatBoosts.sol
 │   │   ├── status/         # Status effects (Burn, Frostbite, Panic, Sleep, Zap) + StatusEffectLib
 │   │   ├── battlefield/    # Battlefield effects (Overclock)
+│   │   # NOTE: stat boosts are inlined into the Engine (see "Stat Boosts" below); the math
+│   │   #       helpers live in src/lib/StatBoostLib.sol, there is no StatBoosts effect contract.
 │   ├── game-layer/         # Team / mon registry, gacha, exp, facets, quests, gifts
 │   │   ├── GachaTeamRegistry.sol   # Concrete leaf: composes the abstracts below
 │   │   ├── MonOwnership.sol        # monsOwned set + ownership view/check helpers
@@ -220,6 +221,30 @@ Effects implement `IEffect` with a bitmap indicating which lifecycle steps they 
 
 Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` effect is a global default that regenerates 1 stamina per turn.
 
+### Stat Boosts (inlined into the Engine)
+
+Stat modifiers are **not** a separate effect contract — they are native Engine functions:
+`addStatBoost` / `addKeyedStatBoost` / `removeStatBoost` / `removeKeyedStatBoost` / `clearAllStatBoosts`
+(declared in `IEngine`). Moves, abilities, and shared effects (`BurnStatus`, `FrostbiteStatus`,
+`Overclock`, `UpOnly`, `Tinderclaws`, …) call `engine.addStatBoost(...)` directly during `execute`.
+The packing/aggregation math lives in `src/lib/StatBoostLib.sol`. (Historically this was an external
+`StatBoosts` effect that the Engine called back into ~10–15× per application; inlining removed those
+round-trips.)
+
+How it works:
+- Each boost **source** is one packed entry stored in the mon's normal effect mapping under the
+  `STAT_BOOST_ADDRESS` sentinel (steps bitmap `STAT_BOOST_STEPS` = `OnMonSwitchOut | ALWAYS_APPLIES`).
+  Sources are keyed by `msg.sender` (or `msg.sender` + a salt string), so each move/ability/effect
+  stacks independently and can remove its own boost. Boosts are **multiplicative** per source; `Temp`
+  boosts are dropped automatically on switch-out (`_inlineStatBoostSwitchOut`), `Perm` ones persist.
+- Boosts apply only to the 5 stat deltas: `Speed`, `Attack`, `Defense`, `SpecialAttack`,
+  `SpecialDefense`. There is **no globalKV snapshot** — the Engine telescopes off the live `monState`
+  delta (`new boosted − base − currentDelta`) and fires `OnUpdateMonState` like any other delta write.
+- **Ownership invariant:** the stat-boost system is the *sole* writer of those 5 deltas. External
+  `updateMonState` calls with `Speed`..`SpecialDefense` **revert with `StatRequiresStatBoost`** — to
+  change a stat you must go through `add`/`removeStatBoost`, never `updateMonState`. (`Hp`, `Stamina`,
+  `IsKnockedOut`, `ShouldSkipTurn` remain writable via `updateMonState`.)
+
 ### Type System
 
 16 types: Yin, Yang, Earth, Liquid, Fire, Metal, Ice, Nature, Lightning, Mythic, Air, Math, Cyber, Wild, Cosmic, None. Type effectiveness is calculated by `ITypeCalculator`.
@@ -254,8 +279,10 @@ playerData[address] (1 slot per player):
   bit 254       isWhitelistedAsOpponent (admin-set; replaces a separate mapping)
   bit 253       isHardCpu (only meaningful when bit 254 is set)
   bits 250-252  streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
+  bits 224-249  (reserved)
   bits 192-223  lastQuestCompletedDay (uint32 calendar day)
-  bits 128-159  lastFirstGameTimestamp (uint32 seconds since epoch)
+  bits 160-191  lastSeenTimestamp (uint32 seconds; last battle of ANY kind — drives streak grace/reset)
+  bits 128-159  lastFirstGameTimestamp (uint32 seconds; last streak-bonus game — gates the 24h cooldown)
   bits 0-127    pointsBalance (uint128)
 
 packedExpForMon[player][monId / 16]: 16 mons × 16 bits each, capped at 65535.
@@ -263,10 +290,15 @@ facetData[player][monId / 16]:        16 mons × 16 bits each
                                        (bits 0-11 unlockedBitmap, bits 12-15 assignedFacetId).
 ```
 
-Streak is timestamp-driven (not calendar-day): a battle counts as "first of day"
-when ≥24h have passed since `lastFirstGameTimestamp`. A gap >36h
-(`STREAK_GRACE_WINDOW`) resets `streakDay` to 1; otherwise it ratchets up
-toward the cap of `STREAK_FLAT_BONUS_MAX` (= 5).
+Streak is timestamp-driven (not calendar-day): a battle qualifies for the streak bonus
+when ≥24h have passed since `lastFirstGameTimestamp` (the last *bonus-earning* game). On a
+qualifying battle the ratchet-vs-reset decision is measured from `lastSeenTimestamp` (the
+last battle of *any* kind, advanced every battle): a gap >36h (`STREAK_GRACE_WINDOW`) of
+genuine inactivity resets `streakDay` to 1, otherwise it ratchets up toward the cap of
+`STREAK_FLAT_BONUS_MAX` (= 5). Splitting the two anchors is deliberate — measuring the
+reset from the bonus anchor instead would strand players who play slightly more often than
+once per 24h (their sub-24h plays advance no anchor, so the next day reads a phantom ~46h
+gap and resets the streak forever).
 
 Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws` walks the team in one pass and coalesces SSTOREs by bucket.
 
@@ -293,8 +325,8 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 ### Storage Architecture
 
 - `BattleData` and `BattleConfig` are stored per battle key (derived from player addresses)
-- `MonState` tracks deltas from base stats (hpDelta, staminaDelta, etc.)
-- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon)
+- `MonState` tracks deltas from base stats (hpDelta, staminaDelta, etc.). The 5 stat deltas are written only by the inlined stat-boost path (see "Stat Boosts"); other deltas via `updateMonState`.
+- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources reuse these same mappings under the `STAT_BOOST_ADDRESS` sentinel.
 - Heavy use of bit packing for gas efficiency (KO bitmaps, effect counts, active mon indices)
 - Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`)
 - `GachaTeamRegistry`'s storage is the union of its abstract bases; each base owns its own mappings/constants so the leaf is integration-only. Reordering the inheritance list would shift slot layout — keep the order in `GachaTeamRegistry.sol` stable across deploys.
@@ -417,7 +449,7 @@ Effects fall into several categories depending on scope:
 
 - **Status effects** (`src/effects/status/`): Extend `StatusEffect` which enforces one-status-per-mon via a KV flag. Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
 - **Battlefield effects** (`src/effects/battlefield/`): Extend `BasicEffect`, use `targetIndex=2` for global scope. (e.g., `Overclock`)
-- **Shared utility effects** (`src/effects/`): Deployed once, used by many contracts. (e.g., `StatBoosts` for stat modifiers, `StaminaRegen` for per-turn recovery)
+- **Shared utility effects** (`src/effects/`): Deployed once, used by many contracts. (e.g., `StaminaRegen` for per-turn recovery). NOTE: stat modifiers are **not** an effect — they are inlined Engine functions (`addStatBoost`/`removeStatBoost`/…); see "Stat Boosts" above.
 - **Mon-local effects** (`src/mons/<monname>/`): Abilities or move-effect hybrids that only apply to one mon. These live in the mon's directory, not in `src/effects/`.
 
 To implement a new effect:

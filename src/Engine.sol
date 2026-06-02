@@ -11,6 +11,7 @@ import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
 import {ICommitManager} from "./commit-manager/ICommitManager.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
+import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {TimeoutCheckParams, ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
@@ -42,16 +43,21 @@ contract Engine is IEngine, MappingAllocator {
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
     int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
-    // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.)
-    // A non-zero encoded move is the "transient is populated for this call" signal.
-    uint256 private transient _turnP0MoveEncoded;
-    uint256 private transient _turnP1MoveEncoded;
-    uint104 private transient _turnP0Salt;
-    uint104 private transient _turnP1Salt;
+    // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.).
+    // Packed per player into ONE transient slot: [salt: bits 0-103 | encoded move: bits 104-127].
+    // The encoded move is always nonzero when populated (it carries IS_REAL_TURN_BIT) and salt is only
+    // ever written paired with it, so `packed != 0` is exactly the "transient is populated this call"
+    // signal — and the salt read collapses from two transient loads to one.
+    uint256 private transient _turnP0Packed;
+    uint256 private transient _turnP1Packed;
 
     // Errors
     error NoWriteAllowed();
     error WrongCaller();
+    // The 5 stat deltas (Speed/Attack/Defense/SpecialAttack/SpecialDefense) are owned exclusively by
+    // the inlined stat-boost system; they can only be written via add/removeStatBoost so the boost
+    // aggregation (which telescopes off the live delta) can't be silently clobbered.
+    error StatRequiresStatBoost();
     error MatchmakerNotAuthorized();
     error MatchmakerError();
     error MovesNotSet();
@@ -116,7 +122,7 @@ contract Engine is IEngine, MappingAllocator {
         pairHashNonces[pairHash] += 1;
 
         // Ensure that the matchmaker validates the match for both players
-        if (!matchmaker.validateMatch(battleKey, battle.p0) || !matchmaker.validateMatch(battleKey, battle.p1)) {
+        if (!matchmaker.validateMatch(battleKey, battle.p0, battle.p1)) {
             revert MatchmakerError();
         }
 
@@ -174,6 +180,7 @@ contract Engine is IEngine, MappingAllocator {
         config.packedP1EffectsCount = 0;
         config.koBitmaps = 0;
         config.globalKVCount = 0;
+        config.playerEffectStepsUnion = 0;
 
         // teamIndices narrowed from Battle.uint96; phantom-team writes truncate to match.
         battleData[battleKey] = BattleData({
@@ -182,7 +189,6 @@ contract Engine is IEngine, MappingAllocator {
             p0TeamIndex: uint16(battle.p0TeamIndex),
             p1TeamIndex: uint16(battle.p1TeamIndex),
             winnerIndex: 2, // Initialize to 2 (uninitialized/no winner)
-            prevPlayerSwitchForTurnFlag: 0,
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
             activeMonIndex: 0, // Defaults to 0 (both players start with mon index 0)
             turnId: 0,
@@ -302,7 +308,7 @@ contract Engine is IEngine, MappingAllocator {
             revert MovesNotSet();
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @notice Combined setMove + setMove + execute for gas optimization
@@ -328,16 +334,16 @@ contract Engine is IEngine, MappingAllocator {
             revert WrongCaller();
         }
 
-        // Populate transient directly. _executeInternal sees non-zero _turnP0MoveEncoded and skips the
+        // Populate transient directly. _executeInternal sees non-zero _turnP0Packed and skips the
         // mirror-from-storage step. No SSTORE happens; transient auto-clears at tx end in prod.
         uint8 p0StoredMoveIndex = p0MoveIndex < SWITCH_MOVE_INDEX ? p0MoveIndex + MOVE_INDEX_OFFSET : p0MoveIndex;
         uint8 p1StoredMoveIndex = p1MoveIndex < SWITCH_MOVE_INDEX ? p1MoveIndex + MOVE_INDEX_OFFSET : p1MoveIndex;
-        _turnP0MoveEncoded = (uint256(p0StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0ExtraData) << 8);
-        _turnP1MoveEncoded = (uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8);
-        _turnP0Salt = p0Salt;
-        _turnP1Salt = p1Salt;
+        _turnP0Packed =
+            _packTurn((uint256(p0StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0ExtraData) << 8), p0Salt);
+        _turnP1Packed =
+            _packTurn((uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8), p1Salt);
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @notice Combined single-player setMove + execute for forced switch turns
@@ -364,14 +370,95 @@ contract Engine is IEngine, MappingAllocator {
         uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
         uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
         if (playerIndex == 0) {
-            _turnP0MoveEncoded = encoded;
-            _turnP0Salt = salt;
+            _turnP0Packed = _packTurn(encoded, salt);
         } else {
-            _turnP1MoveEncoded = encoded;
-            _turnP1Salt = salt;
+            _turnP1Packed = _packTurn(encoded, salt);
         }
 
-        return _executeInternal(battleKey, storageKey);
+        return _executeInternal(battleKey, storageKey, true);
+    }
+
+    /// @notice Execute every buffered turn in `entries` in one tx by looping `_executeInternal`
+    ///         with DIRECT storage. The EVM keeps each slot warm across sub-turns, so cold SLOADs
+    ///         are paid once per batch and amortized for free — no transient shadow layer.
+    /// @dev Only callable by the registered moveManager. Each `entries[i]` packs:
+    ///        [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]
+    ///      Flag-based dispatch reads the live `playerSwitchForTurnFlag` to pick the acting half
+    ///      (the non-acting player's half is a NO_OP the engine ignores). Returns the number of
+    ///      sub-turns actually executed and the winner (zero address if the game continues).
+    function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner)
+    {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        BattleConfig storage config = battleConfig[storageKey];
+        if (msg.sender != config.moveManager) {
+            revert WrongCaller();
+        }
+
+        for (uint256 i = 0; i < entries.length; i++) {
+            uint256 entry = entries[i];
+            uint8 p0Move = uint8(entry);
+            uint16 p0Extra = uint16(entry >> 8);
+            uint104 p0Salt = uint104(entry >> 24);
+            uint8 p1Move = uint8(entry >> 128);
+            uint16 p1Extra = uint16(entry >> 136);
+            uint104 p1Salt = uint104(entry >> 152);
+
+            // Live flag read (direct storage, warm after the first sub-turn).
+            uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+            if (flag == 2) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+            } else if (flag == 0) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+            } else {
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+            }
+
+            winner = _executeInternal(battleKey, storageKey, false);
+            executed++;
+            if (winner != address(0)) {
+                break;
+            }
+
+            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx.
+            _turnP0Packed = 0;
+            _turnP1Packed = 0;
+            tempRNG = 0;
+            koOccurredFlag = 0;
+            tempPreDamage = 0;
+            effectsDirtyBitmap = 0;
+        }
+        // The batched flow emits NO per-turn events (each sub-turn passes emitEvents=false to
+        // _executeInternal: no EngineExecute, no MonMoves). The submitter already holds every
+        // move + salt from the batch calldata, so the per-turn logs would be pure overhead
+        // (~1.6k gas/turn for MonMoves). Indexers reconstruct from the call's calldata.
+    }
+
+    /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
+    ///         the engine's slot-reused storageKey (warm SSTOREs on subsequent battles).
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32) {
+        return _getStorageKey(battleKey);
+    }
+
+    /// @notice Minimal context for the batched submit flow: only the fields submitTurnMoves needs.
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey)
+    {
+        storageKey = _resolveStorageKey(battleKey);
+        BattleData storage data = battleData[battleKey];
+        p0 = data.p0;
+        p1 = data.p1;
+        turnId = data.turnId;
+        winnerIndex = data.winnerIndex;
     }
 
     /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
@@ -382,6 +469,13 @@ contract Engine is IEngine, MappingAllocator {
         m.extraData = uint16(encoded >> 8);
     }
 
+    /// @dev Packs a current-turn (encoded move, salt) pair into one transient word:
+    /// [salt: bits 0-103 | encoded move: bits 104-127]. Companion to the unpacks in
+    /// _getCurrentTurnMove / _getCurrentTurnSalt.
+    function _packTurn(uint256 encoded, uint104 salt) private pure returns (uint256) {
+        return uint256(salt) | (encoded << 104);
+    }
+
     /// @dev Returns the current turn's MoveDecision for `playerIndex`. During an active
     /// execute, reads from transient storage (populated at the start of _executeInternal).
     function _getCurrentTurnMove(BattleConfig storage config, uint256 playerIndex)
@@ -389,25 +483,26 @@ contract Engine is IEngine, MappingAllocator {
         view
         returns (MoveDecision memory)
     {
-        uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
+        uint256 encoded = (playerIndex == 0 ? _turnP0Packed : _turnP1Packed) >> 104;
         if (encoded != 0) {
             return _decodeMove(encoded);
         }
         return playerIndex == 0 ? config.p0Move : config.p1Move;
     }
 
-    /// @dev Salt companion to `_getCurrentTurnMove`.
+    /// @dev Salt companion to `_getCurrentTurnMove`. One transient load covers both the
+    /// "populated?" check and the salt extraction.
     function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint104) {
-        uint256 encoded = playerIndex == 0 ? _turnP0MoveEncoded : _turnP1MoveEncoded;
-        if (encoded != 0) {
-            return playerIndex == 0 ? _turnP0Salt : _turnP1Salt;
+        uint256 packed = playerIndex == 0 ? _turnP0Packed : _turnP1Packed;
+        if (packed != 0) {
+            return uint104(packed);
         }
         return playerIndex == 0 ? config.p0Salt : config.p1Salt;
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey) internal returns (address winner) {
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitEvents) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -420,15 +515,12 @@ contract Engine is IEngine, MappingAllocator {
         // `cameFromDirectMoveInput` detects whether transient was pre-populated by executeWithMoves
         // or executeWithSingleMove
         // (non-zero at entry) vs. a plain execute() call (transient is zero, helpers fall back to storage).
-        bool cameFromDirectMoveInput = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
+        bool cameFromDirectMoveInput = _turnP0Packed != 0 || _turnP1Packed != 0;
 
         // Set up turn / player vars
         uint256 turnId = battle.turnId;
         uint256 playerSwitchForTurnFlag = 2;
         uint256 priorityPlayerIndex;
-
-        // Store the prev player switch for turn flag
-        battle.prevPlayerSwitchForTurnFlag = battle.playerSwitchForTurnFlag;
 
         // Set the battle key for the stack frame
         // (gets cleared at the end of the transaction)
@@ -450,9 +542,14 @@ contract Engine is IEngine, MappingAllocator {
         // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
         // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
         // are zero the emit is skipped entirely.
+        // Batched flows (executeBatchedTurns) pass emitEvents=false: the submitter already
+        // holds every move + salt (they're in the batch/submit calldata), so the per-turn
+        // MonMoves log is pure overhead there (~1.6k gas/turn) and is skipped.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
+        if (emitEvents) {
+            _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
+        }
 
         // If only a single player has a move to submit, then we don't trigger any effects
         // (Basically this only handles switching mons for now)
@@ -709,8 +806,10 @@ contract Engine is IEngine, MappingAllocator {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
             _handleGameOver(battleKey, winner);
 
-            // Still emit execute event
-            emit EngineExecute(battleKey);
+            // Single-execute paths emit EngineExecute + MonMoves; the batched flow passes
+            // emitEvents=false (no per-turn and no batch-level emit — the submitter already
+            // holds the full move list from the batch calldata).
+            if (emitEvents) emit EngineExecute(battleKey);
             return winner;
         }
 
@@ -728,9 +827,9 @@ contract Engine is IEngine, MappingAllocator {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-        battle.lastExecuteTimestamp = uint48(block.timestamp);
+        battle.lastExecuteTimestamp = uint40(block.timestamp);
 
-        emit EngineExecute(battleKey);
+        if (emitEvents) emit EngineExecute(battleKey);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
@@ -744,12 +843,16 @@ contract Engine is IEngine, MappingAllocator {
     /// Note: this loses `setMove`'s `isForCurrentBattle` cache hit (Engine.sol:1454) on the next setMove,
     /// adding one warm SLOAD per call. Production never calls this so the regression is test-only.
     function resetCallContext() external {
-        _turnP0MoveEncoded = 0;
-        _turnP1MoveEncoded = 0;
-        _turnP0Salt = 0;
-        _turnP1Salt = 0;
+        _turnP0Packed = 0;
+        _turnP1Packed = 0;
         battleKeyForWrite = bytes32(0);
         storageKeyForWrite = bytes32(0);
+        // Per-turn transients that `executeBatchedTurns` resets between sub-turns; cleared here too
+        // so each call starts like a fresh tx (these auto-clear at tx end in prod).
+        tempRNG = 0;
+        koOccurredFlag = 0;
+        tempPreDamage = 0;
+        effectsDirtyBitmap = 0;
     }
 
     function end(bytes32 battleKey) external {
@@ -899,20 +1002,23 @@ contract Engine is IEngine, MappingAllocator {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
 
-        // Trigger OnUpdateMonState lifecycle hook only if any per-mon effect could listen.
-        // Skipping saves the abi.encode(4-tuple) allocation + _runEffects shell overhead when no
-        // OnUpdateMonState consumers are registered on this mon (the common case).
+        // Trigger OnUpdateMonState lifecycle hook only if some player effect actually listens at it
+        // (battle-wide union) AND this mon has effects. OnUpdateMonState has a single listener in the
+        // whole game (Dreamcatcher), so the union bit is unset in almost every battle — skipping the
+        // abi.encode(4-tuple) + _runEffects shell entirely. Stat-boost delta writes hit this path a lot.
         uint256 updateMonStateCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (updateMonStateCount > 0) {
+        if (updateMonStateCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0) {
             _runEffects(
                 battleKey,
                 tempRNG,
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd)
+                abi.encode(playerIndex, monIndex, stateVarIndex, valueToAdd),
+                type(uint256).max
             );
         }
     }
@@ -922,6 +1028,13 @@ contract Engine is IEngine, MappingAllocator {
     {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
+        }
+        // Speed(2)..SpecialDefense(6) are the stat-boost-owned deltas — reject direct writes so they
+        // can only change through add/removeStatBoost (the internal stat-boost path bypasses this by
+        // calling _updateMonStateInternal directly). Hp/Stamina/IsKnockedOut/ShouldSkipTurn stay open.
+        uint256 idx = uint256(stateVarIndex);
+        if (idx >= uint256(MonStateIndexName.Speed) && idx <= uint256(MonStateIndexName.SpecialDefense)) {
+            revert StatRequiresStatBoost();
         }
         _updateMonStateInternal(playerIndex, monIndex, stateVarIndex, valueToAdd);
     }
@@ -1020,6 +1133,12 @@ contract Engine is IEngine, MappingAllocator {
             if (!removeAfterRun) {
                 // Add to the appropriate effects mapping based on targetIndex
                 BattleConfig storage config = battleConfig[storageKeyForWrite];
+
+                // Record which steps any PLAYER effect now listens at, so the per-mon step pipelines
+                // can skip the _runEffects shell when nothing listens (see playerEffectStepsUnion).
+                if (targetIndex != 2) {
+                    config.playerEffectStepsUnion |= stepsBitmap;
+                }
 
                 if (targetIndex == 2) {
                     // Global effects use simple sequential indexing
@@ -1123,11 +1242,312 @@ contract Engine is IEngine, MappingAllocator {
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Inlined stat boosts
+    //
+    // Formerly the standalone `StatBoosts` effect contract. Boost sources are stored in the normal
+    // per-mon effect mappings under the STAT_BOOST_ADDRESS sentinel (stepsBitmap = STAT_BOOST_STEPS),
+    // and the aggregated multiplier snapshot lives in globalKV — both already recycled across battles
+    // by the MappingAllocator-managed storageKey, so no new storage is introduced. Callers (moves,
+    // abilities, shared effects) invoke these directly during execute, so the boost-source key is
+    // still derived from msg.sender exactly as it was when StatBoosts saw the caller. The math lives
+    // in StatBoostLib; here we only touch storage and fire the OnUpdateMonState pipeline via
+    // _updateMonStateInternal (matching the legacy updateMonState path).
+    // ---------------------------------------------------------------------------------------------
+
+    /// @notice Apply a stat-boost source keyed by msg.sender (no salt). Merges into an existing
+    ///         same-source/same-permanence entry if present.
+    function addStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag
+    ) external {
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        uint168 key = StatBoostLib.generateKeyNoSalt(targetIndex, monIndex, msg.sender);
+        _addStatBoostWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
+    }
+
+    /// @notice Apply a stat-boost source keyed by (msg.sender, salt string) so one caller can hold
+    ///         multiple independent boost instances on the same mon.
+    function addKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external {
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        uint168 key = StatBoostLib.generateKey(targetIndex, monIndex, msg.sender, keyToUse);
+        _addStatBoostWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
+    }
+
+    /// @notice Remove the msg.sender-keyed stat-boost source of the given permanence (if any) and
+    ///         recompute the mon's boosted stats.
+    function removeStatBoost(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) external {
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        uint168 key = StatBoostLib.generateKeyNoSalt(targetIndex, monIndex, msg.sender);
+        _removeStatBoostWithKey(targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
+    }
+
+    /// @notice Remove a (msg.sender, salt)-keyed stat-boost source.
+    function removeKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external {
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        uint168 key = StatBoostLib.generateKey(targetIndex, monIndex, msg.sender, keyToUse);
+        _removeStatBoostWithKey(targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
+    }
+
+    /// @notice Remove every stat-boost source on a mon and reset its stats to base values.
+    function clearAllStatBoosts(uint256 targetIndex, uint256 monIndex) external {
+        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+
+        uint256 removeCount;
+        for (uint256 i; i < monEffectCount; ++i) {
+            EffectInstance storage eff = effects[baseSlot + i];
+            if (address(eff.effect) == STAT_BOOST_ADDRESS) {
+                eff.effect = IEffect(TOMBSTONE_ADDRESS);
+                unchecked { ++removeCount; }
+            }
+        }
+        if (removeCount == 0) return;
+
+        // Reset to base by applying with empty aggregation.
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        uint32[5] memory numBoostsPerStat;
+        uint256[5] memory accumulatedNumeratorPerStat;
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+    }
+
+    function _getStatBoostBaseStats(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
+        private
+        view
+        returns (uint32[5] memory stats)
+    {
+        MonStats storage monStats = _getTeamMon(config, targetIndex, monIndex).stats;
+        stats[0] = monStats.attack;
+        stats[1] = monStats.defense;
+        stats[2] = monStats.specialAttack;
+        stats[3] = monStats.specialDefense;
+        stats[4] = monStats.speed;
+    }
+
+    function _addStatBoostWithKey(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        bool isPerm,
+        uint168 key
+    ) private {
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+
+        bool found;
+        uint256 foundSlot;
+        bytes32 existingData;
+        uint32[5] memory numBoostsPerStat;
+        uint256[5] memory accumulatedNumeratorPerStat;
+
+        // Single pass: find the matching key AND aggregate every OTHER boost source on the mon.
+        for (uint256 i; i < monEffectCount; ++i) {
+            uint256 slotIndex = baseSlot + i;
+            EffectInstance storage eff = effects[slotIndex];
+            if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
+            bytes32 data = eff.data;
+            (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
+                StatBoostLib.unpackBoostData(data);
+            if (existingKey == key && effIsPerm == isPerm) {
+                found = true;
+                foundSlot = slotIndex;
+                existingData = data;
+                continue; // excluded from aggregation; merged version is added below
+            }
+            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
+        }
+
+        // Compute the new/merged source and add its contribution.
+        bytes32 newData;
+        {
+            uint8[5] memory finalPercents;
+            uint8[5] memory finalCounts;
+            bool[5] memory finalIsMul;
+            if (found) {
+                (, , uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) =
+                    StatBoostLib.unpackBoostData(existingData);
+                (finalPercents, finalCounts, finalIsMul) =
+                    StatBoostLib.mergeExistingAndNewBoosts(ep, ec, em, statBoostsToApply);
+                newData = StatBoostLib.packBoostDataWithArrays(key, isPerm, finalPercents, finalCounts, finalIsMul);
+            } else {
+                newData = StatBoostLib.packBoostData(key, isPerm, statBoostsToApply);
+                (, , finalPercents, finalCounts, finalIsMul) = StatBoostLib.unpackBoostData(newData);
+            }
+            StatBoostLib.accumulateBoosts(
+                baseStats, finalPercents, finalCounts, finalIsMul, numBoostsPerStat, accumulatedNumeratorPerStat
+            );
+        }
+
+        // Persist the source entry.
+        if (found) {
+            effects[foundSlot].data = newData;
+        } else {
+            _addStatBoostEffectSlot(config, targetIndex, monIndex, packedCounts, effects, monEffectCount, newData);
+        }
+
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+    }
+
+    function _removeStatBoostWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, bool isPerm) private {
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+
+        bool found;
+        uint256 foundSlot;
+        uint32[5] memory numBoostsPerStat;
+        uint256[5] memory accumulatedNumeratorPerStat;
+
+        for (uint256 i; i < monEffectCount; ++i) {
+            uint256 slotIndex = baseSlot + i;
+            EffectInstance storage eff = effects[slotIndex];
+            if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
+            (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
+                StatBoostLib.unpackBoostData(eff.data);
+            if (existingKey == key && effIsPerm == isPerm) {
+                found = true;
+                foundSlot = slotIndex;
+                continue; // removed: excluded from aggregation
+            }
+            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
+        }
+
+        if (!found) return;
+        effects[foundSlot].effect = IEffect(TOMBSTONE_ADDRESS);
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+    }
+
+    /// @dev Write a fresh stat-boost source into the next free per-mon effect slot. Mirrors the
+    ///      player-effect storage block in _addEffectInternal (count bump + dirty bit) but writes
+    ///      the sentinel address and fixed steps bitmap directly — no external IEffect calls.
+    function _addStatBoostEffectSlot(
+        BattleConfig storage config,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint96 packedCounts,
+        mapping(uint256 => EffectInstance) storage effects,
+        uint256 monEffectCount,
+        bytes32 data
+    ) private {
+        uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
+        EffectInstance storage effectSlot = effects[slotIndex];
+        effectSlot.effect = IEffect(STAT_BOOST_ADDRESS);
+        effectSlot.stepsBitmap = STAT_BOOST_STEPS;
+        effectSlot.data = data;
+        uint96 newCounts = _setMonEffectCount(packedCounts, monIndex, monEffectCount + 1);
+        if (targetIndex == 0) {
+            config.packedP0EffectsCount = newCounts;
+            effectsDirtyBitmap |= (1 << (1 + monIndex));
+        } else {
+            config.packedP1EffectsCount = newCounts;
+            effectsDirtyBitmap |= (1 << (9 + monIndex));
+        }
+    }
+
+    /// @dev Re-apply a mon's aggregated stat boosts by telescoping its monState deltas. The
+    ///      stat-boost system is the sole writer of the 5 stat-delta fields, so the current delta
+    ///      *is* the previous boost contribution (cleared == sentinel == 0): old boosted stat =
+    ///      base + currentDelta. We compute the new boosted stat and feed the difference through
+    ///      _updateMonStateInternal, which fires OnUpdateMonState for listeners exactly as before.
+    ///      No globalKV snapshot is kept — being inside the Engine we read the delta back directly.
+    function _applyStatBoosts(
+        BattleConfig storage config,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint32[5] memory baseStats,
+        uint32[5] memory numBoostsPerStat,
+        uint256[5] memory accumulatedNumeratorPerStat
+    ) private {
+        uint32[5] memory newBoostedStats =
+            StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
+
+        for (uint256 i; i < 5; ++i) {
+            // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
+            int32 valueToAdd = int32(newBoostedStats[i]) - int32(baseStats[i]) - _statBoostCurrentDelta(st, i);
+            if (valueToAdd != 0) {
+                _updateMonStateInternal(targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd);
+            }
+        }
+    }
+
+    /// @dev Current stat-boost delta for boost-index i (0:atk,1:def,2:spatk,3:spdef,4:speed),
+    ///      treating the cleared sentinel as 0.
+    function _statBoostCurrentDelta(MonState storage st, uint256 i) private view returns (int32) {
+        int32 d;
+        if (i == 0) d = st.attackDelta;
+        else if (i == 1) d = st.defenceDelta;
+        else if (i == 2) d = st.specialAttackDelta;
+        else if (i == 3) d = st.specialDefenceDelta;
+        else d = st.speedDelta;
+        return d == CLEARED_MON_STATE_SENTINEL ? int32(0) : d;
+    }
+
+    /// @dev Switch-out handling for stat-boost entries: in a single pass drop EVERY temp source on
+    ///      the mon (they all expire on switch-out) and re-aggregate the surviving permanent sources,
+    ///      applying the result once. _runEffects only routes here when it hits a temp entry; that
+    ///      first hit does all the work and tombstones its siblings, so the remaining temp slots are
+    ///      skipped by the loop's tombstone guard (collapses the legacy per-instance O(n^2) recompute).
+    function _inlineStatBoostSwitchOut(BattleConfig storage config, uint256 targetIndex, uint256 monIndex) private {
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        uint32[5] memory numBoostsPerStat;
+        uint256[5] memory accumulatedNumeratorPerStat;
+
+        for (uint256 i; i < monEffectCount; ++i) {
+            EffectInstance storage eff = effects[baseSlot + i];
+            if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
+            (bool effIsPerm, , uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
+                StatBoostLib.unpackBoostData(eff.data);
+            if (!effIsPerm) {
+                eff.effect = IEffect(TOMBSTONE_ADDRESS); // temp sources all expire on switch-out
+                continue;
+            }
+            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
+        }
+
+        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+    }
+
     function setGlobalKV(uint64 key, uint192 value) external {
-        bytes32 battleKey = battleKeyForWrite;
-        if (battleKey == bytes32(0)) {
+        if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
+        _setGlobalKV(key, value);
+    }
+
+    /// @dev Internal globalKV writer (assumes caller has gated on battleKeyForWrite). Shared by the
+    ///      external setGlobalKV and the inlined stat-boost snapshot path.
+    function _setGlobalKV(uint64 key, uint192 value) private {
         bytes32 storageKey = storageKeyForWrite;
         BattleConfig storage config = battleConfig[storageKey];
         uint40 timestamp = config.startTimestamp;
@@ -1198,10 +1618,13 @@ contract Engine is IEngine, MappingAllocator {
         uint256 monEffectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (monEffectCount > 0) {
+        // PreDamage has a single listener game-wide (Adaptor), so the union bit is unset in almost
+        // every battle — skip the pipeline (and the tempPreDamage round-trip) entirely.
+        if (monEffectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.PreDamage))) != 0) {
             tempPreDamage = damage;
             _runEffects(
-                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source)
+                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source), type(uint256).max
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
@@ -1223,15 +1646,18 @@ contract Engine is IEngine, MappingAllocator {
             // Lock in winner immediately if this KO ends the game
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
-        // Only run the AfterDamage hook pipeline if any per-mon effects could listen.
-        if (monEffectCount > 0) {
+        // Only run the AfterDamage hook pipeline if some player effect listens at it AND this mon
+        // has effects.
+        if (monEffectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterDamage))) != 0) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
                 playerIndex,
                 playerIndex,
                 EffectStep.AfterDamage,
-                abi.encode(damage, source)
+                abi.encode(damage, source),
+                type(uint256).max
             );
         }
     }
@@ -1288,11 +1714,11 @@ contract Engine is IEngine, MappingAllocator {
                 config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
             );
 
-            // Type effectiveness via TypeCalcLib (internal pure, no external call)
-            Mon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-            uint32 scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, defenderMon.stats.type1, basePower);
-            if (defenderMon.stats.type2 != Type.None) {
-                scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, defenderMon.stats.type2, scaledBasePower);
+            // Type effectiveness via TypeCalcLib (internal pure, no external call). Reuse the defender
+            // types already loaded into ctx instead of re-resolving the defender Mon from storage.
+            uint32 scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType1, basePower);
+            if (ctx.defenderType2 != Type.None) {
+                scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType2, scaledBasePower);
             }
 
             // Shared damage formula (same function the external path uses)
@@ -1452,7 +1878,7 @@ contract Engine is IEngine, MappingAllocator {
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
     {
-        bool isInsideExecute = _turnP0MoveEncoded != 0 || _turnP1MoveEncoded != 0;
+        bool isInsideExecute = _turnP0Packed != 0 || _turnP1Packed != 0;
 
         bool isForCurrentBattle = battleKeyForWrite == battleKey;
         bytes32 storageKey = isForCurrentBattle ? storageKeyForWrite : _getStorageKey(battleKey);
@@ -1471,11 +1897,9 @@ contract Engine is IEngine, MappingAllocator {
             uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
             uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
             if (playerIndex == 0) {
-                _turnP0MoveEncoded = encoded;
-                _turnP0Salt = salt;
+                _turnP0Packed = _packTurn(encoded, salt);
             } else {
-                _turnP1MoveEncoded = encoded;
-                _turnP1Salt = salt;
+                _turnP1Packed = _packTurn(encoded, salt);
             }
         } else {
             // Out-of-execute setMove (commit manager revealing across txs) - must persist to storage
@@ -1557,20 +1981,20 @@ contract Engine is IEngine, MappingAllocator {
         // Go through each effect to see if it should be cleared after a switch,
         // If so, remove the effect and the extra data
         if (!currentMonState.isKnockedOut) {
-            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "");
+            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
 
             // Then run the global on mon switch out hook as well
-            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "");
+            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
         }
 
         // Update to new active mon (we assume validateSwitch already resolved and gives us a valid target)
         battle.activeMonIndex = _setActiveMonIndex(battle.activeMonIndex, playerIndex, monToSwitchIndex);
 
         // Run onMonSwitchIn hook for local effects
-        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
 
         // Run onMonSwitchIn hook for global effects
-        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "");
+        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
         if (battle.turnId != 0 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
@@ -1731,7 +2155,8 @@ contract Engine is IEngine, MappingAllocator {
         uint256 effectIndex,
         uint256 playerIndex,
         EffectStep round,
-        bytes memory extraEffectsData
+        bytes memory extraEffectsData,
+        uint256 effectsCountHint
     ) internal {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
@@ -1742,22 +2167,27 @@ contract Engine is IEngine, MappingAllocator {
 
         uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
-        // Pre-compute loop metadata once (baseSlot, dirtyBit, effectsCount)
+        // Pre-compute loop metadata once (baseSlot, dirtyBit)
         // Bit 0: global, Bits 1-8: P0 mons 0-7, Bits 9-16: P1 mons 0-7
         uint256 baseSlot;
         uint256 dirtyBit;
-        uint256 effectsCount;
         if (effectIndex == 2) {
             dirtyBit = 1;
-            effectsCount = config.globalEffectsLength;
         } else if (effectIndex == 0) {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (1 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
         } else {
             baseSlot = _getEffectSlotIndex(monIndex, 0);
             dirtyBit = 1 << (9 + monIndex);
-            effectsCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
+        }
+
+        // Callers whose resolved count is for THIS list (the active mon, or the global list) thread it
+        // in to skip the initial read; everyone else passes the sentinel and we resolve it here. Note:
+        // callers like updateMonState/dealDamage hold a count for a possibly-benched mon, so they MUST
+        // pass the sentinel — the count below is always for `monIndex` (this player's active mon).
+        uint256 effectsCount = effectsCountHint;
+        if (effectsCount == type(uint256).max) {
+            effectsCount = _loadEffectsCount(config, effectIndex, monIndex);
         }
 
         // Iterate directly over storage, skipping tombstones
@@ -1828,6 +2258,16 @@ contract Engine is IEngine, MappingAllocator {
         // Inline execution for address(0) effects (StaminaRegen)
         if (address(effect) == address(0)) {
             _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            return;
+        }
+
+        // Inline execution for stat-boost sentinel entries. Only OnMonSwitchOut is in their steps
+        // bitmap; a temp boost is dropped on switch-out and the mon's stats recomputed from the
+        // remaining permanent sources (mirrors the legacy StatBoosts.onMonSwitchOut path).
+        if (address(effect) == STAT_BOOST_ADDRESS) {
+            if (!StatBoostLib.isPerm(data)) {
+                _inlineStatBoostSwitchOut(config, effectIndex, monIndex);
+            }
             return;
         }
 
@@ -1975,10 +2415,12 @@ contract Engine is IEngine, MappingAllocator {
             return playerSwitchForTurnFlag;
         }
 
-        // Short-circuit if no effects exist for this target (skip both effects and KO check)
-        bool hasEffects;
+        // Short-circuit if no effects exist for this target (skip both effects and KO check).
+        // The count we resolve here is for the active mon (or the global list), which is exactly
+        // the list _runEffects iterates — so we thread it in to skip _runEffects' own initial read.
+        uint256 effectsCount;
         if (effectIndex == 2) {
-            hasEffects = config.globalEffectsLength > 0;
+            effectsCount = config.globalEffectsLength;
         } else {
             uint256 monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
@@ -1990,15 +2432,14 @@ contract Engine is IEngine, MappingAllocator {
             }
 
             // Check effect count for this mon
-            uint256 effectCount = (effectIndex == 0)
+            effectsCount = (effectIndex == 0)
                 ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
                 : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-            hasEffects = effectCount > 0;
         }
 
-        if (hasEffects) {
-            // Run the effects
-            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "");
+        if (effectsCount > 0) {
+            // Run the effects (thread the resolved count so _runEffects skips its own initial read)
+            _runEffects(battleKey, rng, effectIndex, playerIndex, round, "", effectsCount);
         }
 
         // Only check for Game Over / KO if a KO actually occurred since last check
@@ -2186,14 +2627,16 @@ contract Engine is IEngine, MappingAllocator {
         uint256 effectCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monIndex);
-        if (effectCount > 0) {
+        if (effectCount > 0
+            && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
                 playerIndex,
                 playerIndex,
                 EffectStep.OnUpdateMonState,
-                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1))
+                abi.encode(playerIndex, monIndex, MonStateIndexName.Stamina, int32(1)),
+                type(uint256).max
             );
         }
     }
@@ -2527,10 +2970,6 @@ contract Engine is IEngine, MappingAllocator {
         p1Levels = TeamLevelInfo({monIds: p1MonIds, exp: p1Exp, levels: p1LevelArr});
     }
 
-    function getBattleValidator(bytes32 battleKey) external view returns (IValidator) {
-        return battleConfig[_resolveStorageKey(battleKey)].validator;
-    }
-
     /// @notice Validates a player move, handling both inline validation (when validator is address(0)) and external validators
     /// @dev This allows callers like CPU to validate moves without needing to handle the address(0) case themselves
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
@@ -2678,15 +3117,6 @@ contract Engine is IEngine, MappingAllocator {
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
     }
 
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32) {
-        return _readMonStateDelta(battleConfig[storageKey], playerIndex, monIndex, stateVarIndex);
-    }
-
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,
@@ -2734,17 +3164,17 @@ contract Engine is IEngine, MappingAllocator {
         return result;
     }
 
-    function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
-        return battleData[battleKey].playerSwitchForTurnFlag;
+    function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {
+        return _getGlobalKVValue(_resolveStorageKey(battleKey), key);
     }
 
-    function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
+    /// @dev Internal timestamp-gated globalKV reader. Returns 0 for stale values left over from a
+    ///      prior battle that reused this storageKey. Shared by getGlobalKV and the inlined
+    ///      stat-boost snapshot path.
+    function _getGlobalKVValue(bytes32 storageKey, uint64 key) private view returns (uint192) {
         bytes32 packed = globalKV[storageKey][key];
-        // Extract timestamp (upper 64 bits) and value (lower 192 bits)
         uint64 storedTimestamp = uint64(uint256(packed) >> 192);
         uint64 currentTimestamp = uint64(battleConfig[storageKey].startTimestamp);
-        // If timestamps don't match, return 0 (stale value from different battle)
         if (storedTimestamp != currentTimestamp) {
             return 0;
         }
@@ -2760,6 +3190,40 @@ contract Engine is IEngine, MappingAllocator {
         return _getEffectsForTarget(storageKey, targetIndex, monIndex);
     }
 
+    /// @notice Targeted single-effect lookup. Scans a mon's (or the global) effect list for
+    ///         `effectAddr` and returns its slot index + data, WITHOUT materializing the full
+    ///         `EffectInstance[]` array. For abilities / move-effects that only need one known
+    ///         effect (idempotency guards, reading own state) this avoids the array build + ABI
+    ///         round-trip that dominates `getEffects()`. `effectIndex` matches the index that
+    ///         `editEffect` expects (absolute slot for players, list index for global).
+    function getEffectData(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, address effectAddr)
+        external
+        view
+        returns (bool exists, uint256 effectIndex, bytes32 data)
+    {
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        if (targetIndex == 2) {
+            uint256 len = config.globalEffectsLength;
+            for (uint256 i; i < len;) {
+                EffectInstance storage e = config.globalEffects[i];
+                if (address(e.effect) == effectAddr) return (true, i, e.data);
+                unchecked { ++i; }
+            }
+            return (false, 0, bytes32(0));
+        }
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        for (uint256 i; i < monEffectCount;) {
+            uint256 slotIndex = baseSlot + i;
+            EffectInstance storage e = effects[slotIndex];
+            if (address(e.effect) == effectAddr) return (true, slotIndex, e.data);
+            unchecked { ++i; }
+        }
+        return (false, 0, bytes32(0));
+    }
+
     function getWinner(bytes32 battleKey) external view returns (address) {
         BattleData storage data = battleData[battleKey];
         uint8 winnerIndex = data.winnerIndex;
@@ -2769,24 +3233,12 @@ contract Engine is IEngine, MappingAllocator {
         return (winnerIndex == 0) ? data.p0 : data.p1;
     }
 
-    function getStartTimestamp(bytes32 battleKey) external view returns (uint256) {
-        return battleConfig[_resolveStorageKey(battleKey)].startTimestamp;
-    }
-
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
         return battleData[battleKey].lastExecuteTimestamp;
     }
 
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
         return _getKOBitmap(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
-    }
-
-    function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256) {
-        return battleData[battleKey].prevPlayerSwitchForTurnFlag;
-    }
-
-    function getMoveManager(bytes32 battleKey) external view returns (address) {
-        return battleConfig[_resolveStorageKey(battleKey)].moveManager;
     }
 
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory ctx) {
@@ -2800,7 +3252,6 @@ contract Engine is IEngine, MappingAllocator {
         ctx.winnerIndex = data.winnerIndex;
         ctx.turnId = data.turnId;
         ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.prevPlayerSwitchForTurnFlag = data.prevPlayerSwitchForTurnFlag;
         ctx.p0ActiveMonIndex = uint8(data.activeMonIndex & 0xFF);
         ctx.p1ActiveMonIndex = uint8(data.activeMonIndex >> 8);
         ctx.validator = address(config.validator);
@@ -2894,97 +3345,6 @@ contract Engine is IEngine, MappingAllocator {
         return _getDamageCalcContextInternal(
             config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
         );
-    }
-
-    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.turnId = data.turnId;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-
-        // Get active mon indices
-        uint256 p0MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 0);
-        uint256 p1MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 1);
-        ctx.p0ActiveMonIndex = uint8(p0MonIndex);
-        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
-
-        // Get KO status for active mons
-        MonState storage p0State = config.p0States[p0MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
-        ctx.p0ActiveMonKnockedOut = p0State.isKnockedOut;
-        ctx.p1ActiveMonKnockedOut = p1State.isKnockedOut;
-
-        // Get stamina info for active mons
-        Mon storage p0Mon = config.p0Team[p0MonIndex];
-        Mon storage p1Mon = config.p1Team[p1MonIndex];
-        ctx.p0ActiveMonBaseStamina = p0Mon.stats.stamina;
-        ctx.p0ActiveMonStaminaDelta =
-            p0State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p0State.staminaDelta;
-        ctx.p1ActiveMonBaseStamina = p1Mon.stats.stamina;
-        ctx.p1ActiveMonStaminaDelta =
-            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
-    }
-
-    /// @notice Cheap route-only getter for CPUMoveManager.selectMove. Returns just the fields
-    ///         needed to authenticate the caller, detect game-over, and route on the switch flag.
-    ///         One SLOAD (p0/winnerIndex/playerSwitchForTurnFlag all live in the same BattleData
-    ///         slot) — skips the storage-key hash, config pointer, team-sizes/KO-bitmap unpacks,
-    ///         and p1's active-mon + move-slot reads that the full CPUContext performs.
-    function getCPURouteContext(bytes32 battleKey)
-        external
-        view
-        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag)
-    {
-        BattleData storage data = battleData[battleKey];
-        p0 = data.p0;
-        winnerIndex = data.winnerIndex;
-        playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-    }
-
-    /// @notice Batch getter for the CPU move-selection hot path. Assumes the CPU is p1.
-    /// @dev Consolidates everything CPUMoveManager.selectMove and CPU.calculateValidMoves need,
-    ///      including p1's active mon move slots, in a single staticcall.
-    function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.battleKey = battleKey;
-        ctx.p0 = data.p0;
-        ctx.p1 = data.p1;
-        ctx.validator = address(config.validator);
-        ctx.winnerIndex = data.winnerIndex;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.turnId = data.turnId;
-
-        uint256 p0MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 0);
-        uint256 p1MonIndex = _unpackActiveMonIndex(data.activeMonIndex, 1);
-        ctx.p0ActiveMonIndex = uint8(p0MonIndex);
-        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
-
-        uint8 teamSizes = config.teamSizes;
-        ctx.p0TeamSize = teamSizes & 0x0F;
-        ctx.p1TeamSize = teamSizes >> 4;
-
-        uint16 koBitmaps = config.koBitmaps;
-        ctx.p0KOBitmap = uint8(koBitmaps & 0xFF);
-        ctx.p1KOBitmap = uint8(koBitmaps >> 8);
-
-        Mon storage p1Active = config.p1Team[p1MonIndex];
-        MonState storage p1State = config.p1States[p1MonIndex];
-        ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
-        ctx.cpuActiveMonStaminaDelta =
-            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
-        ctx.cpuActiveMonKnockedOut = p1State.isKnockedOut;
-
-        uint256[] storage moves = p1Active.moves;
-        uint256 len = moves.length;
-        if (len > 4) len = 4;
-        for (uint256 i; i < len; ++i) {
-            ctx.cpuActiveMonMoveSlots[i] = moves[i];
-        }
     }
 
     /// @notice Returns the MonState array for one side of a battle. Used by registry-side

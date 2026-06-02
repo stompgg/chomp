@@ -9,15 +9,7 @@ import "../../src/Structs.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
-
 contract StatBoostsMove is IMoveSet {
-    StatBoosts immutable STAT_BOOSTS;
-
-    constructor(StatBoosts _STAT_BOOSTS) {
-        STAT_BOOSTS = _STAT_BOOSTS;
-    }
-
     function name() external pure returns (string memory) {
         return "";
     }
@@ -44,7 +36,7 @@ contract StatBoostsMove is IMoveSet {
             boostPercent: uint8(uint32(boostAmount)),
             boostType: boostType
         });
-        STAT_BOOSTS.addStatBoosts(engine, playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
+        engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
 
     function priority(IEngine, bytes32, uint256) public pure returns (uint32) {

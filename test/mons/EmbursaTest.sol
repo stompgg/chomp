@@ -26,7 +26,6 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {HeatBeacon} from "../../src/mons/embursa/HeatBeacon.sol";
@@ -137,8 +136,7 @@ contract EmbursaTest is Test, BattleHelper {
         HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(dummyStatus)));
         Q5 q5 = new Q5(typeCalc);
         SetAblaze setAblaze = new SetAblaze(typeCalc, IEffect(address(dummyStatus)));
-        StatBoosts statBoosts = new StatBoosts();
-        HoneyBribe honeyBribe = new HoneyBribe(statBoosts);
+        HoneyBribe honeyBribe = new HoneyBribe();
 
         IMoveSet koMove = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -300,7 +298,7 @@ contract EmbursaTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, 4, 0, 0);
         (effects, ) = engine.getEffects(battleKey, 1, 0);
-        assertEq(address(effects[1].effect), address(statBoosts), "StatBoosts should be applied to Bob's mon");
+        assertEq(address(effects[1].effect), STAT_BOOST_ADDRESS, "StatBoosts should be applied to Bob's mon");
         assertEq(
             engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
             1,
@@ -518,7 +516,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         // After turn ends, only Bob has a forced switch pending.
         assertEq(
-            uint256(engine.getPlayerSwitchForTurnFlagForBattleState(battleKey)),
+            uint256(engine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             1,
             "Next turn should be Bob's single-player forced switch"
         );
@@ -544,9 +542,8 @@ contract EmbursaTest is Test, BattleHelper {
      * - If burn is applied externally, SpATK boost is still granted at end of round
      */
     function test_tinderclaws_selfBurnOnMove() public {
-        StatBoosts statBoosts = new StatBoosts();
-        BurnStatus burnStatus = new BurnStatus(statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
+        BurnStatus burnStatus = new BurnStatus();
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)));
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(attackFactory.createAttack(
@@ -634,9 +631,8 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_tinderclaws_restingRemovesBurn() public {
-        StatBoosts statBoosts = new StatBoosts();
-        BurnStatus burnStatus = new BurnStatus(statBoosts);
-        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)), statBoosts);
+        BurnStatus burnStatus = new BurnStatus();
+        Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)));
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(attackFactory.createAttack(

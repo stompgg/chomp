@@ -15,7 +15,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
-import {StatBoosts} from "../../src/effects/StatBoosts.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -43,7 +42,6 @@ contract GhouliathTest is Test, BattleHelper {
     IMoveSet osteoporosis;
     WitherAway witherAway;
     PanicStatus panicStatus;
-    StatBoosts statBoosts;
     EternalGrudge eternalGrudge;
     StandardAttackFactory standardAttackFactory;
     DefaultMatchmaker matchmaker;
@@ -68,8 +66,7 @@ contract GhouliathTest is Test, BattleHelper {
         panicStatus = new PanicStatus();
         witherAway =
             new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
-        statBoosts = new StatBoosts();
-        eternalGrudge = new EternalGrudge(statBoosts);
+        eternalGrudge = new EternalGrudge();
         matchmaker = new DefaultMatchmaker(engine);
     }
 

@@ -14,26 +14,21 @@ contract TempStatBoostEffect is BasicEffect {
         return "";
     }
 
-    // Steps: OnApply, OnMonSwitchOut
+    // Steps: OnApply
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x21;
+        return 0x01;
     }
 
+    // Applies a TEMPORARY +100% Attack multiply (base 1 -> 2, i.e. delta +1). The engine drops temp
+    // stat boosts natively on switch-out, so this no longer needs its own OnMonSwitchOut hook.
     function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Attack, 1);
+        StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
+        boosts[0] = StatBoostToApply({stat: MonStateIndexName.Attack, boostPercent: 100, boostType: StatBoostType.Multiply});
+        engine.addStatBoost(targetIndex, monIndex, boosts, StatBoostFlag.Temp);
         return (bytes32(0), false);
-    }
-
-    function onMonSwitchOut(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Attack, 1);
-        return (bytes32(0), true);
     }
 }

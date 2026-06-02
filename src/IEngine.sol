@@ -26,6 +26,28 @@ interface IEngine {
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
+    // Inlined stat boosts (formerly the StatBoosts effect contract). Keyed by msg.sender.
+    function addStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag
+    ) external;
+    function addKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostToApply[] calldata statBoostsToApply,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external;
+    function removeStatBoost(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) external;
+    function removeKeyedStatBoost(
+        uint256 targetIndex,
+        uint256 monIndex,
+        StatBoostFlag boostFlag,
+        string calldata keyToUse
+    ) external;
+    function clearAllStatBoosts(uint256 targetIndex, uint256 monIndex) external;
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
@@ -55,13 +77,20 @@ interface IEngine {
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
         returns (address winner);
+    function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner);
     function resetCallContext() external;
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
-    function getMoveManager(bytes32 battleKey) external view returns (address);
+    function getStorageKey(bytes32 battleKey) external view returns (bytes32);
+    function getSubmitContext(bytes32 battleKey)
+        external
+        view
+        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
         bytes32 battleKey,
@@ -79,12 +108,6 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
-    function getMonStateForStorageKey(
-        bytes32 storageKey,
-        uint256 playerIndex,
-        uint256 monIndex,
-        MonStateIndexName stateVarIndex
-    ) external view returns (int32);
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view
@@ -97,9 +120,7 @@ interface IEngine {
     function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
     function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
-    function getPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
-    function getBattleValidator(bytes32 battleKey) external view returns (IValidator);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
         returns (bool);
@@ -107,11 +128,13 @@ interface IEngine {
         external
         view
         returns (EffectInstance[] memory, uint256[] memory);
+    function getEffectData(bytes32 battleKey, uint256 targetIndex, uint256 monIndex, address effectAddr)
+        external
+        view
+        returns (bool exists, uint256 effectIndex, bytes32 data);
     function getWinner(bytes32 battleKey) external view returns (address);
-    function getStartTimestamp(bytes32 battleKey) external view returns (uint256);
     function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
-    function getPrevPlayerSwitchForTurnFlagForBattleState(bytes32 battleKey) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
     function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
     function getCommitAuthForDualSigned(bytes32 battleKey)
@@ -122,12 +145,6 @@ interface IEngine {
         external
         view
         returns (DamageCalcContext memory);
-    function getValidationContext(bytes32 battleKey) external view returns (ValidationContext memory);
-    function getCPUContext(bytes32 battleKey) external view returns (CPUContext memory);
-    function getCPURouteContext(bytes32 battleKey)
-        external
-        view
-        returns (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag);
     function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
     function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
         external

@@ -64,6 +64,14 @@ MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Maps move name → attack-overlay placement. Absent means the default 'target'
+# (overlay drawn on the opposing mon); 'canvas-center' lifts it to the middle
+# of the battle canvas. Renderer-only per-move metadata with no CSV column —
+# same kind of override as MOVE_SPRITE_VARIANTS, keyed by exact move name.
+MOVE_OVERLAY_PLACEMENT: Dict[str, str] = {
+    "Gachachacha": "canvas-center",
+}
+
 
 def _resolve_sprite_for_key(
     key: str,
@@ -255,6 +263,9 @@ def read_moves_data(
             "description": row["DevDescription"],
             "inputType": row.get("InputType", "none").strip() or "none",
         }
+        placement = MOVE_OVERLAY_PLACEMENT.get(move_name)
+        if placement:
+            move_data["overlayPlacement"] = placement
         sprite, matched_keys = build_attack_sprite(
             move_name, attack_spritesheet_data, non_standard_spritesheet_data
         )
@@ -411,6 +422,11 @@ export type MoveSpriteVariants = {{
   readonly selfKO: SpriteAnimationConfig;
 }};
 
+// Where a move's attack overlay renders. Default 'target' overlays the sprite
+// on the opposing mon; 'canvas-center' lifts it to the middle of the battle
+// canvas (works across desktop/mobile/large without per-breakpoint coords).
+export type AttackOverlayPlacement = 'target' | 'canvas-center';
+
 export type Move = {{
   readonly address: LowercaseHex;
   readonly name: string;
@@ -423,6 +439,7 @@ export type Move = {{
   readonly description: string;
   readonly inputType: MoveInputType;
   readonly sprite?: SpriteAnimationConfig | MoveSpriteVariants;
+  readonly overlayPlacement?: AttackOverlayPlacement;
 }};
 
 export type Mon = {{

@@ -419,7 +419,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeMons[1], 1, "P1 should switch to mon 1");
         assertEq(
-            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             2,
             "Battle should return to two-player turns"
         );
@@ -479,7 +479,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
         assertEq(activeMons[1], 1, "P1 should switch through normal reveal fallback");
         assertEq(
-            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             2,
             "Battle should return to two-player turns"
         );
@@ -491,11 +491,11 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _forceP1Switch(testEngine, signedManager, battleKey);
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
-        assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 0, "P0 should be forced to switch");
+        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 0, "P0 should be forced to switch");
 
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint16(1));
         assertEq(
-            testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey),
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             2,
             "Battle should return to two-player turns"
         );
@@ -520,7 +520,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
             testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        assertEq(testEngine.getPlayerSwitchForTurnFlagForBattleState(battleKey), 1, "P1 should be forced to switch");
+        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 1, "P1 should be forced to switch");
     }
 
     function _executeSinglePlayerMoveAndReset(

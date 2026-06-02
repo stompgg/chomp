@@ -24,8 +24,13 @@ contract ReduceSpAtkMove is IMoveSet {
         // Get the opposing player's index
         uint256 opposingPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
-        // Reduce the opposing mon's SpecialAttack by 1
-        engine.updateMonState(opposingPlayerIndex, defenderMonIndex, MonStateIndexName.SpecialAttack, -1);
+        // Reduce the opposing mon's SpecialAttack via the stat-boost system. Stats can only be
+        // written through stat boosts now; a 10% divide on a base of 10 lands exactly -1, matching
+        // the legacy direct updateMonState(SpecialAttack, -1), and still fires OnUpdateMonState.
+        StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
+        boosts[0] =
+            StatBoostToApply({stat: MonStateIndexName.SpecialAttack, boostPercent: 10, boostType: StatBoostType.Divide});
+        engine.addStatBoost(opposingPlayerIndex, defenderMonIndex, boosts, StatBoostFlag.Temp);
     }
 
     function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
