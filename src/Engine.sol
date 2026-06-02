@@ -1700,11 +1700,11 @@ contract Engine is IEngine, MappingAllocator {
                 config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
             );
 
-            // Type effectiveness via TypeCalcLib (internal pure, no external call)
-            Mon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
-            uint32 scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, defenderMon.stats.type1, basePower);
-            if (defenderMon.stats.type2 != Type.None) {
-                scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, defenderMon.stats.type2, scaledBasePower);
+            // Type effectiveness via TypeCalcLib (internal pure, no external call). Reuse the defender
+            // types already loaded into ctx instead of re-resolving the defender Mon from storage.
+            uint32 scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType1, basePower);
+            if (ctx.defenderType2 != Type.None) {
+                scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType2, scaledBasePower);
             }
 
             // Shared damage formula (same function the external path uses)
