@@ -620,4 +620,144 @@ contract CPUTest is Test {
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -2, "p0 mon0 took 2 dmg");
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2, "cpu mon0 took 2 dmg");
     }
+
+    // Measures the marginal gas the BattleCompleteWithBatchTurns event adds over a no-event batched
+    // tx: exactly the build (abi.encodePacked of winner + 19B/turn) + the LOG2 emit, at realistic
+    // turn counts. This is the whole delta — executeBatchedTurns does nothing else new.
+    event _BatchEvProbe(bytes32 indexed battleKey, bytes payload);
+
+    function test_gas_batchEventOverhead() public {
+        uint256[3] memory counts = [uint256(11), 26, 40];
+        for (uint256 c; c < 3; c++) {
+            uint256 N = counts[c];
+            uint256[] memory entries = new uint256[](N);
+            for (uint256 i; i < N; i++) {
+                uint104 salt = uint104(uint256(keccak256(abi.encode("salt", i))));
+                // p0Move 1 | p0Salt | p1Move 1 (CPU salt 0) — a typical attack-vs-attack turn.
+                entries[i] = uint256(1) | (uint256(salt) << 24) | (uint256(1) << 128);
+            }
+            address winner = address(0x1234);
+            uint256 g0 = gasleft();
+            // Mirror the engine's O(n) single-buffer build (memory-array variant of the calldata
+            // assembly in executeBatchedTurns).
+            bytes memory payload = new bytes(20 + N * 19);
+            assembly {
+                let ptr := add(payload, 32)
+                mstore(ptr, shl(96, winner))
+                ptr := add(ptr, 20)
+                let src := add(entries, 32)
+                for { let i := 0 } lt(i, N) { i := add(i, 1) } {
+                    mstore(ptr, shl(104, mload(add(src, mul(i, 0x20)))))
+                    ptr := add(ptr, 19)
+                }
+            }
+            emit _BatchEvProbe(bytes32(uint256(0xABCD)), payload);
+            uint256 used = g0 - gasleft();
+            emit log_named_uint(string(abi.encodePacked("batch-event gas N=", vm.toString(N))), used);
+        }
+    }
+
+    // A batched CPU game that CONCLUDES emits exactly one BattleCompleteWithBatchTurns (winner +
+    // every executed turn, CPU salt dropped) and NO plain BattleComplete. We decode the payload and
+    // confirm the winner + a sample turn round-trip from the 19-byte/turn packing.
+    function test_executeGame_emitsBattleCompleteWithBatchTurns() public {
+        TestMoveFactory moveFactory = new TestMoveFactory();
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0))));
+        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 1))));
+
+        Mon memory cpuMon = _createMon(Type.Liquid);
+        cpuMon.stats.hp = 1; // dies to one 1-damage hit -> game concludes inside the batch
+        cpuMon.stats.stamina = 10;
+        cpuMon.moves = moves;
+        Mon[] memory cpuTeam = new Mon[](1);
+        cpuTeam[0] = cpuMon;
+
+        Mon memory aliceMon = _createMon(Type.Liquid);
+        aliceMon.stats.hp = 100; // survives the CPU's 1-damage hit -> ALICE wins
+        aliceMon.stats.stamina = 10;
+        aliceMon.moves = moves;
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+
+        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
+        teamRegistry.setTeam(address(okayCPU), cpuTeam);
+        teamRegistry.setTeam(ALICE, aliceTeam);
+        DefaultValidator v = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: keccak256(
+                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
+            ),
+            p1: address(okayCPU),
+            p1TeamIndex: 0,
+            validator: v,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            teamRegistry: teamRegistry,
+            engineHooks: new IEngineHook[](0),
+            moveManager: address(okayCPU),
+            matchmaker: okayCPU
+        });
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(okayCPU);
+        engine.updateMatchmakers(makersToAdd, new address[](0));
+        bytes32 battleKey = okayCPU.startBattle(proposal);
+        vm.stopPrank();
+
+        // Game must not start and end in the same block (Engine guards against it).
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Turn 0: both send in mon 0 (switch). Turn 1: both attack (move 1) -> CPU mon (hp 1) KO'd.
+        uint8[2] memory p0m = [uint8(SWITCH_MOVE_INDEX), uint8(1)];
+        uint8[2] memory p1m = [uint8(SWITCH_MOVE_INDEX), uint8(1)];
+        uint104[2] memory p0s = [uint104(0xDEAD1), uint104(0xBEEF2)];
+        bytes memory stream;
+        for (uint256 i; i < 2; i++) {
+            // [p0Move 1 | p0Extra 2 | p0Salt 13 | p1Move 1 | p1Extra 2]; CPU salt always 0.
+            stream = abi.encodePacked(stream, p0m[i], uint16(0), p0s[i], p1m[i], uint16(0));
+        }
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        okayCPU.executeGame(battleKey, stream);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bytes32 plainSig = keccak256("BattleComplete(bytes32,address)");
+        bytes32 batchSig = keccak256("BattleCompleteWithBatchTurns(bytes32,bytes)");
+        bytes memory payload;
+        uint256 batchCount;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(engine)) continue;
+            assertTrue(logs[i].topics[0] != plainSig, "batched path must NOT emit plain BattleComplete");
+            if (logs[i].topics[0] == batchSig) {
+                batchCount++;
+                assertEq(logs[i].topics[1], battleKey, "battleKey topic");
+                payload = abi.decode(logs[i].data, (bytes));
+            }
+        }
+        assertEq(batchCount, 1, "exactly one BattleCompleteWithBatchTurns");
+
+        // Game concluded after 2 turns -> payload = winner(20) + 2*19.
+        assertEq(payload.length, 20 + 2 * 19, "winner + 2 turns");
+
+        address decodedWinner;
+        assembly {
+            decodedWinner := shr(96, mload(add(payload, 32)))
+        }
+        assertEq(decodedWinner, ALICE, "winner is ALICE (p0)");
+
+        // Decode turn 1 (the attack): the 19-byte record is the low 152 bits, big-endian.
+        uint256 vv;
+        assembly {
+            vv := shr(104, mload(add(payload, add(32, add(20, 19)))))
+        }
+        assertEq(vv & 0xFF, 1, "turn1 p0 raw move == attack(1)");
+        assertEq((vv >> 24) & ((uint256(1) << 104) - 1), uint256(0xBEEF2), "turn1 p0 salt round-trips");
+        assertEq((vv >> 128) & 0xFF, 1, "turn1 p1 raw move == attack(1)");
+    }
 }

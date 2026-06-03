@@ -19,10 +19,8 @@ contract SetupCPU is Script {
         vm.startBroadcast();
 
         GachaTeamRegistry gachaTeamRegistry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
-        string[] memory cpuPlayers = new string[](3);
-        cpuPlayers[0] = "OKAY_CPU";
-        cpuPlayers[1] = "BETTER_CPU";
-        cpuPlayers[2] = "FAIR_CPU";
+        string[] memory cpuPlayers = new string[](1);
+        cpuPlayers[0] = "BETTER_CPU";
 
         uint256[] memory monIndices = new uint256[](4);
         uint8[] memory facetIds = new uint8[](4);
@@ -56,10 +54,6 @@ contract SetupCPU is Script {
             cpuAddresses[i] = vm.envAddress(cpuPlayers[i]);
         }
         gachaTeamRegistry.setWhitelistedOpponents(cpuAddresses, empty);
-
-        address[] memory hardCpus = new address[](1);
-        hardCpus[0] = vm.envAddress("BETTER_CPU");
-        gachaTeamRegistry.setHardCpuOpponents(hardCpus, empty);
 
         vm.stopBroadcast();
 

@@ -14,7 +14,7 @@ build_info = true
 via_ir = true
 
 [lint]
-exclude_lints = ["unsafe-typecast", "unaliased-plain-import", "mixed-case-variable", "mixed-case-function", "asm-keccak256", "pascal-case-struct", "screaming-snake-case-immutable", "incorrect-shift"]
+exclude_lints = ["unsafe-typecast", "unaliased-plain-import", "mixed-case-variable", "mixed-case-function", "asm-keccak256", "pascal-case-struct", "screaming-snake-case-immutable", "incorrect-shift", "named-struct-fields"]
 
 [profile.default.optimizer_details]
 constantOptimizer = true

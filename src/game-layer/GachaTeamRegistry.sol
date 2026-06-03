@@ -123,6 +123,12 @@ contract GachaTeamRegistry is
     // resolves both the team's mon ids and its facet config at battle start.
     uint256 internal constant OPP_FACET_BITS_PER_SLOT = 4;
     uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
+    // Hard-CPU difficulty flag inside the per-(user, CPU) phantom config slot
+    // (opponentTeamFacetsPacked). High bit, far above the facet lanes (<= 8 mons x 4 bits = 32 bits).
+    // Client-set via setOpponentTeam/For: once the CPU runs off-chain (and the CPU contracts collapse
+    // to one address) difficulty is a client concept, so the hard-CPU x2 exp keys off this bit rather
+    // than the opponent's profile IS_HARD_CPU_BIT. Trust-the-client (see PLAN_OFFCHAIN_CPU.md).
+    uint256 internal constant OPP_HARD_CPU_BIT = 1 << 255;
     mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
     constructor(
@@ -254,10 +260,11 @@ contract GachaTeamRegistry is
     function setOpponentTeam(
         address opponent,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        bool isHard
     ) external {
         if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds);
+        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds, isHard);
     }
 
     /// @notice Trusted-relayer entry: a whitelisted CPU writes a user's phantom team
@@ -266,17 +273,19 @@ contract GachaTeamRegistry is
     function setOpponentTeamFor(
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        bool isHard
     ) external override {
         if (!isWhitelistedOpponent(msg.sender)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(msg.sender, user, monIndices, facetIds);
+        _setOpponentTeam(msg.sender, user, monIndices, facetIds, isHard);
     }
 
     function _setOpponentTeam(
         address opponent,
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        bool isHard
     ) internal {
         if (monIndices.length != facetIds.length) revert FacetArgsLengthMismatch();
         uint256 phantomKey = uint16(uint160(user));
@@ -289,6 +298,9 @@ contract GachaTeamRegistry is
             packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
             unchecked { ++i; }
         }
+        // Difficulty rides in the same slot (high bit), client-set. Whole slot is rewritten each
+        // call, so the flag must be (re)applied here.
+        if (isHard) packedFacets |= OPP_HARD_CPU_BIT;
         opponentTeamFacetsPacked[opponent][phantomKey] = packedFacets;
     }
 
@@ -484,6 +496,17 @@ contract GachaTeamRegistry is
         emit Migrated(player);
     }
 
+    /// @notice True if `player` has unimported progress on `PREVIOUS_REGISTRY` — i.e. a
+    /// client should call `migrate()` for them. Composes the whole decision so callers
+    /// need not know a previous registry exists. False when migration is disabled
+    /// (`PREVIOUS_REGISTRY` unset) or the player has already imported.
+    function needsMigration(address player) external view returns (bool) {
+        GachaTeamRegistry prev = PREVIOUS_REGISTRY;
+        if (address(prev) == address(0)) return false;
+        if (migrated[player]) return false;
+        return prev.balanceOf(player) > 0;
+    }
+
     // ----- IEngineHook -----
     function getStepsBitmap() external pure override returns (uint16) {
         return STEPS_BITMAP;
@@ -524,11 +547,15 @@ contract GachaTeamRegistry is
             uint8 koBitmap = playerIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
             uint256 basePts = ctx.winner == player ? POINTS_PER_WIN : POINTS_PER_LOSS;
             uint256 packed = playerIndex == 0 ? packed0 : packed1;
-            uint256 opponentPacked = playerIndex == 0 ? packed1 : packed0;
-            // Mask-and-compare keeps it to one SLOAD-free check; canonical accessors are
-            // isWhitelistedOpponent / isHardCpu.
-            bool oppIsHardCpu = (opponentPacked & (IS_CPU_BIT | IS_HARD_CPU_BIT))
-                                == (IS_CPU_BIT | IS_HARD_CPU_BIT);
+            // Hard-CPU x2 exp keys off the opponent's per-(user, CPU) phantom config bit (client-set
+            // via setOpponentTeam), not the opponent's profile flag: once the CPU runs off-chain and
+            // the CPU contracts collapse to one address, difficulty is a client concept. The CPU's
+            // battle team index IS this user's phantom key, so the phantom slot reads back here.
+            bool oppIsCpu = playerIndex == 0 ? isCpu1 : isCpu0;
+            address oppAddr = playerIndex == 0 ? ctx.p1 : ctx.p0;
+            uint256 oppTeamIdx = playerIndex == 0 ? ctx.p1TeamIndex : ctx.p0TeamIndex;
+            bool oppIsHardCpu =
+                oppIsCpu && (opponentTeamFacetsPacked[oppAddr][oppTeamIdx] & OPP_HARD_CPU_BIT) != 0;
 
             uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT | IS_HARD_CPU_BIT);
             uint256 points = packed & POINTS_MASK_128;

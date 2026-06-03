@@ -270,6 +270,31 @@ class TestYulTranspiler(unittest.TestCase):
         self.assertIn('_storageRead(myVar', result)
         self.assertIn('_storageWrite(myVar', result)
 
+    def test_unmodelable_calldata_assembly_flagged(self):
+        """Raw calldata reads / calldata .offset have no faithful simulation, so
+        the transpiler flags the block as unmodelable (the function generator then
+        replaces the whole body with a throwing stub)."""
+        # calldataload nested inside a discarded mstore — codegen no-ops the
+        # mstore, so detection must come from the AST walk, not codegen traversal.
+        self.transpiler.transpile('mstore(ptr, shl(104, calldataload(add(src, 0x20))))')
+        self.assertTrue(self.transpiler.unmodelable)
+
+        # calldata slice .offset pointer.
+        self.transpiler.transpile('let src := entries.offset')
+        self.assertTrue(self.transpiler.unmodelable)
+
+    def test_modelable_assembly_not_flagged(self):
+        """Benign assembly — including the array-resize mstore(arrayVar, lenVar)
+        pattern other Engine functions rely on — must NOT be flagged."""
+        self.transpiler.transpile('result.length := idx')  # parsed as assignment; never calldata
+        self.assertFalse(self.transpiler.unmodelable)
+
+        self.transpiler.transpile('mstore(result, idx)')  # array-resize mstore
+        self.assertFalse(self.transpiler.unmodelable)
+
+        self.transpiler.transpile('let slot := myVar.slot\nif sload(slot) { sstore(slot, 0) }')
+        self.assertFalse(self.transpiler.unmodelable)
+
     def test_arithmetic_operations(self):
         """Test add, sub, mul, div, mod transpilation."""
         yul_code = 'let x := add(1, 2)'

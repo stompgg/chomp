@@ -521,6 +521,8 @@ class StatementGenerator(BaseGenerator):
         """Generate TypeScript code for an assembly block (transpiled from Yul)."""
         yul_code = stmt.block.code
         ts_code = self._yul_transpiler.transpile(yul_code)
+        if self._yul_transpiler.unmodelable:
+            self._ctx.current_function_unmodelable = True
         lines = []
         lines.append(f'{self.indent()}// Assembly block (transpiled from Yul)')
         for line in ts_code.split('\n'):

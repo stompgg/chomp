@@ -154,10 +154,14 @@ class CodeGenerationContext:
         self.current_method_return_types = {}
         self.current_local_structs = set()
         self.current_inherited_structs = {}
+        # Set when a function's inline assembly can't be faithfully simulated
+        # (raw calldata/offset access) so its body is replaced with a throwing stub.
+        self.current_function_unmodelable = False
 
     def reset_for_function(self) -> None:
         """Reset state for a new function."""
         self.current_local_vars = set()
+        self.current_function_unmodelable = False
 
     @classmethod
     def from_registry(

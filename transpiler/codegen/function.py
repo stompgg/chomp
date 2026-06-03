@@ -137,6 +137,10 @@ class FunctionGenerator(BaseGenerator):
         """Generate TypeScript code for a function implementation."""
         lines = []
 
+        # Cleared here; statement codegen sets it if the body has inline assembly
+        # that can't be faithfully simulated (raw calldata/offset access).
+        self._ctx.current_function_unmodelable = False
+
         # Track local variables for this function
         self._ctx.current_local_vars = set()
         for i, p in enumerate(func.parameters):
@@ -176,6 +180,10 @@ class FunctionGenerator(BaseGenerator):
         lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{method_name}({params}): {return_type} {{')
         self.indent_level += 1
 
+        # Everything appended from here is the function body; if the body turns out
+        # to contain un-modelable assembly we discard it back to this marker and
+        # emit a throwing stub instead.
+        body_start = len(lines)
 
         # Declare named return parameters at start of function
         named_return_vars = []
@@ -224,6 +232,18 @@ class FunctionGenerator(BaseGenerator):
                     lines.append(f'{self.indent()}return [{", ".join(named_return_vars)}];')
             elif return_type != 'void':
                 lines.append(f'{self.indent()}throw new Error("Not implemented");')
+
+        # Inline assembly with raw calldata/memory-buffer access can't be faithfully
+        # simulated — replace the whole body with a throwing stub (a `throw`
+        # satisfies any return type). Such functions are on-chain-only paths the
+        # simulation never exercises; fail loudly if one ever does.
+        if self._ctx.current_function_unmodelable:
+            del lines[body_start:]
+            lines.append(
+                f'{self.indent()}throw new Error('
+                f'"{method_name}: inline assembly with raw calldata/memory-buffer '
+                f'access is not modeled in the simulation runtime.");'
+            )
 
         self.indent_level -= 1
         lines.append(f'{self.indent()}}}')

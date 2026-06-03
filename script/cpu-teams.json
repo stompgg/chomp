@@ -1,6 +1,6 @@
 {
-  "cpuPlayers": ["OKAY_CPU", "BETTER_CPU", "FAIR_CPU"],
-  "hardCpus": ["BETTER_CPU"],
+  "cpuPlayers": ["BETTER_CPU"],
+  "hardCpus": [],
   "teams": [
     [0, 3, 10, 5],
     [1, 11, 6, 7],

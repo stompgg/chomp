@@ -583,6 +583,11 @@ _ZERO_OPS = frozenset({
     'extcodehash', 'calldatacopy', 'calldatasize',
 })
 
+# Raw calldata reads. These have no faithful equivalent in the simulation's value
+# model — `bytes` are JS strings and there is no calldata address space — so a
+# function whose assembly uses them is stubbed (throws) rather than mistranslated.
+_CALLDATA_OPS = frozenset({'calldataload', 'calldatacopy', 'calldatasize'})
+
 
 class YulTranspiler:
     """
@@ -606,11 +611,18 @@ class YulTranspiler:
         """
         self._known_constants = known_constants or set()
         self._warnings: List[str] = []
+        self._unmodelable = False
 
     @property
     def warnings(self) -> List[str]:
         """Get warnings generated during transpilation."""
         return self._warnings
+
+    @property
+    def unmodelable(self) -> bool:
+        """True if the last transpiled block used raw calldata/offset access that
+        cannot be faithfully simulated — the caller should stub the function."""
+        return self._unmodelable
 
     def transpile(self, yul_code: str) -> str:
         """
@@ -623,6 +635,7 @@ class YulTranspiler:
             TypeScript code equivalent
         """
         self._warnings = []
+        self._unmodelable = False
         slot_vars: Dict[str, str] = {}
 
         try:
@@ -630,10 +643,55 @@ class YulTranspiler:
             tokens = tokenizer.tokenize()
             parser = YulParser(tokens)
             ast = parser.parse()
+            # Flag raw calldata/offset access before codegen — codegen no-ops mstore
+            # without descending into its value, so an AST walk is the reliable
+            # place to spot calldataload nested inside a discarded write.
+            self._scan_unmodelable(ast)
             return self._generate_block_contents(ast, slot_vars, indent=0)
         except SyntaxError as e:
             self._warnings.append(f"Yul parse error: {e}")
             return f'// Yul parse error: {e}'
+
+    def _scan_unmodelable(self, node) -> None:
+        """Walk the Yul AST and set `_unmodelable` if it reads raw calldata
+        (`calldataload`/`calldatacopy`) or dereferences a calldata/slice `.offset`
+        pointer — neither has a faithful equivalent in the simulation."""
+        if node is None:
+            return
+        if isinstance(node, YulOffsetAccess):
+            self._unmodelable = True
+            return
+        if isinstance(node, YulFunctionCall):
+            if node.name in _CALLDATA_OPS:
+                self._unmodelable = True
+            for arg in node.arguments:
+                self._scan_unmodelable(arg)
+            return
+        if isinstance(node, YulBlock):
+            for stmt in node.statements:
+                self._scan_unmodelable(stmt)
+            return
+        if isinstance(node, (YulLet, YulAssignment)):
+            self._scan_unmodelable(node.value)
+            return
+        if isinstance(node, YulIf):
+            self._scan_unmodelable(node.condition)
+            self._scan_unmodelable(node.body)
+            return
+        if isinstance(node, YulFor):
+            self._scan_unmodelable(node.init)
+            self._scan_unmodelable(node.condition)
+            self._scan_unmodelable(node.post)
+            self._scan_unmodelable(node.body)
+            return
+        if isinstance(node, YulSwitch):
+            self._scan_unmodelable(node.expression)
+            for _val, block in node.cases:
+                self._scan_unmodelable(block)
+            return
+        if isinstance(node, YulExpressionStatement):
+            self._scan_unmodelable(node.expression)
+            return
 
     def _generate_block_contents(
         self,

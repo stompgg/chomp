@@ -83,6 +83,15 @@ contract Engine is IEngine, MappingAllocator {
     event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
+    // Batched-game completion: winner + every executed turn, for off-chain replay. Replaces the
+    // plain BattleComplete on the batched path (the per-turn MonMoves/EngineExecute are skipped
+    // there, so this carries the full move list). `payload` is a single packed blob:
+    //   bytes  0- 19 : winner address (20 bytes)
+    //   bytes 20-  N : 19 bytes per executed turn, big-endian, the low 152 bits of each
+    //                  engine turn-entry: [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16]
+    // The p1 (CPU) salt is dropped — always 0 on the batched (CPU) path. Moves are RAW indices
+    // (consumer applies MOVE_INDEX_OFFSET, matching the MonMoves convention).
+    event BattleCompleteWithBatchTurns(bytes32 indexed battleKey, bytes payload);
 
     /// @notice Constructor to set default validator config for inline validation
     /// @dev When a battle's validator is address(0), Engine uses inline validation logic with these params
@@ -436,9 +445,41 @@ contract Engine is IEngine, MappingAllocator {
             effectsDirtyBitmap = 0;
         }
         // The batched flow emits NO per-turn events (each sub-turn passes emitEvents=false to
-        // _executeInternal: no EngineExecute, no MonMoves). The submitter already holds every
-        // move + salt from the batch calldata, so the per-turn logs would be pure overhead
-        // (~1.6k gas/turn for MonMoves). Indexers reconstruct from the call's calldata.
+        // _executeInternal: no EngineExecute, no MonMoves, and BattleComplete is suppressed in
+        // _handleGameOver). Instead, when the game concluded this batch, emit ONE
+        // BattleCompleteWithBatchTurns carrying the winner + every executed turn so off-chain
+        // indexers get the full replay from a single Engine log (no per-CPU-address subscription).
+        // Each turn is the low 152 bits of its entry — the p1 (CPU) salt is always 0 here, so it's
+        // dropped — packed big-endian as 19 bytes via bytes19(bytes32(entry << 104)).
+        if (winner != address(0)) {
+            emit BattleCompleteWithBatchTurns(battleKey, _packBatchPayload(entries, executed, winner));
+        }
+    }
+
+    /// @dev Packs the BattleCompleteWithBatchTurns payload: [winner 20B | 19B/turn ...]. Each turn is
+    ///      the low 152 bits of its entry (p1/CPU salt is always 0 on the batched path, so dropped) —
+    ///      `entry << 104` lands those 152 bits in the leading 19 bytes of the stored word. Single
+    ///      pre-sized buffer (O(n); encodePacked-accumulate would reallocate+copy each turn -> O(n^2)).
+    ///      Allocated with +13 slack so the final 32-byte mstore can never write past the buffer, then
+    ///      the real length is set — keeps the block memory-safe.
+    function _packBatchPayload(uint256[] calldata entries, uint256 numTurns, address winner)
+        private
+        pure
+        returns (bytes memory payload)
+    {
+        uint256 len = 20 + numTurns * 19;
+        payload = new bytes(len + 13);
+        assembly ("memory-safe") {
+            let ptr := add(payload, 32)
+            mstore(ptr, shl(96, winner)) // winner address in the leading 20 bytes
+            ptr := add(ptr, 20)
+            let src := entries.offset
+            for { let i := 0 } lt(i, numTurns) { i := add(i, 1) } {
+                mstore(ptr, shl(104, calldataload(add(src, mul(i, 0x20)))))
+                ptr := add(ptr, 19)
+            }
+            mstore(payload, len) // drop the 13 slack bytes from the visible length
+        }
     }
 
     /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
@@ -804,7 +845,9 @@ contract Engine is IEngine, MappingAllocator {
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
-            _handleGameOver(battleKey, winner);
+            // Batched path (emitEvents=false) suppresses BattleComplete here — executeBatchedTurns
+            // emits BattleCompleteWithBatchTurns after the loop with the full turn list.
+            _handleGameOver(battleKey, winner, emitEvents);
 
             // Single-execute paths emit EngineExecute + MonMoves; the batched flow passes
             // emitEvents=false (no per-turn and no batch-level emit — the submitter already
@@ -875,7 +918,7 @@ contract Engine is IEngine, MappingAllocator {
             if (potentialLoser != address(0)) {
                 address winner = potentialLoser == data.p0 ? data.p1 : data.p0;
                 data.winnerIndex = (winner == data.p0) ? 0 : 1;
-                _handleGameOver(battleKey, winner);
+                _handleGameOver(battleKey, winner, true);
                 return;
             }
             unchecked {
@@ -884,7 +927,7 @@ contract Engine is IEngine, MappingAllocator {
         }
         // Allow forcible end of battle after max duration
         if (block.timestamp - config.startTimestamp > MAX_BATTLE_DURATION) {
-            _handleGameOver(battleKey, data.p0);
+            _handleGameOver(battleKey, data.p0, true);
             return;
         }
     }
@@ -928,7 +971,10 @@ contract Engine is IEngine, MappingAllocator {
         return address(0);
     }
 
-    function _handleGameOver(bytes32 battleKey, address winner) internal {
+    /// @param emitBattleComplete When false (batched path), the plain BattleComplete emit is
+    ///        suppressed — `executeBatchedTurns` emits BattleCompleteWithBatchTurns instead so the
+    ///        winner + full turn list arrive in one log. Hooks (GachaEvent) + key-free still run.
+    function _handleGameOver(bytes32 battleKey, address winner, bool emitBattleComplete) internal {
         bytes32 storageKey = storageKeyForWrite;
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -947,7 +993,7 @@ contract Engine is IEngine, MappingAllocator {
 
         // Free the key used for battle configs so other battles can use it
         _freeStorageKey(battleKey, storageKey);
-        emit BattleComplete(battleKey, winner);
+        if (emitBattleComplete) emit BattleComplete(battleKey, winner);
     }
 
     /**

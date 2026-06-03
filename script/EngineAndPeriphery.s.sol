@@ -8,9 +8,7 @@ import "../src/Constants.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {FairCPU} from "../src/cpu/FairCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
@@ -56,9 +54,11 @@ contract EngineAndPeriphery is Script {
         // DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
         // deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
 
-        OkayCPU okayCPU = new OkayCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
-        deployedContracts.push(DeployData({name: "OKAY CPU", contractAddress: address(okayCPU)}));
-
+        // Collapsed CPU: a single contract hosts every difficulty. BetterCPU is the host — its
+        // on-chain heuristic is unused now (the client computes moves and submits the whole game via
+        // executeGame), but it carries the matchmaker/move-manager/executeGame surface. Difficulty is
+        // a pure client concept (which TS heuristic runs + the per-battle isHard phantom bit + the
+        // difficulty reported to belch), so OkayCPU/FairCPU are no longer deployed.
         BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
@@ -74,19 +74,13 @@ contract EngineAndPeriphery is Script {
         betterCPU.setMonConfig(11, setupKey, 3); // Ekineki   -> Nine Nine Nine (slot 2)
         betterCPU.setMonConfig(12, setupKey, 1); // Nirvamma  -> Hard Reset    (slot 0)
 
-        // FairCPU: heuristic CPU that does not peek at the player's current-turn revealed move.
-        // Shares HeuristicCPUBase storage layout with BetterCPU but ignores playerMoveIndex/
-        // playerExtraData. Skips the per-mon SETUP_MOVE config — FairCPU deletes the Diyu
-        // free-turn branch entirely, so those configs would be dead writes.
-        FairCPU fairCPU = new FairCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
-        deployedContracts.push(DeployData({name: "FAIR CPU", contractAddress: address(fairCPU)}));
-
-        // Whitelist all CPUs so users can setOpponentTeam against them.
+        // Whitelist the single CPU so users can setOpponentTeam / startCustomBattle against it.
+        // (SetupCPU re-whitelists from cpu-teams.json; idempotent.) The hard-CPU exp multiplier no
+        // longer uses the profile IS_HARD_CPU_BIT — it reads the per-battle phantom config bit — so
+        // setHardCpuOpponents is not called here.
         {
-            address[] memory toAllow = new address[](3);
-            toAllow[0] = address(okayCPU);
-            toAllow[1] = address(betterCPU);
-            toAllow[2] = address(fairCPU);
+            address[] memory toAllow = new address[](1);
+            toAllow[0] = address(betterCPU);
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }
@@ -96,17 +90,6 @@ contract EngineAndPeriphery is Script {
 
         // SimplePM simplePM = new SimplePM(engine);
         // deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
-
-        ReturnerGift returnerGift = new ReturnerGift(address(gachaTeamRegistry));
-        deployedContracts.push(DeployData({name: "RETURNER GIFT", contractAddress: address(returnerGift)}));
-
-        {
-            address[] memory toAllow = new address[](1);
-            toAllow[0] = address(returnerGift);
-            address[] memory toDisallow = new address[](0);
-            gachaTeamRegistry.setAssigners(toAllow, toDisallow);
-        }
-        returnerGift.setMerkleRoot(0xa5a0a4a18ff338c23790a0561e53748033ed3764ed3cbae49f06afcff7c7d773);
 
         deployGameFundamentals();
         
