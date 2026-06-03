@@ -48,36 +48,13 @@ contract EngineAndPeriphery is Script {
         deployedContracts.push(DeployData({name: "COMMIT MANAGER", contractAddress: address(commitManager)}));
 
         GachaTeamRegistry gachaTeamRegistry =
-            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(address(0)));
+            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(0x575CbCB7CAE4524051bb3470d80702DfBac226bE));
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
-
-        // DefaultRandomnessOracle defaultOracle = new DefaultRandomnessOracle();
-        // deployedContracts.push(DeployData({name: "DEFAULT RANDOMNESS ORACLE", contractAddress: address(defaultOracle)}));
-
-        // Collapsed CPU: a single contract hosts every difficulty. BetterCPU is the host — its
-        // on-chain heuristic is unused now (the client computes moves and submits the whole game via
-        // executeGame), but it carries the matchmaker/move-manager/executeGame surface. Difficulty is
-        // a pure client concept (which TS heuristic runs + the per-battle isHard phantom bit + the
-        // difficulty reported to belch), so OkayCPU/FairCPU are no longer deployed.
+        
         BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
         deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
 
-        // Diyu D5: per-mon setup moves. Value is stored as (slot + 1); see BetterCPU.monConfig.
-        // setMonConfig writes plain storage and does not require the mon to be registered yet.
-        uint256 setupKey = betterCPU.CONFIG_SETUP_MOVE();
-        betterCPU.setMonConfig(1,  setupKey, 2); // Inutia    -> Initialize    (slot 1)
-        betterCPU.setMonConfig(2,  setupKey, 1); // Malalien  -> Triple Think  (slot 0)
-        betterCPU.setMonConfig(3,  setupKey, 2); // Iblivion  -> Loop          (slot 1)
-        betterCPU.setMonConfig(6,  setupKey, 2); // Pengym    -> Deadlift      (slot 1)
-        betterCPU.setMonConfig(7,  setupKey, 3); // Embursa   -> Heat Beacon   (slot 2)
-        betterCPU.setMonConfig(9,  setupKey, 3); // Aurox     -> Iron Wall     (slot 2)
-        betterCPU.setMonConfig(11, setupKey, 3); // Ekineki   -> Nine Nine Nine (slot 2)
-        betterCPU.setMonConfig(12, setupKey, 1); // Nirvamma  -> Hard Reset    (slot 0)
-
         // Whitelist the single CPU so users can setOpponentTeam / startCustomBattle against it.
-        // (SetupCPU re-whitelists from cpu-teams.json; idempotent.) The hard-CPU exp multiplier no
-        // longer uses the profile IS_HARD_CPU_BIT — it reads the per-battle phantom config bit — so
-        // setHardCpuOpponents is not called here.
         {
             address[] memory toAllow = new address[](1);
             toAllow[0] = address(betterCPU);
@@ -88,8 +65,8 @@ contract EngineAndPeriphery is Script {
         SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
         deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
-        // SimplePM simplePM = new SimplePM(engine);
-        // deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
+        SimplePM simplePM = new SimplePM(engine);
+        deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
         deployGameFundamentals();
         
@@ -98,8 +75,6 @@ contract EngineAndPeriphery is Script {
     }
 
     function deployGameFundamentals() public {
-
-        // Stat boosts are now inlined into the Engine (no standalone StatBoosts contract to deploy).
 
         Overclock overclock = new Overclock();
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
