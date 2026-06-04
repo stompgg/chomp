@@ -84,7 +84,6 @@ contract GachaMigrationTest is Test {
         address[] memory aliceList = new address[](1);
         aliceList[0] = ALICE;
         oldReg.setWhitelistedOpponents(aliceList, new address[](0));
-        oldReg.setHardCpuOpponents(aliceList, new address[](0));
 
         // ----- New (destination) registry: points back at oldReg. -----
         newReg = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, oldReg);
@@ -114,7 +113,6 @@ contract GachaMigrationTest is Test {
         assertEq(newReg.playerData(ALICE), oldReg.playerData(ALICE), "profile word verbatim");
         assertEq(newReg.pointsBalance(ALICE), 1234, "points carried");
         assertTrue(newReg.isWhitelistedOpponent(ALICE), "whitelist flag carried");
-        assertTrue(newReg.isHardCpu(ALICE), "hard-cpu flag carried");
     }
 
     function test_migrate_copiesExpAndFacets() public {

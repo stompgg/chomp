@@ -9,7 +9,7 @@ import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
 /// `playerData[address]` bit layout:
 ///   bit 255         : bonusAwarded (first-game-ever bonus has been awarded)
 ///   bit 254         : isWhitelistedAsOpponent (CPU flag)
-///   bit 253         : isHardCpu (only meaningful when bit 254 is set)
+///   bit 253         : (reserved; formerly isHardCpu)
 ///   bits 250-252    : streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
 ///   bits 224-249    : (reserved)
 ///   bits 192-223    : lastQuestCompletedDay (uint32 calendar day)
@@ -24,7 +24,7 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
 
     uint256 internal constant BONUS_AWARDED_BIT = 1 << 255;
     uint256 internal constant IS_CPU_BIT = 1 << 254;
-    uint256 internal constant IS_HARD_CPU_BIT = 1 << 253;
+    // bit 253 reserved (formerly IS_HARD_CPU_BIT)
     uint256 internal constant STREAK_DAY_SHIFT = 250;
     uint256 internal constant STREAK_DAY_MASK = 0x7;
     uint256 internal constant LAST_FIRST_GAME_TS_SHIFT = 128;
@@ -42,10 +42,6 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
 
     function setWhitelistedOpponents(address[] memory toAllow, address[] memory toDisallow) external onlyOwner {
         _flipPlayerDataBitBulk(toAllow, toDisallow, IS_CPU_BIT);
-    }
-
-    function setHardCpuOpponents(address[] memory toMark, address[] memory toUnmark) external onlyOwner {
-        _flipPlayerDataBitBulk(toMark, toUnmark, IS_HARD_CPU_BIT);
     }
 
     function setAssigners(address[] memory toAdd, address[] memory toRemove) external onlyOwner {
@@ -78,10 +74,6 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
 
     function isWhitelistedOpponent(address addr) public view returns (bool) {
         return playerData[addr] & IS_CPU_BIT != 0;
-    }
-
-    function isHardCpu(address addr) public view returns (bool) {
-        return playerData[addr] & IS_HARD_CPU_BIT != 0;
     }
 
     // ----- IGachaPointsAssigner -----

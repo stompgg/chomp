@@ -86,12 +86,12 @@ uint256 constant GACHA_FIRST_GAME_EVER_BONUS = 16;
 uint256 constant EXP_PER_SURVIVING_MON = 2;
 uint256 constant EXP_PER_KOD_MON = 1;
 
-// Always-on exp multipliers (game-type bonuses)
-uint256 constant PVP_EXP_MULT = 2;
-uint256 constant HARD_CPU_EXP_MULT = 2;
+// Flat exp multiplier applied to every game's per-mon exp. Replaces the old
+// game-type bonuses (hard-CPU difficulty was client-mutable and PvP/CPU no longer differ).
+uint256 constant GAME_EXP_MULT = 2;
 
 // First-game-of-the-day flat bonus that ratchets with a daily-login streak.
-// Added to base reward *before* multipliers so it rides quest / PvP / hard-CPU mults.
+// Added to base reward *before* multipliers so it rides the game + quest mults.
 // Streak resets to 1 once the gap since the last bonus exceeds STREAK_GRACE_WINDOW.
 uint256 constant STREAK_FLAT_BONUS_MAX = 5;
 uint256 constant STREAK_GRACE_WINDOW = 36 hours;
