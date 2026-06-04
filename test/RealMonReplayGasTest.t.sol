@@ -68,7 +68,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     function _deployStack() internal {
-        engine = new Engine(4, 4, 1);
+        engine = new Engine(4, 4);
         TypeCalculator tc = new TypeCalculator();
         Overclock oc = new Overclock();
         SleepStatus sleepStatus = new SleepStatus();
@@ -151,6 +151,16 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     function _startBattle() internal returns (bytes32) {
+        return _startBattleWith(address(mgr));
+    }
+
+    /// @notice Start a battle wired to the Engine's built-in dual-signed buffer flow (sentinel
+    ///         moveManager) instead of the external SignedCommitManager.
+    function _startBattleBuiltIn() internal returns (bytes32) {
+        return _startBattleWith(BUILTIN_DUAL_SIGNED_MANAGER);
+    }
+
+    function _startBattleWith(address moveManager) internal returns (bytes32) {
         address[] memory makersToAdd = new address[](1);
         makersToAdd[0] = address(maker);
         address[] memory makersToRemove = new address[](0);
@@ -163,7 +173,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
                 p0: p0, p0TeamIndex: 0, p1: p1, p1TeamIndex: 0,
                 teamRegistry: registry, validator: IValidator(address(0)),
                 rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
-                moveManager: address(mgr), matchmaker: maker, engineHooks: new IEngineHook[](0)
+                moveManager: moveManager, matchmaker: maker, engineHooks: new IEngineHook[](0)
             }),
             pairHashNonce: nonce
         });
@@ -236,6 +246,38 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         for (uint64 i; i < lastIdx; i++) submitExec += _submitTurn(battleKey, i, plan[i], false, measure);
         // Final turn submits AND drains the buffer in one tx (submit + executeBuffered combined).
         execExec = _submitTurn(battleKey, lastIdx, plan[lastIdx], true, measure);
+        engine.resetCallContext();
+    }
+
+    // ---- BUILT-IN BATCHED (in-Engine buffer: submit/drain via the Engine directly, no external
+    //      SignedCommitManager). Same single-sig dual-signed flow, but signatures target the Engine's
+    //      EIP-712 domain and there is no cross-contract getSubmitContext/executeBatchedTurns hop. ----
+    function _submitTurnBuiltIn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
+        internal returns (uint256 gasUsed)
+    {
+        uint8 p0m = tn.p0Present ? tn.p0Move : NO_OP_MOVE_INDEX;
+        uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
+        uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, turnId))));
+        uint104 p1s = tn.p1Present ? tn.p1Salt : uint104(uint256(keccak256(abi.encode("noop1", battleKey, turnId))));
+        TurnSubmission memory entry = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, turnId, p0m, tn.p0Extra, p0s, p1m, tn.p1Extra, p1s, P0_PK, P1_PK
+        );
+        address committer = _committerFor(turnId, p0, p1);
+        if (measure) vm.cool(address(engine));
+        vm.prank(committer);
+        uint256 g0 = gasleft();
+        if (combined) {
+            engine.submitTurnMovesAndExecute(battleKey, entry);
+        } else {
+            engine.submitTurnMoves(battleKey, entry);
+        }
+        gasUsed = g0 - gasleft();
+    }
+
+    function _runBuiltIn(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 submitExec, uint256 execExec) {
+        uint64 lastIdx = uint64(plan.length - 1);
+        for (uint64 i; i < lastIdx; i++) submitExec += _submitTurnBuiltIn(battleKey, i, plan[i], false, measure);
+        execExec = _submitTurnBuiltIn(battleKey, lastIdx, plan[lastIdx], true, measure);
         engine.resetCallContext();
     }
 
@@ -314,6 +356,24 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
         assertEq(legacyState, batchedState, "legacy and batched must reach identical end state");
 
+        // BUILT-IN BATCHED: same dual-signed flow driven through the Engine directly (sentinel
+        // moveManager) — no external SignedCommitManager. This is the Phase 2 A/B vs external batched.
+        _deployStack();
+        registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
+        registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
+        bytes32 inKey1 = _startBattleBuiltIn();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _runBuiltIn(inKey1, plan, false);
+        bytes32 builtInState = _stateHash(inKey1);
+        _endViaTimeout(inKey1);
+        bytes32 inKey2 = _startBattleBuiltIn();
+        require(engine.getStorageKey(inKey1) == engine.getStorageKey(inKey2), "built-in storageKey reuse");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        (uint256 inSubmitExec, uint256 inExecExec) = _runBuiltIn(inKey2, plan, true);
+        uint256 builtInTotal = inSubmitExec + inExecExec + plan.length * TX_BASE;
+
+        assertEq(legacyState, builtInState, "legacy and built-in must reach identical end state");
+
         // ONE-TX (single-player/CPU): all moves up front, executed in one tx. Fresh stack, same pattern.
         _deployStack();
         registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
@@ -334,8 +394,11 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         console.log("");
         console.log("=== CLEAN BRANCH: REAL game (26 turns), PROD config (inline regen), production-faithful ===");
         console.log("  LEGACY  (inline regen, repack, 1-sig):", legacyTotal);
-        console.log("  BATCHED (inline regen, repack, 1-sig):", batchedTotal);
+        console.log("  BATCHED (external mgr, repack, 1-sig) :", batchedTotal);
         if (batchedTotal < legacyTotal) console.log("  batching saves vs clean-legacy       :", legacyTotal - batchedTotal);
+        console.log("  BUILT-IN BATCHED (in-Engine, no mgr)  :", builtInTotal);
+        if (builtInTotal < batchedTotal) console.log("  built-in saves vs external batched   :", batchedTotal - builtInTotal);
+        if (builtInTotal < legacyTotal) console.log("  built-in saves vs clean-legacy       :", legacyTotal - builtInTotal);
         console.log("  ONE-TX  (CPU: all moves + execute, 1 tx):", oneTxTotal);
         if (oneTxTotal < batchedTotal) console.log("  one-tx saves vs batched              :", batchedTotal - oneTxTotal);
         if (oneTxTotal < legacyTotal) console.log("  one-tx saves vs legacy               :", legacyTotal - oneTxTotal);

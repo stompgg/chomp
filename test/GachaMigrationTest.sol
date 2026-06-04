@@ -33,7 +33,7 @@ contract GachaMigrationTest is Test {
         // currentDay > 0 so daily-gated branches behave; mirrors GachaTeamRegistryTest.
         vm.warp(2 days);
 
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         mockRNG = new MockGachaRNG();
 
         // ----- Old (source) registry: no predecessor. -----

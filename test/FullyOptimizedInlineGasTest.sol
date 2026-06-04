@@ -71,7 +71,7 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         p0 = vm.addr(P0_PK);
         p1 = vm.addr(P1_PK);
 
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         signedMatchmaker = new SignedMatchmaker(engine);
         typeCalc = new TestTypeCalculator();

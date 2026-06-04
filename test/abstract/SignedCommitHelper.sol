@@ -53,6 +53,60 @@ abstract contract SignedCommitHelper is Test {
         uint104 revealerSalt,
         uint16 revealerExtraData
     ) internal view returns (bytes memory) {
+        return _signDualRevealWithDomain(
+            _signedCommitDomainSeparator(signedCommitManagerAddr),
+            privateKey,
+            battleKey,
+            turnId,
+            committerMoveHash,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData
+        );
+    }
+
+    /// @notice EIP-712 domain separator for the Engine's built-in dual-signed flow (name "ChompEngine").
+    /// @dev Mirrors Engine._domainNameAndVersion(). Used when a battle's moveManager is the
+    ///      BUILTIN_DUAL_SIGNED_MANAGER sentinel, so the revealer signature must target the Engine.
+    function _engineDomainSeparator(address engineAddr) internal view returns (bytes32) {
+        return keccak256(
+            abi.encode(_SIGNED_COMMIT_DOMAIN_TYPEHASH, keccak256("ChompEngine"), keccak256("1"), block.chainid, engineAddr)
+        );
+    }
+
+    /// @notice Sign a DualSignedReveal against the Engine's built-in-flow domain.
+    function _signDualRevealForEngine(
+        address engineAddr,
+        uint256 privateKey,
+        bytes32 battleKey,
+        uint64 turnId,
+        bytes32 committerMoveHash,
+        uint8 revealerMoveIndex,
+        uint104 revealerSalt,
+        uint16 revealerExtraData
+    ) internal view returns (bytes memory) {
+        return _signDualRevealWithDomain(
+            _engineDomainSeparator(engineAddr),
+            privateKey,
+            battleKey,
+            turnId,
+            committerMoveHash,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData
+        );
+    }
+
+    function _signDualRevealWithDomain(
+        bytes32 domainSeparator,
+        uint256 privateKey,
+        bytes32 battleKey,
+        uint64 turnId,
+        bytes32 committerMoveHash,
+        uint8 revealerMoveIndex,
+        uint104 revealerSalt,
+        uint16 revealerExtraData
+    ) private pure returns (bytes memory) {
         bytes32 structHash = SignedCommitLib.hashDualSignedReveal(
             SignedCommitLib.DualSignedReveal({
                 battleKey: battleKey,
@@ -63,9 +117,7 @@ abstract contract SignedCommitHelper is Test {
                 revealerExtraData: revealerExtraData
             })
         );
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", _signedCommitDomainSeparator(signedCommitManagerAddr), structHash)
-        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }

@@ -35,7 +35,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(2, 4, 1);
+        engine = new Engine(2, 4);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);

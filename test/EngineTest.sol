@@ -68,7 +68,7 @@ contract EngineTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         validator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
@@ -475,14 +475,6 @@ contract EngineTest is Test, BattleHelper {
         // Attempt to forcibly advance the game state
         vm.expectRevert();
         engine.execute(battleKey);
-
-        // Check that timeout succeeds for Bob in this case
-        vm.warp(vm.getBlockTimestamp() + (TIMEOUT_DURATION * validator.PREV_TURN_MULTIPLIER()) + 1);
-        engine.end(battleKey);
-
-        // Assert Bob wins
-        (, state) = engine.getBattle(battleKey);
-        assertEq(engine.getWinner(battleKey), BOB);
     }
 
     function test_fasterPriorityKOsForcesSwitchCorrectlyFailsOnInvalidSwitchNoCommit() public {
@@ -496,16 +488,6 @@ contract EngineTest is Test, BattleHelper {
         // Game should revert because moves have not been set
         vm.expectRevert();
         engine.execute(battleKey);
-
-        // Assume Alice AFKs
-
-        // Check that timeout succeeds for Bob in this case, Alice is the loser
-        vm.warp(vm.getBlockTimestamp() + (TIMEOUT_DURATION * validator.PREV_TURN_MULTIPLIER()) + 1);
-        engine.end(battleKey);
-
-        // Assert Bob wins
-        (, state) = engine.getBattle(battleKey);
-        assertEq(engine.getWinner(battleKey), BOB);
     }
 
     function test_nonKOSubsequentMoves() public {
@@ -2652,59 +2634,21 @@ contract EngineTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Bob does nothing (it's his turn to move, so he'll lose by timeout)
+        // Bob does nothing — let the battle stall out.
 
-        // Skip ahead 1 second (past the timeout)
-        vm.warp(block.timestamp + 1);
+        // Run past MAX_BATTLE_DURATION so anyone can force-end it (awards p0 = ALICE).
+        vm.warp(block.timestamp + MAX_BATTLE_DURATION + 1);
 
         // End the battle
         engine.end(battleKey);
 
-        // Check that ALICE wins (Bob didn't commit for round 2)
+        // Check that ALICE wins (p0 wins the force-end)
         assertEq(engine.getWinner(battleKey), ALICE);
 
         // // Bob should not be able to commit to the ended battle
         vm.startPrank(BOB);
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
         commitManager.commitMove(battleKey, bytes32(0));
-    }
-
-    // Verifies that ending a battle in the same block it started reverts with GameStartsAndEndsSameBlock
-    function test_cannotEndBattleSameBlock() public {
-        // Create a validator with 0 timeout so we can trigger an immediate timeout
-        uint256[] memory empty = new uint256[](0);
-        Mon memory mon = Mon({
-            stats: MonStats({
-                hp: 10,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: empty,
-            ability: 0
-        });
-        Mon[] memory team = new Mon[](1);
-        team[0] = mon;
-        defaultRegistry.setTeam(ALICE, team);
-        defaultRegistry.setTeam(BOB, team);
-        DefaultValidator zeroTimeoutValidator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0}));
-        bytes32 battleKey = _startBattle(zeroTimeoutValidator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Alice commits to switch to mon index 0
-        vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint104(0), uint16(0))));
-
-        // Attempt to end the battle immediately (same block as start)
-        // Bob hasn't committed and timeout is 0, so Bob loses, but game should revert
-        // because we're still in the same block as battle start
-        vm.expectRevert(Engine.GameStartsAndEndsSameBlock.selector);
-        engine.end(battleKey);
     }
 
     // Helper function, creates a battle with two mons each for Alice and Bob
@@ -2978,142 +2922,9 @@ contract EngineTest is Test, BattleHelper {
         assertEq(turnId, 2);
     }
 
-    function test_timeoutSucceedsCommitPlayerNoSwitchFlag() public {
-        bytes32 battleKey = _startDummyBattleWithTwoMons();
-
-        // Wait for TIMEOUT_DURATION * PREV_TURN_MULTIPLIER + 1
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-        vm.warp(TIMEOUT_DURATION * validatorToUse.PREV_TURN_MULTIPLIER() + 1);
-
-        // Call end on the battle
-        engine.end(battleKey);
-
-        // Assert that Bob wins bc Alice didn't commit to start
-        assertEq(engine.getWinner(battleKey), BOB);
-    }
-
-    function test_timeoutSucceedsRevealPlayerNoSwitchFlag() public {
-        bytes32 battleKey = _startDummyBattleWithTwoMons();
-
-        // Let Alice commit to choosing switch
-        uint104 salt = 0;
-        uint16 extraData = uint16(0);
-        bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
-        vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, moveHash);
-
-        // Wait for TIMEOUT_DURATION + 1
-        vm.warp(TIMEOUT_DURATION + 1);
-
-        // Call end on the battle
-        engine.end(battleKey);
-
-        // Assert that Alice wins because Bob didn't reveal
-        assertEq(engine.getWinner(battleKey), ALICE);
-    }
-
-    function test_timeoutSucceedsCommitPlayerWitholdsRevealNoSwitchFlag() public {
-        bytes32 battleKey = _startDummyBattleWithTwoMons();
-
-        // Let Alice commit to choosing switch
-        uint104 salt = 0;
-        uint16 extraData = uint16(0);
-        bytes32 moveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, salt, extraData));
-        vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, moveHash);
-
-        // Let Bob reveal to choosing switch as well
-        vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, salt, extraData, true);
-        engine.resetCallContext();
-        // Wait for TIMEOUT_DURATION + 1
-        vm.warp(TIMEOUT_DURATION + 1);
-
-        // Call end on the battle
-        engine.end(battleKey);
-
-        // Assert that Bob wins because Alice didn't reveal
-        assertEq(engine.getWinner(battleKey), BOB);
-    }
-
-    function test_timeoutScceedsRevealPlayerSwitchFlag() public {
-        // Initialize fast and slow mons
-        IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
-        );
-        uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(normalAttack)));
-        Mon memory fastMon = Mon({
-            stats: MonStats({
-                hp: 10,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: moves,
-            ability: 0
-        });
-        Mon memory slowMon = Mon({
-            stats: MonStats({
-                hp: 10,
-                stamina: 2,
-                speed: 1,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: moves,
-            ability: 0
-        });
-        Mon[] memory fastTeam = new Mon[](2);
-        fastTeam[0] = fastMon;
-        fastTeam[1] = fastMon;
-        Mon[] memory slowTeam = new Mon[](2);
-        slowTeam[0] = slowMon;
-        slowTeam[1] = slowMon;
-        // Register teams
-        defaultRegistry.setTeam(ALICE, fastTeam);
-        defaultRegistry.setTeam(BOB, slowTeam);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-
-        bytes32 battleKey = _startBattle(validatorToUse, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // First move of the game has to be selecting their mons (both index 0)
-        _commitRevealExecuteForAliceAndBob(
-            battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-
-        // Let Alice and Bob commit and reveal to both choosing attack (move index 0)
-        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, 0, 0);
-
-        // Alice should knock out Bob, but let Bob do nothing
-        // Skip ahead TIMEOUT_DURATION * multiplier (as it's a new turn)
-        vm.warp((TIMEOUT_DURATION * validatorToUse.PREV_TURN_MULTIPLIER()) + 1);
-
-        // Call end on the battle
-        engine.end(battleKey);
-
-        // Assert that Alice wins because Bob didn't reveal
-        assertEq(engine.getWinner(battleKey), ALICE);
-    }
-
     function test_secondBattleDifferentBattleKey() public {
         bytes32 battleKey = _startDummyBattleWithTwoMons();
-        vm.warp(TIMEOUT_DURATION + 1);
+        vm.warp(block.timestamp + MAX_BATTLE_DURATION + 1);
         vm.startPrank(BOB);
         engine.end(battleKey);
         bytes32 newBattleKey = _startDummyBattleWithTwoMons();

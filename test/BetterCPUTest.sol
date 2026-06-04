@@ -67,7 +67,7 @@ contract BetterCPUTest is Test {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         mockCPURNG = new MockCPURNG();
         typeCalc = new TestTypeCalculator();

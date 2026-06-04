@@ -11,30 +11,7 @@ import {SignedCommitLib} from "./SignedCommitLib.sol";
 
 /// @title SignedCommitManager
 /// @notice Extends DefaultCommitManager with optimistic dual-signed commit flow
-/// @dev Allows both players to sign their moves off-chain, enabling the committer
-///      to submit both moves and execute in a single transaction.
-///
-///      Normal flow (3 transactions):
-///        1. Alice commits (TX 1)
-///        2. Bob reveals (TX 2)
-///        3. Alice reveals (TX 3)
-///
-///      Dual-signed flow (1 transaction):
-///        1. Alice signs her move hash off-chain (SignedCommit), sends to Bob
-///        2. Bob signs his move + Alice's hash off-chain (DualSignedReveal), sends back
-///        3. Anyone (Alice, Bob, or a relayer) calls executeWithDualSignedMoves with
-///           both signatures + Alice's preimage (TX 1)
-///
-///      Security: Alice commits to her hash before seeing Bob's move (binding Alice
-///      cryptographically via her SignedCommit). Bob signs over Alice's hash (binding
-///      Bob via his DualSignedReveal). Both signatures together prove both players'
-///      intent without trusting msg.sender — submission can be relayed without
-///      reopening any unilateral-revealer attack.
-///
-///      Fallback if Alice stalls: Bob can use commitWithSignature() to publish Alice's
-///      signed commitment on-chain, then continue with the normal reveal flow.
-///
-///      Fallback if Bob doesn't cooperate: Alice can use the normal commitMove() flow.
+/// @dev 
 contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Thrown when the signature verification fails
     error InvalidSignature();
@@ -59,8 +36,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///      revealer signs `DualSignedReveal{committerMoveHash, …}`, which pins the committer's move
     ///      hash, so the committer is locked to this exact move (a different preimage would break the
     ///      revealer's signature) and a malicious revealer cannot play a forged committer move (they
-    ///      are not `msg.sender == committer`). Saves one ecrecover + one 65-byte signature vs the
-    ///      dual-sig variant. Trade-off: NOT relayer-friendly — the committer must send their own tx.
+    ///      are not `msg.sender == committer`).
     /// @param battleKey The battle identifier
     /// @param committerMoveIndex The committer's move index
     /// @param committerSalt The committer's salt
@@ -281,9 +257,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
 
         (address committer, address revealer) = entry.turnId % 2 == 0 ? (ctxP0, ctxP1) : (ctxP1, ctxP0);
 
-        // SINGLE-SIG: committer is msg.sender (no committer signature). Cheaper than dual-sig by
-        // one ecrecover + one 65-byte sig; the revealer sig below still pins committerMoveHash so
-        // the committer cannot change their move and cannot be impersonated.
         if (msg.sender != committer) {
             revert NotCommitter();
         }

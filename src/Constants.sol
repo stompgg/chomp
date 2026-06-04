@@ -55,6 +55,11 @@ uint16 constant STAT_BOOST_STEPS = 0x8020;
 // inline StaminaRegen as a global effect without calling an external contract.
 address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A);  // "STA"mina
 
+// Sentinel moveManager address: when a battle's moveManager is set to this, the battle uses the
+// Engine's built-in dual-signed buffer flow (submitTurnMoves / executeBuffered) instead of an
+// external ICommitManager contract. The built-in submit/drain entrypoints require this sentinel.
+address constant BUILTIN_DUAL_SIGNED_MANAGER = address(0x5165);  // "SIGS" - built-in dual-signed
+
 // Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
 uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
 
@@ -70,7 +75,6 @@ bytes32 constant NONE_EVENT_TYPE = bytes32(0);
 // Prefixed with GAME_ to avoid shadowing Engine's immutable fields of the same name.
 uint256 constant GAME_MONS_PER_TEAM = 4;
 uint256 constant GAME_MOVES_PER_MON = 4;
-uint256 constant GAME_TIMEOUT_DURATION = 30; // seconds
 
 // Gacha point economy — mirrored in the transpiled frontend so copy/breakdowns
 // can key off these values.

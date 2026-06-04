@@ -19,7 +19,7 @@ contract StandardAttackFactoryTest is Test {
     IEngine constant DUMMY_ENGINE = IEngine(address(0));
 
     function setUp() public {
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         typeCalc = new TypeCalculator();
         factory = new StandardAttackFactory(typeCalc);
     }

@@ -41,7 +41,7 @@ contract EngineAndPeriphery is Script {
         TypeCalculator typeCalc = new TypeCalculator();
         deployedContracts.push(DeployData({name: "TYPE CALCULATOR", contractAddress: address(typeCalc)}));
 
-        Engine engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, GAME_TIMEOUT_DURATION);
+        Engine engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         deployedContracts.push(DeployData({name: "ENGINE", contractAddress: address(engine)}));
 
         SignedCommitManager commitManager = new SignedCommitManager(engine);

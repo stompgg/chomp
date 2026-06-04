@@ -57,7 +57,7 @@ contract GachaTeamRegistryTest is Test {
         // the daily-multiplier / quest-eligibility branches never trigger on the first battle.
         vm.warp(2 days);
 
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         mockRNG = new MockGachaRNG();
 
         gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));

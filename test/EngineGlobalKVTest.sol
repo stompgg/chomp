@@ -39,7 +39,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         kvMove = new MockKVWriterMove();

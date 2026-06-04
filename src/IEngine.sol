@@ -82,6 +82,16 @@ interface IEngine {
         returns (uint64 executed, address winner);
     function resetCallContext() external;
 
+    // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
+    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external;
+    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external;
+    function executeBuffered(bytes32 battleKey) external;
+    function getBufferStatus(bytes32 battleKey) external view returns (uint64 numExecuted, uint8 numBuffered);
+    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+        external
+        view
+        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt);
+
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);

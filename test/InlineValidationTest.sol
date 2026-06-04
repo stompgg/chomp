@@ -42,7 +42,7 @@ contract InlineValidationTest is Test, BattleHelper {
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
         // Create engine with inline validation defaults
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
         matchmaker = new DefaultMatchmaker(engine);
         moveFactory = new TestMoveFactory();

@@ -55,7 +55,7 @@ contract EkinekiTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -129,7 +129,7 @@ contract EkinekiTest is Test, BattleHelper {
         assertTrue(bobHpDelta < 0, "Bob should have taken damage from Bubble Bop");
 
         // Now do a fresh battle with single hit to compare
-        Engine engine2 = new Engine(0, 0, 0);
+        Engine engine2 = new Engine(0, 0);
         DefaultCommitManager commitManager2 = new DefaultCommitManager(IEngine(address(engine2)));
         DefaultMatchmaker matchmaker2 = new DefaultMatchmaker(engine2);
         TestTeamRegistry registry2 = new TestTeamRegistry();

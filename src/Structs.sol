@@ -91,6 +91,11 @@ struct BattleData {
     uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
     uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
     uint16 turnId;
+    // Built-in dual-signed buffer (BUILTIN_DUAL_SIGNED_MANAGER battles): per-turn entries staged via
+    // submitTurnMoves but not yet drained. Fills slot 1's last 8 free bits — no new storage slot. The
+    // executed-turn count is `turnId` itself (buffering does not execute), so the next valid submit id
+    // is `turnId + numBuffered`. Reset to 0 each battle by startBattle's BattleData reinit.
+    uint8 numBuffered;
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over

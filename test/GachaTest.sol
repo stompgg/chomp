@@ -27,7 +27,7 @@ contract GachaTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         mockRNG = new MockGachaRNG();
@@ -185,7 +185,7 @@ contract GachaTest is Test, BattleHelper {
 
         // Alice wins the battle (inactivity for Bob), we skip ahead
         mockRNG.setRNG(1); // No extra bonus for points
-        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + MAX_BATTLE_DURATION + 1);
         engine.end(battleKey);
 
         // Assert Alice won
@@ -256,7 +256,7 @@ contract GachaTest is Test, BattleHelper {
             _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
 
         // Advance time to avoid GameStartsAndEndsSameBlock error
-        vm.warp(vm.getBlockTimestamp() + 1);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
@@ -333,7 +333,7 @@ contract GachaTest is Test, BattleHelper {
         // ---- First battle ----
         bytes32 battleKey =
             _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
-        vm.warp(vm.getBlockTimestamp() + 1);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
         vm.stopPrank();
@@ -359,7 +359,7 @@ contract GachaTest is Test, BattleHelper {
         // ---- Second battle ----
         battleKey =
             _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
-        vm.warp(vm.getBlockTimestamp() + 1);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
         vm.stopPrank();

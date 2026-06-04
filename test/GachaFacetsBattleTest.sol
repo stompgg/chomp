@@ -40,14 +40,13 @@ contract GachaFacetsBattleTest is Test {
 
     uint256 constant MONS_PER_TEAM = 2;
     uint256 constant MOVES_PER_MON = 1;
-    uint256 constant TIMEOUT = 10;
     address constant ABILITY_ADDR = address(0xABAB);
 
     function setUp() public {
         // GachaTeamRegistry's day-bucketed quest/streak logic needs a non-zero day.
         vm.warp(2 days);
 
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, TIMEOUT);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
         mockOracle = new MockRandomnessOracle();
         mockRNG = new MockGachaRNG();
         registry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));

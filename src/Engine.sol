@@ -9,21 +9,21 @@ import "./moves/IMoveSet.sol";
 
 import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
-import {ICommitManager} from "./commit-manager/ICommitManager.sol";
+import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
+import {ECDSA} from "./lib/ECDSA.sol";
+import {EIP712} from "./lib/EIP712.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
-import {TimeoutCheckParams, ValidatorLogic} from "./lib/ValidatorLogic.sol";
+import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
-contract Engine is IEngine, MappingAllocator {
+contract Engine is IEngine, MappingAllocator, EIP712 {
     // Default validator config (immutable, for inline validation when validator is address(0))
     uint256 public immutable DEFAULT_MONS_PER_TEAM;
     uint256 public immutable DEFAULT_MOVES_PER_MON;
-    uint256 public immutable DEFAULT_TIMEOUT_DURATION;
-    uint256 public constant PREV_TURN_MULTIPLIER = 2;
 
     bytes32 public transient battleKeyForWrite; // intended to be used during call stack by other contracts
     bytes32 private transient storageKeyForWrite; // cached storage key to avoid repeated lookups
@@ -40,6 +40,11 @@ contract Engine is IEngine, MappingAllocator {
     // Paired with BattleConfig.globalKVCount to isolate the current battle's live entries from any leftover
     // lanes written by prior battles that shared this storageKey.
     mapping(bytes32 storageKey => mapping(uint256 slotIdx => uint256 packedKeys)) private globalKVKeySlots;
+    // Built-in dual-signed buffer: per-turn packed (p0,p1) move projection, keyed by the recycled
+    // storageKey (warm nz->nz SSTOREs across battles). Layout per slot matches the executeBatchedTurns
+    // entry: [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]. The live count
+    // is BattleData.numBuffered; entries are only ever read in [turnId, turnId+numBuffered).
+    mapping(bytes32 storageKey => mapping(uint64 turnId => uint256 packed)) private moveBuffer;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
     int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
@@ -54,9 +59,6 @@ contract Engine is IEngine, MappingAllocator {
     // Errors
     error NoWriteAllowed();
     error WrongCaller();
-    // The 5 stat deltas (Speed/Attack/Defense/SpecialAttack/SpecialDefense) are owned exclusively by
-    // the inlined stat-boost system; they can only be written via add/removeStatBoost so the boost
-    // aggregation (which telescopes off the live delta) can't be silently clobbered.
     error StatRequiresStatBoost();
     error MatchmakerNotAuthorized();
     error MatchmakerError();
@@ -67,6 +69,12 @@ contract Engine is IEngine, MappingAllocator {
     error BattleNotStarted();
     error NotTwoPlayerTurn();
     error NotSinglePlayerTurn();
+    // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
+    error NotBuiltInManager();
+    error WrongTurnId();
+    error NotCommitter();
+    error InvalidSignature();
+    error EmptyBuffer();
 
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
@@ -92,16 +100,35 @@ contract Engine is IEngine, MappingAllocator {
     // The p1 (CPU) salt is dropped — always 0 on the batched (CPU) path. Moves are RAW indices
     // (consumer applies MOVE_INDEX_OFFSET, matching the MonMoves convention).
     event BattleCompleteWithBatchTurns(bytes32 indexed battleKey, bytes payload);
+    // Emitted by the built-in dual-signed buffer flow when a turn is staged via submitTurnMoves.
+    // Both players' moves are known at submit (committer preimage + revealer signature), so per-turn
+    // move data is published in real time even though execution is deferred to the drain. Compact:
+    // battleKey topic + one packed data word. Layout:
+    //   bits   0-  7 : p0 move index (raw — consumer applies MOVE_INDEX_OFFSET, matching MonMoves)
+    //   bits   8- 23 : p0 extraData (uint16)
+    //   bits  24- 31 : p1 move index (raw)
+    //   bits  32- 47 : p1 extraData (uint16)
+    //   bits  48-111 : turnId (uint64)
+    // Salts are omitted (needed only for the on-chain hash check, already done); getBufferedTurn
+    // still exposes them on-chain if ever required.
+    event MovesSubmitted(bytes32 indexed battleKey, bytes32 packed);
 
     /// @notice Constructor to set default validator config for inline validation
     /// @dev When a battle's validator is address(0), Engine uses inline validation logic with these params
     /// @param _DEFAULT_MONS_PER_TEAM Default mons per team for inline validation
     /// @param _DEFAULT_MOVES_PER_MON Default moves per mon for inline validation
-    /// @param _DEFAULT_TIMEOUT_DURATION Default timeout duration for inline validation
-    constructor(uint256 _DEFAULT_MONS_PER_TEAM, uint256 _DEFAULT_MOVES_PER_MON, uint256 _DEFAULT_TIMEOUT_DURATION) {
+    constructor(uint256 _DEFAULT_MONS_PER_TEAM, uint256 _DEFAULT_MOVES_PER_MON) {
         DEFAULT_MONS_PER_TEAM = _DEFAULT_MONS_PER_TEAM;
         DEFAULT_MOVES_PER_MON = _DEFAULT_MOVES_PER_MON;
-        DEFAULT_TIMEOUT_DURATION = _DEFAULT_TIMEOUT_DURATION;
+    }
+
+    /// @inheritdoc EIP712
+    /// @dev Domain for the built-in dual-signed buffer flow. NOTE: this differs from
+    ///      SignedCommitManager's domain, so signatures for the built-in flow must target the Engine
+    ///      address (off-chain signers in belch/munch re-target here).
+    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
+        name = "ChompEngine";
+        version = "1";
     }
 
     function updateMatchmakers(address[] memory makersToAdd, address[] memory makersToRemove) external {
@@ -201,7 +228,8 @@ contract Engine is IEngine, MappingAllocator {
             playerSwitchForTurnFlag: 2, // Set flag to be 2 which means both players act
             activeMonIndex: 0, // Defaults to 0 (both players start with mon index 0)
             turnId: 0,
-            lastExecuteTimestamp: 0 // Fresh battleKey per battle, starts at 0
+            lastExecuteTimestamp: 0, // Fresh battleKey per battle, starts at 0
+            numBuffered: 0 // Built-in dual-signed buffer starts empty (auto-resets each battle here)
         });
 
         // Set the team for p0 and p1 in the reusable config storage
@@ -479,6 +507,234 @@ contract Engine is IEngine, MappingAllocator {
                 ptr := add(ptr, 19)
             }
             mstore(payload, len) // drop the 13 slack bytes from the visible length
+        }
+    }
+
+    /// @dev Executes one buffered turn for the built-in drain: flag-dispatch the packed entry into the
+    ///      current-turn transients (the non-acting half on a single-player turn is ignored), then
+    ///      _executeInternal with emitEvents=false. Single call site (_drainBuffer) so the optimizer
+    ///      inlines it. NOTE: executeBatchedTurns (the external-manager A/B baseline) keeps its own
+    ///      inlined copy of this loop body on purpose — extracting a 2-call-site helper stopped the
+    ///      inliner and added ~1M gas across a real replay, so the baseline must not share this.
+    function _executeBatchedEntry(bytes32 battleKey, bytes32 storageKey, uint256 entry)
+        internal
+        returns (address winner)
+    {
+        uint8 p0Move = uint8(entry);
+        uint16 p0Extra = uint16(entry >> 8);
+        uint104 p0Salt = uint104(entry >> 24);
+        uint8 p1Move = uint8(entry >> 128);
+        uint16 p1Extra = uint16(entry >> 136);
+        uint104 p1Salt = uint104(entry >> 152);
+
+        // Live flag read (direct storage, warm after the first sub-turn).
+        uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+        if (flag == 2) {
+            uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+            uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+            _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+            _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+        } else if (flag == 0) {
+            uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+            _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+        } else {
+            uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+            _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+        }
+
+        return _executeInternal(battleKey, storageKey, false);
+    }
+
+    /// @dev Reset per-turn transients between batched sub-turns so the next starts like a fresh tx.
+    function _resetBatchedTurnTransients() internal {
+        _turnP0Packed = 0;
+        _turnP1Packed = 0;
+        tempRNG = 0;
+        koOccurredFlag = 0;
+        tempPreDamage = 0;
+        effectsDirtyBitmap = 0;
+    }
+
+    // ---------------------------------------------------------------------
+    // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
+    // ---------------------------------------------------------------------
+
+    /// @notice Stage one per-turn dual-signed submission into the Engine's buffer (no execution).
+    /// @dev SINGLE-SIG: the committer is msg.sender (no committer signature); the revealer's EIP-712
+    ///      signature pins the committer's move hash, so the committer can't change their move and
+    ///      can't be impersonated. Requires the battle to use the built-in flow (moveManager sentinel).
+    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
+        _submitTurnMoves(battleKey, entry);
+    }
+
+    /// @notice Stage a submission and drain the whole buffer in the same tx (final-turn convenience).
+    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external {
+        bytes32 storageKey = _submitTurnMoves(battleKey, entry);
+        _drainBuffer(battleKey, storageKey);
+    }
+
+    /// @notice Drain every currently buffered turn in one tx. Permissionless — entries were already
+    ///         signature-validated at submit.
+    function executeBuffered(bytes32 battleKey) external {
+        _drainBuffer(battleKey, _getStorageKey(battleKey));
+    }
+
+    function _submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry)
+        internal
+        returns (bytes32 storageKey)
+    {
+        storageKey = _getStorageKey(battleKey);
+        if (battleConfig[storageKey].moveManager != BUILTIN_DUAL_SIGNED_MANAGER) {
+            revert NotBuiltInManager();
+        }
+        BattleData storage data = battleData[battleKey];
+        if (data.winnerIndex != 2) {
+            revert GameAlreadyOver();
+        }
+
+        // numExecuted IS the live turnId (buffering doesn't execute); next valid id is turnId+numBuffered.
+        uint64 turnId = data.turnId;
+        uint8 numBuffered = data.numBuffered;
+        if (entry.turnId != turnId + numBuffered) {
+            revert WrongTurnId();
+        }
+
+        (address committer, address revealer) = entry.turnId % 2 == 0 ? (data.p0, data.p1) : (data.p1, data.p0);
+        if (msg.sender != committer) {
+            revert NotCommitter();
+        }
+
+        bytes32 committerMoveHash =
+            keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
+        {
+            SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
+                battleKey: battleKey,
+                turnId: entry.turnId,
+                committerMoveHash: committerMoveHash,
+                revealerMoveIndex: entry.revealerMoveIndex,
+                revealerSalt: entry.revealerSalt,
+                revealerExtraData: entry.revealerExtraData
+            });
+            bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
+            if (ECDSA.recoverCalldata(digest, entry.revealerSig) != revealer) {
+                revert InvalidSignature();
+            }
+        }
+
+        // Project committer/revealer onto (p0, p1) by turn parity, matching the executeBatchedTurns layout.
+        uint8 p0Move;
+        uint16 p0Extra;
+        uint104 p0Salt;
+        uint8 p1Move;
+        uint16 p1Extra;
+        uint104 p1Salt;
+        if (entry.turnId % 2 == 0) {
+            (p0Move, p0Extra, p0Salt) = (entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt);
+            (p1Move, p1Extra, p1Salt) = (entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt);
+        } else {
+            (p0Move, p0Extra, p0Salt) = (entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt);
+            (p1Move, p1Extra, p1Salt) = (entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt);
+        }
+
+        moveBuffer[storageKey][entry.turnId] = _packBufferedTurn(p0Move, p0Extra, p0Salt, p1Move, p1Extra, p1Salt);
+        data.numBuffered = numBuffered + 1;
+        emit MovesSubmitted(
+            battleKey,
+            bytes32(
+                uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p1Move) << 24) | (uint256(p1Extra) << 32)
+                    | (uint256(entry.turnId) << 48)
+            )
+        );
+    }
+
+    function _drainBuffer(bytes32 battleKey, bytes32 storageKey)
+        internal
+        returns (uint64 executed, address winner)
+    {
+        BattleData storage data = battleData[battleKey];
+        uint64 startTurn = data.turnId;
+        uint256 numBuffered = data.numBuffered;
+        if (numBuffered == 0) {
+            revert EmptyBuffer();
+        }
+
+        // Snapshot the buffered entries (also reused for the BattleCompleteWithBatchTurns payload).
+        uint256[] memory entries = new uint256[](numBuffered);
+        for (uint256 i = 0; i < numBuffered; i++) {
+            entries[i] = moveBuffer[storageKey][startTurn + uint64(i)];
+        }
+
+        storageKeyForWrite = storageKey;
+        for (uint256 i = 0; i < numBuffered; i++) {
+            winner = _executeBatchedEntry(battleKey, storageKey, entries[i]);
+            executed++;
+            if (winner != address(0)) {
+                break;
+            }
+            _resetBatchedTurnTransients();
+        }
+        // Buffer consumed; turnId was advanced per executed turn by _executeInternal.
+        data.numBuffered = 0;
+        if (winner != address(0)) {
+            emit BattleCompleteWithBatchTurns(battleKey, _packBatchPayloadMemory(entries, executed, winner));
+        }
+    }
+
+    /// @notice Buffer status: numExecuted is the live turnId, plus the staged-but-undrained count.
+    function getBufferStatus(bytes32 battleKey) external view returns (uint64 numExecuted, uint8 numBuffered) {
+        BattleData storage data = battleData[battleKey];
+        return (data.turnId, data.numBuffered);
+    }
+
+    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+        external
+        view
+        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+    {
+        return _unpackBufferedTurn(moveBuffer[_resolveStorageKey(battleKey)][turnId]);
+    }
+
+    function _packBufferedTurn(uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+        internal
+        pure
+        returns (uint256 packed)
+    {
+        packed = uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p0Salt) << 24) | (uint256(p1Move) << 128)
+            | (uint256(p1Extra) << 136) | (uint256(p1Salt) << 152);
+    }
+
+    function _unpackBufferedTurn(uint256 packed)
+        internal
+        pure
+        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+    {
+        p0Move = uint8(packed);
+        p0Extra = uint16(packed >> 8);
+        p0Salt = uint104(packed >> 24);
+        p1Move = uint8(packed >> 128);
+        p1Extra = uint16(packed >> 136);
+        p1Salt = uint104(packed >> 152);
+    }
+
+    /// @dev Memory-array twin of _packBatchPayload (the built-in drain reads entries from storage into
+    ///      memory). Same [winner 20B | 19B/turn] layout.
+    function _packBatchPayloadMemory(uint256[] memory entries, uint256 numTurns, address winner)
+        private
+        pure
+        returns (bytes memory payload)
+    {
+        uint256 len = 20 + numTurns * 19;
+        payload = new bytes(len + 13);
+        assembly ("memory-safe") {
+            let ptr := add(payload, 32)
+            mstore(ptr, shl(96, winner))
+            ptr := add(ptr, 20)
+            let src := add(entries, 0x20)
+            for { let i := 0 } lt(i, numTurns) { i := add(i, 1) } {
+                mstore(ptr, shl(104, mload(add(src, mul(i, 0x20)))))
+                ptr := add(ptr, 19)
+            }
+            mstore(payload, len)
         }
     }
 
@@ -898,77 +1154,25 @@ contract Engine is IEngine, MappingAllocator {
         effectsDirtyBitmap = 0;
     }
 
+    /// @notice Forcibly end a stalled battle once it has run past MAX_BATTLE_DURATION.
+    /// @dev Permissionless. Per-turn inactivity detection has been removed, so this max-duration
+    ///      cleanup is the sole on-chain stall-resolution path (a future external resolver can
+    ///      declare timeout winners via the validator's `validateTimeout` surface). Called before
+    ///      the window elapses it is a silent no-op.
     function end(bytes32 battleKey) external {
         BattleData storage data = battleData[battleKey];
-        bytes32 storageKey = _getStorageKey(battleKey);
-        storageKeyForWrite = storageKey;
-        BattleConfig storage config = battleConfig[storageKey];
         if (data.winnerIndex != 2) {
             revert GameAlreadyOver();
         }
-        for (uint256 i; i < 2;) {
-            address potentialLoser;
-            if (address(config.validator) != address(0)) {
-                potentialLoser = config.validator.validateTimeout(battleKey, i);
-            }
-            // Use inline timeout validation when validator is address(0)
-            else {
-                potentialLoser = _validateTimeoutInline(battleKey, data, config, i);
-            }
-            if (potentialLoser != address(0)) {
-                address winner = potentialLoser == data.p0 ? data.p1 : data.p0;
-                data.winnerIndex = (winner == data.p0) ? 0 : 1;
-                _handleGameOver(battleKey, winner, true);
-                return;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        // Allow forcible end of battle after max duration
-        if (block.timestamp - config.startTimestamp > MAX_BATTLE_DURATION) {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        if (block.timestamp - battleConfig[storageKey].startTimestamp > MAX_BATTLE_DURATION) {
+            // Award p0, matching the BattleComplete(p0) event _handleGameOver emits. Setting
+            // winnerIndex is required: _handleGameOver itself never writes it, so without this the
+            // battle would stay winnerIndex==2 (commit manager would never see it as complete).
+            data.winnerIndex = 0;
             _handleGameOver(battleKey, data.p0, true);
-            return;
         }
-    }
-
-    /// @dev Inline timeout validation logic using shared ValidatorLogic
-    function _validateTimeoutInline(
-        bytes32 battleKey,
-        BattleData storage data,
-        BattleConfig storage config,
-        uint256 playerIndexToCheck
-    ) private view returns (address loser) {
-        uint256 otherPlayerIndex = 1 - playerIndexToCheck;
-        ICommitManager commitManager = ICommitManager(config.moveManager);
-        address[2] memory players = [data.p0, data.p1];
-
-        // Fetch commit data for both players
-        (bytes32 playerMoveHash, uint256 playerCommitTurnId) =
-            commitManager.getCommitment(battleKey, players[playerIndexToCheck]);
-        (bytes32 otherPlayerMoveHash, uint256 otherPlayerCommitTurnId) =
-            commitManager.getCommitment(battleKey, players[otherPlayerIndex]);
-
-        // Build params struct
-        TimeoutCheckParams memory params = TimeoutCheckParams({
-            turnId: data.turnId,
-            playerSwitchForTurnFlag: data.playerSwitchForTurnFlag,
-            playerIndexToCheck: playerIndexToCheck,
-            lastTurnTimestamp: data.turnId == 0 ? config.startTimestamp : data.lastExecuteTimestamp,
-            timeoutDuration: DEFAULT_TIMEOUT_DURATION,
-            prevTurnMultiplier: PREV_TURN_MULTIPLIER,
-            playerMoveHash: playerMoveHash,
-            playerCommitTurnId: playerCommitTurnId,
-            otherPlayerRevealCount: commitManager.getMoveCountForBattleState(battleKey, players[otherPlayerIndex]),
-            otherPlayerTimestamp: commitManager.getLastMoveTimestampForPlayer(battleKey, players[otherPlayerIndex]),
-            otherPlayerMoveHash: otherPlayerMoveHash,
-            otherPlayerCommitTurnId: otherPlayerCommitTurnId
-        });
-
-        if (ValidatorLogic.validateTimeoutLogic(params)) {
-            return players[playerIndexToCheck];
-        }
-        return address(0);
     }
 
     /// @param emitBattleComplete When false (batched path), the plain BattleComplete emit is

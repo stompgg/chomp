@@ -36,7 +36,6 @@ contract StartBattleGasTest is Test, GasMeasure {
     address constant CPU = address(0xC9);
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
-    uint256 constant TIMEOUT = 10;
     uint256 constant POOL = 12; // mon ids 0..11 (ALICE {0,3,4,5}, CPU-T1 {1,2,6,7}, CPU-T2 {8,9,10,11})
 
     Engine engine;
@@ -52,7 +51,7 @@ contract StartBattleGasTest is Test, GasMeasure {
     function setUp() public {
         vm.warp(2 days); // gacha day-bucketed logic needs a non-zero day
 
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, TIMEOUT);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
         mockOracle = new MockRandomnessOracle();
         mockRNG = new MockGachaRNG();
         registry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
@@ -204,7 +203,7 @@ contract StartBattleGasTest is Test, GasMeasure {
 
         // Free the key; swap the CPU team to DISTINCT mons T2 {8,9,10,11} so the recycled config is
         // genuinely overwritten on the p1 (CPU) side.
-        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         engine.end(k1);
         engine.resetCallContext();
         _setCpuTeam([uint256(8), 9, 10, 11]);
@@ -225,7 +224,7 @@ contract StartBattleGasTest is Test, GasMeasure {
 
         // ---- WARM SAME: recycle again, CPU team UNCHANGED (T2) -> team-store all no-op. Baseline so
         //      (WARM_DIFF - WARM_SAME) isolates the 28-slot CPU team-store nz->nz cost. ----
-        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         engine.end(k2);
         engine.resetCallContext();
         bytes32 k3 = _proposeAndAccept("s3");

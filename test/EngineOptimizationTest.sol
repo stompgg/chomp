@@ -57,7 +57,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         oneMonValidator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
@@ -539,7 +539,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
         internal
         returns (Engine testEngine, SignedCommitManager signedManager, bytes32 battleKey)
     {
-        testEngine = new Engine(3, 1, 100);
+        testEngine = new Engine(3, 1);
         signedManager = new SignedCommitManager(testEngine);
         DefaultMatchmaker localMatchmaker = new DefaultMatchmaker(testEngine);
         TestTeamRegistry registry = new TestTeamRegistry();

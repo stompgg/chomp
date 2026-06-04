@@ -31,7 +31,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0, 0);
+        engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(engine);
         validator = new DefaultValidator(
             engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: TIMEOUT})
@@ -123,7 +123,8 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
     function test_BattleAlreadyComplete() public {
         vm.warp(1);
         bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-        vm.warp(TIMEOUT * TIMEOUT);
+        // Run past MAX_BATTLE_DURATION so anyone can force-end the stalled battle (awards p0).
+        vm.warp(MAX_BATTLE_DURATION + 2);
         engine.end(battleKey);
         vm.startPrank(ALICE);
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
@@ -133,33 +134,4 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         commitManager.commitMove(battleKey, bytes32(0));
     }
 
-    function test_timeoutIfP0FailsCommit() public {
-        vm.warp(1);
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-        vm.warp(TIMEOUT * validator.PREV_TURN_MULTIPLIER() + 1);
-        engine.end(battleKey);
-        assertEq(engine.getWinner(battleKey), BOB);
-    }
-
-    function test_timeoutIfP1FailsReveal() public {
-        vm.warp(1);
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-        vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, bytes32("1"));
-        vm.warp(TIMEOUT * validator.PREV_TURN_MULTIPLIER() + 1);
-        engine.end(battleKey);
-        assertEq(engine.getWinner(battleKey), ALICE);
-    }
-
-    function test_timeoutIfP0FailsReveal() public {
-        vm.warp(1);
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-        vm.startPrank(ALICE);
-        commitManager.commitMove(battleKey, bytes32("1"));
-        vm.startPrank(BOB);
-        commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(0), false);
-        vm.warp(TIMEOUT * validator.PREV_TURN_MULTIPLIER() + 1);
-        engine.end(battleKey);
-        assertEq(engine.getWinner(battleKey), BOB);
-    }
 }

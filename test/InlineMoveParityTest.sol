@@ -32,7 +32,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON, 1);
+        engine = new Engine(MONS_PER_TEAM, MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
