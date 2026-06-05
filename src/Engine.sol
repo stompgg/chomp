@@ -91,9 +91,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     event MonMoves(bytes32 indexed battleKey, uint256 packedMoves, uint256 packedSalts);
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
-    // Batched-game completion: winner + every executed turn, for off-chain replay. Replaces the
-    // plain BattleComplete on the batched path (the per-turn MonMoves/EngineExecute are skipped
-    // there, so this carries the full move list). `payload` is a single packed blob:
+    // CPU one-tx completion (executeBatchedTurns only): winner + every executed turn, for off-chain
+    // replay. Replaces the plain BattleComplete on the CPU path (which skips per-turn MonMoves, so this
+    // carries the full move list). The built-in PvP drain does NOT use this — it emits per-turn MonMoves
+    // + a normal BattleComplete instead. `payload` is a single packed blob:
     //   bytes  0- 19 : winner address (20 bytes)
     //   bytes 20-  N : 19 bytes per executed turn, big-endian, the low 152 bits of each
     //                  engine turn-entry: [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16]
@@ -345,7 +346,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert MovesNotSet();
         }
 
-        return _executeInternal(battleKey, storageKey, true);
+        // EngineExecute is a per-tx "a turn executed" ping (legacy = one turn per tx). The batched
+        // drain runs many turns in one tx, so it emits MonMoves per turn but not this — hence it lives
+        // here at the entrypoint, not inside the per-turn _executeInternal body.
+        winner = _executeInternal(battleKey, storageKey, true);
+        emit EngineExecute(battleKey);
     }
 
     /// @notice Combined setMove + setMove + execute for gas optimization
@@ -380,7 +385,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _turnP1Packed =
             _packTurn((uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8), p1Salt);
 
-        return _executeInternal(battleKey, storageKey, true);
+        winner = _executeInternal(battleKey, storageKey, true);
+        emit EngineExecute(battleKey);
     }
 
     /// @notice Combined single-player setMove + execute for forced switch turns
@@ -412,7 +418,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn(encoded, salt);
         }
 
-        return _executeInternal(battleKey, storageKey, true);
+        winner = _executeInternal(battleKey, storageKey, true);
+        emit EngineExecute(battleKey);
     }
 
     /// @notice Execute every buffered turn in `entries` in one tx by looping `_executeInternal`
@@ -464,7 +471,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 break;
             }
 
-            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx.
+            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx. Kept inline
+            // here (rather than calling _resetBatchedTurnTransients, which _drainBuffer uses) for the
+            // same inliner reason this whole loop body is inlined — see the _executeBatchedEntry note.
             _turnP0Packed = 0;
             _turnP1Packed = 0;
             tempRNG = 0;
@@ -512,10 +521,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev Executes one buffered turn for the built-in drain: flag-dispatch the packed entry into the
     ///      current-turn transients (the non-acting half on a single-player turn is ignored), then
-    ///      _executeInternal with emitEvents=false. Single call site (_drainBuffer) so the optimizer
-    ///      inlines it. NOTE: executeBatchedTurns (the external-manager A/B baseline) keeps its own
-    ///      inlined copy of this loop body on purpose — extracting a 2-call-site helper stopped the
-    ///      inliner and added ~1M gas across a real replay, so the baseline must not share this.
+    ///      _executeInternal with emitEvents=true. The built-in batched flow is a PvP-capable prod path,
+    ///      so it surfaces the per-turn MonMoves (carrying both salts) + BattleComplete at game over that
+    ///      an indexer replays from. It deliberately does NOT emit the per-tx EngineExecute ping: all the
+    ///      drained turns run in ONE tx, so a per-turn ping would be wrong (EngineExecute is emitted once
+    ///      per legacy execute() tx at the entrypoint, not in this loop body). Single call site
+    ///      (_drainBuffer) so the optimizer inlines it. NOTE: executeBatchedTurns (the CPU one-tx path)
+    ///      keeps its own inlined copy of this loop body with emitEvents=false on purpose — CPU has one
+    ///      actor, so a single BattleCompleteWithBatchTurns is the right log there, and extracting a
+    ///      2-call-site helper stopped the inliner and added ~1M gas across a real replay.
     function _executeBatchedEntry(bytes32 battleKey, bytes32 storageKey, uint256 entry)
         internal
         returns (address winner)
@@ -542,7 +556,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
         }
 
-        return _executeInternal(battleKey, storageKey, false);
+        return _executeInternal(battleKey, storageKey, true);
     }
 
     /// @dev Reset per-turn transients between batched sub-turns so the next starts like a fresh tx.
@@ -638,6 +652,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         moveBuffer[storageKey][entry.turnId] = _packBufferedTurn(p0Move, p0Extra, p0Salt, p1Move, p1Extra, p1Salt);
         data.numBuffered = numBuffered + 1;
+        // MovesSubmitted carries a distinct, salt-free layout (the buffer slot keeps the salts; this
+        // submit-time log only needs to announce the moves + turnId):
+        //   [p0Move 8 | p0Extra 16 | p1Move 8 | p1Extra 16 | turnId 64]
         emit MovesSubmitted(
             battleKey,
             bytes32(
@@ -658,15 +675,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert EmptyBuffer();
         }
 
-        // Snapshot the buffered entries (also reused for the BattleCompleteWithBatchTurns payload).
-        uint256[] memory entries = new uint256[](numBuffered);
-        for (uint256 i = 0; i < numBuffered; i++) {
-            entries[i] = moveBuffer[storageKey][startTurn + uint64(i)];
-        }
-
         storageKeyForWrite = storageKey;
         for (uint256 i = 0; i < numBuffered; i++) {
-            winner = _executeBatchedEntry(battleKey, storageKey, entries[i]);
+            // Execute directly off the buffer slot — no entries[] snapshot needed: each sub-turn now
+            // emits its own per-turn MonMoves (emitEvents=true), so there's no end-of-drain batch payload
+            // to assemble. BattleComplete is emitted by _handleGameOver on the winning turn.
+            winner = _executeBatchedEntry(battleKey, storageKey, moveBuffer[storageKey][startTurn + uint64(i)]);
             executed++;
             if (winner != address(0)) {
                 break;
@@ -675,9 +689,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         // Buffer consumed; turnId was advanced per executed turn by _executeInternal.
         data.numBuffered = 0;
-        if (winner != address(0)) {
-            emit BattleCompleteWithBatchTurns(battleKey, _packBatchPayloadMemory(entries, executed, winner));
-        }
     }
 
     /// @notice Buffer status: numExecuted is the live turnId, plus the staged-but-undrained count.
@@ -716,46 +727,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         p1Salt = uint104(packed >> 152);
     }
 
-    /// @dev Memory-array twin of _packBatchPayload (the built-in drain reads entries from storage into
-    ///      memory). Same [winner 20B | 19B/turn] layout.
-    function _packBatchPayloadMemory(uint256[] memory entries, uint256 numTurns, address winner)
-        private
-        pure
-        returns (bytes memory payload)
-    {
-        uint256 len = 20 + numTurns * 19;
-        payload = new bytes(len + 13);
-        assembly ("memory-safe") {
-            let ptr := add(payload, 32)
-            mstore(ptr, shl(96, winner))
-            ptr := add(ptr, 20)
-            let src := add(entries, 0x20)
-            for { let i := 0 } lt(i, numTurns) { i := add(i, 1) } {
-                mstore(ptr, shl(104, mload(add(src, mul(i, 0x20)))))
-                ptr := add(ptr, 19)
-            }
-            mstore(payload, len)
-        }
-    }
-
-    /// @notice Public storageKey resolver so external move managers can key per-turn buffers on
-    ///         the engine's slot-reused storageKey (warm SSTOREs on subsequent battles).
+    /// @notice Public resolver for a battle's slot-reused storageKey (the per-battle config slot index).
+    ///         Used by tooling/tests to verify slot reuse across battles.
     function getStorageKey(bytes32 battleKey) external view returns (bytes32) {
         return _getStorageKey(battleKey);
-    }
-
-    /// @notice Minimal context for the batched submit flow: only the fields submitTurnMoves needs.
-    function getSubmitContext(bytes32 battleKey)
-        external
-        view
-        returns (address p0, address p1, uint64 turnId, uint8 winnerIndex, bytes32 storageKey)
-    {
-        storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        p0 = data.p0;
-        p1 = data.p1;
-        turnId = data.turnId;
-        winnerIndex = data.winnerIndex;
     }
 
     /// @dev Decodes a transient-encoded move (layout: [extraData:16 | packedMoveIndex:8]) into a
@@ -839,9 +814,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
         // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
         // are zero the emit is skipped entirely.
-        // Batched flows (executeBatchedTurns) pass emitEvents=false: the submitter already
-        // holds every move + salt (they're in the batch/submit calldata), so the per-turn
-        // MonMoves log is pure overhead there (~1.6k gas/turn) and is skipped.
+        // The CPU one-tx path (executeBatchedTurns) passes emitEvents=false: the submitter already
+        // holds every move + salt (they're in the batch calldata) and a single
+        // BattleCompleteWithBatchTurns carries the replay, so the per-turn MonMoves log is pure
+        // overhead there (~1.6k gas/turn) and is skipped. The built-in PvP drain passes emitEvents=true
+        // (it must surface per-turn MonMoves), and emits EngineExecute via neither path — see entrypoints.
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
         if (emitEvents) {
@@ -905,71 +882,87 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             priorityPlayerIndex = _computePriorityPlayerIndex(config, battle, battleKey, rng, p0TurnMove, p1TurnMove);
             uint256 otherPlayerIndex = 1 - priorityPlayerIndex;
 
-            // Run beginning of round effects
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                2,
-                EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                priorityPlayerIndex,
-                priorityPlayerIndex,
-                EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                otherPlayerIndex,
-                otherPlayerIndex,
-                EffectStep.RoundStart,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
+            // Run beginning of round effects. Skip the global-list call when there are no global
+            // effects (the inline-regen prod default keeps globalEffectsLength == 0), and skip the
+            // per-player calls when no effect anywhere listens at RoundStart (union bit clear) — both
+            // avoid the _handleEffects call + its winnerIndex/koOccurredFlag bookkeeping when there is
+            // provably nothing to run. Ordering (global, priority, other) is preserved.
+            if (config.globalEffectsLength != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    2,
+                    2,
+                    EffectStep.RoundStart,
+                    EffectRunCondition.SkipIfGameOver,
+                    playerSwitchForTurnFlag
+                );
+            }
+            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    priorityPlayerIndex,
+                    priorityPlayerIndex,
+                    EffectStep.RoundStart,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    otherPlayerIndex,
+                    otherPlayerIndex,
+                    EffectStep.RoundStart,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
+            }
 
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
 
-            // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s)
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                priorityPlayerIndex,
-                priorityPlayerIndex,
-                EffectStep.AfterMove,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
+            // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s).
+            // Union re-read here (not cached from RoundStart): the move just executed may have added an
+            // effect that listens at AfterMove.
+            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    priorityPlayerIndex,
+                    priorityPlayerIndex,
+                    EffectStep.AfterMove,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
+            }
 
             // Always run the global effect's afterMove hook(s)
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                priorityPlayerIndex,
-                EffectStep.AfterMove,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
+            if (config.globalEffectsLength != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    2,
+                    priorityPlayerIndex,
+                    EffectStep.AfterMove,
+                    EffectRunCondition.SkipIfGameOver,
+                    playerSwitchForTurnFlag
+                );
+            }
 
+            // Stamina regen decision is encapsulated in _inlineStaminaRegen, which reads the move FRESH
+            // — required because effects (SleepStatus) can rewrite the move to a resting NO_OP mid-turn.
             if (inlineStaminaRegen) {
                 _inlineStaminaRegen(
                     config,
@@ -1005,31 +998,36 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s)
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                otherPlayerIndex,
-                otherPlayerIndex,
-                EffectStep.AfterMove,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
+            // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s).
+            // Union re-read: the non-priority move just executed may have added an AfterMove listener.
+            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    otherPlayerIndex,
+                    otherPlayerIndex,
+                    EffectStep.AfterMove,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
+            }
 
             // Always run the global effect's afterMove hook(s)
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                otherPlayerIndex,
-                EffectStep.AfterMove,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
+            if (config.globalEffectsLength != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    2,
+                    otherPlayerIndex,
+                    EffectStep.AfterMove,
+                    EffectRunCondition.SkipIfGameOver,
+                    playerSwitchForTurnFlag
+                );
+            }
 
             if (inlineStaminaRegen) {
                 _inlineStaminaRegen(
@@ -1042,44 +1040,50 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            // Always run global effects at the end of the round
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                2,
-                2,
-                EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOver,
-                playerSwitchForTurnFlag
-            );
+            // Round-end effects. Same guard shape as RoundStart: skip the global call with no global
+            // effects, and skip both per-player calls when nothing listens at RoundEnd (union re-read,
+            // since the two moves this turn may have applied a RoundEnd status). Ordering preserved.
+            if (config.globalEffectsLength != 0) {
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    2,
+                    2,
+                    EffectStep.RoundEnd,
+                    EffectRunCondition.SkipIfGameOver,
+                    playerSwitchForTurnFlag
+                );
+            }
 
-            // If priority mon is not KOed, run roundEnd effects for the priority mon
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                priorityPlayerIndex,
-                priorityPlayerIndex,
-                EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
+            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
+                // If priority mon is not KOed, run roundEnd effects for the priority mon
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    priorityPlayerIndex,
+                    priorityPlayerIndex,
+                    EffectStep.RoundEnd,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
 
-            // If non priority mon is not KOed, run roundEnd effects for the non priority mon
-            playerSwitchForTurnFlag = _handleEffects(
-                battleKey,
-                config,
-                battle,
-                rng,
-                otherPlayerIndex,
-                otherPlayerIndex,
-                EffectStep.RoundEnd,
-                EffectRunCondition.SkipIfGameOverOrMonKO,
-                playerSwitchForTurnFlag
-            );
+                // If non priority mon is not KOed, run roundEnd effects for the non priority mon
+                playerSwitchForTurnFlag = _handleEffects(
+                    battleKey,
+                    config,
+                    battle,
+                    rng,
+                    otherPlayerIndex,
+                    otherPlayerIndex,
+                    EffectStep.RoundEnd,
+                    EffectRunCondition.SkipIfGameOverOrMonKO,
+                    playerSwitchForTurnFlag
+                );
+            }
 
             if (inlineStaminaRegen) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
@@ -1101,14 +1105,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
-            // Batched path (emitEvents=false) suppresses BattleComplete here — executeBatchedTurns
-            // emits BattleCompleteWithBatchTurns after the loop with the full turn list.
+            // CPU one-tx path (emitEvents=false) suppresses BattleComplete here — executeBatchedTurns
+            // emits BattleCompleteWithBatchTurns after the loop with the full turn list. The legacy and
+            // built-in drain paths (emitEvents=true) emit the normal BattleComplete.
             _handleGameOver(battleKey, winner, emitEvents);
-
-            // Single-execute paths emit EngineExecute + MonMoves; the batched flow passes
-            // emitEvents=false (no per-turn and no batch-level emit — the submitter already
-            // holds the full move list from the batch calldata).
-            if (emitEvents) emit EngineExecute(battleKey);
             return winner;
         }
 
@@ -1127,8 +1127,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             config.p1Move.packedMoveIndex = 0;
         }
         battle.lastExecuteTimestamp = uint40(block.timestamp);
-
-        if (emitEvents) emit EngineExecute(battleKey);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
@@ -1384,8 +1382,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 // Add to the appropriate effects mapping based on targetIndex
                 BattleConfig storage config = battleConfig[storageKeyForWrite];
 
-                // Record which steps any PLAYER effect now listens at, so the per-mon step pipelines
-                // can skip the _runEffects shell when nothing listens (see playerEffectStepsUnion).
+                // INVARIANT: every path that adds a player effect MUST fold its steps bitmap into
+                // playerEffectStepsUnion here. The step-skip guards in _executeInternal / _handleSwitch
+                // treat a clear union bit as "no player effect listens at this step" and skip the whole
+                // _runEffects shell, so a missed update would silently drop live effects. This is the
+                // canonical chokepoint (addEffect -> _addEffectInternal); the ONLY other player-effect
+                // writer is _addStatBoostEffectSlot, which mirrors this with `|= STAT_BOOST_STEPS`.
+                // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
                 if (targetIndex != 2) {
                     config.playerEffectStepsUnion |= stepsBitmap;
                 }
@@ -1710,6 +1713,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         effectSlot.effect = IEffect(STAT_BOOST_ADDRESS);
         effectSlot.stepsBitmap = STAT_BOOST_STEPS;
         effectSlot.data = data;
+        // Upholds the playerEffectStepsUnion invariant documented in _addEffectInternal: this is the
+        // one player-effect add-path that bypasses _addEffectInternal, so it must fold its steps in too.
+        // Without this the union under-reports OnMonSwitchOut and _handleSwitch would skip dropping
+        // temp boosts on switch-out.
+        config.playerEffectStepsUnion |= STAT_BOOST_STEPS;
         uint96 newCounts = _setMonEffectCount(packedCounts, monIndex, monEffectCount + 1);
         if (targetIndex == 0) {
             config.packedP0EffectsCount = newCounts;
@@ -2070,12 +2078,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKey];
+        uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
         // Use the validator to check if the switch is valid
         bool isValid;
         if (address(config.validator) == address(0)) {
             // Use inline validation (no external call)
-            uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
             bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             isValid = ValidatorLogic.validateSwitch(
                 battle.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
@@ -2086,7 +2094,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         if (isValid) {
             // Only call the internal switch function if the switch is valid
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
+            _handleSwitch(battleKey, config, battle, playerIndex, monToSwitchIndex, activeMonIndex);
 
             // Check for game over and/or KOs
             (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, battle, playerIndex);
@@ -2216,35 +2224,60 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    function _handleSwitch(bytes32 battleKey, uint256 playerIndex, uint256 monToSwitchIndex) internal {
+    /// @dev `config`/`battle`/`currentActiveMonIndex` are threaded in from the caller (both call sites
+    ///      already resolved them, and `battle.activeMonIndex` can't change between then and the switch
+    ///      this function performs) so we don't re-resolve the mapping pointers or re-read the index here.
+    function _handleSwitch(
+        bytes32 battleKey,
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 playerIndex,
+        uint256 monToSwitchIndex,
+        uint256 currentActiveMonIndex
+    ) internal {
         // NOTE: We will check for game over after the switch in the engine for two player turns, so we don't do it here
         // But this also means that the current flow of OnMonSwitchOut effects -> OnMonSwitchIn effects -> ability activateOnSwitch
         // will all resolve before checking for KOs or winners
         // (could break this up even more, but that's for a later version / PR)
 
-        BattleData storage battle = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint256 currentActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
         MonState storage currentMonState = _getMonState(config, playerIndex, currentActiveMonIndex);
 
         // If the current mon is not KO'ed
         // Go through each effect to see if it should be cleared after a switch,
-        // If so, remove the effect and the extra data
+        // If so, remove the effect and the extra data.
+        // Guard each _runEffects so we don't pay its setup (storage re-resolution + count load) when
+        // there's provably nothing to run: the switching mon has no effects (count == 0) or no effect
+        // anywhere listens at this step (union bit clear — stat boosts now fold their OnMonSwitchOut
+        // step into the union via _addStatBoostEffectSlot), and the global list is empty.
         if (!currentMonState.isKnockedOut) {
-            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
+            uint256 outCount = playerIndex == 0
+                ? _getMonEffectCount(config.packedP0EffectsCount, currentActiveMonIndex)
+                : _getMonEffectCount(config.packedP1EffectsCount, currentActiveMonIndex);
+            if (outCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchOut))) != 0) {
+                _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", outCount);
+            }
 
             // Then run the global on mon switch out hook as well
-            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
+            if (config.globalEffectsLength > 0) {
+                _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
+            }
         }
 
         // Update to new active mon (we assume validateSwitch already resolved and gives us a valid target)
         battle.activeMonIndex = _setActiveMonIndex(battle.activeMonIndex, playerIndex, monToSwitchIndex);
 
-        // Run onMonSwitchIn hook for local effects
-        _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
+        // Run onMonSwitchIn hook for local effects (the new active mon is monToSwitchIndex)
+        uint256 inCount = playerIndex == 0
+            ? _getMonEffectCount(config.packedP0EffectsCount, monToSwitchIndex)
+            : _getMonEffectCount(config.packedP1EffectsCount, monToSwitchIndex);
+        if (inCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchIn))) != 0) {
+            _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", inCount);
+        }
 
         // Run onMonSwitchIn hook for global effects
-        _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
+        if (config.globalEffectsLength > 0) {
+            _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchIn, "", type(uint256).max);
+        }
 
         // Run ability for the newly switched in mon as long as it's not KO'ed and as long as it's not turn 0, (execute() has a special case to run activateOnSwitch after both moves are handled)
         if (battle.turnId != 0 && !_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) {
@@ -2258,6 +2291,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @dev Reads the current-turn move FRESH via _getCurrentTurnMove (rather than reusing the
+    ///      _executeInternal top-of-turn p0TurnMove/p1TurnMove snapshot): effects like SleepStatus call
+    ///      engine.setMove(...NO_OP...) to overwrite a victim's move mid-turn, so the move can change
+    ///      after the snapshot and must be re-read here.
     function _handleMove(
         bytes32 battleKey,
         BattleConfig storage config,
@@ -2314,7 +2351,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (battle.turnId != 0 && monToSwitchIndex == activeMonIndex) {
                 return playerSwitchForTurnFlag;
             }
-            _handleSwitch(battleKey, playerIndex, monToSwitchIndex);
+            _handleSwitch(battleKey, config, battle, playerIndex, monToSwitchIndex, activeMonIndex);
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // No-op: do nothing (e.g. just recover stamina)
         } else {

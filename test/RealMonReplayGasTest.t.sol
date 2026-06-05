@@ -213,45 +213,16 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         engine.resetCallContext();
     }
 
-    // ---- BATCHED (single-sig submit: committer = msg.sender) ----
-    function _submitTurn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
-        internal returns (uint256 gasUsed)
-    {
-        uint8 p0m = tn.p0Present ? tn.p0Move : NO_OP_MOVE_INDEX;
-        uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
-        uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, turnId))));
-        uint104 p1s = tn.p1Present ? tn.p1Salt : uint104(uint256(keccak256(abi.encode("noop1", battleKey, turnId))));
-        TurnSubmission memory entry = _buildTurnSubmission(
-            address(mgr), battleKey, turnId, p0m, tn.p0Extra, p0s, p1m, tn.p1Extra, p1s, P0_PK, P1_PK
-        );
-        address committer = _committerFor(turnId, p0, p1);
-        if (measure) _coolEngineAndMgr();
-        vm.prank(committer);
-        uint256 g0 = gasleft();
-        // Final submission drains the whole buffer in the same tx; the rest only buffer.
-        if (combined) {
-            mgr.submitTurnMovesAndExecute(battleKey, entry);
-        } else {
-            mgr.submitTurnMoves(battleKey, entry);
-        }
-        gasUsed = g0 - gasleft();
-    }
-
     function _runLegacy(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 totalExec) {
         for (uint256 i; i < plan.length; i++) totalExec += _legacyTurn(battleKey, plan[i], measure);
     }
 
-    function _runBatched(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 submitExec, uint256 execExec) {
-        uint64 lastIdx = uint64(plan.length - 1);
-        for (uint64 i; i < lastIdx; i++) submitExec += _submitTurn(battleKey, i, plan[i], false, measure);
-        // Final turn submits AND drains the buffer in one tx (submit + executeBuffered combined).
-        execExec = _submitTurn(battleKey, lastIdx, plan[lastIdx], true, measure);
-        engine.resetCallContext();
-    }
-
-    // ---- BUILT-IN BATCHED (in-Engine buffer: submit/drain via the Engine directly, no external
-    //      SignedCommitManager). Same single-sig dual-signed flow, but signatures target the Engine's
-    //      EIP-712 domain and there is no cross-contract getSubmitContext/executeBatchedTurns hop. ----
+    // ---- BUILT-IN BATCHED (in-Engine buffer: submit/drain via the Engine directly). Single-sig
+    //      dual-signed flow with signatures targeting the Engine's own EIP-712 domain. The drain emits
+    //      per-turn MonMoves (both salts) + a BattleComplete at game over — the same replay stream as the
+    //      legacy per-turn path, minus the per-tx EngineExecute ping (the whole drain is one tx). So this
+    //      is a faithful PvP-capable prod path (the "delayed execution with turn-by-turn submits" flow)
+    //      and a fair apples-to-apples metric vs LEGACY. ----
     function _submitTurnBuiltIn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
         internal returns (uint256 gasUsed)
     {
@@ -284,7 +255,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     // ---- ONE-TX (single-player / CPU): all moves provided up front and executed in ONE tx via
     //      engine.executeBatchedTurns (the same loop the batched drain runs). No per-turn
     //      commit-reveal — single-player has no adversary to hide moves from — so the (plan.length-1)
-    //      submit txs and their sig/getSubmitContext overhead collapse into this single call. ----
+    //      submit txs and their per-submit signature/context overhead collapse into this single call. ----
     function _oneTxEntries(bytes32 battleKey, Turn[] memory plan) internal pure returns (uint256[] memory entries) {
         entries = new uint256[](plan.length);
         for (uint256 i; i < plan.length; i++) {
@@ -338,26 +309,10 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         uint256 legacyExec = _runLegacy(lKey2, plan, true);
         uint256 legacyTotal = legacyExec + plan.length * TX_BASE;
 
-        // BATCHED: fresh stack, same pattern.
-        _deployStack();
-        registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
-        registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
-        bytes32 bKey1 = _startBattle();
-        vm.warp(vm.getBlockTimestamp() + 1);
-        _runBatched(bKey1, plan, false);
-        bytes32 batchedState = _stateHash(bKey1);
-        _endViaTimeout(bKey1);
-        bytes32 bKey2 = _startBattle();
-        require(engine.getStorageKey(bKey1) == engine.getStorageKey(bKey2), "batched storageKey reuse");
-        vm.warp(vm.getBlockTimestamp() + 1);
-        (uint256 submitExec, uint256 execExec) = _runBatched(bKey2, plan, true);
-        // plan.length transactions total: (plan.length - 1) buffer-only submits + 1 combined submit+execute.
-        uint256 batchedTotal = submitExec + execExec + plan.length * TX_BASE;
-
-        assertEq(legacyState, batchedState, "legacy and batched must reach identical end state");
-
-        // BUILT-IN BATCHED: same dual-signed flow driven through the Engine directly (sentinel
-        // moveManager) — no external SignedCommitManager. This is the Phase 2 A/B vs external batched.
+        // BUILT-IN BATCHED: dual-signed turn-by-turn submits buffered in the Engine, then drained in one
+        // tx (sentinel moveManager, no external SignedCommitManager). The drain emits the same per-turn
+        // events as legacy (MonMoves + EngineExecute + BattleComplete), so this is the production
+        // "delayed execution with turn-by-turn submits" path and a fair apples-to-apples metric.
         _deployStack();
         registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
         registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
@@ -393,15 +348,11 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
         console.log("");
         console.log("=== CLEAN BRANCH: REAL game (26 turns), PROD config (inline regen), production-faithful ===");
-        console.log("  LEGACY  (inline regen, repack, 1-sig):", legacyTotal);
-        console.log("  BATCHED (external mgr, repack, 1-sig) :", batchedTotal);
-        if (batchedTotal < legacyTotal) console.log("  batching saves vs clean-legacy       :", legacyTotal - batchedTotal);
-        console.log("  BUILT-IN BATCHED (in-Engine, no mgr)  :", builtInTotal);
-        if (builtInTotal < batchedTotal) console.log("  built-in saves vs external batched   :", batchedTotal - builtInTotal);
-        if (builtInTotal < legacyTotal) console.log("  built-in saves vs clean-legacy       :", legacyTotal - builtInTotal);
-        console.log("  ONE-TX  (CPU: all moves + execute, 1 tx):", oneTxTotal);
-        if (oneTxTotal < batchedTotal) console.log("  one-tx saves vs batched              :", batchedTotal - oneTxTotal);
-        if (oneTxTotal < legacyTotal) console.log("  one-tx saves vs legacy               :", legacyTotal - oneTxTotal);
+        console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyTotal);
+        console.log("  BUILT-IN (PvP delayed turn-by-turn submits, events):", builtInTotal);
+        if (builtInTotal < legacyTotal) console.log("  built-in saves vs legacy                       :", legacyTotal - builtInTotal);
+        console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxTotal);
+        if (oneTxTotal < legacyTotal) console.log("  one-tx saves vs legacy                         :", legacyTotal - oneTxTotal);
         // NOTE: the old external-StaminaRegen main baseline (5,277,953) is NOT comparable — it
         // measured the slow ruleset. A fair main comparison needs main itself re-measured under inline.
     }
