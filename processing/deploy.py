@@ -82,12 +82,39 @@ def update_env_file(matches: list[tuple[str, str]], env_path: Path):
             f.write(f"{key}={existing[key]}\n")
 
 
+def get_prev_gacha_registry(network: str, chomp_dir: Path) -> str | None:
+    """Read the currently-deployed GachaTeamRegistry address from munch's address.ts.
+
+    The newly-deployed registry takes this as its PREVIOUS_REGISTRY so players can
+    self-migrate their progression. Munch's address.ts is the source of truth (it's
+    network-specific), so we read whichever of MAINNET/TESTNET matches this deploy.
+
+    Returns None (→ migration disabled, address(0)) if munch or the key is missing.
+    """
+    from createAddressAndABIs import parse_existing_addresses
+
+    munch_address_file = chomp_dir.parent / "munch" / "src" / "app" / "data" / "address.ts"
+    if not munch_address_file.exists():
+        print(f"⚠️  munch address.ts not found at {munch_address_file}; "
+              "PREVIOUS_REGISTRY defaults to address(0) (migration disabled)")
+        return None
+
+    parsed = parse_existing_addresses(munch_address_file.read_text())
+    addr = parsed.get(network.upper(), {}).get("GACHA_TEAM_REGISTRY")
+    if not addr:
+        print(f"⚠️  GACHA_TEAM_REGISTRY not found for {network.upper()} in munch address.ts; "
+              "PREVIOUS_REGISTRY defaults to address(0) (migration disabled)")
+        return None
+    return addr
+
+
 def run_forge_script(
     script_path: str,
     rpc_url: str,
     password: str,
     chomp_dir: Path,
-    dry_run: bool = False
+    dry_run: bool = False,
+    extra_env: dict | None = None,
 ) -> str:
     """Run a forge script and return the output."""
     cmd = [
@@ -111,14 +138,21 @@ def run_forge_script(
     print(f"{'='*60}")
 
     if dry_run:
+        if extra_env:
+            print(f"[DRY RUN] With env: {extra_env}")
         print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
         return ""
+
+    # Forge reads PREV_GACHA_TEAM_REGISTRY (and friends) via vm.envOr; merge over the
+    # inherited environment so explicitly-passed values win over any .env entry.
+    env = {**os.environ, **extra_env} if extra_env else None
 
     result = subprocess.run(
         cmd,
         cwd=chomp_dir,
         capture_output=True,
         text=True,
+        env=env,
     )
 
     # Print stdout for visibility
@@ -631,12 +665,22 @@ def main():
     if not args.skip_forge:
         # Run forge scripts and update .env after each
         for script_path in SCRIPTS:
+            # EngineAndPeriphery deploys a new GachaTeamRegistry; point it at the prior
+            # one (from munch's address.ts for this network) so players can migrate.
+            extra_env = None
+            if "EngineAndPeriphery" in script_path:
+                prev_gacha = get_prev_gacha_registry(network, chomp_dir)
+                if prev_gacha:
+                    extra_env = {"PREV_GACHA_TEAM_REGISTRY": prev_gacha}
+                    print(f"PREVIOUS_REGISTRY for new GachaTeamRegistry = {prev_gacha} ({network})")
+
             output = run_forge_script(
                 script_path,
                 rpc_url,
                 password,
                 chomp_dir,
-                dry_run=args.dry_run
+                dry_run=args.dry_run,
+                extra_env=extra_env,
             )
 
             # Parse and update .env (skip for SetupCPU which doesn't deploy new contracts)

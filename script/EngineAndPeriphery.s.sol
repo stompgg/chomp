@@ -47,8 +47,13 @@ contract EngineAndPeriphery is Script {
         SignedCommitManager commitManager = new SignedCommitManager(engine);
         deployedContracts.push(DeployData({name: "COMMIT MANAGER", contractAddress: address(commitManager)}));
 
+        // The previously-deployed registry players migrate their progression from. This is
+        // network-specific, so deploy.py injects PREV_GACHA_TEAM_REGISTRY (read from munch's
+        // address.ts for the target network). Defaults to address(0) (migration disabled) for
+        // ad-hoc forge runs rather than baking in a stale, network-wrong literal.
+        address previousGachaRegistry = vm.envOr("PREV_GACHA_TEAM_REGISTRY", address(0));
         GachaTeamRegistry gachaTeamRegistry =
-            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(0x575CbCB7CAE4524051bb3470d80702DfBac226bE));
+            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(previousGachaRegistry));
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
         
         BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
