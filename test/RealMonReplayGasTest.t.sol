@@ -297,62 +297,72 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         Turn[] memory plan = _plan();
         vm.warp(vm.getBlockTimestamp() + 1);
 
-        // LEGACY: battle 1 warms slots + ends via timeout (frees storageKey), battle 2 measured.
+        // Every path is measured TWICE on its own freshly-deployed stack, so all paths share one regime
+        // when compared: battle 1 runs on a fresh storageKey (every config/state/buffer SSTORE is a
+        // 0->nonzero COLD write), then ends via timeout (freeing the storageKey) and battle 2 reuses that
+        // same storageKey so its writes are steady-state nonzero->nonzero (REUSED). Mixing regimes would
+        // flatter whichever path touches more storage, so we report COLD and REUSED separately.
+
+        // ---- LEGACY (per-turn execute via external mgr) ----
         bytes32 lKey1 = _startBattle();
         vm.warp(vm.getBlockTimestamp() + 1);
-        _runLegacy(lKey1, plan, false);
+        uint256 legacyCold = _runLegacy(lKey1, plan, true) + plan.length * TX_BASE;
         bytes32 legacyState = _stateHash(lKey1);
         _endViaTimeout(lKey1);
         bytes32 lKey2 = _startBattle();
         require(engine.getStorageKey(lKey1) == engine.getStorageKey(lKey2), "legacy storageKey reuse");
         vm.warp(vm.getBlockTimestamp() + 1);
-        uint256 legacyExec = _runLegacy(lKey2, plan, true);
-        uint256 legacyTotal = legacyExec + plan.length * TX_BASE;
+        uint256 legacyReused = _runLegacy(lKey2, plan, true) + plan.length * TX_BASE;
 
-        // BUILT-IN BATCHED: dual-signed turn-by-turn submits buffered in the Engine, then drained in one
-        // tx (sentinel moveManager, no external SignedCommitManager). The drain emits the same per-turn
-        // events as legacy (MonMoves + EngineExecute + BattleComplete), so this is the production
-        // "delayed execution with turn-by-turn submits" path and a fair apples-to-apples metric.
+        // ---- BUILT-IN BATCHED (in-Engine buffer: turn-by-turn submits, single drain; emits the same
+        //      per-turn MonMoves + a final BattleComplete as legacy) ----
         _deployStack();
         registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
         registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
         bytes32 inKey1 = _startBattleBuiltIn();
         vm.warp(vm.getBlockTimestamp() + 1);
-        _runBuiltIn(inKey1, plan, false);
+        (uint256 inSubmitCold, uint256 inExecCold) = _runBuiltIn(inKey1, plan, true);
+        uint256 builtInCold = inSubmitCold + inExecCold + plan.length * TX_BASE;
         bytes32 builtInState = _stateHash(inKey1);
         _endViaTimeout(inKey1);
         bytes32 inKey2 = _startBattleBuiltIn();
         require(engine.getStorageKey(inKey1) == engine.getStorageKey(inKey2), "built-in storageKey reuse");
         vm.warp(vm.getBlockTimestamp() + 1);
-        (uint256 inSubmitExec, uint256 inExecExec) = _runBuiltIn(inKey2, plan, true);
-        uint256 builtInTotal = inSubmitExec + inExecExec + plan.length * TX_BASE;
+        (uint256 inSubmitReused, uint256 inExecReused) = _runBuiltIn(inKey2, plan, true);
+        uint256 builtInReused = inSubmitReused + inExecReused + plan.length * TX_BASE;
 
         assertEq(legacyState, builtInState, "legacy and built-in must reach identical end state");
 
-        // ONE-TX (single-player/CPU): all moves up front, executed in one tx. Fresh stack, same pattern.
+        // ---- ONE-TX (CPU: all moves up front, executed in one tx) ----
         _deployStack();
         registry.setTeam(p0, _buildTeam(P0_IDS, _p0Stats()));
         registry.setTeam(p1, _buildTeam(P1_IDS, _p1Stats()));
         bytes32 oKey1 = _startBattle();
         vm.warp(vm.getBlockTimestamp() + 1);
-        _runOneTx(oKey1, plan, false);
+        uint256 oneTxCold = _runOneTx(oKey1, plan, true) + TX_BASE;
         bytes32 oneTxState = _stateHash(oKey1);
         _endViaTimeout(oKey1);
         bytes32 oKey2 = _startBattle();
         require(engine.getStorageKey(oKey1) == engine.getStorageKey(oKey2), "one-tx storageKey reuse");
         vm.warp(vm.getBlockTimestamp() + 1);
-        uint256 oneTxExec = _runOneTx(oKey2, plan, true);
-        uint256 oneTxTotal = oneTxExec + TX_BASE; // submit + execute everything in ONE tx
+        uint256 oneTxReused = _runOneTx(oKey2, plan, true) + TX_BASE;
 
         assertEq(legacyState, oneTxState, "legacy and one-tx must reach identical end state");
 
         console.log("");
-        console.log("=== CLEAN BRANCH: REAL game (26 turns), PROD config (inline regen), production-faithful ===");
-        console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyTotal);
-        console.log("  BUILT-IN (PvP delayed turn-by-turn submits, events):", builtInTotal);
-        if (builtInTotal < legacyTotal) console.log("  built-in saves vs legacy                       :", legacyTotal - builtInTotal);
-        console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxTotal);
-        if (oneTxTotal < legacyTotal) console.log("  one-tx saves vs legacy                         :", legacyTotal - oneTxTotal);
+        console.log("=== REAL game (26 turns), PROD config (inline regen), production-faithful ===");
+        console.log("--- COLD SLOTS (fresh storageKey, first battle on the stack) ---");
+        console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyCold);
+        console.log("  BUILT-IN (PvP turn-by-turn submits, events)    :", builtInCold);
+        if (builtInCold < legacyCold) console.log("    built-in saves vs legacy                     :", legacyCold - builtInCold);
+        console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxCold);
+        if (oneTxCold < legacyCold) console.log("    one-tx saves vs legacy                       :", legacyCold - oneTxCold);
+        console.log("--- REUSED SLOTS (storageKey reused from a prior battle) ---");
+        console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyReused);
+        console.log("  BUILT-IN (PvP turn-by-turn submits, events)    :", builtInReused);
+        if (builtInReused < legacyReused) console.log("    built-in saves vs legacy                     :", legacyReused - builtInReused);
+        console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxReused);
+        if (oneTxReused < legacyReused) console.log("    one-tx saves vs legacy                       :", legacyReused - oneTxReused);
         // NOTE: the old external-StaminaRegen main baseline (5,277,953) is NOT comparable — it
         // measured the slow ruleset. A fair main comparison needs main itself re-measured under inline.
     }

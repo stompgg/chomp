@@ -578,13 +578,23 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      signature pins the committer's move hash, so the committer can't change their move and
     ///      can't be impersonated. Requires the battle to use the built-in flow (moveManager sentinel).
     function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
-        _submitTurnMoves(battleKey, entry);
+        (bytes32 storageKey, uint256 packed) = _validateAndPackTurn(battleKey, entry);
+        // Persist for a later drain (this turn executes in a separate tx).
+        moveBuffer[storageKey][entry.turnId] = packed;
+        BattleData storage data = battleData[battleKey];
+        data.numBuffered = data.numBuffered + 1;
+        _emitMovesSubmitted(battleKey, packed, entry.turnId);
     }
 
-    /// @notice Stage a submission and drain the whole buffer in the same tx (final-turn convenience).
+    /// @notice Stage a submission and execute it (plus any earlier buffered turns) in the same tx.
+    /// @dev The submitted entry executes in THIS tx, so it never needs to persist: validate it, drain
+    ///      any previously-buffered turns from storage, then execute this entry straight from memory —
+    ///      skipping the SSTORE + immediate SLOAD round-trip the buffer-then-drain path would pay for it.
+    ///      For a 1-turn batch (no prior buffer) this touches `moveBuffer`/`numBuffered` zero times.
     function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external {
-        bytes32 storageKey = _submitTurnMoves(battleKey, entry);
-        _drainBuffer(battleKey, storageKey);
+        (bytes32 storageKey, uint256 packed) = _validateAndPackTurn(battleKey, entry);
+        _emitMovesSubmitted(battleKey, packed, entry.turnId);
+        _drainBufferThenExecute(battleKey, storageKey, packed);
     }
 
     /// @notice Drain every currently buffered turn in one tx. Permissionless — entries were already
@@ -593,9 +603,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _drainBuffer(battleKey, _getStorageKey(battleKey));
     }
 
-    function _submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry)
+    /// @dev Validate a dual-signed submission (built-in manager, game live, turn id, committer ==
+    ///      msg.sender, revealer signature) and project it onto the packed (p0|p1) buffer-word layout.
+    ///      VIEW — no state writes: the caller decides whether to buffer it (SSTORE) or execute it now.
+    function _validateAndPackTurn(bytes32 battleKey, TurnSubmission calldata entry)
         internal
-        returns (bytes32 storageKey)
+        view
+        returns (bytes32 storageKey, uint256 packed)
     {
         storageKey = _getStorageKey(battleKey);
         if (battleConfig[storageKey].moveManager != BUILTIN_DUAL_SIGNED_MANAGER) {
@@ -607,9 +621,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // numExecuted IS the live turnId (buffering doesn't execute); next valid id is turnId+numBuffered.
-        uint64 turnId = data.turnId;
-        uint8 numBuffered = data.numBuffered;
-        if (entry.turnId != turnId + numBuffered) {
+        if (entry.turnId != data.turnId + data.numBuffered) {
             revert WrongTurnId();
         }
 
@@ -636,30 +648,28 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Project committer/revealer onto (p0, p1) by turn parity, matching the executeBatchedTurns layout.
-        uint8 p0Move;
-        uint16 p0Extra;
-        uint104 p0Salt;
-        uint8 p1Move;
-        uint16 p1Extra;
-        uint104 p1Salt;
         if (entry.turnId % 2 == 0) {
-            (p0Move, p0Extra, p0Salt) = (entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt);
-            (p1Move, p1Extra, p1Salt) = (entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt);
+            packed = _packBufferedTurn(
+                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt,
+                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt
+            );
         } else {
-            (p0Move, p0Extra, p0Salt) = (entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt);
-            (p1Move, p1Extra, p1Salt) = (entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt);
+            packed = _packBufferedTurn(
+                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt,
+                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt
+            );
         }
+    }
 
-        moveBuffer[storageKey][entry.turnId] = _packBufferedTurn(p0Move, p0Extra, p0Salt, p1Move, p1Extra, p1Salt);
-        data.numBuffered = numBuffered + 1;
-        // MovesSubmitted carries a distinct, salt-free layout (the buffer slot keeps the salts; this
-        // submit-time log only needs to announce the moves + turnId):
-        //   [p0Move 8 | p0Extra 16 | p1Move 8 | p1Extra 16 | turnId 64]
+    /// @dev MovesSubmitted carries a distinct, salt-free layout (the buffer slot keeps the salts; this
+    ///      submit-time log only needs to announce the moves + turnId), derived from the packed word:
+    ///        [p0Move 8 | p0Extra 16 | p1Move 8 | p1Extra 16 | turnId 64]
+    function _emitMovesSubmitted(bytes32 battleKey, uint256 packed, uint64 turnId) private {
         emit MovesSubmitted(
             battleKey,
             bytes32(
-                uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p1Move) << 24) | (uint256(p1Extra) << 32)
-                    | (uint256(entry.turnId) << 48)
+                uint256(uint8(packed)) | (uint256(uint16(packed >> 8)) << 8) | (uint256(uint8(packed >> 128)) << 24)
+                    | (uint256(uint16(packed >> 136)) << 32) | (uint256(turnId) << 48)
             )
         );
     }
@@ -689,6 +699,32 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         // Buffer consumed; turnId was advanced per executed turn by _executeInternal.
         data.numBuffered = 0;
+    }
+
+    /// @dev Drain any previously-buffered turns (from storage, in order) then execute `currentEntry`
+    ///      straight from memory — it's the just-submitted turn that runs in this tx, so it never hits
+    ///      storage (no SSTORE on submit, no SLOAD here). If the game ends while draining the prior
+    ///      buffer, the current entry is NOT executed (the battle is already over).
+    function _drainBufferThenExecute(bytes32 battleKey, bytes32 storageKey, uint256 currentEntry) internal {
+        BattleData storage data = battleData[battleKey];
+        uint64 startTurn = data.turnId;
+        uint256 numBuffered = data.numBuffered;
+        storageKeyForWrite = storageKey;
+
+        for (uint256 i = 0; i < numBuffered; i++) {
+            if (_executeBatchedEntry(battleKey, storageKey, moveBuffer[storageKey][startTurn + uint64(i)]) != address(0))
+            {
+                data.numBuffered = 0; // game ended mid-buffer; the current entry does not execute
+                return;
+            }
+            _resetBatchedTurnTransients();
+        }
+        // Execute the just-submitted entry from memory — no buffer round-trip.
+        _executeBatchedEntry(battleKey, storageKey, currentEntry);
+        // Only touch numBuffered if there was a prior buffer to clear (1-turn batch leaves it at 0).
+        if (numBuffered != 0) {
+            data.numBuffered = 0;
+        }
     }
 
     /// @notice Buffer status: numExecuted is the live turnId, plus the staged-but-undrained count.
