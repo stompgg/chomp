@@ -87,11 +87,10 @@ interface IEngine {
     function submitTurnMoves(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external;
     function submitTurnMovesAndExecute(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external;
     function executeBuffered(bytes32 battleKey) external;
-    function getBufferStatus(bytes32 battleKey) external view returns (uint64 numExecuted, uint8 numBuffered);
-    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+    function getBufferedTurns(bytes32 battleKey)
         external
         view
-        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt);
+        returns (uint64 numExecuted, uint256[] memory packedTurns);
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
@@ -123,7 +122,6 @@ interface IEngine {
         external
         view
         returns (MoveDecision memory);
-    function getPlayersForBattle(bytes32 battleKey) external view returns (address[] memory);
     function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
     function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
@@ -140,14 +138,8 @@ interface IEngine {
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
     function getWinner(bytes32 battleKey) external view returns (address);
-    function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
-    function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory);
-    function getCommitAuthForDualSigned(bytes32 battleKey)
-        external
-        view
-        returns (address committer, address revealer, uint64 turnId);
     function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
         external
         view

@@ -376,6 +376,20 @@ class ContractGenerator(BaseGenerator):
                     inherited_methods.update(
                         self._ctx.runtime_replacement_methods[primary_base]
                     )
+
+                # Conversely, methods provided by a runtime-replacement *mixin* base (a
+                # secondary base whose body is spliced into this class, not a real TS
+                # `extends` parent) are not inherited in the TS sense: a same-named method
+                # on this contract defines the member outright rather than overriding an
+                # inherited one. Drop them from the override set so we don't emit a spurious
+                # `override` that TS rejects (the member isn't on the actual extends base).
+                # `get_all_inherited_methods` above can pull them in from the Solidity
+                # inheritance graph (e.g. Engine overriding EIP712._domainNameAndVersion).
+                for secondary_base in base_classes[1:]:
+                    if secondary_base in self._ctx.runtime_replacement_mixins:
+                        inherited_methods -= self._ctx.runtime_replacement_methods.get(
+                            secondary_base, set()
+                        )
             else:
                 extends = ' extends Contract'
                 self._ctx.current_base_classes = ['Contract']

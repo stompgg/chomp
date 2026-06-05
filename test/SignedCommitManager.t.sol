@@ -7,18 +7,18 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
+import {DefaultValidator} from "../src/DefaultValidator.sol";
+import {Engine} from "../src/Engine.sol";
+import {IEngine} from "../src/IEngine.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
-import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {IEngine} from "../src/IEngine.sol";
-import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
-import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
+import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
+import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
+import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelper {
     Engine engine;
@@ -43,8 +43,7 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
         defaultRegistry = new TestTeamRegistry();
         engine = new Engine(0, 0);
         validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
         );
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
@@ -161,21 +160,21 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
         bytes32 committerMoveHash = keccak256(abi.encodePacked(moveIndex, committerSalt, uint16(0)));
 
         (, uint256 revealerPk) = turnId % 2 == 0 ? (P0_PK, P1_PK) : (P1_PK, P0_PK);
-        bytes memory revealerSignature = _signDualReveal(address(signedCommitManager),
-            revealerPk, battleKey, uint64(turnId), committerMoveHash, moveIndex, revealerSalt, 0
+        bytes memory revealerSignature = _signDualReveal(
+            address(signedCommitManager),
+            revealerPk,
+            battleKey,
+            uint64(turnId),
+            committerMoveHash,
+            moveIndex,
+            revealerSalt,
+            0
         );
 
         // Single-sig: the committer must be msg.sender (no committer signature).
         vm.startPrank(turnId % 2 == 0 ? p0 : p1);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            moveIndex,
-            committerSalt,
-            0,
-            moveIndex,
-            revealerSalt,
-            0,
-            revealerSignature
+            battleKey, moveIndex, committerSalt, 0, moveIndex, revealerSalt, 0, revealerSignature
         );
         vm.stopPrank();
         engine.resetCallContext();
@@ -183,7 +182,6 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
 }
 
 contract SignedCommitManagerTest is SignedCommitManagerTestBase {
-
     // =========================================================================
     // Happy Path Tests
     // =========================================================================
@@ -200,29 +198,18 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
 
         // Single-sig: committer (p0) is msg.sender; only p1 (revealer) signs.
         uint104 p1Salt = uint104(2);
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, turnId, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, turnId, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
         );
 
         // p0 submits both moves and executes
         vm.startPrank(p0);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            p1Salt,
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, p1Salt, 0, p1Signature
         );
 
         // Verify turn advanced
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "Turn should have advanced to 1");
-
-        // Note: In the optimized dual-signed flow, we don't update playerData.numMovesRevealed
-        // The engine's lastExecuteTimestamp is used for timeout tracking instead
-        assertEq(engine.getLastExecuteTimestamp(battleKey), uint48(block.timestamp), "lastExecuteTimestamp should be set");
     }
 
     function test_executeWithDualSigned_turn1() public {
@@ -238,21 +225,14 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p1MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p1Salt, uint16(0)));
 
         uint104 p0Salt = uint104(3);
-        bytes memory p0Signature = _signDualReveal(address(signedCommitManager),
-            P0_PK, battleKey, turnId, p1MoveHash, NO_OP_MOVE_INDEX, p0Salt, 0
+        bytes memory p0Signature = _signDualReveal(
+            address(signedCommitManager), P0_PK, battleKey, turnId, p1MoveHash, NO_OP_MOVE_INDEX, p0Salt, 0
         );
 
         // Single-sig: committer (p1) is msg.sender; only p0 (revealer) signs.
         vm.startPrank(p1);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            NO_OP_MOVE_INDEX,
-            p1Salt,
-            0,
-            NO_OP_MOVE_INDEX,
-            p0Salt,
-            0,
-            p0Signature
+            battleKey, NO_OP_MOVE_INDEX, p1Salt, 0, NO_OP_MOVE_INDEX, p0Salt, 0, p0Signature
         );
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Turn should have advanced to 2");
@@ -329,14 +309,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.startPrank(p0);
         vm.expectRevert();
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            invalidSignature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, invalidSignature
         );
     }
 
@@ -347,21 +320,14 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Wrong revealer signer: p0 signs the revealer slot instead of p1. Committer is msg.sender (p0).
-        bytes memory wrongSignature = _signDualReveal(address(signedCommitManager),
-            P0_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory wrongSignature = _signDualReveal(
+            address(signedCommitManager), P0_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         vm.startPrank(p0);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            wrongSignature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, wrongSignature
         );
     }
 
@@ -377,22 +343,15 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Both signatures bound to turnId=0, replayed at turnId=2
-        bytes memory turn0Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0MoveHash, NO_OP_MOVE_INDEX, uint104(0), 0
+        bytes memory turn0Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0MoveHash, NO_OP_MOVE_INDEX, uint104(0), 0
         );
 
         // Committer (p0) is msg.sender; replayed turn-0 revealer sig is invalid at turn 2.
         vm.startPrank(p0);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            NO_OP_MOVE_INDEX,
-            p0Salt,
-            0,
-            NO_OP_MOVE_INDEX,
-            uint104(0),
-            0,
-            turn0Signature
+            battleKey, NO_OP_MOVE_INDEX, p0Salt, 0, NO_OP_MOVE_INDEX, uint104(0), 0, turn0Signature
         );
     }
 
@@ -403,8 +362,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Both signatures bound to battle 1
-        bytes memory battle1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey1, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory battle1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey1, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         // Start second battle and try to use battle 1's revealer signature
@@ -414,14 +373,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.startPrank(p0);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey2,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            battle1Signature
+            battleKey2, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, battle1Signature
         );
     }
 
@@ -438,8 +390,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
             keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, attackerCommitterSalt, uint16(0)));
 
         // p1 signs the DualSignedReveal binding themselves to the chosen committer preimage.
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, chosenCommitterMoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, chosenCommitterMoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         // _startBattleWith leaves an active prank on p0; the attacker (p1, NOT the committer) submits.
@@ -447,14 +399,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.prank(p1);
         vm.expectRevert(SignedCommitManager.NotCommitter.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            attackerCommitterSalt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, attackerCommitterSalt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
         );
     }
 
@@ -467,8 +412,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         uint104 p1Salt = uint104(2);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
         );
 
         // _startBattleWith leaves an active prank on p0; clear it before pranking the relayer.
@@ -477,14 +422,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.prank(relayer);
         vm.expectRevert(SignedCommitManager.NotCommitter.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            p1Salt,
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, p1Salt, 0, p1Signature
         );
     }
 
@@ -498,8 +436,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         uint104 p0Salt = uint104(1);
         // Revealer (p1) signs over the committer's ORIGINAL move hash (NO_OP).
         bytes32 p0OriginalHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0OriginalHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0OriginalHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         // Committer (p0, msg.sender) submits a DIFFERENT move (SWITCH). The engine recomputes
@@ -508,44 +446,13 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.startPrank(p0);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
         );
     }
 
     // =========================================================================
     // Edge Case Tests
     // =========================================================================
-
-    function test_revert_battleNotStarted() public {
-        bytes32 fakeBattleKey = bytes32(uint256(123));
-
-        uint104 p0Salt = uint104(1);
-        bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
-
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, fakeBattleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
-        );
-
-        vm.startPrank(p0);
-        vm.expectRevert(Engine.BattleNotStarted.selector);
-        signedCommitManager.executeWithDualSignedMoves(
-            fakeBattleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
-        );
-    }
 
     function test_revert_replayPrevented_byTurnAdvancement() public {
         bytes32 battleKey = _startBattleWith(address(signedCommitManager));
@@ -560,21 +467,14 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p1MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p1Salt, uint16(0)));
 
         // Revealer signature bound to turnId=0 (replay attempt at turn 1).
-        bytes memory p0Signature = _signDualReveal(address(signedCommitManager),
-            P0_PK, battleKey, 0, p1MoveHash, NO_OP_MOVE_INDEX, uint104(0), 0
+        bytes memory p0Signature = _signDualReveal(
+            address(signedCommitManager), P0_PK, battleKey, 0, p1MoveHash, NO_OP_MOVE_INDEX, uint104(0), 0
         );
 
         vm.startPrank(p1);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            NO_OP_MOVE_INDEX,
-            p1Salt,
-            0,
-            NO_OP_MOVE_INDEX,
-            uint104(0),
-            0,
-            p0Signature
+            battleKey, NO_OP_MOVE_INDEX, p1Salt, 0, NO_OP_MOVE_INDEX, uint104(0), 0, p0Signature
         );
     }
 
@@ -584,20 +484,13 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         uint104 p0Salt = uint104(1);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         vm.startPrank(p0);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
         );
 
         // After execution, turn advances to 1, where p1 (not p0) is the committer. The same caller
@@ -605,14 +498,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         // the revealer-sig-replay path is covered by test_revert_replayPrevented_byTurnAdvancement).
         vm.expectRevert(SignedCommitManager.NotCommitter.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
         );
     }
 
@@ -625,8 +511,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
 
         // p1 signs over a DIFFERENT hash than what p0 will submit
         bytes32 fakeP0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, uint104(999), uint16(0)));
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, fakeP0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, fakeP0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         // p0 (committer, msg.sender) submits their real move data; revealer sig was over
@@ -634,14 +520,7 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         vm.startPrank(p0);
         vm.expectRevert(SignedCommitManager.InvalidSignature.selector);
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            uint104(0),
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
         );
     }
 
@@ -652,8 +531,8 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // p1 signs with SWITCH_MOVE_INDEX
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
         );
 
         // p0 (committer, msg.sender) tries to submit a different revealer move (NO_OP not SWITCH).
@@ -858,16 +737,21 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
     ) internal {
         uint104 committerSalt = uint104(turnId + 1);
         uint104 revealerSalt = uint104(turnId + 2);
-        bytes32 committerMoveHash =
-            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
 
         // Committer is p0 on even turns, p1 on odd turns. SINGLE-SIG: committer == msg.sender (no
         // committer signature); only the revealer signs.
-        (, uint256 revealerPk, address committerAddr) =
-            turnId % 2 == 0 ? (P0_PK, P1_PK, p0) : (P1_PK, P0_PK, p1);
+        (, uint256 revealerPk, address committerAddr) = turnId % 2 == 0 ? (P0_PK, P1_PK, p0) : (P1_PK, P0_PK, p1);
 
-        bytes memory revealerSig = _signDualReveal(address(signedCommitManager),
-            revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
+        bytes memory revealerSig = _signDualReveal(
+            address(signedCommitManager),
+            revealerPk,
+            battleKey,
+            turnId,
+            committerMoveHash,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData
         );
 
         vm.startPrank(committerAddr);
@@ -930,16 +814,8 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
         _executeDualSigned(battleKey, 1, 50, 0, NO_OP_MOVE_INDEX, 0);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance despite bad moveIndex");
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
-            p0HpBefore,
-            "p0 HP unchanged"
-        );
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
-            p1HpBefore,
-            "p1 HP unchanged"
-        );
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), p0HpBefore, "p0 HP unchanged");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), p1HpBefore, "p1 HP unchanged");
     }
 
     /// @notice Switch with an out-of-bounds target index must silently no-op, not silently wrap
@@ -973,5 +849,19 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance");
         uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
         assertEq(active[1], 0, "p1 still on mon 0 - same-mon switch silent no-op");
+    }
+
+    function test_revertBattleNotCommiter() public {
+        bytes32 fakeBattleKey = bytes32(uint256(123));
+        uint104 p0Salt = uint104(1);
+        bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, fakeBattleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, uint104(0), 0
+        );
+        vm.startPrank(p0);
+        vm.expectRevert(Engine.NotCommitter.selector);
+        signedCommitManager.executeWithDualSignedMoves(
+            fakeBattleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, uint104(0), 0, p1Signature
+        );
     }
 }

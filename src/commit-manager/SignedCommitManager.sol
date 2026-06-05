@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {IValidator} from "../IValidator.sol";
-import {CommitContext, PlayerDecisionData} from "../Structs.sol";
+import {BattleContext, PlayerDecisionData} from "../Structs.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {EIP712} from "../lib/EIP712.sol";
 import {DefaultCommitManager} from "./DefaultCommitManager.sol";
@@ -61,7 +61,11 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         uint16 revealerExtraData,
         bytes calldata revealerSignature
     ) external {
-        (address committer, address revealer, uint64 turnId) = ENGINE.getCommitAuthForDualSigned(battleKey);
+        // Derive the turn's committer/revealer/turnId from battle state (getCommitAuthForDualSigned
+        // was removed from the Engine surface): turnId is the executed count, parity picks the roles.
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+        uint64 turnId = ctx.turnId;
+        (address committer, address revealer) = turnId % 2 == 0 ? (ctx.p0, ctx.p1) : (ctx.p1, ctx.p0);
 
         if (msg.sender != committer) {
             revert NotCommitter();
@@ -110,7 +114,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     /// @notice Executes a forced single-player move, usually a switch after a KO, in one transaction.
     /// @dev The acting player is inferred from the engine's switch flag and must be msg.sender.
     function executeSinglePlayerMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
-        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
 
         if (ctx.startTimestamp == 0) {
             revert BattleNotYetStarted();
@@ -149,7 +153,7 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
     ///        SignedCommit(moveHash, battleKey, turnId)
     function commitWithSignature(bytes32 battleKey, bytes32 moveHash, bytes calldata committerSignature) external {
         // Get battle context
-        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
 
         // Validate battle state
         if (ctx.startTimestamp == 0) {

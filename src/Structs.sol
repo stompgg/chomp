@@ -278,17 +278,6 @@ struct BattleContext {
     address moveManager;
 }
 
-// Lightweight context for commit manager (fewer SLOADs than BattleContext)
-struct CommitContext {
-    uint48 startTimestamp;
-    address p0;
-    address p1;
-    uint8 winnerIndex;
-    uint64 turnId;
-    uint8 playerSwitchForTurnFlag;
-    address validator;
-}
-
 // Batch context for damage calculation to reduce external calls (7 -> 1)
 struct DamageCalcContext {
     uint8 attackerMonIndex;

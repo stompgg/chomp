@@ -51,6 +51,37 @@
           { "name": "at", "visibility": "protected", "params": ["set: AddressSet", "index: bigint"], "returns": "string" }
         ]
       }
+    },
+    {
+      "source": "lib/EIP712.sol",
+      "reason": "Complex Yul assembly for EIP-712 domain separation and typed-data digest hashing",
+      "runtimeModule": "../runtime",
+      "exports": ["EIP712"],
+      "interface": {
+        "class": "EIP712",
+        "extends": "Contract",
+        "abstract": true,
+        "methods": [
+          { "name": "_hashTypedData", "visibility": "protected", "params": ["structHash: string"], "returns": "string" },
+          { "name": "_domainNameAndVersion", "visibility": "protected", "returns": "[string, string]" }
+        ],
+        "mixin": "  // EIP712 mixin (secondary base class). Typed-data hashing is reached only by the\n  // built-in dual-signed buffer flow (submitTurnMoves), an on-chain-only feature that\n  // local simulation never exercises, so it throws rather than ship a subtly-wrong\n  // digest (matching the runtime ecrecover convention). _domainNameAndVersion is\n  // supplied by the subclass (Engine), so it is intentionally not part of this mixin.\n  protected _hashTypedData(_structHash: string): string {\n    throw new Error('EIP712._hashTypedData called — the built-in dual-signed buffer flow (submitTurnMoves) is an on-chain-only feature and is not modeled in local simulation.');\n  }"
+      }
+    },
+    {
+      "source": "lib/ECDSA.sol",
+      "reason": "Complex Yul assembly around the ecrecover precompile for secp256k1 signature recovery",
+      "runtimeModule": "../runtime",
+      "exports": ["ECDSA", "eCDSA"],
+      "interface": {
+        "class": "ECDSA",
+        "extends": "Contract",
+        "abstract": false,
+        "methods": [
+          { "name": "recoverCalldata", "visibility": "public", "params": ["hash: string", "signature: string"], "returns": "string" },
+          { "name": "recover", "visibility": "public", "params": ["hash: string", "signature: string"], "returns": "string" }
+        ]
+      }
     }
   ],
   "dependencyOverrides": {

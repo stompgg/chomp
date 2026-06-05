@@ -2788,7 +2788,7 @@ contract EngineTest is Test, BattleHelper {
         matchmaker.confirmBattle(battleKey, salt, p0TeamIndex);
 
         // Verify Bob is now p1
-        assertEq(engine.getPlayersForBattle(battleKey)[1], BOB);
+        assertEq(engine.getBattleContext(battleKey).p1, BOB);
     }
 
     /*

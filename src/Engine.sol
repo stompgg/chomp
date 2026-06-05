@@ -422,14 +422,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         emit EngineExecute(battleKey);
     }
 
-    /// @notice Execute every buffered turn in `entries` in one tx by looping `_executeInternal`
-    ///         with DIRECT storage. The EVM keeps each slot warm across sub-turns, so cold SLOADs
-    ///         are paid once per batch and amortized for free — no transient shadow layer.
-    /// @dev Only callable by the registered moveManager. Each `entries[i]` packs:
-    ///        [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]
-    ///      Flag-based dispatch reads the live `playerSwitchForTurnFlag` to pick the acting half
-    ///      (the non-acting player's half is a NO_OP the engine ignores). Returns the number of
-    ///      sub-turns actually executed and the winner (zero address if the game continues).
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
         external
         returns (uint64 executed, address winner)
@@ -711,40 +703,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    /// @notice Buffer status: numExecuted is the live turnId, plus the staged-but-undrained count.
-    function getBufferStatus(bytes32 battleKey) external view returns (uint64 numExecuted, uint8 numBuffered) {
-        BattleData storage data = battleData[battleKey];
-        return (data.turnId, data.numBuffered);
-    }
-
-    function getBufferedTurn(bytes32 battleKey, uint64 turnId)
+    /// @notice One-call buffer reload: the executed-turn count plus every staged-but-undrained buffer
+    ///         entry, in turn order — a client resuming mid-battle reads the whole pending buffer in one
+    ///         eth_call (`numExecuted`, then `packedTurns`; `packedTurns.length` is the buffered count,
+    ///         and `numExecuted + packedTurns.length` is the next turnId to submit). Each word is the
+    ///         packed (p0|p1) buffer entry — identical layout to MovesSubmitted's `packed`
+    ///         ([p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104]) — so the
+    ///         consumer reuses one unpack for both.
+    function getBufferedTurns(bytes32 battleKey)
         external
         view
-        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+        returns (uint64 numExecuted, uint256[] memory packedTurns)
     {
-        return _unpackBufferedTurn(moveBuffer[_resolveStorageKey(battleKey)][turnId]);
-    }
-
-    function _packBufferedTurn(uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
-        internal
-        pure
-        returns (uint256 packed)
-    {
-        packed = uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p0Salt) << 24) | (uint256(p1Move) << 128)
-            | (uint256(p1Extra) << 136) | (uint256(p1Salt) << 152);
-    }
-
-    function _unpackBufferedTurn(uint256 packed)
-        internal
-        pure
-        returns (uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
-    {
-        p0Move = uint8(packed);
-        p0Extra = uint16(packed >> 8);
-        p0Salt = uint104(packed >> 24);
-        p1Move = uint8(packed >> 128);
-        p1Extra = uint16(packed >> 136);
-        p1Salt = uint104(packed >> 152);
+        BattleData storage data = battleData[battleKey];
+        numExecuted = data.turnId;
+        uint256 n = data.numBuffered;
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        packedTurns = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            packedTurns[i] = moveBuffer[storageKey][numExecuted + uint64(i)];
+        }
     }
 
     /// @notice Public resolver for a battle's slot-reused storageKey (the per-battle config slot index).
@@ -3404,13 +3382,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _getCurrentTurnMove(config, playerIndex);
     }
 
-    function getPlayersForBattle(bytes32 battleKey) external view returns (address[] memory) {
-        address[] memory players = new address[](2);
-        players[0] = battleData[battleKey].p0;
-        players[1] = battleData[battleKey].p1;
-        return players;
-    }
-
     function getMonStatsForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         external
         view
@@ -3547,10 +3518,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return (winnerIndex == 0) ? data.p0 : data.p1;
     }
 
-    function getLastExecuteTimestamp(bytes32 battleKey) external view returns (uint48) {
-        return battleData[battleKey].lastExecuteTimestamp;
-    }
-
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
         return _getKOBitmap(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
     }
@@ -3570,45 +3537,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.p1ActiveMonIndex = uint8(data.activeMonIndex >> 8);
         ctx.validator = address(config.validator);
         ctx.moveManager = config.moveManager;
-    }
-
-    function getCommitContext(bytes32 battleKey) external view returns (CommitContext memory ctx) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        ctx.startTimestamp = config.startTimestamp;
-        ctx.p0 = data.p0;
-        ctx.p1 = data.p1;
-        ctx.winnerIndex = data.winnerIndex;
-        ctx.turnId = data.turnId;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.validator = address(config.validator);
-    }
-
-    /// @notice Lightweight getter for dual-signed flow that validates state and returns only needed fields
-    /// @dev Reverts internally if battle not started, already complete, or not a two-player turn
-    function getCommitAuthForDualSigned(bytes32 battleKey)
-        external
-        view
-        returns (address committer, address revealer, uint64 turnId)
-    {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
-        BattleConfig storage config = battleConfig[storageKey];
-
-        if (config.startTimestamp == 0) revert BattleNotStarted();
-        if (data.winnerIndex != 2) revert GameAlreadyOver();
-        if (data.playerSwitchForTurnFlag != 2) revert NotTwoPlayerTurn();
-
-        turnId = data.turnId;
-        if (turnId % 2 == 0) {
-            committer = data.p0;
-            revealer = data.p1;
-        } else {
-            committer = data.p1;
-            revealer = data.p0;
-        }
     }
 
     function _getDamageCalcContextInternal(

@@ -501,3 +501,5 @@ export {
   Uint256Set,
   Int256Set,
 } from './EnumerableSetLib';
+export { EIP712 } from './EIP712';
+export { ECDSA, eCDSA } from './ECDSA';

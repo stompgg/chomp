@@ -196,6 +196,9 @@ contract DefaultValidator is IValidator {
     */
     function validateTimeout(bytes32 battleKey, uint256 playerIndexToCheck) external view returns (address loser) {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
+        // getLastExecuteTimestamp was removed from the Engine surface; this deprecated timeout path
+        // reads it from the full battle dump instead.
+        (, BattleData memory bd) = ENGINE.getBattle(battleKey);
         uint256 otherPlayerIndex = 1 - playerIndexToCheck;
 
         ICommitManager commitManager = ICommitManager(ctx.moveManager);
@@ -212,7 +215,7 @@ contract DefaultValidator is IValidator {
             turnId: ctx.turnId,
             playerSwitchForTurnFlag: ctx.playerSwitchForTurnFlag,
             playerIndexToCheck: playerIndexToCheck,
-            lastTurnTimestamp: ctx.turnId == 0 ? ctx.startTimestamp : ENGINE.getLastExecuteTimestamp(battleKey),
+            lastTurnTimestamp: ctx.turnId == 0 ? ctx.startTimestamp : bd.lastExecuteTimestamp,
             timeoutDuration: TIMEOUT_DURATION,
             prevTurnMultiplier: PREV_TURN_MULTIPLIER,
             playerMoveHash: playerMoveHash,

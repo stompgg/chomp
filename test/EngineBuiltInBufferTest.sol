@@ -48,15 +48,15 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
         bytes32 battleKey = _startBuiltIn();
         // Turn 0: both switch in mon 0 (buffer only).
         _submit(battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, false);
-        (uint64 numExecuted, uint8 numBuffered) = engine.getBufferStatus(battleKey);
+        (uint64 numExecuted, uint256[] memory turns) = engine.getBufferedTurns(battleKey);
         assertEq(numExecuted, 0, "no turn executed yet");
-        assertEq(numBuffered, 1, "one turn buffered");
+        assertEq(turns.length, 1, "one turn buffered");
         assertEq(engine.getTurnIdForBattleState(battleKey), 0, "engine turnId unchanged while buffered");
 
         // Turn 1: both attack with move 0; combined submit drains the whole buffer.
         _submit(battleKey, 1, 0, 0, 3, 0, 0, 4, true);
-        (numExecuted, numBuffered) = engine.getBufferStatus(battleKey);
-        assertEq(numBuffered, 0, "buffer drained");
+        (numExecuted, turns) = engine.getBufferedTurns(battleKey);
+        assertEq(turns.length, 0, "buffer drained");
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "both turns executed");
     }
 
@@ -172,17 +172,17 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
         // stale moveBuffer entry + stale numBuffered on the now-dead battleData).
         bytes32 key1 = _startBuiltIn();
         _submit(key1, 0, SWITCH_MOVE_INDEX, 0, 7, SWITCH_MOVE_INDEX, 0, 8, false);
-        (, uint8 buffered1) = engine.getBufferStatus(key1);
-        assertEq(buffered1, 1, "battle 1 has a buffered turn");
+        (, uint256[] memory turns1) = engine.getBufferedTurns(key1);
+        assertEq(turns1.length, 1, "battle 1 has a buffered turn");
         _endBattle(key1);
 
         // Battle 2 reuses the freed storageKey. numBuffered lives in BattleData[battleKey] (reinit
         // each battle), so it starts at 0 — the stale moveBuffer slot is simply overwritten.
         bytes32 key2 = _startBuiltIn();
         require(engine.getStorageKey(key2) == key1, "battle 2 should reuse battle 1's storageKey");
-        (uint64 exec2, uint8 buffered2) = engine.getBufferStatus(key2);
+        (uint64 exec2, uint256[] memory turns2) = engine.getBufferedTurns(key2);
         assertEq(exec2, 0, "fresh battle starts at turn 0");
-        assertEq(buffered2, 0, "no stale buffered count leaked across the storageKey reuse");
+        assertEq(turns2.length, 0, "no stale buffered count leaked across the storageKey reuse");
         // First submit of the fresh battle resolves to the derived turn 0 (no stale numBuffered leaked).
         _submit(key2, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, true);
         assertEq(engine.getTurnIdForBattleState(key2), 1, "battle 2 turn 0 executed cleanly");

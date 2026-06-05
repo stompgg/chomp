@@ -270,9 +270,21 @@ class AbiTypeInferer:
                     return 'bytes32'
                 if func_name == 'name':
                     return 'string'
+                # Type-cast calls (e.g. uint8(x), uint104(x), bytes32(x)) carry their
+                # target type — mirror the non-packed inference (_infer_function_call_type)
+                # so encodePacked emits the real width. Defaulting to uint256 here both
+                # mis-sizes the packing (32 bytes instead of 1 for uint8) and trips viem's
+                # number/bigint typing for the <=48-bit casts that render as `Number(...)`.
+                if func_name == 'address':
+                    return 'address'
+                if func_name.startswith(('uint', 'int')) or func_name.startswith('bytes'):
+                    return func_name
             elif isinstance(arg.function, MemberAccess):
                 if arg.function.member == 'name':
                     return 'string'
+        if isinstance(arg, TypeCast):
+            if arg.type_name and arg.type_name.name:
+                return self._get_packed_type(arg.type_name.name)
         return 'uint256'
 
     def _get_packed_type(self, type_name: str, is_array: bool = False) -> str:

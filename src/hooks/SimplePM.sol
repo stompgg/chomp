@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {Ownable} from "../lib/Ownable.sol";
-import {CommitContext} from "../Structs.sol";
+import {BattleContext} from "../Structs.sol";
 
 struct PMEntry {
     uint96 p0Shares;
@@ -41,7 +41,7 @@ contract SimplePM is Ownable {
     function buyShares(bytes32 battleKey, bool isP0) payable public {
         // One batched read covers both the existence guard and the turnId (getStartTimestamp was
         // removed from the engine surface). startTimestamp == 0 means the battle was never started.
-        CommitContext memory ctx = ENGINE.getCommitContext(battleKey);
+        BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         if (ctx.startTimestamp == 0) {
             revert InvalidBattle(battleKey);
         }
@@ -68,8 +68,7 @@ contract SimplePM is Ownable {
         if (winner == address(0)) {
             revert GameNotOver(battleKey);
         }
-        address[] memory players = ENGINE.getPlayersForBattle(battleKey);
-        bool isP0Winner = winner == players[0];
+        bool isP0Winner = winner == ENGINE.getBattleContext(battleKey).p0;
 
         PMEntry storage marketDetails = marketForBattle[battleKey];
         uint256 sharesToRedeem = sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance;
