@@ -29,7 +29,7 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint104 p1Salt,
         uint256 p0Pk,
         uint256 p1Pk
-    ) internal view returns (TurnSubmission memory entry) {
+    ) internal view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
         return _buildTurnSubmissionImpl(
             signedCommitManagerAddr, false, battleKey, turnId, p0MoveIndex, p0ExtraData, p0Salt, p1MoveIndex, p1ExtraData, p1Salt, p0Pk, p1Pk
         );
@@ -49,7 +49,7 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint104 p1Salt,
         uint256 p0Pk,
         uint256 p1Pk
-    ) internal view returns (TurnSubmission memory entry) {
+    ) internal view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
         return _buildTurnSubmissionImpl(
             engineAddr, true, battleKey, turnId, p0MoveIndex, p0ExtraData, p0Salt, p1MoveIndex, p1ExtraData, p1Salt, p0Pk, p1Pk
         );
@@ -68,7 +68,7 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint104 p1Salt,
         uint256 p0Pk,
         uint256 p1Pk
-    ) private view returns (TurnSubmission memory entry) {
+    ) private view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
         uint8 cM; uint16 cE; uint104 cS;
         uint8 rM; uint16 rE; uint104 rS; uint256 rPk;
         if (turnId % 2 == 0) {
@@ -79,18 +79,25 @@ abstract contract BatchHelper is SignedCommitHelper {
             rM = p0MoveIndex; rE = p0ExtraData; rS = p0Salt; rPk = p0Pk;
         }
         bytes32 committerMoveHash = keccak256(abi.encodePacked(cM, cS, cE));
+        // turnId is signed (the revealer binds it) but NOT submitted — the Engine derives it.
         bytes memory sig = useEngineDomain
             ? _signDualRevealForEngine(verifyingContract, rPk, battleKey, turnId, committerMoveHash, rM, rS, rE)
             : _signDualReveal(verifyingContract, rPk, battleKey, turnId, committerMoveHash, rM, rS, rE);
-        entry = TurnSubmission({
-            turnId: turnId,
-            committerMoveIndex: cM,
-            committerExtraData: cE,
-            committerSalt: cS,
-            revealerMoveIndex: rM,
-            revealerExtraData: rE,
-            revealerSalt: rS,
-            revealerSig: sig
-        });
+        // Pack committer (low 128 bits) + revealer (high 128) into one word, matching the buffer layout.
+        packedMoves = uint256(cM) | (uint256(cE) << 8) | (uint256(cS) << 24)
+            | (uint256(rM) << 128) | (uint256(rE) << 136) | (uint256(rS) << 152);
+        (r, vs) = _compactSig(sig);
+    }
+
+    /// @dev Split a 65-byte (r,s,v) signature into the EIP-2098 compact (r, vs) form the Engine expects.
+    function _compactSig(bytes memory sig) internal pure returns (bytes32 r, bytes32 vs) {
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(sig, 0x20))
+            s := mload(add(sig, 0x40))
+            v := byte(0, mload(add(sig, 0x60)))
+        }
+        vs = s | bytes32(uint256(v - 27) << 255);
     }
 }

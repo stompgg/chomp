@@ -251,21 +251,6 @@ struct RevealedMove {
     uint104 salt;
 }
 
-// Per-turn submission for `SignedCommitManager.submitTurnMoves` (batched flow). SINGLE-SIG model:
-// the committer is `msg.sender` (no committer signature), and the revealer signs `DualSignedReveal`
-// which pins the committer's move hash — so the committer can't change their move post-hoc and
-// can't be impersonated (msg.sender == committer). On-chain stores the packed (p0,p1) projection.
-struct TurnSubmission {
-    uint64 turnId;
-    uint8 committerMoveIndex;
-    uint16 committerExtraData;
-    uint104 committerSalt;
-    uint8 revealerMoveIndex;
-    uint16 revealerExtraData;
-    uint104 revealerSalt;
-    bytes revealerSig;
-}
-
 // Used for StatBoosts
 struct StatBoostToApply {
     MonStateIndexName stat;

@@ -34,10 +34,13 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @notice Faithful replay of a REAL prod battle (26 turns, switch/no-op heavy): real mon loadouts
 ///         via SetupMons' canonical deployX() recipes + the log's per-turn moveIndex/salt/extraData,
-///         run through LEGACY (per-turn execute) and BATCHED (single-sig submit x N-1 + a final
-///         submitTurnMovesAndExecute that buffers the last turn and drains in the same tx).
-///         Asserts byte-equal end state (equivalence) and reports production-faithful (vm.cool,
-///         steady-state) total gas. Batching uses direct storage (no shadow) + single-sig submit.
+///         run through LEGACY (per-turn execute), BUILT-IN (turn-by-turn submits + drain), and ONE-TX
+///         (CPU batch). Asserts byte-equal end state (equivalence) across all three.
+///         Gas accounting is production-faithful per tx: TX_BASE (21000 intrinsic) + the EIP-2028
+///         calldata cost (16/4 per byte) + on-chain execution. The ABI encode is done OUTSIDE the
+///         measured bracket and the call is dispatched low-level (see _measuredCall) because in prod the
+///         relayer/wallet encodes off-chain — measuring it would over-count paths with larger structs.
+///         Every path is measured on COLD slots (fresh storageKey) and again on REUSED slots.
 contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     uint256 constant P0_PK = 0xA11CE;
     uint256 constant P1_PK = 0xB0B;
@@ -183,33 +186,84 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         return key;
     }
 
+    // Old submit struct shape, kept only to measure the calldata delta of the flat+compact refactor.
+    struct _OldTurnSubmission {
+        uint256 packedMoves;
+        bytes revealerSig;
+    }
+
+    /// @notice Deterministic calldata-cost comparison (immune to the optimizer-layout shift in the full
+    ///         replay): old `submitTurnMoves(bytes32, TurnSubmission{uint256, bytes})` vs new flat
+    ///         `submitTurnMoves(bytes32, uint256, bytes32, bytes32)`. Asserts the new form is cheaper.
+    function test_submitCalldataCompression() public pure {
+        bytes32 bk = keccak256("battleKey");
+        uint256 pm = uint256(keccak256("packedMoves")); // realistic high-entropy move word
+        bytes32 r = keccak256("r");
+        bytes32 s = keccak256("s") & bytes32(type(uint256).max >> 1); // low-s (yParity bit free)
+        bytes memory sig65 = abi.encodePacked(r, s, uint8(27)); // standard (r,s,v) 65-byte sig
+        bytes32 vs = s; // v == 27 → no yParity bit set
+
+        // Args-only calldata (selector is identical 4 bytes in both, so excluded).
+        uint256 costOld = _calldataCost(abi.encode(bk, _OldTurnSubmission(pm, sig65)));
+        uint256 costNew = _calldataCost(abi.encode(bk, pm, r, vs));
+        assertLt(costNew, costOld, "flat+compact must be cheaper calldata");
+        console.log("submit calldata gas  OLD (struct + bytes sig):", costOld);
+        console.log("submit calldata gas  NEW (flat + compact sig) :", costNew);
+        console.log("saved per submit                             :", costOld - costNew);
+        console.log("saved over a 26-submit game                  :", (costOld - costNew) * 26);
+    }
+
     function _coolEngineAndMgr() internal { vm.cool(address(engine)); vm.cool(address(mgr)); }
+
+    /// @dev EIP-2028 calldata cost: 16 gas per non-zero byte, 4 per zero byte. This is the real
+    ///      top-level-tx cost the flat TX_BASE (21000 intrinsic) omits. Execution here far exceeds the
+    ///      EIP-7623 floor, so the standard token cost applies.
+    function _calldataCost(bytes memory cd) internal pure returns (uint256 cost) {
+        for (uint256 i; i < cd.length; i++) cost += cd[i] == bytes1(0) ? 4 : 16;
+    }
+
+    /// @dev Prod-faithful per-tx gas = on-chain execution + calldata bytes. The ABI encode is done by
+    ///      the CALLER, OUTSIDE this bracket, because in prod the relayer/wallet encodes off-chain — so we
+    ///      measure only the low-level call (CALL + the callee's decode + logic) and add the real calldata
+    ///      cost. Cold-starts storage first (per-tx cold slots). Add `+ TX_BASE` once per tx at the call site.
+    function _measuredCall(address target, address sender, bytes memory cd, bool measure)
+        internal
+        returns (uint256 gasUsed)
+    {
+        if (measure) _coolEngineAndMgr();
+        vm.prank(sender);
+        uint256 g0 = gasleft();
+        (bool ok,) = target.call(cd);
+        uint256 raw = g0 - gasleft();
+        require(ok, "measured call reverted");
+        if (measure) gasUsed = raw + _calldataCost(cd);
+    }
 
     // ---- LEGACY (per-turn, 2-sig executeWithDualSignedMoves as on main) ----
     function _legacyTurn(bytes32 battleKey, Turn memory tn, bool measure) internal returns (uint256 gasUsed) {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
         bool twoPlayer = tn.p0Present && tn.p1Present;
+        bytes memory cd;
+        address actor;
         if (twoPlayer) {
             (uint8 cM, uint16 cE, uint104 cS, uint8 rM, uint16 rE, uint104 rS, uint256 rPk) =
                 turnId % 2 == 0
                     ? (tn.p0Move, tn.p0Extra, tn.p0Salt, tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK)
                     : (tn.p1Move, tn.p1Extra, tn.p1Salt, tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK);
             // Single-sig: committer (msg.sender, by parity) submits; only the revealer signs.
-            address committer = turnId % 2 == 0 ? p0 : p1;
+            actor = turnId % 2 == 0 ? p0 : p1;
             bytes32 cHash = keccak256(abi.encodePacked(cM, cS, cE));
             bytes memory rSig = _signDualReveal(address(mgr), rPk, battleKey, turnId, cHash, rM, rS, rE);
-            if (measure) { _coolEngineAndMgr(); vm.prank(committer); uint256 g0 = gasleft();
-                mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, rSig);
-                gasUsed = g0 - gasleft();
-            } else { vm.prank(committer); mgr.executeWithDualSignedMoves(battleKey, cM, cS, cE, rM, rS, rE, rSig); }
+            cd = abi.encodeCall(mgr.executeWithDualSignedMoves, (battleKey, cM, cS, cE, rM, rS, rE, rSig));
         } else {
-            (uint8 m, uint16 e, uint104 s, address actor) = tn.p0Present
+            uint8 m;
+            uint16 e;
+            uint104 s;
+            (m, e, s, actor) = tn.p0Present
                 ? (tn.p0Move, tn.p0Extra, tn.p0Salt, p0) : (tn.p1Move, tn.p1Extra, tn.p1Salt, p1);
-            if (measure) _coolEngineAndMgr();
-            uint256 g0 = gasleft();
-            vm.prank(actor); mgr.executeSinglePlayerMove(battleKey, m, s, e);
-            if (measure) gasUsed = g0 - gasleft();
+            cd = abi.encodeCall(mgr.executeSinglePlayerMove, (battleKey, m, s, e));
         }
+        gasUsed = _measuredCall(address(mgr), actor, cd, measure);
         engine.resetCallContext();
     }
 
@@ -218,11 +272,10 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     // ---- BUILT-IN BATCHED (in-Engine buffer: submit/drain via the Engine directly). Single-sig
-    //      dual-signed flow with signatures targeting the Engine's own EIP-712 domain. The drain emits
-    //      per-turn MonMoves (both salts) + a BattleComplete at game over — the same replay stream as the
-    //      legacy per-turn path, minus the per-tx EngineExecute ping (the whole drain is one tx). So this
-    //      is a faithful PvP-capable prod path (the "delayed execution with turn-by-turn submits" flow)
-    //      and a fair apples-to-apples metric vs LEGACY. ----
+    //      dual-signed flow with signatures targeting the Engine's own EIP-712 domain. Each submit
+    //      announces the moves via one compressed MovesSubmitted (move idx + extra + salts); the drain
+    //      emits NO per-turn events, only a BattleComplete at game over. The production "delayed execution
+    //      with turn-by-turn submits" path and a fair apples-to-apples metric vs LEGACY. ----
     function _submitTurnBuiltIn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
         internal returns (uint256 gasUsed)
     {
@@ -230,19 +283,13 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
         uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, turnId))));
         uint104 p1s = tn.p1Present ? tn.p1Salt : uint104(uint256(keccak256(abi.encode("noop1", battleKey, turnId))));
-        TurnSubmission memory entry = _buildTurnSubmissionForEngine(
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
             address(engine), battleKey, turnId, p0m, tn.p0Extra, p0s, p1m, tn.p1Extra, p1s, P0_PK, P1_PK
         );
-        address committer = _committerFor(turnId, p0, p1);
-        if (measure) vm.cool(address(engine));
-        vm.prank(committer);
-        uint256 g0 = gasleft();
-        if (combined) {
-            engine.submitTurnMovesAndExecute(battleKey, entry);
-        } else {
-            engine.submitTurnMoves(battleKey, entry);
-        }
-        gasUsed = g0 - gasleft();
+        bytes memory cd = combined
+            ? abi.encodeCall(engine.submitTurnMovesAndExecute, (battleKey, packedMoves, r, vs))
+            : abi.encodeCall(engine.submitTurnMoves, (battleKey, packedMoves, r, vs));
+        gasUsed = _measuredCall(address(engine), _committerFor(turnId, p0, p1), cd, measure);
     }
 
     function _runBuiltIn(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 submitExec, uint256 execExec) {
@@ -272,11 +319,9 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
     function _runOneTx(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 execGas) {
         uint256[] memory entries = _oneTxEntries(battleKey, plan);
-        if (measure) _coolEngineAndMgr();
-        vm.prank(address(mgr)); // executeBatchedTurns is moveManager-gated
-        uint256 g0 = gasleft();
-        engine.executeBatchedTurns(battleKey, entries);
-        if (measure) execGas = g0 - gasleft();
+        // executeBatchedTurns is moveManager-gated, so the mgr is the tx sender.
+        bytes memory cd = abi.encodeCall(engine.executeBatchedTurns, (battleKey, entries));
+        execGas = _measuredCall(address(engine), address(mgr), cd, measure);
         engine.resetCallContext();
     }
 

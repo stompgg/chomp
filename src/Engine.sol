@@ -71,7 +71,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     error NotSinglePlayerTurn();
     // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
     error NotBuiltInManager();
-    error WrongTurnId();
     error NotCommitter();
     error InvalidSignature();
     error EmptyBuffer();
@@ -92,26 +91,27 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     event EngineExecute(bytes32 indexed battleKey);
     event BattleComplete(bytes32 indexed battleKey, address winner);
     // CPU one-tx completion (executeBatchedTurns only): winner + every executed turn, for off-chain
-    // replay. Replaces the plain BattleComplete on the CPU path (which skips per-turn MonMoves, so this
-    // carries the full move list). The built-in PvP drain does NOT use this — it emits per-turn MonMoves
-    // + a normal BattleComplete instead. `payload` is a single packed blob:
+    // replay. Replaces the plain BattleComplete on the CPU path (which emits no per-turn events, so this
+    // carries the full move list). The built-in PvP drain does NOT use this — it announces moves via
+    // MovesSubmitted at submit time and emits only a normal BattleComplete at game over. `payload` is a
+    // single packed blob:
     //   bytes  0- 19 : winner address (20 bytes)
     //   bytes 20-  N : 19 bytes per executed turn, big-endian, the low 152 bits of each
     //                  engine turn-entry: [p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16]
     // The p1 (CPU) salt is dropped — always 0 on the batched (CPU) path. Moves are RAW indices
     // (consumer applies MOVE_INDEX_OFFSET, matching the MonMoves convention).
     event BattleCompleteWithBatchTurns(bytes32 indexed battleKey, bytes payload);
-    // Emitted by the built-in dual-signed buffer flow when a turn is staged via submitTurnMoves.
-    // Both players' moves are known at submit (committer preimage + revealer signature), so per-turn
-    // move data is published in real time even though execution is deferred to the drain. Compact:
-    // battleKey topic + one packed data word. Layout:
+    // Emitted by the built-in dual-signed buffer flow when a turn is staged (submitTurnMoves) or
+    // submitted-and-executed (submitTurnMovesAndExecute). Both players' moves are known at submit, so
+    // the full per-turn move data is published here in real time and the drain emits NO per-turn events.
+    // `packed` IS the buffer word — one compressed data word carrying both players' move index + extra
+    // data + salt (turnId is the submission order, derivable from the event sequence):
     //   bits   0-  7 : p0 move index (raw — consumer applies MOVE_INDEX_OFFSET, matching MonMoves)
     //   bits   8- 23 : p0 extraData (uint16)
-    //   bits  24- 31 : p1 move index (raw)
-    //   bits  32- 47 : p1 extraData (uint16)
-    //   bits  48-111 : turnId (uint64)
-    // Salts are omitted (needed only for the on-chain hash check, already done); getBufferedTurn
-    // still exposes them on-chain if ever required.
+    //   bits  24-127 : p0 salt (uint104)
+    //   bits 128-135 : p1 move index (raw)
+    //   bits 136-151 : p1 extraData (uint16)
+    //   bits 152-255 : p1 salt (uint104)
     event MovesSubmitted(bytes32 indexed battleKey, bytes32 packed);
 
     /// @notice Constructor to set default validator config for inline validation
@@ -349,7 +349,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // EngineExecute is a per-tx "a turn executed" ping (legacy = one turn per tx). The batched
         // drain runs many turns in one tx, so it emits MonMoves per turn but not this — hence it lives
         // here at the entrypoint, not inside the per-turn _executeInternal body.
-        winner = _executeInternal(battleKey, storageKey, true);
+        winner = _executeInternal(battleKey, storageKey, true, true);
         emit EngineExecute(battleKey);
     }
 
@@ -385,7 +385,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _turnP1Packed =
             _packTurn((uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8), p1Salt);
 
-        winner = _executeInternal(battleKey, storageKey, true);
+        winner = _executeInternal(battleKey, storageKey, true, true);
         emit EngineExecute(battleKey);
     }
 
@@ -418,7 +418,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn(encoded, salt);
         }
 
-        winner = _executeInternal(battleKey, storageKey, true);
+        winner = _executeInternal(battleKey, storageKey, true, true);
         emit EngineExecute(battleKey);
     }
 
@@ -465,7 +465,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             }
 
-            winner = _executeInternal(battleKey, storageKey, false);
+            winner = _executeInternal(battleKey, storageKey, false, false);
             executed++;
             if (winner != address(0)) {
                 break;
@@ -519,15 +519,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    /// @dev Executes one buffered turn for the built-in drain: flag-dispatch the packed entry into the
+    /// @dev Executes one buffered turn for the built-in PvP drain: flag-dispatch the packed entry into the
     ///      current-turn transients (the non-acting half on a single-player turn is ignored), then
-    ///      _executeInternal with emitEvents=true. The built-in batched flow is a PvP-capable prod path,
-    ///      so it surfaces the per-turn MonMoves (carrying both salts) + BattleComplete at game over that
-    ///      an indexer replays from. It deliberately does NOT emit the per-tx EngineExecute ping: all the
-    ///      drained turns run in ONE tx, so a per-turn ping would be wrong (EngineExecute is emitted once
-    ///      per legacy execute() tx at the entrypoint, not in this loop body). Single call site
+    ///      _executeInternal with (emitMonMoves=false, emitBattleComplete=true). The drain emits NO
+    ///      per-turn events — each move was already announced by MovesSubmitted at submit time — only a
+    ///      normal BattleComplete at game over. (No per-tx EngineExecute either: the whole drain is one tx;
+    ///      EngineExecute is emitted once per legacy execute() tx at the entrypoint.) Single call site
     ///      (_drainBuffer) so the optimizer inlines it. NOTE: executeBatchedTurns (the CPU one-tx path)
-    ///      keeps its own inlined copy of this loop body with emitEvents=false on purpose — CPU has one
+    ///      keeps its own inlined copy of this loop body with (false, false) on purpose — CPU has one
     ///      actor, so a single BattleCompleteWithBatchTurns is the right log there, and extracting a
     ///      2-call-site helper stopped the inliner and added ~1M gas across a real replay.
     function _executeBatchedEntry(bytes32 battleKey, bytes32 storageKey, uint256 entry)
@@ -556,7 +555,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
         }
 
-        return _executeInternal(battleKey, storageKey, true);
+        return _executeInternal(battleKey, storageKey, false, true);
     }
 
     /// @dev Reset per-turn transients between batched sub-turns so the next starts like a fresh tx.
@@ -577,13 +576,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev SINGLE-SIG: the committer is msg.sender (no committer signature); the revealer's EIP-712
     ///      signature pins the committer's move hash, so the committer can't change their move and
     ///      can't be impersonated. Requires the battle to use the built-in flow (moveManager sentinel).
-    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external {
-        (bytes32 storageKey, uint256 packed) = _validateAndPackTurn(battleKey, entry);
+    function submitTurnMoves(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external {
+        (bytes32 storageKey, uint256 packed, uint64 turnId, BattleData storage data) =
+            _validateAndPackTurn(battleKey, packedMoves, r, vs);
         // Persist for a later drain (this turn executes in a separate tx).
-        moveBuffer[storageKey][entry.turnId] = packed;
-        BattleData storage data = battleData[battleKey];
+        moveBuffer[storageKey][turnId] = packed;
         data.numBuffered = data.numBuffered + 1;
-        _emitMovesSubmitted(battleKey, packed, entry.turnId);
+        // Announce the move now (the drain emits no per-turn events) — one compressed log carrying both
+        // players' move indices + extra data + salts.
+        emit MovesSubmitted(battleKey, bytes32(packed));
     }
 
     /// @notice Stage a submission and execute it (plus any earlier buffered turns) in the same tx.
@@ -591,9 +592,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      any previously-buffered turns from storage, then execute this entry straight from memory —
     ///      skipping the SSTORE + immediate SLOAD round-trip the buffer-then-drain path would pay for it.
     ///      For a 1-turn batch (no prior buffer) this touches `moveBuffer`/`numBuffered` zero times.
-    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external {
-        (bytes32 storageKey, uint256 packed) = _validateAndPackTurn(battleKey, entry);
-        _emitMovesSubmitted(battleKey, packed, entry.turnId);
+    function submitTurnMovesAndExecute(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external {
+        (bytes32 storageKey, uint256 packed,,) = _validateAndPackTurn(battleKey, packedMoves, r, vs);
+        // Announce this turn's moves (the drain emits no per-turn events), then drain + execute. Prior
+        // buffered turns were already announced at their own submitTurnMoves.
+        emit MovesSubmitted(battleKey, bytes32(packed));
         _drainBufferThenExecute(battleKey, storageKey, packed);
     }
 
@@ -603,75 +606,56 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _drainBuffer(battleKey, _getStorageKey(battleKey));
     }
 
-    /// @dev Validate a dual-signed submission (built-in manager, game live, turn id, committer ==
-    ///      msg.sender, revealer signature) and project it onto the packed (p0|p1) buffer-word layout.
-    ///      VIEW — no state writes: the caller decides whether to buffer it (SSTORE) or execute it now.
-    function _validateAndPackTurn(bytes32 battleKey, TurnSubmission calldata entry)
+    /// @dev Validate a dual-signed submission (built-in manager, game live, committer == msg.sender,
+    ///      revealer EIP-2098 compact signature) and project it onto the packed (p0|p1) buffer-word
+    ///      layout. VIEW — no state writes: the caller decides whether to buffer it (SSTORE) or execute
+    ///      it now. Returns the resolved `data` pointer so the caller doesn't re-resolve the mapping.
+    function _validateAndPackTurn(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs)
         internal
         view
-        returns (bytes32 storageKey, uint256 packed)
+        returns (bytes32 storageKey, uint256 packed, uint64 turnId, BattleData storage data)
     {
         storageKey = _getStorageKey(battleKey);
         if (battleConfig[storageKey].moveManager != BUILTIN_DUAL_SIGNED_MANAGER) {
             revert NotBuiltInManager();
         }
-        BattleData storage data = battleData[battleKey];
+        data = battleData[battleKey];
         if (data.winnerIndex != 2) {
             revert GameAlreadyOver();
         }
 
-        // numExecuted IS the live turnId (buffering doesn't execute); next valid id is turnId+numBuffered.
-        if (entry.turnId != data.turnId + data.numBuffered) {
-            revert WrongTurnId();
-        }
+        // turnId is NOT submitted — it's the next undrained turn (buffering doesn't execute, so the live
+        // turnId is the executed count). The revealer's signature binds this exact id, so a stale or
+        // out-of-order submission simply fails recovery below (no separate WrongTurnId check needed).
+        turnId = data.turnId + data.numBuffered;
 
-        (address committer, address revealer) = entry.turnId % 2 == 0 ? (data.p0, data.p1) : (data.p1, data.p0);
+        (address committer, address revealer) = turnId % 2 == 0 ? (data.p0, data.p1) : (data.p1, data.p0);
         if (msg.sender != committer) {
             revert NotCommitter();
         }
 
+        // Decode the committer/revealer halves from the single packed word.
         bytes32 committerMoveHash =
-            keccak256(abi.encodePacked(entry.committerMoveIndex, entry.committerSalt, entry.committerExtraData));
+            keccak256(abi.encodePacked(uint8(packedMoves), uint104(packedMoves >> 24), uint16(packedMoves >> 8)));
         {
             SignedCommitLib.DualSignedReveal memory reveal = SignedCommitLib.DualSignedReveal({
                 battleKey: battleKey,
-                turnId: entry.turnId,
+                turnId: turnId,
                 committerMoveHash: committerMoveHash,
-                revealerMoveIndex: entry.revealerMoveIndex,
-                revealerSalt: entry.revealerSalt,
-                revealerExtraData: entry.revealerExtraData
+                revealerMoveIndex: uint8(packedMoves >> 128),
+                revealerSalt: uint104(packedMoves >> 152),
+                revealerExtraData: uint16(packedMoves >> 136)
             });
             bytes32 digest = _hashTypedData(SignedCommitLib.hashDualSignedReveal(reveal));
-            if (ECDSA.recoverCalldata(digest, entry.revealerSig) != revealer) {
+            if (ECDSA.recover(digest, r, vs) != revealer) {
                 revert InvalidSignature();
             }
         }
 
-        // Project committer/revealer onto (p0, p1) by turn parity, matching the executeBatchedTurns layout.
-        if (entry.turnId % 2 == 0) {
-            packed = _packBufferedTurn(
-                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt,
-                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt
-            );
-        } else {
-            packed = _packBufferedTurn(
-                entry.revealerMoveIndex, entry.revealerExtraData, entry.revealerSalt,
-                entry.committerMoveIndex, entry.committerExtraData, entry.committerSalt
-            );
-        }
-    }
-
-    /// @dev MovesSubmitted carries a distinct, salt-free layout (the buffer slot keeps the salts; this
-    ///      submit-time log only needs to announce the moves + turnId), derived from the packed word:
-    ///        [p0Move 8 | p0Extra 16 | p1Move 8 | p1Extra 16 | turnId 64]
-    function _emitMovesSubmitted(bytes32 battleKey, uint256 packed, uint64 turnId) private {
-        emit MovesSubmitted(
-            battleKey,
-            bytes32(
-                uint256(uint8(packed)) | (uint256(uint16(packed >> 8)) << 8) | (uint256(uint8(packed >> 128)) << 24)
-                    | (uint256(uint16(packed >> 136)) << 32) | (uint256(turnId) << 48)
-            )
-        );
+        // Project (committer, revealer) -> (p0, p1) for the buffer word. packedMoves already holds
+        // committer in the low 128 bits, revealer in the high 128 — which IS the buffer (p0|p1) layout on
+        // even turns (committer == p0). On odd turns (committer == p1) just swap the two halves.
+        packed = turnId % 2 == 0 ? packedMoves : (packedMoves >> 128) | (packedMoves << 128);
     }
 
     function _drainBuffer(bytes32 battleKey, bytes32 storageKey)
@@ -687,9 +671,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         storageKeyForWrite = storageKey;
         for (uint256 i = 0; i < numBuffered; i++) {
-            // Execute directly off the buffer slot — no entries[] snapshot needed: each sub-turn now
-            // emits its own per-turn MonMoves (emitEvents=true), so there's no end-of-drain batch payload
-            // to assemble. BattleComplete is emitted by _handleGameOver on the winning turn.
+            // Execute directly off the buffer slot. Sub-turns emit no per-turn events (moves were
+            // announced via MovesSubmitted at submit), so there's no end-of-drain batch payload to
+            // assemble. BattleComplete is emitted by _handleGameOver on the winning turn.
             winner = _executeBatchedEntry(battleKey, storageKey, moveBuffer[storageKey][startTurn + uint64(i)]);
             executed++;
             if (winner != address(0)) {
@@ -809,8 +793,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
+    /// @dev Two independent event controls. `emitMonMoves`: per-turn MonMoves at the top (legacy
+    ///      per-turn execute only — the batched/buffer paths announce moves elsewhere). `emitBattleComplete`:
+    ///      the normal BattleComplete on game over (legacy + the PvP buffer drain; the CPU one-tx path
+    ///      passes false and emits BattleCompleteWithBatchTurns instead). Combinations in use:
+    ///      legacy (true,true), CPU one-tx (false,false), PvP drain (false,true).
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitEvents) internal returns (address winner) {
+    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitMonMoves, bool emitBattleComplete)
+        internal
+        returns (address winner)
+    {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -850,14 +842,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // inside _handleMove. Per-lane packedMoveIndex == 0 means that player did not
         // submit (e.g. non-acting side on a switch-only follow-up turn); if both lanes
         // are zero the emit is skipped entirely.
-        // The CPU one-tx path (executeBatchedTurns) passes emitEvents=false: the submitter already
-        // holds every move + salt (they're in the batch calldata) and a single
-        // BattleCompleteWithBatchTurns carries the replay, so the per-turn MonMoves log is pure
-        // overhead there (~1.6k gas/turn) and is skipped. The built-in PvP drain passes emitEvents=true
-        // (it must surface per-turn MonMoves), and emits EngineExecute via neither path — see entrypoints.
+        // Only the legacy per-turn execute path emits MonMoves here. The CPU one-tx path and the PvP
+        // buffer drain both pass emitMonMoves=false: CPU carries the replay in BattleCompleteWithBatchTurns,
+        // and the PvP path already announced each move via MovesSubmitted at submit time — so re-emitting
+        // per-turn MonMoves in the drain would be pure overhead (~1.6k gas/turn).
         MoveDecision memory p0TurnMove = _getCurrentTurnMove(config, 0);
         MoveDecision memory p1TurnMove = _getCurrentTurnMove(config, 1);
-        if (emitEvents) {
+        if (emitMonMoves) {
             _emitMonMoves(battleKey, config, battle, p0TurnMove, p1TurnMove);
         }
 
@@ -1141,10 +1132,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
-            // CPU one-tx path (emitEvents=false) suppresses BattleComplete here — executeBatchedTurns
-            // emits BattleCompleteWithBatchTurns after the loop with the full turn list. The legacy and
-            // built-in drain paths (emitEvents=true) emit the normal BattleComplete.
-            _handleGameOver(battleKey, winner, emitEvents);
+            // CPU one-tx path (emitBattleComplete=false) suppresses BattleComplete here —
+            // executeBatchedTurns emits BattleCompleteWithBatchTurns after the loop with the full turn
+            // list. Legacy + the PvP buffer drain (emitBattleComplete=true) emit the normal BattleComplete.
+            _handleGameOver(battleKey, winner, emitBattleComplete);
             return winner;
         }
 

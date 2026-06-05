@@ -82,9 +82,10 @@ interface IEngine {
         returns (uint64 executed, address winner);
     function resetCallContext() external;
 
-    // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
-    function submitTurnMoves(bytes32 battleKey, TurnSubmission calldata entry) external;
-    function submitTurnMovesAndExecute(bytes32 battleKey, TurnSubmission calldata entry) external;
+    // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles). Flat args: a single packed
+    // move word + an EIP-2098 compact revealer signature (r, vs).
+    function submitTurnMoves(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external;
+    function submitTurnMovesAndExecute(bytes32 battleKey, uint256 packedMoves, bytes32 r, bytes32 vs) external;
     function executeBuffered(bytes32 battleKey) external;
     function getBufferStatus(bytes32 battleKey) external view returns (uint64 numExecuted, uint8 numBuffered);
     function getBufferedTurn(bytes32 battleKey, uint64 turnId)
