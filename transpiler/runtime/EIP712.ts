@@ -1,20 +1,9 @@
 /**
- * EIP712 - EIP-712 typed-data domain separation and digest hashing (Solady pattern).
- *
- * The on-chain `EIP712` base builds the domain separator and the
- * `\x19\x01`-prefixed digest in Yul assembly. The only code path that reaches it
- * is the built-in dual-signed buffer flow (`Engine.submitTurnMoves` /
- * `submitTurnMovesAndExecute`), which is an on-chain-only feature — local battle
- * simulation drives `execute`/`executeWithMoves` directly and never stages signed
- * turns. So, matching the runtime `ecrecover` convention, `_hashTypedData` throws
- * loudly rather than shipping a subtly-wrong digest that would typecheck and
- * silently mislead.
- *
- * This class exists so `import { EIP712 } from './lib/EIP712'` resolves; the
- * methods Engine actually uses are spliced in via the `mixin` field of this
- * file's entry in transpiler-config.json.
- *
- * @see transpiler/transpiler-config.json -> runtimeReplacements
+ * EIP712 - runtime stand-in for the Solady (Yul-assembly) EIP-712 base. The only caller is the
+ * built-in dual-signed buffer flow (submitTurnMoves), which is on-chain-only and never runs in local
+ * simulation, so `_hashTypedData` throws rather than ship a subtly-wrong digest (matches `ecrecover`).
+ * Exists so `import { EIP712 } from './lib/EIP712'` resolves; the methods Engine uses are spliced in
+ * via the `mixin` field of this file's transpiler-config.json runtimeReplacements entry.
  */
 
 import { Contract } from './base';

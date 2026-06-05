@@ -9,11 +9,8 @@ Meta-script to orchestrate the full deployment pipeline:
 6. Run createAddressAndABIs.py and generateMonsTypescript.py
 7. Run transpiler (sol2ts.py) to generate TypeScript from Solidity
 
-On a full deploy you're prompted whether to (re)deploy mons + CPU or only the
-Engine + periphery; pass --engine-only to skip the prompt and deploy engine only.
-
 Usage:
-    python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet [--engine-only]
+    python processing/deploy.py [--rpc-url <RPC_URL>] --testnet|--mainnet
 """
 
 import argparse
@@ -54,18 +51,6 @@ SCRIPTS = [
 def get_chomp_dir() -> Path:
     """Get the chomp directory (parent of processing/)."""
     return Path(__file__).parent.parent
-
-
-def prompt_yes_no(question: str, default: bool = True) -> bool:
-    """Ask an interactive y/n question. Returns `default` on empty input or EOF."""
-    suffix = " [Y/n] " if default else " [y/N] "
-    try:
-        resp = input(question + suffix).strip().lower()
-    except EOFError:
-        return default
-    if not resp:
-        return default
-    return resp in ("y", "yes")
 
 
 def parse_deploy_data(output: str) -> list[tuple[str, str]]:
@@ -576,12 +561,6 @@ def main():
         default=None,
         help='Comma-separated list of mon names to force-redeploy even if clean (e.g. aurox,pengym)'
     )
-    parser.add_argument(
-        '--engine-only',
-        action='store_true',
-        help='Deploy only Engine + periphery (EngineAndPeriphery.s.sol); skip SetupMons and '
-             'SetupCPU. Bypasses the interactive "update mon deploys?" prompt.'
-    )
 
     args = parser.parse_args()
     network = "mainnet" if args.mainnet else "testnet"
@@ -618,62 +597,40 @@ def main():
         return
 
     # Full deploy path
-    # Decide whether to (re)deploy mons + CPU, or only the Engine + periphery.
-    # --engine-only forces engine-only (non-interactive); otherwise prompt when on a
-    # TTY, defaulting to a full deploy (preserves prior behavior for scripted runs).
-    if args.engine_only:
-        deploy_mons = False
-    elif sys.stdin.isatty():
-        deploy_mons = prompt_yes_no(
-            "Update mon deploys (SetupMons + SetupCPU)?  n = deploy only Engine + periphery.",
-            default=True,
-        )
-    else:
-        deploy_mons = True
-
-    if not deploy_mons:
-        print("\n→ Engine-only deploy: skipping SetupMons + SetupCPU")
-
     # Run validation and Solidity generation
     if not args.skip_build:
         os.chdir(chomp_dir)
 
-        if deploy_mons:
-            print(f"\n{'='*60}")
-            print("Validating move contracts against CSV data")
-            print(f"{'='*60}")
-            from validateMoves import run as run_validate
-            if not run_validate():
-                print("ERROR: Move validation failed. Fix issues before deploying.")
-                sys.exit(1)
+        print(f"\n{'='*60}")
+        print("Validating move contracts against CSV data")
+        print(f"{'='*60}")
+        from validateMoves import run as run_validate
+        if not run_validate():
+            print("ERROR: Move validation failed. Fix issues before deploying.")
+            sys.exit(1)
 
-            print(f"\n{'='*60}")
-            print("Generating Solidity deployment script (SetupMons.s.sol)")
-            print(f"{'='*60}")
-            from generateSolidity import run as run_solidity
-            if not run_solidity():
-                print("ERROR: Solidity generation failed.")
-                sys.exit(1)
+        print(f"\n{'='*60}")
+        print("Generating Solidity deployment script (SetupMons.s.sol)")
+        print(f"{'='*60}")
+        from generateSolidity import run as run_solidity
+        if not run_solidity():
+            print("ERROR: Solidity generation failed.")
+            sys.exit(1)
 
-            print(f"\n{'='*60}")
-            print("Generating SetupCPU.s.sol + munch cpu-teams.ts from cpu-teams.json")
-            print(f"{'='*60}")
-            from generateSetupCPU import run as run_setup_cpu
-            if not run_setup_cpu():
-                print("ERROR: SetupCPU generation failed.")
-                sys.exit(1)
-        else:
-            print("\nSkipping mon validation + SetupMons/SetupCPU generation (engine-only deploy)")
+        print(f"\n{'='*60}")
+        print("Generating SetupCPU.s.sol + munch cpu-teams.ts from cpu-teams.json")
+        print(f"{'='*60}")
+        from generateSetupCPU import run as run_setup_cpu
+        if not run_setup_cpu():
+            print("ERROR: SetupCPU generation failed.")
+            sys.exit(1)
 
     # Collect all addresses across forge scripts
     all_addresses: list[tuple[str, str]] = []
 
-    # Engine-only deploys run just EngineAndPeriphery; full deploys run the whole list.
-    scripts_to_run = SCRIPTS if deploy_mons else ["script/EngineAndPeriphery.s.sol"]
-
     if not args.skip_forge:
         # Run forge scripts and update .env after each
-        for script_path in scripts_to_run:
+        for script_path in SCRIPTS:
             output = run_forge_script(
                 script_path,
                 rpc_url,
@@ -694,32 +651,21 @@ def main():
                 else:
                     print("No DeployData found in output")
 
-    # Run TypeScript generation scripts. For engine-only deploys, all_addresses holds
-    # only the freshly deployed engine periphery; the inline move/ability packing needs
-    # the full mon address set to resolve effect addresses, so pull the complete set
-    # from .env (now updated with the new engine addresses), mirroring the incremental path.
-    if deploy_mons or args.dry_run:
-        ts_addresses = all_addresses
-    else:
-        from dep_graph import load_env_addresses
-        ts_addresses = list(load_env_addresses(str(env_path)).items())
-    run_typescript_scripts(network, chomp_dir, ts_addresses, dry_run=args.dry_run)
+    # Run TypeScript generation scripts.
+    run_typescript_scripts(network, chomp_dir, all_addresses, dry_run=args.dry_run)
 
     # Run transpiler to generate TypeScript from Solidity
     run_transpiler(chomp_dir, dry_run=args.dry_run)
 
-    # Seed/update manifest after full deploy. Skip on engine-only: the manifest tracks
-    # mon deploy state, and re-seeding it from current source hashes (without having
-    # redeployed the mons) would falsely mark changed-but-undeployed mons as deployed,
-    # corrupting incremental tracking.
-    if not args.dry_run and deploy_mons:
+    # Seed/update manifest after full deploy.
+    if not args.dry_run:
         print(f"\n{'='*60}")
         print("Updating deploy manifest")
         print(f"{'='*60}")
         seed_manifest_after_full_deploy(network, chomp_dir)
 
     print(f"\n{'='*60}")
-    print("ENGINE-ONLY DEPLOYMENT COMPLETE!" if not deploy_mons else "DEPLOYMENT COMPLETE!")
+    print("DEPLOYMENT COMPLETE!")
     print(f"{'='*60}")
 
 
