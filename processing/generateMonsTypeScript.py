@@ -41,7 +41,7 @@ def build_sprite_config(
     loop: bool,
 ) -> Dict[str, Any]:
     """Build a sprite animation config from source data."""
-    return {
+    config = {
         "spritesheetUrl": spritesheet_url,
         "frames": source["frames"],
         "frameWidth": frame_width,
@@ -49,6 +49,10 @@ def build_sprite_config(
         "frameDurationMs": source.get("msPerFrame", 100),
         "loop": loop,
     }
+    # Only front/back idle entries carry contentTop; scopes the field to those.
+    if source.get("contentTop") is not None:
+        config["contentTop"] = source["contentTop"]
+    return config
 
 
 # Moves whose animation depends on the runtime branch taken.
@@ -211,7 +215,6 @@ def read_mons_data(
             "id": mon_id,
             "name": row["Name"],
             "flavor": row.get("Flavor", ""),
-            "mini": f"/assets/mons/all/{mon_name_lower}_mini.gif",
             "sprites": build_sprites(mon_name_lower, spritesheet_data),
             "stats": {
                 "hp": int(row["HP"]),
@@ -446,7 +449,6 @@ export type Mon = {{
   readonly id: number;
   readonly name: string;
   readonly flavor: string;
-  readonly mini: string;
   readonly sprites: {{
     readonly frontIdle: SpriteAnimationConfig;
     readonly frontSwitchIn: SpriteAnimationConfig;

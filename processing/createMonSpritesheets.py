@@ -34,6 +34,13 @@ def extract_frames(gif_path: str) -> tuple[list[Image.Image], int]:
         return [img.seek(i) or img.convert('RGBA').copy() for i in range(img.n_frames)], frame_rate
 
 
+def compute_content_top(frames: list[Image.Image]) -> int:
+    """Topmost non-transparent source row, min across frames (highest the art ever
+    reaches), so a HUD anchored to it never clips during the idle bob."""
+    tops = [bbox[1] for f in frames if (bbox := f.getchannel('A').getbbox())]
+    return min(tops) if tops else 0
+
+
 def to_white_silhouette(frame: Image.Image) -> Image.Image:
     """Convert frame to white pixels preserving transparency."""
     result = Image.new('RGBA', frame.size, (0, 0, 0, 0))
@@ -271,7 +278,7 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         # Main animation frames
         frame_start = len(all_frames)
         all_frames.extend(frames)
-        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames)}
+        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames), "contentTop": compute_content_top(frames)}
 
         # Damage frames immediately follow the idle frames for this mon
         if name in damage_by_parent:
