@@ -83,26 +83,24 @@ def update_env_file(matches: list[tuple[str, str]], env_path: Path):
 
 
 def get_prev_gacha_registry(network: str, chomp_dir: Path) -> str | None:
-    """Read the currently-deployed GachaTeamRegistry address from munch's address.ts.
+    """Read the currently-deployed GachaTeamRegistry address from deployments.json.
 
     The newly-deployed registry takes this as its PREVIOUS_REGISTRY so players can
-    self-migrate their progression. Munch's address.ts is the source of truth (it's
-    network-specific), so we read whichever of MAINNET/TESTNET matches this deploy.
+    self-migrate their progression. deployments.json is chomp's own canonical record
+    (network-specific), so we read whichever of MAINNET/TESTNET matches this deploy.
 
-    Returns None (→ migration disabled, address(0)) if munch or the key is missing.
+    Returns None (→ migration disabled, address(0)) if the record or the key is missing.
     """
-    from createAddressAndABIs import parse_existing_addresses
-
-    munch_address_file = chomp_dir.parent / "munch" / "src" / "app" / "data" / "address.ts"
-    if not munch_address_file.exists():
-        print(f"⚠️  munch address.ts not found at {munch_address_file}; "
+    deployments_file = chomp_dir / "deployments.json"
+    if not deployments_file.exists():
+        print(f"⚠️  {deployments_file} not found; "
               "PREVIOUS_REGISTRY defaults to address(0) (migration disabled)")
         return None
 
-    parsed = parse_existing_addresses(munch_address_file.read_text())
-    addr = parsed.get(network.upper(), {}).get("GACHA_TEAM_REGISTRY")
+    record = json.loads(deployments_file.read_text())
+    addr = record.get(network.upper(), {}).get("GACHA_TEAM_REGISTRY")
     if not addr:
-        print(f"⚠️  GACHA_TEAM_REGISTRY not found for {network.upper()} in munch address.ts; "
+        print(f"⚠️  GACHA_TEAM_REGISTRY not found for {network.upper()} in deployments.json; "
               "PREVIOUS_REGISTRY defaults to address(0) (migration disabled)")
         return None
     return addr
@@ -337,6 +335,36 @@ def run_typescript_scripts(
             print("ERROR: generateMonsTypescript.py failed")
             sys.exit(1)
 
+    # Run generateEventLayouts.py (packed-event bit layout → generated/eventLayouts.ts)
+    print(f"\n{'='*60}")
+    print("Running generateEventLayouts.py")
+    print(f"{'='*60}")
+
+    cmd = [sys.executable, str(processing_dir / "generateEventLayouts.py")]
+
+    if dry_run:
+        print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+    else:
+        result = subprocess.run(cmd, cwd=chomp_dir)
+        if result.returncode != 0:
+            print("ERROR: generateEventLayouts.py failed")
+            sys.exit(1)
+
+    # Run generateEip712Meta.py (typehash strings + EIP-712 domains → generated/eip712Meta.ts)
+    print(f"\n{'='*60}")
+    print("Running generateEip712Meta.py")
+    print(f"{'='*60}")
+
+    cmd = [sys.executable, str(processing_dir / "generateEip712Meta.py")]
+
+    if dry_run:
+        print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+    else:
+        result = subprocess.run(cmd, cwd=chomp_dir)
+        if result.returncode != 0:
+            print("ERROR: generateEip712Meta.py failed")
+            sys.exit(1)
+
 
 def run_transpiler(chomp_dir: Path, dry_run: bool = False):
     """Run the Solidity to TypeScript transpiler and sync output to munch."""
@@ -375,11 +403,11 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
             print("ERROR: Transpiler failed")
             sys.exit(1)
 
-    # Sync transpiled output to munch. runtime/ is excluded: munch owns its own
-    # runtime/ (including the simulator's battle-harness.ts, which chomp no
-    # longer carries). Chomp still copies transpiler/runtime/ into its own
-    # ts-output/runtime/ for vitest, but that copy is not propagated to munch.
-    munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "ts-output"
+    # Sync transpiled output to munch's quarantined generated/sim dir. runtime/ is excluded:
+    # munch owns its own runtime/ (including the simulator's battle-harness.ts, which chomp no
+    # longer carries). Chomp still copies transpiler/runtime/ into its own ts-output/runtime/
+    # for vitest, but that copy is not propagated to munch.
+    munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "generated" / "sim"
     chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
 
     if munch_ts_output.exists():
@@ -666,7 +694,7 @@ def main():
         # Run forge scripts and update .env after each
         for script_path in SCRIPTS:
             # EngineAndPeriphery deploys a new GachaTeamRegistry; point it at the prior
-            # one (from munch's address.ts for this network) so players can migrate.
+            # one (from the canonical deployments record for this network) so players can migrate.
             extra_env = None
             if "EngineAndPeriphery" in script_path:
                 prev_gacha = get_prev_gacha_registry(network, chomp_dir)

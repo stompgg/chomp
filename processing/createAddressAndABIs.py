@@ -118,6 +118,28 @@ def parse_existing_addresses(content: str) -> Dict[str, Dict[str, str]]:
     return result
 
 
+def read_deployments(deployments_file: Path, seed_address_file: Path) -> Dict[str, Dict[str, str]]:
+    """Canonical per-network address record (chomp-owned). Reads deployments.json; on the
+    first run (file absent) seeds it from a consumer's existing address.ts so the historical
+    ground truth carries over. That seed is the one and only read from a consumer repo."""
+    if deployments_file.exists():
+        data = json.loads(deployments_file.read_text())
+        return {'MAINNET': dict(data.get('MAINNET', {})), 'TESTNET': dict(data.get('TESTNET', {}))}
+    if seed_address_file.exists():
+        print(f"🌱 Seeding {deployments_file.name} from {seed_address_file}")
+        return parse_existing_addresses(seed_address_file.read_text())
+    return {'MAINNET': {}, 'TESTNET': {}}
+
+
+def write_deployments(deployments_file: Path, record: Dict[str, Dict[str, str]]) -> None:
+    """Persist the canonical address record, sorted for stable diffs."""
+    out = {
+        'MAINNET': dict(sorted(record.get('MAINNET', {}).items())),
+        'TESTNET': dict(sorted(record.get('TESTNET', {}).items())),
+    }
+    deployments_file.write_text(json.dumps(out, indent=2) + "\n")
+
+
 def update_address_file(
     addresses: Dict[str, str],
     output_file: str,
@@ -214,9 +236,9 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
         ("OkayCPU", "okay-cpu.ts", "OkayCPUABI")
     ]
 
-    # Define output paths for both repositories
-    munch_abi_dir = game_dir / "munch" / "src" / "app" / "types" / "abi"
-    belch_abi_dir = game_dir / "belch" / "src" / "abi"
+    # Output paths. Generated artifacts are quarantined under each consumer's generated/ dir.
+    munch_abi_dir = game_dir / "munch" / "src" / "app" / "generated" / "abi"
+    belch_abi_dir = game_dir / "belch" / "src" / "generated" / "abi"
 
     updated_files = []
 
@@ -257,9 +279,10 @@ def run_main_logic(addresses: Dict[str, str], network: str):
     # out directory is in chomp
     out_dir = chomp_dir / "out"
 
-    # Define output files for both munch and belch repositories
-    munch_output_file = game_dir / "munch" / "src" / "app" / "data" / "address.ts"
-    belch_output_file = game_dir / "belch" / "src" / "config" / "address.ts"
+    # Output files. Generated artifacts are quarantined under each consumer's generated/ dir.
+    deployments_file = chomp_dir / "deployments.json"
+    munch_output_file = game_dir / "munch" / "src" / "app" / "generated" / "address.ts"
+    belch_output_file = game_dir / "belch" / "src" / "generated" / "address.ts"
     fallback_output_file = base_path / "address.ts"
 
     print("=" * 60)
@@ -268,15 +291,13 @@ def run_main_logic(addresses: Dict[str, str], network: str):
 
     print(f"Loaded {len(addresses)} addresses for {network}")
 
-    # Read existing addresses from munch as source of truth
-    existing_addresses = {'MAINNET': {}, 'TESTNET': {}}
-    if munch_output_file.exists():
-        with open(munch_output_file, 'r') as f:
-            content = f.read()
-        existing_addresses = parse_existing_addresses(content)
-        print(f"📖 Read existing addresses from munch (MAINNET: {len(existing_addresses['MAINNET'])}, TESTNET: {len(existing_addresses['TESTNET'])})")
-    else:
-        print(f"⚠️  No existing munch address file found, starting fresh")
+    # deployments.json is the canonical record (seeds from munch on first run). Merge this
+    # deploy's addresses into it and persist; each consumer's address.ts is generated from it.
+    existing_addresses = read_deployments(deployments_file, munch_output_file)
+    print(f"📖 Existing addresses (MAINNET: {len(existing_addresses['MAINNET'])}, TESTNET: {len(existing_addresses['TESTNET'])})")
+    existing_addresses[network] = {**existing_addresses.get(network, {}), **addresses}
+    write_deployments(deployments_file, existing_addresses)
+    print(f"💾 Wrote {deployments_file}")
 
     # Track which files were updated
     updated_files = []

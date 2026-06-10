@@ -400,10 +400,10 @@ def generate_typescript_const(data: Dict[int, Dict[str, Any]], output_file: str)
             json_str = json_str.replace(f'"{val}"', f"{enum_name}.{val}")
 
     typescript_content = f"""// Auto-generated type file
-import {{ Address }} from './address-config';
+import {{ Address }} from '../data/address-config';
 import {{ LowercaseHex, Type }} from '../types/structs';
 import {{ SpriteAnimationConfig }} from '../types/animation';
-import {{ applyFacetToStats, TOTAL_FACETS }} from './facets';
+import {{ applyFacetToStats, TOTAL_FACETS }} from '../data/facets';
 
 export enum MoveClass {{
   Physical = 'Physical',
@@ -569,10 +569,12 @@ def run() -> bool:
         / "non_standard_spritesheet.json",
     }
 
-    # Determine output location
+    # Determine output location. Generated artifacts are quarantined under generated/;
+    # data/ (still present, with hand-written files) is the "munch is checked out" guard.
     game_dir = base_path.parent.parent
     munch_data_dir = game_dir / "munch" / "src" / "app" / "data"
-    munch_output = munch_data_dir / "mon.ts"
+    munch_generated_dir = game_dir / "munch" / "src" / "app" / "generated"
+    munch_output = munch_generated_dir / "mon.ts"
     output_file = munch_output if munch_data_dir.exists() else base_path / "mon_data.ts"
     print(f"Output target: {output_file}")
 
@@ -616,7 +618,7 @@ def run() -> bool:
     )
     if non_standard:
         non_standard_output = (
-            munch_data_dir / "non-standard-sprites.ts"
+            munch_generated_dir / "non-standard-sprites.ts"
             if munch_data_dir.exists()
             else base_path / "non_standard_sprites.ts"
         )

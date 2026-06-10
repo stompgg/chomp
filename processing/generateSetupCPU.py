@@ -132,9 +132,11 @@ def run() -> bool:
         f.write(render_solidity(data, mon_names))
     print(f"Wrote {sol_path}")
 
+    # Generated artifacts are quarantined under generated/; data/ is the "munch present" guard.
     munch_data = base.parent / "munch" / "src" / "app" / "data"
+    munch_generated = base.parent / "munch" / "src" / "app" / "generated"
     if munch_data.exists():
-        ts_path = munch_data / "cpu-teams.ts"
+        ts_path = munch_generated / "cpu-teams.ts"
         with open(ts_path, "w", encoding="utf-8") as f:
             f.write(render_munch_ts(data, mon_names))
         print(f"Wrote {ts_path}")
