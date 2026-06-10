@@ -116,17 +116,18 @@ chomp/
 ├── processing/             # Python build scripts
 │   ├── generateSolidity.py          # Generate SetupMons.s.sol from CSV data
 │   ├── generateSetupCPU.py          # Generate SetupCPU.s.sol team config from cpu-teams.json
-│   ├── generate_incremental.py      # Incremental codegen utility
 │   ├── validateMoves.py             # Validate move contracts match CSV data
 │   ├── deploy.py                    # Full deployment pipeline orchestrator
+│   ├── deploy_addresses.py          # Inline ability/move address packing for the deploy pipeline
 │   ├── buildTypeChart.py            # Build type effectiveness chart
 │   ├── buildDamageGifs.py           # Render damage-preview GIFs
 │   ├── createAddressAndABIs.py      # Extract deployed addresses + ABIs
 │   ├── generateMonsTypeScript.py    # Generate TypeScript mon data
+│   ├── generateEventLayouts.py      # Generate generated/eventLayouts.ts (GachaEvent bit layout)
+│   ├── generateEip712Meta.py        # Generate generated/eip712Meta.ts (typehash strings + domains)
 │   ├── createMonSpritesheets.py     # Generate mon spritesheets
 │   ├── createAttackSpritesheets.py  # Generate attack spritesheets
 │   ├── packMoves.py                 # Pack move data for distribution
-│   ├── dep_graph.py                 # Solidity import-dependency analyzer
 │   ├── inputToEnv.py                # Parse forge output to .env
 │   └── removeUnusedImports.py       # Clean up unused Solidity imports
 ├── transpiler/             # Solidity-to-TypeScript transpiler (Python)
