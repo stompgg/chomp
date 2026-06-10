@@ -36,7 +36,6 @@ struct CustomBattleProposal {
     uint96 p0TeamIndex;
     uint256[] monIndices;
     uint8[] facetIds;
-    bool isHard; // hard-CPU difficulty flag for the phantom config (client-set; drives ×2 exp)
     ITeamRegistry teamRegistry;
     IValidator validator;
     IRandomnessOracle rngOracle;

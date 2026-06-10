@@ -21,8 +21,7 @@ import {
     GACHA_FIRST_GAME_EVER_BONUS,
     EXP_PER_SURVIVING_MON,
     EXP_PER_KOD_MON,
-    PVP_EXP_MULT,
-    HARD_CPU_EXP_MULT,
+    GAME_EXP_MULT,
     STREAK_FLAT_BONUS_MAX,
     STREAK_GRACE_WINDOW,
     QUEST_REWARD_MULT,
@@ -88,7 +87,7 @@ contract GachaTeamRegistry is
 
     uint256 internal constant BONUS_FIRST_ROLL = 1 << 0;
     uint256 internal constant BONUS_FIRST_GAME = 1 << 1;
-    uint256 internal constant BONUS_HARD_CPU  = 1 << 2;
+    // bit 2 reserved (formerly BONUS_HARD_CPU)
     uint256 internal constant BONUS_QUEST      = 1 << 3;
 
     // ----- Errors -----
@@ -123,12 +122,6 @@ contract GachaTeamRegistry is
     // resolves both the team's mon ids and its facet config at battle start.
     uint256 internal constant OPP_FACET_BITS_PER_SLOT = 4;
     uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
-    // Hard-CPU difficulty flag inside the per-(user, CPU) phantom config slot
-    // (opponentTeamFacetsPacked). High bit, far above the facet lanes (<= 8 mons x 4 bits = 32 bits).
-    // Client-set via setOpponentTeam/For: once the CPU runs off-chain (and the CPU contracts collapse
-    // to one address) difficulty is a client concept, so the hard-CPU x2 exp keys off this bit rather
-    // than the opponent's profile IS_HARD_CPU_BIT. Trust-the-client (see PLAN_OFFCHAIN_CPU.md).
-    uint256 internal constant OPP_HARD_CPU_BIT = 1 << 255;
     mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
     constructor(
@@ -260,11 +253,10 @@ contract GachaTeamRegistry is
     function setOpponentTeam(
         address opponent,
         uint256[] memory monIndices,
-        uint8[] memory facetIds,
-        bool isHard
+        uint8[] memory facetIds
     ) external {
         if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds, isHard);
+        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds);
     }
 
     /// @notice Trusted-relayer entry: a whitelisted CPU writes a user's phantom team
@@ -273,19 +265,17 @@ contract GachaTeamRegistry is
     function setOpponentTeamFor(
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds,
-        bool isHard
+        uint8[] memory facetIds
     ) external override {
         if (!isWhitelistedOpponent(msg.sender)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(msg.sender, user, monIndices, facetIds, isHard);
+        _setOpponentTeam(msg.sender, user, monIndices, facetIds);
     }
 
     function _setOpponentTeam(
         address opponent,
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds,
-        bool isHard
+        uint8[] memory facetIds
     ) internal {
         if (monIndices.length != facetIds.length) revert FacetArgsLengthMismatch();
         uint256 phantomKey = uint16(uint160(user));
@@ -298,9 +288,6 @@ contract GachaTeamRegistry is
             packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
             unchecked { ++i; }
         }
-        // Difficulty rides in the same slot (high bit), client-set. Whole slot is rewritten each
-        // call, so the flag must be (re)applied here.
-        if (isHard) packedFacets |= OPP_HARD_CPU_BIT;
         opponentTeamFacetsPacked[opponent][phantomKey] = packedFacets;
     }
 
@@ -575,7 +562,6 @@ contract GachaTeamRegistry is
         uint256 packed1 = playerData[ctx.p1];
         bool isCpu0 = packed0 & IS_CPU_BIT != 0;
         bool isCpu1 = packed1 & IS_CPU_BIT != 0;
-        bool isPvP = !(isCpu0 || isCpu1);
 
         uint256[2] memory packedEvents;
 
@@ -588,17 +574,8 @@ contract GachaTeamRegistry is
             uint8 koBitmap = playerIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
             uint256 basePts = ctx.winner == player ? POINTS_PER_WIN : POINTS_PER_LOSS;
             uint256 packed = playerIndex == 0 ? packed0 : packed1;
-            // Hard-CPU x2 exp keys off the opponent's per-(user, CPU) phantom config bit (client-set
-            // via setOpponentTeam), not the opponent's profile flag: once the CPU runs off-chain and
-            // the CPU contracts collapse to one address, difficulty is a client concept. The CPU's
-            // battle team index IS this user's phantom key, so the phantom slot reads back here.
-            bool oppIsCpu = playerIndex == 0 ? isCpu1 : isCpu0;
-            address oppAddr = playerIndex == 0 ? ctx.p1 : ctx.p0;
-            uint256 oppTeamIdx = playerIndex == 0 ? ctx.p1TeamIndex : ctx.p0TeamIndex;
-            bool oppIsHardCpu =
-                oppIsCpu && (opponentTeamFacetsPacked[oppAddr][oppTeamIdx] & OPP_HARD_CPU_BIT) != 0;
 
-            uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT | IS_HARD_CPU_BIT);
+            uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT);
             uint256 points = packed & POINTS_MASK_128;
             uint32 lastFirstGameTs = uint32(packed >> LAST_FIRST_GAME_TS_SHIFT);
             uint32 lastSeenTs = uint32(packed >> LAST_SEEN_TS_SHIFT);
@@ -607,15 +584,9 @@ contract GachaTeamRegistry is
 
             uint256 bonusFlags;
             uint256 streakFlat;
-            uint256 expMult = 1;
+            // Flat per-mon exp multiplier on every battle, game-type agnostic. Quest stacks on top.
+            uint256 expMult = GAME_EXP_MULT;
             uint256 gachaMult = 1;
-
-            if (isPvP) {
-                expMult *= PVP_EXP_MULT;
-            } else if (oppIsHardCpu) {
-                expMult *= HARD_CPU_EXP_MULT;
-                bonusFlags |= BONUS_HARD_CPU;
-            }
 
             // The rolling 24h cooldown (measured from the last bonus-earning game) gates the
             // streak bonus to once per day. The 36h grace decides ratchet-vs-reset, but is

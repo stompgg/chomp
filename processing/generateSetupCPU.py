@@ -33,7 +33,6 @@ def load_cpu_teams(json_path: Path) -> dict[str, Any]:
 
 def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
     cpu_players: list[str] = data["cpuPlayers"]
-    hard_cpus: list[str] = data.get("hardCpus", [])
     teams: list[list[int]] = data["teams"]
 
     lines: list[str] = []
@@ -85,13 +84,6 @@ def render_solidity(data: dict[str, Any], mon_names: dict[int, str]) -> str:
     lines.append("            cpuAddresses[i] = vm.envAddress(cpuPlayers[i]);")
     lines.append("        }")
     lines.append("        gachaTeamRegistry.setWhitelistedOpponents(cpuAddresses, empty);")
-
-    if hard_cpus:
-        lines.append("")
-        lines.append(f"        address[] memory hardCpus = new address[]({len(hard_cpus)});")
-        for i, name in enumerate(hard_cpus):
-            lines.append(f'        hardCpus[{i}] = vm.envAddress("{name}");')
-        lines.append("        gachaTeamRegistry.setHardCpuOpponents(hardCpus, empty);")
 
     lines.append("")
     lines.append("        vm.stopBroadcast();")

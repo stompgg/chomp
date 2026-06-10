@@ -257,7 +257,7 @@ How it works:
 |---|---|
 | `MonOwnership` | `monsOwned` per-player set; ownership view + bulk-check helpers (`_isOwnerBatch`, `_validateOwnership`). Satisfies the `_isFacetMonOwned` hook on `Facets`. |
 | `MonRegistry` | Owner-managed mon catalog (`monStats`, `monMoves`, `monAbilities`, `monMetadata`, sequential `monIds` set). Inherits `ITeamRegistry` so its `createMon`/`modifyMon`/batched-getters bind directly. Backs the `_getMonStatsForFacets` hook used by facet delta computation. |
-| `PlayerProfile` | Packed `playerData[address]` (one uint256 per player) + the owner-managed `isAssigner` allowlist. Exposes `pointsBalance`, `isWhitelistedOpponent`, `isHardCpu`, the bulk admin flag setters, and `assignPoints` (IGachaPointsAssigner). |
+| `PlayerProfile` | Packed `playerData[address]` (one uint256 per player) + the owner-managed `isAssigner` allowlist. Exposes `pointsBalance`, `isWhitelistedOpponent`, the bulk admin flag setters, and `assignPoints` (IGachaPointsAssigner). |
 | `PackedTeamStore` | Bit-packed team CRUD: `teamGroupsPacked` (4 teams × 64 bits per slot), `teamOrderPacked` (16-slot live bitmap + display order). Constructor takes `MONS_PER_TEAM` / `MOVES_PER_MON` immutables. Subclass hooks: `_packedTeamValidateOwnership`, `_packedTeamIsCpuOpponent`, `_packedTeamGetMonData`. |
 | `Facets` | 12-facet ±5% stat tradeoff system (see below). Pure helpers, packed per-mon facet data, `assignFacets`. |
 | `MonExp` | Packed per-mon exp (`packedExpForMon`), level curve, level-up facet draws (`_processLevelUps`), public `getExp` / `getLevel` / `getExpAndLevelsFor*`, assigner-gated `assignExp`. Inherits `Facets` + `PackedTeamStore` because level-ups draw facets and team views need the lane helpers. Subclass hooks: `_assertExpAssigner`, `_monRegistrySize`. |
@@ -277,7 +277,7 @@ The leaf adds: the `onBattleEnd` orchestration (streak / quest / points / exp lo
 playerData[address] (1 slot per player):
   bit 255       bonusAwarded (first-game-ever bonus claimed)
   bit 254       isWhitelistedAsOpponent (admin-set; replaces a separate mapping)
-  bit 253       isHardCpu (only meaningful when bit 254 is set)
+  bit 253       (reserved; formerly isHardCpu)
   bits 250-252  streakDay (1..STREAK_FLAT_BONUS_MAX; 0 = no streak yet)
   bits 224-249  (reserved)
   bits 192-223  lastQuestCompletedDay (uint32 calendar day)
@@ -308,7 +308,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 - Streak flat: `streakDay` (1..5) added inside the parenthetical of both the points and per-mon-exp formulas. Only granted when the battle qualifies as "first of day" (≥24h since the last grant).
 - Points formula: `(basePts + streakFlat) × gachaMult + firstGameEverBonus`. `gachaMult` is `×QUEST_REWARD_MULT` (= 2) when the active daily quest completes (winner-only, one-shot per day), else 1. `firstGameEverBonus` is `+FIRST_GAME_EVER_BONUS` (= 16), one-shot ever, applied *after* the multiplier.
 - Per-mon exp formula: `(baseExp + streakFlat) × expMult`, capped at 65535. `baseExp` is `EXP_PER_SURVIVING_MON` (2) for alive slots, `EXP_PER_KOD_MON` (1) for KO'd slots.
-- `expMult` stack: `PVP_EXP_MULT` (×2) on any PvP battle **xor** `HARD_CPU_EXP_MULT` (×2) on a battle against the Hard CPU (mutually exclusive — PvP wins the branch), times `QUEST_REWARD_MULT` (×2) on quest completion. Max stack = ×4.
+- `expMult` stack: a flat `GAME_EXP_MULT` (×2) on **every** battle regardless of game type (PvP, CPU, hard or not), times `QUEST_REWARD_MULT` (×2) on quest completion. Max stack = ×4. (There is no longer a PvP-vs-CPU or hard-CPU exp distinction — the old client-set "hard CPU" flag let any user self-grant the bonus, so it was removed.)
 - Level-ups (12-tier curve, capped at level 12 to match `TOTAL_FACETS`) trigger one facet draw per level crossed.
 
 **Facets.** 12 systematically-derived stat tradeoffs across 4 stat groups (`HP`, `Atk`, `Def`, `Speed`). `_facetDef(facetId)` is pure — no constant table. Magnitudes are **boost-indexed**: the boost stat determines both the boost% and the cost% paid on the nerfed stat. HP/Atk/Def boosts are symmetric (+5% / -5%); speed boosts pay a heavier cost (+5% / -10%) so they can't cheaply break speed ties. The percentages live as `BOOST_PCT_*` / `COST_PCT_*` constants in `Facets.sol`. Unlocks are persistent per-mon; `assignFacets(monIds, facetIds)` is a free bulk re-assign that requires the caller to own every listed mon and the facet to be in the unlocked bitmap (`facetId == 0` clears). `GachaTeamRegistry.getTeams()` folds the active facet's delta into each mon's stats before returning, so by the time the Engine stores teams in `BattleConfig` they already reflect the boost/cost. `validateMon` no longer checks stat equality (the round-trip would always fail with facets applied) — moves and ability membership are still enforced.
@@ -320,7 +320,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 **Events.**
 
 - `Roll(address indexed player, uint256[] monIds, uint256 pointsSpent)` — fires on both `firstRoll` (spend = 0) and paid `roll`.
-- `GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed)` — one per battle, carrying both sides' packed payloads (CPU side is 0). Layout sized for `MONS_PER_TEAM` up to 8: points (bits 0-15), per-mon exp gain (bits 16-79, 8 lanes × 8b), per-mon facets unlocked this battle (bits 80-175, 8 lanes × 12-bit bitmap = 1 bit per facet id), `BONUS_*` flags (bits 176-183: `FIRST_ROLL` | `FIRST_GAME` | `HARD_CPU` | `QUEST`), combined exp multiplier (bits 184-191), outcome (bits 192-199: 0=loss, 1=win, 2=draw), `streakDay` (bits 200-202). Lanes saturate so a future tuning blow-up can't bleed into neighbouring fields.
+- `GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed)` — one per battle, carrying both sides' packed payloads (CPU side is 0). Layout sized for `MONS_PER_TEAM` up to 8: points (bits 0-15), per-mon exp gain (bits 16-79, 8 lanes × 8b), per-mon facets unlocked this battle (bits 80-175, 8 lanes × 12-bit bitmap = 1 bit per facet id), `BONUS_*` flags (bits 176-183: `FIRST_ROLL` (bit 0) | `FIRST_GAME` (bit 1) | bit 2 reserved/formerly `HARD_CPU` | `QUEST` (bit 3)), combined exp multiplier (bits 184-191), outcome (bits 192-199: 0=loss, 1=win, 2=draw), `streakDay` (bits 200-202). Lanes saturate so a future tuning blow-up can't bleed into neighbouring fields.
 
 ### Storage Architecture
 

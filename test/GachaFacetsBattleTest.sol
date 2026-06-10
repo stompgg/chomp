@@ -111,7 +111,7 @@ contract GachaFacetsBattleTest is Test {
         cpuFacets[0] = 1;
         cpuFacets[1] = 0;
         vm.prank(ALICE);
-        registry.setOpponentTeam(CPU, cpuMons, cpuFacets, false);
+        registry.setOpponentTeam(CPU, cpuMons, cpuFacets);
 
         // Both players must authorize the matchmaker with the engine.
         address[] memory makersToAdd = new address[](1);
