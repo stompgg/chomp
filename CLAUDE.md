@@ -521,6 +521,7 @@ CSV-to-code mapping notes:
 - RNG reuse: `StandardAttack` uses the same RNG for both accuracy and effect chance, making them correlated rather than independent
 - Malicious p0 can modify mon moves between commit and battle start - mitigate via team registry or adding move indices to integrity hash
 - `MAX_BATTLE_DURATION` is 1 hour; `TIMEOUT_DURATION` is configurable per validator
+- DefaultMatchmaker (deprecated, test-suite-only) leaks/strands MappingAllocator pool keys on re-proposals and open-proposal cycles — documented won't-fix in its contract header; do not promote it back to production without fixing
 
 ## Gas Optimization Notes
 

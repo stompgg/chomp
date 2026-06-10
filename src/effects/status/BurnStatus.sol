@@ -39,10 +39,6 @@ contract BurnStatus is StatusEffect {
         return (noStatus || hasBurnAlready);
     }
 
-    function getKeyForMonIndex(uint256 targetIndex, uint256 monIndex) public pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(targetIndex, monIndex, name()))));
-    }
-
     function onApply(
         IEngine engine,
         bytes32 battleKey,
@@ -112,9 +108,8 @@ contract BurnStatus is StatusEffect {
 
         // Reset the attack reduction
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
-
-        // Reset the burn degree
-        engine.setGlobalKV(getKeyForMonIndex(targetIndex, monIndex), 0);
+        // NOTE: no burn-degree KV reset — the degree lives in effect extraData (see onApply /
+        // onRoundEnd), and the old per-mon degree key was never written nor read anywhere.
     }
 
     // Deal damage over time

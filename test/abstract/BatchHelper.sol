@@ -93,7 +93,9 @@ abstract contract BatchHelper is SignedCommitHelper {
     function _compactSig(bytes memory sig) internal pure returns (bytes32 r, bytes32 vs) {
         bytes32 s;
         uint8 v;
-        assembly {
+        // memory-safe: only reads within sig's allocation; required so contracts combining this
+        // helper with deep-stack functions (e.g. GasMeasure._tally) keep via-IR stack-to-memory spilling.
+        assembly ("memory-safe") {
             r := mload(add(sig, 0x20))
             s := mload(add(sig, 0x40))
             v := byte(0, mload(add(sig, 0x60)))

@@ -218,6 +218,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.koBitmaps = 0;
         config.globalKVCount = 0;
         config.playerEffectStepsUnion = 0;
+        // Salts are only written by the legacy setMove storage path and are never cleared at game
+        // over; reset them so a recycled key cannot leak the previous battle's salts into this one.
+        // (Slot-3 neighbors of playerEffectStepsUnion, so these writes coalesce with the one above.)
+        config.p0Salt = 0;
+        config.p1Salt = 0;
 
         // teamIndices narrowed from Battle.uint96; phantom-team writes truncate to match.
         battleData[battleKey] = BattleData({
@@ -256,29 +261,33 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
         }
 
-        // Set the global effects and data to start the game if any
+        // Set the global effects and data to start the game if any.
+        // NOTE: hasInlineStaminaRegen AND globalEffectsLength must be (re)written on EVERY branch —
+        // config storage is recycled across battles, so a stale value from the previous occupant
+        // would otherwise leak into this battle (e.g. inline regen running on top of an external
+        // ruleset, or a previous battle's global effect staying live when the new ruleset is empty).
         if (address(battle.ruleset) == INLINE_STAMINA_REGEN_RULESET) {
             config.hasInlineStaminaRegen = true;
             config.globalEffectsLength = 0;
         } else if (address(battle.ruleset) != address(0)) {
             (IEffect[] memory effects, bytes32[] memory data) = battle.ruleset.getInitialGlobalEffects();
+            config.hasInlineStaminaRegen = false;
             uint256 numEffects = effects.length;
-            if (numEffects > 0) {
-                for (uint256 i = 0; i < numEffects;) {
-                    config.globalEffects[i].effect = effects[i];
-                    if (address(effects[i]) == address(0)) {
-                        config.globalEffects[i].stepsBitmap = 0x8084;
-                    } else {
-                        config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
-                    }
-                    config.globalEffects[i].data = data[i];
-                    unchecked {
-                        ++i;
-                    }
+            for (uint256 i = 0; i < numEffects;) {
+                config.globalEffects[i].effect = effects[i];
+                if (address(effects[i]) == address(0)) {
+                    config.globalEffects[i].stepsBitmap = 0x8084;
+                } else {
+                    config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
                 }
-                config.globalEffectsLength = uint8(effects.length);
+                config.globalEffects[i].data = data[i];
+                unchecked {
+                    ++i;
+                }
             }
+            config.globalEffectsLength = uint8(numEffects);
         } else {
+            config.hasInlineStaminaRegen = false;
             config.globalEffectsLength = 0;
         }
 
@@ -1110,6 +1119,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If a winner has been set, handle the game over
         if (battle.winnerIndex != 2) {
             winner = (battle.winnerIndex == 0) ? battle.p0 : battle.p1;
+            // Clear storage move slots before _handleGameOver frees the storage key for reuse: a
+            // recycled config would otherwise keep this battle's final setMove-written
+            // IS_REAL_TURN_BIT, letting anyone drive the next battle's turn 0 via the
+            // permissionless execute() with stale moves. Conditional for the same reason as the
+            // end-of-turn clear below — transient-path battles never write these slots.
+            if (!cameFromDirectMoveInput) {
+                config.p0Move.packedMoveIndex = 0;
+                config.p1Move.packedMoveIndex = 0;
+            }
             // CPU one-tx path (emitBattleComplete=false) suppresses BattleComplete here —
             // executeBatchedTurns emits BattleCompleteWithBatchTurns after the loop with the full turn
             // list. Legacy + the PvP buffer drain (emitBattleComplete=true) emit the normal BattleComplete.
@@ -1169,11 +1187,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
-        if (block.timestamp - battleConfig[storageKey].startTimestamp > MAX_BATTLE_DURATION) {
+        BattleConfig storage config = battleConfig[storageKey];
+        if (block.timestamp - config.startTimestamp > MAX_BATTLE_DURATION) {
             // Award p0, matching the BattleComplete(p0) event _handleGameOver emits. Setting
             // winnerIndex is required: _handleGameOver itself never writes it, so without this the
             // battle would stay winnerIndex==2 (commit manager would never see it as complete).
             data.winnerIndex = 0;
+            // Clear any storage-written move slots (e.g. a lone revealed move on a stalled
+            // commit-reveal battle) so the freed key cannot be recycled with a live
+            // IS_REAL_TURN_BIT — same hygiene as the game-over path in _executeInternal. Rare
+            // cold path; the writes are cheap no-ops when the slots are already clear.
+            config.p0Move.packedMoveIndex = 0;
+            config.p1Move.packedMoveIndex = 0;
             _handleGameOver(battleKey, data.p0, true);
         }
     }

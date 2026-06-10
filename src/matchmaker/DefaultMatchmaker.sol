@@ -6,6 +6,27 @@ import {ProposedBattle, Battle} from "../Structs.sol";
 import {IMatchmaker} from "./IMatchmaker.sol";
 import {MappingAllocator} from "../lib/MappingAllocator.sol";
 
+/// @notice DEPRECATED — production matchmaking runs through SignedMatchmaker; this contract is
+///         kept for the test suite only.
+/// @dev KNOWN BUGS (won't-fix while deprecated — do NOT promote back to production without
+///      addressing these; see GAS_AUDIT.md BUG-4):
+///      1. Re-proposing the same battle double-allocates its storage key: proposeBattle calls
+///         _initializeStorageKey unconditionally, which never checks for an existing battleKey
+///         mapping. With a non-empty free pool the re-propose pops a second key and permanently
+///         leaks the first; with an empty pool the new terms are written to the raw-key row while
+///         _getStorageKey still resolves to the old mapped row, so accepts against the NEW terms
+///         revert BattleChangedBeforeAcceptance while the OLD terms remain acceptable.
+///      2. _cleanUpBattleProposal frees the storage key (deleting the battleKey mapping) BEFORE
+///         resolving the proposal row, so on recycled keys the UNSET_P0_TEAM_INDEX marker lands
+///         on the wrong (raw-key) row — a wasted fresh SSTORE and a row left looking active.
+///      3. Open-proposal cycles free the post-fill alias key instead of the key owning the
+///         proposal row (and the fast+open path never deletes its preP1FillBattleKey entry).
+///         The (p0, address(0)) pair nonce never bumps, so EVERY open-proposal cycle strands the
+///         row's real key and pushes a junk key into the pool.
+///      Fix sketch if ever revived: route proposeBattle through a get-or-reuse storage-key helper
+///      (reuse battleKeyToStorageKey[battleKey] when set), and in _cleanUpBattleProposal resolve
+///      the preP1FillBattleKey override and mark the row consumed BEFORE freeing the owning key
+///      (with acceptBattle's fast path passing the post-fill key when one exists).
 contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
 
     bytes32 constant public FAST_BATTLE_SENTINAL_HASH = 0x1000000000000000000000000000000000000000000000000000000000000000; // Used to skip the confirmBattle step

@@ -880,4 +880,157 @@ contract EffectTest is Test, BattleHelper {
         vm.stopPrank();
         engine.resetCallContext();
     }
+
+    // ------------------------------------------------------------------
+    // One-sleeper-per-player gate (SleepStatus global sleep key)
+    // ------------------------------------------------------------------
+
+    /// @dev Mirrors SleepStatus._globalSleepKey.
+    function _sleepGlobalKey(uint256 targetIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encodePacked("Sleep", targetIndex))));
+    }
+
+    /// @dev Finds an oracle rng value whose SleepStatus.onRoundStart wake roll for
+    ///      (targetIndex, monIndex) matches `wantWake`.
+    function _sleepRngFor(bool wantWake, uint256 targetIndex, uint256 monIndex) internal pure returns (uint256) {
+        for (uint256 r = 1; r < 100; r++) {
+            bool wakes = uint256(keccak256(abi.encode(r, targetIndex, monIndex))) % 3 == 0;
+            if (wakes == wantWake) {
+                return r;
+            }
+        }
+        revert("no rng found");
+    }
+
+    function _makeSleepAttack() internal returns (IMoveSet) {
+        return standardAttackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 0,
+                STAMINA_COST: 0,
+                ACCURACY: 100,
+                PRIORITY: 1,
+                MOVE_TYPE: Type.Ice,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "SleepHit",
+                EFFECT: sleepStatus
+            })
+        );
+    }
+
+    /// @dev Two 2-mon teams; Alice's mons are faster so her sleep lands before Bob acts.
+    ///      Every mon carries [sleepAttack, koAttack] so tests can also KO (validator allows 2 moves).
+    function _setupSleepGateBattle() internal returns (bytes32 battleKey) {
+        IMoveSet sleepAttack = _makeSleepAttack();
+        IMoveSet koAttack = standardAttackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 100,
+                STAMINA_COST: 0,
+                ACCURACY: 100,
+                PRIORITY: 1,
+                MOVE_TYPE: Type.Ice,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "KOHit",
+                EFFECT: IEffect(address(0))
+            })
+        );
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(sleepAttack)));
+        moves[1] = uint256(uint160(address(koAttack)));
+
+        Mon memory fastMon = _createMon();
+        fastMon.moves = moves;
+        fastMon.stats.speed = 2;
+        fastMon.stats.stamina = 5;
+        Mon memory slowMon = _createMon();
+        slowMon.moves = moves;
+        slowMon.stats.stamina = 5;
+
+        Mon[] memory fastTeam = new Mon[](2);
+        fastTeam[0] = fastMon;
+        fastTeam[1] = fastMon;
+        Mon[] memory slowTeam = new Mon[](2);
+        slowTeam[0] = slowMon;
+        slowTeam[1] = slowMon;
+
+        DefaultValidator validatorToUse = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: TIMEOUT_DURATION})
+        );
+        defaultRegistry.setTeam(ALICE, fastTeam);
+        defaultRegistry.setTeam(BOB, slowTeam);
+
+        battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+    }
+
+    function test_sleepOnePerPlayer_blocksSecondSleeper() public {
+        bytes32 battleKey = _setupSleepGateBattle();
+
+        // Turn 1: Alice sleeps Bob's mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory bobMon0Effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(bobMon0Effects.length, 1, "Bob's mon 0 should be asleep");
+        // The player-1 sleeper flag points at mon 0 (value = [monIndex+1 | sleepStatus address])
+        uint192 flag = engine.getGlobalKV(battleKey, _sleepGlobalKey(1));
+        assertEq(address(uint160(flag)), address(sleepStatus), "sleeper flag should carry the status address");
+        assertEq(uint256(flag >> 160), 1, "sleeper flag should point at mon 0");
+
+        // Turn 2: Bob switches to mon 1 (mon 0 stays asleep on the bench)
+        mockOracle.setRNG(_sleepRngFor(false, 1, 0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 1);
+
+        // Turn 3: Alice tries to sleep Bob's mon 1 — blocked, only one sleeper per player
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory bobMon1Effects,) = engine.getEffects(battleKey, 1, 1);
+        assertEq(bobMon1Effects.length, 0, "second sleeper on the same player should be blocked");
+    }
+
+    function test_sleepOnePerPlayer_allowsNewSleeperAfterWake() public {
+        bytes32 battleKey = _setupSleepGateBattle();
+
+        // Turn 1: Alice sleeps Bob's mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Turn 2: Bob's mon wakes early (rng chosen to trigger the wake roll)
+        mockOracle.setRNG(_sleepRngFor(true, 1, 0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects.length, 0, "mon 0 should have woken");
+        assertEq(uint256(engine.getGlobalKV(battleKey, _sleepGlobalKey(1))), 0, "sleeper flag should clear on wake");
+
+        // Turn 3: Alice sleeps Bob's mon 0 again — allowed now that the previous sleep ended
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects.length, 1, "re-sleep after wake should apply");
+    }
+
+    function test_sleepOnePerPlayer_koReleasesGate() public {
+        bytes32 battleKey = _setupSleepGateBattle();
+
+        // Turn 1: Alice sleeps Bob's mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Turn 2: Alice KOs the sleeping mon 0 (no early wake)
+        mockOracle.setRNG(_sleepRngFor(false, 1, 0));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut), 1);
+
+        // Turn 3 (single-player): Bob switches in mon 1
+        vm.startPrank(BOB);
+        _revealMoveAndReset(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, 1);
+
+        // Turn 4: Alice sleeps mon 1 — allowed because the registered sleeper (mon 0) is KO'd
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory bobMon1Effects,) = engine.getEffects(battleKey, 1, 1);
+        assertEq(bobMon1Effects.length, 1, "gate should release when the registered sleeper is KO'd");
+        uint192 flag = engine.getGlobalKV(battleKey, _sleepGlobalKey(1));
+        assertEq(uint256(flag >> 160), 2, "sleeper flag should now point at mon 1");
+    }
 }
