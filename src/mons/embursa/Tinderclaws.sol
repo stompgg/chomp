@@ -65,10 +65,10 @@ contract Tinderclaws is IAbility, BasicEffect {
             // Make rng unique to this mon
             rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
             if (rng % BURN_CHANCE == BURN_CHANCE - 1) {
-                // Apply burn to self (if it can be applied)
-                if (BURN_STATUS.shouldApply(engine, battleKey, bytes32(0), targetIndex, monIndex)) {
-                    engine.addEffect(targetIndex, monIndex, BURN_STATUS, bytes32(0));
-                }
+                // Apply burn to self. No shouldApply pre-check: the engine's _addEffectInternal
+                // runs the exact same check and silently no-ops on false — the external pre-check
+                // was a duplicate ~1.4k round-trip on every proc.
+                engine.addEffect(targetIndex, monIndex, BURN_STATUS, bytes32(0));
             }
         }
 

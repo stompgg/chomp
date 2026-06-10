@@ -124,13 +124,51 @@ library StatBoostLib {
     ) internal pure {
         for (uint256 k = 0; k < 5; k++) {
             if (boostCounts[k] == 0) continue;
-            uint256 existingStatValue =
-                (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
-            uint256 scalingFactor = isMul[k] ? DENOM + boostPercents[k] : DENOM - boostPercents[k];
-            unchecked {
-                accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCounts[k]);
-            }
-            numBoostsPerStat[k] += boostCounts[k];
+            _accumulateOne(
+                k, boostPercents[k], boostCounts[k], isMul[k], baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
+            );
+        }
+    }
+
+    /// @dev accumulateBoosts for a FRESH source straight from the caller's StatBoostToApply
+    ///      entries — skips the pack -> unpack round-trip through the 5-lane arrays that
+    ///      _addStatBoostWithKey otherwise pays just to feed the aggregation.
+    function accumulateBoostsToApply(
+        uint32[5] memory baseStats,
+        StatBoostToApply[] memory statBoostsToApply,
+        uint32[5] memory numBoostsPerStat,
+        uint256[5] memory accumulatedNumeratorPerStat
+    ) internal pure {
+        for (uint256 i = 0; i < statBoostsToApply.length; i++) {
+            _accumulateOne(
+                monStateIndexToStatBoostIndex(statBoostsToApply[i].stat),
+                statBoostsToApply[i].boostPercent,
+                1,
+                statBoostsToApply[i].boostType == StatBoostType.Multiply,
+                baseStats,
+                numBoostsPerStat,
+                accumulatedNumeratorPerStat
+            );
+        }
+    }
+
+    /// @dev Shared accumulation core for one stat lane (see accumulateBoosts for the unchecked
+    ///      rationale).
+    function _accumulateOne(
+        uint256 k,
+        uint256 boostPercent,
+        uint256 boostCount,
+        bool isMul,
+        uint32[5] memory baseStats,
+        uint32[5] memory numBoostsPerStat,
+        uint256[5] memory accumulatedNumeratorPerStat
+    ) private pure {
+        uint256 existingStatValue =
+            (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
+        uint256 scalingFactor = isMul ? DENOM + boostPercent : DENOM - boostPercent;
+        unchecked {
+            accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCount);
+            numBoostsPerStat[k] += uint32(boostCount);
         }
     }
 

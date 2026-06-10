@@ -58,10 +58,12 @@ contract BurnStatus is StatusEffect {
             uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
             uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
             hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
+            // Set the burn flag only when fresh — this single read replaces both super.onApply's
+            // guard re-read and its redundant same-value write on the escalation path.
+            if (!hasBurnAlready) {
+                engine.setGlobalKV(keyForMon, uint192(uint160(address(this))));
+            }
         }
-
-        // Set burn flag
-        super.onApply(engine, battleKey, rng, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
 
         // Set stat debuff or increase burn degree
         if (!hasBurnAlready) {

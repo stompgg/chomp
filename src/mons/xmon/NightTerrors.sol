@@ -96,7 +96,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return 0x8024;
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
         external
         override
         returns (bytes32, bool)
@@ -140,7 +140,10 @@ contract NightTerrors is IMoveSet, BasicEffect {
             DEFAULT_VOL,
             moveType(engine, battleKey),
             moveClass(engine, battleKey),
-            engine.tempRNG(),
+            // The hook's rng parameter IS tempRNG on every RoundEnd path — the engine sets
+            // tempRNG = rng then threads the same value into every effect hook; the external
+            // tempRNG() read-back was a duplicate round-trip.
+            rng,
             DEFAULT_CRIT_RATE
         );
 

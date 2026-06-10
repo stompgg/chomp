@@ -47,11 +47,15 @@ abstract contract Quests is Ownable {
         uint256 packed;
     }
 
-    Quest[] internal questPool;
+    // Flat pool storage: mapping + explicit packed length. _questPoolLength and _dayOffset are
+    // adjacent uint32s, so Solidity packs them into ONE slot — the battle-end quest gate reads
+    // both (pool size + effective day) for a single cold SLOAD instead of two.
+    mapping(uint256 => Quest) internal questPool;
+    uint32 private _questPoolLength;
 
     /// @dev Admin-controlled forward-only offset added to `block.timestamp / 1 days` in
     /// every quest-day read. Lets the owner advance the daily quest rotation without
-    /// having to wait wall-clock time on a long-running chain.
+    /// having to wait wall-clock time on a long-running chain. Packs with _questPoolLength.
     uint32 internal _dayOffset;
 
     event DayAdvanced(uint32 by, uint32 newOffset, uint32 newEffectiveDay);
@@ -101,27 +105,29 @@ abstract contract Quests is Ownable {
     /// before _initializeOwner is meaningful from outside. External callers must go through
     /// the onlyOwner-gated `addQuest`.
     function _addQuest(Predicate[] memory preds) internal returns (uint256 questId) {
-        questId = questPool.length;
-        questPool.push(Quest({packed: _encodeQuest(preds)}));
+        questId = _questPoolLength;
+        questPool[questId] = Quest({packed: _encodeQuest(preds)});
+        _questPoolLength = uint32(questId + 1);
     }
 
     function editQuest(uint256 questId, Predicate[] memory preds) external onlyOwner {
-        if (questId >= questPool.length) revert InvalidQuestId();
+        if (questId >= _questPoolLength) revert InvalidQuestId();
         questPool[questId].packed = _encodeQuest(preds);
     }
 
     function removeQuest(uint256 questId) external onlyOwner {
-        uint256 last = questPool.length;
+        uint256 last = _questPoolLength;
         if (questId >= last) revert InvalidQuestId();
         last -= 1;
         if (questId != last) {
             questPool[questId] = questPool[last];
         }
-        questPool.pop();
+        delete questPool[last];
+        _questPoolLength = uint32(last);
     }
 
     function getQuestPoolLength() external view returns (uint256) {
-        return questPool.length;
+        return _questPoolLength;
     }
 
     function dayOffset() external view returns (uint32) {
@@ -148,7 +154,7 @@ abstract contract Quests is Ownable {
         view
         returns (uint256 packed, uint256 count)
     {
-        if (questId >= questPool.length) revert InvalidQuestId();
+        if (questId >= _questPoolLength) revert InvalidQuestId();
         packed = questPool[questId].packed;
         count = (packed >> COUNT_SHIFT) & COUNT_MASK;
     }
@@ -159,14 +165,22 @@ abstract contract Quests is Ownable {
     /// callers must gate quest evaluation on `getQuestPoolLength() > 0`.
     function getActiveQuest() external view returns (uint32 activeDay, uint32 activeQuestId) {
         activeDay = _currentDay();
-        uint256 len = questPool.length;
+        uint256 len = _questPoolLength;
         if (len == 0) return (activeDay, 0);
         activeQuestId = uint32(uint256(keccak256(abi.encode(activeDay))) % len);
     }
 
-    /// @dev Caller must ensure questPool.length > 0 (the `% len` would otherwise revert).
-    function _activeQuestIdForDay(uint32 day) internal view returns (uint32) {
-        return uint32(uint256(keccak256(abi.encode(day))) % questPool.length);
+    /// @dev Caller supplies the pool length (already read from the packed slot) and must
+    ///      ensure it is > 0 (the `% len` would otherwise revert).
+    function _activeQuestIdForDay(uint32 day, uint256 poolLen) internal pure returns (uint32) {
+        return uint32(uint256(keccak256(abi.encode(day))) % poolLen);
+    }
+
+    /// @dev One-SLOAD read of the packed (poolLength, dayOffset) slot plus the derived quest day —
+    ///      the battle-end gate's single entry point for quest config.
+    function _questDayAndPoolLen() internal view returns (uint32 day, uint256 poolLen) {
+        poolLen = _questPoolLength;
+        day = uint32(block.timestamp / 1 days) + _dayOffset;
     }
 
     // ----- Eval -----
@@ -186,10 +200,11 @@ abstract contract Quests is Ownable {
     function _evalActiveQuest(
         BattleEndContext memory ctx,
         uint256 playerIndex,
-        bytes32 battleKey
+        bytes32 battleKey,
+        uint32 day,
+        uint256 poolLen
     ) internal view returns (bool) {
-        uint32 day = _currentDay();
-        uint32 activeQuestId = _activeQuestIdForDay(day);
+        uint32 activeQuestId = _activeQuestIdForDay(day, poolLen);
         uint256 packed = questPool[activeQuestId].packed; // 1 SLOAD
         uint256 count = (packed >> COUNT_SHIFT) & COUNT_MASK;
         for (uint256 i; i < count;) {

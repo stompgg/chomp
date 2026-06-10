@@ -223,6 +223,60 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
         assertEq(uint256(cfg.p1Salt), 0, "stale p1Salt leaked into battle 2");
     }
 
+    /// @dev Engine.startBattle's team-store block is hand-unrolled to exactly 4 lanes (see the
+    ///      comment there); this pins the constant so a future change can't silently desync them.
+    function test_moveLaneCountMatchesUnrolledCopy() public pure {
+        assertEq(MOVE_LANES_PER_MON, 4, "update Engine.startBattle's unrolled lane copies");
+    }
+
+    function test_recycledKey_moveLanesZeroFilled() public {
+        // Battle 1 uses 2-move mons end-to-end (writes move lanes 0 and 1 on the config storage)
+        (, bytes32 storageKey1) = _runBattleToGameOver(IRuleset(address(0)));
+
+        // Battle 2 on the recycled key uses ONE-move mons: lane 1 must read zero — battle 1's
+        // koAttack word must not survive as a playable move.
+        uint256[] memory oneMove = new uint256[](1);
+        oneMove[0] = uint256(uint160(address(staminaSink)));
+        Mon memory mon = Mon({
+            stats: MonStats({
+                hp: 10,
+                stamina: 5,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            moves: oneMove,
+            ability: 0
+        });
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        // DefaultValidator requires exact move counts, so battle 2 gets its own 1-move validator.
+        DefaultValidator oneMoveValidator = new DefaultValidator(
+            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
+        );
+        bytes32 battleKey2 = _startBattle(
+            oneMoveValidator,
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(0)),
+            address(commitManager)
+        );
+        assertEq(engine.getStorageKey(battleKey2), storageKey1, "expected recycled storage key");
+        assertEq(engine.getMoveForMonForBattle(battleKey2, 0, 0, 1), 0, "stale move lane leaked");
+        (BattleConfigView memory cfg,) = engine.getBattle(battleKey2);
+        assertEq(cfg.teams[0][0].moves.length, 1, "view should reflect the stored move count");
+    }
+
     /// @dev Same flow as BattleHelper._commitRevealExecuteForAliceAndBob but with a caller-chosen salt.
     function _commitRevealExecuteWithSalt(bytes32 battleKey, uint8 aliceMoveIndex, uint8 bobMoveIndex, uint104 salt)
         internal

@@ -133,14 +133,15 @@ abstract contract CPUMoveManager {
         uint256[] memory entries = new uint256[](numTurns);
         for (uint256 i; i < numTurns; ++i) {
             uint256 off = i * 19;
-            uint256 p0Move = uint8(moves[off]);
-            uint256 p0Extra = (uint256(uint8(moves[off + 1])) << 8) | uint256(uint8(moves[off + 2]));
-            uint256 p0Salt; // 13 bytes = 104 bits, big-endian
-            for (uint256 b; b < 13; ++b) {
-                p0Salt = (p0Salt << 8) | uint256(uint8(moves[off + 3 + b]));
-            }
-            uint256 p1Move = uint8(moves[off + 16]);
-            uint256 p1Extra = (uint256(uint8(moves[off + 17])) << 8) | uint256(uint8(moves[off + 18]));
+            // One chunk load per turn (calldata slice -> bytes19; byte 0 lands in the high byte
+            // of the 152-bit word) replaces 19 bounds-checked per-byte reads including a
+            // 13-iteration salt loop. Layout: [p0Move 1 | p0Extra 2 | p0Salt 13 | p1Move 1 | p1Extra 2]
+            uint256 word = uint256(uint152(bytes19(moves[off:off + 19])));
+            uint256 p0Move = (word >> 144) & 0xFF;
+            uint256 p0Extra = (word >> 128) & 0xFFFF;
+            uint256 p0Salt = (word >> 24) & ((uint256(1) << 104) - 1);
+            uint256 p1Move = (word >> 16) & 0xFF;
+            uint256 p1Extra = word & 0xFFFF;
             // entry: p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104 (= 0).
             entries[i] = p0Move | (p0Extra << 8) | (p0Salt << 24) | (p1Move << 128) | (p1Extra << 136);
         }
@@ -148,45 +149,38 @@ abstract contract CPUMoveManager {
         _afterTurn(battleKey, rctx.p0, winner);
     }
 
-    /// @notice Assemble the CPU decision context from granular engine reads. Replaces the removed
-    ///         `Engine.getCPUContext` batch getter (to be revisited in the CPU-flow overhaul). Assumes
-    ///         the CPU is p1. `getBattle()` is the faithful source for the active mon's move-slot array
-    ///         *with its length* (per-slot `getMoveForMonForBattle` reverts past `moves.length`, which
-    ///         breaks <4-move mons); KO bitmaps come from the dedicated getter rather than being
-    ///         reconstructed from monStates.
+    /// @notice Assemble the CPU decision context from granular engine reads. The old wide
+    ///         `Engine.getBattle` hydration materialized both full teams, all effects, and the
+    ///         globalKV buffer (~130k+ per on-chain CPU turn) to extract ~12 scalars — and its
+    ///         tuple decode overflowed via-IR's stack allocator once BattleData grew. Granular
+    ///         getters read exactly what the CPU consumes. Assumes the CPU is p1. Zero move
+    ///         slots mean "no move here" (fixed-lane team storage returns 0 for empty lanes).
     function _buildCPUContext(bytes32 battleKey) internal view returns (CPUContext memory ctx) {
-        (BattleConfigView memory cfg, BattleData memory data) = ENGINE.getBattle(battleKey);
-
+        BattleContext memory bctx = ENGINE.getBattleContext(battleKey);
         ctx.battleKey = battleKey;
-        ctx.p0 = data.p0;
-        ctx.p1 = data.p1;
-        ctx.validator = address(cfg.validator);
-        ctx.winnerIndex = data.winnerIndex;
-        ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
-        ctx.turnId = data.turnId;
-
-        // activeMonIndex packs p0 in the low byte, p1 in the high byte.
-        uint256 p1MonIndex = uint8(data.activeMonIndex >> 8);
-        ctx.p0ActiveMonIndex = uint8(data.activeMonIndex);
-        ctx.p1ActiveMonIndex = uint8(p1MonIndex);
-
-        ctx.p0TeamSize = cfg.teamSizes & 0x0F;
-        ctx.p1TeamSize = cfg.teamSizes >> 4;
-
+        ctx.p0 = bctx.p0;
+        ctx.p1 = bctx.p1;
+        ctx.validator = bctx.validator;
+        ctx.winnerIndex = bctx.winnerIndex;
+        ctx.playerSwitchForTurnFlag = bctx.playerSwitchForTurnFlag;
+        ctx.turnId = bctx.turnId;
+        ctx.p0ActiveMonIndex = bctx.p0ActiveMonIndex;
+        ctx.p1ActiveMonIndex = bctx.p1ActiveMonIndex;
+        ctx.p0TeamSize = uint8(ENGINE.getTeamSize(battleKey, 0));
+        ctx.p1TeamSize = uint8(ENGINE.getTeamSize(battleKey, 1));
         ctx.p0KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 0));
         ctx.p1KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 1));
 
-        Mon memory p1Active = cfg.teams[1][p1MonIndex];
-        MonState memory p1State = cfg.monStates[1][p1MonIndex];
-        ctx.cpuActiveMonBaseStamina = p1Active.stats.stamina;
+        uint256 p1MonIndex = bctx.p1ActiveMonIndex;
+        ctx.cpuActiveMonBaseStamina =
+            ENGINE.getMonValueForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.Stamina);
+        // getMonStateForBattle normalizes the cleared sentinel to 0, matching the old hydration.
         ctx.cpuActiveMonStaminaDelta =
-            p1State.staminaDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : p1State.staminaDelta;
-        ctx.cpuActiveMonKnockedOut = p1State.isKnockedOut;
-
-        uint256 len = p1Active.moves.length;
-        if (len > 4) len = 4;
-        for (uint256 i; i < len; ++i) {
-            ctx.cpuActiveMonMoveSlots[i] = p1Active.moves[i];
+            ENGINE.getMonStateForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.Stamina);
+        ctx.cpuActiveMonKnockedOut =
+            ENGINE.getMonStateForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.IsKnockedOut) != 0;
+        for (uint256 i; i < 4; ++i) {
+            ctx.cpuActiveMonMoveSlots[i] = ENGINE.getMoveForMonForBattle(battleKey, 1, p1MonIndex, i);
         }
     }
 

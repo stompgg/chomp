@@ -62,6 +62,16 @@ interface IEngine {
         IEffect effect,
         uint256 rng
     ) external returns (int32 damage, bytes32 eventType);
+    function dispatchCustomAttack(
+        uint256 attackerPlayerIndex,
+        uint32 basePower,
+        uint32 accuracy,
+        uint256 volatility,
+        Type moveType,
+        MoveClass moveClass,
+        uint256 rng,
+        uint256 critRate
+    ) external returns (int32 damage, bytes32 eventType);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
     function execute(bytes32 battleKey) external returns (address winner);

@@ -14,11 +14,23 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
     error MonAlreadyCreated();
     error MonNotyetCreated();
     error NonSequentialMonId();
+    error TooManyMoves();
+    error TooManyAbilities();
+
+    /// @dev Catalog move-row width. Flat rows replace the old per-mon EnumerableSets: reading a
+    ///      mon's full moveset is CATALOG_MOVE_LANES SLOADs with no lazy-length word and no
+    ///      per-value position slots (9 -> 5 cold SLOADs per distinct mon in getTeams, ~8.4k).
+    ///      Zero lane = empty (move words are addresses/packed-inline data, never zero). Raising
+    ///      the width for a bigger catalog is a registry redeploy — the catalog is re-seeded by
+    ///      the deploy scripts, never migrated.
+    uint256 internal constant CATALOG_MOVE_LANES = 4;
 
     EnumerableSetLib.Uint256Set internal monIds;
     mapping(uint256 monId => MonStats) public monStats;
-    mapping(uint256 monId => EnumerableSetLib.Uint256Set) internal monMoves;
-    mapping(uint256 monId => EnumerableSetLib.Uint256Set) internal monAbilities;
+    mapping(uint256 monId => uint256[CATALOG_MOVE_LANES]) internal monMoveRows;
+    /// @dev Single primary-ability slot (0 = unset). Every catalog mon has exactly one ability;
+    ///      createMon/modifyMon enforce it rather than silently dropping extras.
+    mapping(uint256 monId => uint256) internal monAbility;
     mapping(uint256 monId => mapping(bytes32 => bytes32)) internal monMetadata;
 
     function createMon(
@@ -38,15 +50,16 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         }
         monIds.add(monId);
         monStats[monId] = _monStats;
-        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
         uint256 numMoves = allowedMoves.length;
+        if (numMoves > CATALOG_MOVE_LANES) revert TooManyMoves();
+        uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
         for (uint256 i; i < numMoves; ++i) {
-            moves.add(allowedMoves[i]);
+            row[i] = allowedMoves[i];
         }
-        EnumerableSetLib.Uint256Set storage abilities = monAbilities[monId];
         uint256 numAbilities = allowedAbilities.length;
-        for (uint256 i; i < numAbilities; ++i) {
-            abilities.add(allowedAbilities[i]);
+        if (numAbilities > 1) revert TooManyAbilities();
+        if (numAbilities == 1) {
+            monAbility[monId] = allowedAbilities[0];
         }
         _modifyMonMetadata(monId, keys, values);
     }
@@ -64,30 +77,49 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
             revert MonNotyetCreated();
         }
         monStats[monId] = _monStats;
-        EnumerableSetLib.Uint256Set storage moves = monMoves[monId];
+        // Rebuild the move row in memory (owner-only cold path — clarity over micro-gas):
+        // drop removals, keep order, append additions, then write all lanes back.
         {
-            uint256 numMovesToAdd = movesToAdd.length;
-            for (uint256 i; i < numMovesToAdd; ++i) {
-                moves.add(movesToAdd[i]);
-            }
-        }
-        {
+            uint256[] memory current = _moveRowValues(monId);
+            uint256 n = current.length;
             uint256 numMovesToRemove = movesToRemove.length;
             for (uint256 i; i < numMovesToRemove; ++i) {
-                moves.remove(movesToRemove[i]);
+                for (uint256 j; j < n; ++j) {
+                    if (current[j] == movesToRemove[i]) {
+                        for (uint256 k = j + 1; k < n; ++k) {
+                            current[k - 1] = current[k];
+                        }
+                        --n;
+                        break;
+                    }
+                }
+            }
+            uint256 numMovesToAdd = movesToAdd.length;
+            if (n + numMovesToAdd > CATALOG_MOVE_LANES) revert TooManyMoves();
+            uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
+            for (uint256 i; i < CATALOG_MOVE_LANES; ++i) {
+                if (i < n) {
+                    row[i] = current[i];
+                } else if (i < n + numMovesToAdd) {
+                    row[i] = movesToAdd[i - n];
+                } else {
+                    row[i] = 0;
+                }
             }
         }
-        EnumerableSetLib.Uint256Set storage abilities = monAbilities[monId];
         {
-            uint256 numAbilitiesToAdd = abilitiesToAdd.length;
-            for (uint256 i; i < numAbilitiesToAdd; ++i) {
-                abilities.add(abilitiesToAdd[i]);
+            if (abilitiesToAdd.length > 1 || (abilitiesToAdd.length == 1 && abilitiesToRemove.length == 0 && monAbility[monId] != 0))
+            {
+                revert TooManyAbilities();
             }
-        }
-        {
             uint256 numAbilitiesToRemove = abilitiesToRemove.length;
             for (uint256 i; i < numAbilitiesToRemove; ++i) {
-                abilities.remove(abilitiesToRemove[i]);
+                if (monAbility[monId] == abilitiesToRemove[i]) {
+                    monAbility[monId] = 0;
+                }
+            }
+            if (abilitiesToAdd.length == 1) {
+                monAbility[monId] = abilitiesToAdd[0];
             }
         }
     }
@@ -111,12 +143,21 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         // No stat-equality check: getTeams folds facet ±5% deltas into stats, so a passing team
         // legitimately diverges from monStats[monId]. The Engine's only source of teams is the
         // registry's getTeams, so caller-supplied stats can't be smuggled in here anyway.
+        uint256[] memory row = _moveRowValues(monId);
         for (uint256 i; i < m.moves.length; ++i) {
-            if (!monMoves[monId].contains(m.moves[i])) {
+            bool found;
+            for (uint256 j; j < row.length; ++j) {
+                if (row[j] == m.moves[i]) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
                 return false;
             }
         }
-        if (!monAbilities[monId].contains(m.ability)) {
+        uint256 ability = monAbility[monId];
+        if (!(ability != 0 && m.ability == ability)) {
             return false;
         }
         return true;
@@ -140,8 +181,8 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         returns (MonStats memory _monStats, uint256[] memory moves, uint256[] memory abilities)
     {
         _monStats = monStats[monId];
-        moves = monMoves[monId].values();
-        abilities = monAbilities[monId].values();
+        moves = _moveRowValues(monId);
+        abilities = _abilityValues(monId);
     }
 
     function getMonDataBatch(uint256[] calldata ids)
@@ -165,10 +206,41 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         for (uint256 i; i < len;) {
             uint256 monId = ids[i];
             stats[i] = monStats[monId];
-            moves[i] = monMoves[monId].values();
-            abilities[i] = monAbilities[monId].values();
+            moves[i] = _moveRowValues(monId);
+            abilities[i] = _abilityValues(monId);
             unchecked { ++i; }
         }
+    }
+
+    /// @dev Materialize a move row's nonzero lanes, order-preserving. Constant-index reads on
+    ///      purpose — dynamic-index access into a fixed array can make via-IR emit an extra
+    ///      SLOAD-bearing helper per lane (see Engine.startBattle's unroll note).
+    function _moveRowValues(uint256 monId) internal view returns (uint256[] memory vals) {
+        uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
+        uint256 m0 = row[0];
+        uint256 m1 = row[1];
+        uint256 m2 = row[2];
+        uint256 m3 = row[3];
+        uint256 n;
+        if (m0 != 0) ++n;
+        if (m1 != 0) ++n;
+        if (m2 != 0) ++n;
+        if (m3 != 0) ++n;
+        vals = new uint256[](n);
+        uint256 w;
+        if (m0 != 0) vals[w++] = m0;
+        if (m1 != 0) vals[w++] = m1;
+        if (m2 != 0) vals[w++] = m2;
+        if (m3 != 0) vals[w++] = m3;
+    }
+
+    function _abilityValues(uint256 monId) internal view returns (uint256[] memory vals) {
+        uint256 ability = monAbility[monId];
+        if (ability == 0) {
+            return new uint256[](0);
+        }
+        vals = new uint256[](1);
+        vals[0] = ability;
     }
 
     function getMonIds(uint256 start, uint256 end) external view override returns (uint256[] memory) {
@@ -191,11 +263,13 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
     }
 
     function isValidMove(uint256 monId, uint256 moveSlot) external view override returns (bool) {
-        return monMoves[monId].contains(moveSlot);
+        if (moveSlot == 0) return false;
+        uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
+        return row[0] == moveSlot || row[1] == moveSlot || row[2] == moveSlot || row[3] == moveSlot;
     }
 
     function isValidAbility(uint256 monId, uint256 ability) external view override returns (bool) {
-        return monAbilities[monId].contains(ability);
+        return ability != 0 && monAbility[monId] == ability;
     }
 
     function getMonCount() external view override returns (uint256) {

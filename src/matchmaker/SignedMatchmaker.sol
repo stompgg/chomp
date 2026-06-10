@@ -82,7 +82,4 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
         ENGINE.startBattle(offer.battle);
     }
 
-    function validateMatch(bytes32, address, address) external pure returns (bool) {
-        return true;
-    }
 }

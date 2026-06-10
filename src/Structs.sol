@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {MOVE_LANES_PER_MON} from "./Constants.sol";
 import {Type, MonStateIndexName, StatBoostType, MoveClass, ExtraDataType} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
@@ -85,6 +86,11 @@ struct BattleData {
     address p1;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
+    // Mirror of `BattleConfig.moveManager == BUILTIN_DUAL_SIGNED_MANAGER`, set at startBattle
+    // (moveManager is only ever written there, so the mirror cannot desync). Lets the built-in
+    // buffer's pure staging tx (submitTurnMoves) skip its only battleConfig access — a cold
+    // sentinel SLOAD (~2.2k per stage tx). Lives in slot 0's spare bits.
+    bool usesBuiltinManager;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
     uint8 playerSwitchForTurnFlag;
@@ -121,12 +127,19 @@ struct BattleConfig {
     // or Adaptor (PreDamage) listener, which is the common case. Over-approximate: never cleared on
     // removal (safe — at worst runs a pipeline that finds nothing, as today). Packs into slot 3.
     uint16 playerEffectStepsUnion; //  16
+    // OR of every engine hook's stepsBitmap, set once at startBattle (hooks cannot be added
+    // mid-battle). Gates the per-round hook loops: prod battles always carry the gacha hook,
+    // which is OnBattleEnd-only, so without this gate every turn pays two pointless
+    // engineHooks[i].stepsBitmap probes (~2.2k/turn — measured in ProdPvPGasBenchmark).
+    // Packs into slot 3 with the salts + player union; p0Move/p1Move shift to the next slot
+    // (which also makes the game-over move-slot clear a single-slot write).
+    uint16 engineHookStepsUnion; //  16
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
     ITeamRegistry teamRegistry;
-    mapping(uint256 index => Mon) p0Team;
-    mapping(uint256 index => Mon) p1Team;
+    mapping(uint256 index => StoredMon) p0Team;
+    mapping(uint256 index => StoredMon) p1Team;
     mapping(uint256 index => MonState) p0States;
     mapping(uint256 index => MonState) p1States;
     mapping(uint256 => EffectInstance) globalEffects;
@@ -223,6 +236,21 @@ struct Mon {
     MonStats stats;
     uint256 ability; // Lower 160 bits = address for external abilities, or packed inline data if upper bits set
     uint256[] moves; // Lower 160 bits = address for external moves, or packed inline data if upper bits set
+}
+
+// Engine-internal storage shape for a snapshotted team mon. Mirrors `Mon` but stores moves as a
+// fixed-size lane array: no dynamic-array length slot (one fewer fresh SSTORE per mon per battle)
+// and no per-access length-check SLOAD + keccak indirection on the per-turn hot path — 6 slots
+// per mon instead of 7. Unused lanes are ZERO-FILLED at startBattle (this storage is recycled
+// across battles, so a stale lane from the previous occupant must never leak in as a playable
+// move); readers treat a zero lane as "no move here" (silent skip), matching the old
+// out-of-bounds semantics. The public `Mon` struct remains the ABI type everywhere —
+// Engine.getBattle rebuilds Mon[] views from StoredMon, deriving the moves array length by
+// dropping trailing zero lanes (zero move words are not valid playable moves).
+struct StoredMon {
+    MonStats stats;
+    uint256 ability;
+    uint256[MOVE_LANES_PER_MON] moves;
 }
 
 struct MonState {

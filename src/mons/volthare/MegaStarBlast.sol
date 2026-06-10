@@ -38,7 +38,9 @@ contract MegaStarBlast is IMoveSet {
         for (uint256 i; i < effects.length; i++) {
             if (address(effects[i].effect) == address(OVERCLOCK)) {
                 bytes32 effectData = effects[i].data;
-                if (effectData == bytes32(attackerPlayerIndex)) {
+                // Overclock packs [duration << 8 | playerIndex] into its extraData — mask the
+                // player byte (raw equality would never match once the countdown is nonzero).
+                if ((uint256(effectData) & 0xFF) == attackerPlayerIndex) {
                     return int32(int256(indices[i]));
                 }
             }

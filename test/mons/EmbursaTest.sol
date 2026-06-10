@@ -126,8 +126,10 @@ contract EmbursaTest is Test, BattleHelper {
         );
 
         // Verify damage occurred
+        // Real type chart (TypeCalcLib) resolves this matchup at 0.5x — custom attacks no longer
+        // use the injected mock calculator (dispatchCustomAttack consolidation).
         assertEq(
-            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -150, "Damage should have occurred"
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -75, "Damage should have occurred"
         );
     }
 
@@ -136,7 +138,6 @@ contract EmbursaTest is Test, BattleHelper {
         HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(dummyStatus)));
         Q5 q5 = new Q5(typeCalc);
         SetAblaze setAblaze = new SetAblaze(typeCalc, IEffect(address(dummyStatus)));
-        HoneyBribe honeyBribe = new HoneyBribe();
 
         IMoveSet koMove = attackFactory.createAttack(
             ATTACK_PARAMS({
@@ -154,12 +155,12 @@ contract EmbursaTest is Test, BattleHelper {
             })
         );
 
-        uint256[] memory aliceMoves = new uint256[](5);
+        // Engine team storage holds MOVE_LANES_PER_MON (4) moves per mon, matching prod.
+        uint256[] memory aliceMoves = new uint256[](4);
         aliceMoves[0] = uint256(uint160(address(heatBeacon)));
         aliceMoves[1] = uint256(uint160(address(q5)));
         aliceMoves[2] = uint256(uint160(address(setAblaze)));
-        aliceMoves[3] = uint256(uint160(address(honeyBribe)));
-        aliceMoves[4] = uint256(uint160(address(koMove)));
+        aliceMoves[3] = uint256(uint160(address(koMove)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
@@ -178,12 +179,11 @@ contract EmbursaTest is Test, BattleHelper {
         });
 
         // 5. Create Bob's mon with higher speed
-        uint256[] memory bobMoves = new uint256[](5);
+        uint256[] memory bobMoves = new uint256[](4);
         bobMoves[0] = uint256(uint160(address(heatBeacon)));
         bobMoves[1] = uint256(uint160(address(q5)));
         bobMoves[2] = uint256(uint160(address(setAblaze)));
-        bobMoves[3] = uint256(uint160(address(honeyBribe)));
-        bobMoves[4] = uint256(uint160(address(koMove)));
+        bobMoves[3] = uint256(uint160(address(koMove)));
 
         Mon memory bobMon = Mon({
             stats: MonStats({
@@ -207,7 +207,7 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
         IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 5, TIMEOUT_DURATION: 10})
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
         );
 
         // Set Ablaze test
@@ -232,7 +232,7 @@ contract EmbursaTest is Test, BattleHelper {
         assertEq(address(effects[0].effect), address(dummyStatus), "Bob's mon should have Dummy status");
         assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
         mockOracle.setRNG(2);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 4, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, 0, 0);
         assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
         assertEq(
             engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
@@ -277,7 +277,7 @@ contract EmbursaTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 4, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 3, 0, 0);
         (effects, ) = engine.getEffects(battleKey, 2, 0);
         assertEq(address(effects[0].effect), address(q5), "Q5 should be applied to global effects");
         assertEq(
@@ -286,7 +286,8 @@ contract EmbursaTest is Test, BattleHelper {
             "Alice's mon should be KOed"
         );
 
-        // Honey Bribe test
+        // Honey Bribe test (NOTE when un-TODOing: teams hold 4 moves — swap honeyBribe into a
+        // lane (e.g. replace q5) and redeploy it here; it was dropped from the shared move array)
         // Start a new battle
         // Alice uses Heat Beacon, Bob does nothing
         // Alice uses Honey Bribe, Bob uses KO move

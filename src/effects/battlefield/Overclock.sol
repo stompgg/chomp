@@ -23,28 +23,41 @@ contract Overclock is BasicEffect {
         return 0x801D;
     }
 
-    function _effectKey(uint256 playerIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, name()))));
+    // ----- extraData layout -----
+    // The countdown lives in the effect's OWN extraData — which the engine already threads
+    // through every hook and persists for free via _updateOrRemoveEffect — instead of a globalKV
+    // entry (whose first write per battle costs a key-buffer append + a fresh nonzero word,
+    // ~13-48k, plus a getDuration/setDuration round-trip pair every active round).
+    //   bits 0-7  playerIndex (the side that summoned Overclock)
+    //   bits 8-15 remaining duration in rounds
+    // NOTE: MegaStarBlast._checkForOverclock reads this layout raw (masks the player byte) —
+    // the two contracts must ship together.
+    uint256 private constant DURATION_SHIFT = 8;
+
+    function _pack(uint256 playerIndex, uint256 duration) internal pure returns (bytes32) {
+        return bytes32(playerIndex | (duration << DURATION_SHIFT));
+    }
+
+    function _playerOf(bytes32 data) internal pure returns (uint256) {
+        return uint256(data) & 0xFF;
+    }
+
+    function _durationOf(bytes32 data) internal pure returns (uint256) {
+        return uint256(data) >> DURATION_SHIFT;
     }
 
     function applyOverclock(IEngine engine, bytes32 battleKey, uint256 playerIndex) public {
-        // Check if we have an active Overclock effect
-        uint256 duration = getDuration(engine, battleKey, playerIndex);
-        if (duration == 0) {
-            // If not, add the effect to the global effects array
-            engine.addEffect(2, playerIndex, IEffect(address(this)), bytes32(playerIndex));
-        } else {
-            // Otherwise, reset the duration
-            setDuration(engine, DEFAULT_DURATION, playerIndex);
+        // Two instances can coexist (one per player), so the already-active check scans for
+        // address AND player — the address-keyed getEffectData getter would be ambiguous here.
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 2, 2);
+        for (uint256 i; i < effects.length; i++) {
+            if (address(effects[i].effect) == address(this) && _playerOf(effects[i].data) == playerIndex) {
+                // Already active: reset the countdown in place.
+                engine.editEffect(2, indices[i], _pack(playerIndex, DEFAULT_DURATION));
+                return;
+            }
         }
-    }
-
-    function getDuration(IEngine engine, bytes32 battleKey, uint256 playerIndex) public view returns (uint256) {
-        return uint256(engine.getGlobalKV(battleKey, _effectKey(playerIndex)));
-    }
-
-    function setDuration(IEngine engine, uint256 newDuration, uint256 playerIndex) public {
-        engine.setGlobalKV(_effectKey(playerIndex), uint192(newDuration));
+        engine.addEffect(2, playerIndex, IEffect(address(this)), bytes32(playerIndex));
     }
 
     function _applyStatChange(IEngine engine, uint256 playerIndex, uint256 monIndex) internal {
@@ -80,34 +93,27 @@ contract Overclock is BasicEffect {
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint256 playerIndex = uint256(extraData);
 
-        // Set default duration
-        setDuration(engine, DEFAULT_DURATION, playerIndex);
-
         // Apply stat change to the team of the player who summoned Overclock
         uint256 activeMonIndex = playerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
         _applyStatChange(engine, playerIndex, activeMonIndex);
 
-        return (extraData, false);
+        // The returned extraData is what the engine stores: countdown starts here.
+        return (_pack(playerIndex, DEFAULT_DURATION), false);
     }
 
-    function onRoundEnd(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256,
-        uint256
-    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        uint256 playerIndex = uint256(extraData);
-        uint256 duration = getDuration(engine, battleKey, playerIndex);
-        if (duration == 1) {
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+        external
+        pure
+        override
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
+        // Tick the countdown in extraData — zero engine calls; the engine persists the returned
+        // value (or runs onRemove when we signal removal).
+        uint256 duration = _durationOf(extraData);
+        if (duration <= 1) {
             return (extraData, true);
-        } else {
-            setDuration(engine, duration - 1, playerIndex);
-            return (extraData, false);
         }
+        return (_pack(_playerOf(extraData), duration - 1), false);
     }
 
     function onMonSwitchIn(
@@ -120,7 +126,7 @@ contract Overclock is BasicEffect {
         uint256,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        uint256 playerIndex = uint256(extraData);
+        uint256 playerIndex = _playerOf(extraData);
         // Apply stat change to the mon on the team of the player who summoned Overclock
         if (targetIndex == playerIndex) {
             _applyStatChange(engine, targetIndex, monIndex);
@@ -146,11 +152,10 @@ contract Overclock is BasicEffect {
         uint256 p0ActiveMonIndex,
         uint256 p1ActiveMonIndex
     ) external override {
-        uint256 playerIndex = uint256(extraData);
+        uint256 playerIndex = _playerOf(extraData);
         uint256 activeMonIndex = playerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
-        // Reset stat changes from the mon on the team of the player who summoned Overclock
+        // Reset stat changes from the mon on the team of the player who summoned Overclock.
+        // (No KV cleanup — the countdown lives in this effect's extraData, which dies with it.)
         _removeStatChange(engine, playerIndex, activeMonIndex);
-        // Clear the duration when we clear the effect
-        setDuration(engine, 0, playerIndex);
     }
 }

@@ -278,3 +278,48 @@ Measurement protocol per repo conventions: prod-config benchmarks (inline regen 
 `validator == address(0)`, gacha hook attached — note current benchmarks omit the hook), one
 change per intermediate commit, `git add` confirmed wins, full snapshot diff for anything touching
 `Engine.sol` hot paths.
+
+
+---
+
+## 5. Implementation results (landed 2026-06-09, all staged, 528/528 tests green)
+
+Grading metric: `prodStorageGas` — the GasMeasure harness's conservative synthetic (deterministic
+access tally x EIP-2929/2200 prices, tx.to pre-warm, refunds ignored, cold surcharge once per slot)
+— plus measured scalars for compute-shaped changes. Foundry's raw in-test gas understates prod
+(one-tx warmth; `vm.cool` re-prices slots but not accounts), so tallies are the evidence.
+
+| Change | Measured | Source of the win |
+|---|---|---|
+| A2 fixed move lanes | −161k cold start; −17.6k warm; ~−930/turn | dynamic-array length slot gone (8 fresh 20k writes); hot-path length-check SLOAD + keccak gone. Hand-unrolled lane copies (via-IR emits +1 SLOAD per dynamic-index store into struct-nested fixed arrays — pinned by test) |
+| A1 flat catalog rows | −24 SLOADs/start = −50.4k prod; catalog seeding −390k | EnumerableSet lazy-length + position words -> 4 lanes + 1 ability slot (9 -> 6 cold reads/mon) |
+| A6 getTeams micro | ~−2k/start | playerData read once/side; facet-bucket cache; alias move arrays; single-hash battleKey; sentinel-skip |
+| A3 free list | −40k/recycled lifecycle (start +7k, end −47k gross) | pop leaves values in place; push is nz->nz/no-op instead of fresh 20k writes |
+| A5 drop validateMatch | −1.7k/start | callback + error deleted; isMatchmakerFor gate is the trust boundary |
+| A7 slot consolidation | −1k/warm start | slot-2 fields written once after the last external-call barrier; slot-3 grouped |
+| B2 hook steps union | −2,100/turn on every prod (hooked) battle | hooked == bare now (372,700 == 372,700 over 5 turns); +100/turn only on zero-hook test battles |
+| B3 builtin flag mirror | −2,100/stage tx (108,600 -> 102,300 per 3) | stage tx's only config access (cold sentinel SLOAD) replaced by a BattleData slot-0 bit |
+| B4 transient coalesce | −479/combined turn; −900/batched sub-turn (scalar) | 8 TLOADs+decodes -> 2; salts threaded into _emitMonMoves |
+| B6 guard reorder | −2.9–3.1k/status battle; 0 on effect-free turns | union-bit-first with one shared read in dealDamage (freshness re-read only when PreDamage ran) |
+| C3 loop-guard hoist | −38.2k/status battle (Fast_Battle1) | step filter before the eff.data SLOAD + call setup; boost sentinels stop taxing every pass |
+| C5 stat-boost streamline | −16–21k/status battle (scalar) | direct delta writes when no OnUpdateMonState listener; fresh sources accumulate without pack->unpack |
+| C2 Overclock extraData | analytic ~18–25k/lifecycle (suite-verified; benchmarks lack Overclock) | countdown rides effect extraData (engine persists it free); KV entry + 2 round-trips/round gone; MegaStarBlast masks the player byte (shipped together) |
+| C4 tombstone reuse | analytic ~2.9k vs 20k/re-add (benchmarks lack temp churn) | fresh boost sources overwrite the first tombstone; list stops growing |
+| C6 dispatchCustomAttack | analytic ~3.5–5k/custom attack (verifier-recomputed) | 10 custom mons' damage path in one engine frame REUSING the inline internals; the always-cold deployed TypeCalculator account drops out; 2 mon tests updated to the real type chart |
+| C7 effect round-trips | ~−400 storage/battle + call overhead | StatusEffect.onApply unconditional write (engine-only invariant documented); Tinderclaws pre-check + NightTerrors tempRNG() dropped |
+| D1 dead snapshot skip | cost-free on all benchmarked paths; ~2.4–4.5k/batched tx with flag sub-turns | snapshot gated on (emitMonMoves or flag >= 2); single flag read |
+| D2 executeGame decode | compute-only, ~600–800/turn decoded | bytes19 calldata-slice chunk load (pure Solidity — no assembly, no transpiler shim) replaces 19 per-byte reads |
+| D3 quest config | −2.1–2.3k/battle end; quest tests −3.5–22.6k | pool length + dayOffset packed in one slot, read lazily only when a human winner hits the quest gate |
+
+End-state benchmarks (prodStorageGas): warm-recycled startBattle 411,500 (Cold 1,418,100);
+built-in PvP 5-turn span 372,700 hooked or bare; stage tx ~34,100; 3-turn drain 154,800; full
+status-battle replays 1,015,800–1,454,200 (were ~1,494,400+ at harness introduction, post-A-tier).
+
+Bonus (dev-only): CPUMoveManager._buildCPUContext granular rebuild (~−130k/on-chain CPU turn) —
+landed as the fix for B3's BattleData ABI growth overflowing the old wide-decode's stack.
+
+Deviations from audit estimates worth knowing: A6 corrected from ~10.5k to ~2k (its removed reads
+were duplicates of still-touched slots — only the warm cost saves, the cold surcharge migrates);
+A3's warm-start +7k is the predicted distribution shift, not a regression; C2/C4/D1's wins are
+suite-verified but invisible to current benchmarks (no Overclock/temp-churn/flag-sub-turn
+scenarios scripted — candidates for a future benchmark extension).

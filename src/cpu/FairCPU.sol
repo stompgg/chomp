@@ -161,7 +161,11 @@ contract FairCPU is HeuristicCPUBase {
     {
         for (uint256 i; i < 4;) {
             try ENGINE.getMoveForMonForBattle(battleKey, 0, opponentMonIndex, uint8(i)) returns (uint256 slot) {
-                oppMetas[i] = MoveSlotLib.decodeMeta(slot, ENGINE, battleKey, 0, opponentMonIndex);
+                // Zero lane = the mon has no move at this index (fixed-lane team storage returns 0
+                // instead of reverting like the old dynamic array did) — keep the default-zero meta.
+                if (slot != 0) {
+                    oppMetas[i] = MoveSlotLib.decodeMeta(slot, ENGINE, battleKey, 0, opponentMonIndex);
+                }
             } catch {
                 // Leave default-zero meta — basePower == 0 means it contributes nothing to damage.
             }

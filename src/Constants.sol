@@ -35,6 +35,11 @@ int32 constant CLEARED_MON_STATE_SENTINEL = type(int32).max - 1;
 // 7 x 0x7FFFFFFE (int32.max - 1) + 2 x 0x00 (false)
 uint256 constant PACKED_CLEARED_MON_STATE = 0x00007FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE7FFFFFFE;
 
+// Fixed move-lane count for Engine-internal team storage (StoredMon.moves). A compile-time
+// constant by necessity (fixed-size array): raising it means an Engine redeploy. Matches
+// GAME_MOVES_PER_MON; readers treat a zero lane as "no move here".
+uint256 constant MOVE_LANES_PER_MON = 4;
+
 uint8 constant PLAYER_EFFECT_BITS = 6;
 uint8 constant MAX_EFFECTS_PER_MON = uint8(2 ** PLAYER_EFFECT_BITS) - 1; // 63
 uint256 constant EFFECT_SLOTS_PER_MON = 64; // Stride for per-mon effect storage (2^6)

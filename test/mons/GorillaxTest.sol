@@ -178,8 +178,11 @@ contract GorillaxTest is Test, BattleHelper {
 
         // Assert that Bob's mon index 0 took damage
         int32 bobMonHPDelta = -1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        // Custom attacks route through the engine's real type chart (TypeCalcLib) since the
+        // dispatchCustomAttack consolidation — this matchup resolves 0.5x (the injected mock
+        // used to return 1x here).
         assertApproxEqRel(
-            bobMonHPDelta, int32(rockPull.OPPONENT_BASE_POWER()), 2e17, "Damage dealt to opponent is within range"
+            bobMonHPDelta, int32(rockPull.OPPONENT_BASE_POWER()) / 2, 2e17, "Damage dealt to opponent is within range"
         );
 
         // Alice uses Rock Pull, Bob does not switch

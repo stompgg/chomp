@@ -323,8 +323,12 @@ contract GachaTeamRegistry is
     // facets from the per-(user, opponent) phantom slot the human caller configured via
     // setOpponentTeam; human sides use per-mon facetData.
     function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external view returns (Mon[] memory, Mon[] memory) {
-        _assertTeamLive(p0, p0TeamIndex);
-        _assertTeamLive(p1, p1TeamIndex);
+        // Read each side's CPU flag ONCE (playerData SLOAD) and thread it into both the liveness
+        // check and the facet-source selection below (was: two reads per side).
+        bool p0IsCpu = isWhitelistedOpponent(p0);
+        bool p1IsCpu = isWhitelistedOpponent(p1);
+        _assertTeamLive(p0, p0TeamIndex, p0IsCpu);
+        _assertTeamLive(p1, p1TeamIndex, p1IsCpu);
         Mon[] memory p0Team = new Mon[](MONS_PER_TEAM);
         Mon[] memory p1Team = new Mon[](MONS_PER_TEAM);
 
@@ -344,40 +348,73 @@ contract GachaTeamRegistry is
 
         (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
 
-        bool p0IsCpu = isWhitelistedOpponent(p0);
-        bool p1IsCpu = isWhitelistedOpponent(p1);
         uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
         uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
 
+        // Human-side facet buckets are cached across the loop: team mon ids usually share the
+        // 16-mon facetData bucket, so this collapses up to MONS_PER_TEAM reads into one per side.
+        FacetBucketCache memory p0Bucket;
+        FacetBucketCache memory p1Bucket;
+        p0Bucket.idx = type(uint256).max;
+        p1Bucket.idx = type(uint256).max;
+
         // Unpack into teams
         for (uint256 i; i < MONS_PER_TEAM;) {
-            uint256[] memory p0MovesToUse = new uint256[](MOVES_PER_MON);
-            uint256[] memory p1MovesToUse = new uint256[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON;) {
-                p0MovesToUse[j] = moves[i][j];
-                p1MovesToUse[j] = moves[i + MONS_PER_TEAM][j];
-                unchecked {
-                    ++j;
-                }
-            }
-
             uint8 p0FacetId = p0IsCpu
                 ? uint8((p0CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
-                : _facetIdForMon(p0, ids[i]);
+                : _facetIdForMonCached(p0, ids[i], p0Bucket);
             uint8 p1FacetId = p1IsCpu
                 ? uint8((p1CpuFacets >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK)
-                : _facetIdForMon(p1, ids[i + MONS_PER_TEAM]);
+                : _facetIdForMonCached(p1, ids[i + MONS_PER_TEAM], p1Bucket);
             _applyFacetToStats(stats[i], p0FacetId);
             _applyFacetToStats(stats[i + MONS_PER_TEAM], p1FacetId);
 
-            p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: p0MovesToUse});
-            p1Team[i] = Mon({stats: stats[i + MONS_PER_TEAM], ability: abilities[i + MONS_PER_TEAM][0], moves: p1MovesToUse});
+            p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: _movesArrayFor(moves[i])});
+            p1Team[i] = Mon({
+                stats: stats[i + MONS_PER_TEAM],
+                ability: abilities[i + MONS_PER_TEAM][0],
+                moves: _movesArrayFor(moves[i + MONS_PER_TEAM])
+            });
             unchecked {
                 ++i;
             }
         }
 
         return (p0Team, p1Team);
+    }
+
+    struct FacetBucketCache {
+        uint256 idx;
+        uint256 word;
+    }
+
+    /// @dev _facetIdForMon with a caller-held bucket cache (cache.idx == uint256.max = empty).
+    function _facetIdForMonCached(address player, uint256 monId, FacetBucketCache memory cache)
+        private
+        view
+        returns (uint8 facetId)
+    {
+        uint256 bucket = monId / MONS_PER_FACET_BUCKET;
+        if (bucket != cache.idx) {
+            cache.idx = bucket;
+            cache.word = facetData[player][bucket];
+        }
+        (, facetId) = _readFacetSlotForMon(cache.word, monId % MONS_PER_FACET_BUCKET);
+    }
+
+    /// @dev Alias the catalog move array when it already has exactly MOVES_PER_MON entries — the
+    ///      invariant for every real catalog mon — skipping a fresh allocation + element copy per
+    ///      mon. Mismatched lengths fall back to copy-with-truncation; short rows zero-fill, which
+    ///      the Engine's fixed-lane team storage treats as "no move here".
+    function _movesArrayFor(uint256[] memory catalogMoves) private view returns (uint256[] memory out) {
+        if (catalogMoves.length == MOVES_PER_MON) {
+            return catalogMoves;
+        }
+        out = new uint256[](MOVES_PER_MON);
+        uint256 n = catalogMoves.length < MOVES_PER_MON ? catalogMoves.length : MOVES_PER_MON;
+        for (uint256 j; j < n; ++j) {
+            out[j] = catalogMoves[j];
+        }
     }
 
     function _applyFacetToStats(MonStats memory stats, uint8 facetId) private pure {
@@ -528,7 +565,11 @@ contract GachaTeamRegistry is
         if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
 
         uint32 currentTime = uint32(block.timestamp);
-        uint32 currentDay = _currentDay();
+        // Quest day + pool length load lazily (one packed slot) only when a human WINNER reaches
+        // the quest gate — losses to CPUs and draws never pay the read.
+        uint32 currentDay;
+        uint256 questLen;
+        bool questCfgLoaded;
 
         uint256 packed0 = playerData[ctx.p0];
         uint256 packed1 = playerData[ctx.p1];
@@ -596,16 +637,20 @@ contract GachaTeamRegistry is
             }
             lastSeenTs = currentTime; // every counted battle marks activity for the grace window
 
-            if (
-                ctx.winner == player
-                && lastQuestCompletedDay != currentDay
-                && questPool.length > 0
-                && _evalActiveQuest(ctx, playerIndex, battleKey)
-            ) {
-                gachaMult *= QUEST_REWARD_MULT;
-                expMult *= QUEST_REWARD_MULT;
-                lastQuestCompletedDay = currentDay;
-                bonusFlags |= BONUS_QUEST;
+            if (ctx.winner == player) {
+                if (!questCfgLoaded) {
+                    (currentDay, questLen) = _questDayAndPoolLen();
+                    questCfgLoaded = true;
+                }
+                if (
+                    lastQuestCompletedDay != currentDay && questLen > 0
+                        && _evalActiveQuest(ctx, playerIndex, battleKey, currentDay, questLen)
+                ) {
+                    gachaMult *= QUEST_REWARD_MULT;
+                    expMult *= QUEST_REWARD_MULT;
+                    lastQuestCompletedDay = currentDay;
+                    bonusFlags |= BONUS_QUEST;
+                }
             }
 
             uint256 pointsThisBattle = (basePts + streakFlat) * gachaMult;

@@ -150,6 +150,15 @@ abstract contract PackedTeamStore is ITeamRegistry {
         }
     }
 
+    /// @dev Variant for callers that already resolved the CPU-opponent flag (saves the
+    ///      _packedTeamIsCpuOpponent playerData re-read when checking both sides in one call).
+    function _assertTeamLive(address player, uint256 teamIndex, bool isCpuOpponent) internal view {
+        if (isCpuOpponent) return;
+        if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
+            revert InvalidTeamIndex();
+        }
+    }
+
     /// @dev Count trailing zeros of a nonzero value (caller-bounded to LIVE_BITMAP_MASK).
     function _ctz(uint256 x) internal pure returns (uint256 n) {
         unchecked {

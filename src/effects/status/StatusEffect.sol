@@ -28,19 +28,20 @@ abstract contract StatusEffect is BasicEffect {
         }
     }
 
-    function onApply(IEngine engine, bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    /// @dev ENGINE-ONLY INVARIANT: the engine calls onApply immediately after a passing
+    ///      shouldApply with nothing in between (_addEffectInternal), so the per-mon status flag
+    ///      is guaranteed clear (or already ours, for statuses whose shouldApply allows that)
+    ///      whenever this runs — the old guard re-read of the same key was a pure ~700-gas
+    ///      round-trip. No non-engine caller exists (and a direct caller could already write the
+    ///      flag via setGlobalKV, so this is not a trust boundary).
+    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         public
         virtual
         override
         returns (bytes32 extraData, bool removeAfterRun)
     {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-
-        uint192 monValue = engine.getGlobalKV(battleKey, keyForMon);
-        if (monValue == 0) {
-            // Set the global status flag to be the address of the status
-            engine.setGlobalKV(keyForMon, uint192(uint160(address(this))));
-        }
+        // Set the global status flag to be the address of the status (unconditional — see above)
+        engine.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), uint192(uint160(address(this))));
         return (extraData, removeAfterRun);
     }
 

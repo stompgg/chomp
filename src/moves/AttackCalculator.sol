@@ -35,10 +35,15 @@ library AttackCalculator {
         return effectRng % 100 < effectAccuracy;
     }
 
+    /// @dev Delegates to the engine's one-call custom-attack path (context + TypeCalcLib + core
+    ///      + damage application in a single frame). The TYPE_CALCULATOR / battleKey params are
+    ///      kept so the ~10 mon call sites compile unchanged; type effectiveness now comes from
+    ///      the engine-side TypeCalcLib — identical in production, where the deployed
+    ///      TypeCalculator is a passthrough over the same lib (and almost always cold, ~2.6k+).
     function _calculateDamage(
         IEngine ENGINE,
-        ITypeCalculator TYPE_CALCULATOR,
-        bytes32 battleKey,
+        ITypeCalculator, /* TYPE_CALCULATOR — unused, see above */
+        bytes32, /* battleKey — unused, the engine resolves its own transient context */
         uint256 attackerPlayerIndex,
         uint32 basePower,
         uint32 accuracy, // out of 100
@@ -48,24 +53,9 @@ library AttackCalculator {
         uint256 rng,
         uint256 critRate // out of 100
     ) internal returns (int32, bytes32) {
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        // Use batch getter to reduce external calls (7 -> 1)
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerPlayerIndex, defenderPlayerIndex);
-        (int32 damage, bytes32 eventType) = _calculateDamageFromContext(
-            TYPE_CALCULATOR,
-            ctx,
-            basePower,
-            accuracy,
-            volatility,
-            attackType,
-            attackSupertype,
-            rng,
-            critRate
+        return ENGINE.dispatchCustomAttack(
+            attackerPlayerIndex, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
         );
-        if (damage != 0) {
-            ENGINE.dealDamage(defenderPlayerIndex, ctx.defenderMonIndex, damage);
-        }
-        return (damage, eventType);
     }
 
     function _calculateDamageView(
