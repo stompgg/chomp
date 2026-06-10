@@ -790,7 +790,10 @@ class YulTranspiler:
         """Generate: if (cond) { body }"""
         cond = self._generate_expression(stmt.condition, slot_vars)
         body = self._generate_block_contents(stmt.body, slot_vars, indent + 1) if stmt.body else ''
-        lines = [f'{prefix}if ({cond}) {{']
+        # Yul `if` runs the body when the condition is NONZERO. Make the comparison explicit
+        # instead of relying on bigint truthiness — semantically identical, and it avoids
+        # tsc's TS2872 (always-truthy) diagnostic on translated boolean-ternary conditions.
+        lines = [f'{prefix}if (BigInt({cond}) !== 0n) {{']
         if body and body != '// Assembly: no-op':
             lines.append(body)
         lines.append(f'{prefix}}}')

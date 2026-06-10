@@ -1536,6 +1536,86 @@ class TestInitScan(unittest.TestCase):
         self.assertEqual(len(deps), 0, f'expected auto-resolution, got {deps}')
 
 
+
+
+class TestGasOptRegressions(unittest.TestCase):
+    """Regressions for transpiler fixes shipped with the June 2026 engine gas-optimization pass."""
+
+    def _generate(self, source: str) -> str:
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+        generator = TypeScriptCodeGenerator()
+        return generator.generate(ast)
+
+    def test_assembly_assign_token_rejoined(self):
+        """':=' must survive assembly re-serialization as one token.
+
+        The Solidity lexer emits ':' '=' separately; the parser must re-join them or the
+        YulTokenizer (which only recognizes contiguous ':=') silently drops let-binding values
+        and assignment RHSes — e.g. `let v := sload(slot)` degraded to a valueless `let v` plus
+        a bare untranslated `sload(slot)` call in the generated TS.
+        """
+        source = """
+        contract T {
+            function f() public pure returns (uint256 r) {
+                assembly {
+                    let v := 5
+                    if iszero(v) { v := 6 }
+                    r := v
+                }
+            }
+        }
+        """
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+        asm = ast.contracts[0].functions[0].body.statements[0]
+        self.assertIn(':=', asm.block.code)
+        self.assertNotIn(': =', asm.block.code)
+
+    def test_constant_sized_fixed_array_default_zero_fills(self):
+        """uint256[CONST] struct fields must zero-fill like Solidity, not default to []."""
+        source = """
+        uint256 constant LANES = 3;
+
+        struct Row {
+            uint256[LANES] vals;
+        }
+
+        contract T {
+            mapping(uint256 => Row) internal rows;
+        }
+        """
+        # Mirror sol2ts's real wiring: the constant's literal value is recorded during the
+        # registry discovery pass and resolved by the generator from there.
+        ast = Parser(Lexer(source).tokenize()).parse()
+        registry = TypeRegistry()
+        registry.discover_from_ast(ast, 'Test.sol')
+        output = TypeScriptCodeGenerator(registry).generate(ast)
+        self.assertIn('new Array(3).fill(0n)', output)
+
+    def test_overload_merge_handles_self_delegating_shorter_overload(self):
+        """A shorter overload whose body just delegates to the longer one must contribute the
+        delegated expression as the merged optional parameter's default (not undefined)."""
+        source = """
+        contract T {
+            function f(uint256 a) internal {
+                f(a, a + 1);
+            }
+
+            function f(uint256 a, uint256 b) internal {
+                a = b;
+            }
+        }
+        """
+        output = self._generate(source)
+        self.assertIn('if (b === undefined)', output)
+        self.assertIn('b = ', output)
+
+
 if __name__ == '__main__':
     # Run tests with verbosity
     unittest.main(verbosity=2)

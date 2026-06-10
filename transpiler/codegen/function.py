@@ -23,6 +23,7 @@ from ..parser.ast_nodes import (
     IfStatement,
     Block,
     VariableDeclarationStatement,
+    ExpressionStatement,
 )
 
 
@@ -330,6 +331,26 @@ class FunctionGenerator(BaseGenerator):
                                         lines.append(f'{self.indent()}  {extra_name} = {init_expr};')
                                         lines.append(f'{self.indent()}}}')
                                         break
+                            else:
+                                # Self-delegating shorter overload (e.g. `_f(a) { _f(a, g(a)); }`):
+                                # the extra argument's expression in the delegated call IS the
+                                # default for the merged optional parameter. Without this, the
+                                # merged method would silently use `undefined`.
+                                call = None
+                                if isinstance(stmt, ExpressionStatement):
+                                    call = stmt.expression
+                                elif isinstance(stmt, ReturnStatement):
+                                    call = stmt.expression
+                                from ..parser.ast_nodes import FunctionCall, Identifier
+                                if (isinstance(call, FunctionCall)
+                                        and isinstance(call.function, Identifier)
+                                        and call.function.name == main_func.name
+                                        and len(call.arguments) > i):
+                                    init_expr = self._expr.generate(call.arguments[i])
+                                    lines.append(f'{self.indent()}if ({extra_name} === undefined) {{')
+                                    lines.append(f'{self.indent()}  {extra_name} = {init_expr};')
+                                    lines.append(f'{self.indent()}}}')
+                                    break
 
             for stmt in main_func.body.statements:
                 lines.append(self._stmt.generate(stmt))

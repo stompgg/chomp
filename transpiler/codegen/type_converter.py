@@ -163,8 +163,18 @@ class TypeConverter(BaseGenerator):
         if (solidity_type_name and getattr(solidity_type_name, 'is_array', False)
                 and getattr(solidity_type_name, 'array_size', None)):
             size_expr = solidity_type_name.array_size
+            size = None
             if isinstance(size_expr, Literal) and size_expr.kind == 'number':
                 size = int(size_expr.value)
+            elif (self._registry is not None
+                    and size_expr.__class__.__name__ == 'Identifier'
+                    and getattr(size_expr, 'name', None) in getattr(self._registry, 'constant_values', {})):
+                # Constant-sized fixed array (e.g. uint256[MOVE_LANES_PER_MON]): resolve the
+                # size from the recorded literal so the factory zero-fills like Solidity does
+                # (falling through to the dynamic-array '[]' default would leave undefined
+                # lanes where the chain has zeros).
+                size = self._registry.constant_values[size_expr.name]
+            if size is not None:
                 element_ts_type = ts_type.rstrip('[]')
                 # Build a TypeName for the element type (strip array info)
                 element_sol_type = TypeName(name=sol_name, is_mapping=False) if sol_name else None

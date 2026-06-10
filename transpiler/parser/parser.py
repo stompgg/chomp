@@ -1017,6 +1017,15 @@ class Parser:
                 depth -= 1
                 if depth > 0:
                     code += ' } '
+            elif (self.current().type == TokenType.COLON
+                    and self.peek(1).type == TokenType.EQ):
+                # The Solidity lexer has no ':=' token, so Yul assignments arrive as ':' '='.
+                # Re-join them: a spaced ': =' mis-tokenizes downstream (YulTokenizer only
+                # recognizes contiguous ':='), silently corrupting let-bindings/assignments —
+                # e.g. `let v := sload(slot)` degraded to a valueless `let v` plus a bare
+                # `sload(slot)` call. Inside assembly, ':' followed by '=' can only be ':='.
+                code += ' :='
+                self.advance()  # consume ':'; the trailing advance() below consumes '='
             else:
                 code += ' ' + self.current().value
             self.advance()

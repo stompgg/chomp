@@ -26,6 +26,11 @@ class TypeRegistry:
         self.structs: Set[str] = set()
         self.enums: Set[str] = set()
         self.constants: Set[str] = set()
+        # Literal numeric values of constants (e.g. MOVE_LANES_PER_MON -> 4), so codegen can
+        # resolve constant-sized fixed arrays at transpile time (avoids a Structs<->Constants
+        # import cycle that a symbolic reference would create).
+        self.constant_values: dict = {}
+
         self.interfaces: Set[str] = set()
         self.contracts: Set[str] = set()
         self.libraries: Set[str] = set()
@@ -41,6 +46,16 @@ class TypeRegistry:
         self.struct_fields: Dict[str, Dict[str, str]] = {}
         # Interface method signatures: {interface_name: [{name, params: [(name, type)], returns: [type]}]}
         self.interface_methods: Dict[str, List[dict]] = {}
+
+
+    def _record_constant_value(self, const) -> None:
+        """Record a constant's literal numeric value when statically resolvable."""
+        init = getattr(const, 'initial_value', None)
+        if init is not None and init.__class__.__name__ == 'Literal' and getattr(init, 'kind', '') == 'number':
+            try:
+                self.constant_values[const.name] = int(str(init.value), 0)
+            except ValueError:
+                pass
 
     def discover_from_source(self, source: str, rel_path: Optional[str] = None) -> None:
         """Discover types from a single Solidity source string."""
@@ -91,6 +106,7 @@ class TypeRegistry:
         for const in ast.constants:
             if const.mutability == 'constant':
                 self.constants.add(const.name)
+                self._record_constant_value(const)
 
         # Contracts, interfaces, libraries
         for contract in ast.contracts:
@@ -170,6 +186,7 @@ class TypeRegistry:
                 state_vars.add(var.name)
                 if var.mutability == 'constant':
                     self.constants.add(var.name)
+                    self._record_constant_value(var)
                 if var.visibility == 'public' and var.mutability not in ('constant', 'immutable'):
                     self.known_public_state_vars.add(var.name)
                     # Track public mappings specifically for getter method generation
