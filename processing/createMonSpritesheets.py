@@ -41,6 +41,13 @@ def compute_content_top(frames: list[Image.Image]) -> int:
     return min(tops) if tops else 0
 
 
+def compute_content_bottom(frames: list[Image.Image]) -> int:
+    """Bottommost non-transparent source row (exclusive), max across frames (lowest
+    the art ever reaches), so a sprite grounded to it bobs up, never below."""
+    bottoms = [bbox[3] for f in frames if (bbox := f.getchannel('A').getbbox())]
+    return max(bottoms) if bottoms else FRAME_SIZE
+
+
 def to_white_silhouette(frame: Image.Image) -> Image.Image:
     """Convert frame to white pixels preserving transparency."""
     result = Image.new('RGBA', frame.size, (0, 0, 0, 0))
@@ -278,7 +285,7 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         # Main animation frames
         frame_start = len(all_frames)
         all_frames.extend(frames)
-        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames), "contentTop": compute_content_top(frames)}
+        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames), "contentTop": compute_content_top(frames), "contentBottom": compute_content_bottom(frames)}
 
         # Damage frames immediately follow the idle frames for this mon
         if name in damage_by_parent:

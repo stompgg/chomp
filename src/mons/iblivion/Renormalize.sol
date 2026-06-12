@@ -13,13 +13,6 @@ import {Baselight} from "./Baselight.sol";
 import {Loop} from "./Loop.sol";
 import {MoveMeta} from "../../Structs.sol";
 
-/**
- * Renormalize Move for Iblivion
- * - Stamina: 0, Type: Yin, Class: Self, Priority: -1 (below normal)
- * - Sets Baselight level to 3
- * - Clears all StatBoost instances (resets all stat boosts including Loop's effect)
- * - Clears Loop active flag so Loop can be used again
- */
 contract Renormalize is IMoveSet {
     Baselight immutable BASELIGHT;
     Loop immutable LOOP;

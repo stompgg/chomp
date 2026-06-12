@@ -2,6 +2,7 @@
   "aurox_back.gif": {
     "msPerFrame": 200,
     "contentTop": 44,
+    "contentBottom": 96,
     "frames": [[0, 0], [96, 0]],
     "switchOut": {
       "msPerFrame": 100,
@@ -15,6 +16,7 @@
   "aurox_front.gif": {
     "msPerFrame": 100,
     "contentTop": 17,
+    "contentBottom": 80,
     "frames": [[192, 0], [288, 0], [384, 0], [480, 0]],
     "switchOut": {
       "msPerFrame": 100,
@@ -32,6 +34,7 @@
   "ekineki_back.gif": {
     "msPerFrame": 100,
     "contentTop": 16,
+    "contentBottom": 96,
     "frames": [[960, 0], [1056, 0], [0, 96], [96, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -45,6 +48,7 @@
   "ekineki_front.gif": {
     "msPerFrame": 100,
     "contentTop": 15,
+    "contentBottom": 79,
     "frames": [[192, 96], [288, 96], [384, 96], [480, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -62,6 +66,7 @@
   "embursa_back.gif": {
     "msPerFrame": 200,
     "contentTop": 1,
+    "contentBottom": 96,
     "frames": [[960, 96], [1056, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -75,6 +80,7 @@
   "embursa_front.gif": {
     "msPerFrame": 200,
     "contentTop": 1,
+    "contentBottom": 95,
     "frames": [[0, 192], [96, 192], [192, 192], [288, 192]],
     "switchOut": {
       "msPerFrame": 100,
@@ -92,6 +98,7 @@
   "ghouliath_back.gif": {
     "msPerFrame": 200,
     "contentTop": 2,
+    "contentBottom": 96,
     "frames": [[768, 192], [864, 192]],
     "switchOut": {
       "msPerFrame": 100,
@@ -105,6 +112,7 @@
   "ghouliath_front.gif": {
     "msPerFrame": 100,
     "contentTop": 17,
+    "contentBottom": 78,
     "frames": [[960, 192], [1056, 192], [0, 288], [96, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -122,6 +130,7 @@
   "gorillax_back.gif": {
     "msPerFrame": 200,
     "contentTop": 7,
+    "contentBottom": 96,
     "frames": [[576, 288], [672, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -135,6 +144,7 @@
   "gorillax_front.gif": {
     "msPerFrame": 100,
     "contentTop": 7,
+    "contentBottom": 89,
     "frames": [[768, 288], [864, 288], [960, 288], [1056, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -152,6 +162,7 @@
   "iblivion_back.gif": {
     "msPerFrame": 200,
     "contentTop": 13,
+    "contentBottom": 96,
     "frames": [[384, 384], [480, 384]],
     "switchOut": {
       "msPerFrame": 100,
@@ -165,6 +176,7 @@
   "iblivion_front.gif": {
     "msPerFrame": 100,
     "contentTop": 18,
+    "contentBottom": 81,
     "frames": [[576, 384], [672, 384], [768, 384], [864, 384]],
     "switchOut": {
       "msPerFrame": 100,
@@ -182,6 +194,7 @@
   "inutia_back.gif": {
     "msPerFrame": 200,
     "contentTop": 19,
+    "contentBottom": 96,
     "frames": [[192, 480], [288, 480]],
     "switchOut": {
       "msPerFrame": 100,
@@ -195,6 +208,7 @@
   "inutia_front.gif": {
     "msPerFrame": 100,
     "contentTop": 20,
+    "contentBottom": 76,
     "frames": [[384, 480], [480, 480], [576, 480], [672, 480]],
     "switchOut": {
       "msPerFrame": 100,
@@ -212,6 +226,7 @@
   "malalien_back.gif": {
     "msPerFrame": 200,
     "contentTop": 9,
+    "contentBottom": 96,
     "frames": [[0, 576], [96, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -225,6 +240,7 @@
   "malalien_front.gif": {
     "msPerFrame": 100,
     "contentTop": 16,
+    "contentBottom": 80,
     "frames": [[192, 576], [288, 576], [384, 576], [480, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -242,6 +258,7 @@
   "nirvamma_back.gif": {
     "msPerFrame": 100,
     "contentTop": 1,
+    "contentBottom": 96,
     "frames": [[960, 576], [1056, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -255,6 +272,7 @@
   "nirvamma_front.gif": {
     "msPerFrame": 100,
     "contentTop": 1,
+    "contentBottom": 93,
     "frames": [[0, 672], [96, 672], [192, 672], [288, 672], [384, 672], [480, 672], [576, 672], [672, 672]],
     "switchOut": {
       "msPerFrame": 100,
@@ -272,6 +290,7 @@
   "pengym_back.gif": {
     "msPerFrame": 200,
     "contentTop": 14,
+    "contentBottom": 96,
     "frames": [[0, 768], [96, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -285,6 +304,7 @@
   "pengym_front.gif": {
     "msPerFrame": 100,
     "contentTop": 21,
+    "contentBottom": 88,
     "frames": [[192, 768], [288, 768], [384, 768], [480, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -302,6 +322,7 @@
   "sofabbi_back.gif": {
     "msPerFrame": 200,
     "contentTop": 25,
+    "contentBottom": 96,
     "frames": [[960, 768], [1056, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -315,6 +336,7 @@
   "sofabbi_front.gif": {
     "msPerFrame": 200,
     "contentTop": 20,
+    "contentBottom": 80,
     "frames": [[0, 864], [96, 864], [192, 864], [288, 864]],
     "switchOut": {
       "msPerFrame": 100,
@@ -332,6 +354,7 @@
   "volthare_back.gif": {
     "msPerFrame": 200,
     "contentTop": 0,
+    "contentBottom": 96,
     "frames": [[768, 864], [864, 864]],
     "switchOut": {
       "msPerFrame": 100,
@@ -345,6 +368,7 @@
   "volthare_front.gif": {
     "msPerFrame": 100,
     "contentTop": 10,
+    "contentBottom": 85,
     "frames": [[960, 864], [1056, 864], [0, 960], [96, 960]],
     "switchOut": {
       "msPerFrame": 100,
@@ -362,6 +386,7 @@
   "xmon_back.gif": {
     "msPerFrame": 200,
     "contentTop": 11,
+    "contentBottom": 96,
     "frames": [[576, 960], [672, 960]],
     "switchOut": {
       "msPerFrame": 100,
@@ -375,6 +400,7 @@
   "xmon_front.gif": {
     "msPerFrame": 100,
     "contentTop": 16,
+    "contentBottom": 85,
     "frames": [[768, 960], [864, 960], [960, 960], [1056, 960]],
     "switchOut": {
       "msPerFrame": 100,

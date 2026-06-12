@@ -49,9 +49,11 @@ def build_sprite_config(
         "frameDurationMs": source.get("msPerFrame", 100),
         "loop": loop,
     }
-    # Only front/back idle entries carry contentTop; scopes the field to those.
+    # Only front/back idle entries carry contentTop/contentBottom; scopes the fields to those.
     if source.get("contentTop") is not None:
         config["contentTop"] = source["contentTop"]
+    if source.get("contentBottom") is not None:
+        config["contentBottom"] = source["contentBottom"]
     return config
 
 

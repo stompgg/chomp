@@ -1,9 +1,9 @@
 Name,Mon,Power,Stamina,Accuracy,Priority,Type,Class,DevDescription,UserDescription,InputType
-Eternal Grudge,Ghouliath,0,2,100,1,Yin,Self,"KO’s self, inflicts Grudge on the opponent. Halves ATK and SpATK.",,none
-Infernal Flame,Ghouliath,120,2,85,0,Fire,Special,"Deals damage, 30% chance of inflicting Burn. Burn can stack up to 3 times (1st, 2nd, 3rd degree). Each stack of burn increases damage over time, from 1/16 to 1/8 to 1/4.",,none
-Wither Away,Ghouliath,60,3,100,0,Yin,Special,Deals damage and then inflicts Panic on both parties. Panic drains 1 stamina at end of turn for a max of 3 turns.,,none
+Eternal Grudge,Ghouliath,0,2,100,1,Yin,Self,"KO’s self. In return, halves the opponent's ATK and SpATK.",,none
+Infernal Flame,Ghouliath,120,2,85,0,Fire,Special,"Deals damage, 30% chance of inflicting Burn.",,none
+Wither Away,Ghouliath,60,3,100,0,Yin,Special,"Deals damage, and then inflicts Panic on both players.",,none
 Osteoporosis,Ghouliath,90,2,100,0,Yin,Physical,Deals damage.,,none
-Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opposing Mon is attempting to switch out, deals heavy damage. Otherwise, deals damage to Gorillax.",,none
+Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opponent is attempting to switch out, deals heavy damage. Otherwise, deals damage to self.",,none
 Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,none
 Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,none
 Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,none
@@ -11,7 +11,7 @@ Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to 
 Loop,Iblivion,0,1,100,0,Yang,Self,"Sets all stats to +15/30/40% based on Baselight level. Does not stack".,,none
 Brightback,Iblivion,70,2,100,0,Yang,Physical,"Deals damage. Consume 1 Baselight stack to heal for 50% of damage dealt.",,none
 Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none
-Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up long-lasting battlefield effect. Triggers on switch ins. Damages opponent and heals self for 1/8 of max HP. Has 4 charges.,,none
+Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up battlefield effect. Triggers on switch ins. Damages opponent and heals self for 16.6% of max HP. Has 4 charges.,,none
 Initialize,Inutia,0,2,100,0,Mythic,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none
 Big Bite,Inutia,80,2,100,0,Wild,Physical,Deals damage.,,none
 Hit And Dip,Inutia,60,2,100,0,Mythic,Special,"Deals damage, then swaps out.",,self-mon
@@ -19,27 +19,27 @@ Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none
 Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, 10% chance to cause Panic.",,none
 Infinite Love,Malalien,90,3,100,0,Cosmic,Special,"Deals damage, 10% chance to cause Sleep.",,none
-Chill Out,Pengym,0,0,100,0,Ice,Other,"Inflicts Frostbite. Frostbite deals 1/16 damage every turn, and also halves SpATK.",,none
+Chill Out,Pengym,0,0,100,0,Ice,Other,"Inflicts Frostbite on the opponent.",,none
 Deadlift,Pengym,0,2,100,0,Metal,Self,Increases ATK and DEF by 50%.,,none
 Deep Freeze,Pengym,90,3,100,0,Ice,Physical,"If the target has Frostbite, consumes Frostbite and does double damage.",,none
 Pistol Squat,Pengym,80,2,100,-1,Metal,Physical,"Deals damage, forces enemy mon to switch.",,none
 Gachachacha,Sofabbi,?,3,100,0,Cyber,Physical,"Uniformly random power from 0 to 200. 5% chance to auto-KO self, 5% chance to auto-KO opponent.",,none
 Guest Feature,Sofabbi,75,3,100,0,Cyber,Physical,Attack Type is set to be the first Type of another selected party member.,,self-mon
 Unexpected Carrot,Sofabbi,120,4,100,0,Nature,Physical,Deals damage.,,none
-Snack Break,Sofabbi,0,1,100,0,Nature,Self,"Heal for 1/2 of health. Effectiveness reduces by half each time, until a min of 1/16.",,none
+Snack Break,Sofabbi,0,1,100,0,Nature,Self,"Heal for 50% of health. Effectiveness reduces by half each time, until a min of 6.6%.",,none
 Electrocute,Volthare,90,2,100,0,Lightning,Special,"Deals damage, 10% chance to cause Zap. A Zapped mon skips its next turn.",,none
 Round Trip,Volthare,30,1,100,0,Lightning,Special,"Deals damage, then switches out.",,self-mon
-Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"+2 priority. If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, 30% chance to cause Zap.",,none
-Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Also Overclocks your team,,none
-Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals both self and opponent by 1/2 of max HP. (Each subsequent use cuts HP healed in half). Lowers opponent SpDEF by 50%.,,none
+Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, 30% chance to inflict Zap.",,none
+Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Overclocks your team,,none
+Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals both self and opponent by 50% of max HP. (Each subsequent use cuts HP healed in half). Lowers opponent SpDEF by 50%.,,none
 Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, 30% chance of Burn.",,none
-Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflict Burn on the opposing mon.,,none
+Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none
 Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns and Burns the enemy.,,none
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none
 Gilded Recovery,Aurox,0,2,100,0,Mythic,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,self-mon
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated for the first time each switch-in, Aurox gains 25% of max HP",,none
-Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to Aurox.,,none
-Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,"Inflicts Sleep on self and opponent. When asleep, you are forced to rest.",,none
+Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to self.,,none
+Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,"Inflicts Sleep on self and opponent.",,none
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, 50% chance to steal 1 stamina from opponent.",,none
 Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For the next 8 turns, any mon that rests will take 1/8th of max HP as damage.",,none
 Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,none
@@ -47,7 +47,7 @@ Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base 
 Sneak Attack,Ekineki,60,2,100,0,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,opponent-mon
 Nine Nine Nine,Ekineki,0,1,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,none
 Overflow,Ekineki,90,3,100,0,Math,Special,Deals damage.,,none
-Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the resting mon gains +1 stamina, heals 1/16 max HP, and is swapped out. The next time your opponent rests, their mon loses 1 stamina, takes 1/16 max HP damage, and also swaps out.",,none
-Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,Deals damage with a 20% chance to inflict Panic.,,none
-Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"Deals damage equal to how much time has passed since the move was last used.",,none
-Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at 20% chance.",,mode-select
+Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the resting mon gains +1 stamina, heals 6.6% max HP, and is swapped out. The next time your opponent rests, their mon loses 1 stamina, takes 1/16 max HP damage, and also swaps out.",,none
+Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,Deals damage, 20% chance to inflict Panic.,,none
+Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"First use boosts defenses. Second use deals damage based on how much time has passed, and then resets.",,none
+Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at 33% chance.",,mode-select
