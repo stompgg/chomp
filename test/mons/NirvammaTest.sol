@@ -135,34 +135,65 @@ contract NirvammaTest is Test, BattleHelper {
         );
     }
 
+    // Each case drives Nirvamma to a chosen stamina deficit before it rests, then pins the exact
+    // stamina/HP the own-team trigger leaves behind. Explicit expected values (not a mirror of the
+    // contract formula) so a future change to the heal curve fails this test.
+    struct OwnTriggerCase {
+        uint256 pingsBeforeRest; // Alice pings cast between the HardReset cast and the resting NO_OP
+        int32 expectedStaminaAfter; // Nirvamma staminaDelta after the own trigger fires
+        int32 expectedHpAfter; // Nirvamma hpDelta after the own trigger fires
+    }
+
     function test_hardReset_ownTeamTrigger() public {
-        (bytes32 battleKey, HardReset hardReset,) = _setupHardReset();
+        // HardReset's own-team trigger restores +2 stamina when the resting mon is down >= 2 (capped
+        // at +2 -- it never overheals stamina), heals 12.5% max HP (HP_DENOM = 8; capped so the HP
+        // delta never exceeds 0), and force-swaps the mon out. Nirvamma maxHp = 160 -> 12.5% = 20 HP;
+        // each Bob ping deals 10 damage. Nirvamma (speed 2) is priority, so its NO_OP fires the
+        // trigger and swaps out before Bob's same-turn ping lands -- that ping hits the filler.
+        OwnTriggerCase[2] memory cases = [
+            // No extra pings: HardReset cost only -> stamina -2; one Bob hit -> hp -10.
+            // Trigger: +2 stamina -> 0; +20 HP capped to +10 (heals up to 0) -> hp 0.
+            OwnTriggerCase({pingsBeforeRest: 0, expectedStaminaAfter: 0, expectedHpAfter: 0}),
+            // Two extra pings: stamina -4; three Bob hits -> hp -30.
+            // Trigger: +2 stamina (capped, not +4) -> -2; +20 HP (uncapped, -30 + 20) -> hp -10.
+            OwnTriggerCase({pingsBeforeRest: 2, expectedStaminaAfter: -2, expectedHpAfter: -10})
+        ];
 
-        // Turn 1: Alice casts HardReset (-2 stam). Bob attacks (Alice's Nirvamma takes damage).
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
-        assertTrue(_hasEffect(battleKey, 2, 0, address(hardReset)), "HardReset should be in global effects");
-        int32 stamBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
-        int32 hpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertLt(stamBefore, 0, "Nirvamma stamina should be negative after HardReset cost");
-        assertLt(hpBefore, 0, "Nirvamma should have taken damage");
+        for (uint256 c = 0; c < cases.length; c++) {
+            OwnTriggerCase memory tc = cases[c];
+            (bytes32 battleKey, HardReset hardReset,) = _setupHardReset();
 
-        // Turn 2: Alice rests. Bob attacks. Alice's NO_OP fires own trigger.
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+            // Turn 1: Alice casts HardReset (-2 stam). Bob attacks (Alice's Nirvamma takes damage).
+            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
+            assertTrue(_hasEffect(battleKey, 2, 0, address(hardReset)), "HardReset should be in global effects");
 
-        // Alice's old Nirvamma (now inactive) should have +1 stamina and +10 hp from own trigger.
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina),
-            stamBefore + 1,
-            "Nirvamma should gain +1 stamina from own trigger"
-        );
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
-            hpBefore + 10,
-            "Nirvamma should heal 1/16 maxHp from own trigger"
-        );
-        // Alice should have force-swapped to filler (mon 1).
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[0], 1, "Alice should have force-swapped to filler");
+            // Optional extra pings (move index 1) to deepen Nirvamma's stamina deficit before resting.
+            for (uint256 i = 0; i < tc.pingsBeforeRest; i++) {
+                _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, 0, 0);
+            }
+
+            int32 stamBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
+            int32 hpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+            assertLt(stamBefore, 0, "Nirvamma stamina should be negative before resting");
+            assertLt(hpBefore, 0, "Nirvamma should have taken damage before resting");
+
+            // Resting turn: Alice NO_OPs -> own trigger fires (heal + force-swap). Bob attacks.
+            _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+            assertEq(
+                engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina),
+                tc.expectedStaminaAfter,
+                "Nirvamma stamina after own trigger mismatch"
+            );
+            assertEq(
+                engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+                tc.expectedHpAfter,
+                "Nirvamma HP after own trigger mismatch"
+            );
+            // Alice should have force-swapped to filler (mon 1).
+            uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
+            assertEq(active[0], 1, "Alice should have force-swapped to filler");
+        }
     }
 
     function test_hardReset_oppTeamTrigger() public {
