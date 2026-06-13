@@ -13,7 +13,7 @@ import {SwitchTargetLib} from "../../lib/SwitchTargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract HardReset is IMoveSet, BasicEffect {
-    int32 public constant HP_DENOM = 16;
+    int32 public constant HP_DENOM = 8;
 
     // extraData layout:
     //   bit 0 = casterIndex (0 or 1)
@@ -110,7 +110,10 @@ contract HardReset is IMoveSet, BasicEffect {
 
         if (isOwnTeam && !ownFired) {
             int32 cur = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
-            if (cur < 0) {
+            if (cur < -1) {
+                engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 2);
+            }
+            else if (cur < 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
             }
             int32 maxHp = int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));

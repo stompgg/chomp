@@ -299,11 +299,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 numEffects = effects.length;
             for (uint256 i = 0; i < numEffects;) {
                 config.globalEffects[i].effect = effects[i];
-                if (address(effects[i]) == address(0)) {
-                    config.globalEffects[i].stepsBitmap = 0x8084;
-                } else {
-                    config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
-                }
+                config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
                 config.globalEffects[i].data = data[i];
                 unchecked {
                     ++i;
@@ -2748,12 +2744,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private {
         // Use stored bitmap instead of external call to shouldRunAtStep()
         if ((stepsBitmap & (1 << uint8(round))) == 0) {
-            return;
-        }
-
-        // Inline execution for address(0) effects (StaminaRegen)
-        if (address(effect) == address(0)) {
-            _inlineStaminaRegen(config, round, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
             return;
         }
 

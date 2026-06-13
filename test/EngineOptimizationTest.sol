@@ -189,13 +189,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
     // 9c. Inline StaminaRegen on RoundEnd
     // ============================================================
 
-    /// @notice address(0) global effect produces same stamina regen as real StaminaRegen on RoundEnd
+    /// @notice INLINE_STAMINA_REGEN_RULESET produces inline stamina regen on RoundEnd
     function test_inlineStaminaRegenOnRoundEnd() public {
-        // Use address(0) as the global effect (inline StaminaRegen)
-        IEffect[] memory effects = new IEffect[](1);
-        effects[0] = IEffect(address(0));
-        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
-
         // Deploy a no-damage move that costs 5 stamina
         IMoveSet noDamageAttack = standardAttackFactory.createAttack(
             ATTACK_PARAMS({
@@ -242,7 +237,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
             defaultRegistry,
             matchmaker,
             new IEngineHook[](0),
-            IRuleset(address(ruleset)),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
             address(commitManager)
         );
 
@@ -262,12 +257,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
     // 9d. Inline StaminaRegen on NoOp
     // ============================================================
 
-    /// @notice address(0) global effect regens stamina on NoOp (AfterMove) + RoundEnd
+    /// @notice INLINE_STAMINA_REGEN_RULESET regens stamina on NoOp (AfterMove) + RoundEnd
     function test_inlineStaminaRegenOnNoOp() public {
-        IEffect[] memory effects = new IEffect[](1);
-        effects[0] = IEffect(address(0));
-        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
-
         IMoveSet noDamageAttack = standardAttackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
@@ -313,7 +304,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
             defaultRegistry,
             matchmaker,
             new IEngineHook[](0),
-            IRuleset(address(ruleset)),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
             address(commitManager)
         );
 
@@ -338,10 +329,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
     /// @notice Stamina regen should not push staminaDelta above 0
     function test_inlineStaminaRegenDoesNotOverheal() public {
-        IEffect[] memory effects = new IEffect[](1);
-        effects[0] = IEffect(address(0));
-        DefaultRuleset ruleset = new DefaultRuleset(engine, effects);
-
         // Move costs only 1 stamina
         IMoveSet cheapAttack = standardAttackFactory.createAttack(
             ATTACK_PARAMS({
@@ -388,7 +375,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
             defaultRegistry,
             matchmaker,
             new IEngineHook[](0),
-            IRuleset(address(ruleset)),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
             address(commitManager)
         );
 
@@ -601,7 +588,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
     // 9g. Inline StaminaRegen saves gas vs external
     // ============================================================
 
-    /// @notice Inline StaminaRegen (address(0)) should use less gas than external StaminaRegen
+    /// @notice Inline StaminaRegen (INLINE_STAMINA_REGEN_RULESET) should use less gas than external StaminaRegen
     /// @dev Uses same engine with 3 sequential battles: warmup (external), then external vs inline
     ///      Battle 2 (external) and Battle 3 (inline) both hit warm storage equally
     function test_inlineStaminaRegenGasSavings() public {
@@ -647,10 +634,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         IEffect[] memory externalEffects = new IEffect[](1);
         externalEffects[0] = staminaRegen;
         DefaultRuleset externalRuleset = new DefaultRuleset(engine, externalEffects);
-
-        IEffect[] memory inlineEffects = new IEffect[](1);
-        inlineEffects[0] = IEffect(address(0));
-        DefaultRuleset inlineRuleset = new DefaultRuleset(engine, inlineEffects);
 
         // Battle 1: warmup (cold storage hit absorbed here)
         bytes32 warmupKey = _startBattle(
@@ -699,7 +682,7 @@ contract EngineOptimizationTest is Test, BattleHelper {
             defaultRegistry,
             matchmaker,
             new IEngineHook[](0),
-            IRuleset(address(inlineRuleset)),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
             address(commitManager)
         );
         vm.warp(vm.getBlockTimestamp() + 1);
