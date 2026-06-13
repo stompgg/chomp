@@ -303,9 +303,9 @@ contract SetupMons is Script {
             hp: 277,
             stamina: 5,
             speed: 256,
-            attack: 188,
+            attack: 199,
             defense: 164,
-            specialAttack: 240,
+            specialAttack: 180,
             specialDefense: 168,
             type1: Type.Yang,
             type2: Type.Air
