@@ -37,6 +37,7 @@ from .ast_nodes import (
     FunctionCall,
     MemberAccess,
     IndexAccess,
+    IndexRangeAccess,
     NewExpression,
     TupleExpression,
     ArrayLiteral,
@@ -1160,9 +1161,21 @@ class Parser:
                 expr = MemberAccess(expression=expr, member=member)
             elif self.match(TokenType.LBRACKET):
                 self.advance()
-                index = self.parse_expression()
-                self.expect(TokenType.RBRACKET)
-                expr = IndexAccess(base=expr, index=index)
+                # Calldata slice (`arr[start:end]`) vs plain index (`arr[i]`).
+                # Either slice bound may be omitted: arr[:end], arr[start:], arr[:].
+                start = None
+                if not self.match(TokenType.COLON):
+                    start = self.parse_expression()
+                if self.match(TokenType.COLON):
+                    self.advance()
+                    end = None
+                    if not self.match(TokenType.RBRACKET):
+                        end = self.parse_expression()
+                    self.expect(TokenType.RBRACKET)
+                    expr = IndexRangeAccess(base=expr, start=start, end=end)
+                else:
+                    self.expect(TokenType.RBRACKET)
+                    expr = IndexAccess(base=expr, index=start)
             elif self.match(TokenType.LBRACE):
                 # Call options: expr{key: value, ...}(args)
                 self.advance()

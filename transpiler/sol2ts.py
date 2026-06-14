@@ -81,9 +81,22 @@ class SolidityToTypeScriptTranspiler:
         self._discover_from_directory_cached(directory, pattern)
 
     def _discover_from_directory_cached(self, directory: str, pattern: str = '**/*.sol') -> None:
-        """Discover types from Solidity files while reusing parsed ASTs."""
+        """Discover types from Solidity files while reusing parsed ASTs.
+
+        Honors the same skip config as ``transpile_directory``: a file the user
+        skipped (and that has no runtime replacement) is never emitted, so by
+        the config's own contract nothing emitted can depend on its types —
+        meaning there is no reason to parse it for discovery either. Skipping it
+        here also keeps a skip-listed file from emitting spurious parse warnings.
+        """
         base_dir = Path(directory)
         for sol_file in base_dir.glob(pattern):
+            rel_str = normalize_config_path(str(sol_file.relative_to(base_dir)))
+            has_replacement = self.config.runtime_replacement_for(rel_str) is not None
+            if not has_replacement and (
+                self.config.should_skip_file(rel_str) or self.config.should_skip_dir(rel_str)
+            ):
+                continue
             try:
                 rel_path = sol_file.relative_to(base_dir).with_suffix('')
                 ast = self._parse_file_cached(sol_file)

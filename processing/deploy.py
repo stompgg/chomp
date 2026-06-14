@@ -95,6 +95,54 @@ def update_env_file(matches: list[tuple[str, str]], env_path: Path):
             f.write(f"{key}={existing[key]}\n")
 
 
+# Bookkeeping key in .env recording which network the current address record belongs to.
+ENV_NETWORK_KEY = "DEPLOY_NETWORK"
+
+
+def set_env_network(env_path: Path, network: str) -> None:
+    """Stamp .env with the network its addresses belong to, so a later --skip-forge
+    regeneration can refuse to emit the wrong network's addresses from it."""
+    lines: list[str] = []
+    found = False
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.strip().startswith(f"{ENV_NETWORK_KEY}="):
+                lines.append(f"{ENV_NETWORK_KEY}={network}")
+                found = True
+            else:
+                lines.append(line)
+    if not found:
+        lines.insert(0, f"{ENV_NETWORK_KEY}={network}")
+    env_path.write_text("\n".join(lines) + "\n")
+
+
+def read_env_network(env_path: Path) -> str | None:
+    """Which network .env's address record belongs to (last broadcast), or None if untagged."""
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text().splitlines():
+        if line.strip().startswith(f"{ENV_NETWORK_KEY}="):
+            return line.split('=', 1)[1].strip().lower() or None
+    return None
+
+
+def read_env_addresses(env_path: Path) -> list[tuple[str, str]]:
+    """Read the (NAME, raw-address) pairs from .env — the durable record of the latest
+    broadcast. Only 20-byte 0x-addresses are returned; bookkeeping keys are skipped."""
+    if not env_path.exists():
+        return []
+    pairs: list[tuple[str, str]] = []
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if re.fullmatch(r'0x[0-9a-fA-F]{40}', value):
+            pairs.append((key.strip(), value))
+    return pairs
+
+
 def get_prev_gacha_registry(network: str, chomp_dir: Path) -> str | None:
     """Read the currently-deployed GachaTeamRegistry address from deployments.json.
 
@@ -297,6 +345,11 @@ def run_deploy(args, network, rpc_url, password, chomp_dir, env_path):
     all_addresses: list[tuple[str, str]] = []
 
     if not args.skip_forge:
+        # Tag .env with this network up front so a later --skip-forge regen sourcing from it
+        # can detect (and refuse) a cross-network mismatch.
+        if not args.dry_run:
+            set_env_network(env_path, network)
+
         # Run forge scripts and update .env after each.
         for script_path in SCRIPTS:
             # EngineAndPeriphery deploys a new GachaTeamRegistry; point it at the prior
@@ -328,6 +381,23 @@ def run_deploy(args, network, rpc_url, password, chomp_dir, env_path):
                         print(f"Updated .env with {len(matches)} addresses")
                 else:
                     print("No DeployData found in output")
+    elif not args.dry_run:
+        # No fresh broadcast this run: regenerate consumers from .env, the durable record of
+        # the latest broadcast's RAW addresses. Without this, a --skip-forge regen feeds
+        # createAddressAndABIs an empty set, which re-emits whatever stale addresses already
+        # sit in deployments.json — pairing a freshly regenerated ABI with an old contract.
+        env_network = read_env_network(env_path)
+        if env_network and env_network != network:
+            raise RuntimeError(
+                f"{env_path} holds {env_network.upper()} addresses (last broadcast), but this is a "
+                f"{network.upper()} --skip-forge run. Re-broadcast for {network.upper()} first."
+            )
+        all_addresses = read_env_addresses(env_path)
+        if not all_addresses:
+            raise RuntimeError(
+                f"--skip-forge but no deployed addresses found in {env_path}; nothing to generate."
+            )
+        print(f"Loaded {len(all_addresses)} addresses from {env_path} (no forge broadcast this run)")
 
     # Run TypeScript generation scripts.
     run_typescript_scripts(network, chomp_dir, all_addresses, dry_run=args.dry_run)

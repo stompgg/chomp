@@ -1616,6 +1616,63 @@ class TestGasOptRegressions(unittest.TestCase):
         self.assertIn('b = ', output)
 
 
+class TestCalldataSlices(unittest.TestCase):
+    """Calldata array slices (`arr[start:end]`), a Solidity >=0.6.0 feature.
+
+    Regression: the postfix parser only modeled `arr[i]` and raised
+    'Expected RBRACKET but got COLON' on the slice colon, which aborted type
+    discovery for any file using slices (e.g. cpu/CPUMoveManager.sol).
+    """
+
+    def _gen(self, body: str) -> str:
+        source = f'''
+        contract T {{
+            function f(bytes calldata data) external pure returns (bytes memory) {{
+                {body}
+            }}
+        }}
+        '''
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+        generator = TypeScriptCodeGenerator()
+        return generator.generate(ast)
+
+    def test_slice_parses_without_error(self):
+        """The exact construct that crashed discovery must now parse and transpile."""
+        out = self._gen('return data[off:off + 19];')
+        self.assertIn('.slice(', out)
+
+    def test_bounded_slice(self):
+        out = self._gen('return data[2:5];')
+        self.assertIn('data.slice(2n, 5n)', out)
+
+    def test_open_ended_start(self):
+        """`arr[start:]` -> slice(start)."""
+        out = self._gen('return data[3:];')
+        self.assertIn('data.slice(3n)', out)
+        self.assertNotIn('slice(3n,', out)
+
+    def test_open_ended_end(self):
+        """`arr[:end]` -> slice(0, end)."""
+        out = self._gen('return data[:4];')
+        self.assertIn('data.slice(0, 4n)', out)
+
+    def test_full_slice(self):
+        """`arr[:]` -> slice(0)."""
+        out = self._gen('return data[:];')
+        self.assertIn('data.slice(0)', out)
+
+    def test_plain_index_unaffected(self):
+        """A regular subscript must still be IndexAccess, not a slice."""
+        out = self._gen('return data[0:1];')  # sanity: slice path
+        self.assertIn('.slice(', out)
+        plain = self._gen('uint8 x = uint8(data[0]); return data;')
+        self.assertIn('data[0]', plain)
+        self.assertNotIn('data[0].slice', plain)
+
+
 if __name__ == '__main__':
     # Run tests with verbosity
     unittest.main(verbosity=2)

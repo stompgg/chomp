@@ -242,6 +242,18 @@ class IndexAccess(Expression):
 
 
 @dataclass
+class IndexRangeAccess(Expression):
+    """Represents a calldata array slice (e.g., arr[start:end]).
+
+    Solidity (>=0.6.0) allows either bound to be omitted — `arr[start:]`,
+    `arr[:end]`, `arr[:]` — so both `start` and `end` are optional.
+    """
+    base: Expression
+    start: Optional[Expression] = None
+    end: Optional[Expression] = None
+
+
+@dataclass
 class NewExpression(Expression):
     """Represents a 'new' expression for contract/array creation."""
     type_name: TypeName

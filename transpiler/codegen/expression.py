@@ -26,6 +26,7 @@ from ..parser.ast_nodes import (
     FunctionCall,
     MemberAccess,
     IndexAccess,
+    IndexRangeAccess,
     NewExpression,
     TupleExpression,
     ArrayLiteral,
@@ -116,6 +117,8 @@ class ExpressionGenerator(BaseGenerator):
             return self.generate_member_access(expr)
         elif isinstance(expr, IndexAccess):
             return self.generate_index_access(expr)
+        elif isinstance(expr, IndexRangeAccess):
+            return self.generate_index_range_access(expr)
         elif isinstance(expr, NewExpression):
             return self.generate_new_expression(expr)
         elif isinstance(expr, TupleExpression):
@@ -706,6 +709,22 @@ class ExpressionGenerator(BaseGenerator):
             mapping_access,
         )
         return f'{base}[{index}]'
+
+    def generate_index_range_access(self, access: IndexRangeAccess) -> str:
+        """Generate TypeScript for a calldata array slice (`arr[start:end]`).
+
+        Maps to `Array.prototype.slice`, which matches Solidity slice semantics
+        for array-typed calldata (start inclusive, end exclusive, both optional).
+        Note: `bytes` are modeled as hex strings in the runtime, so slicing a
+        `bytes` value this way slices hex characters rather than bytes — the
+        only current slice site is in the (skip-listed) CPU module, so this
+        emits faithful code for the array case without a bespoke byte helper.
+        """
+        base = self.generate(access.base)
+        start = self.generate(access.start) if access.start is not None else '0'
+        if access.end is not None:
+            return f'{base}.slice({start}, {self.generate(access.end)})'
+        return f'{base}.slice({start})'
 
     # =========================================================================
     # NEW EXPRESSIONS

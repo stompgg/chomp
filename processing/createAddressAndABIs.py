@@ -267,6 +267,66 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
     return updated_files
 
 
+def write_consumer_address_files(
+    addresses: Dict[str, str],
+    network: str,
+    existing_addresses: Dict[str, Dict[str, str]],
+) -> List[str]:
+    """Write each consumer's address.ts (munch, belch) from `existing_addresses`, merging
+    `addresses` into `network`. The in-tree fallback is written only when neither consumer
+    repo is present. Single source of where the consumers live and how they're written."""
+    base_path = Path(__file__).parent
+    game_dir = base_path.parent.parent
+
+    written: List[str] = []
+    consumers = [
+        (game_dir / "munch" / "src" / "app" / "generated" / "address.ts", False, "munch"),
+        (game_dir / "belch" / "src" / "generated" / "address.ts", True, "belch"),
+    ]
+    for output_file, is_belch, label in consumers:
+        if output_file.parent.exists():
+            update_address_file(addresses, str(output_file), network, existing_addresses, is_belch=is_belch)
+            written.append(label)
+            print(f"✅ Updated address.ts in {label}: {output_file}")
+        else:
+            print(f"⚠️  {label} not found at {output_file.parent}")
+
+    if not written:
+        fallback = base_path / "address.ts"
+        update_address_file(addresses, str(fallback), network, existing_addresses, is_belch=False)
+        print(f"✅ Updated address.ts (fallback): {fallback}")
+        written.append("fallback")
+    return written
+
+
+def sync_consumers_from_deployments() -> None:
+    """Project the canonical deployments.json record into each consumer's address.ts without
+    deploying. deployments.json already stores the final packed values, so this is a pure
+    format conversion — no forge, no .env, no ABI/packing. Use it to rebuild munch/belch
+    address.ts from the chomp-owned record (e.g. after a git revert left one stale)."""
+    base_path = Path(__file__).parent
+    chomp_dir = base_path.parent
+    game_dir = chomp_dir.parent
+    deployments_file = chomp_dir / "deployments.json"
+    munch_output_file = game_dir / "munch" / "src" / "app" / "generated" / "address.ts"
+
+    print("=" * 60)
+    print("PROJECTING deployments.json → consumer address.ts")
+    print("=" * 60)
+
+    if not deployments_file.exists():
+        print(f"⚠️  {deployments_file} not found; nothing to project.")
+        return
+
+    record = read_deployments(deployments_file, munch_output_file)
+    print(f"📖 deployments.json (MAINNET: {len(record['MAINNET'])}, TESTNET: {len(record['TESTNET'])})")
+
+    # addresses={} → both network blocks are written verbatim from the record; `network` is a
+    # no-op here (nothing to merge) but required by the signature.
+    write_consumer_address_files({}, 'TESTNET', record)
+    print("DONE!")
+
+
 def run_main_logic(addresses: Dict[str, str], network: str):
     """Run main logic with provided addresses."""
     base_path = Path(__file__).parent
@@ -281,9 +341,8 @@ def run_main_logic(addresses: Dict[str, str], network: str):
 
     # Output files. Generated artifacts are quarantined under each consumer's generated/ dir.
     deployments_file = chomp_dir / "deployments.json"
+    # munch's address.ts seeds deployments.json on first run.
     munch_output_file = game_dir / "munch" / "src" / "app" / "generated" / "address.ts"
-    belch_output_file = game_dir / "belch" / "src" / "generated" / "address.ts"
-    fallback_output_file = base_path / "address.ts"
 
     print("=" * 60)
     print(f"PROCESSING ADDRESSES ({network})")
@@ -299,29 +358,8 @@ def run_main_logic(addresses: Dict[str, str], network: str):
     write_deployments(deployments_file, existing_addresses)
     print(f"💾 Wrote {deployments_file}")
 
-    # Track which files were updated
-    updated_files = []
-
-    # Update munch repository
-    if munch_output_file.parent.exists():
-        update_address_file(addresses, str(munch_output_file), network, existing_addresses, is_belch=False)
-        updated_files.append(f"munch: {munch_output_file}")
-        print(f"{len(updated_files)} Updated address.ts in munch repository")
-    else:
-        print(f"⚠️  Munch repository not found at {munch_output_file.parent}")
-
-    # Update belch repository (using the same existing_addresses from munch)
-    if belch_output_file.parent.exists():
-        update_address_file(addresses, str(belch_output_file), network, existing_addresses, is_belch=True)
-        updated_files.append(f"belch: {belch_output_file}")
-        print(f"{len(updated_files)} Updated address.ts in belch repository")
-    else:
-        print(f"⚠️  Belch repository not found at {belch_output_file.parent}")
-
-    # Fallback if neither repository was found
-    if not updated_files:
-        update_address_file(addresses, str(fallback_output_file), network, existing_addresses, is_belch=False)
-        print(f"1 Updated address.ts (fallback): {fallback_output_file}")
+    # Project the merged record into every consumer's address.ts.
+    write_consumer_address_files(addresses, network, existing_addresses)
 
     # Process ABIs
     print("\n" + "=" * 60)
@@ -377,6 +415,11 @@ def main():
         action='store_true',
         help='Only update ABIs, skip address processing'
     )
+    parser.add_argument(
+        '--sync-consumers',
+        action='store_true',
+        help='Project deployments.json into munch/belch address.ts (no deploy, no ABI/.env)'
+    )
 
     # Network flags (mutually exclusive, required unless --abi-only)
     network_group = parser.add_mutually_exclusive_group(required=False)
@@ -392,6 +435,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Handle --sync-consumers mode (project deployments.json → consumers, no network needed)
+    if args.sync_consumers:
+        sync_consumers_from_deployments()
+        return
 
     # Handle --abi-only mode
     if args.abi_only:
