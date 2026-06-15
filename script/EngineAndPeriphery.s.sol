@@ -7,7 +7,6 @@ import "../src/Constants.sol";
 // Fundamental entities
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {BetterCPU} from "../src/cpu/BetterCPU.sol";
 import {ICPURNG} from "../src/rng/ICPURNG.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
@@ -15,7 +14,6 @@ import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {SimplePM} from "../src/hooks/SimplePM.sol";
-import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 // Shared effects
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";

@@ -237,6 +237,8 @@ def run_typescript_scripts(
     generators in-process (addresses/ABIs, mon data, event layouts, EIP-712 meta)."""
     from createAddressAndABIs import parse_addresses_from_content, run_main_logic
     from generateMonsTypeScript import run as run_mons_ts
+    from generate_type_chart import run as run_type_chart
+    from generateTypeMetadata import run as run_type_metadata
     from generateEventLayouts import main as run_event_layouts
     from generateEip712Meta import main as run_eip712_meta
 
@@ -257,6 +259,8 @@ def run_typescript_scripts(
 
     run_step("createAddressAndABIs", lambda: run_main_logic(addresses, network), dry_run)
     run_step("generateMonsTypeScript", run_mons_ts, dry_run)
+    run_step("generateTypeChart", run_type_chart, dry_run)
+    run_step("generateTypeMetadata", run_type_metadata, dry_run)
     run_step("generateEventLayouts", run_event_layouts, dry_run)
     run_step("generateEip712Meta", run_eip712_meta, dry_run)
 

@@ -11,11 +11,10 @@ enum Type {
     Ice,
     Nature,
     Lightning,
-    Mythic,
+    Faith,
     Air,
     Math,
     Cyber,
-    Wild,
     Cosmic,
     None
 }

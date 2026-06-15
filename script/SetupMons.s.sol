@@ -206,13 +206,13 @@ contract SetupMons is Script {
             defense: 189,
             specialAttack: 175,
             specialDefense: 192,
-            type1: Type.Wild,
+            type1: Type.Faith,
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = 0x500d200000000000000000000000000000000000000000000000000000000000;
+        moves[2] = 0x5009200000000000000000000000000000000000000000000000000000000000;
         moves[3] = uint256(uint160(addrs[2]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[3]));
@@ -256,7 +256,7 @@ contract SetupMons is Script {
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = 0x644c300000000000000000000000000000000000000000000000000000000000;
         moves[2] = 0x504b30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
-        moves[3] = 0x5a4e30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
+        moves[3] = 0x5a4d30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[1]));
         bytes32[] memory keys = new bytes32[](0);

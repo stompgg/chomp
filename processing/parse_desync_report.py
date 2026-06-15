@@ -19,11 +19,8 @@ import re
 import sys
 from pathlib import Path
 
-# Type enum index -> Solidity Type member (Enums.sol order).
-TYPE_NAMES = [
-    "Yin", "Yang", "Earth", "Liquid", "Fire", "Metal", "Ice", "Nature",
-    "Lightning", "Mythic", "Air", "Math", "Cyber", "Wild", "Cosmic", "None",
-]
+# Type enum index -> Solidity Type member (Enums.sol order), single-sourced.
+from types_enum import TYPE_NAMES
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_STAMINA = 5

@@ -15,11 +15,7 @@ import os
 from typing import Dict, Optional, Tuple
 
 
-TYPE_MAP = {
-    "Yin": 0, "Yang": 1, "Earth": 2, "Liquid": 3, "Fire": 4,
-    "Metal": 5, "Ice": 6, "Nature": 7, "Lightning": 8, "Mythic": 9,
-    "Air": 10, "Math": 11, "Cyber": 12, "Wild": 13, "Cosmic": 14, "None": 15
-}
+from types_enum import TYPE_INDEX as TYPE_MAP  # name -> enum index, from src/Enums.sol
 
 CLASS_MAP = {"Physical": 0, "Special": 1, "Self": 2, "Other": 3}
 

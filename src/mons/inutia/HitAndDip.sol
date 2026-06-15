@@ -22,7 +22,7 @@ contract HitAndDip is StandardAttack {
                 BASE_POWER: 60,
                 STAMINA_COST: 2,
                 ACCURACY: 100,
-                MOVE_TYPE: Type.Mythic,
+                MOVE_TYPE: Type.Faith,
                 MOVE_CLASS: MoveClass.Special,
                 PRIORITY: DEFAULT_PRIORITY,
                 CRIT_RATE: DEFAULT_CRIT_RATE,

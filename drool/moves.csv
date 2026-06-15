@@ -11,10 +11,10 @@ Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to 
 Loop,Iblivion,0,1,100,0,Yang,Self,"Sets all stats to +15/30/40% based on Baselight level. Does not stack".,,none
 Brightback,Iblivion,70,2,100,0,Yang,Physical,"Deals damage. Consume 1 Baselight stack to heal for 50% of damage dealt.",,none
 Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none
-Chain Expansion,Inutia,0,1,100,0,Mythic,Other,Sets up battlefield effect. Triggers on switch ins. Damages opponent and heals self for 16.6% of max HP. Has 4 charges.,,none
-Initialize,Inutia,0,2,100,0,Mythic,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none
-Big Bite,Inutia,80,2,100,0,Wild,Physical,Deals damage.,,none
-Hit And Dip,Inutia,60,2,100,0,Mythic,Special,"Deals damage, then swaps out.",,self-mon
+Chain Expansion,Inutia,0,1,100,0,Faith,Other,Sets up battlefield effect. Triggers on switch ins. Damages opponent and heals self for 16.6% of max HP. Has 4 charges.,,none
+Initialize,Inutia,0,2,100,0,Faith,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none
+Big Bite,Inutia,80,2,100,0,Faith,Physical,Deals damage.,,none
+Hit And Dip,Inutia,60,2,100,0,Faith,Special,"Deals damage, then swaps out.",,self-mon
 Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none
 Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, 10% chance to cause Panic.",,none
@@ -36,7 +36,7 @@ Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, 30% chance of Burn.",,
 Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none
 Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns and Burns the enemy.,,none
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none
-Gilded Recovery,Aurox,0,2,100,0,Mythic,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,self-mon
+Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,self-mon
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated for the first time each switch-in, Aurox gains 25% of max HP",,none
 Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to self.,,none
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,"Inflicts Sleep on self and opponent.",,none

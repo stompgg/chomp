@@ -1,6 +1,6 @@
 Id,Name,HP,Attack,Defense,SpecialAttack,SpecialDefense,Speed,Type1,Type2,Flavor
 0,Ghouliath,303,157,202,151,202,181,Yin,Fire,"Often found in dark places like caves and OTC trading desks."
-1,Inutia,351,171,189,175,192,229,Wild,NA,"A little jumpy. Nose is always wet."
+1,Inutia,351,171,189,175,192,229,Faith,NA,"A little jumpy. Nose is always wet."
 2,Malalien,258,121,125,322,151,308,Cyber,NA,"Do not approach or be approached."
 3,Iblivion,277,199,164,180,168,256,Yang,Air,"Many say it has great potential for growth."
 4,Gorillax,407,302,175,112,176,129,Earth,NA,"Big."

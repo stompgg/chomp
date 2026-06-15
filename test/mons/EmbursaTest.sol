@@ -29,7 +29,6 @@ import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {HeatBeacon} from "../../src/mons/embursa/HeatBeacon.sol";
-import {HoneyBribe} from "../../src/mons/embursa/HoneyBribe.sol";
 import {Q5} from "../../src/mons/embursa/Q5.sol";
 import {SetAblaze} from "../../src/mons/embursa/SetAblaze.sol";
 import {Tinderclaws} from "../../src/mons/embursa/Tinderclaws.sol";

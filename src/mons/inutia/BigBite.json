@@ -2,7 +2,7 @@
   "name": "Big Bite",
   "basePower": 80,
   "staminaCost": 2,
-  "moveType": "Wild",
+  "moveType": "Faith",
   "moveClass": "Physical",
   "effectAccuracy": 0,
   "effect": null

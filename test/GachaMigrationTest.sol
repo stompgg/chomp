@@ -8,7 +8,6 @@ import "../src/Enums.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
-import {IEngine} from "../src/IEngine.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 

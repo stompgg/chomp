@@ -16,7 +16,6 @@ import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
 import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
-import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 

@@ -69,7 +69,7 @@ contract Initialize is IMoveSet, BasicEffect {
     }
 
     function moveType(IEngine, bytes32) public pure returns (Type) {
-        return Type.Mythic;
+        return Type.Faith;
     }
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {

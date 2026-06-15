@@ -9,11 +9,10 @@ Yin,Metal,1
 Yin,Ice,1
 Yin,Nature,1
 Yin,Lightning,1
-Yin,Mythic,1
+Yin,Faith,1
 Yin,Air,1
 Yin,Math,2
 Yin,Cyber,1
-Yin,Wild,1
 Yin,Cosmic,5
 
 Yang,Yin,2
@@ -25,11 +24,10 @@ Yang,Metal,1
 Yang,Ice,1
 Yang,Nature,1
 Yang,Lightning,1
-Yang,Mythic,1
+Yang,Faith,1
 Yang,Air,1
 Yang,Math,5
 Yang,Cyber,1
-Yang,Wild,1
 Yang,Cosmic,2
 
 Earth,Yin,1
@@ -41,11 +39,10 @@ Earth,Metal,1
 Earth,Ice,1
 Earth,Nature,1
 Earth,Lightning,2
-Earth,Mythic,1
+Earth,Faith,1
 Earth,Air,0
 Earth,Math,1
 Earth,Cyber,1
-Earth,Wild,2
 Earth,Cosmic,1
 
 Liquid,Yin,1
@@ -57,11 +54,10 @@ Liquid,Metal,5
 Liquid,Ice,1
 Liquid,Nature,5
 Liquid,Lightning,1
-Liquid,Mythic,1
+Liquid,Faith,1
 Liquid,Air,1
 Liquid,Math,1
 Liquid,Cyber,1
-Liquid,Wild,1
 Liquid,Cosmic,1
 
 Fire,Yin,1
@@ -73,11 +69,10 @@ Fire,Metal,2
 Fire,Ice,2
 Fire,Nature,2
 Fire,Lightning,1
-Fire,Mythic,1
+Fire,Faith,1
 Fire,Air,1
 Fire,Math,1
 Fire,Cyber,1
-Fire,Wild,1
 Fire,Cosmic,1
 
 Metal,Yin,1
@@ -89,11 +84,10 @@ Metal,Metal,1
 Metal,Ice,2
 Metal,Nature,1
 Metal,Lightning,1
-Metal,Mythic,1
+Metal,Faith,1
 Metal,Air,1
 Metal,Math,1
 Metal,Cyber,5
-Metal,Wild,1
 Metal,Cosmic,1
 
 Ice,Yin,1
@@ -105,11 +99,10 @@ Ice,Metal,1
 Ice,Ice,1
 Ice,Nature,2
 Ice,Lightning,1
-Ice,Mythic,1
+Ice,Faith,1
 Ice,Air,2
 Ice,Math,2
 Ice,Cyber,1
-Ice,Wild,1
 Ice,Cosmic,1
 
 Nature,Yin,1
@@ -121,11 +114,10 @@ Nature,Metal,5
 Nature,Ice,5
 Nature,Nature,1
 Nature,Lightning,1
-Nature,Mythic,2
+Nature,Faith,2
 Nature,Air,5
 Nature,Math,1
 Nature,Cyber,2
-Nature,Wild,1
 Nature,Cosmic,2
 
 Lightning,Yin,1
@@ -137,28 +129,26 @@ Lightning,Metal,2
 Lightning,Ice,1
 Lightning,Nature,5
 Lightning,Lightning,1
-Lightning,Mythic,1
+Lightning,Faith,1
 Lightning,Air,2
 Lightning,Math,1
 Lightning,Cyber,5
-Lightning,Wild,1
 Lightning,Cosmic,1
 
-Mythic,Yin,2
-Mythic,Yang,2
-Mythic,Earth,1
-Mythic,Liquid,1
-Mythic,Fire,1
-Mythic,Metal,1
-Mythic,Ice,1
-Mythic,Nature,5
-Mythic,Lightning,1
-Mythic,Mythic,5
-Mythic,Air,1
-Mythic,Math,1
-Mythic,Cyber,2
-Mythic,Wild,1
-Mythic,Cosmic,5
+Faith,Yin,2
+Faith,Yang,2
+Faith,Earth,1
+Faith,Liquid,1
+Faith,Fire,1
+Faith,Metal,1
+Faith,Ice,1
+Faith,Nature,5
+Faith,Lightning,1
+Faith,Faith,5
+Faith,Air,1
+Faith,Math,1
+Faith,Cyber,2
+Faith,Cosmic,5
 
 Air,Yin,1
 Air,Yang,1
@@ -169,11 +159,10 @@ Air,Metal,5
 Air,Ice,1
 Air,Nature,2
 Air,Lightning,5
-Air,Mythic,1
+Air,Faith,1
 Air,Air,1
 Air,Math,1
 Air,Cyber,1
-Air,Wild,1
 Air,Cosmic,1
 
 Math,Yin,1
@@ -185,11 +174,10 @@ Math,Metal,5
 Math,Ice,1
 Math,Nature,1
 Math,Lightning,2
-Math,Mythic,1
+Math,Faith,1
 Math,Air,1
 Math,Math,1
 Math,Cyber,1
-Math,Wild,2
 Math,Cosmic,0
 
 Cyber,Yin,1
@@ -201,28 +189,11 @@ Cyber,Metal,2
 Cyber,Ice,1
 Cyber,Nature,1
 Cyber,Lightning,1
-Cyber,Mythic,2
+Cyber,Faith,2
 Cyber,Air,1
 Cyber,Math,5
 Cyber,Cyber,1
-Cyber,Wild,5
 Cyber,Cosmic,1
-
-Wild,Yin,1
-Wild,Yang,1
-Wild,Earth,5
-Wild,Liquid,2
-Wild,Fire,2
-Wild,Metal,1
-Wild,Ice,1
-Wild,Nature,1
-Wild,Lightning,5
-Wild,Mythic,1
-Wild,Air,1
-Wild,Math,1
-Wild,Cyber,1
-Wild,Wild,1
-Wild,Cosmic,1
 
 Cosmic,Yin,1
 Cosmic,Yang,1
@@ -233,9 +204,8 @@ Cosmic,Metal,5
 Cosmic,Ice,1
 Cosmic,Nature,1
 Cosmic,Lightning,1
-Cosmic,Mythic,1
+Cosmic,Faith,1
 Cosmic,Air,1
 Cosmic,Math,2
 Cosmic,Cyber,2
-Cosmic,Wild,1
 Cosmic,Cosmic,1

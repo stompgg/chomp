@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Any
 
+from types_enum import REAL_TYPE_NAMES
+
 
 def to_address_key(name: str) -> str:
     """Convert name to UPPER_SNAKE_CASE for address key."""
@@ -378,23 +380,7 @@ def generate_typescript_const(data: Dict[int, Dict[str, Any]], output_file: str)
 
     # Replace string values with enum references
     ENUM_REPLACEMENTS = {
-        "Type": [
-            "Yin",
-            "Yang",
-            "Earth",
-            "Liquid",
-            "Fire",
-            "Metal",
-            "Ice",
-            "Nature",
-            "Lightning",
-            "Mythic",
-            "Air",
-            "Math",
-            "Cyber",
-            "Wild",
-            "Cosmic",
-        ],
+        "Type": REAL_TYPE_NAMES,  # single-sourced from src/Enums.sol
         "MoveClass": ["Physical", "Special", "Other", "Self"],
     }
     for enum_name, values in ENUM_REPLACEMENTS.items():

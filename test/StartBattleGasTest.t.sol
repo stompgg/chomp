@@ -9,7 +9,6 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IEngine} from "../src/IEngine.sol";
 import {IValidator} from "../src/IValidator.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
