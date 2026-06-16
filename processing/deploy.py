@@ -24,7 +24,7 @@ from pathlib import Path
 # Add processing directory to path for local imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from processing.addressPacking import collect_inline_move_addresses, pack_inline_ability_addresses
+from addressPacking import collect_inline_move_addresses, pack_inline_ability_addresses
 
 
 # Constants
