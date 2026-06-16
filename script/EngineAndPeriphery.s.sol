@@ -16,6 +16,7 @@ import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {SimplePM} from "../src/hooks/SimplePM.sol";
 
 // Shared effects
+import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
@@ -96,5 +97,8 @@ contract EngineAndPeriphery is Script {
 
         ZapStatus zapStatus = new ZapStatus();
         deployedContracts.push(DeployData({name: "ZAP STATUS", contractAddress: address(zapStatus)}));
+
+        BlessedStatus blessedStatus = new BlessedStatus();
+        deployedContracts.push(DeployData({name: "BLESSED STATUS", contractAddress: address(blessedStatus)}));
     }
 }

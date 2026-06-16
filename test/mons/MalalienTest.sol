@@ -26,6 +26,8 @@ import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {ActusReus} from "../../src/mons/malalien/ActusReus.sol";
+import {FoulLanguage} from "../../src/mons/malalien/FoulLanguage.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {TripleThink} from "../../src/mons/malalien/TripleThink.sol";
 
 contract MalalienTest is Test, BattleHelper {
@@ -35,6 +37,7 @@ contract MalalienTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     ActusReus actusReus;
+    FoulLanguage foulLanguage;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -46,7 +49,63 @@ contract MalalienTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         actusReus = new ActusReus();
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
+        foulLanguage = new FoulLanguage(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
+    }
+
+    // Foul Language deals damage and then deals half of that damage back to Malalien as recoil.
+    function test_foulLanguageRecoil() public {
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(foulLanguage)));
+
+        uint256[] memory bobMoves = new uint256[](1);
+        bobMoves[0] = uint256(uint160(address(attackFactory.createAttack(ATTACK_PARAMS({
+            BASE_POWER: 1, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+            MOVE_TYPE: Type.Liquid, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Filler", EFFECT: IEffect(address(0))
+        })))));
+
+        // Big HP pools so neither mon is KO'd and the recoil is a clean fraction of the damage dealt.
+        Mon memory aliceMon = Mon({
+            stats: MonStats({hp: 1000, stamina: 10, speed: 10, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Yang, type2: Type.None}),
+            moves: aliceMoves,
+            ability: 0
+        });
+        Mon memory bobMon = Mon({
+            stats: MonStats({hp: 1000, stamina: 10, speed: 5, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Liquid, type2: Type.None}),
+            moves: bobMoves,
+            ability: 0
+        });
+
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Alice uses Foul Language on Bob; Bob no-ops.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        int32 bobHp = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 aliceHp = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+
+        int32 bobDamage = -bobHp;
+        assertGt(bobDamage, 0, "Foul Language should deal damage to Bob");
+        assertEq(aliceHp, -(bobDamage / int32(foulLanguage.RECOIL_DENOM())), "Malalien should take half the dealt damage as recoil");
     }
 
     function test_actusReusIndictment() public {

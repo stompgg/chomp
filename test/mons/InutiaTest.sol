@@ -22,9 +22,11 @@ import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
+import {BlessedStatus} from "../../src/effects/status/BlessedStatus.sol";
 import {ChainExpansion} from "../../src/mons/inutia/ChainExpansion.sol";
 import {Initialize} from "../../src/mons/inutia/Initialize.sol";
 import {Interweaving} from "../../src/mons/inutia/Interweaving.sol";
+import {Sanctify} from "../../src/mons/inutia/Sanctify.sol";
 
 contract InutiaTest is Test, BattleHelper {
     Engine engine;
@@ -33,6 +35,8 @@ contract InutiaTest is Test, BattleHelper {
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
     Interweaving interweaving;
+    Sanctify sanctify;
+    BlessedStatus blessedStatus;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -43,8 +47,81 @@ contract InutiaTest is Test, BattleHelper {
         engine = new Engine(0, 0);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         interweaving = new Interweaving();
+        blessedStatus = new BlessedStatus();
+        sanctify = new Sanctify(IEffect(address(blessedStatus)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
+    }
+
+    // Sanctify gives Inutia the Blessed status, which heals maxHp/16 at the end of each turn.
+    function test_sanctifyBlessedHeals() public {
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
+        );
+
+        uint256[] memory aliceMoves = new uint256[](1);
+        aliceMoves[0] = uint256(uint160(address(sanctify)));
+
+        // Bob carries a chip-damage move (no volatility/crit) to deterministically wound Alice first,
+        // so the (overheal-capped) Blessed heal is observable.
+        uint256[] memory bobMoves = new uint256[](1);
+        bobMoves[0] = uint256(uint160(address(attackFactory.createAttack(ATTACK_PARAMS({
+            BASE_POWER: 50, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
+            MOVE_TYPE: Type.Liquid, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
+            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Chip", EFFECT: IEffect(address(0))
+        })))));
+
+        // hp 160 ⇒ Blessed heals 160/16 = 10 per tick.
+        Mon memory aliceMon = Mon({
+            stats: MonStats({hp: 160, stamina: 10, speed: 5, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Faith, type2: Type.None}),
+            moves: aliceMoves,
+            ability: 0
+        });
+        Mon memory bobMon = Mon({
+            stats: MonStats({hp: 160, stamina: 10, speed: 10, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Liquid, type2: Type.None}),
+            moves: bobMoves,
+            ability: 0
+        });
+
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 2: Bob chips Alice; Alice no-ops.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        int32 aliceAfterDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 damageTaken = -aliceAfterDamage;
+        // Damage must exceed one heal tick so the heal isn't clamped by the overheal guard.
+        assertGt(damageTaken, int32(160) / blessedStatus.HEAL_DENOM(), "Alice should be wounded by more than one heal tick");
+
+        // Turn 3: Alice uses Sanctify; Bob no-ops. Blessed is applied and ticks once at this round's end.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Alice should now carry the Blessed status.
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
+        bool hasBlessed = false;
+        for (uint256 i = 0; i < aliceEffects.length; i++) {
+            if (keccak256(bytes(aliceEffects[i].effect.name())) == keccak256(bytes("Blessed"))) {
+                hasBlessed = true;
+            }
+        }
+        assertTrue(hasBlessed, "Alice should have the Blessed status");
+
+        int32 aliceAfterHeal = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 healAmt = aliceAfterHeal - aliceAfterDamage;
+        assertEq(healAmt, int32(160) / blessedStatus.HEAL_DENOM(), "Blessed should heal maxHp/16 at round end");
     }
 
     function test_interweaving() public {

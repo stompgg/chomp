@@ -24,9 +24,11 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
 
+import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {PanicStatus} from "../../src/effects/status/PanicStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {EternalGrudge} from "../../src/mons/ghouliath/EternalGrudge.sol";
+import {GraveAffliction} from "../../src/mons/ghouliath/GraveAffliction.sol";
 
 import {RiseFromTheGrave} from "../../src/mons/ghouliath/RiseFromTheGrave.sol";
 import {WitherAway} from "../../src/mons/ghouliath/WitherAway.sol";
@@ -43,6 +45,8 @@ contract GhouliathTest is Test, BattleHelper {
     WitherAway witherAway;
     PanicStatus panicStatus;
     EternalGrudge eternalGrudge;
+    GraveAffliction graveAffliction;
+    BurnStatus burnStatus;
     StandardAttackFactory standardAttackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -67,6 +71,8 @@ contract GhouliathTest is Test, BattleHelper {
         witherAway =
             new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
         eternalGrudge = new EternalGrudge();
+        graveAffliction = new GraveAffliction();
+        burnStatus = new BurnStatus();
         matchmaker = new DefaultMatchmaker(engine);
     }
 
@@ -518,5 +524,101 @@ contract GhouliathTest is Test, BattleHelper {
         int32 spAttackDelta = engine.getMonStateForBattle(battleKey, 1, bobMonIndex, MonStateIndexName.SpecialAttack);
         assertEq(attackDelta, -5, "Bob's mon's attack should be debuffed");
         assertEq(spAttackDelta, -5, "Bob's mon's special attack should be debuffed");
+    }
+
+    // Build two single-mon (well, duplicated) teams and start a battle. Alice carries
+    // [burnApplier, graveAffliction]; Bob carries two fillers. Returns the battle key after both
+    // mons are switched in.
+    function _startGraveAfflictionBattle(IMoveSet aliceMove0, IMoveSet aliceMove1)
+        internal
+        returns (bytes32 battleKey)
+    {
+        DefaultValidator validator2 = new DefaultValidator(
+            IEngine(address(engine)),
+            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+
+        uint256[] memory aliceMoves = new uint256[](2);
+        aliceMoves[0] = uint256(uint160(address(aliceMove0)));
+        aliceMoves[1] = uint256(uint160(address(aliceMove1)));
+
+        uint256[] memory bobMoves = new uint256[](2);
+        bobMoves[0] = uint256(uint160(address(osteoporosis)));
+        bobMoves[1] = uint256(uint160(address(osteoporosis)));
+
+        Mon memory aliceMon = Mon({
+            stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 5, defense: 5, specialAttack: 5, specialDefense: 5, type1: Type.Yang, type2: Type.None}),
+            moves: aliceMoves,
+            ability: 0
+        });
+        Mon memory bobMon = Mon({
+            stats: MonStats({hp: 100, stamina: 10, speed: 5, attack: 5, defense: 5, specialAttack: 5, specialDefense: 5, type1: Type.Liquid, type2: Type.None}),
+            moves: bobMoves,
+            ability: 0
+        });
+
+        Mon[] memory aliceTeam = new Mon[](2);
+        aliceTeam[0] = aliceMon;
+        aliceTeam[1] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        battleKey = _startBattle(validator2, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+    }
+
+    // Grave Affliction halves the current HP of BOTH mons, but only when the opposing mon has a
+    // status condition.
+    function testGraveAffliction_firesWhenOpponentHasStatus() public {
+        // A minimal attack that inflicts Burn on its target (used to give Bob a status condition).
+        IMoveSet burnApplier = standardAttackFactory.createAttack(ATTACK_PARAMS({
+            BASE_POWER: 10, STAMINA_COST: 2, ACCURACY: 100, PRIORITY: 3,
+            MOVE_TYPE: Type.Yang, EFFECT_ACCURACY: 100, MOVE_CLASS: MoveClass.Special,
+            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Burnify", EFFECT: IEffect(address(burnStatus))
+        }));
+
+        bytes32 battleKey = _startGraveAfflictionBattle(burnApplier, IMoveSet(address(graveAffliction)));
+
+        // Alice burns Bob (move 0); Bob no-ops.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        int32 aliceBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 bobBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        assertEq(aliceBefore, 0, "Alice should be at full HP before Grave Affliction");
+
+        // Alice uses Grave Affliction (move 1); Bob no-ops.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
+
+        int32 aliceAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 bobAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+
+        // Alice has no status, so her only loss is Grave Affliction's self-damage = half her current
+        // (full) HP, i.e. 50.
+        assertEq(aliceAfter, -50, "Alice should lose exactly half her current HP");
+
+        // Bob loses at least half his current HP from Grave Affliction; Burn's round-end tick adds a
+        // little more on top, hence the inequality.
+        int32 bobCurrentHp = int32(100) + bobBefore;
+        assertLe(bobAfter, bobBefore - bobCurrentHp / 2, "Bob should lose at least half his current HP");
+    }
+
+    // With no status on the opponent, Grave Affliction is a no-op for both mons.
+    function testGraveAffliction_noOpWhenOpponentHealthy() public {
+        bytes32 battleKey =
+            _startGraveAfflictionBattle(IMoveSet(address(graveAffliction)), IMoveSet(address(graveAffliction)));
+
+        // Alice uses Grave Affliction (move 0) while Bob has no status; Bob no-ops.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        int32 aliceHp = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        int32 bobHp = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        assertEq(aliceHp, 0, "Alice should take no damage when opponent has no status");
+        assertEq(bobHp, 0, "Bob should take no damage when he has no status");
     }
 }

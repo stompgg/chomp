@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 from types_enum import REAL_TYPE_NAMES
+from packMoves import pack_move, find_json_moves
 
 
 def to_address_key(name: str) -> str:
@@ -241,6 +242,7 @@ def read_moves_data(
     file_path: str,
     attack_spritesheet_data: Dict[str, Any],
     non_standard_spritesheet_data: Dict[str, Any],
+    json_moves: Dict[str, Dict[str, dict]],
 ) -> tuple[Dict[str, List[Dict[str, Any]]], set[str]]:
     """Read moves.csv and return a dictionary keyed by mon name, plus set of all move keys."""
     moves_by_mon: Dict[str, List[Dict[str, Any]]] = {}
@@ -269,7 +271,16 @@ def read_moves_data(
             "class": row["Class"],
             "description": row["DevDescription"],
             "inputType": row.get("InputType", "none").strip() or "none",
+            "unlockLevel": int((row.get("UnlockLevel") or "0").strip() or "0"),
         }
+        # Inline (JSON) moves carry an effect-address-independent identity (the upper 96 bits of the
+        # packed move word) so the frontend can map a frozen on-chain move word back to its catalog
+        # entry. Deployed moves are matched by `address`, so they need no inlineKey.
+        contract_name = re.sub(r"\W+", "", move_name.replace(" ", ""))
+        inline_json = json_moves.get(mon_name.lower(), {}).get(contract_name)
+        if inline_json is not None:
+            move_data["inlineKey"] = hex(pack_move(inline_json, effect_address=0) >> 160)
+
         placement = MOVE_OVERLAY_PLACEMENT.get(move_name)
         if placement:
             move_data["overlayPlacement"] = placement
@@ -282,6 +293,11 @@ def read_moves_data(
         # them matched so find_non_standard_sprites won't re-emit them.
         all_move_keys.update(matched_keys)
         moves_by_mon.setdefault(mon_name, []).append(move_data)
+
+    # Emit moves in ascending unlock level (stable) so lane index == on-chain lane order: level-0
+    # moves fill lanes 0..3, higher-tier moves follow. Mirrors generateSolidity's lane sort.
+    for moves in moves_by_mon.values():
+        moves.sort(key=lambda m: m["unlockLevel"])
 
     return moves_by_mon, all_move_keys
 
@@ -429,6 +445,13 @@ export type Move = {{
   readonly class: MoveClass;
   readonly description: string;
   readonly inputType: MoveInputType;
+  // Level a player's mon must reach before this move can be brought into battle. 0 = always
+  // available (battle lanes 0..3); higher-lane moves unlock at 6 (see MonExp._unlockLevelForLane).
+  readonly unlockLevel: number;
+  // Effect-address-independent identity for inline (JSON) moves: the upper 96 bits of the packed
+  // move word. Lets a frozen on-chain battle move resolve to this catalog entry. Absent for
+  // deployed moves (those resolve by `address`).
+  readonly inlineKey?: string;
   readonly sprite?: SpriteAnimationConfig | MoveSpriteVariants;
   readonly overlayPlacement?: AttackOverlayPlacement;
 }};
@@ -586,9 +609,12 @@ def run() -> bool:
         )
         print(f"  ✓ Loaded non-standard attack spritesheet")
 
+    # Inline-move JSON definitions (for inlineKey identity); src/ sits next to drool/.
+    json_moves = find_json_moves(str(base_path.parent / "src"))
+
     mons_data = read_mons_data(str(files["mons"]), spritesheet_data)
     moves_by_mon, all_move_keys = read_moves_data(
-        str(files["moves"]), attack_spritesheet_data, non_standard_spritesheet_data
+        str(files["moves"]), attack_spritesheet_data, non_standard_spritesheet_data, json_moves
     )
     abilities_by_mon = read_abilities_data(str(files["abilities"]))
 

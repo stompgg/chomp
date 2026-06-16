@@ -14,6 +14,7 @@ import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {IEngine} from "../src/IEngine.sol";
 
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
+import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
@@ -79,6 +80,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         FrostbiteStatus frost = new FrostbiteStatus();
         BurnStatus burn = new BurnStatus();
         ZapStatus zap = new ZapStatus();
+        BlessedStatus blessed = new BlessedStatus();
         gachaReg = new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)), GachaTeamRegistry(address(0)));
         vm.setEnv("TYPE_CALCULATOR", vm.toString(address(tc)));
         vm.setEnv("OVERCLOCK", vm.toString(address(oc)));
@@ -87,6 +89,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         vm.setEnv("FROSTBITE_STATUS", vm.toString(address(frost)));
         vm.setEnv("BURN_STATUS", vm.toString(address(burn)));
         vm.setEnv("ZAP_STATUS", vm.toString(address(zap)));
+        vm.setEnv("BLESSED_STATUS", vm.toString(address(blessed)));
         vm.setEnv("GACHA_TEAM_REGISTRY", vm.toString(address(gachaReg)));
         deployGhouliath(gachaReg); deployInutia(gachaReg); deployMalalien(gachaReg); deployIblivion(gachaReg);
         deployGorillax(gachaReg); deploySofabbi(gachaReg); deployPengym(gachaReg); deployEmbursa(gachaReg);

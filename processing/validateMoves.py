@@ -25,6 +25,7 @@ class MoveData:
     move_class: str
     description: str
     extra_data: str
+    unlock_level: int = 0
 
 @dataclass
 class ContractData:
@@ -45,6 +46,11 @@ class MoveValidator:
     
     # Constants from the codebase
     DEFAULT_PRIORITY = 3
+    # Lane gating (must match MonExp / MonRegistry): 4 battle lanes (level-0), up to 8 catalog lanes,
+    # higher lanes unlock at level 6.
+    MOVES_PER_MON = 4
+    CATALOG_MOVE_LANES = 8
+    FIRST_UNLOCK_LEVEL = 6
     
     # MoveClass enum mapping
     CLASS_MAPPING = {
@@ -122,7 +128,8 @@ class MoveValidator:
                     move_type=row['Type'],
                     move_class=row['Class'],
                     description=row['DevDescription'], # Change to UserDescription later
-                    extra_data=row.get('InputType', '')
+                    extra_data=row.get('InputType', ''),
+                    unlock_level=int((row.get('UnlockLevel') or '0').strip() or '0'),
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
                 self.moves_data[normalized_name] = move_data
@@ -402,6 +409,35 @@ class MoveValidator:
 
         return result
 
+    def check_unlock_curve(self) -> List[str]:
+        """Validate the per-mon unlock curve in moves.csv against the on-chain by-lane gating.
+
+        For each mon: at most CATALOG_MOVE_LANES total moves, exactly MOVES_PER_MON level-0 moves
+        (they fill battle lanes 0..3), and every higher-lane move must unlock at FIRST_UNLOCK_LEVEL.
+        """
+        moves_by_mon: Dict[str, List[MoveData]] = {}
+        for move_data in self.moves_data.values():
+            moves_by_mon.setdefault(move_data.mon, []).append(move_data)
+
+        errors: List[str] = []
+        for mon, moves in sorted(moves_by_mon.items()):
+            if len(moves) > self.CATALOG_MOVE_LANES:
+                errors.append(f"{mon}: {len(moves)} moves exceeds CATALOG_MOVE_LANES ({self.CATALOG_MOVE_LANES})")
+
+            level_zero = [m for m in moves if m.unlock_level == 0]
+            if len(level_zero) != self.MOVES_PER_MON:
+                errors.append(
+                    f"{mon}: {len(level_zero)} level-0 moves (expected exactly MOVES_PER_MON = {self.MOVES_PER_MON})"
+                )
+
+            for m in moves:
+                if m.unlock_level not in (0, self.FIRST_UNLOCK_LEVEL):
+                    errors.append(
+                        f"{mon}: move '{m.name}' has UnlockLevel {m.unlock_level} "
+                        f"(higher-lane moves must unlock at {self.FIRST_UNLOCK_LEVEL})"
+                    )
+        return errors
+
     def run_validation(self) -> tuple[bool, bool]:
         """
         Run validation for all moves.
@@ -413,6 +449,17 @@ class MoveValidator:
         """
         self.load_csv_data()
         print(f"Loaded {len(self.moves_data)} moves from CSV")
+
+        # CSV-level unlock-curve check (independent of contract-vs-CSV checks). A broken curve is an
+        # authoring mistake, not something the contract auto-updater can fix, so fail fast.
+        curve_errors = self.check_unlock_curve()
+        if curve_errors:
+            print("\n" + "=" * 80)
+            print("UNLOCK CURVE ERRORS")
+            print("=" * 80)
+            for err in curve_errors:
+                print(f"  • {err}")
+            return (False, False)
         found_contracts = 0
         missing_contracts = []
 

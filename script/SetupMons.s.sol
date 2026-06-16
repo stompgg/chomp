@@ -25,6 +25,7 @@ import {Q5} from "../src/mons/embursa/Q5.sol";
 import {SetAblaze} from "../src/mons/embursa/SetAblaze.sol";
 import {Tinderclaws} from "../src/mons/embursa/Tinderclaws.sol";
 import {EternalGrudge} from "../src/mons/ghouliath/EternalGrudge.sol";
+import {GraveAffliction} from "../src/mons/ghouliath/GraveAffliction.sol";
 import {InfernalFlame} from "../src/mons/ghouliath/InfernalFlame.sol";
 import {RiseFromTheGrave} from "../src/mons/ghouliath/RiseFromTheGrave.sol";
 import {WitherAway} from "../src/mons/ghouliath/WitherAway.sol";
@@ -39,7 +40,9 @@ import {ChainExpansion} from "../src/mons/inutia/ChainExpansion.sol";
 import {HitAndDip} from "../src/mons/inutia/HitAndDip.sol";
 import {Initialize} from "../src/mons/inutia/Initialize.sol";
 import {Interweaving} from "../src/mons/inutia/Interweaving.sol";
+import {Sanctify} from "../src/mons/inutia/Sanctify.sol";
 import {ActusReus} from "../src/mons/malalien/ActusReus.sol";
+import {FoulLanguage} from "../src/mons/malalien/FoulLanguage.sol";
 import {TripleThink} from "../src/mons/malalien/TripleThink.sol";
 import {Adaptor} from "../src/mons/nirvamma/Adaptor.sol";
 import {Chronoffense} from "../src/mons/nirvamma/Chronoffense.sol";
@@ -114,12 +117,12 @@ contract SetupMons is Script {
     }
 
     function deployGhouliath(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](4);
+        DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        address[4] memory addrs;
+        address[5] memory addrs;
 
         {
             addrs[0] = address(new EternalGrudge());
@@ -134,8 +137,12 @@ contract SetupMons is Script {
             deployedContracts[2] = DeployData({name: "Wither Away", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new RiseFromTheGrave());
-            deployedContracts[3] = DeployData({name: "Rise From The Grave", contractAddress: addrs[3]});
+            addrs[3] = address(new GraveAffliction());
+            deployedContracts[3] = DeployData({name: "Grave Affliction", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new RiseFromTheGrave());
+            deployedContracts[4] = DeployData({name: "Rise From The Grave", contractAddress: addrs[4]});
         }
 
         _registerGhouliath(registry, addrs);
@@ -143,7 +150,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerGhouliath(GachaTeamRegistry registry, address[4] memory addrs) internal {
+    function _registerGhouliath(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 303,
             stamina: 5,
@@ -155,25 +162,26 @@ contract SetupMons is Script {
             type1: Type.Yin,
             type2: Type.Fire
         });
-        uint256[] memory moves = new uint256[](4);
+        uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
         moves[2] = uint256(uint160(addrs[2]));
         moves[3] = 0x5a00200000000000000000000000000000000000000000000000000000000000;
+        moves[4] = uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = uint256(uint160(addrs[3]));
+        abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(0, stats, moves, abilities, keys, values);
     }
 
     function deployInutia(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](4);
+        DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        address[4] memory addrs;
+        address[5] memory addrs;
 
         {
             addrs[0] = address(new ChainExpansion(ITypeCalculator(typecalculator)));
@@ -188,8 +196,12 @@ contract SetupMons is Script {
             deployedContracts[2] = DeployData({name: "Hit And Dip", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new Interweaving());
-            deployedContracts[3] = DeployData({name: "Interweaving", contractAddress: addrs[3]});
+            addrs[3] = address(new Sanctify(IEffect(vm.envAddress("BLESSED_STATUS"))));
+            deployedContracts[3] = DeployData({name: "Sanctify", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new Interweaving());
+            deployedContracts[4] = DeployData({name: "Interweaving", contractAddress: addrs[4]});
         }
 
         _registerInutia(registry, addrs);
@@ -197,7 +209,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerInutia(GachaTeamRegistry registry, address[4] memory addrs) internal {
+    function _registerInutia(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 351,
             stamina: 5,
@@ -209,30 +221,35 @@ contract SetupMons is Script {
             type1: Type.Faith,
             type2: Type.None
         });
-        uint256[] memory moves = new uint256[](4);
+        uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
         moves[2] = 0x5009200000000000000000000000000000000000000000000000000000000000;
         moves[3] = uint256(uint160(addrs[2]));
+        moves[4] = uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = uint256(uint160(addrs[3]));
+        abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(1, stats, moves, abilities, keys, values);
     }
 
     function deployMalalien(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](2);
+        DeployData[] memory deployedContracts = new DeployData[](3);
 
-        address[2] memory addrs;
+        address[3] memory addrs;
 
         {
             addrs[0] = address(new TripleThink());
             deployedContracts[0] = DeployData({name: "Triple Think", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new ActusReus());
-            deployedContracts[1] = DeployData({name: "Actus Reus", contractAddress: addrs[1]});
+            addrs[1] = address(new FoulLanguage(ITypeCalculator(vm.envAddress("TYPE_CALCULATOR"))));
+            deployedContracts[1] = DeployData({name: "Foul Language", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new ActusReus());
+            deployedContracts[2] = DeployData({name: "Actus Reus", contractAddress: addrs[2]});
         }
 
         _registerMalalien(registry, addrs);
@@ -240,7 +257,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerMalalien(GachaTeamRegistry registry, address[2] memory addrs) internal {
+    function _registerMalalien(GachaTeamRegistry registry, address[3] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 258,
             stamina: 5,
@@ -252,13 +269,14 @@ contract SetupMons is Script {
             type1: Type.Cyber,
             type2: Type.None
         });
-        uint256[] memory moves = new uint256[](4);
+        uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = 0x644c300000000000000000000000000000000000000000000000000000000000;
         moves[2] = 0x504b30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
         moves[3] = 0x5a4d30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
+        moves[4] = uint256(uint160(addrs[1]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[1]));
+        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[2]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(2, stats, moves, abilities, keys, values);

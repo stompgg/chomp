@@ -27,6 +27,7 @@ class MonData:
         self.type1 = type1
         self.type2 = type2
         self.moves: List[str] = []
+        self.move_unlock_levels: Dict[str, int] = {}  # move name -> unlock level (lane gating)
         self.abilities: List[str] = []
         self.sprite_data: List[int] = []  # uint256 values for compressed sprite data
         self.palette_data: List[int] = []  # uint256 values for compressed palette data
@@ -83,7 +84,12 @@ def read_mons_csv(file_path: str) -> Dict[str, MonData]:
 
 
 def read_moves_csv(file_path: str, mons: Dict[str, MonData]) -> None:
-    """Read moves.csv and populate move data for each mon"""
+    """Read moves.csv and populate move data for each mon.
+
+    Moves are emitted in ascending (UnlockLevel, CSV order) so the four level-0 moves fill battle
+    lanes 0-3 and any higher-tier move lands at lane 4+ (matching MonExp._unlockLevelForLane). The
+    sort is stable, so CSV order is preserved within a tier.
+    """
     with open(file_path, 'r', newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
@@ -91,6 +97,11 @@ def read_moves_csv(file_path: str, mons: Dict[str, MonData]) -> None:
             mon_name = row['Mon'].strip()
             if move_name and mon_name and mon_name in mons:
                 mons[mon_name].moves.append(move_name)
+                mons[mon_name].move_unlock_levels[move_name] = int((row.get('UnlockLevel') or '0').strip() or '0')
+
+    # Stable-sort each mon's moves by unlock level so lanes line up with the on-chain curve.
+    for mon in mons.values():
+        mon.moves.sort(key=lambda name: mon.move_unlock_levels.get(name, 0))
 
 
 def read_abilities_csv(file_path: str, mons: Dict[str, MonData]) -> None:
