@@ -17,13 +17,15 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
     error TooManyMoves();
     error TooManyAbilities();
 
-    /// @dev Catalog move-row width. Flat rows replace the old per-mon EnumerableSets: reading a
-    ///      mon's full moveset is CATALOG_MOVE_LANES SLOADs with no lazy-length word and no
-    ///      per-value position slots (9 -> 5 cold SLOADs per distinct mon in getTeams, ~8.4k).
-    ///      Zero lane = empty (move words are addresses/packed-inline data, never zero). Raising
-    ///      the width for a bigger catalog is a registry redeploy — the catalog is re-seeded by
-    ///      the deploy scripts, never migrated.
-    uint256 internal constant CATALOG_MOVE_LANES = 4;
+    /// @dev Catalog move-row width — the *learnable pool* size, distinct from the battle-slot
+    ///      count (MOVES_PER_MON, still 4). Lane order is learnset order: lanes [0, MOVES_PER_MON)
+    ///      are the default moves (unlock level 0); lanes >= MOVES_PER_MON are higher-pool moves
+    ///      that unlock by level (see MonExp._unlockLevelForLane). Flat rows replace the old
+    ///      per-mon EnumerableSets: reading a mon's full moveset is CATALOG_MOVE_LANES SLOADs with
+    ///      no lazy-length word and no per-value position slots. Zero lane = empty (move words are
+    ///      addresses/packed-inline data, never zero). Raising the width for a bigger catalog is a
+    ///      registry redeploy — the catalog is re-seeded by the deploy scripts, never migrated.
+    uint256 internal constant CATALOG_MOVE_LANES = 8;
 
     EnumerableSetLib.Uint256Set internal monIds;
     mapping(uint256 monId => MonStats) public monStats;
@@ -221,17 +223,66 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         uint256 m1 = row[1];
         uint256 m2 = row[2];
         uint256 m3 = row[3];
+        uint256 m4 = row[4];
+        uint256 m5 = row[5];
+        uint256 m6 = row[6];
+        uint256 m7 = row[7];
         uint256 n;
         if (m0 != 0) ++n;
         if (m1 != 0) ++n;
         if (m2 != 0) ++n;
         if (m3 != 0) ++n;
+        if (m4 != 0) ++n;
+        if (m5 != 0) ++n;
+        if (m6 != 0) ++n;
+        if (m7 != 0) ++n;
         vals = new uint256[](n);
         uint256 w;
         if (m0 != 0) vals[w++] = m0;
         if (m1 != 0) vals[w++] = m1;
         if (m2 != 0) vals[w++] = m2;
         if (m3 != 0) vals[w++] = m3;
+        if (m4 != 0) vals[w++] = m4;
+        if (m5 != 0) vals[w++] = m5;
+        if (m6 != 0) vals[w++] = m6;
+        if (m7 != 0) vals[w++] = m7;
+    }
+
+    /// @dev Materialize the full lane-indexed move row (length CATALOG_MOVE_LANES, zeros included).
+    ///      Used by the move-loadout resolver where bit `i` of a selection bitmap maps to lane `i`,
+    ///      so positions must be preserved (unlike _moveRowValues, which trims gaps).
+    function _catalogMoveLanes(uint256 monId) internal view returns (uint256[] memory vals) {
+        uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
+        vals = new uint256[](CATALOG_MOVE_LANES);
+        vals[0] = row[0];
+        vals[1] = row[1];
+        vals[2] = row[2];
+        vals[3] = row[3];
+        vals[4] = row[4];
+        vals[5] = row[5];
+        vals[6] = row[6];
+        vals[7] = row[7];
+    }
+
+    /// @dev Batched team-mon read for getTeams: stats + full lane-indexed move rows + single
+    ///      ability per mon. Distinct from _getMonDataBatch (trimmed moves, array-of-array
+    ///      abilities) which backs the public getter and the PackedTeamStore.getTeam view.
+    function _getTeamMonData(uint256[] memory ids)
+        internal
+        view
+        returns (MonStats[] memory stats, uint256[][] memory fullMoves, uint256[] memory abilities)
+    {
+        uint256 len = ids.length;
+        stats = new MonStats[](len);
+        fullMoves = new uint256[][](len);
+        abilities = new uint256[](len);
+        for (uint256 i; i < len;) {
+            uint256 monId = ids[i];
+            stats[i] = monStats[monId];
+            fullMoves[i] = _catalogMoveLanes(monId);
+            abilities[i] = monAbility[monId];
+            unchecked { ++i; }
+        }
     }
 
     function _abilityValues(uint256 monId) internal view returns (uint256[] memory vals) {
@@ -265,7 +316,8 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
     function isValidMove(uint256 monId, uint256 moveSlot) external view override returns (bool) {
         if (moveSlot == 0) return false;
         uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
-        return row[0] == moveSlot || row[1] == moveSlot || row[2] == moveSlot || row[3] == moveSlot;
+        return row[0] == moveSlot || row[1] == moveSlot || row[2] == moveSlot || row[3] == moveSlot
+            || row[4] == moveSlot || row[5] == moveSlot || row[6] == moveSlot || row[7] == moveSlot;
     }
 
     function isValidAbility(uint256 monId, uint256 ability) external view override returns (bool) {

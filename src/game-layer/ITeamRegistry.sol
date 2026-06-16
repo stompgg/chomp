@@ -54,4 +54,12 @@ interface ITeamRegistry {
     function getFacetData(address player, uint256 monId)
         external view returns (uint16 unlockedBitmap, uint8 assignedFacetId);
     function getFacetDeltaForMon(address player, uint256 monId) external view returns (StatDelta memory);
+
+    // Move loadout — per-(player, mon) selection of which unlocked catalog moves occupy the 4
+    // battle slots. Resolution into battle moves happens inside getTeams().
+    function assignMoves(uint256[] calldata monIds, uint8[] calldata selectionBitmaps) external;
+    function getMoveSelection(address player, uint256 monId) external view returns (uint8 bitmap);
+    function getUnlockedMoves(address player, uint256 monId) external view returns (uint8 bitmap);
+    function getMovePool(uint256 monId)
+        external view returns (uint256[] memory moves, uint8[] memory unlockLevels);
 }

@@ -191,4 +191,21 @@ contract TestTeamRegistry is ITeamRegistry {
     function getFacetDeltaForMon(address, uint256) external pure returns (StatDelta memory) {
         return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
     }
+
+    // ---- move-loadout stubs ----
+
+    function assignMoves(uint256[] calldata, uint8[] calldata) external pure {}
+
+    function getMoveSelection(address, uint256) external pure returns (uint8) {
+        return 0;
+    }
+
+    function getUnlockedMoves(address, uint256) external pure returns (uint8) {
+        return 0;
+    }
+
+    function getMovePool(uint256) external pure returns (uint256[] memory moves, uint8[] memory unlockLevels) {
+        moves = new uint256[](0);
+        unlockLevels = new uint8[](0);
+    }
 }

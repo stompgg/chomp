@@ -5,5 +5,10 @@ pragma solidity ^0.8.0;
 /// caller (a whitelisted CPU). Lets a matchmaker bundle team-config + battle-start
 /// in one tx while preserving per-user phantom-slot isolation.
 interface IPhantomTeamRegistry {
-    function setOpponentTeamFor(address user, uint256[] memory monIndices, uint8[] memory facetIds) external;
+    function setOpponentTeamFor(
+        address user,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
+    ) external;
 }

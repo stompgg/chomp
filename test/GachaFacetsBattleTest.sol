@@ -109,8 +109,9 @@ contract GachaFacetsBattleTest is Test {
         uint8[] memory cpuFacets = new uint8[](MONS_PER_TEAM);
         cpuFacets[0] = 1;
         cpuFacets[1] = 0;
+        uint8[] memory cpuMoves = new uint8[](MONS_PER_TEAM); // default loadout
         vm.prank(ALICE);
-        registry.setOpponentTeam(CPU, cpuMons, cpuFacets);
+        registry.setOpponentTeam(CPU, cpuMons, cpuFacets, cpuMoves);
 
         // Both players must authorize the matchmaker with the engine.
         address[] memory makersToAdd = new address[](1);

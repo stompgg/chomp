@@ -13,12 +13,36 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     error LengthMismatch();
     error InvalidMonId();
 
+    // ----- Move-loadout errors -----
+    error NotMoveOwner();
+    error EmptyMoveSelection();
+    error TooManyMovesSelected();
+    error InvalidMoveLane();
+    error MoveNotUnlocked();
+
+    event MovesAssigned(address indexed player, uint256[] monIds);
+
     uint256 internal constant MONS_PER_EXP_BUCKET = 16;
     uint256 internal constant EXP_BITS_PER_MON = 16;
     uint256 internal constant EXP_PER_MON_MASK = (1 << EXP_BITS_PER_MON) - 1;
     uint256 internal constant EXP_PER_MON_CAP = EXP_PER_MON_MASK; // 65535
 
     mapping(address player => mapping(uint256 monBucket => uint256 packedExp)) public packedExpForMon;
+
+    // ----- Move loadout (per-(player, mon) battle-slot selection) -----
+    // Deterministic level-gated learnset: a mon's higher catalog lanes become selectable once the
+    // player's copy reaches the lane's unlock level. "Unlocked" is a pure function of level + the
+    // by-lane curve below — no per-player unlock storage.
+    uint256 internal constant FIRST_UNLOCK_LEVEL = 6;
+
+    // Per-mon selection field: an 8-bit *set* bitmap (bit i = "catalog lane i is in my battle set").
+    // Battle-slot order is derived (ascending lane), not stored. Whole-mon value 0 = unconfigured →
+    // resolves to the default lanes [0, MOVES_PER_MON). Stride is 16 bits / 16 mons per bucket to
+    // align with the exp & facet buckets (only the low 8 bits are used; high 8 reserved), so
+    // migrate() copies all three in one bucket loop and the getTeams/assignMoves bucket math is shared.
+    uint256 internal constant MOVE_SEL_BITS_PER_MON = 16;
+    uint256 internal constant MOVE_SEL_MASK = 0xFF;
+    mapping(address player => mapping(uint256 monBucket => uint256 packed)) public selectedMoveBitmap;
 
     // =====================================================================
     // Public view API (ITeamRegistry)
@@ -164,6 +188,144 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     }
 
     // =====================================================================
+    // Move loadout (ITeamRegistry)
+    // =====================================================================
+
+    /// @notice Uniform-across-mons unlock curve. Lane order = learnset order: lanes
+    /// [0, MOVES_PER_MON) are the default moves (level 0); higher lanes unlock at FIRST_UNLOCK_LEVEL.
+    function _unlockLevelForLane(uint256 lane) internal view returns (uint256) {
+        if (lane < MOVES_PER_MON) return 0;
+        return FIRST_UNLOCK_LEVEL;
+    }
+
+    /// @dev OR of (1 << lane) for every catalog lane with a non-zero move whose unlock level is
+    /// <= the player's current level for the mon. Excludes empty lanes via the non-zero check.
+    function _unlockedMoveMask(address player, uint256 monId) internal view returns (uint8 mask) {
+        uint256[] memory fullRow = _fullMoveRow(monId);
+        uint256 level = _levelForExp(_getExp(player, monId));
+        for (uint256 lane; lane < fullRow.length;) {
+            if (fullRow[lane] != 0 && _unlockLevelForLane(lane) <= level) {
+                mask |= uint8(1 << lane);
+            }
+            unchecked { ++lane; }
+        }
+    }
+
+    /// @notice The set of catalog lanes currently usable by `player` for `monId` (pure function of
+    /// level). The frontend ANDs the move picker against this.
+    function getUnlockedMoves(address player, uint256 monId) external view override returns (uint8) {
+        return _unlockedMoveMask(player, monId);
+    }
+
+    /// @notice The player's selected battle-slot set for `monId` as an 8-bit lane bitmap. Returns
+    /// the default (lanes [0, MOVES_PER_MON)) when unconfigured (stored value 0).
+    function getMoveSelection(address player, uint256 monId) external view override returns (uint8) {
+        uint256 bucket = monId / MONS_PER_EXP_BUCKET;
+        uint256 lane = monId % MONS_PER_EXP_BUCKET;
+        uint8 stored = uint8((selectedMoveBitmap[player][bucket] >> (lane * MOVE_SEL_BITS_PER_MON)) & MOVE_SEL_MASK);
+        if (stored == 0) return uint8((uint256(1) << MOVES_PER_MON) - 1);
+        return stored;
+    }
+
+    /// @notice Learnset display: a mon's non-empty catalog moves (in lane order) and each move's
+    /// unlock level.
+    function getMovePool(uint256 monId)
+        external
+        view
+        override
+        returns (uint256[] memory moves, uint8[] memory unlockLevels)
+    {
+        uint256[] memory fullRow = _fullMoveRow(monId);
+        uint256 n;
+        for (uint256 i; i < fullRow.length; ++i) {
+            if (fullRow[i] != 0) ++n;
+        }
+        moves = new uint256[](n);
+        unlockLevels = new uint8[](n);
+        uint256 w;
+        for (uint256 lane; lane < fullRow.length;) {
+            if (fullRow[lane] != 0) {
+                moves[w] = fullRow[lane];
+                unlockLevels[w] = uint8(_unlockLevelForLane(lane));
+                unchecked { ++w; }
+            }
+            unchecked { ++lane; }
+        }
+    }
+
+    /// @notice Pick which of an owned mon's unlocked moves occupy its 4 battle slots. Parallel
+    /// arrays: `selectionBitmaps[i]` is the 8-bit lane set for `monIds[i]`. Bucket-coalesced write
+    /// mirroring assignFacets. Unlock is monotonic (level only rises), so a stored selection can
+    /// never later become un-unlocked — no read-time re-validation needed.
+    function assignMoves(uint256[] calldata monIds_, uint8[] calldata selectionBitmaps) external override {
+        if (monIds_.length != selectionBitmaps.length) revert LengthMismatch();
+        uint256 lastBucket = type(uint256).max;
+        uint256 currentSlot;
+        bool dirty;
+        for (uint256 i; i < monIds_.length;) {
+            uint256 monId = monIds_[i];
+            uint8 bitmap = selectionBitmaps[i];
+            if (!_isFacetMonOwned(msg.sender, monId)) revert NotMoveOwner();
+            if (bitmap == 0) revert EmptyMoveSelection();
+            if (_popcount(bitmap) > MOVES_PER_MON) revert TooManyMovesSelected();
+
+            // Every set bit must point at a non-empty, unlocked catalog lane. Split the two
+            // failure modes for precise errors (empty lane vs out-leveled lane).
+            {
+                uint256[] memory fullRow = _fullMoveRow(monId);
+                uint256 level = _levelForExp(_getExp(msg.sender, monId));
+                for (uint256 b; b < fullRow.length;) {
+                    if ((bitmap & uint8(1 << b)) != 0) {
+                        if (fullRow[b] == 0) revert InvalidMoveLane();
+                        if (_unlockLevelForLane(b) > level) revert MoveNotUnlocked();
+                    }
+                    unchecked { ++b; }
+                }
+            }
+
+            uint256 bucket = monId / MONS_PER_EXP_BUCKET;
+            uint256 lane = monId % MONS_PER_EXP_BUCKET;
+            if (bucket != lastBucket) {
+                if (lastBucket != type(uint256).max && dirty) {
+                    selectedMoveBitmap[msg.sender][lastBucket] = currentSlot;
+                }
+                currentSlot = selectedMoveBitmap[msg.sender][bucket];
+                lastBucket = bucket;
+                dirty = false;
+            }
+            uint256 shift = lane * MOVE_SEL_BITS_PER_MON;
+            currentSlot = (currentSlot & ~(MOVE_SEL_MASK << shift)) | (uint256(bitmap) << shift);
+            dirty = true;
+            unchecked { ++i; }
+        }
+        if (lastBucket != type(uint256).max && dirty) {
+            selectedMoveBitmap[msg.sender][lastBucket] = currentSlot;
+        }
+        emit MovesAssigned(msg.sender, monIds_);
+    }
+
+    /// @dev Resolve a mon's MOVES_PER_MON battle slots from its full lane-indexed catalog row and
+    /// an 8-bit selection bitmap. bitmap == 0 → default (first MOVES_PER_MON non-zero lanes); else
+    /// the set non-zero lanes in ascending order. Trailing slots stay 0 (Engine: "no move").
+    function _resolveBattleMoves(uint256[] memory fullRow, uint8 bitmap)
+        internal
+        view
+        returns (uint256[] memory out)
+    {
+        out = new uint256[](MOVES_PER_MON);
+        uint256 w;
+        for (uint256 lane; lane < fullRow.length && w < MOVES_PER_MON;) {
+            uint256 word = fullRow[lane];
+            bool take = bitmap == 0 ? true : (bitmap & uint8(1 << lane)) != 0;
+            if (take && word != 0) {
+                out[w] = word;
+                unchecked { ++w; }
+            }
+            unchecked { ++lane; }
+        }
+    }
+
+    // =====================================================================
     // Shared internals
     // =====================================================================
 
@@ -266,4 +428,8 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     function _assertExpAssigner() internal view virtual;
 
     function _monRegistrySize() internal view virtual returns (uint256);
+
+    /// @dev Full lane-indexed catalog move row (length CATALOG_MOVE_LANES, zeros included) for
+    /// `monId`. Wired by the leaf to MonRegistry's catalog.
+    function _fullMoveRow(uint256 monId) internal view virtual returns (uint256[] memory);
 }

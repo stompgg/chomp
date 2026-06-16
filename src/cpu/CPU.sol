@@ -296,7 +296,9 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
     /// to other users' slots. The registry must implement IPhantomTeamRegistry; the relay gate
     /// enforces that only whitelisted CPUs (i.e. this contract once added) can land the write.
     function startCustomBattle(CustomBattleProposal calldata p) external returns (bytes32 battleKey) {
-        IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(p.p0, p.monIndices, p.facetIds);
+        IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(
+            p.p0, p.monIndices, p.facetIds, p.moveSelections
+        );
 
         uint96 p1TeamIndex = uint96(uint16(uint160(p.p0)));
         (battleKey,) = ENGINE.computeBattleKey(p.p0, address(this));

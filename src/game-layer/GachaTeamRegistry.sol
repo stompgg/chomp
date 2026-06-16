@@ -124,6 +124,17 @@ contract GachaTeamRegistry is
     uint256 internal constant OPP_FACET_SLOT_MASK = (1 << OPP_FACET_BITS_PER_SLOT) - 1;
     mapping(address opponent => mapping(uint256 phantomKey => uint256 packedFacets)) public opponentTeamFacetsPacked;
 
+    // ----- Per-(user, opponent) CPU team move-loadout config -----
+    // Mirrors opponentTeamFacetsPacked: each user picks an 8-bit move-selection bitmap for each
+    // slot of a whitelisted opponent's phantom team. 8 bits per slot, MONS_PER_TEAM slots
+    // (4 × 8 = 32 bits) fit in one uint256. Keyed by the same phantomKey so a single logical
+    // config resolves the team's mon ids, facets, and moves at battle start. No ownership/unlock
+    // checks — the user is configuring an opponent they will fight, and the resolver self-limits
+    // (extra/empty-lane bits resolve to nothing; a 0 slot falls back to the default loadout).
+    uint256 internal constant OPP_MOVE_BITS_PER_SLOT = 8;
+    uint256 internal constant OPP_MOVE_SLOT_MASK = (1 << OPP_MOVE_BITS_PER_SLOT) - 1;
+    mapping(address opponent => mapping(uint256 phantomKey => uint256 packedMoves)) public opponentTeamMovesPacked;
+
     constructor(
         uint256 _MONS_PER_TEAM,
         uint256 _MOVES_PER_MON,
@@ -247,16 +258,18 @@ contract GachaTeamRegistry is
     // BattleData.pXTeamIndex storage width. ~2^16 collision space — acceptable since exp accrual
     // is winner/human-only and uses the player's own (small) teamIndex, not the phantom key.
     //
-    // facetIds is a parallel array: facetIds[i] is the facet (0=none, 1..12) the caller wants
-    // applied to the CPU's slot i. No ownership / unlock checks — the user is configuring an
-    // opponent they will fight, not their own mons.
+    // facetIds / moveSelections are parallel arrays: for the CPU's slot i, facetIds[i] is the
+    // facet (0=none, 1..12) and moveSelections[i] is the 8-bit move-loadout bitmap (0 = default
+    // loadout). No ownership / unlock checks — the user is configuring an opponent they will fight,
+    // not their own mons.
     function setOpponentTeam(
         address opponent,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
     ) external {
         if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds);
+        _setOpponentTeam(opponent, msg.sender, monIndices, facetIds, moveSelections);
     }
 
     /// @notice Trusted-relayer entry: a whitelisted CPU writes a user's phantom team
@@ -265,30 +278,37 @@ contract GachaTeamRegistry is
     function setOpponentTeamFor(
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
     ) external override {
         if (!isWhitelistedOpponent(msg.sender)) revert NotWhitelistedOpponent();
-        _setOpponentTeam(msg.sender, user, monIndices, facetIds);
+        _setOpponentTeam(msg.sender, user, monIndices, facetIds, moveSelections);
     }
 
     function _setOpponentTeam(
         address opponent,
         address user,
         uint256[] memory monIndices,
-        uint8[] memory facetIds
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
     ) internal {
-        if (monIndices.length != facetIds.length) revert FacetArgsLengthMismatch();
+        if (monIndices.length != facetIds.length || monIndices.length != moveSelections.length) {
+            revert FacetArgsLengthMismatch();
+        }
         uint256 phantomKey = uint16(uint160(user));
         _writeTeamLane(opponent, phantomKey, _packIndices(monIndices));
 
         uint256 packedFacets;
+        uint256 packedMoves;
         for (uint256 i; i < facetIds.length;) {
             uint8 facetId = facetIds[i];
             if (facetId > TOTAL_FACETS) revert InvalidFacetId();
             packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
+            packedMoves |= uint256(moveSelections[i]) << (i * OPP_MOVE_BITS_PER_SLOT);
             unchecked { ++i; }
         }
         opponentTeamFacetsPacked[opponent][phantomKey] = packedFacets;
+        opponentTeamMovesPacked[opponent][phantomKey] = packedMoves;
     }
 
     /// @notice Unpack the caller's configured facets for a CPU opponent.
@@ -301,6 +321,20 @@ contract GachaTeamRegistry is
         facetIds = new uint8[](MONS_PER_TEAM);
         for (uint256 i; i < MONS_PER_TEAM;) {
             facetIds[i] = uint8((packed >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK);
+            unchecked { ++i; }
+        }
+    }
+
+    /// @notice Unpack the caller-configured move-loadout bitmaps for a CPU opponent.
+    function getOpponentTeamMoves(address user, address opponent)
+        external
+        view
+        returns (uint8[] memory moveSelections)
+    {
+        uint256 packed = opponentTeamMovesPacked[opponent][uint16(uint160(user))];
+        moveSelections = new uint8[](MONS_PER_TEAM);
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            moveSelections[i] = uint8((packed >> (i * OPP_MOVE_BITS_PER_SLOT)) & OPP_MOVE_SLOT_MASK);
             unchecked { ++i; }
         }
     }
@@ -333,17 +367,28 @@ contract GachaTeamRegistry is
             }
         }
 
-        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _getMonDataBatch(ids);
+        // Full lane-indexed (8-wide) catalog rows so the move resolver can map selection bit i to
+        // catalog lane i; abilities is one word per mon (0 = none).
+        (MonStats[] memory stats, uint256[][] memory fullMoves, uint256[] memory abilities) =
+            _getTeamMonData(ids);
 
         uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
         uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
+        // CPU move loadouts come from the per-(user, CPU) phantom slot; human loadouts from
+        // selectedMoveBitmap (cached per bucket, same as facets). 0 in either → default loadout.
+        uint256 p0CpuMoves = p0IsCpu ? opponentTeamMovesPacked[p0][p0TeamIndex] : 0;
+        uint256 p1CpuMoves = p1IsCpu ? opponentTeamMovesPacked[p1][p1TeamIndex] : 0;
 
-        // Human-side facet buckets are cached across the loop: team mon ids usually share the
-        // 16-mon facetData bucket, so this collapses up to MONS_PER_TEAM reads into one per side.
+        // Human-side facet + move buckets are cached across the loop: team mon ids usually share
+        // the 16-mon bucket, so this collapses up to MONS_PER_TEAM reads into one per side.
         FacetBucketCache memory p0Bucket;
         FacetBucketCache memory p1Bucket;
         p0Bucket.idx = type(uint256).max;
         p1Bucket.idx = type(uint256).max;
+        MoveBucketCache memory p0MoveBucket;
+        MoveBucketCache memory p1MoveBucket;
+        p0MoveBucket.idx = type(uint256).max;
+        p1MoveBucket.idx = type(uint256).max;
 
         // Unpack into teams
         for (uint256 i; i < MONS_PER_TEAM;) {
@@ -356,11 +401,22 @@ contract GachaTeamRegistry is
             _applyFacetToStats(stats[i], p0FacetId);
             _applyFacetToStats(stats[i + MONS_PER_TEAM], p1FacetId);
 
-            p0Team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: _movesArrayFor(moves[i])});
+            uint8 p0MoveSel = p0IsCpu
+                ? uint8((p0CpuMoves >> (i * OPP_MOVE_BITS_PER_SLOT)) & OPP_MOVE_SLOT_MASK)
+                : _moveSelectionForMonCached(p0, ids[i], p0MoveBucket);
+            uint8 p1MoveSel = p1IsCpu
+                ? uint8((p1CpuMoves >> (i * OPP_MOVE_BITS_PER_SLOT)) & OPP_MOVE_SLOT_MASK)
+                : _moveSelectionForMonCached(p1, ids[i + MONS_PER_TEAM], p1MoveBucket);
+
+            p0Team[i] = Mon({
+                stats: stats[i],
+                ability: abilities[i],
+                moves: _resolveBattleMoves(fullMoves[i], p0MoveSel)
+            });
             p1Team[i] = Mon({
                 stats: stats[i + MONS_PER_TEAM],
-                ability: abilities[i + MONS_PER_TEAM][0],
-                moves: _movesArrayFor(moves[i + MONS_PER_TEAM])
+                ability: abilities[i + MONS_PER_TEAM],
+                moves: _resolveBattleMoves(fullMoves[i + MONS_PER_TEAM], p1MoveSel)
             });
             unchecked {
                 ++i;
@@ -368,6 +424,26 @@ contract GachaTeamRegistry is
         }
 
         return (p0Team, p1Team);
+    }
+
+    struct MoveBucketCache {
+        uint256 idx;
+        uint256 word;
+    }
+
+    /// @dev Reads a human player's stored move-selection bitmap for `monId`, caching the bucket
+    /// word. Returns the raw stored value (0 = unconfigured → _resolveBattleMoves applies default).
+    function _moveSelectionForMonCached(address player, uint256 monId, MoveBucketCache memory cache)
+        private
+        view
+        returns (uint8)
+    {
+        uint256 bucket = monId / MONS_PER_EXP_BUCKET;
+        if (bucket != cache.idx) {
+            cache.idx = bucket;
+            cache.word = selectedMoveBitmap[player][bucket];
+        }
+        return uint8((cache.word >> ((monId % MONS_PER_EXP_BUCKET) * MOVE_SEL_BITS_PER_MON)) & MOVE_SEL_MASK);
     }
 
     struct FacetBucketCache {
@@ -387,21 +463,6 @@ contract GachaTeamRegistry is
             cache.word = facetData[player][bucket];
         }
         (, facetId) = _readFacetSlotForMon(cache.word, monId % MONS_PER_FACET_BUCKET);
-    }
-
-    /// @dev Alias the catalog move array when it already has exactly MOVES_PER_MON entries — the
-    ///      invariant for every real catalog mon — skipping a fresh allocation + element copy per
-    ///      mon. Mismatched lengths fall back to copy-with-truncation; short rows zero-fill, which
-    ///      the Engine's fixed-lane team storage treats as "no move here".
-    function _movesArrayFor(uint256[] memory catalogMoves) private view returns (uint256[] memory out) {
-        if (catalogMoves.length == MOVES_PER_MON) {
-            return catalogMoves;
-        }
-        out = new uint256[](MOVES_PER_MON);
-        uint256 n = catalogMoves.length < MOVES_PER_MON ? catalogMoves.length : MOVES_PER_MON;
-        for (uint256 j; j < n; ++j) {
-            out[j] = catalogMoves[j];
-        }
     }
 
     function _applyFacetToStats(MonStats memory stats, uint8 facetId) private pure {
@@ -501,11 +562,15 @@ contract GachaTeamRegistry is
             unchecked { ++i; }
         }
 
-        // Exp + facets share the same 16-mon bucketing, so one loop copies both.
+        // Exp, facets, and move selections share the same 16-mon bucketing, so one loop copies all
+        // three. Caveat: a move-selection bit i refers to catalog *lane i*, so a migrated selection
+        // resolves to the same moves only if the new catalog preserves each mon's move-lane order —
+        // an extension of the existing "same sequential mon ids" migration assumption.
         uint256 numBuckets = (prev.getMonCount() + MONS_PER_EXP_BUCKET - 1) / MONS_PER_EXP_BUCKET;
         for (uint256 b; b < numBuckets;) {
             packedExpForMon[player][b] = prev.packedExpForMon(player, b);
             facetData[player][b] = prev.facetData(player, b);
+            selectedMoveBitmap[player][b] = prev.selectedMoveBitmap(player, b);
             unchecked { ++b; }
         }
 
@@ -763,6 +828,10 @@ contract GachaTeamRegistry is
 
     function _monRegistrySize() internal view override returns (uint256) {
         return monIds.length();
+    }
+
+    function _fullMoveRow(uint256 monId) internal view override returns (uint256[] memory) {
+        return _catalogMoveLanes(monId);
     }
 
     /// @dev Quest opcode dispatch. Has direct access to registry storage and the engine.

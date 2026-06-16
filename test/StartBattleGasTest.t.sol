@@ -119,9 +119,10 @@ contract StartBattleGasTest is Test, GasMeasure {
     function _setCpuTeam(uint256[4] memory mons) internal {
         uint256[] memory cpuMons = new uint256[](MONS_PER_TEAM);
         uint8[] memory cpuFacets = new uint8[](MONS_PER_TEAM);
+        uint8[] memory cpuMoves = new uint8[](MONS_PER_TEAM); // default loadout
         for (uint256 i; i < MONS_PER_TEAM; ++i) { cpuMons[i] = mons[i]; cpuFacets[i] = 1; }
         vm.prank(ALICE);
-        registry.setOpponentTeam(CPU, cpuMons, cpuFacets);
+        registry.setOpponentTeam(CPU, cpuMons, cpuFacets, cpuMoves);
     }
 
     /// @dev propose + accept (unmeasured); caller measures confirmBattle (-> startBattle) alone.

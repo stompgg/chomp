@@ -36,6 +36,7 @@ struct CustomBattleProposal {
     uint96 p0TeamIndex;
     uint256[] monIndices;
     uint8[] facetIds;
+    uint8[] moveSelections;
     ITeamRegistry teamRegistry;
     IValidator validator;
     IRandomnessOracle rngOracle;
