@@ -225,7 +225,7 @@ Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` 
 ### Stat Boosts (inlined into the Engine)
 
 Stat modifiers are **not** a separate effect contract — they are native Engine functions:
-`addStatBoost` / `addKeyedStatBoost` / `removeStatBoost` / `removeKeyedStatBoost` / `clearAllStatBoosts`
+`addStatBoost` / `removeStatBoost` / `clearAllStatBoosts`
 (declared in `IEngine`). Moves, abilities, and shared effects (`BurnStatus`, `FrostbiteStatus`,
 `Overclock`, `UpOnly`, `Tinderclaws`, …) call `engine.addStatBoost(...)` directly during `execute`.
 The packing/aggregation math lives in `src/lib/StatBoostLib.sol`. (Historically this was an external
@@ -235,7 +235,7 @@ round-trips.)
 How it works:
 - Each boost **source** is one packed entry stored in the mon's normal effect mapping under the
   `STAT_BOOST_ADDRESS` sentinel (steps bitmap `STAT_BOOST_STEPS` = `OnMonSwitchOut | ALWAYS_APPLIES`).
-  Sources are keyed by `msg.sender` (or `msg.sender` + a salt string), so each move/ability/effect
+  Sources are keyed by `msg.sender`, so each move/ability/effect
   stacks independently and can remove its own boost. Boosts are **multiplicative** per source; `Temp`
   boosts are dropped automatically on switch-out (`_inlineStatBoostSwitchOut`), `Perm` ones persist.
 - Boosts apply only to the 5 stat deltas: `Speed`, `Attack`, `Defense`, `SpecialAttack`,

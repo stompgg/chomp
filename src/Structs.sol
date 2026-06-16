@@ -210,15 +210,6 @@ struct GlobalKVEntry {
     bytes32 value;
 }
 
-// Stored by the Engine for a battle, tracks mutable battle data
-struct BattleState {
-    uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
-    uint8 prevPlayerSwitchForTurnFlag;
-    uint8 playerSwitchForTurnFlag;
-    uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
-    uint64 turnId;
-}
-
 struct MonStats {
     uint32 hp;
     uint32 stamina;

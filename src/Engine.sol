@@ -1616,37 +1616,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _addStatBoostWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
     }
 
-    /// @notice Apply a stat-boost source keyed by (msg.sender, salt string) so one caller can hold
-    ///         multiple independent boost instances on the same mon.
-    function addKeyedStatBoost(
-        uint256 targetIndex,
-        uint256 monIndex,
-        StatBoostToApply[] calldata statBoostsToApply,
-        StatBoostFlag boostFlag,
-        string calldata keyToUse
-    ) external {
-        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
-        uint168 key = StatBoostLib.generateKey(targetIndex, monIndex, msg.sender, keyToUse);
-        _addStatBoostWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
-    }
-
     /// @notice Remove the msg.sender-keyed stat-boost source of the given permanence (if any) and
     ///         recompute the mon's boosted stats.
     function removeStatBoost(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) external {
         if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
         uint168 key = StatBoostLib.generateKeyNoSalt(targetIndex, monIndex, msg.sender);
-        _removeStatBoostWithKey(targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
-    }
-
-    /// @notice Remove a (msg.sender, salt)-keyed stat-boost source.
-    function removeKeyedStatBoost(
-        uint256 targetIndex,
-        uint256 monIndex,
-        StatBoostFlag boostFlag,
-        string calldata keyToUse
-    ) external {
-        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
-        uint168 key = StatBoostLib.generateKey(targetIndex, monIndex, msg.sender, keyToUse);
         _removeStatBoostWithKey(targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
     }
 

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {CLEARED_MON_STATE_SENTINEL, SWITCH_MOVE_INDEX} from "../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
-import {DamageCalcContext, MonStats, MoveMeta, RevealedMove} from "../Structs.sol";
+import {CPUContext, DamageCalcContext, MonStats, MoveMeta, RevealedMove} from "../Structs.sol";
 import {MoveSlotLib} from "../moves/MoveSlotLib.sol";
 import {ICPURNG} from "../rng/ICPURNG.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";

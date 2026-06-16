@@ -329,6 +329,14 @@ def sync_consumers_from_deployments() -> None:
 
 def run_main_logic(addresses: Dict[str, str], network: str):
     """Run main logic with provided addresses."""
+    # In-process callers (deploy.py) pass a lowercase network; internals key everything off
+    # uppercase MAINNET/TESTNET (as deployments.json and main() do). Normalize at this boundary
+    # so a lowercase key can't silently create a phantom entry that rewrites address.ts/
+    # deployments.json with stale addresses. Guard loudly against any other value.
+    network = network.upper()
+    if network not in ('MAINNET', 'TESTNET'):
+        raise ValueError(f"network must be MAINNET or TESTNET, got {network!r}")
+
     base_path = Path(__file__).parent
 
     # base_path is /game/chomp/processing, so we need to go up 1 level to /game/chomp

@@ -103,14 +103,6 @@ library StatBoostLib {
         return uint168((uint256(uint160(caller)) << 8) | (monIndex << 1) | targetIndex);
     }
 
-    function generateKey(uint256 targetIndex, uint256 monIndex, address caller, string memory salt)
-        internal
-        pure
-        returns (uint168)
-    {
-        return uint168(uint256(keccak256(abi.encode(targetIndex, monIndex, caller, salt))));
-    }
-
     // Accumulate boost contributions into running totals (modifies arrays in place). Multiplication
     // is unchecked: high stack counts wrap mod 2^256 instead of reverting; the apply step clamps the
     // final boosted stat to int32, so the wrap is observable as a weird stat value but never a revert.
