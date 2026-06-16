@@ -46,26 +46,6 @@ class MoveValidator:
     # Constants from the codebase
     DEFAULT_PRIORITY = 3
     
-    # Type enum mapping
-    TYPE_MAPPING = {
-        'Yin': 'Type.Yin',
-        'Yang': 'Type.Yang', 
-        'Earth': 'Type.Earth',
-        'Liquid': 'Type.Liquid',
-        'Fire': 'Type.Fire',
-        'Metal': 'Type.Metal',
-        'Ice': 'Type.Ice',
-        'Nature': 'Type.Nature',
-        'Lightning': 'Type.Lightning',
-        'Mythic': 'Type.Mythic',
-        'Air': 'Type.Air',
-        'Math': 'Type.Math',
-        'Cyber': 'Type.Cyber',
-        'Wild': 'Type.Wild',
-        'Cosmic': 'Type.Cosmic',
-        'None': 'Type.None'
-    }
-    
     # MoveClass enum mapping
     CLASS_MAPPING = {
         'Physical': 'MoveClass.Physical',
