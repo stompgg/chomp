@@ -570,7 +570,11 @@ contract GachaTeamRegistry is
         for (uint256 b; b < numBuckets;) {
             packedExpForMon[player][b] = prev.packedExpForMon(player, b);
             facetData[player][b] = prev.facetData(player, b);
-            selectedMoveBitmap[player][b] = prev.selectedMoveBitmap(player, b);
+            // selectedMoveBitmap postdates the earliest registries; tolerate a previous
+            // registry that lacks the getter (the staticcall reverts) and leave the default.
+            try prev.selectedMoveBitmap(player, b) returns (uint256 bitmap) {
+                selectedMoveBitmap[player][b] = bitmap;
+            } catch {}
             unchecked { ++b; }
         }
 

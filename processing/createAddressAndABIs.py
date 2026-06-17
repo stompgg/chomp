@@ -21,6 +21,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Fallback for a contract present in the canonical record on one network but not the other.
+ZERO_ADDRESS = "0x" + "0" * 40
+
 
 def to_screaming_snake_case(name: str) -> str:
     """Convert camelCase/PascalCase/space-separated to SCREAMING_SNAKE_CASE."""
@@ -159,9 +162,15 @@ def update_address_file(
     }
     updated_addresses[network] = merged
 
-    # Sort addresses by key for consistent output
-    sorted_mainnet = dict(sorted(updated_addresses['MAINNET'].items()))
-    sorted_testnet = dict(sorted(updated_addresses['TESTNET'].items()))
+    # A consumer selects ONE network's block at runtime, but TS types `Address` as the union of
+    # both blocks and therefore requires every key to exist in BOTH. Networks legitimately diverge
+    # (e.g. a new mon shipped to testnet but not yet mainnet), so emit the *union* of keys in each
+    # block, zero-filling any address absent on a given network. The zero address is the correct
+    # "not deployed on this network" signal (consumers already treat ZERO_ADDRESS specially) and it
+    # keeps both blocks' key sets identical, so the union type — and the consumer build — always holds.
+    mainnet_addrs = updated_addresses['MAINNET']
+    testnet_addrs = updated_addresses['TESTNET']
+    all_keys = sorted(set(mainnet_addrs) | set(testnet_addrs))
 
     # Generate TypeScript content with different imports based on repository
     if is_belch:
@@ -172,16 +181,16 @@ def update_address_file(
 
     typescript_content += "export const Address = {\n"
 
-    # Write MAINNET block
+    # Write MAINNET block (absent-on-mainnet keys fall back to the zero address)
     typescript_content += "  MAINNET: {\n"
-    for key, value in sorted_mainnet.items():
-        typescript_content += f"    {key}: '{value}' as LowercaseHex,\n"
+    for key in all_keys:
+        typescript_content += f"    {key}: '{mainnet_addrs.get(key, ZERO_ADDRESS)}' as LowercaseHex,\n"
     typescript_content += "  },\n"
 
-    # Write TESTNET block
+    # Write TESTNET block (absent-on-testnet keys fall back to the zero address)
     typescript_content += "  TESTNET: {\n"
-    for key, value in sorted_testnet.items():
-        typescript_content += f"    {key}: '{value}' as LowercaseHex,\n"
+    for key in all_keys:
+        typescript_content += f"    {key}: '{testnet_addrs.get(key, ZERO_ADDRESS)}' as LowercaseHex,\n"
     typescript_content += "  },\n"
 
     typescript_content += "};\n"

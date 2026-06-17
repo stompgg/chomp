@@ -3,8 +3,9 @@
 Meta-script to orchestrate the full deployment pipeline:
 1. Validate move contracts against CSV data
 2. Generate Solidity deploy scripts (SetupMons.s.sol, SetupCPU.s.sol)
-3. Run the forge scripts -> parse output -> update .env + deployments.json
-4. Run the TypeScript generators (addresses/ABIs, mon data, event layouts, EIP-712 meta)
+3. Run the forge scripts -> parse output -> update .env (raw addresses)
+4. Run the TypeScript generators (addresses/ABIs -> deployments.json + munch/belch
+   address.ts; mon data, event layouts, EIP-712 meta)
 5. Run the transpiler (sol2ts.py) to generate TypeScript from Solidity
 
 Usage:
