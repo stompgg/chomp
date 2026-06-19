@@ -16,7 +16,7 @@ Chain Expansion,Inutia,0,1,100,0,Faith,Other,Sets up battlefield effect. Trigger
 Initialize,Inutia,0,2,100,0,Faith,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none,0
 Big Bite,Inutia,80,2,100,0,Faith,Physical,Deals damage.,,none,0
 Hit And Dip,Inutia,60,2,100,0,Faith,Special,"Deals damage, then swaps out.",,self-mon,0
-Sanctify,Inutia,0,2,100,0,Faith,Self,"Applies Blessed status on self.",,none,6
+Sanctify,Inutia,0,2,100,0,Faith,Other,"Applies Blessed status on a team member.",,self-mon,6
 Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none,0
 Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none,0
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, 10% chance to cause Panic.",,none,0

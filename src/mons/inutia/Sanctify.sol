@@ -26,14 +26,17 @@ contract Sanctify is IMoveSet {
         IEngine engine,
         bytes32,
         uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
         uint256,
-        uint16,
+        uint256,
+        uint16 extraData,
         uint256
     ) external {
-        // Bless self. addEffect runs BlessedStatus.shouldApply, which no-ops if this mon already
-        // carries a status condition (one status per mon).
-        engine.addEffect(attackerPlayerIndex, attackerMonIndex, BLESSED_STATUS, bytes32(0));
+        // extraData contains the target team index as raw uint16.
+        uint256 targetMonIndex = uint256(extraData);
+
+        // Bless the targeted team member. addEffect runs BlessedStatus.shouldApply, which no-ops if
+        // that mon already carries a status condition (one status per mon).
+        engine.addEffect(attackerPlayerIndex, targetMonIndex, BLESSED_STATUS, bytes32(0));
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
@@ -49,11 +52,11 @@ contract Sanctify is IMoveSet {
     }
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
-        return MoveClass.Self;
+        return MoveClass.Other;
     }
 
     function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
+        return ExtraDataType.SelfTeamIndex;
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)

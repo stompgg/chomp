@@ -57,6 +57,9 @@ def build_sprite_config(
         config["contentTop"] = source["contentTop"]
     if source.get("contentBottom") is not None:
         config["contentBottom"] = source["contentBottom"]
+    # Ground shadows carry the footprint center column (cx) used to align the blob under the mon.
+    if source.get("cx") is not None:
+        config["cx"] = source["cx"]
     return config
 
 
@@ -147,7 +150,9 @@ def build_attack_sprite(
 
 
 def build_sprites(
-    mon_name_lower: str, spritesheet_data: Dict[str, Any]
+    mon_name_lower: str,
+    spritesheet_data: Dict[str, Any],
+    shadow_data: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Build sprite configurations for a mon."""
     sprites = {}
@@ -203,11 +208,24 @@ def build_sprites(
             loop=True,
         )
 
+    # Per-frame ground shadow (one blob per front idle frame, looping in lockstep).
+    shadow_source = shadow_data.get(mon_name_lower)
+    if shadow_source and "frames" in shadow_source:
+        sprites["shadow"] = build_sprite_config(
+            "/assets/mons/all/mon_shadow.png",
+            shadow_source,
+            frame_width=96,
+            frame_height=96,
+            loop=True,
+        )
+
     return sprites
 
 
 def read_mons_data(
-    file_path: str, spritesheet_data: Dict[str, Any]
+    file_path: str,
+    spritesheet_data: Dict[str, Any],
+    shadow_data: Dict[str, Any],
 ) -> Dict[int, Dict[str, Any]]:
     """Read mons.csv and return a dictionary keyed by mon ID."""
     mons_data = {}
@@ -220,7 +238,7 @@ def read_mons_data(
             "id": mon_id,
             "name": row["Name"],
             "flavor": row.get("Flavor", ""),
-            "sprites": build_sprites(mon_name_lower, spritesheet_data),
+            "sprites": build_sprites(mon_name_lower, spritesheet_data, shadow_data),
             "stats": {
                 "hp": int(row["HP"]),
                 "attack": int(row["Attack"]),
@@ -471,6 +489,7 @@ export type Mon = {{
     readonly backHurt?: SpriteAnimationConfig;
     readonly mini: SpriteAnimationConfig;
     readonly micro?: SpriteAnimationConfig;
+    readonly shadow?: SpriteAnimationConfig;
   }};
   readonly stats: {{
     readonly hp: number;
@@ -570,6 +589,7 @@ def run() -> bool:
         "moves": base_path / "moves.csv",
         "abilities": base_path / "abilities.csv",
         "spritesheet": base_path / "imgs" / "spritesheet.json",
+        "shadow": base_path / "imgs" / "mon_shadow.json",
         "attack_spritesheet": base_path
         / "imgs"
         / "attacks"
@@ -589,8 +609,9 @@ def run() -> bool:
     output_file = munch_output if munch_data_dir.exists() else base_path / "mon_data.ts"
     print(f"Output target: {output_file}")
 
-    # Verify required input files exist (non_standard_spritesheet is optional)
-    required_files = {k: v for k, v in files.items() if k != "non_standard_spritesheet"}
+    # Verify required input files exist (non_standard_spritesheet and shadow are optional)
+    optional = {"non_standard_spritesheet", "shadow"}
+    required_files = {k: v for k, v in files.items() if k not in optional}
     missing = [name for name, path in required_files.items() if not path.exists()]
     if missing:
         print(f"Error: Missing files: {', '.join(missing)}")
@@ -600,6 +621,11 @@ def run() -> bool:
 
     spritesheet_data = read_json(str(files["spritesheet"]))
     attack_spritesheet_data = read_json(str(files["attack_spritesheet"]))
+
+    # Ground-shadow metadata (per-mon footprint + frames); optional.
+    shadow_data = read_json(str(files["shadow"])) if files["shadow"].exists() else {}
+    if shadow_data:
+        print(f"  ✓ Loaded ground shadows for {len(shadow_data)} mons")
 
     # Load non-standard spritesheet if it exists
     non_standard_spritesheet_data = {}
@@ -612,7 +638,7 @@ def run() -> bool:
     # Inline-move JSON definitions (for inlineKey identity); src/ sits next to drool/.
     json_moves = find_json_moves(str(base_path.parent / "src"))
 
-    mons_data = read_mons_data(str(files["mons"]), spritesheet_data)
+    mons_data = read_mons_data(str(files["mons"]), spritesheet_data, shadow_data)
     moves_by_mon, all_move_keys = read_moves_data(
         str(files["moves"]), attack_spritesheet_data, non_standard_spritesheet_data, json_moves
     )
