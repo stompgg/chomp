@@ -312,6 +312,126 @@ function bigintToAddress(value: bigint): string {
 }
 
 // =============================================================================
+// AMBIENT EXECUTION CONTEXT
+// =============================================================================
+// The address registry + transient-instance list are global: the contracts they
+// hold (moves/effects/abilities) are stateless and engine-agnostic — the Engine
+// threads itself into every call — so one shared set is correct across all battles,
+// mirroring the single deployed Engine + shared contracts on-chain. `currentCall`
+// carries the per-transaction caller stack, depth and observers. OBSERVATION (the
+// call/state log) is a write-only side-channel the SEMANTICS path (sender rewrite,
+// depth, transient reset) never reads, so logging can't change a result.
+
+/** Write-only side-channel; the semantics path must never branch on an Observer. */
+export interface Observer {
+  /** Declare interest in internal (`_`-prefixed) methods; externals are always captured. */
+  captures?(method: string): boolean;
+  /** Fires once per captured ROOT call, fully populated (sub-calls hang off `children`). */
+  onCall?(entry: CallEntry): void;
+  /** A tracked mutation outside any captured call (in-call ones attach to the entry). */
+  onStateChange?(change: StateChangeEntry): void;
+}
+
+interface CallFrame {
+  address: string;  // load-bearing: drives msg.sender derivation
+  name: string;     // observation only
+}
+
+/** Scoped to one execution (≈ one transaction). */
+export interface CallContext {
+  /** top = the currently-EXECUTING contract; its caller (msg.sender) is the frame below. */
+  callerStack: CallFrame[];
+  /** 0→1 = transaction boundary → reset all transient storage. */
+  callDepth: number;
+  /** pure side-channel; never read by the semantics path. */
+  observers: Observer[];
+  /** innermost open entry receives state changes; emptied per transaction. */
+  entryStack: CallEntry[];
+}
+
+let currentCall: CallContext = { callerStack: [], callDepth: 0, observers: [], entryStack: [] };
+
+// address → contract instance, for Contract.at() lookups.
+const _addressRegistry = new Map<string, Contract>();
+// Contracts with transient storage, reset at each transaction boundary.
+let _transientInstances: Contract[] = [];
+
+/** Reset transient storage on every transient-bearing instance (at depth 0→1). */
+function resetAllTransient(): void {
+  for (const instance of _transientInstances) {
+    (instance as any)._resetTransient();
+  }
+}
+
+/**
+ * Establish a transaction: push `sender` as the bottom frame and cross depth 0→1
+ * (transient reset). The seam that establishes execution context. `observers` scope
+ * to this tx — thread one array across sequential txs (setMove, setMove, execute) to
+ * accumulate all their roots.
+ */
+export function runAsTransaction<T>(
+  sender: string,
+  observers: Observer[],
+  fn: () => T,
+): T {
+  const prevCall = currentCall;
+  currentCall = {
+    callerStack: [{ address: sender, name: 'External' }],
+    callDepth: 0,
+    observers,
+    entryStack: [],
+  };
+  currentCall.callDepth++;            // 0→1 boundary
+  resetAllTransient();
+  try {
+    return fn();
+  } finally {
+    currentCall = prevCall;
+  }
+}
+
+/** Run `fn` without crossing a tx boundary, so transient state (tempRNG, buffered
+ *  packed moves, write-context transients) survives. */
+export function runNested<T>(fn: () => T): T {
+  currentCall.callDepth++;            // stays > 0: no transient reset
+  try {
+    return fn();
+  } finally {
+    currentCall.callDepth--;
+  }
+}
+
+/** True if any attached observer wants to capture this internal method. */
+function _captureInternal(method: string): boolean {
+  const obs = currentCall.observers;
+  for (let i = 0; i < obs.length; i++) {
+    if (obs[i].captures?.(method)) return true;
+  }
+  return false;
+}
+
+/** Standard call-tree observer: accumulates root CallEntries + orphan state
+ *  changes. Caller supplies the internal-method subscription set. */
+export class CallTreeObserver implements Observer {
+  readonly roots: CallEntry[] = [];
+  readonly orphanStateChanges: StateChangeEntry[] = [];
+
+  constructor(private readonly captured: ReadonlySet<string>) {}
+
+  captures(method: string): boolean {
+    return this.captured.has(method);
+  }
+
+  onCall(entry: CallEntry): void {
+    this.roots.push(entry);
+  }
+
+  onStateChange(change: StateChangeEntry): void {
+    this.orphanStateChanges.push(change);
+  }
+}
+
+// =============================================================================
 // DEEP STATE OBSERVATION
 // =============================================================================
 
@@ -322,22 +442,27 @@ function bigintToAddress(value: bigint): string {
 const _stateProxyCache = new WeakMap<object, Map<string, any>>();
 
 /**
- * Record a state change. Attaches to the innermost active call entry if one
- * exists; otherwise falls back to the orphan _stateChangeLog (if set).
+ * Record a state change. Attaches to the innermost open call entry if one
+ * exists; otherwise offers it to observers as an orphan change.
  */
 function _recordStateChange(change: StateChangeEntry): void {
-  const top = Contract._callStack[Contract._callStack.length - 1];
+  const stack = currentCall.entryStack;
+  const top = stack[stack.length - 1];
   if (top) {
     top.stateChanges.push(change);
-  } else if (Contract._stateChangeLog) {
-    Contract._stateChangeLog.push(change);
+    return;
+  }
+  const obs = currentCall.observers;
+  for (let i = 0; i < obs.length; i++) {
+    obs[i].onStateChange?.(change);
   }
 }
 
 /**
- * Wrap an object in a recursive Proxy that logs property writes to
- * Contract._stateChangeLog. Used for nested state (structs, arrays)
- * accessed through a contract's __stateVars properties.
+ * Wrap an object in a recursive Proxy that records property writes via
+ * _recordStateChange (to the innermost open call entry, or to observers as an
+ * orphan). Used for nested state (structs, arrays) accessed through a contract's
+ * __stateVars properties.
  *
  * @param obj          The raw object to wrap
  * @param contractName Class name of the owning contract
@@ -359,9 +484,10 @@ function _wrapForStateTracking(obj: any, contractName: string, path: string): an
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof prop === 'symbol') return value;
-      // Recursively wrap nested objects (structs, arrays) for deep tracking
+      // Recursively wrap nested objects (structs, arrays) for deep tracking,
+      // gated on the same single signal as entry creation: an observer is attached.
       if (value !== null && typeof value === 'object'
-          && (Contract._callStack.length > 0 || Contract._stateChangeLog)) {
+          && currentCall.observers.length > 0) {
         const childPath = path ? `${path}.${String(prop)}` : String(prop);
         return _wrapForStateTracking(value, contractName, childPath);
       }
@@ -397,9 +523,6 @@ function _wrapForStateTracking(obj: any, contractName: string, path: string): an
  * address registry for Contract.at() lookups, and YUL assembly helpers.
  */
 export abstract class Contract {
-  /** Static registry: address → contract instance, for Contract.at() lookups */
-  private static _addressRegistry: Map<string, Contract> = new Map();
-
   /** Mutable storage variable names — overridden per contract by the transpiler.
    *  Used by the state-change tracking proxy to filter which property writes to log. */
   static readonly __stateVars: Set<string> = new Set();
@@ -410,73 +533,14 @@ export abstract class Contract {
    *  errors at call sites. */
   static readonly __argNames: Readonly<Record<string, readonly string[]>> = {};
 
-
-
   // =========================================================================
-  // CALL LOGGING
+  // ADDRESS RESOLUTION
   // =========================================================================
 
   /**
-   * When non-null, the proxy logs every cross-contract call as a tree of
-   * CallEntry nodes. Top-level entries are external calls into the system;
-   * each entry's `children` holds sub-calls made during its execution.
-   * Set before executeTurn(), read after, cleared between turns.
-   */
-  static _turnCallLog: CallEntry[] | null = null;
-
-  /**
-   * Stack of currently-executing call entries. The innermost (top) entry
-   * receives any state variable mutations that happen during its execution.
-   * Sub-calls push themselves onto this stack so the proxy can attribute
-   * mutations to the right call.
-   */
-  static _callStack: CallEntry[] = [];
-
-  /**
-   * Fallback log for state changes that happen outside any tracked call
-   * (e.g., during construction, or when _turnCallLog is null).
-   * Set before executeTurn() to enable orphan tracking.
-   */
-  static _stateChangeLog: StateChangeEntry[] | null = null;
-
-  /**
-   * Tracks the address of the currently executing contract.
-   * Used to propagate msg.sender on cross-contract calls (matching Solidity semantics).
-   */
-  static _currentCaller: string = ADDRESS_ZERO;
-  static _currentCallerName: string = 'External';
-
-  /**
-   * Tracks nesting depth of external contract calls.
-   * Used to detect transaction boundaries for transient storage reset.
-   * Depth 0→1 = new transaction = reset all transient storage.
-   */
-  static _callDepth: number = 0;
-
-  /**
-   * Raw (unwrapped) instances of contracts that have transient storage.
-   * Populated in the constructor when _resetTransient exists on the prototype.
-   */
-  private static _transientInstances: any[] = [];
-
-  /**
-   * Reset transient storage on all registered contracts.
-   * Called automatically at transaction boundaries (when _callDepth goes 0→1).
-   * This matches Solidity semantics where transient storage is cleared per transaction.
-   */
-  static _resetAllTransient(): void {
-    for (const instance of Contract._transientInstances) {
-      instance._resetTransient();
-    }
-  }
-
-  /**
-   * Resolve a value to a contract instance.
-   * - If value is already a contract object, return it directly.
-   * - If value is a bigint (uint256 address), look up by address in the registry.
-   * - If value is a string address, look up directly.
-   * Returns a stub with only _contractAddress for unregistered addresses
-   * (e.g. sentinels/tombstones that are only used for identity comparisons).
+   * Resolve a value (contract object, uint256/string address) to a contract
+   * instance via the global registry. Unregistered addresses return a stub
+   * carrying only _contractAddress (sentinels/tombstones used for identity).
    */
   static at(value: any): any {
     if (value && typeof value === 'object' && '_contractAddress' in value) {
@@ -491,7 +555,7 @@ export abstract class Contract {
       throw new Error(`Contract.at: cannot resolve ${typeof value}`);
     }
     const normalized = address.toLowerCase();
-    const instance = Contract._addressRegistry.get(normalized);
+    const instance = _addressRegistry.get(normalized);
     if (instance) {
       return instance;
     }
@@ -501,13 +565,11 @@ export abstract class Contract {
     return { _contractAddress: normalized };
   }
 
-  /**
-   * Clear the address registry and transient instance tracking (useful between tests)
-   */
+  /** Clear the registry + transient-instance tracking (between battles/tests). */
   static clearRegistry(): void {
-    Contract._addressRegistry.clear();
-    Contract._transientInstances = [];
-    Contract._callDepth = 0;
+    _addressRegistry.clear();
+    _transientInstances = [];
+    currentCall = { callerStack: [], callDepth: 0, observers: [], entryStack: [] };
   }
 
   // Storage for this contract instance
@@ -518,7 +580,7 @@ export abstract class Contract {
 
   /**
    * Contract address for address(this) pattern.
-   * Setting this auto-registers the instance in the static address registry.
+   * Setting this auto-registers the instance in the global address registry.
    */
   private _address: string = ADDRESS_ZERO;
   /** Reference to the Proxy wrapping this instance (set by constructor) */
@@ -537,30 +599,28 @@ export abstract class Contract {
     // registerOnchainAddresses.
     if (prevAddr !== ADDRESS_ZERO && prevAddr !== addr) {
       const prevLower = prevAddr.toLowerCase();
-      const current = Contract._addressRegistry.get(prevLower);
+      const current = _addressRegistry.get(prevLower);
       if (current === (this._proxy ?? this) || current === this) {
-        Contract._addressRegistry.delete(prevLower);
+        _addressRegistry.delete(prevLower);
       }
     }
     if (addr !== ADDRESS_ZERO) {
       // Register the Proxy (not the raw instance) so Contract.at() returns
       // the msg.sender-propagating wrapper
-      Contract._addressRegistry.set(addr.toLowerCase(), this._proxy ?? this);
+      _addressRegistry.set(addr.toLowerCase(), (this._proxy ?? this) as Contract);
     }
   }
 
-  // Message context (msg.sender, msg.value, msg.data)
-  public _msg: {
-    sender: string;
-    value: bigint;
-    data: `0x${string}`;
-  } = {
-    sender: ADDRESS_ZERO,
-    value: 0n,
-    data: '0x' as `0x${string}`,
-  };
+  // msg.sender DERIVED, not stored: the immediate caller is the frame below the
+  // executing contract (callerStack top), i.e. at(-2). value/data unused. No stored
+  // _msg → can't desync from the stack.
+  get _msg(): { sender: string; value: bigint; data: `0x${string}` } {
+    const stack = currentCall.callerStack;
+    const sender = stack[stack.length - 2]?.address ?? ADDRESS_ZERO;
+    return { sender, value: 0n, data: '0x' as `0x${string}` };
+  }
 
-  // Block context
+  // Block context (per-instance; the harness advances the engine's clock per turn).
   public _block: {
     timestamp: bigint;
     number: bigint;
@@ -580,16 +640,15 @@ export abstract class Contract {
     // If the first arg is an explicit address string, use it. Otherwise leave
     // _address at ADDRESS_ZERO; callers (e.g. registerOnchainAddresses) will
     // set the real address after construction. This avoids populating the
-    // static _addressRegistry with stale auto-generated entries.
+    // registry with stale auto-generated entries.
     if (typeof args[0] === 'string') {
       this._contractAddress = args[0];
     }
 
-    // Register for transient reset if this contract has transient vars.
-    // Done here (before proxy wrapping) so we store the raw instance,
-    // allowing _resetAllTransient to call _resetTransient without going through the proxy.
+    // Register for transient reset. Done before proxy wrapping so we store the raw
+    // instance (resetAllTransient calls _resetTransient directly).
     if (typeof (this as any)._resetTransient === 'function') {
-      Contract._transientInstances.push(this);
+      _transientInstances.push(this);
     }
 
     // Wrap instance in a Proxy that propagates msg.sender on cross-contract calls.
@@ -602,9 +661,10 @@ export abstract class Contract {
       // Ensure property writes through the proxy go to the target (not the proxy object).
       // This is critical because external calls use `this = proxy` inside methods,
       // so `this.field = x` must write to the target's storage.
-      // Also logs state variable mutations to the innermost active call.
+      // Also records state variable mutations to the innermost open call entry,
+      // gated on the single observation signal (an observer is attached).
       set(target, prop, value, receiver) {
-        if (typeof prop !== 'symbol') {
+        if (typeof prop !== 'symbol' && currentCall.observers.length > 0) {
           const stateVars = (self.constructor as any).__stateVars as Set<string> | undefined;
           if (stateVars?.has(prop as string)) {
             const oldValue = Reflect.get(target, prop, target);
@@ -623,10 +683,10 @@ export abstract class Contract {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
         if (typeof prop === 'symbol') return value;
-        // Wrap state variable objects in deep observation proxy for nested tracking.
-        // Active whenever there's a current call or _stateChangeLog is set.
+        // Wrap state variable objects in deep observation proxy for nested tracking,
+        // gated on the same single signal as entry creation: an observer is attached.
         if (typeof value !== 'function' && value !== null && typeof value === 'object'
-            && (Contract._callStack.length > 0 || Contract._stateChangeLog)) {
+            && currentCall.observers.length > 0) {
           const stateVars = (self.constructor as any).__stateVars as Set<string> | undefined;
           if (stateVars?.has(prop as string)) {
             return _wrapForStateTracking(value, self.constructor.name, prop as string);
@@ -635,54 +695,50 @@ export abstract class Contract {
         if (typeof value !== 'function') return value;
         const propStr = prop as string;
 
-        // State-changing methods that the call log must always capture,
-        // even for internal calls and `_` prefixed internal variants.
-        // Internal *Internal variants are preferred over public wrappers since
-        // they catch both the public-API path AND direct internal callers
-        // (e.g. _inlineStandardAttack bypasses public dispatchStandardAttack).
-        const LOGGED_METHODS = ['_dealDamageInternal', '_emitMonMoves', '_computePriorityPlayerIndex', 'updateMonState', '_addEffectInternal', '_dispatchStandardAttackInternal', '_calculateDamage', 'removeEffect', '_handleMove', '_handleSwitch', '_inlineStaminaRegen'];
-        const forceLog = Contract._turnCallLog && LOGGED_METHODS.includes(propStr);
-
-        // Skip private/internal helpers — except force-logged methods
-        if (propStr.startsWith('_') && !forceLog) return value;
+        // Internal/library (`_`) methods never change msg.sender or depth, so they
+        // only need the wrapper when an observer wants to capture them; else fast-path
+        // the raw fn (the historical no-wrap path).
+        if (propStr.startsWith('_') && !_captureInternal(propStr)) {
+          return value;
+        }
 
         return function (this: any, ...callArgs: any[]) {
-          const isInternal = Contract._currentCaller === self._contractAddress;
+          const call = currentCall;
 
-          // Capture caller context BEFORE the call (these are the values seen FROM
-          // the caller's perspective, before we update _currentCaller for this call).
-          const preCallCaller = Contract._currentCaller;
-          const preCallCallerName = Contract._currentCallerName;
+          // ── SEMANTICS ── a function of call *type* only, identical with or without
+          // observers. Stack top = executing contract; a self-call or any `_` method
+          // preserves msg.sender → internal.
+          const topFrame = call.callerStack[call.callerStack.length - 1];
+          const isInternal =
+            propStr.startsWith('_') || topFrame?.address === self._contractAddress;
 
-          // Create the call entry up front so any state changes during execution
-          // can attach to it. Only created if logging is active.
-          const entry: CallEntry | null = Contract._turnCallLog ? {
-            caller: preCallCaller,
-            callerName: preCallCallerName,
-            target: self._contractAddress,
-            targetName: self.constructor.name,
-            method: propStr,
-            args: callArgs,
-            depth: Contract._callDepth + (isInternal ? 0 : 1),
-            internal: isInternal,
-            children: [],
-            stateChanges: [],
-          } : null;
-
-          if (entry) Contract._callStack.push(entry);
-
-          // External-only setup: msg.sender, transient reset, depth tracking
-          let prevSender: string | undefined;
+          const preDepth = call.callDepth;
           if (!isInternal) {
-            const isTopLevel = Contract._callDepth === 0;
-            Contract._callDepth++;
-            if (isTopLevel) {
-              Contract._resetAllTransient();
-            }
-            prevSender = target._msg.sender;
-            target._msg.sender = Contract._currentCaller;
-            Contract._currentCaller = self._contractAddress;
-            Contract._currentCallerName = self.constructor.name;
+            call.callerStack.push({ address: self._contractAddress, name: self.constructor.name });
+            if (++call.callDepth === 1) resetAllTransient();
+          }
+
+          // ── OBSERVATION ── the ONLY code that reads call.observers. It builds the
+          // call tree but can never feed back into the semantics above.
+          let entry: CallEntry | null = null;
+          let isRootEntry = false;
+          if (call.observers.length > 0) {
+            entry = {
+              caller: topFrame?.address ?? ADDRESS_ZERO,
+              callerName: topFrame?.name ?? 'External',
+              target: self._contractAddress,
+              targetName: self.constructor.name,
+              method: propStr,
+              args: callArgs,
+              depth: preDepth + (isInternal ? 0 : 1),
+              internal: isInternal,
+              children: [],
+              stateChanges: [],
+            };
+            const parent = call.entryStack[call.entryStack.length - 1];
+            if (parent) parent.children.push(entry);
+            else isRootEntry = true;
+            call.entryStack.push(entry);
           }
 
           try {
@@ -691,19 +747,16 @@ export abstract class Contract {
             return result;
           } finally {
             if (!isInternal) {
-              target._msg.sender = prevSender!;
-              Contract._currentCaller = preCallCaller;
-              Contract._currentCallerName = preCallCallerName;
-              Contract._callDepth--;
+              call.callDepth--;
+              call.callerStack.pop();
             }
             if (entry) {
-              Contract._callStack.pop();
-              // Attach to parent's children, or push to top-level log if root
-              const parent = Contract._callStack[Contract._callStack.length - 1];
-              if (parent) {
-                parent.children.push(entry);
-              } else {
-                Contract._turnCallLog!.push(entry);
+              call.entryStack.pop();
+              // Root entries (children already linked) are offered to observers.
+              if (isRootEntry) {
+                for (let i = 0; i < call.observers.length; i++) {
+                  call.observers[i].onCall?.(entry);
+                }
               }
             }
           }
@@ -717,14 +770,6 @@ export abstract class Contract {
   // =========================================================================
   // CONTEXT SETTERS
   // =========================================================================
-
-  setMsgSender(sender: string): void {
-    this._msg.sender = sender;
-  }
-
-  setMsgContext(sender: string, value: bigint = 0n, data: `0x${string}` = '0x'): void {
-    this._msg = { sender, value, data };
-  }
 
   setBlockTimestamp(timestamp: bigint): void {
     this._block.timestamp = timestamp;

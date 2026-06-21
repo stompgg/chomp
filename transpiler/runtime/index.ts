@@ -206,6 +206,10 @@ export { Storage, EventStream, ADDRESS_ZERO, globalEventStream, contractAddresse
 export type { EventLog } from './base';
 import { ADDRESS_ZERO } from './base';
 
+// Execution-context API — see base.ts "AMBIENT EXECUTION CONTEXT".
+export { runAsTransaction, runNested, CallTreeObserver } from './base';
+export type { Observer, CallContext, CallEntry, StateChangeEntry } from './base';
+
 // =============================================================================
 // TYPE HELPERS
 // =============================================================================
