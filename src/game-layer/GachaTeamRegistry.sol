@@ -102,7 +102,6 @@ contract GachaTeamRegistry is
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
     event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
-    event Migrated(address indexed player);
 
     // ----- Immutables -----
     IEngine public immutable ENGINE;
@@ -585,8 +584,6 @@ contract GachaTeamRegistry is
             unchecked { ++g; }
         }
         teamOrderPacked[player] = prev.teamOrderPacked(player);
-
-        emit Migrated(player);
     }
 
     /// @notice True if `player` has unimported progress on `PREVIOUS_REGISTRY` — i.e. a
