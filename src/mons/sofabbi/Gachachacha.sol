@@ -6,6 +6,7 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {RNGLib} from "../../lib/RNGLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -44,7 +45,8 @@ contract Gachachacha is IMoveSet {
         uint16,
         uint256 rng
     ) external {
-        uint256 chance = rng % OPP_KO_THRESHOLD_R;
+        // Mix in attacker player index to break symmetry on mirror matchups
+        uint256 chance = RNGLib.mixForAttacker(rng, attackerPlayerIndex) % OPP_KO_THRESHOLD_R;
         uint32 basePower;
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 playerForCalculator = attackerPlayerIndex;

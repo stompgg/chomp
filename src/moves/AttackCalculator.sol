@@ -6,16 +6,15 @@ import "../Enums.sol";
 import "../Structs.sol";
 
 import {IEngine} from "../IEngine.sol";
+import {RNGLib} from "../lib/RNGLib.sol";
 import {ITypeCalculator} from "../types/ITypeCalculator.sol";
 
 library AttackCalculator {
     uint32 constant RNG_SCALING_DENOM = 100;
 
-    /// @notice Mix the raw rng with the attacker index so mirror mons using the same move
-    /// against each other don't roll identical accuracy/damage/crit values. Deterministic —
-    /// keyed only by (rng, attackerPlayerIndex) — so the oracle's rng is still the only source.
+    /// @notice Mix the attacker index into the rng to break symmetry on mirror matchups.
     function mixRngForAttacker(uint256 rng, uint256 attackerPlayerIndex) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encode(rng, attackerPlayerIndex)));
+        return RNGLib.mixForAttacker(rng, attackerPlayerIndex);
     }
 
     /// @notice Decide whether a move's post-hit effect should fire.

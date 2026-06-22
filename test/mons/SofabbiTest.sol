@@ -183,7 +183,8 @@ contract SofabbiTest is Test, BattleHelper {
         // Start battle
         bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
-        // Set oracle to return 1 (ie both mons gain staminaDelta)
+        // CarrotHarvest folds the owner player index into the regen roll, so seeds are precomputed
+        // for the per-player outcome: 1 = both mons regen, 5 = neither regens.
         mockOracle.setRNG(1);
 
         // First move: Both players select their first mon (index 0)
@@ -195,8 +196,8 @@ contract SofabbiTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), 1);
 
-        // Set oracle to return 0 (ie no mons gain staminaDelta)
-        mockOracle.setRNG(0);
+        // Neither mon regens
+        mockOracle.setRNG(5);
 
         // Alice and Bob both do nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
@@ -457,8 +458,10 @@ contract SofabbiTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Set rng to be 10
-        mockOracle.setRNG(10);
+        // Gachachacha mixes the attacker index into rng, so these raw seeds are precomputed such
+        // that the mixed chance (Alice = player 0) lands in each branch: 10 (low), 201 (self-KO),
+        // 206 (opp-KO).
+        mockOracle.setRNG(11);
 
         // Alice uses an attack, it should do minimal damage
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -468,16 +471,16 @@ contract SofabbiTest is Test, BattleHelper {
 
         assertApproxEqRel(bobDamage, -10, 2e17, "low damage from rng");
 
-        // Set rng to be MAX BASE POWER
-        mockOracle.setRNG(gacha.MAX_BASE_POWER() + 1);
+        // Self-KO branch
+        mockOracle.setRNG(765);
 
         // Alice uses an attack, it should hurt themselves for a lot
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         int32 aliceDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertApproxEqRel(aliceDamage, -1024, 2e17, "high self damage from rng");
 
-        // Set rng to be MAX BASE POWER + SELF KO CHANCE + 1
-        mockOracle.setRNG(gacha.SELF_KO_THRESHOLD_R() + 1);
+        // Opp-KO branch
+        mockOracle.setRNG(248);
 
         // Opponent should be close to death (maybe not due to variance)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);

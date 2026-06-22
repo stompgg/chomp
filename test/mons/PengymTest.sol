@@ -571,6 +571,9 @@ contract PengymTest is Test, BattleHelper {
         // Start a battle
         bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
+        // Precomputed seed: forced-switch target walks the team in order and PistolSquat doesn't crit
+        mockOracle.setRNG(5);
+
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)

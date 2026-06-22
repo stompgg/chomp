@@ -2200,10 +2200,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///         dealDamage call — into one engine frame REUSING the same internals the inline
     ///         StandardAttack path runs (_getDamageCalcContextInternal / TypeCalcLib /
     ///         _calculateDamageCore / _dealDamageInternal).
-    /// @dev Mirrors AttackCalculator's legacy semantics EXACTLY (and intentionally differs from
-    ///      dispatchStandardAttack): unconditional accuracy gate, NO per-attacker rng remix, and
-    ///      damage applied when `damage != 0` — so battle outcomes and replays stay bit-identical
-    ///      to the old library path.
+    /// @dev Differs from dispatchStandardAttack only in its unconditional accuracy gate and applying
+    ///      damage when `damage != 0`.
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
         uint32 basePower,
@@ -2222,6 +2220,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 defenderPlayerIndex = 1 - attackerPlayerIndex;
         uint256 attackerMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, attackerPlayerIndex);
         uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex);
+
+        // Mix in attacker player index to break symmetry on mirror matchups
+        rng = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
 
         if ((rng % 100) >= accuracy) {
             return (0, MOVE_MISS_EVENT_TYPE);

@@ -760,8 +760,8 @@ contract AuroxTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Set rng to be 2 to trigger frostbite
-        mockOracle.setRNG(2);
+        // Precomputed seed triggers frostbite for Alice (player 0)
+        mockOracle.setRNG(3);
 
         // Alice uses volatile punch, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -771,8 +771,8 @@ contract AuroxTest is Test, BattleHelper {
 
         assertEq(address(effects[1].effect), address(frostbiteStatus), "Bob's mon should have frostbite");
 
-        // Set rng to be 10 to trigger burn
-        mockOracle.setRNG(6);
+        // Precomputed seed triggers burn for Bob (player 1)
+        mockOracle.setRNG(1);
 
         // Alice does nothing, Bob uses volatile punch
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);

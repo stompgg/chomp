@@ -61,12 +61,13 @@ contract VolatilePunch is StandardAttack {
         if (damage > 0) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
-            // Use a different part of the RNG for status application
-            uint256 statusRng = uint256(keccak256(abi.encode(rng, "STATUS_EFFECT")));
+            // Use a different part of the RNG for status application. Mix in attacker player index
+            // to break symmetry on mirror matchups.
+            uint256 statusRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STATUS_EFFECT")));
 
             // 30% chance for Burn or Frostbite
             if ((statusRng % 100) < STATUS_EFFECT_CHANCE) {
-                uint256 statusSelectorRng = uint256(keccak256(abi.encode(rng, "STATUS_SELECTOR")));
+                uint256 statusSelectorRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STATUS_SELECTOR")));
                 if (statusSelectorRng % 2 == 0) {
                     engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
                 } else {

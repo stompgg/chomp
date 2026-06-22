@@ -681,8 +681,9 @@ contract XmonTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Set RNG to 1 to prevent early waking from sleep (rng % 3 == 0 wakes early)
-        mockOracle.setRNG(1);
+        // Precomputed seed: Bob stays asleep through turn 5 + no crit/volatility so the awake/asleep
+        // damage ratio is clean.
+        mockOracle.setRNG(16);
 
         // Turn 1: Alice uses Night Terrors, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);

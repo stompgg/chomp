@@ -116,8 +116,8 @@ contract EmbursaTest is Test, BattleHelper {
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), 0, "No damage should have occurred"
         );
 
-        // Set rng to be 2 (magic number that cancels out the damage calc volatility stuff)
-        mockOracle.setRNG(2);
+        // Precomputed seed: no crit + volatility cancels out, so damage is exactly the base
+        mockOracle.setRNG(4);
 
         // Alice and Bob both do nothing
         _commitRevealExecuteForAliceAndBob(

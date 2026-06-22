@@ -215,8 +215,8 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(effects.length, 1, "Overclock should be applied");
         assertEq(address(effects[0].effect), address(overclock), "Overclock should be applied");
 
-        // Set RNG so that Zap is applied
-        mockOracle.setRNG(2);
+        // Precomputed seed: MegaStarBlast hits for full damage and Zap procs (Alice = player 0)
+        mockOracle.setRNG(55);
 
         // Alice uses Mega Star Blast (move index 1), Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
@@ -230,8 +230,8 @@ contract VolthareTest is Test, BattleHelper {
         int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertEq(bobHpDelta, -1 * int32(msb.BASE_POWER()), "Bob's mon should take 150 damage");
 
-        // Now that Overclock has cleared, set RNG to be below 50, and ensure that nothing happens
-        mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
+        // Now that Overclock has cleared, precomputed seed makes MSB miss at base accuracy (Alice)
+        mockOracle.setRNG(1);
 
         // Alice uses Mega Star Blast, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
@@ -314,9 +314,9 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(uint256(effects[0].data) & 0xFF, 1, "Overclock should be tagged with Bob's index");
         assertGt(uint256(effects[0].data) >> 8, 0, "Overclock countdown should be running");
 
-        // Set RNG high enough that base accuracy (60) fails — so Alice's MSB will miss,
-        // confirming Overclock did NOT upgrade accuracy to 100.
-        mockOracle.setRNG(msb.BASE_ACCURACY() + 1);
+        // Precomputed seed makes Alice's MSB miss at base accuracy (60), confirming Overclock did
+        // NOT upgrade accuracy to 100.
+        mockOracle.setRNG(1);
 
         // Alice uses MegaStarBlast. Bob does nothing.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);

@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {MonStateIndexName} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
+import {RNGLib} from "./RNGLib.sol";
 
 library SwitchTargetLib {
     /// Returns a non-KO'd teammate index (other than `currentMonIndex`) chosen by walking the
@@ -14,9 +15,11 @@ library SwitchTargetLib {
         uint256 currentMonIndex,
         uint256 rng
     ) internal view returns (int32) {
+        // Mix in target player index to break symmetry on mirror matchups
+        uint256 offset = RNGLib.mixForAttacker(rng, playerIndex);
         uint256 teamSize = engine.getTeamSize(battleKey, playerIndex);
         for (uint256 i; i < teamSize; ++i) {
-            uint256 candidate = (i + rng) % teamSize;
+            uint256 candidate = (i + offset) % teamSize;
             if (candidate != currentMonIndex) {
                 bool isKOed =
                     engine.getMonStateForBattle(battleKey, playerIndex, candidate, MonStateIndexName.IsKnockedOut) == 1;

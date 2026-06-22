@@ -80,9 +80,9 @@ contract MegaStarBlast is IMoveSet {
             rng,
             DEFAULT_CRIT_RATE
         );
-        // Apply Zap if rng allows
+        // Apply Zap if rng allows. Mix in attacker player index to break symmetry on mirror matchups.
         if (damage > 0) {
-            uint256 rng2 = uint256(keccak256(abi.encode(rng)));
+            uint256 rng2 = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "ZAP")));
             if (rng2 % 100 < ZAP_ACCURACY) {
                 uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
                 engine.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");

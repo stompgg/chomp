@@ -7,6 +7,7 @@ pragma solidity ^0.8.0;
 import {MonStateIndexName} from "../../Enums.sol";
 import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {RNGLib} from "../../lib/RNGLib.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -45,7 +46,8 @@ contract CarrotHarvest is IAbility, BasicEffect {
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        if (rng % CHANCE == 1) {
+        // Mix in target player index to break symmetry on mirror matchups
+        if (RNGLib.mixForAttacker(rng, targetIndex) % CHANCE == 1) {
             // Update the stamina of the mon
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
         }

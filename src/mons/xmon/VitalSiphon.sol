@@ -51,8 +51,10 @@ contract VitalSiphon is StandardAttack {
             critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
         );
 
-        // 50% chance to steal stamina (assuming move dealt damage)
-        if (damage > 0 && rng % 100 >= STAMINA_STEAL_PERCENT) {
+        // 50% chance to steal stamina (assuming move dealt damage). Mix in attacker player index to
+        // break symmetry on mirror matchups.
+        uint256 stealRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STAMINA_STEAL")));
+        if (damage > 0 && stealRng % 100 >= STAMINA_STEAL_PERCENT) {
             uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
             // Check if opponent has at least 1 stamina
