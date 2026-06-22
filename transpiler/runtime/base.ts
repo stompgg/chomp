@@ -6,9 +6,6 @@
  *
  * ALL contract classes must extend this Contract — there is only one.
  * index.ts re-exports it; it does NOT define a second Contract class.
- *
- * Storage, EventStream, globalEventStream, and ADDRESS_ZERO also live here
- * as the single source of truth. index.ts re-exports them.
  */
 
 import { keccak256, encodePacked, toHex, hexToBigInt } from 'viem';
@@ -316,11 +313,7 @@ function bigintToAddress(value: bigint): string {
 // =============================================================================
 // The address registry + transient-instance list are global: the contracts they
 // hold (moves/effects/abilities) are stateless and engine-agnostic — the Engine
-// threads itself into every call — so one shared set is correct across all battles,
-// mirroring the single deployed Engine + shared contracts on-chain. `currentCall`
-// carries the per-transaction caller stack, depth and observers. OBSERVATION (the
-// call/state log) is a write-only side-channel the SEMANTICS path (sender rewrite,
-// depth, transient reset) never reads, so logging can't change a result.
+// threads itself into every call
 
 /** Write-only side-channel; the semantics path must never branch on an Observer. */
 export interface Observer {

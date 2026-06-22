@@ -300,20 +300,22 @@ def run_transpiler(chomp_dir: Path, dry_run: bool = False):
         if result.returncode != 0:
             raise RuntimeError("Transpiler failed")
 
-    # Sync transpiled output to munch's quarantined generated/sim dir. runtime/ is excluded:
-    # munch owns its own runtime/ (including the simulator's battle-harness.ts, which chomp no
-    # longer carries). Chomp still copies transpiler/runtime/ into its own ts-output/runtime/
-    # for vitest, but that copy is not propagated to munch.
+    # Sync transpiled output to munch's quarantined generated/sim dir, including runtime/ so the
+    # transpiler runtime (base.ts, the assembly shims, etc.) stays authoritative from chomp. Only
+    # runtime/battle-harness.ts is excluded: it's munch-only (the simulator's battle harness, which
+    # chomp doesn't carry), and --delete would otherwise prune it. Chomp's transpiler/runtime/ is
+    # the source of truth for the shared files, so any comments worth keeping must live there.
     munch_ts_output = chomp_dir.parent / "munch" / "src" / "app" / "generated" / "sim"
     chomp_ts_output = chomp_dir / "transpiler" / "ts-output"
 
     if munch_ts_output.exists():
         print(f"\nSyncing transpiled output to {munch_ts_output}")
         if dry_run:
-            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ (excluding runtime/)")
+            print(f"[DRY RUN] Would rsync {chomp_ts_output}/ → {munch_ts_output}/ "
+                  "(excluding runtime/battle-harness.ts)")
         else:
             result = subprocess.run(
-                ["rsync", "-a", "--delete", "--exclude=runtime/",
+                ["rsync", "-a", "--delete", "--exclude=runtime/battle-harness.ts",
                  f"{chomp_ts_output}/", f"{munch_ts_output}/"],
             )
             if result.returncode != 0:
