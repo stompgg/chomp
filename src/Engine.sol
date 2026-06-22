@@ -2080,13 +2080,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 rng,
         uint256 source
     ) internal returns (int32 damage, bytes32 eventType) {
-        // Per-attacker rng mix: mirror mons using the same move against each other must roll differently.
-        // See AttackCalculator.mixRngForAttacker for rationale; matches StandardAttack._move's external path.
-        uint256 rngToUse = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
-
         if (basePower > 0) {
+            // Fold attacker index into a single damage hash to break mirror symmetry; rolls read disjoint slices.
+            uint256 h = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
+
             // Accuracy check (only for damaging moves; status moves have no accuracy gate, matching the external path)
-            if (accuracy < 100 && (rngToUse % 100) >= accuracy) {
+            if (accuracy < 100 && (uint64(h) % 100) >= accuracy) {
                 return (0, MOVE_MISS_EVENT_TYPE);
             }
 
@@ -2104,7 +2103,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Shared damage formula (same function the external path uses)
             (damage, eventType) =
-                AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rngToUse, critRate);
+                AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, h, critRate);
 
             if (damage > 0 && scaledBasePower > 0) {
                 _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source);
@@ -2112,9 +2111,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Effect gate: status move always eligible; damaging move only if it dealt damage.
-        // Uses a rerolled rng so effect trigger is uncorrelated with the accuracy/crit/volatility rolls.
-        if (address(effect) != address(0) && AttackCalculator.shouldApplyEffect(rng, basePower, damage, effectAccuracy))
-        {
+        // Roll folds the attacker index (mirror desymmetry), independent of the damage-path rolls.
+        if (
+            address(effect) != address(0)
+                && AttackCalculator.shouldApplyEffect(rng, attackerPlayerIndex, basePower, damage, effectAccuracy)
+        ) {
             _addEffectInternal(defenderPlayerIndex, defenderMonIndex, effect, "");
         }
     }
@@ -2221,10 +2222,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 attackerMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, attackerPlayerIndex);
         uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex);
 
-        // Mix in attacker player index to break symmetry on mirror matchups
-        rng = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
+        // Fold attacker index into a single damage hash to break mirror symmetry; rolls read disjoint slices.
+        uint256 h = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
 
-        if ((rng % 100) >= accuracy) {
+        if ((uint64(h) % 100) >= accuracy) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
 
@@ -2236,7 +2237,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             scaledBasePower = TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType2, scaledBasePower);
         }
         (damage, eventType) =
-            AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, rng, critRate);
+            AttackCalculator._calculateDamageCore(ctx, scaledBasePower, moveClass, volatility, h, critRate);
         if (damage != 0) {
             _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, uint256(uint160(msg.sender)));
         }

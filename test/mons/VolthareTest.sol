@@ -216,7 +216,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(address(effects[0].effect), address(overclock), "Overclock should be applied");
 
         // Precomputed seed: MegaStarBlast hits for full damage and Zap procs (Alice = player 0)
-        mockOracle.setRNG(55);
+        mockOracle.setRNG(39);
 
         // Alice uses Mega Star Blast (move index 1), Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
@@ -231,7 +231,7 @@ contract VolthareTest is Test, BattleHelper {
         assertEq(bobHpDelta, -1 * int32(msb.BASE_POWER()), "Bob's mon should take 150 damage");
 
         // Now that Overclock has cleared, precomputed seed makes MSB miss at base accuracy (Alice)
-        mockOracle.setRNG(1);
+        mockOracle.setRNG(2);
 
         // Alice uses Mega Star Blast, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);
@@ -316,7 +316,7 @@ contract VolthareTest is Test, BattleHelper {
 
         // Precomputed seed makes Alice's MSB miss at base accuracy (60), confirming Overclock did
         // NOT upgrade accuracy to 100.
-        mockOracle.setRNG(1);
+        mockOracle.setRNG(2);
 
         // Alice uses MegaStarBlast. Bob does nothing.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), 0);

@@ -21,16 +21,18 @@ library AttackCalculator {
     /// Status moves (basePower == 0) have no accuracy check and always "land" — they are
     /// eligible to apply subject to effectAccuracy. Damaging moves must have dealt nonzero
     /// damage (didn't miss via accuracy and weren't type-immune).
-    /// The rng is rerolled with an independent keccak so the effect trigger is uncorrelated
-    /// with the accuracy/crit/volatility rolls that already consumed the damage-path rng.
-    function shouldApplyEffect(uint256 rng, uint32 basePower, int32 damage, uint32 effectAccuracy)
-        internal
-        pure
-        returns (bool)
-    {
+    /// Folds the attacker index for mirror desymmetry; the tag keeps the roll independent of the
+    /// accuracy/crit/volatility rolls drawn from keccak(rng, attackerPlayerIndex).
+    function shouldApplyEffect(
+        uint256 rng,
+        uint256 attackerPlayerIndex,
+        uint32 basePower,
+        int32 damage,
+        uint32 effectAccuracy
+    ) internal pure returns (bool) {
         if (effectAccuracy == 0) return false;
         if (basePower > 0 && damage <= 0) return false;
-        uint256 effectRng = uint256(keccak256(abi.encode(rng)));
+        uint256 effectRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "EFFECT")));
         return effectRng % 100 < effectAccuracy;
     }
 
@@ -97,10 +99,9 @@ library AttackCalculator {
         uint256 rng,
         uint256 critRate // out of 100
     ) internal view returns (int32, bytes32) {
-        // Do accuracy check first to decide whether or not to short circuit
-        // [0... accuracy] [accuracy + 1, ..., 100]
-        // [succeeds     ] [fails                 ]
-        if ((rng % 100) >= accuracy) {
+        // Hash once: accuracy uses the low 64 bits, _calculateDamageCore the higher slices.
+        uint256 h = uint256(keccak256(abi.encode(rng)));
+        if ((uint64(h) % 100) >= accuracy) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
 
@@ -110,7 +111,7 @@ library AttackCalculator {
             scaledBasePower = TYPE_CALCULATOR.getTypeEffectiveness(attackType, ctx.defenderType2, scaledBasePower);
         }
 
-        return _calculateDamageCore(ctx, scaledBasePower, attackSupertype, volatility, rng, critRate);
+        return _calculateDamageCore(ctx, scaledBasePower, attackSupertype, volatility, h, critRate);
     }
 
     function _calculateDamageCore(
@@ -118,7 +119,7 @@ library AttackCalculator {
         uint32 scaledBasePower,
         MoveClass attackSupertype,
         uint256 volatility,
-        uint256 rng,
+        uint256 h,
         uint256 critRate
     ) internal pure returns (int32, bytes32) {
         uint32 attackStat;
@@ -141,23 +142,23 @@ library AttackCalculator {
             defenceStat = 1;
         }
 
-        // Calculate move volatility
-        uint256 rng2 = uint256(keccak256(abi.encode(rng)));
+        // Volatility and crit read disjoint high slices of the hash; the caller's accuracy uses the low 64 bits.
+        uint256 scalingRoll = uint64(h >> 64);
         uint32 rngScaling = 100;
         if (volatility > 0) {
-            if (rng2 % 100 > 50) {
-                rngScaling = 100 + uint32(rng2 % (volatility + 1));
+            if (scalingRoll % 100 > 50) {
+                rngScaling = 100 + uint32(scalingRoll % (volatility + 1));
             } else {
-                rngScaling = 100 - uint32(rng2 % (volatility + 1));
+                rngScaling = 100 - uint32(scalingRoll % (volatility + 1));
             }
         }
 
         // Calculate crit chance
-        uint256 rng3 = uint256(keccak256(abi.encode(rng2)));
+        uint256 critRoll = h >> 128;
         uint32 critNum = 1;
         uint32 critDenom = 1;
         bytes32 eventType = NONE_EVENT_TYPE;
-        if ((rng3 % 100) <= critRate) {
+        if ((critRoll % 100) <= critRate) {
             critNum = CRIT_NUM;
             critDenom = CRIT_DENOM;
             eventType = MOVE_CRIT_EVENT_TYPE;

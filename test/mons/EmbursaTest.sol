@@ -117,7 +117,7 @@ contract EmbursaTest is Test, BattleHelper {
         );
 
         // Precomputed seed: no crit + volatility cancels out, so damage is exactly the base
-        mockOracle.setRNG(4);
+        mockOracle.setRNG(28);
 
         // Alice and Bob both do nothing
         _commitRevealExecuteForAliceAndBob(

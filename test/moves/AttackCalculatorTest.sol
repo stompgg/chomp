@@ -167,7 +167,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
         MoveClass attackSupertype = MoveClass.Physical;
         uint256 critRate = 0;
 
-        // With rng = 49, attack should hit (rng < accuracy)
+        // Precomputed seed: accuracy roll lands a hit
         (int32 damage1,) = AttackCalculator._calculateDamageView(
             engine,
             typeCalc,
@@ -179,11 +179,11 @@ contract AttackCalculatorTest is Test, BattleHelper {
             volatility,
             attackType,
             attackSupertype,
-            49,
+            6,
             critRate
         );
 
-        // With rng = 50, attack should miss (rng >= accuracy)
+        // Precomputed seed: accuracy roll lands a miss
         (int32 damage2, bytes32 eventType) = AttackCalculator._calculateDamageView(
             engine,
             typeCalc,
@@ -277,7 +277,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
             volatility,
             attackType,
             attackSupertype,
-            5, // Hashes to be 60,greater than 50, we scale up
+            5, // Precomputed seed: scales up
             critRate
         );
 
@@ -293,7 +293,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
             volatility,
             attackType,
             attackSupertype,
-            49, // Hashes to be 40, less than 50, we scale down
+            3, // Precomputed seed: scales down
             critRate
         );
 
