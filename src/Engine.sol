@@ -791,8 +791,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @dev Packs a current-turn (encoded move, salt) pair into one transient word:
-    /// [salt: bits 0-103 | encoded move: bits 104-127]. Companion to the unpacks in
-    /// _getCurrentTurnMove / _getCurrentTurnSalt.
+    /// [salt: bits 0-103 | encoded move: bits 104-127]. Move is unpacked in
+    /// _getCurrentTurnMove; salt is unpacked inline at the reveal-hash sites.
     function _packTurn(uint256 encoded, uint104 salt) private pure returns (uint256) {
         return uint256(salt) | (encoded << 104);
     }
@@ -809,16 +809,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return _decodeMove(encoded);
         }
         return playerIndex == 0 ? config.p0Move : config.p1Move;
-    }
-
-    /// @dev Salt companion to `_getCurrentTurnMove`. One transient load covers both the
-    /// "populated?" check and the salt extraction.
-    function _getCurrentTurnSalt(BattleConfig storage config, uint256 playerIndex) internal view returns (uint104) {
-        uint256 packed = playerIndex == 0 ? _turnP0Packed : _turnP1Packed;
-        if (packed != 0) {
-            return uint104(packed);
-        }
-        return playerIndex == 0 ? config.p0Salt : config.p1Salt;
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
@@ -2463,6 +2453,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    function _firstNonKOed(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
+        uint256 koBitmap = _getKOBitmap(config, playerIndex);
+        uint256 teamSize = (playerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+        for (uint256 i; i < teamSize; ++i) {
+            if ((koBitmap & (1 << i)) == 0) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
     /// @dev Reads the current-turn move FRESH via _getCurrentTurnMove (rather than reusing the
     ///      _executeInternal top-of-turn p0TurnMove/p1TurnMove snapshot): effects like SleepStatus call
     ///      engine.setMove(...NO_OP...) to overwrite a victim's move mid-turn, so the move can change
@@ -2497,12 +2498,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Coerce to a switch when one is required: turn 0 (initial send-in) or active mon KO'd.
-        // If the submitted move is not a switch, force a switch to mon index 0 so the battle can
-        // progress instead of reverting. If mon 0 is itself invalid (KO'd), the switch-target
-        // check below silently no-ops and timeout handles the stuck player.
+        // Target the first non-KO'd slot so the switch always lands
         if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
             moveIndex = SWITCH_MOVE_INDEX;
-            move.extraData = uint16(0);
+            move.extraData = uint16(_firstNonKOed(config, playerIndex));
         }
 
         // Handle a switch, no-op, or regular move.
@@ -3007,10 +3006,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /**
      * - Helper functions for packing/unpacking activeMonIndex
      */
-    function _packActiveMonIndices(uint8 player0Index, uint8 player1Index) internal pure returns (uint16) {
-        return uint16(player0Index) | (uint16(player1Index) << 8);
-    }
-
     function _unpackActiveMonIndex(uint16 packed, uint256 playerIndex) internal pure returns (uint256) {
         if (playerIndex == 0) {
             return uint256(uint8(packed));
