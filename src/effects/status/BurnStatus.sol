@@ -42,12 +42,12 @@ contract BurnStatus is StatusEffect {
     function onApply(
         IEngine engine,
         bytes32 battleKey,
-        uint256 rng,
+        uint256,
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256,
+        uint256 
     )
         public
         override
