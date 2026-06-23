@@ -96,7 +96,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
     }
 
     function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
-        return DEFAULT_PRIORITY;
+        return DEFAULT_PRIORITY + 1;
     }
 
     function moveType(IEngine, bytes32) public pure returns (Type) {

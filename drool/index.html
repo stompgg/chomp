@@ -9,6 +9,7 @@
     <script type="module" src="mon-moves.js"></script>
     <script type="module" src="mon-full.js"></script>
     <script type="module" src="mon-analysis.js"></script>
+    <script type="module" src="type-chart.js"></script>
   </head>
   <body>
     <div class="container">
@@ -21,6 +22,7 @@
         <div class="tab" data-tab="stats">Stats</div>
         <div class="tab" data-tab="moves">Moves</div>
         <div class="tab" data-tab="analysis">Analysis</div>
+        <div class="tab" data-tab="types">Types</div>
       </div>
 
       <div class="mobile-tabs-container">
@@ -29,6 +31,7 @@
           <option value="stats">Stats</option>
           <option value="moves">Moves</option>
           <option value="analysis">Analysis</option>
+          <option value="types">Types</option>
         </select>
       </div>
 
@@ -128,6 +131,8 @@
           </div>
         </div>
       </div>
+
+      <div id="types" class="tab-content"></div>
     </div>
   </body>
 </html>

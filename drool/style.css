@@ -1,3 +1,7 @@
+:root {
+  /* Referenced by Lightning's bg in type-metadata.csv */
+  --text-warm: #FFD700;
+}
 body {
   font-family: Arial, sans-serif;
   padding: 10px;
@@ -288,7 +292,8 @@ tr:nth-child(even) {
   background-color: #40738c;
 }
 #save-indicator,
-#moves-save-indicator {
+#moves-save-indicator,
+#types-save-indicator {
   transition: all 0.3s ease;
   font-size: 16px;
   vertical-align: middle;
@@ -739,5 +744,200 @@ th.sortable:hover {
 .sort-indicator {
   display: inline-block;
   margin-left: 4px;
+}
+
+/* ===== Type chart (Types tab) ===== */
+.type-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.type-subtab {
+  background-color: #2d2d2d;
+  border: 1px solid #404040;
+}
+.type-subtab.active {
+  background-color: #365d72;
+}
+.type-subview {
+  display: none;
+}
+.type-subview.active {
+  display: block;
+}
+
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+table.type-grid {
+  border-collapse: collapse;
+  width: auto;
+  margin-bottom: 10px;
+}
+.type-grid th,
+.type-grid td {
+  border: 1px solid #404040;
+  text-align: center;
+  padding: 2px;
+}
+.type-grid thead th {
+  position: sticky;
+  top: 0;
+  background-color: #1a1a1a;
+  z-index: 2;
+}
+.type-grid tbody th {
+  position: static;
+  background-color: #1a1a1a;
+  text-align: left;
+  padding: 2px 4px;
+}
+.type-grid .tc-corner {
+  color: #888;
+  font-size: 0.7rem;
+  font-weight: normal;
+  text-align: right;
+  white-space: nowrap;
+}
+.tc-cell {
+  width: 40px;
+  height: 30px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.78rem;
+  font-weight: bold;
+  transition: background-color 0.15s;
+}
+.tc-cell:hover {
+  outline: 2px solid #999;
+  outline-offset: -2px;
+}
+.tc-neutral {
+  background-color: transparent;
+  color: #555;
+}
+.tc-super {
+  background-color: rgba(76, 175, 80, 0.28);
+  color: #bdf5bd;
+}
+.tc-half {
+  background-color: rgba(244, 67, 54, 0.24);
+  color: #ffb3ac;
+}
+.tc-immune {
+  background-color: #0d0d0d;
+  color: #777;
+}
+.tc-diag {
+  box-shadow: inset 0 0 0 1px #666;
+}
+
+.tc-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-size: 0.8rem;
+  color: #bbb;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tc-legend .swatch {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 5px;
+  border: 1px solid #404040;
+}
+
+.tc-hint {
+  color: #aaa;
+  font-size: 0.85rem;
+  margin: 0 0 8px;
+}
+.tc-textarea {
+  width: 100%;
+  min-height: 340px;
+  background-color: #111;
+  color: #e0e0e0;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  padding: 10px;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+#tc-msg {
+  margin-left: 8px;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.balance-rank {
+  width: auto;
+}
+.balance-rank th {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.balance-rank td,
+.balance-rank th {
+  text-align: center;
+}
+.balance-rank td:first-child,
+.balance-rank th:first-child {
+  text-align: left;
+}
+.balance-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.balance-card {
+  background-color: #252525;
+  border: 1px solid #404040;
+  border-radius: 6px;
+  padding: 12px;
+}
+.balance-card .bc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+.balance-card .bc-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 5px 0;
+}
+.balance-card .bc-label {
+  color: #999;
+  font-size: 0.72rem;
+  min-width: 70px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.balance-card .type-chip {
+  font-size: 0.72rem;
+}
+.bc-empty {
+  color: #666;
+  font-size: 0.78rem;
 }
 

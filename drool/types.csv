@@ -39,7 +39,7 @@ Earth,Metal,1
 Earth,Ice,1
 Earth,Nature,1
 Earth,Lightning,2
-Earth,Faith,1
+Earth,Faith,5
 Earth,Air,0
 Earth,Math,1
 Earth,Cyber,1
@@ -144,7 +144,7 @@ Faith,Metal,1
 Faith,Ice,1
 Faith,Nature,5
 Faith,Lightning,1
-Faith,Faith,5
+Faith,Faith,1
 Faith,Air,1
 Faith,Math,1
 Faith,Cyber,2
