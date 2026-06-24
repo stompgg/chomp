@@ -62,6 +62,7 @@ import {PreemptiveShock} from "../src/mons/volthare/PreemptiveShock.sol";
 import {RoundTrip} from "../src/mons/volthare/RoundTrip.sol";
 import {ContagiousSlumber} from "../src/mons/xmon/ContagiousSlumber.sol";
 import {Dreamcatcher} from "../src/mons/xmon/Dreamcatcher.sol";
+import {InvokeTaboo} from "../src/mons/xmon/InvokeTaboo.sol";
 import {NightTerrors} from "../src/mons/xmon/NightTerrors.sol";
 import {Somniphobia} from "../src/mons/xmon/Somniphobia.sol";
 import {VitalSiphon} from "../src/mons/xmon/VitalSiphon.sol";
@@ -664,13 +665,13 @@ contract SetupMons is Script {
     }
 
     function deployXmon(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](5);
+        DeployData[] memory deployedContracts = new DeployData[](6);
 
         // Cache commonly used addresses
         address sleepstatus = vm.envAddress("SLEEP_STATUS");
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        address[5] memory addrs;
+        address[6] memory addrs;
 
         {
             addrs[0] = address(new ContagiousSlumber(IEffect(sleepstatus)));
@@ -689,8 +690,12 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Night Terrors", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new Dreamcatcher());
-            deployedContracts[4] = DeployData({name: "Dreamcatcher", contractAddress: addrs[4]});
+            addrs[4] = address(new InvokeTaboo(IEffect(sleepstatus)));
+            deployedContracts[4] = DeployData({name: "Invoke Taboo", contractAddress: addrs[4]});
+        }
+        {
+            addrs[5] = address(new Dreamcatcher());
+            deployedContracts[5] = DeployData({name: "Dreamcatcher", contractAddress: addrs[5]});
         }
 
         _registerXmon(registry, addrs);
@@ -698,7 +703,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerXmon(GachaTeamRegistry registry, address[5] memory addrs) internal {
+    function _registerXmon(GachaTeamRegistry registry, address[6] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 311,
             stamina: 5,
@@ -710,13 +715,16 @@ contract SetupMons is Script {
             type1: Type.Cosmic,
             type2: Type.None
         });
-        uint256[] memory moves = new uint256[](4);
+        // Lanes 0-3 are the level-0 battle moves; lane 4 (Invoke Taboo) is a higher-pool move that
+        // unlocks at level 6 (see moves.csv UnlockLevel and the MonExp by-lane gating).
+        uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
         moves[2] = uint256(uint160(addrs[2]));
         moves[3] = uint256(uint160(addrs[3]));
+        moves[4] = uint256(uint160(addrs[4]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[4]));
+        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[5]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(10, stats, moves, abilities, keys, values);
