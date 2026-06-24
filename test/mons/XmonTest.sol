@@ -368,6 +368,50 @@ contract XmonTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1 * 3, "Bob: 1 stack + 2 stacks");
     }
 
+    // Both players casting in the same battle share one global instance; the stack just accumulates.
+    function test_somniphobiaSingleInstanceWhenBothCast() public {
+        Somniphobia somniphobia = new Somniphobia();
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(_staminaBurn(2))));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = moves;
+        aliceMon.stats.hp = 1000;
+        aliceMon.stats.stamina = 10;
+        aliceMon.stats.speed = 2;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = moves;
+        bobMon.stats.hp = 1000;
+        bobMon.stats.stamina = 10;
+        bobMon.stats.speed = 1;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Both players cast Somniphobia on the same turn -> one coordinator, stack 2.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
+
+        (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertTrue(exists, "Single global coordinator should exist");
+        assertEq((uint256(data) >> 8) & 0xFF, 2, "Both casts accumulate into one stack-2 instance");
+    }
+
     // A mon switched in while Somniphobia is active picks up the effect; the one switched out loses it.
     function test_somniphobiaFollowsSwitchIns() public {
         Somniphobia somniphobia = new Somniphobia();
@@ -464,6 +508,51 @@ contract XmonTest is Test, BattleHelper {
         (bool punisherGone,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
         assertFalse(coordinatorGone, "Coordinator should expire after DURATION turns");
         assertFalse(punisherGone, "Per-mon copy should clear once the coordinator is gone");
+    }
+
+    // Re-casting bumps the stack but does NOT refresh the timer: it still expires on the original
+    // schedule (4 rounds after the first cast), and only a fresh cast after that resets it.
+    function test_somniphobiaRecastDoesNotRefreshDuration() public {
+        Somniphobia somniphobia = new Somniphobia();
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(_staminaBurn(2))));
+
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = 1000;
+        mon.stats.stamina = 10;
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1: first cast (DURATION = 4).
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        // Turn 2: re-cast -> stack 2, but the timer keeps ticking from the first cast.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        (,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertEq((uint256(data) >> 8) & 0xFF, 2, "Re-cast should raise the stack to 2");
+
+        // Turn 3: still ticking from the original cast.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (bool aliveAtTurn3,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertTrue(aliveAtTurn3, "Still active before the original duration elapses");
+
+        // Turn 4: expires on the original schedule despite the turn-2 re-cast.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (bool gone,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertFalse(gone, "Re-cast must not extend the duration; it expires on the original schedule");
     }
 
     /// @notice Invoke Taboo (-1 priority) reads the move the opponent used this turn and brands it.

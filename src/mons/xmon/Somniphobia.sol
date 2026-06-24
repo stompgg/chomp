@@ -27,8 +27,9 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
         if (exists) {
+            // Bump the stack but keep the original countdown; the effect must fade before it resets.
             uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
-            engine.editEffect(2, effectIndex, bytes32((stack << 8) | DURATION));
+            engine.editEffect(2, effectIndex, bytes32((stack << 8) | (uint256(data) & 0xFF)));
         } else {
             engine.addEffect(2, attackerPlayerIndex, this, bytes32((uint256(1) << 8) | DURATION));
         }
