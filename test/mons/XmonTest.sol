@@ -200,22 +200,12 @@ contract XmonTest is Test, BattleHelper {
         assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)), "Alice should have -3 stamina delta (after using the move)");
     }
 
-    /// @notice Somniphobia now triggers on ANY stamina gain (via OnUpdateMonState), not just the
-    ///         rest action. This exercises two non-trivial cases in one battle:
-    ///           * the end-of-turn StaminaRegen tick (a gain that is NOT a rest) deals damage;
-    ///           * a resting mon that is already at full stamina gains nothing and takes no damage.
-    function test_somniphobiaDamagesOnAnyStaminaGain() public {
-        Somniphobia somniphobia = new Somniphobia();
-        StaminaRegen staminaRegen = new StaminaRegen();
-
-        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 50; // 400 HP -> 50 damage per tick
-        int32 tick = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -50
-
-        // A move that just burns stamina (cost 2, no damage) so a mon can drop below full and regen.
-        StandardAttack staminaBurn = attackFactory.createAttack(
+    // Stamina-burn filler: costs stamina, deals no damage, so a mon can drop below full and regen.
+    function _staminaBurn(uint32 cost) internal returns (StandardAttack) {
+        return attackFactory.createAttack(
             ATTACK_PARAMS({
                 BASE_POWER: 0,
-                STAMINA_COST: 2,
+                STAMINA_COST: cost,
                 ACCURACY: 100,
                 PRIORITY: DEFAULT_PRIORITY,
                 MOVE_TYPE: Type.Cosmic,
@@ -227,6 +217,18 @@ contract XmonTest is Test, BattleHelper {
                 EFFECT: IEffect(address(0))
             })
         );
+    }
+
+    // Somniphobia triggers on any stamina gain (not just resting): the round-end regen tick deals
+    // damage, while a mon resting at full stamina gains nothing and is untouched.
+    function test_somniphobiaDamagesOnAnyStaminaGain() public {
+        Somniphobia somniphobia = new Somniphobia();
+        StaminaRegen staminaRegen = new StaminaRegen();
+
+        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 50; // 400 HP -> 50 damage per tick at 1 stack
+        int32 tick = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -50
+
+        StandardAttack staminaBurn = _staminaBurn(2);
 
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(somniphobia)));
@@ -271,14 +273,15 @@ contract XmonTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Turn 1: Alice casts Somniphobia (applies to BOTH active mons, costs Alice 1 stamina),
-        // Bob burns 2 stamina. Neither rests. At round-end StaminaRegen tops each mon back up by 1,
-        // and that gain triggers Somniphobia on both: each takes one tick.
+        // Turn 1: Alice casts Somniphobia, Bob burns 2 stamina. Neither rests. At round-end
+        // StaminaRegen tops each mon back up by 1, and that gain triggers Somniphobia on both.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
 
-        // Both should have the (local) Somniphobia effect.
+        // The global coordinator exists and both active mons carry the per-mon effect.
+        (bool coordinatorExists,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
         (bool aliceHas,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
         (bool bobHas,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
+        assertTrue(coordinatorExists, "Somniphobia coordinator should exist");
         assertTrue(aliceHas, "Alice should have Somniphobia effect");
         assertTrue(bobHas, "Bob should have Somniphobia effect");
 
@@ -303,6 +306,164 @@ contract XmonTest is Test, BattleHelper {
             tick * 2,
             "Bob took another tick: resting regen'd stamina"
         );
+    }
+
+    // Re-casting Somniphobia raises the stack, scaling the per-gain damage (1/8 max HP per stack).
+    function test_somniphobiaStacks() public {
+        Somniphobia somniphobia = new Somniphobia();
+        StaminaRegen staminaRegen = new StaminaRegen();
+
+        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 100; // 800 HP -> 100 per stack
+        int32 stack1 = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -100
+
+        StandardAttack staminaBurn = _staminaBurn(2);
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = moves;
+        aliceMon.stats.hp = maxHp;
+        aliceMon.stats.stamina = 5;
+        aliceMon.stats.speed = 2;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = moves;
+        bobMon.stats.hp = maxHp;
+        bobMon.stats.stamina = 5;
+        bobMon.stats.speed = 1;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+        bytes32 battleKey = _startBattle(
+            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+        );
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1: Alice casts Somniphobia (stack 1), Bob burns stamina. Round-end regen deals 1 stack.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1, "Alice 1-stack tick");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1, "Bob 1-stack tick");
+
+        // Turn 2: Alice casts again (stack 2), Bob burns stamina. Round-end regen now deals 2 stacks.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
+
+        (,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertEq((uint256(data) >> 8) & 0xFF, 2, "Coordinator should be at stack 2");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1 * 3, "Alice: 1 stack + 2 stacks");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1 * 3, "Bob: 1 stack + 2 stacks");
+    }
+
+    // A mon switched in while Somniphobia is active picks up the effect; the one switched out loses it.
+    function test_somniphobiaFollowsSwitchIns() public {
+        Somniphobia somniphobia = new Somniphobia();
+        StaminaRegen staminaRegen = new StaminaRegen();
+
+        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 100; // 800 HP -> 100 per stack
+        int32 stack1 = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -100
+
+        StandardAttack staminaBurn = _staminaBurn(2);
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = maxHp;
+        mon.stats.stamina = 5;
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+        bytes32 battleKey = _startBattle(
+            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+        );
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1: Alice casts Somniphobia, Bob burns stamina -> Bob's mon 0 picks up the effect.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
+        (bool bob0Has,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
+        assertTrue(bob0Has, "Bob mon 0 should have the effect");
+
+        // Turn 2: Bob switches to mon 1. Mon 0 loses the effect; mon 1 gains it on switch-in.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1));
+        (bool bob0Still,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
+        (bool bob1Has,,) = engine.getEffectData(battleKey, 1, 1, address(somniphobia));
+        (bool coordinatorAlive,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertFalse(bob0Still, "Switched-out mon 0 should lose the effect");
+        assertTrue(bob1Has, "Switched-in mon 1 should pick up the effect");
+        assertTrue(coordinatorAlive, "Coordinator persists across switches");
+
+        // Turn 3: Bob's mon 1 burns stamina; the round-end regen gain damages it, proving coverage.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp), stack1, "Switched-in mon takes a tick");
+    }
+
+    // The effect (coordinator + per-mon copies) is gone after DURATION turns.
+    function test_somniphobiaExpiresAfterDuration() public {
+        Somniphobia somniphobia = new Somniphobia();
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(_staminaBurn(2))));
+
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = 1000;
+        mon.stats.stamina = 10;
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        DefaultValidator validator = new DefaultValidator(
+            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        );
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1 casts it (DURATION = 4). It then counts down one per round end.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        // Turns 2-3: still active.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (bool aliveAtTurn3,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        assertTrue(aliveAtTurn3, "Coordinator still active before duration elapses");
+
+        // Turn 4: the 4th round end expires it; the per-mon copy self-clears the same round.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (bool coordinatorGone,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        (bool punisherGone,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
+        assertFalse(coordinatorGone, "Coordinator should expire after DURATION turns");
+        assertFalse(punisherGone, "Per-mon copy should clear once the coordinator is gone");
     }
 
     /// @notice Invoke Taboo (-1 priority) reads the move the opponent used this turn and brands it.

@@ -10,18 +10,13 @@ import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 
-/// @notice Somniphobia punishes recovering stamina. When used, it places an effect on BOTH active
-///         mons that lasts DURATION turns. While the effect is active, any time that mon gains
-///         stamina from *any* source (resting, the round-end stamina regen, a stamina-steal move,
-///         etc.) it immediately takes 1/DAMAGE_DENOM of its max HP as damage.
-/// @dev Detecting "any stamina gain" is done via the OnUpdateMonState hook (the same hook
-///      Dreamcatcher uses to heal on stamina gain). That hook only fires for *local* (per-mon)
-///      effects — global effects never receive it — so Somniphobia is registered locally on each
-///      active mon rather than as a single battlefield-wide global effect. It is cleared when the
-///      mon switches out, scoping it to the mons that were active when it was invoked.
 contract Somniphobia is IMoveSet, BasicEffect {
-    uint256 public constant DURATION = 8;
+    uint256 public constant DURATION = 4;
     int32 public constant DAMAGE_DENOM = 8;
+
+    // Global-coordinator data: [stack: bits 8-15 | remainingDuration: bits 0-7].
+    // Per-mon-punisher data: this marker bit set (distinguishes the two roles, which share a contract).
+    uint256 internal constant PUNISHER_MARKER = 1 << 255;
 
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Somniphobia";
@@ -29,18 +24,23 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
     function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 defenderMonIndex, uint16, uint256) external {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        _applyTo(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
-        _applyTo(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
+
+        (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
+        if (exists) {
+            uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
+            engine.editEffect(2, effectIndex, bytes32((stack << 8) | DURATION));
+        } else {
+            engine.addEffect(2, attackerPlayerIndex, this, bytes32((uint256(1) << 8) | DURATION));
+        }
+
+        _applyPunisher(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
+        _applyPunisher(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
     }
 
-    /// @dev Add (or refresh) the effect on a single mon. Re-invoking while it is already present
-    ///      resets the remaining duration rather than stacking a second copy.
-    function _applyTo(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
-        (bool exists, uint256 effectIndex,) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
-        if (exists) {
-            engine.editEffect(playerIndex, effectIndex, bytes32(DURATION));
-        } else {
-            engine.addEffect(playerIndex, monIndex, this, bytes32(DURATION));
+    function _applyPunisher(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
+        (bool exists,,) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
+        if (!exists) {
+            engine.addEffect(playerIndex, monIndex, this, bytes32(PUNISHER_MARKER));
         }
     }
 
@@ -64,12 +64,11 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return ExtraDataType.None;
     }
 
-    // Steps: RoundEnd (0x04), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
+    // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint16) {
-        return ALWAYS_APPLIES_BIT | 0x0124;
+        return ALWAYS_APPLIES_BIT | 0x0134;
     }
 
-    /// @notice Damage the mon whenever its stamina is increased.
     function onUpdateMonState(
         IEngine engine,
         bytes32 battleKey,
@@ -82,31 +81,30 @@ contract Somniphobia is IMoveSet, BasicEffect {
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {
-        // Only trigger on a stamina *gain*. The damage below routes back through updateMonState
-        // (as an Hp delta), which re-enters this hook — the stat guard makes that re-entry a no-op,
-        // so there is no recursion.
         if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
-            uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
-            int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM;
-            if (damage > 0) {
-                engine.dealDamage(playerIndex, monIndex, damage);
+            (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
+            if (exists) {
+                int32 stack = int32(uint32((uint256(data) >> 8) & 0xFF));
+                uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+                int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM * stack;
+                if (damage > 0) {
+                    engine.dealDamage(playerIndex, monIndex, damage);
+                }
             }
         }
         return (extraData, false);
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
-        pure
         override
-        returns (bytes32, bool removeAfterRun)
+        returns (bytes32, bool)
     {
-        uint256 turnsLeft = uint256(extraData);
-        if (turnsLeft == 1) {
-            return (extraData, true);
-        } else {
-            return (bytes32(turnsLeft - 1), false);
+        // Global coordinator only: apply the punisher to the mon that just switched in.
+        if (uint256(extraData) & PUNISHER_MARKER == 0) {
+            _applyPunisher(engine, battleKey, targetIndex, monIndex);
         }
+        return (extraData, false);
     }
 
     function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
@@ -115,8 +113,27 @@ contract Somniphobia is IMoveSet, BasicEffect {
         override
         returns (bytes32, bool)
     {
-        // Clear when the mon leaves the field.
-        return (extraData, true);
+        // Punisher clears with its mon; the global coordinator persists.
+        return (extraData, uint256(extraData) & PUNISHER_MARKER != 0);
+    }
+
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+        external
+        view
+        override
+        returns (bytes32, bool)
+    {
+        if (uint256(extraData) & PUNISHER_MARKER != 0) {
+            // Punisher: drop self once the coordinator is gone.
+            (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
+            return (extraData, !exists);
+        }
+        // Global coordinator: count down, preserving the stack.
+        uint256 duration = uint256(extraData) & 0xFF;
+        if (duration <= 1) {
+            return (extraData, true);
+        }
+        return (bytes32((uint256(extraData) & 0xFF00) | (duration - 1)), false);
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
