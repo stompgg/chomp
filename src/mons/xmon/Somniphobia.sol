@@ -2,29 +2,47 @@
 
 pragma solidity ^0.8.0;
 
-import {NO_OP_MOVE_INDEX, DEFAULT_PRIORITY, MOVE_INDEX_MASK} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
-import { MoveDecision, MonStateIndexName, MoveMeta } from "../../Structs.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY} from "../../Constants.sol";
+import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 
 contract Somniphobia is IMoveSet, BasicEffect {
-    uint256 public constant DURATION = 8;
+    uint256 public constant DURATION = 4;
     int32 public constant DAMAGE_DENOM = 8;
+
+    // Global-coordinator data: [stack: bits 8-15 | remainingDuration: bits 0-7].
+    // Per-mon-punisher data: this marker bit set (distinguishes the two roles, which share a contract).
+    uint256 internal constant PUNISHER_MARKER = 1 << 255;
 
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Somniphobia";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
-        // Add effect globally for 6 turns (only if it's not already in global effects)
-        (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 defenderMonIndex, uint16, uint256) external {
+        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+
+        (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
         if (exists) {
-            return;
+            // Bump the stack but keep the original countdown; the effect must fade before it resets.
+            uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
+            engine.editEffect(2, effectIndex, bytes32((stack << 8) | (uint256(data) & 0xFF)));
+        } else {
+            engine.addEffect(2, attackerPlayerIndex, this, bytes32((uint256(1) << 8) | DURATION));
         }
-        engine.addEffect(2, attackerPlayerIndex, this, bytes32(DURATION));
+
+        _applyPunisher(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
+        _applyPunisher(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
+    }
+
+    function _applyPunisher(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {
+        (bool exists,,) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
+        if (!exists) {
+            engine.addEffect(playerIndex, monIndex, this, bytes32(PUNISHER_MARKER));
+        }
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
@@ -47,46 +65,76 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return ExtraDataType.None;
     }
 
-    // Steps: RoundEnd, AfterMove
+    // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8084;
+        return ALWAYS_APPLIES_BIT | 0x0134;
     }
 
-    function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onUpdateMonState(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint256,
+        uint256,
+        MonStateIndexName stateVarIndex,
+        int32 valueToAdd
+    ) external override returns (bytes32, bool) {
+        if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
+            (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
+            if (exists) {
+                int32 stack = int32(uint32((uint256(data) >> 8) & 0xFF));
+                uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+                int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM * stack;
+                if (damage > 0) {
+                    engine.dealDamage(playerIndex, monIndex, damage);
+                }
+            }
+        }
+        return (extraData, false);
+    }
+
+    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
         external
         override
         returns (bytes32, bool)
     {
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
-
-        // Unpack the move index from packedMoveIndex
-        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
-
-        // If this player rested (NO_OP), deal damage
-        if (moveIndex == NO_OP_MOVE_INDEX) {
-            uint32 maxHp = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
-            int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM;
-
-            if (damage > 0) {
-                engine.dealDamage(targetIndex, monIndex, damage);
-            }
+        // Global coordinator only: apply the punisher to the mon that just switched in.
+        if (uint256(extraData) & PUNISHER_MARKER == 0) {
+            _applyPunisher(engine, battleKey, targetIndex, monIndex);
         }
-
         return (extraData, false);
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         pure
         override
-        returns (bytes32, bool removeAfterRun)
+        returns (bytes32, bool)
     {
-        uint256 turnsLeft = uint256(extraData);
-        if (turnsLeft == 1) {
-            return (extraData, true);
-        } else {
-            return (bytes32(turnsLeft - 1), false);
+        // Punisher clears with its mon; the global coordinator persists.
+        return (extraData, uint256(extraData) & PUNISHER_MARKER != 0);
+    }
+
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+        external
+        view
+        override
+        returns (bytes32, bool)
+    {
+        if (uint256(extraData) & PUNISHER_MARKER != 0) {
+            // Punisher: drop self once the coordinator is gone.
+            (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
+            return (extraData, !exists);
         }
+        // Global coordinator: count down, preserving the stack.
+        uint256 duration = uint256(extraData) & 0xFF;
+        if (duration <= 1) {
+            return (extraData, true);
+        }
+        return (bytes32((uint256(extraData) & 0xFF00) | (duration - 1)), false);
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
