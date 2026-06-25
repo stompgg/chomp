@@ -202,6 +202,11 @@ class ContractGenerator(BaseGenerator):
         var_list = ', '.join(f"'{v}'" for v in mutable_state_vars)
         lines.append(f"{self.indent()}static override readonly __stateVars = new Set([{var_list}]);")
 
+        # __className: source name as a string literal so the call-log → action
+        # mapper keys off a mangle-stable identity (constructor.name is renamed
+        # by the production minifier). Mirrors __stateVars — always emitted.
+        lines.append(f"{self.indent()}static override readonly __className: string = {contract.name!r};")
+
         # Widened __argNames — references the narrow const declared above.
         if method_to_longest_params:
             lines.append(
