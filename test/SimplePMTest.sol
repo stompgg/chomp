@@ -190,6 +190,28 @@ contract SimplePMTest is Test {
         assertEq(p1Balance, 1 ether);
     }
 
+    function test_T1_6_FeeUsesBufferedTurnsWhileExecutedTurnIsZero() public {
+        // Deferred PvP: executed turnId stays 0 while moves buffer. Effective turn = 0 + 10 = 10 → 20% fee.
+        mockEngine.setTurnId(BATTLE_KEY, 0);
+        mockEngine.setNumBuffered(BATTLE_KEY, 10);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, ALICE);
+        assertEq(p0Balance, 0.8 ether);
+    }
+
+    function test_T1_7_EffectiveTurnIsExecutedPlusBuffered() public {
+        // 5 executed + 5 buffered = effective turn 10 → 20% fee.
+        mockEngine.setTurnId(BATTLE_KEY, 5);
+        mockEngine.setNumBuffered(BATTLE_KEY, 5);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, ALICE);
+        assertEq(p0Balance, 0.8 ether);
+    }
+
     // =========================================================================
     // Group 2: buyShares — Revert Conditions
     // =========================================================================
@@ -223,6 +245,26 @@ contract SimplePMTest is Test {
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(SimplePM.InvalidBattle.selector, fakeBattle));
         pm.buyShares{value: 1 ether}(fakeBattle, true);
+    }
+
+    function test_T2_5_RevertWhenBufferedTurnsPushPastCutoff() public {
+        // Executed turn 0 but 16 buffered → effective turn 16 > 15 → TooLate(16).
+        mockEngine.setTurnId(BATTLE_KEY, 0);
+        mockEngine.setNumBuffered(BATTLE_KEY, 16);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(SimplePM.TooLate.selector, 16));
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+    }
+
+    function test_T2_6_DoesNotRevertAtEffectiveTurn15() public {
+        // 10 executed + 5 buffered = effective turn 15 → still allowed, 30% fee.
+        mockEngine.setTurnId(BATTLE_KEY, 10);
+        mockEngine.setNumBuffered(BATTLE_KEY, 5);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint96 p0Shares,,) = pm.marketForBattle(BATTLE_KEY);
+        assertEq(p0Shares, 0.7 ether);
     }
 
     // =========================================================================

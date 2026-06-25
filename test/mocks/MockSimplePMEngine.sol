@@ -5,12 +5,17 @@ import {BattleContext} from "../../src/Structs.sol";
 
 contract MockSimplePMEngine {
     mapping(bytes32 => uint256) public turnIds;
+    mapping(bytes32 => uint256) public numBuffereds;
     mapping(bytes32 => address) public winners;
     mapping(bytes32 => address[]) public playersList;
     mapping(bytes32 => uint256) public startTimestamps;
 
     function setTurnId(bytes32 battleKey, uint256 turnId) external {
         turnIds[battleKey] = turnId;
+    }
+
+    function setNumBuffered(bytes32 battleKey, uint256 n) external {
+        numBuffereds[battleKey] = n;
     }
 
     function setWinner(bytes32 battleKey, address winner) external {
@@ -48,5 +53,15 @@ contract MockSimplePMEngine {
             ctx.p0 = players[0];
             ctx.p1 = players[1];
         }
+    }
+
+    /// @notice SimplePM reads the buffered-turn count as `packedTurns.length`; entries are unused here.
+    function getBufferedTurns(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint256[] memory packedTurns)
+    {
+        numExecuted = uint64(turnIds[battleKey]);
+        packedTurns = new uint256[](numBuffereds[battleKey]);
     }
 }

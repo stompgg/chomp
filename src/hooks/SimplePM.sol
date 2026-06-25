@@ -39,13 +39,15 @@ contract SimplePM is Ownable {
     }
 
     function buyShares(bytes32 battleKey, bool isP0) payable public {
-        // One batched read covers both the existence guard and the turnId (getStartTimestamp was
-        // removed from the engine surface). startTimestamp == 0 means the battle was never started.
+        // Existence guard + executed turn come from the context. Under deferred PvP the executed turnId
+        // is 0 while moves buffer, so the live turn adds the buffered count (getBufferedTurns.length) —
+        // read separately to keep this cost off every per-turn getBattleContext caller.
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         if (ctx.startTimestamp == 0) {
             revert InvalidBattle(battleKey);
         }
-        uint256 turnId = ctx.turnId;
+        (, uint256[] memory bufferedTurns) = ENGINE.getBufferedTurns(battleKey);
+        uint256 turnId = uint256(ctx.turnId) + bufferedTurns.length;
         if (turnId > LAST_TURN_TO_JOIN) {
             revert TooLate(turnId);
         }
