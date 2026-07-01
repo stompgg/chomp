@@ -10,10 +10,10 @@
 
 ## Project Overview
 
-**C.H.O.M.P.** (Credibly Hackable On-chain Monster PvP) is an on-chain turn-based PvP battling game inspired by Pokemon Showdown and M.U.G.E.N. Built on Solidity using the Foundry framework, it features an extensible battle engine where users can create custom moves, monsters ("mons"), effects, abilities, and hooks.
+**chomp.** (Credibly Hackable On-chain Monster PvP) is an on-chain turn-based PvP battling game inspired by Pokemon Showdown. Built on Solidity using the Foundry framework, it features an extensible battle engine where users can create custom moves, monsters ("mons"), effects, abilities, and hooks.
 
 **License:** AGPL-3.0
-**Solidity version:** 0.8.34
+**Solidity version:** ^0.8.34
 
 ## Quick Start
 

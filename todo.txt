@@ -1,9 +1,5 @@
 # TODO
 
-- Add sanity checks to gacha rewards (all opponent mons need to be KO'ed, or all of your mons need to be KO'ed)
-- Add one-time rewards, consumable EXP / points
-- Mix up CPU team comp
-
 ---------------------------------------------------------------------------------------------
 
 Volthare:
