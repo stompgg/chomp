@@ -1,8 +1,7 @@
 import { ContractContainer, addressToUint, contractAddresses } from '../../transpiler/ts-output/runtime';
-import { Contract, globalEventStream, type CallEntry } from '../../transpiler/ts-output/runtime/base';
+import { Contract, globalEventStream, runAsTransaction, type CallEntry } from '../../transpiler/ts-output/runtime/base';
 import { setupContainer } from '../../transpiler/ts-output/factories';
 import { Engine } from '../../transpiler/ts-output/Engine';
-import { DefaultValidator } from '../../transpiler/ts-output/DefaultValidator';
 import * as Structs from '../../transpiler/ts-output/Structs';
 import * as Constants from '../../transpiler/ts-output/Constants';
 import { packMove, type InlineMoveJson } from './util/inline-pack';
@@ -108,18 +107,10 @@ export function makeSimContext(opts: SimContextOptions = {}): SimContext {
   const monsPerTeam = opts.monsPerTeam ?? 1n;
   const container = new ContractContainer();
   setupContainer(container);
-  // DefaultValidator is registered with deps=['Engine'] only — its MONS_PER_TEAM
-  // and MOVES_PER_MON default to 0n, which fails any team validation. Override
-  // the registration to inject the Args the constructor needs.
-  container.registerLazySingleton(
-    'DefaultValidator',
-    ['Engine'],
-    (engine: any) => new DefaultValidator(engine, {
-      MONS_PER_TEAM: monsPerTeam,
-      MOVES_PER_MON: Constants.GAME_MOVES_PER_MON,
-      TIMEOUT_DURATION: Constants.GAME_TIMEOUT_DURATION,
-    } as any),
-  );
+  // DefaultValidator is no longer transpiled — use the engine's inline validator path (startBattle
+  // passes a zero validator). Inline validation reads the engine's DEFAULT_MONS_PER_TEAM /
+  // DEFAULT_MOVES_PER_MON, which setupContainer leaves at 0, so re-register the Engine with them set.
+  container.registerLazySingleton('Engine', [], () => new Engine(monsPerTeam, Constants.GAME_MOVES_PER_MON));
   for (const name of container.getRegisteredNames()) {
     const inst = container.tryResolve<any>(name);
     if (inst && typeof inst === 'object' && '_contractAddress' in inst) {
@@ -187,7 +178,7 @@ export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Stru
   (engine as any).__mutateIsMatchmakerFor(P0_ADDR, matchmaker._contractAddress, true);
   (engine as any).__mutateIsMatchmakerFor(P1_ADDR, matchmaker._contractAddress, true);
 
-  const validator = ctx.container.resolve<any>('IValidator');
+  const validator = { _contractAddress: '0x0000000000000000000000000000000000000000' } as any; // inline validator path
   const rngOracle = ctx.container.resolve<any>('IRandomnessOracle');
   const ruleset = { _contractAddress: INLINE_STAMINA_REGEN_RULESET } as any;
   const battle: Structs.Battle = {
@@ -203,8 +194,7 @@ export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Stru
     matchmaker: matchmaker as any,
     engineHooks: [],
   };
-  Contract._currentCaller = matchmaker._contractAddress;
-  (engine as any).startBattle(battle);
+  runAsTransaction(matchmaker._contractAddress, [], () => { (engine as any).startBattle(battle); });
   // Initialize per-mon states (Solidity zero-fill semantics — TS needs explicit defaults).
   const storageKey = (engine as any)._getStorageKey(battleKey);
   const config = (engine as any).battleConfig[storageKey];
@@ -243,17 +233,18 @@ export function executeTurn(ctx: SimContext, battleKey: `0x${string}`, input: Tu
   const engine = ctx.engine as any;
   globalEventStream.clear();
   if (captureCallLog) Contract._turnCallLog = [];
-  Contract._currentCaller = HARNESS_MOVE_MANAGER;
   engine._block.timestamp = engine._block.timestamp + 1n;
-  engine.executeWithMoves(
-    battleKey,
-    BigInt(input.p0MoveIndex),
-    input.p0Salt,
-    input.p0ExtraData ?? 0n,
-    BigInt(input.p1MoveIndex),
-    input.p1Salt,
-    input.p1ExtraData ?? 0n,
-  );
+  runAsTransaction(HARNESS_MOVE_MANAGER, [], () => {
+    engine.executeWithMoves(
+      battleKey,
+      BigInt(input.p0MoveIndex),
+      input.p0Salt,
+      input.p0ExtraData ?? 0n,
+      BigInt(input.p1MoveIndex),
+      input.p1Salt,
+      input.p1ExtraData ?? 0n,
+    );
+  });
   const callLog = Contract._turnCallLog ?? [];
   Contract._turnCallLog = null;
   const storageKey = engine._getStorageKey(battleKey);

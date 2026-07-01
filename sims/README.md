@@ -1,33 +1,15 @@
 # chomp/sims
 
-runs simulations and sanity checks for balance in stomp metagame
+Scripted-battle harness over the transpiled engine (`../transpiler/ts-output`), for validating
+specific move/mechanic claims deterministically.
 
-## Run
+## Use
 
-```bash
-cd chomp/sims
-bun install                      # one-time
-bun run.ts                       # Pass 1 only — static CSV metrics, ~instant
-bun run.ts --engine              # Pass 1 + Pass 2 — full-engine sims (default 100 seeds/cell)
-bun run.ts --engine --seeds 1000 # Pass 2 with custom seed count
-open reports/index.html          # review the report
-```
+`src/harness.ts` exposes `makeSimContext({ monsPerTeam })`, `buildMon`, `startBattle`, `executeTurn`.
+Battles are **scripted** — you pass explicit move indices per side (no CPU), so there is no
+peek/prediction confound. Turn 0 is a NO_OP lead-in; turns 1+ run real moves. Supports 1v1 and 4v4.
 
-## Architecture
+To validate a change: edit the move mockup under `../transpiler/ts-output/mons/<mon>/*.ts`, write a
+throwaway scenario file next to this README, run `bun <file>.ts`, then revert the mockup.
 
-```
-src/
-  util/
-    csv-load.ts        # Parses chomp/drool/{mons,moves,abilities,types}.csv
-    mon-builder.ts     # CSV row → engine MonConfig (resolves move contracts via
-                       #   transpiler/ts-output/factories.ts; pads moves to 4)
-  metrics/
-    static/            # Pass 1: pure-CSV metrics (no engine)
-    engine/
-      damage-hist.ts   # Pass 2: per-pair damage distribution via 1v1 full engine
-  harness.ts           # Mock TeamRegistry + Matchmaker, startBattle / executeTurn
-                       #   wrappers around the transpiled Engine
-  report/
-    rules.ts           # Anomaly-flag rules (per-mon, per-move, per-pair)
-    render.ts          # Emits reports/index.html + reports/data.json
-```
+`src/util/` builds mons from `../drool/*.csv` (`loadRoster`, `buildMonConfig`) and packs inline moves.
