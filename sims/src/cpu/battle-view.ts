@@ -85,23 +85,62 @@ function readStatDeltaScore(e: any, bk: Hex, playerIndex: bigint, monIndex: numb
   return score;
 }
 
-// Per-slot snapshot. Current HP/stamina = base + delta (the engine getters normalize the cleared
-// sentinel to 0); maxHp is carried so consumers compute hp% without re-reading the engine.
-function readMonView(e: any, bk: Hex, playerIndex: bigint, monIndex: number, ko: boolean): MonView {
-  const maxHp = monMaxHp(e, bk, playerIndex, monIndex);
-  const hp = maxHp + monHpDelta(e, bk, playerIndex, monIndex);
-  const stamina = monBaseStamina(e, bk, playerIndex, monIndex) + monStaminaDelta(e, bk, playerIndex, monIndex);
-  const [type1, type2] = monTypes(e, bk, playerIndex, monIndex);
-  const statDeltaScore = readStatDeltaScore(e, bk, playerIndex, monIndex);
-  const skipTurn = Number(e.getMonStateForBattle(bk, playerIndex, BigInt(monIndex), MonStateIndexName.ShouldSkipTurn)) !== 0;
-  return { hp, maxHp, stamina, type1, type2, ko, statDeltaScore, skipTurn };
+// Per-slot snapshot. `hp` / `maxHp` / `ko` are read eagerly (every consumer uses HP, and the fork that
+// produced this view may be disposed after scoring). The four heavier fields — `stamina`, the type
+// pair, `statDeltaScore` (5 stat reads + a stats load), `skipTurn` — are LAZY: computed on first
+// access and cached. A position evaluator only reads them for the two ACTIVE mons, so the ~6 bench
+// slots per view never pay for them. Exact: every consumer touches these before its fork is disposed
+// (scoring precedes `disposeFork`), and fork/child views are only ever read for eager `.hp`.
+class LazyMonView implements MonView {
+  readonly hp: number;
+  readonly maxHp: number;
+  readonly ko: boolean;
+  private _stamina?: number;
+  private _types?: [Type, Type];
+  private _statDeltaScore?: number;
+  private _skipTurn?: boolean;
+
+  constructor(
+    private readonly e: any,
+    private readonly bk: Hex,
+    private readonly pi: bigint,
+    private readonly mi: number,
+    ko: boolean,
+  ) {
+    this.ko = ko;
+    this.maxHp = monMaxHp(e, bk, pi, mi);
+    this.hp = this.maxHp + monHpDelta(e, bk, pi, mi);
+  }
+
+  get stamina(): number {
+    if (this._stamina === undefined) {
+      this._stamina = monBaseStamina(this.e, this.bk, this.pi, this.mi) + monStaminaDelta(this.e, this.bk, this.pi, this.mi);
+    }
+    return this._stamina;
+  }
+  get type1(): Type { return this.typePair()[0]; }
+  get type2(): Type { return this.typePair()[1]; }
+  private typePair(): [Type, Type] {
+    if (this._types === undefined) this._types = monTypes(this.e, this.bk, this.pi, this.mi);
+    return this._types;
+  }
+  get statDeltaScore(): number {
+    if (this._statDeltaScore === undefined) this._statDeltaScore = readStatDeltaScore(this.e, this.bk, this.pi, this.mi);
+    return this._statDeltaScore;
+  }
+  get skipTurn(): boolean {
+    if (this._skipTurn === undefined) {
+      this._skipTurn = Number(this.e.getMonStateForBattle(this.bk, this.pi, BigInt(this.mi), MonStateIndexName.ShouldSkipTurn)) !== 0;
+    }
+    return this._skipTurn;
+  }
 }
 
 function readSide(e: any, bk: Hex, playerIndex: bigint, size: number): MonView[] {
   const ko = koBitmap(e, bk, playerIndex);
   const out: MonView[] = [];
   for (let i = 0; i < size; i++) {
-    out.push(readMonView(e, bk, playerIndex, i, (ko & (1 << i)) !== 0));
+    out.push(new LazyMonView(e, bk, playerIndex, i, (ko & (1 << i)) !== 0));
   }
   return out;
 }

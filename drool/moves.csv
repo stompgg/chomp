@@ -37,7 +37,7 @@ Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on se
 Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals both self and opponent by 50% of max HP. (Each subsequent use cuts HP healed in half). Lowers opponent SpDEF by 50%.,,none,0
 Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, 30% chance of Burn.",,none,0
 Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none,0
-Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns and Burns the enemy.,,none,0
+Q5,Embursa,150,2,100,0,Fire,Special,Deals damage in 5 turns.,,none,0
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none,0
 Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon from a status condition. If successful, Aurox heals 50% of max HP, and the target mon gains +1 stamina.",,self-mon,0
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken. When activated for the first time each switch-in, Aurox gains 25% of max HP",,none,0

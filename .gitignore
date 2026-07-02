@@ -63,3 +63,6 @@ AGENTS.md
 
 bun.lock
 package.json
+
+
+docs/generated/

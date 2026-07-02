@@ -7,9 +7,9 @@
  * previous move.
  *
  * Bridge specifics vs the raw chomp harness:
- *   1. After `startBattle`, the battle's rngOracle is patched to the zero-address stub so the engine
- *      derives `rng = keccak256(uint104 p0Salt, uint104 p1Salt)` — matching munch's ZERO-oracle harness
- *      (chomp's harness installs a real DefaultRandomnessOracle with a different encoding).
+ *   1. After `startBattle`, the battle's rngOracle is patched to a MEMOIZED reproduction of the engine's
+ *      inline zero-oracle rng (`keccak256(uint104 p0Salt, uint104 p1Salt)`) — same values as munch's
+ *      ZERO-oracle harness, but forks with repeated salts skip the keccak (see `rng-oracle.ts`).
  *   2. On a forced-switch turn only the acting side is decided AND only its salt is drawn (p0 before p1),
  *      exactly mirroring munch's `toDecision(null)` skip — the shared rng stream must stay in lockstep.
  */
@@ -21,8 +21,8 @@ import { loadRoster } from '../util/csv-load';
 import { buildTeamMon } from './team';
 import { transposeEngine } from './transpose';
 import { makeRng, randomSalt } from './rng';
-
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+import { MemoizedInlineRngOracle } from './rng-oracle';
+import './fast-status-key'; // registers StatusEffectLib.getKeyForMonIndex as a pure (memoized) proxy method
 const roster = loadRoster();
 
 export interface Seat {
@@ -55,7 +55,7 @@ function startArenaBattle(ctx: SimContext, teams: [number[], number[]]): `0x${st
   const { battleKey } = startBattle(ctx, p0Team, p1Team);
   const engine = ctx.engine as any;
   const storageKey = engine._getStorageKey(battleKey);
-  engine.battleConfig[storageKey].rngOracle = { _contractAddress: ZERO_ADDRESS };
+  engine.battleConfig[storageKey].rngOracle = new MemoizedInlineRngOracle();
   return battleKey;
 }
 

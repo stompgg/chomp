@@ -82,10 +82,45 @@ export const OVERRIDE_SCRIPTS: Record<number, OverrideScript> = {
     { move: 3, label: 'Bull Rush' },
   ],
 
+  // Iblivion (baseHp 277): the battery line — Renormalize (slot 3) once on entry to set Baselight
+  // to 3, Loop (slot 1) once right after for the +40% tier, then Unbounded Strike (slot 0), which
+  // auto-empowers as Baselight re-accrues. (The stamina-gated refill cycle tested inconclusive:
+  // passive accrual means the refill gate almost never binds in the attacker line.)
+  277: [
+    { move: 3, once: true, label: 'Renormalize battery' },
+    { move: 1, once: true, label: 'Loop at +40%' },
+    { move: 2, when: (c) => c.hpFrac < 0.5, label: 'Brightback sustain' },
+    { move: 0, label: 'Unbounded Strike' },
+  ],
+
+  // Xmon (baseHp 311): stack Night Terrors (slot 3) twice early while stamina is healthy — a free
+  // cast that converts 1 stamina per turn into 20 chip per stack — then fall through to hard.
+  311: [{ move: 3, when: (c) => c.stamina >= 3, maxUses: 2, label: 'Night Terrors stack' }],
+
+  // Volthare (baseHp 310): prefer Mega Star Blast (slot 2) whenever affordable — testing whether
+  // greedy's 7-point edge over hard on this mon reduces to one preferred-move rule (the shape
+  // munch's MonConfig already supports).
+  310: [{ move: 2, when: (c) => c.stamina >= 3, label: 'Mega Star Blast preference' }],
+
+  // Embursa (baseHp 420): arm Q5 (slot 3) once on the first action — a 150-power undodgeable hit
+  // five round-starts later for 2 stamina — then fall through to hard. Tests whether the delayed
+  // nuke is unpiloted rather than weak (the fourth delayed-payoff dead slot of the pass).
+  420: [{ move: 3, maxUses: 1, label: 'Arm Q5' }],
+
+  // Pengym (baseHp 371): the committed Frostbite combo — Chill Out (slot 0) to tag, Deep Freeze
+  // (slot 2) whenever affordable, re-tag while saving stamina. Tests design.md's "somewhat slow"
+  // worry. OverrideCtx cannot see opponent status, so stamina gates approximate the sequence.
+  371: [
+    { move: 0, maxUses: 1, label: 'Chill Out tag' },
+    { move: 2, when: (c) => c.stamina >= 3, maxUses: 2, label: 'Deep Freeze' },
+    { move: 0, when: (c) => c.stamina < 3, maxUses: 2, label: 'Chill Out while saving' },
+  ],
+
   // Inutia (baseHp 351): the weave-and-pass line — Initialize (slot 1) on a fresh, safe entry, then
   // Hit and Dip (slot 3) to pivot and pass the boost. NOTE: the pivot target is engine-picked, not
   // frailest-partner-aware, so this tests "does weaving beat mono-attacking," not a hand-picked pass.
   351: [
+    { move: 0, once: true, label: 'Arm Chain Expansion' },
     { move: 1, when: (c) => c.hpFrac > 0.75, once: true, label: 'Initialize on entry' },
     { move: 3, once: true, label: 'Hit and Dip pivot (pass the boost)' },
   ],

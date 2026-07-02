@@ -7,7 +7,7 @@ Carrot Harvest,Sofabbi,"At the end of every turn, Sofabbi has a 50% chance of re
 Post-Workout,Pengym,"On swap out, automatically heal from certain status conditions. If healed, Pengym regains 1 stamina."
 Angery,Gorillax,"Each time Gorillax takes damage, they get Angerier. At 3 stacks, they heal for 16.6% of max HP."
 Preemptive Shock,Volthare,"When Volthare swaps in, they deal a small amount of damage to the opposing mon."
-Interweaving,Inutia,"When Inutia swaps in, the opposing mon's ATK decreases 10%. When Inutia swaps out, the opposing mon's SpATK decreases 15%."
+Interweaving,Inutia,"When Inutia swaps in, the opposing mon's ATK decreases 15%. When Inutia swaps out, the opposing mon's SpATK decreases 15%."
 Up Only,Aurox,"Whenever Aurox takes damage, they gain a persistent 10% ATK boost."
 Dreamcatcher,Xmon,"Whenever Xmon gains stamina, heal 6.6% of max HP."
 Savior Complex,Ekineki,"On switch-in, gain a temporary 15/25/30% SpATK boost based on KO'd mons (1/2/3+). Triggers once per game."

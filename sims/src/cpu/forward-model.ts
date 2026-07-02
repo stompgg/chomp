@@ -81,8 +81,6 @@ export function cloneState<T>(v: T, seen: WeakMap<object, any> = new WeakMap()):
 // so the fork must keep FRESH proxies (from `createDefaultBattleConfig`) and copy materialized
 // entries into them. All OTHER config fields are scalars/structs and clone cleanly via `cloneState`.
 const CONFIG_PROXY_MAP_FIELDS = [
-  'p0Team',
-  'p1Team',
   'p0States',
   'p1States',
   'globalEffects',
@@ -91,11 +89,18 @@ const CONFIG_PROXY_MAP_FIELDS = [
   'engineHooks',
 ] as const;
 
+// Team arrays are written only at battle start (`Engine.startBattle`), never during a turn — the engine
+// only READS `config.p{0,1}Team` while replaying a move (stat boosts mutate mon STATE deltas, not the
+// stored team). So the fork shares the live team proxies by reference instead of deep-cloning ~8
+// nested StoredMon structs per fork. Exact: nothing on the replayed turn writes them.
+const CONFIG_SHARED_FIELDS = new Set<string>(['p0Team', 'p1Team']);
+
 /**
  * Clone a live `BattleConfig` into a fresh one that PRESERVES the auto-vivifying proxies on its map
  * fields. Scalar/struct fields are deep-copied (`cloneState`); each proxy-map field starts from the
  * fresh default proxy and gets every materialized own-key copied in (deep-cloned), so the engine can
- * keep adding new slots on the fork without `undefined`-slot crashes.
+ * keep adding new slots on the fork without `undefined`-slot crashes. The immutable-during-turn team
+ * proxies are shared by reference (see {@link CONFIG_SHARED_FIELDS}).
  */
 function cloneBattleConfig(src: BattleConfig): BattleConfig {
   const out = createDefaultBattleConfig();
@@ -104,7 +109,9 @@ function cloneBattleConfig(src: BattleConfig): BattleConfig {
   const o = out as unknown as Record<string, any>;
 
   for (const k of Object.keys(s)) {
-    if (proxyFields.has(k)) {
+    if (CONFIG_SHARED_FIELDS.has(k)) {
+      o[k] = s[k]; // share the live team proxy by reference (read-only during a turn)
+    } else if (proxyFields.has(k)) {
       // Copy each materialized entry into the fresh proxy (which retains its default factory).
       const srcMap = s[k] as Record<string, any>;
       const dstMap = o[k] as Record<string, any>;
