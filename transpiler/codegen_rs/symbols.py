@@ -105,6 +105,8 @@ class RustSymbols:
         self.stub_calls: set = set()                # bare fn names emitted as stubs
         self.included_containers: Optional[set] = None  # containers whose files are emitted
         self.ext_calls: Dict[Tuple[str, str], Optional['FuncSig']] = {}
+        self.flatten_bases: Dict[str, list] = {}
+        self.contract_defs: Dict[str, object] = {}  # name -> ContractDefinition
 
     # ------------------------------------------------------------------
     # Construction
@@ -125,6 +127,7 @@ class RustSymbols:
                 sym.module_of[struct.name] = module
             for contract in ast.contracts:
                 sym.module_of[contract.name] = module
+                sym.contract_defs[contract.name] = contract
                 if contract.kind == 'interface':
                     sym.interfaces.add(contract.name)
                 elif contract.kind == 'library':

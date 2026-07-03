@@ -106,8 +106,7 @@ class RustStatementGenerator:
         if isinstance(stmt, DeleteStatement):
             return self._gen_delete(stmt)
         if isinstance(stmt, AssemblyStatement):
-            self._ctx.warn('inline assembly reached the Rust backend (Phase 2 decision pending)')
-            return f'{self.ind()}unimplemented!("inline assembly not supported by the Rust backend yet");'
+            return self._gen_assembly(stmt)
         if isinstance(stmt, ExpressionStatement):
             return self._gen_expr_stmt(stmt)
         self._ctx.warn(f'unhandled statement {type(stmt).__name__}')
@@ -609,6 +608,59 @@ class RustStatementGenerator:
                 return f'{self.ind()}panic!({_panic_message(stmt.error_call.value)});'
         return f'{self.ind()}panic!("Revert");'
 
+    # ------------------------------------------------------------------
+    # Inline assembly: known-block registry (see _KNOWN_YUL_NOTE)
+    # ------------------------------------------------------------------
+
+    def _gen_assembly(self, stmt: AssemblyStatement) -> str:
+        import re
+        code = stmt.block.code
+
+        # Shape 1: MonState sentinel slot-clear (startBattle recycling).
+        # `let slot := X.slot ... eq(v, PACKED_CLEARED_MON_STATE) ... sstore`
+        if 'PACKED_CLEARED_MON_STATE' in code and '.slot' in code:
+            m = re.search(r'let\s+slot\s*:=\s*(\w+)\.slot', code)
+            if m:
+                from ..parser.ast_nodes import Identifier as _Id
+                place, _ = self._expr.emit_typed(_Id(name=m.group(1)))
+                p = self._ctx.fresh_temp('ms')
+                return (
+                    f'{self.ind()}{{ let {p} = &mut {place}; '
+                    f'if *{p} != Default::default() && *{p} != crate::world::cleared_mon_state() '
+                    f'{{ *{p} = crate::world::cleared_mon_state(); }} }}'
+                )
+
+        # Shape 3: batch event-payload packer (_packBatchPayload).
+        if 'calldataload' in code and 'shl(104' in code:
+            return (
+                f'{self.ind()}{{ let __n = rt::usize(numTurns); '
+                f'let mut __p: Vec<u8> = Vec::with_capacity(20 + __n * 19); '
+                f'__p.extend_from_slice(winner.as_slice()); '
+                f'for __i in 0..__n {{ '
+                f'let __w = (*entries)[__i].to_be_bytes::<32>(); '
+                f'__p.extend_from_slice(&__w[13..32]); }} '
+                f'payload = __p; }}'
+            )
+
+        # Shape 2: memory-array length shrink — every statement in the block
+        # is `mstore(<ident>, <ident>)`.
+        stmts = [s.strip() for s in code.replace('\n', ' ').split() if s.strip()]
+        pairs = re.findall(r'mstore\(\s*(\w+)\s*,\s*(\w+)\s*\)', code)
+        non_ws = re.sub(r'\s+', '', code)
+        rebuilt = ''.join(f'mstore({a},{b})' for a, b in pairs)
+        if pairs and non_ws == rebuilt:
+            from ..parser.ast_nodes import Identifier as _Id
+            lines = []
+            for arr, ln in pairs:
+                arr_code, _ = self._expr.emit_typed(_Id(name=arr))
+                ln_code, ln_t = self._expr.emit_typed(_Id(name=ln))
+                idx = f'rt::usize({ln_code})' if ln_t.is_wide else f'({ln_code} as usize)'
+                lines.append(f'{self.ind()}{arr_code}.truncate({idx});')
+            return '\n'.join(lines)
+
+        self._ctx.warn('unrecognized inline assembly block (add to the known-block registry)')
+        return f'{self.ind()}unimplemented!("unrecognized inline assembly");'
+
     def _gen_delete(self, stmt: DeleteStatement) -> str:
         # `delete m[k]` on a mapping removes the entry (reads then see zero).
         if isinstance(stmt.expression, IndexAccess):
@@ -621,6 +673,14 @@ class RustStatementGenerator:
         code, _ = self._expr.emit_place(stmt.expression)
         default = self._types.default_value(t)
         return f'{self.ind()}{code} = {default};'
+
+
+_KNOWN_YUL_NOTE = (
+    'Known-block Yul registry: the engine has exactly 3 assembly shapes '
+    '(MonState sentinel slot-clear, memory-array length shrink, the batch '
+    'event-payload packer). Each is recognized structurally and replaced '
+    'with a semantic Rust equivalent; anything else stays a loud stub.'
+)
 
 
 def _panic_message(quoted: str) -> str:

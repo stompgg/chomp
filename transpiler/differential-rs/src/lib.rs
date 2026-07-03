@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 
 pub use chomp_rt::{Address, B256, I256, U256};
 
-pub mod mock_engine;
 
 #[derive(Deserialize, Debug)]
 pub struct Suite {

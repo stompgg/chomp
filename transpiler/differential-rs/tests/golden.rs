@@ -8,14 +8,12 @@
 #![allow(non_snake_case)]
 
 use chomp_differential::*;
-use chomp_differential::mock_engine::PanicEngine;
 
 use chomp_engine::Enums::{MonStateIndexName, MoveClass, StatBoostType, Type};
 use chomp_engine::Structs::{DamageCalcContext, StatBoostToApply};
 use chomp_engine::lib::{RNGLib, StaminaRegenLogic, StatBoostLib};
 use chomp_engine::moves::{AttackCalculator, MoveSlotLib};
-use chomp_engine::types::ITypeCalculator::ITypeCalculator;
-use chomp_engine::types::TypeCalculator::TypeCalculator;
+use chomp_engine::types::TypeCalculator;
 use chomp_engine::types::TypeCalcLib;
 use chomp_engine::Constants;
 
@@ -153,10 +151,9 @@ fn attack_damage_core() {
 fn attack_from_context() {
     for_each(&["attack_from_context"], |name, i, v| {
         run_vector(name, i, v, || {
-            let mut tc = TypeCalculator::default();
             let mut ctx = damage_ctx(&v.inputs);
             let (damage, event) = AttackCalculator::_calculateDamageFromContext(
-                &mut tc as &mut dyn ITypeCalculator,
+                Address::ZERO,
                 &mut ctx,
                 as_u32(&v.inputs[10]),
                 as_u32(&v.inputs[11]),
@@ -320,12 +317,10 @@ fn moveslot_inline_decoding() {
             // fail the test, not be swallowed as a satisfied revert.
             match v.tag.as_str() {
                 "moveType" => run_vector(name, i, v, || {
-                    let mut engine = PanicEngine;
-                    let _ = MoveSlotLib::moveType(raw, &mut engine, bk);
+                    let _ = MoveSlotLib::moveType(raw, Address::ZERO, bk);
                 }),
                 "decodeMeta" => run_vector(name, i, v, || {
-                    let mut engine = PanicEngine;
-                    let _ = MoveSlotLib::decodeMeta(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
+                    let _ = MoveSlotLib::decodeMeta(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
                 }),
                 other => panic!("{name}[{i}]: unknown revert tag `{other}` — add a dispatch arm"),
             }
@@ -341,13 +336,12 @@ fn moveslot_inline_decoding() {
                 assert_eq!(inline, as_bool(&v.outputs[0]), "{name}[{i}] isInline");
                 return;
             }
-            let mut engine = PanicEngine;
             let base_power = MoveSlotLib::basePower(raw, bk);
-            let move_class = MoveSlotLib::moveClass(raw, &mut engine, bk);
-            let priority = MoveSlotLib::priority(raw, &mut engine, bk, U256::ZERO);
-            let move_type = MoveSlotLib::moveType(raw, &mut engine, bk);
-            let stamina = MoveSlotLib::stamina(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
-            let meta = MoveSlotLib::decodeMeta(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
+            let move_class = MoveSlotLib::moveClass(raw, Address::ZERO, bk);
+            let priority = MoveSlotLib::priority(raw, Address::ZERO, bk, U256::ZERO);
+            let move_type = MoveSlotLib::moveType(raw, Address::ZERO, bk);
+            let stamina = MoveSlotLib::stamina(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
+            let meta = MoveSlotLib::decodeMeta(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
             {
                 assert_eq!(inline, as_bool(&v.outputs[0]), "{name}[{i}] isInline");
                 assert_eq!(base_power, as_u32(&v.outputs[1]), "{name}[{i}] basePower");

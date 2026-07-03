@@ -45,7 +45,7 @@ class RustCodeGenerator:
         self._types = RustTypeConverter(symbols, self._ctx)
         self._infer = TypeInferencer(symbols, self._ctx)
         self._expr = RustExpressionGenerator(self._ctx, symbols, self._types, self._infer)
-        self._stmt = RustStatementGenerator(self._ctx, self._expr, self._types, self._infer)
+        self._stmt = RustStatementGenerator(self._ctx, self._expr, self._types, self._infer, symbols)
         self._func = RustFunctionGenerator(
             self._ctx, symbols, self._expr, self._stmt, self._types, self._infer,
             dyn_interfaces,
@@ -78,6 +78,8 @@ class RustCodeGenerator:
         body = '\n'.join(body_parts)
         uses = self._use_lines()
         parts = [HEADER, PRELUDE]
+        if self._ctx.uses_world_type or 'crate::world::' in body or 'world.' in body:
+            parts.append('use crate::world::World;')
         if uses:
             parts.append(uses)
         parts.append('')

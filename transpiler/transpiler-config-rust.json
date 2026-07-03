@@ -1,20 +1,34 @@
 {
-  "$comment": "Rust-backend allowlist. Emission is phased in: value layer + pure libs (Phase 0/1) now; engine core, effects, and mons land per PLAN phase gates. Type discovery always parses all of src/. dynInterfaces are interfaces emitted as callable Rust traits (`&mut dyn T` at internal-fn parameter positions); every other interface-typed value is an Address.",
+  "$comment": "Rust-backend config (see codegen_rs/PHASE2-DESIGN.md). includeFiles: emission allowlist (discovery always parses all of src/). statefulContracts get a <Name>State in the generated World; flatten merges base contracts into the child's module/state. interfaceAliases route interface-value calls to the single transpiled impl; externalInterfaces route to world.ext (harness mocks); everything else stubs loudly until the Phase-3 dispatch enums. stubCalls are bare names from non-transpiled bases (EIP712 dual-signed flow — on-chain-only).",
   "includeFiles": [
     "Enums.sol",
     "Constants.sol",
     "Structs.sol",
     "IEngine.sol",
+    "Engine.sol",
     "types/ITypeCalculator.sol",
     "types/TypeCalcLib.sol",
     "types/TypeCalculator.sol",
+    "rng/DefaultRandomnessOracle.sol",
     "lib/RNGLib.sol",
     "lib/StatBoostLib.sol",
     "lib/StaminaRegenLogic.sol",
     "lib/SwitchTargetLib.sol",
+    "lib/ValidatorLogic.sol",
     "moves/IMoveSet.sol",
     "moves/MoveSlotLib.sol",
     "moves/AttackCalculator.sol"
   ],
-  "dynInterfaces": ["IEngine", "ITypeCalculator", "IMoveSet"]
+  "statefulContracts": ["Engine"],
+  "flatten": { "Engine": ["MappingAllocator"] },
+  "interfaceAliases": {
+    "ITypeCalculator": "TypeCalculator",
+    "IRandomnessOracle": "DefaultRandomnessOracle",
+    "IEngine": "Engine"
+  },
+  "externalInterfaces": ["ITeamRegistry", "IMatchmaker"],
+  "stubCalls": [
+    "_hashTypedData",
+    "_domainNameAndVersionMayChange"
+  ]
 }

@@ -315,6 +315,13 @@ pub fn u256_to_b256(x: U256) -> B256 {
     B256::from(x)
 }
 
+/// Typed diverging stub: gives not-yet-supported call sites (Phase-3
+/// dispatch, on-chain-only paths) a concrete type so field access and
+/// comparisons on the result still type-check. Panics if ever reached.
+pub fn todo<T>(msg: &str) -> T {
+    unimplemented!("{}", msg)
+}
+
 /// hex"..." literal support.
 pub fn hex_bytes(s: &str) -> Vec<u8> {
     let s = s.strip_prefix("0x").unwrap_or(s);

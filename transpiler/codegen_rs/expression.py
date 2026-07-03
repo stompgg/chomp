@@ -863,10 +863,16 @@ class RustExpressionGenerator:
             f'external dispatch stub emitted for {iface}.{member} '
             f'(compiles; panics if reached before Phase 3)'
         )
-        return (
-            f'unimplemented!("external contract dispatch (Phase 3): {iface}.{member}")',
-            ret,
-        )
+        return self._typed_stub(f'external contract dispatch (Phase 3): {iface}.{member}', ret), ret
+
+    def _typed_stub(self, msg: str, ret: SolType) -> str:
+        """Diverging stub carrying the callee's return type (plain
+        `unimplemented!` gets unified as `()` in comparison/field contexts)."""
+        if ret.kind == 'unknown':
+            return f'rt::todo("{msg}")'
+        if ret.kind == 'tuple' and any(m.kind == 'unknown' for m in ret.members):
+            return f'rt::todo("{msg}")'
+        return f'rt::todo::<{self._types.rust_type(ret)}>("{msg}")'
 
     def _emit_args(self, sig, arguments: List[Expression]) -> str:
         parts = []

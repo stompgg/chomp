@@ -1,0 +1,289 @@
+error[E0433]: failed to resolve: could not find `commit_manager` in the crate root
+  --> engine/src/Engine.rs:54:12
+   |
+54 | use crate::commit_manager::SignedCommitLib::DualSignedReveal;
+   |            ^^^^^^^^^^^^^^ could not find `commit_manager` in the crate root
+
+error[E0425]: cannot find value `SignedCommitLib` in this scope
+   --> engine/src/Engine.rs:535:44
+    |
+535 |         let mut reveal: DualSignedReveal = SignedCommitLib.DualSignedReveal();
+    |                                            ^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `this` in this scope
+    --> engine/src/Engine.rs:1713:38
+     |
+1713 |             let mut self_: Address = this;
+     |                                      ^^^^ not found in this scope
+
+error[E0425]: cannot find value `this` in this scope
+    --> engine/src/Engine.rs:1812:30
+     |
+1812 |     let mut self_: Address = this;
+     |                              ^^^^ not found in this scope
+
+error[E0425]: cannot find value `this` in this scope
+    --> engine/src/Engine.rs:2323:62
+     |
+2323 | ...   return ValidatorLogic::validateSpecificMoveSelection(this, battleKey, rawMoveSlot, playerIndex, activeMonIndex, extraData, b...
+     |                                                            ^^^^ not found in this scope
+
+warning: unnecessary braces around assigned value
+--
+error[E0308]: mismatched types
+   --> engine/src/Engine.rs:506:9
+    |
+506 | ...et (mut storageKey, mut packed, _) = { let __a1 = battleKey; let __a2 = packedMoves; let __a3 = r; let __a4 = vs; _validateAndPackTurn(world, __a1, __a2, __a3, __a4) };
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ---------------------------------------------------------------------------------------------------------------------------------- this expression has type `(alloy_primitives::bits::fixed::FixedBytes<32>, ruint::Uint<256, 4>, u64, &mut BattleData)`
+    |       |
+    |       expected a tuple with 4 elements, found one with 3 elements
+--
+error[E0308]: mismatched types
+   --> engine/src/Engine.rs:542:41
+    |
+542 |     return (storageKey, packed, turnId, data);
+    |                                         ^^^^ expected `&mut BattleData`, found `BattleData`
+    |
+help: consider mutably borrowing here
+--
+error[E0308]: mismatched types
+   --> engine/src/Engine.rs:559:125
+    |
+559 | ....moveBuffer.get(&storageKey).get(&startTurn + (i.wrapping_to::<u64>())); _executeBatchedEntry(world, __a2, __a3, __a4) };
+    |                                 --- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&u64`, found `u64`
+    |                                 |
+    |                                 arguments to this method are incorrect
+--
+error[E0308]: mismatched types
+   --> engine/src/Engine.rs:582:119
+    |
+582 | ....moveBuffer.get(&storageKey).get(&startTurn + (i.wrapping_to::<u64>())); _executeBatchedEntry(world, __a2, __a3, __a4) } != (Add...
+    |                                 --- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&u64`, found `u64`
+    |                                 |
+    |                                 arguments to this method are incorrect
+--
+error[E0308]: mismatched types
+   --> engine/src/Engine.rs:610:86
+    |
+610 |             packedTurns[rt::usize(i)] = world.Engine.moveBuffer.get(&storageKey).get(&numExecuted + (i.wrapping_to::<u64>()));
+    |                                                                                  --- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&u64`, found `u64`
+    |                                                                                  |
+    |                                                                                  arguments to this method are incorrect
+--
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> engine/src/Engine.rs:824:52
+     |
+ 824 |     { let __a2 = battleKey; let __a3 = storageKey; _freeStorageKey(world, __a2, __a3) };
+     |                                                    ^^^^^^^^^^^^^^^              ---- unexpected argument #3 of type `alloy_primitives::bits::fixed::FixedBytes<32>`
+     |
+note: function defined here
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1450:169
+     |
+1450 | ..."".to_string(); _addEffectInternal(world, __a11, __a12, __a13, __a14) };
+     |                    ------------------                             ^^^^^ expected `FixedBytes<32>`, found `String`
+     |                    |
+     |                    arguments to this function are incorrect
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1621:262
+     |
+1621 | ..._a14 = outCount; _runEffects(world, __a8, __a9, __a10, __a11, __a12, __a13, __a14) };
+     |                     -----------                                         ^^^^^ expected `Vec<u8>`, found `String`
+     |                     |
+     |                     arguments to this function are incorrect
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1624:390
+     |
+1624 | ...fffffffffu64]); _runEffects(world, __a15, __a16, __a17, __a18, __a19, __a20, __a21) };
+     |                    ----------- arguments to this function are incorrect  ^^^^^ expected `Vec<u8>`, found `String`
+     |
+     = note: expected struct `Vec<u8>`
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1631:260
+     |
+1631 | ..._a36 = inCount; _runEffects(world, __a30, __a31, __a32, __a33, __a34, __a35, __a36) };
+     |                    ----------- arguments to this function are incorrect  ^^^^^ expected `Vec<u8>`, found `String`
+     |
+     = note: expected struct `Vec<u8>`
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1634:385
+     |
+1634 | ...fffffffffu64]); _runEffects(world, __a37, __a38, __a39, __a40, __a41, __a42, __a43) };
+     |                    ----------- arguments to this function are incorrect  ^^^^^ expected `Vec<u8>`, found `String`
+     |
+     = note: expected struct `Vec<u8>`
+--
+error[E0308]: mismatched types
+    --> engine/src/Engine.rs:1872:228
+     |
+1872 | ...= effectsCount; _runEffects(world, __a10, __a11, __a12, __a13, __a14, __a15, __a16) };
+     |                    ----------- arguments to this function are incorrect  ^^^^^ expected `Vec<u8>`, found `String`
+     |
+     = note: expected struct `Vec<u8>`
+--
+error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+    --> engine/src/Engine.rs:2628:95
+     |
+2628 |     { let __a1 = battleKey; let __a2 = { let __a3 = battleKey; _getStorageKey(world, __a3) }; _freeStorageKey(world, __a1, __a2) };
+     |                                                                                               ^^^^^^^^^^^^^^^              ---- unexpected argument #3 of type `alloy_primitives::bits::fixed::FixedBytes<32>`
+     |
+note: function defined here
+--
+error[E0499]: cannot borrow `world.Engine.moveBuffer` as mutable more than once at a time
+   --> engine/src/Engine.rs:500:9
+    |
+498 | ...et (mut storageKey, mut packed, mut turnId, mut data) = { let __a1 = battleKey; let __a2 = packedMoves; let __a3 = r; let __a4 = vs; _validateAndPackTurn(world, _...
+    |                                                                                                                                                              ----- first mutable borrow occurs here
+499 | ...et __rhs5 = packed;
+500 | ...*(*world.Engine.moveBuffer.get_mut(&storageKey)).get_mut(&turnId)) = __rhs5;
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:1046:150
+     |
+1034 |         eff = &mut (*(*world.Engine.battleConfig.get_mut(&__key_config)).globalEffects.get_mut(&slotIndex));
+     |                        ------------------------- first mutable borrow occurs here
+...
+1046 |         let mut p0Active: U256 = { let __a2 = (*world.Engine.battleData.get_mut(&__k1)).activeMonIndex; let __a3 = U256::ZERO; _unpackActiveMonIndex(world, _...
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:1047:173
+     |
+1034 |         eff = &mut (*(*world.Engine.battleConfig.get_mut(&__key_config)).globalEffects.get_mut(&slotIndex));
+     |                        ------------------------- first mutable borrow occurs here
+...
+1047 |         let mut p1Active: U256 = { let __a4 = (*world.Engine.battleData.get_mut(&__k1)).activeMonIndex; let __a5 = U256::from_limbs([1u64, 0, 0, 0]); _unpackActiveMonIndex(world, _...
+--
+error[E0507]: cannot move out of `*statBoostsToApply` which is behind a mutable reference
+    --> engine/src/Engine.rs:1058:67
+     |
+1058 | ...Index; let __a2 = monIndex; let mut __a3 = (*statBoostsToApply); let __a4 = boostFlag == StatBoostFlag::Perm; let __a5 = key; _...
+     |                                               ^^^^^^^^^^^^^^^^^^^^ move occurs because `*statBoostsToApply` has type `Vec<StatBoostToApply>`, which does not implement the `Copy` trait
+     |
+help: consider borrowing here
+--
+error[E0499]: cannot borrow `world.Engine.battleConfig` as mutable more than once at a time
+    --> engine/src/Engine.rs:1381:33
+     |
+1377 | ...let __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a4) };
+     |                                                                                       ----- first mutable borrow occurs here
+...
+1381 | ...16 = (*world.Engine.battleConfig.get_mut(&__key_config)).playerEffectStepsUnion;
+--
+error[E0499]: cannot borrow `world.Engine.battleConfig` as mutable more than once at a time
+    --> engine/src/Engine.rs:1383:199
+     |
+1377 | ...t __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a4) };
+     |                                                                                     ----- first mutable borrow occurs here
+...
+1383 | ...6::from_limbs([1u64, 0, 0, 0]).sol_shl((((EffectStep::PreDamage as u8) as u8) as u64))).wrapping_to::<u16>())) != 0u16) && ((if playerIndex == U256::ZERO { { let __a5 = (*world.Engine.battleConfig.ge...
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:1383:311
+     |
+1377 | ...t __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a4) };
+     |                                                                                     ----- first mutable borrow occurs here
+...
+1383 | ...6::from_limbs([1u64, 0, 0, 0]).sol_shl((((EffectStep::PreDamage as u8) as u8) as u64))).wrapping_to::<u16>())) != 0u16) && ((if playerIndex == U256::ZERO { { let __a5 = (*world.Engine.battleConfig.get_mut(&__key_config)).packedP0EffectsCount; let __a6 = monIndex; _getMonEffectCount(world, _...
+--
+error[E0499]: cannot borrow `world.Engine.battleConfig` as mutable more than once at a time
+    --> engine/src/Engine.rs:1383:356
+     |
+1377 | ...t __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a4) };
+     |                                                                                     ----- first mutable borrow occurs here
+...
+1383 | ...6::from_limbs([1u64, 0, 0, 0]).sol_shl((((EffectStep::PreDamage as u8) as u8) as u64))).wrapping_to::<u16>())) != 0u16) && ((if playerIndex == U256::ZERO { { let __a5 = (*world.Engine.battleConfig.get_mut(&__key_config)).packedP0EffectsCount; let __a6 = monIndex; _getMonEffectCount(world, __a5, __a6) } } else { { let __a7 = (*world.Engine.battleConfig.ge...
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:1383:468
+     |
+1377 | ...t __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a4) };
+     |                                                                                     ----- first mutable borrow occurs here
+...
+1383 | ...6::from_limbs([1u64, 0, 0, 0]).sol_shl((((EffectStep::PreDamage as u8) as u8) as u64))).wrapping_to::<u16>())) != 0u16) && ((if playerIndex == U256::ZERO { { let __a5 = (*world.Engine.battleConfig.get_mut(&__key_config)).packedP0EffectsCount; let __a6 = monIndex; _getMonEffectCount(world, __a5, __a6) } } else { { let __a7 = (*world.Engine.battleConfig.get_mut(&__key_config)).packedP1EffectsCount; let __a8 = monIndex; _getMonEffectCount(world, _...
+--
+error[E0506]: cannot assign to `world.Engine.tempPreDamage` because it is borrowed
+    --> engine/src/Engine.rs:1384:9
+     |
+1377 |     let mut monState = { let __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a...
+     |                                                                                                             ----- `world.Engine.tempPreDamage` is borrowed here
+...
+1384 |         world.Engine.tempPreDamage = damage;
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:1394:114
+     |
+1377 |     let mut monState = { let __a2 = __key_config; let __a3 = playerIndex; let __a4 = monIndex; _getMonState(world, __a2, __a3, __a...
+     |                                                                                                             ----- first mutable borrow occurs here
+...
+1394 |     let mut baseHp: u32 = { let __a16 = __key_config; let __a17 = playerIndex; let __a18 = monIndex; _getTeamMon(world, __a16, __a...
+--
+error[E0382]: use of moved value: `extraEffectsData`
+    --> engine/src/Engine.rs:1781:153
+     |
+1748 | pub fn _runEffects(world: &mut World, mut battleKey: B256, mut rng: U256, mut effectIndex: U256, mut playerIndex: U256, mut round: EffectStep, mut extraEffectsData: Vec<u8...
+     |                                                                                                                                                -------------------- move occurs because `extraEffectsData` has type `Vec<u8>`, which does not implement the `Copy` trait
+...
+1770 |     while i < effectsCount {
+--
+error[E0382]: use of moved value: `empty`
+    --> engine/src/Engine.rs:2281:56
+     |
+2280 |         let mut empty: Vec<U256> = vec![U256::ZERO; 0];
+     |             --------- move occurs because `empty` has type `Vec<ruint::Uint<256, 4>>`, which does not implement the `Copy` trait
+2281 |         p0Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+     |                                            -----       ^^^^^ value used here after move
+--
+error[E0382]: use of moved value: `empty`
+    --> engine/src/Engine.rs:2281:71
+     |
+2280 |         let mut empty: Vec<U256> = vec![U256::ZERO; 0];
+     |             --------- move occurs because `empty` has type `Vec<ruint::Uint<256, 4>>`, which does not implement the `Copy` trait
+2281 |         p0Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+     |                                                        -----          ^^^^^ value used here after move
+--
+error[E0382]: use of moved value: `empty`
+    --> engine/src/Engine.rs:2282:44
+     |
+2280 |         let mut empty: Vec<U256> = vec![U256::ZERO; 0];
+     |             --------- move occurs because `empty` has type `Vec<ruint::Uint<256, 4>>`, which does not implement the `Copy` trait
+2281 |         p0Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+     |                                                                       ----- value moved here
+--
+error[E0382]: use of moved value: `empty`
+    --> engine/src/Engine.rs:2282:56
+     |
+2280 |         let mut empty: Vec<U256> = vec![U256::ZERO; 0];
+     |             --------- move occurs because `empty` has type `Vec<ruint::Uint<256, 4>>`, which does not implement the `Copy` trait
+2281 |         p0Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+2282 |         p1Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+--
+error[E0382]: use of moved value: `empty`
+    --> engine/src/Engine.rs:2282:71
+     |
+2280 |         let mut empty: Vec<U256> = vec![U256::ZERO; 0];
+     |             --------- move occurs because `empty` has type `Vec<ruint::Uint<256, 4>>`, which does not implement the `Copy` trait
+2281 |         p0Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+2282 |         p1Levels = TeamLevelInfo { monIds: empty, exp: empty, levels: empty };
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:2520:130
+     |
+2519 | ...erMon = { let __a1 = __key_config; let __a2 = attackerPlayerIndex; let __a3 = attackerMonIndex; _getTeamMon(world, __a1, __a2, ...
+     |                                                                                                                ----- first mutable borrow occurs here
+2520 | ...erState = { let __a4 = __key_config; let __a5 = attackerPlayerIndex; let __a6 = attackerMonIndex; _getMonState(world, __a4, __a...
+     |                                                                                                                   ^^^^^ second mutable borrow occurs here
+--
+error[E0499]: cannot borrow `*world` as mutable more than once at a time
+    --> engine/src/Engine.rs:2526:133
+     |
+2525 | ...derMon = { let __a7 = __key_config; let __a8 = defenderPlayerIndex; let __a9 = defenderMonIndex; _getTeamMon(world, __a7, __a8,...
+     |                                                                                                                 ----- first mutable borrow occurs here
+2526 | ...derState = { let __a10 = __key_config; let __a11 = defenderPlayerIndex; let __a12 = defenderMonIndex; _getMonState(world, __a10...
+     |                                                                                                                       ^^^^^ second mutable borrow occurs here
+--
+error: could not compile `chomp-engine` (lib) due to 37 previous errors; 2 warnings emitted
