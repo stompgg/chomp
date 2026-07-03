@@ -39,14 +39,17 @@ class RustFunctionGenerator:
     # Signatures
     # ------------------------------------------------------------------
 
-    def param_decl(self, p: VariableDeclaration, index: int, allow_mut: bool = True) -> str:
+    def param_decl(self, p: VariableDeclaration, index: int, allow_mut: bool = True,
+                   lowered=None) -> str:
         name = rust_ident(p.name if p.name else f'_arg{index}')
         t = self._infer.from_type_name(p.type_name)
-        if t.is_memory_ref:
+        if lowered is not None and lowered[0] != '!unsupported':
+            # Storage param of a world-taking fn: passed as its mapping KEY;
+            # the body re-derives the place from world per use.
+            key_t = self._types.rust_type(lowered[2])
+            return f'__key_{name}: {key_t}'
+        if t.is_memory_ref or t.kind == 'mapping':
             return f'{name}: &mut {self._types.rust_type(t)}'
-        if t.kind in ('interface', 'contract') and t.name in self._dyn_interfaces:
-            self._ctx.used_traits.add(t.name)
-            return f'{name}: &mut dyn {rust_ident(t.name)}'
         # Solidity freely reassigns value parameters; bind them `mut`.
         # (Trait method DECLARATIONS cannot carry patterns like `mut x`.)
         prefix = 'mut ' if allow_mut else ''
@@ -55,23 +58,37 @@ class RustFunctionGenerator:
     def return_decl(self, params: List[VariableDeclaration]) -> str:
         if not params:
             return ''
-        types = [self._types.rust_type(self._infer.from_type_name(r.type_name)) for r in params]
+        types = []
+        for r in params:
+            t = self._types.rust_type(self._infer.from_type_name(r.type_name))
+            if getattr(r, 'storage_location', '') == 'storage':
+                t = f'&mut {t}'
+            types.append(t)
         if len(types) == 1:
             return f' -> {types[0]}'
         return f' -> ({", ".join(types)})'
 
-    def _register_params(self, func: FunctionDefinition) -> None:
+    def _register_params(self, func: FunctionDefinition, sig=None) -> None:
         self._ctx.reset_for_function()
+        lowered = (getattr(sig, 'param_lowered', None) or []) if sig else []
         for i, p in enumerate(func.parameters):
             name = p.name if p.name else f'_arg{i}'
             self._ctx.current_local_vars.add(name)
             if p.type_name is not None:
                 self._ctx.var_types[name] = p.type_name
             t = self._infer.from_type_name(p.type_name)
-            if t.is_memory_ref:
+            low = lowered[i] if i < len(lowered) else None
+            if low is not None and low[0] != '!unsupported':
+                contract_field, var, _key_t = low
+                field = self._symbols.world_field_of(contract_field)
+                self._ctx.storage_locals[name] = {
+                    'place': f'(*world.{rust_ident(field)}.{rust_ident(var)}'
+                             f'.get_mut(&__key_{rust_ident(name)}))',
+                    'key': f'__key_{rust_ident(name)}',
+                    'root': low,
+                }
+            elif t.is_memory_ref or t.kind == 'mapping':
                 self._ctx.ref_params.add(name)
-            elif t.kind in ('interface', 'contract') and t.name in self._dyn_interfaces:
-                self._ctx.dyn_params.add(name)
         for r in func.return_parameters:
             if r.name:
                 self._ctx.current_local_vars.add(r.name)
@@ -95,17 +112,47 @@ class RustFunctionGenerator:
     # ------------------------------------------------------------------
 
     def generate_function(self, func: FunctionDefinition, receiver: Optional[str]) -> str:
-        """receiver: None for library/module-level fns, '&self'/'&mut self'
-        for contract methods."""
-        self._register_params(func)
+        """receiver: retained for API compat; contracts now emit module-level
+        fns (the World model), so it is always None."""
+        sig = self._symbols.lookup_function(self._ctx.current_class_name, func.name)
+        self._register_params(func, sig)
+        needs_world = bool(sig and sig.needs_world)
+        self._ctx.current_fn_needs_world = needs_world
 
-        params = [self.param_decl(p, i) for i, p in enumerate(func.parameters)]
-        if receiver is not None:
-            params = [receiver] + params
+        lowered = (getattr(sig, 'param_lowered', None) or []) if sig else []
+        params = []
+        for i, p in enumerate(func.parameters):
+            low = lowered[i] if i < len(lowered) else None
+            params.append(self.param_decl(p, i, lowered=low))
+        if needs_world:
+            params = ['world: &mut World'] + params
+            self._ctx.uses_world_type = True
         ret = self.return_decl(func.return_parameters)
 
+        # Storage returns borrow from a reference input; with multiple
+        # reference params Rust cannot elide, so tag everything 'a.
+        returns_storage = any(
+            getattr(r, 'storage_location', '') == 'storage'
+            for r in func.return_parameters
+        )
+        self._ctx.current_fn_returns_storage = returns_storage
+        generics = ''
+        if returns_storage:
+            ref_count = sum(1 for p in params if p.startswith(('world', '&')) or ': &mut' in p)
+            if ref_count != 1:
+                generics = "<'a>"
+                params = [p.replace(': &mut', ": &'a mut", 1) for p in params]
+                params = [
+                    "world: &'a mut World" if p == 'world: &mut World' else p
+                    for p in params
+                ]
+                ret = ret.replace('-> &mut', "-> &'a mut")
+
         lines = []
-        lines.append(f'{self._ctx.indent()}pub fn {rust_ident(func.name)}({", ".join(params)}){ret} {{')
+        lines.append(
+            f'{self._ctx.indent()}pub fn {rust_ident(func.name)}{generics}'
+            f'({", ".join(params)}){ret} {{'
+        )
         self._ctx.indent_level += 1
 
         named_returns = [r.name for r in func.return_parameters if r.name]

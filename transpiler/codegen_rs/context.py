@@ -33,6 +33,35 @@ class RustCodeGenerationContext:
     # function aliasing behaves like Solidity (see statement generator).
     alias_map: Dict[str, str] = field(default_factory=dict)
 
+    # ---- Phase 2 (World model) ----
+    # Storage locals bound to a DIRECT mapping index (`X storage y = m[k];`):
+    # name -> {'place': substitution place text (re-derived per use, no held
+    # borrows), 'key': key temp/expr text (for passing to key-lowered params),
+    # 'root': (contract, state_var, key SolType) or None}.
+    storage_locals: Dict[str, dict] = field(default_factory=dict)
+    # Storage locals bound to helper calls / reference params of storage type:
+    # plain `&mut T` bindings; uses read through `(*name)` like ref params.
+    storage_ref_locals: Set[str] = field(default_factory=set)
+    # Whether the function being emitted takes `world: &mut World`.
+    current_fn_needs_world: bool = False
+    # Whether it returns a storage reference (`-> &mut T`).
+    current_fn_returns_storage: bool = False
+    # Whether anything in this file referenced the World type.
+    uses_world_type: bool = False
+    # Whether the contract being emitted is stateful (state in World).
+    current_contract_stateful: bool = False
+    # Emitting a constructor body: state vars write to `self_` instead of world.
+    in_constructor: bool = False
+    # Per-statement hoisted prelude lines (key temps, arg temps); the
+    # statement generator drains these before the statement that caused them.
+    pending_hoists: List[str] = field(default_factory=list)
+    # Counter for unique temp names within a function.
+    temp_counter: int = 0
+
+    def fresh_temp(self, stem: str) -> str:
+        self.temp_counter += 1
+        return f'__{stem}{self.temp_counter}'
+
     # True inside `unchecked { ... }` blocks -> wrapping arithmetic
     unchecked_depth: int = 0
 
@@ -82,6 +111,12 @@ class RustCodeGenerationContext:
         self.ref_params = set()
         self.dyn_params = set()
         self.alias_map = {}
+        self.storage_locals = {}
+        self.storage_ref_locals = set()
+        self.current_fn_needs_world = False
+        self.in_constructor = False
+        self.pending_hoists = []
+        self.temp_counter = 0
         self.unchecked_depth = 0
         self.loop_stack = []
         # Locals/params of the previous function must not leak into this

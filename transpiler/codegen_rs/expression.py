@@ -184,9 +184,11 @@ class RustExpressionGenerator:
         # owned local from that point on (statement generator records it).
         if name in self._ctx.alias_map:
             return rust_ident(self._ctx.alias_map[name]), t
-        if name in self._ctx.dyn_params:
-            return rust_ident(name), t
-        if name in self._ctx.ref_params:
+        # Storage local bound to a direct mapping index: substitute the
+        # re-derived place on every use (never hold a borrow).
+        if name in self._ctx.storage_locals:
+            return self._ctx.storage_locals[name]['place'], t
+        if name in self._ctx.storage_ref_locals or name in self._ctx.ref_params:
             return f'(*{rust_ident(name)})', t
         if name in self._ctx.current_local_vars:
             return rust_ident(name), t
@@ -194,7 +196,9 @@ class RustExpressionGenerator:
         if const is not None:
             return self._constant_ref(const), const.sol_type
         if name in self._ctx.current_state_vars:
-            return f'self.{rust_ident(name)}', t
+            if self._ctx.in_constructor:
+                return f'self_.{rust_ident(name)}', t
+            return f'world.{rust_ident(self._ctx.current_class_name)}.{rust_ident(name)}', t
         return rust_ident(name), t
 
     def _constant_ref(self, const) -> str:
@@ -429,9 +433,17 @@ class RustExpressionGenerator:
                     if const.is_lazy:
                         name = f'(*{name})'
                     return name, const.sol_type
-            if base.name == 'msg' or base.name == 'block' or base.name == 'tx':
-                self._ctx.warn(f'{base.name}.{member} not modeled yet (needs call context)')
-                return f'unimplemented!("{base.name}.{member} requires call context")', \
+            if base.name in ('msg', 'block', 'tx'):
+                env = {
+                    ('msg', 'sender'): ('world.env.msg_sender', ADDRESS),
+                    ('tx', 'origin'): ('world.env.tx_origin', ADDRESS),
+                    ('block', 'timestamp'): ('world.env.block_timestamp', UINT256),
+                    ('block', 'number'): ('world.env.block_number', UINT256),
+                }.get((base.name, member))
+                if env is not None:
+                    return env
+                self._ctx.warn(f'{base.name}.{member} not modeled')
+                return f'unimplemented!("{base.name}.{member} not modeled")', \
                     self._infer.infer(access)
 
         # type(T).max / type(T).min -> compile-time literal
@@ -457,13 +469,72 @@ class RustExpressionGenerator:
         return f'{code}.{rust_ident(member)}', result_t
 
     def _emit_index(self, access: IndexAccess):
-        base_code, base_t = self.emit_typed(access.base)
+        base_t = self._infer.infer(access.base)
         result_t = self._infer.infer(access)
         if base_t.kind == 'mapping':
+            # Value read: clone (Solidity storage->memory copy). Place
+            # contexts go through emit_place instead.
+            base_code = self._emit_mapping_base(access.base)
             key = self.emit(access.index, base_t.key or UNKNOWN)
             return f'{base_code}.get(&{key})', result_t
+        base_code, _ = self.emit_typed(access.base)
         idx = self._usize_index(access.index)
         return f'{base_code}[{idx}]', result_t
+
+    def _emit_mapping_base(self, expr: Expression) -> str:
+        """Emit the mapping CONTAINER itself (no deref-clone semantics)."""
+        code, _ = self.emit_typed(expr)
+        return code
+
+    # ------------------------------------------------------------------
+    # Place emission (Phase 2): lvalue paths through world storage
+    # ------------------------------------------------------------------
+
+    def emit_place(self, expr: Expression, hoists: Optional[List[str]] = None):
+        """Emit ``expr`` as a Rust PLACE (assignable lvalue path).
+
+        Mapping indexing materializes via ``(*container.get_mut(&key))`` —
+        matching Solidity's zero-initialized storage on first touch. When
+        ``hoists`` is given, mapping keys are bound to temps (added to the
+        list as `let` lines) so a registered storage-local substitution
+        evaluates its key exactly once.
+        Returns (code, SolType).
+        """
+        if isinstance(expr, Identifier):
+            return self.emit_typed(expr)  # identifiers already emit as places
+        if isinstance(expr, MemberAccess):
+            base_code, _ = self.emit_place(expr.expression, hoists)
+            t = self._infer.infer(expr)
+            return f'{base_code}.{rust_ident(expr.member)}', t
+        if isinstance(expr, IndexAccess):
+            base_t = self._infer.infer(expr.base)
+            t = self._infer.infer(expr)
+            if base_t.kind == 'mapping':
+                base_code, _ = self.emit_place(expr.base, hoists)
+                key = self.emit(expr.index, base_t.key or UNKNOWN)
+                if hoists is not None:
+                    tmp = self._ctx.fresh_temp('k')
+                    hoists.append(f'let {tmp} = {key};')
+                    key = tmp
+                return f'(*{base_code}.get_mut(&{key}))', t
+            base_code, _ = self.emit_place(expr.base, hoists)
+            idx = self._usize_index(expr.index)
+            return f'{base_code}[{idx}]', t
+        if isinstance(expr, TernaryOperation):
+            # Conditional storage place: (if c { placeA } else { placeB })
+            cond = self.emit(expr.condition, BOOL)
+            if hoists is not None:
+                tmp = self._ctx.fresh_temp('c')
+                hoists.append(f'let {tmp} = {cond};')
+                cond = tmp
+            a, at = self.emit_place(expr.true_expression, hoists)
+            b, _ = self.emit_place(expr.false_expression, hoists)
+            # Emit as a reference-select then deref so both arms are places.
+            return f'(*(if {cond} {{ &mut {a} }} else {{ &mut {b} }}))', at
+        if isinstance(expr, TupleExpression) and len(expr.components) == 1:
+            return self.emit_place(expr.components[0], hoists)
+        # Fallback: value emission (diagnosed by callers if misused)
+        return self.emit_typed(expr)
 
     def _usize_index(self, expr: Expression) -> str:
         t = self._infer.infer(expr)
@@ -543,12 +614,15 @@ class RustExpressionGenerator:
             if name == 'sha256':
                 return self._emit_hash('rt::sha256', call), BYTES32
 
-            # Same-container call
+            # Same-container (or inherited/flattened) call
             sig = self._symbols.lookup_function(self._ctx.current_class_name, name)
             if sig is not None:
-                args = self._emit_args(sig, call.arguments)
-                return f'{rust_ident(name)}({args})' if self._ctx.current_contract_kind == 'library' \
-                    else f'self.{rust_ident(name)}({args})', sig.return_type()
+                return self._emit_direct_call(rust_ident(name), sig, call.arguments), \
+                    sig.return_type()
+
+            if name in getattr(self._symbols, 'stub_calls', set()):
+                self._ctx.info(f'stubbed call to {name} (configured stubCalls)')
+                return f'unimplemented!("stubbed: {name} (on-chain-only path)")', UNKNOWN
 
             self._ctx.warn(f'call to unknown function {name}')
             args = ', '.join(self.emit(a) for a in call.arguments)
@@ -571,34 +645,25 @@ class RustExpressionGenerator:
             if isinstance(base, Identifier) and base.name in self._symbols.libraries:
                 sig = self._symbols.lookup_function(base.name, member)
                 if sig is not None:
+                    if not self._symbols_included(base.name):
+                        self._ctx.info(f'stubbed call into non-transpiled {base.name}.{member}')
+                        return (
+                            f'unimplemented!("call into non-transpiled {base.name}.{member}")',
+                            sig.return_type(),
+                        )
                     if base.name != self._ctx.current_class_name:
                         self._ctx.used_modules.add(base.name)
                         prefix = f'{rust_ident(base.name)}::'
                     else:
                         prefix = ''
-                    args = self._emit_args(sig, call.arguments)
-                    return f'{prefix}{rust_ident(member)}({args})', sig.return_type()
+                    return self._emit_direct_call(
+                        f'{prefix}{rust_ident(member)}', sig, call.arguments
+                    ), sig.return_type()
 
-            # Interface method call through a value
+            # Interface method call through a value (an Address expression)
             recv_t = self._infer.infer(base)
             if recv_t.kind in ('interface', 'contract'):
-                sig = self._symbols.lookup_function(recv_t.name, member)
-                ret = sig.return_type() if sig else UNKNOWN
-                if isinstance(base, Identifier) and base.name in self._ctx.dyn_params:
-                    args = self._emit_args(sig, call.arguments) if sig \
-                        else ', '.join(self.emit(a) for a in call.arguments)
-                    return f'{rust_ident(base.name)}.{rust_ident(member)}({args})', ret
-                # Method call on an interface VALUE (an address): external
-                # dispatch is a Phase-3 feature (address -> impl registry).
-                self._ctx.info(
-                    f'external dispatch stub emitted for {recv_t.name}.{member} '
-                    f'(compiles; panics if reached before Phase 3)'
-                )
-                return (
-                    f'unimplemented!("external contract dispatch (Phase 3): '
-                    f'{recv_t.name}.{member}")',
-                    ret,
-                )
+                return self._emit_interface_dispatch(recv_t.name, member, base, call)
 
             # Fallback: plain method-style emission
             code, _ = self.emit_typed(base)
@@ -641,6 +706,168 @@ class RustExpressionGenerator:
         self._ctx.warn(f'{fn} over unsupported type {t}')
         return f'unimplemented!("{fn} over {t}")'
 
+    def _symbols_included(self, container: str) -> bool:
+        included = getattr(self._symbols, 'included_containers', None)
+        return included is None or container in included
+
+    def _emit_direct_call(self, fn_path: str, sig, arguments: List[Expression]) -> str:
+        """Call a known function. If the callee takes `world`, hoist every
+        argument to a temp inside a block expression so evaluation never
+        overlaps the `&mut world` being passed; storage-ref arguments to
+        world-taking callees are LOWERED to their mapping keys (the callee
+        re-derives the place from world — see FuncSig.param_lowered)."""
+        if not sig.needs_world:
+            args = self._emit_args(sig, arguments)
+            return f'{fn_path}({args})'
+        lines = []
+        arg_names = []
+        lowered = getattr(sig, 'param_lowered', None) or [None] * len(sig.param_types)
+        for i, arg in enumerate(arguments):
+            ptype = sig.param_types[i] if i < len(sig.param_types) else UNKNOWN
+            low = lowered[i] if i < len(lowered) else None
+            if low is not None:
+                if low[0] == '!unsupported':
+                    self._ctx.warn(
+                        f'storage param of world-taking callee has no unique root '
+                        f'mapping ({low[1]}); call site cannot lower it'
+                    )
+                    arg_names.append('unimplemented!("unlowerable storage param")')
+                    continue
+                key_code = self._storage_key_of(arg, low)
+                tmp = self._ctx.fresh_temp('a')
+                lines.append(f'let {tmp} = {key_code};')
+                arg_names.append(tmp)
+                continue
+            tmp = self._ctx.fresh_temp('a')
+            if ptype.is_memory_ref:
+                code = self.emit(arg, ptype)
+                lines.append(f'let mut {tmp} = {code};')
+                arg_names.append(f'&mut {tmp}')
+            else:
+                code = self.emit(arg, ptype)
+                lines.append(f'let {tmp} = {code};')
+                arg_names.append(tmp)
+        body = ' '.join(lines)
+        args = ', '.join(['world'] + arg_names)
+        return f'{{ {body} {fn_path}({args}) }}'
+
+    def _storage_key_of(self, arg: Expression, root) -> str:
+        """The KEY expression for a storage argument being lowered.
+
+        Cases: a registered storage local (its hoisted key temp); a direct
+        `stateMapping[key]` index whose mapping matches the root; a forwarded
+        key-lowered parameter of the current function.
+        """
+        if isinstance(arg, Identifier):
+            info = self._ctx.storage_locals.get(arg.name)
+            if info is not None and info.get('key') is not None:
+                return info['key']
+        if isinstance(arg, IndexAccess) and isinstance(arg.base, Identifier):
+            if arg.base.name == root[1]:
+                return self.emit(arg.index, root[2])
+        self._ctx.warn('cannot derive storage key for lowered argument')
+        return 'unimplemented!("storage key underivable at call site")'
+
+    def _is_storage_ref_expr(self, expr: Expression) -> bool:
+        """True when the argument denotes a storage place (substituted
+        storage local, storage-ref param/local, or a path into one)."""
+        if isinstance(expr, Identifier):
+            return (expr.name in self._ctx.storage_locals
+                    or expr.name in self._ctx.storage_ref_locals
+                    or expr.name in self._ctx.ref_params)
+        if isinstance(expr, MemberAccess):
+            return self._is_storage_ref_expr(expr.expression)
+        if isinstance(expr, IndexAccess):
+            return self._is_storage_ref_expr(expr.base)
+        if isinstance(expr, TernaryOperation):
+            return (self._is_storage_ref_expr(expr.true_expression)
+                    and self._is_storage_ref_expr(expr.false_expression))
+        return False
+
+    def _emit_interface_dispatch(self, iface: str, member: str, base: Expression,
+                                 call: FunctionCall):
+        """Method call through an interface-typed VALUE (an Address).
+
+        - interfaceAliases: direct module call into the single transpiled
+          impl, with a msg.sender frame push when the callee takes world.
+        - externalInterfaces: routed to world.ext (harness mocks).
+        - otherwise: loud stub (Phase-3 enum dispatch will replace it).
+        """
+        sig = self._symbols.lookup_function(iface, member)
+        ret = sig.return_type() if sig else UNKNOWN
+
+        alias = self._symbols.interface_aliases.get(iface)
+        if alias is not None and self._symbols_included(alias):
+            impl_sig = self._symbols.lookup_function(alias, member)
+            if impl_sig is None:
+                self._ctx.warn(f'alias {iface}->{alias} lacks method {member}')
+                return f'unimplemented!("{alias}.{member} missing")', ret
+            if alias != self._ctx.current_class_name:
+                self._ctx.used_modules.add(alias)
+                fn_path = f'{rust_ident(alias)}::{rust_ident(member)}'
+            else:
+                fn_path = rust_ident(member)
+            if not impl_sig.needs_world:
+                args = self._emit_args(impl_sig, call.arguments)
+                return f'{fn_path}({args})', impl_sig.return_type()
+            # world call with msg.sender frame: sender becomes the calling
+            # contract, current becomes the callee address.
+            target = self.emit(base, ADDRESS)
+            lines = [
+                f'let __target = {target};',
+                'let __saved_sender = world.env.msg_sender;',
+                'let __saved_contract = world.env.current_contract;',
+                'world.env.msg_sender = world.env.current_contract;',
+                'world.env.current_contract = __target;',
+            ]
+            arg_names = []
+            for i, arg in enumerate(call.arguments):
+                ptype = impl_sig.param_types[i] if i < len(impl_sig.param_types) else UNKNOWN
+                tmp = self._ctx.fresh_temp('a')
+                if ptype.is_memory_ref:
+                    code = self.emit(arg, ptype)
+                    lines.insert(1, f'let mut {tmp} = {code};')
+                    arg_names.append(f'&mut {tmp}')
+                else:
+                    code = self.emit(arg, ptype)
+                    lines.insert(1, f'let {tmp} = {code};')
+                    arg_names.append(tmp)
+            args = ', '.join(['world'] + arg_names)
+            body = ' '.join(lines)
+            return (
+                f'{{ {body} let __r = {fn_path}({args}); '
+                f'world.env.msg_sender = __saved_sender; '
+                f'world.env.current_contract = __saved_contract; __r }}',
+                impl_sig.return_type(),
+            )
+
+        if iface in self._symbols.external_interfaces:
+            self._symbols.record_ext_call(iface, member)
+            target = self.emit(base, ADDRESS)
+            lines = [f'let __target = {target};']
+            arg_names = []
+            for i, arg in enumerate(call.arguments):
+                ptype = sig.param_types[i] if sig and i < len(sig.param_types) else UNKNOWN
+                tmp = self._ctx.fresh_temp('a')
+                code = self.emit(arg, ptype)
+                lines.append(f'let {tmp} = {code};')
+                arg_names.append(tmp)
+            args = ', '.join(['__target'] + arg_names)
+            body = ' '.join(lines)
+            return (
+                f'{{ {body} world.ext.{rust_ident(iface)}_{rust_ident(member)}({args}) }}',
+                ret,
+            )
+
+        self._ctx.info(
+            f'external dispatch stub emitted for {iface}.{member} '
+            f'(compiles; panics if reached before Phase 3)'
+        )
+        return (
+            f'unimplemented!("external contract dispatch (Phase 3): {iface}.{member}")',
+            ret,
+        )
+
     def _emit_args(self, sig, arguments: List[Expression]) -> str:
         parts = []
         for i, arg in enumerate(arguments):
@@ -649,20 +876,14 @@ class RustExpressionGenerator:
         return ', '.join(parts)
 
     def emit_arg(self, arg: Expression, ptype: SolType) -> str:
-        """Emit a call argument honoring the callee's parameter passing mode."""
+        """Emit a call argument honoring the callee's parameter passing mode.
+        Interface-typed params are plain Address VALUES (Phase 2)."""
         if ptype.is_memory_ref:
+            if self._is_storage_ref_expr(arg):
+                place, _ = self.emit_place(arg)
+                return f'&mut {place}'
             code = self.emit(arg, ptype)
             return f'&mut ({code})'
-        if ptype.kind in ('interface', 'contract'):
-            if isinstance(arg, Identifier) and arg.name in self._ctx.dyn_params:
-                return f'&mut *{rust_ident(arg.name)}'
-            # An interface value (Address) cannot become a callable handle
-            # until the Phase-3 dispatch registry exists.
-            self._ctx.info(
-                f'dyn-interface argument from a non-parameter value; emitting '
-                f'Phase-3 dispatch stub'
-            )
-            return f'unimplemented!("address -> dyn dispatch (Phase 3)")'
         return self.emit(arg, ptype)
 
     def _abi_token(self, arg: Expression) -> str:

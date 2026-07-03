@@ -11,6 +11,9 @@ fixed array sizes and const initializers can be materialized).
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+# Sentinel import kept light; FuncSig.param_lowered entries are
+# (contract_name, state_var_name, key SolType) tuples or None.
+
 from ..parser.ast_nodes import (
     BinaryOperation,
     ContractDefinition,
@@ -38,6 +41,16 @@ class FuncSig:
     param_types: List[SolType]
     return_types: List[SolType]
     mutability: str                    # '', 'view', 'pure', 'payable'
+    # Phase 2: does this function (transitively) need `world: &mut World`?
+    # True when it touches contract state, msg/block env, or makes a
+    # world-routed call (aliased interface / external interface / a callee
+    # that itself needs world). Computed as a call-graph fixed point.
+    needs_world: bool = False
+    # Per-parameter storage lowering: None = normal passing; otherwise
+    # (contract, mapping_state_var, key SolType) — the parameter was a
+    # `T storage` ref into that root mapping and is passed as its KEY
+    # (a world-taking callee cannot also borrow world through an argument).
+    param_lowered: List = field(default_factory=list)
 
     @property
     def is_view(self) -> bool:
@@ -83,6 +96,15 @@ class RustSymbols:
         self.module_of: Dict[str, Tuple[str, ...]] = {}
         # state variables per contract: name -> SolType
         self.state_vars: Dict[str, Dict[str, SolType]] = {}
+        # function bodies for the needs_world scan: (container, name) -> FunctionDefinition
+        self.function_defs: Dict[Tuple[Optional[str], str], 'FunctionDefinition'] = {}
+        # Phase-2 world configuration (set by the driver before compute_needs_world)
+        self.stateful_contracts: set = set()        # contracts with world-resident state
+        self.interface_aliases: Dict[str, str] = {} # IEngine -> Engine (transpiled impl)
+        self.external_interfaces: set = set()       # routed to world.ext (harness mocks)
+        self.stub_calls: set = set()                # bare fn names emitted as stubs
+        self.included_containers: Optional[set] = None  # containers whose files are emitted
+        self.ext_calls: Dict[Tuple[str, str], Optional['FuncSig']] = {}
 
     # ------------------------------------------------------------------
     # Construction
@@ -182,7 +204,194 @@ class RustSymbols:
                     existing = sym.functions.get(key)
                     if existing is None or len(sig.param_types) > len(existing.param_types):
                         sym.functions[key] = sig
+                        sym.function_defs[key] = func
         return sym
+
+    # ------------------------------------------------------------------
+    # Phase 2: needs_world call-graph fixed point
+    # ------------------------------------------------------------------
+
+    def configure_world(self, stateful_contracts, interface_aliases, external_interfaces,
+                        stub_calls=(), flatten=None, included_containers=None) -> None:
+        self.stateful_contracts = set(stateful_contracts)
+        self.interface_aliases = dict(interface_aliases)
+        self.external_interfaces = set(external_interfaces)
+        self.stub_calls = set(stub_calls)
+        self.flatten_bases = dict(flatten or {})
+        self.included_containers = set(included_containers) if included_containers else None
+        # Flattened bases live inside the child's state struct: their state
+        # vars and functions behave as the child's for the world analysis.
+        for child, bases in self.flatten_bases.items():
+            if child in self.stateful_contracts:
+                for base in bases:
+                    self.stateful_contracts.add(base)
+                    # Merge base state vars into the child's set so world
+                    # paths resolve to world.<child>.<var>.
+                    merged = dict(self.state_vars.get(child, {}))
+                    for k, v in self.state_vars.get(base, {}).items():
+                        merged.setdefault(k, v)
+                    self.state_vars[child] = merged
+                    if self.included_containers is not None:
+                        self.included_containers.add(base)
+
+    def world_field_of(self, container: str) -> str:
+        """World field owning this container's state (child for flattened bases)."""
+        for child, bases in getattr(self, 'flatten_bases', {}).items():
+            if container in bases:
+                return child
+        return container
+
+    def compute_needs_world(self) -> None:
+        """Seed + propagate `needs_world` over the call graph.
+
+        Seeds: touching a state variable of the enclosing stateful contract,
+        msg./block./tx. access, or a method call through an interface-typed
+        expression (alias or external dispatch always routes via world).
+        Propagation: any caller of a needy function is needy.
+        """
+        from ..parser.ast_nodes import (
+            Block as _Block, Expression as _Expr, Statement as _Stmt,
+        )
+        import dataclasses
+
+        def walk(node, visit):
+            if node is None:
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item, visit)
+                return
+            if not dataclasses.is_dataclass(node):
+                return
+            visit(node)
+            for f in dataclasses.fields(node):
+                walk(getattr(node, f.name), visit)
+
+        # Build per-function seed + call edges
+        edges: Dict[Tuple[Optional[str], str], set] = {}
+        for key, func in self.function_defs.items():
+            container, _ = key
+            state_names = set(self.state_vars.get(container, {}).keys()) \
+                if container in self.stateful_contracts else set()
+            local_names = {p.name for p in func.parameters if p.name}
+            seed = [False]
+            callees: set = set()
+            iface_param_names = {}
+            for p in func.parameters:
+                if p.type_name is not None and p.type_name.name in (
+                    set(self.interface_aliases) | self.external_interfaces | self.interfaces
+                ):
+                    iface_param_names[p.name] = p.type_name.name
+
+            def visit(node, _seed=seed, _callees=callees, _state=state_names,
+                      _locals=local_names, _container=container,
+                      _iface_params=iface_param_names):
+                cls = type(node).__name__
+                if cls == 'Identifier':
+                    if node.name in _state:
+                        _seed[0] = True
+                elif cls == 'MemberAccess':
+                    base = node.expression
+                    if type(base).__name__ == 'Identifier' and base.name in ('msg', 'block', 'tx'):
+                        _seed[0] = True
+                elif cls == 'FunctionCall':
+                    fn = node.function
+                    fcls = type(fn).__name__
+                    if fcls == 'Identifier':
+                        _callees.add((_container, fn.name))
+                        _callees.add((None, fn.name))
+                        # constructor-style interface cast has no call edge
+                    elif fcls == 'MemberAccess':
+                        base = fn.expression
+                        bcls = type(base).__name__
+                        if bcls == 'Identifier' and (
+                            base.name in self.libraries or base.name in self.contracts
+                        ):
+                            _callees.add((base.name, fn.member))
+                        else:
+                            # Possible interface-value method call: engine.getX(...),
+                            # config.teamRegistry.getTeams(...). Aliased dispatch
+                            # only propagates neediness through the callee edge
+                            # (a pure impl keeps its callers pure); external
+                            # dispatch always needs world (it lives on world.ext).
+                            for iface in self.external_interfaces:
+                                if (iface, fn.member) in self.functions:
+                                    _seed[0] = True
+                                    break
+                            for iface, alias in self.interface_aliases.items():
+                                if (iface, fn.member) in self.functions:
+                                    _callees.add((alias, fn.member))
+                                    break
+
+            walk(func.body, visit)
+            if container in self.stateful_contracts:
+                seed[0] = True  # state access is pervasive; keep it uniform
+            sig = self.functions.get(key)
+            if sig is not None:
+                sig.needs_world = sig.needs_world or seed[0]
+            edges[key] = callees
+
+        # Fixed point
+        changed = True
+        while changed:
+            changed = False
+            for key, callees in edges.items():
+                sig = self.functions.get(key)
+                if sig is None or sig.needs_world:
+                    continue
+                for callee_key in callees:
+                    callee = self.functions.get(callee_key)
+                    if callee is not None and callee.needs_world:
+                        sig.needs_world = True
+                        changed = True
+                        break
+
+        self._compute_param_lowering()
+
+    def _compute_param_lowering(self) -> None:
+        """`T storage` params of world-taking functions become KEY params.
+
+        A world-taking callee cannot also borrow world through an argument
+        (double &mut). Structs reachable from exactly one root mapping of a
+        stateful contract (BattleConfig <- battleConfig, BattleData <-
+        battleData) are re-derived inside the callee from the passed key.
+        """
+        # struct name -> (contract, state var, key type) for unique roots
+        roots: Dict[str, Tuple[str, str, SolType]] = {}
+        ambiguous: set = set()
+        for contract in self.stateful_contracts:
+            for var_name, st in self.state_vars.get(contract, {}).items():
+                if st.kind == 'mapping' and st.value is not None \
+                        and st.value.kind == 'struct':
+                    sname = st.value.name
+                    if sname in roots or sname in ambiguous:
+                        ambiguous.add(sname)
+                        roots.pop(sname, None)
+                    else:
+                        roots[sname] = (contract, var_name, st.key or UNKNOWN)
+
+        for key, sig in self.functions.items():
+            func = self.function_defs.get(key)
+            if func is None:
+                sig.param_lowered = [None] * len(sig.param_types)
+                continue
+            lowered = []
+            for p, pt in zip(func.parameters, sig.param_types):
+                entry = None
+                if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
+                    if pt.kind == 'struct' and pt.name in roots:
+                        entry = roots[pt.name]
+                    else:
+                        entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
+                lowered.append(entry)
+            # Pad for overload-arity mismatch safety
+            while len(lowered) < len(sig.param_types):
+                lowered.append(None)
+            sig.param_lowered = lowered
+
+    # Ext-call accumulation (ExternalCalls trait generation)
+    def record_ext_call(self, iface: str, method: str) -> None:
+        self.ext_calls[(iface, method)] = self.lookup_function(iface, method)
 
     @staticmethod
     def _module_path(rel_path: str) -> Tuple[str, ...]:
@@ -239,10 +448,12 @@ class RustSymbols:
         sig = self.functions.get((container, name))
         if sig is not None:
             return sig
-        # Fall back to any container exposing the name (interface aliases etc.)
-        for (cont, fname), s in self.functions.items():
-            if fname == name and cont == container:
-                return s
+        # Flattened inheritance: a child's bare call may resolve to a base
+        # (Engine -> MappingAllocator).
+        for base in getattr(self, 'flatten_bases', {}).get(container, []):
+            sig = self.functions.get((base, name))
+            if sig is not None:
+                return sig
         return None
 
     def rust_module(self, type_name: str) -> Optional[str]:

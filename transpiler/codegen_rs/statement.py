@@ -60,11 +60,12 @@ _NATIVE_UNCHECKED = {'+': 'wrapping_add', '-': 'wrapping_sub', '*': 'wrapping_mu
 
 class RustStatementGenerator:
     def __init__(self, ctx: 'RustCodeGenerationContext', expr: 'RustExpressionGenerator',
-                 types: 'RustTypeConverter', inferencer: 'TypeInferencer'):
+                 types: 'RustTypeConverter', inferencer: 'TypeInferencer', symbols=None):
         self._ctx = ctx
         self._expr = expr
         self._types = types
         self._infer = inferencer
+        self._symbols = symbols
 
     # ------------------------------------------------------------------
 
@@ -163,7 +164,7 @@ class RustStatementGenerator:
             t = self._infer.from_type_name(decl.type_name)
             rust_t = self._types.rust_type(t)
             if decl.storage_location == 'storage':
-                self._ctx.warn(f'storage pointer local `{decl.name}` (Phase 2 storage model)')
+                return self._gen_storage_local(decl, stmt.initial_value, t, rust_t)
             if stmt.initial_value is not None:
                 init = self._expr.emit(stmt.initial_value, t)
                 init = self._clone_if_place(init, stmt.initial_value, t)
@@ -184,6 +185,70 @@ class RustStatementGenerator:
                 pats.append(f'mut {rust_ident(d.name)}')
         init = self._expr.emit(stmt.initial_value) if stmt.initial_value else '()'
         return f'{self.ind()}let ({", ".join(pats)}) = {init};'
+
+    def _gen_storage_local(self, decl, init: Optional[Expression], t: SolType,
+                           rust_t: str) -> str:
+        """`X storage y = <place>;` — three shapes:
+
+        1. Direct place path (mapping index / member path / ternary of
+           places): REGISTER a substitution; every later use re-derives the
+           place from world (no held borrow). Keys/conditions hoist to temps
+           so they evaluate exactly once, like the Solidity binding.
+        2. Helper call returning a storage ref (`_getMonState(...)`), or a
+           member path off one: plain `let` binding of the `&mut` (NLL keeps
+           it alive only to the last use).
+        3. Declared without initializer (assigned in branches): deferred
+           `let` of `&mut T`, assignments bind `&mut <place>`.
+        """
+        from ..parser.ast_nodes import FunctionCall as _FC
+        name = decl.name
+
+        if init is None:
+            self._ctx.storage_ref_locals.add(name)
+            return f'{self.ind()}let mut {rust_ident(name)}: &mut {rust_t};'
+
+        def contains_call(e) -> bool:
+            if isinstance(e, _FC):
+                return True
+            if isinstance(e, MemberAccess):
+                return contains_call(e.expression)
+            if isinstance(e, IndexAccess):
+                return contains_call(e.base)
+            if isinstance(e, TupleExpression) and len(e.components) == 1:
+                return contains_call(e.components[0])
+            return False
+
+        if contains_call(init):
+            self._ctx.storage_ref_locals.add(name)
+            code, _ = self._expr.emit_typed(init)
+            if isinstance(init, MemberAccess):
+                # e.g. `_getTeamMon(...).stats` — reborrow the field place
+                return f'{self.ind()}let mut {rust_ident(name)} = &mut {code};'
+            return f'{self.ind()}let mut {rust_ident(name)} = {code};'
+
+        # Direct place: register a substitution with hoisted keys.
+        hoists: list = []
+        place, _pt = self._expr.emit_place(init, hoists)
+        key_text = None
+        root = None
+        if isinstance(init, IndexAccess) and isinstance(init.base, Identifier):
+            base_name = init.base.name
+            container = self._ctx.current_class_name
+            svars = self._symbols.state_vars.get(container, {})
+            st = svars.get(base_name)
+            if st is not None and st.kind == 'mapping':
+                root = (container, base_name, st.key)
+                # emit_place hoisted the key as the LAST temp
+                if hoists:
+                    key_text = hoists[-1].split(' ')[1]
+        self._ctx.storage_locals[name] = {'place': place, 'key': key_text, 'root': root}
+        self._ctx.current_local_vars.add(name)
+        if decl.type_name is not None:
+            self._ctx.var_types[name] = decl.type_name
+        lines = [f'{self.ind()}{h}' for h in hoists]
+        if not lines:
+            return f'{self.ind()}// storage local `{name}` substituted in place'
+        return '\n'.join(lines)
 
     def _maybe_record_alias(self, lhs: Expression, rhs: Expression, t: SolType) -> None:
         """`local = refParam` (whole memory array/struct): in Solidity both
@@ -332,6 +397,16 @@ class RustStatementGenerator:
     return_types: List[SolType] = []
 
     def _gen_return(self, stmt: ReturnStatement) -> str:
+        if getattr(self._ctx, 'current_fn_returns_storage', False) and stmt.expression is not None:
+            # Storage-returning fn: hand back a reference to the place.
+            from ..parser.ast_nodes import TernaryOperation as _T
+            if isinstance(stmt.expression, _T):
+                cond = self._expr.emit(stmt.expression.condition, BOOL)
+                a, _ = self._expr.emit_place(stmt.expression.true_expression)
+                b, _ = self._expr.emit_place(stmt.expression.false_expression)
+                return f'{self.ind()}return if {cond} {{ &mut {a} }} else {{ &mut {b} }};'
+            place, _ = self._expr.emit_place(stmt.expression)
+            return f'{self.ind()}return &mut {place};'
         if stmt.expression is None:
             if self.named_returns:
                 return f'{self.ind()}return {self._named_return_value()};'
@@ -415,7 +490,15 @@ class RustStatementGenerator:
                     lines.append(f'{self.ind()}let _ = {tmp};')
             return '\n'.join(lines)
 
-        lhs_code, _ = self._expr.emit_typed(expr.left)
+        # Deferred storage-ref local being (re)bound to a storage place:
+        # `effectInstance = config.globalEffects[idx];` -> bind the &mut.
+        if (expr.operator == '=' and isinstance(expr.left, Identifier)
+                and expr.left.name in self._ctx.storage_ref_locals):
+            place, _ = self._expr.emit_place(expr.right)
+            return f'{self.ind()}{rust_ident(expr.left.name)} = &mut {place};'
+
+        lhs_code, _ = self._expr.emit_place(expr.left)
+        lhs_is_world_place = '.get_mut(' in lhs_code
 
         if expr.operator == '=':
             if (isinstance(expr.left, Identifier)
@@ -430,44 +513,77 @@ class RustStatementGenerator:
                 )
             rhs = self._expr.emit(expr.right, lhs_t)
             rhs = self._clone_if_place(rhs, expr.right, lhs_t)
-            out = f'{self.ind()}{lhs_code} = {rhs};'
+            out_lines = []
+            if lhs_is_world_place:
+                # RHS may traverse world too; evaluate it first.
+                tmp = self._ctx.fresh_temp('rhs')
+                out_lines.append(f'{self.ind()}let {tmp} = {rhs};')
+                out_lines.append(f'{self.ind()}{lhs_code} = {tmp};')
+                out = '\n'.join(out_lines)
+            else:
+                out = f'{self.ind()}{lhs_code} = {rhs};'
             self._maybe_record_alias(expr.left, expr.right, lhs_t)
             return out
 
         op = expr.operator[:-1]  # '+=' -> '+'
         rhs = self._expr.emit(expr.right, lhs_t)
 
+        def compound(value_expr_of) -> str:
+            """Emit `place = f(place, rhs)` safely for world places: hoist
+            the RHS, take one &mut to the place, update through it."""
+            if not lhs_is_world_place:
+                return f'{self.ind()}{lhs_code} = {value_expr_of(lhs_code, rhs)};'
+            r = self._ctx.fresh_temp('rhs')
+            p = self._ctx.fresh_temp('p')
+            return (
+                f'{self.ind()}{{ let {r} = {rhs}; '
+                f'let {p} = &mut {lhs_code}; '
+                f'*{p} = {value_expr_of(f"(*{p})", r)}; }}'
+            )
+
         if op in ('<<', '>>'):
             amt = self._expr._shift_amount(expr.right)
             method = 'sol_shl' if op == '<<' else 'sol_shr'
-            out = f'{lhs_code}.{method}({amt})'
-            if op == '<<':
-                out = self._expr._mask_odd_width(out, lhs_t)
-            return f'{self.ind()}{lhs_code} = {out};'
+
+            def shift_value(lhs, _r):
+                out = f'{lhs}.{method}({amt})'
+                if op == '<<':
+                    out = self._expr._mask_odd_width(out, lhs_t)
+                return out
+
+            if not lhs_is_world_place:
+                return f'{self.ind()}{lhs_code} = {shift_value(lhs_code, rhs)};'
+            p = self._ctx.fresh_temp('p')
+            return (
+                f'{self.ind()}{{ let {p} = &mut {lhs_code}; '
+                f'*{p} = {shift_value(f"(*{p})", rhs)}; }}'
+            )
 
         if lhs_t.is_wide:
             if op in ('+', '-', '*'):
                 method = _WIDE_UNCHECKED[op] if self._ctx.unchecked else _WIDE_CHECKED[op]
-                return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({rhs});'
+                return compound(lambda l, r: f'{l}.{method}({r})')
             if op in ('/', '%'):
                 if self._ctx.unchecked and lhs_t.kind == 'int':
                     method = 'wrapping_div' if op == '/' else 'wrapping_rem'
-                    return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({rhs});'
+                    return compound(lambda l, r: f'{l}.{method}({r})')
                 if lhs_t.kind == 'int':
                     # alloy's raw I256 Div/Rem only debug_assert on overflow
                     # (release would silently wrap MIN /= -1); route through
                     # the checked helpers like the expression path does.
                     method = 'sol_div' if op == '/' else 'sol_rem'
-                    return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({rhs});'
-                return f'{self.ind()}{lhs_code} = {lhs_code} {op} ({rhs});'
-            return f'{self.ind()}{lhs_code} = {lhs_code} {op} ({rhs});'
+                    return compound(lambda l, r: f'{l}.{method}({r})')
+                return compound(lambda l, r: f'{l} {op} ({r})')
+            return compound(lambda l, r: f'{l} {op} ({r})')
 
         # native
         if self._ctx.unchecked and op in _NATIVE_UNCHECKED:
-            return f'{self.ind()}{lhs_code} = {lhs_code}.{_NATIVE_UNCHECKED[op]}({rhs});'
+            return compound(lambda l, r: f'{l}.{_NATIVE_UNCHECKED[op]}({r})')
         if op == '%' and lhs_t.kind == 'int':
             # Checked signed %=: Solidity's MIN % -1 == 0 (see rt::srem).
-            return f'{self.ind()}{lhs_code} = rt::srem({lhs_code}, {rhs});'
+            return compound(lambda l, r: f'rt::srem({l}, {r})')
+        if lhs_is_world_place:
+            return compound(lambda l, r: f'{l} {op} ({r})')
         return f'{self.ind()}{lhs_code} {op}= {rhs};'
 
     # ------------------------------------------------------------------
@@ -494,8 +610,15 @@ class RustStatementGenerator:
         return f'{self.ind()}panic!("Revert");'
 
     def _gen_delete(self, stmt: DeleteStatement) -> str:
+        # `delete m[k]` on a mapping removes the entry (reads then see zero).
+        if isinstance(stmt.expression, IndexAccess):
+            base_t = self._infer.infer(stmt.expression.base)
+            if base_t.kind == 'mapping':
+                base_place, _ = self._expr.emit_place(stmt.expression.base)
+                key = self._expr.emit(stmt.expression.index, base_t.key or UNKNOWN)
+                return f'{self.ind()}{base_place}.remove(&{key});'
         t = self._infer.infer(stmt.expression)
-        code, _ = self._expr.emit_typed(stmt.expression)
+        code, _ = self._expr.emit_place(stmt.expression)
         default = self._types.default_value(t)
         return f'{self.ind()}{code} = {default};'
 
