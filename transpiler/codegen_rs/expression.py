@@ -646,6 +646,11 @@ class RustExpressionGenerator:
                     rust_ident(name) + suffix, sig, call.arguments
                 ), sig.return_type()
 
+            if name in getattr(self._symbols, 'noop_calls', set()):
+                # Dead machinery on sim paths (solady Ownable init): dropped,
+                # not panicked — these sit on constructor paths.
+                return f'/* noop: {name} */ ()', SolType('tuple', members=())
+
             if name in getattr(self._symbols, 'stub_calls', set()):
                 self._ctx.info(f'stubbed call to {name} (configured stubCalls)')
                 return f'unimplemented!("stubbed: {name} (on-chain-only path)")', UNKNOWN
@@ -668,6 +673,24 @@ class RustExpressionGenerator:
                     return self._emit_abi_decode(call)
                 self._ctx.warn(f'abi.{member} not supported yet')
                 return f'unimplemented!("abi.{member}")', UNKNOWN
+
+            # super.f(...): static dispatch to the next definition after the
+            # caller's DEFINING contract in the flattened module's MRO.
+            if isinstance(base, Identifier) and base.name == 'super':
+                leaf = self._ctx.current_class_name
+                dc = self._ctx.current_defining_container or leaf
+                key = (leaf, dc, member, len(call.arguments))
+                tgt = getattr(self._symbols, 'super_targets', {}).get(key)
+                if tgt is None:
+                    self._ctx.warn(f'unresolved super.{member} in {leaf} (defined in {dc})')
+                    return f'unimplemented!("super.{member}")', UNKNOWN
+                emitted_name, target_container = tgt
+                ov = self._symbols.lookup_overload(target_container, member, len(call.arguments))
+                sig = ov[0] if ov else self._symbols.lookup_function(target_container, member)
+                if sig is None:
+                    self._ctx.warn(f'super target {target_container}.{member} has no signature')
+                    return f'unimplemented!("super.{member}")', UNKNOWN
+                return self._emit_direct_call(emitted_name, sig, call.arguments), sig.return_type()
 
             # Library static call: Lib.fn(...)
             if isinstance(base, Identifier) and base.name in self._symbols.libraries:

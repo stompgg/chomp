@@ -237,16 +237,80 @@ class RustSymbols:
     # Phase 2: needs_world call-graph fixed point
     # ------------------------------------------------------------------
 
+    def linearize_bases(self, name: str) -> list:
+        """Non-interface base chain in Solidity MRO order (most-derived
+        bases first). `contract X is A, B` linearizes X, B, A — bases
+        right-to-left, transitive, keep-first. (True C3 only differs on
+        diamonds, which this codebase does not have.) skip_bases (e.g.
+        solady Ownable — assembly-slot machinery, dead on sim paths) are
+        excluded; calls into them go through noopCalls/stubCalls."""
+        cdef = self.contract_defs.get(name)
+        if cdef is None:
+            return []
+        skip = getattr(self, 'skip_bases', set())
+        out: list = []
+        for base in reversed(getattr(cdef, 'base_contracts', [])):
+            bdef = self.contract_defs.get(base)
+            if bdef is None or getattr(bdef, 'kind', '') == 'interface' or base in skip:
+                continue
+            for b in [base] + self.linearize_bases(base):
+                if b not in out:
+                    out.append(b)
+        return out
+
     def configure_world(self, stateful_contracts, interface_aliases, external_interfaces,
                         stub_calls=(), flatten=None, included_containers=None,
-                        stub_functions=()) -> None:
+                        stub_functions=(), noop_calls=(),
+                        dispatch_interfaces=(), skip_bases=()) -> None:
+        self.skip_bases = set(skip_bases)
         self.stub_functions = set(stub_functions)
         self.stateful_contracts = set(stateful_contracts)
         self.interface_aliases = dict(interface_aliases)
         self.external_interfaces = set(external_interfaces)
         self.stub_calls = set(stub_calls)
+        self.noop_calls = set(noop_calls)
+        self.dispatch_interfaces = set(dispatch_interfaces)
         self.flatten_bases = dict(flatten or {})
         self.included_containers = set(included_containers) if included_containers else None
+        # (leaf, defining_container, fname, arity) -> emitted fn name; filled
+        # during contract emission, consulted by super-call resolution.
+        self.emitted_fn_names: Dict[Tuple[str, str, str, int], str] = {}
+        # (leaf, defining_container, fname, arity) -> (emitted_name,
+        # target_defining_container): the static super-dispatch target.
+        self.super_targets: Dict[Tuple[str, str, str, int], Tuple[str, str]] = {}
+
+        # Auto-flatten: every emitted concrete/abstract contract folds its
+        # transitive non-interface bases into its own module (config entries
+        # override). Stateful status is DERIVED: any contract with merged
+        # mutable state or a constructor gets a <Name>State in World.
+        for name, cdef in self.contract_defs.items():
+            if getattr(cdef, 'kind', '') not in ('contract', 'abstract'):
+                continue
+            if self.included_containers is not None and name not in self.included_containers:
+                continue
+            self.flatten_bases.setdefault(name, self.linearize_bases(name))
+        for name, cdef in self.contract_defs.items():
+            if getattr(cdef, 'kind', '') != 'contract':
+                continue
+            if self.included_containers is not None and name not in self.included_containers:
+                continue
+            defs = [cdef] + [self.contract_defs.get(b) for b in self.flatten_bases.get(name, [])]
+            has_state = any(
+                v.mutability != 'constant'
+                for d in defs if d is not None
+                for v in d.state_variables
+            )
+            has_ctor = any(d is not None and d.constructor is not None for d in defs)
+            if has_state or has_ctor:
+                self.stateful_contracts.add(name)
+
+        # Contracts that appear as somebody's flatten base are emitted ONLY
+        # flattened (no standalone module, no World field). This codebase
+        # never deploys a contract that is also inherited from.
+        self.base_contract_names = {
+            b for bases in self.flatten_bases.values() for b in bases
+        }
+
         # Flattened bases live inside the child's state struct: their state
         # vars and functions behave as the child's for the world analysis.
         for child, bases in self.flatten_bases.items():
@@ -261,6 +325,21 @@ class RustSymbols:
                     self.state_vars[child] = merged
                     if self.included_containers is not None:
                         self.included_containers.add(base)
+
+    def world_state_contracts(self) -> list:
+        """Contracts that own a <Name>State field in World: derived-stateful,
+        concrete, included, and not base-only."""
+        out = []
+        for name in sorted(self.stateful_contracts):
+            cdef = self.contract_defs.get(name)
+            if cdef is None or getattr(cdef, 'kind', '') != 'contract':
+                continue
+            if name in self.base_contract_names:
+                continue
+            if self.included_containers is not None and name not in self.included_containers:
+                continue
+            out.append(name)
+        return out
 
     def world_field_of(self, container: str) -> str:
         """World field owning this container's state (child for flattened bases)."""
@@ -339,7 +418,14 @@ class RustSymbols:
                     elif fcls == 'MemberAccess':
                         base = fn.expression
                         bcls = type(base).__name__
-                        if bcls == 'Identifier' and (
+                        if bcls == 'Identifier' and base.name == 'super':
+                            # Static super dispatch: the target is one of the
+                            # defining contract's own bases (conservatively
+                            # edge to all of them — over-approximating
+                            # needs_world is always safe).
+                            for b in self.linearize_bases(_container or ''):
+                                _callees.add((b, fn.member))
+                        elif bcls == 'Identifier' and (
                             base.name in self.libraries or base.name in self.contracts
                         ):
                             _callees.add((base.name, fn.member))

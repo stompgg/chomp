@@ -52,6 +52,10 @@ class RustCodeGenerationContext:
     current_contract_stateful: bool = False
     # Emitting a constructor body: state vars write to `self_` instead of world.
     in_constructor: bool = False
+    # Contract that DEFINED the function currently being emitted (differs
+    # from current_class_name inside flattened base functions); anchors
+    # static super-dispatch resolution.
+    current_defining_container: str = ''
     # Per-statement hoisted prelude lines (key temps, arg temps); the
     # statement generator drains these before the statement that caused them.
     pending_hoists: List[str] = field(default_factory=list)
@@ -114,6 +118,7 @@ class RustCodeGenerationContext:
         self.storage_locals = {}
         self.storage_ref_locals = set()
         self.current_fn_needs_world = False
+        self.current_defining_container = ''
         self.in_constructor = False
         self.pending_hoists = []
         self.temp_counter = 0

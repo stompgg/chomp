@@ -156,6 +156,7 @@ class RustFunctionGenerator:
         if func.name in getattr(self._symbols, 'stub_functions', set()):
             return self._generate_stub(func, sig, name_suffix)
         self._register_params(func, sig)
+        self._ctx.current_defining_container = container
         needs_world = bool(sig and sig.needs_world)
         self._ctx.current_fn_needs_world = needs_world
 

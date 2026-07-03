@@ -17,7 +17,19 @@
     "lib/ValidatorLogic.sol",
     "moves/IMoveSet.sol",
     "moves/MoveSlotLib.sol",
-    "moves/AttackCalculator.sol"
+    "moves/AttackCalculator.sol",
+    "effects/IEffect.sol",
+    "effects/BasicEffect.sol",
+    "effects/StaminaRegen.sol",
+    "effects/battlefield/Overclock.sol",
+    "effects/status/StatusEffect.sol",
+    "effects/status/StatusEffectLib.sol",
+    "effects/status/BurnStatus.sol",
+    "effects/status/FrostbiteStatus.sol",
+    "effects/status/SleepStatus.sol",
+    "effects/status/ZapStatus.sol",
+    "effects/status/PanicStatus.sol",
+    "effects/status/BlessedStatus.sol"
   ],
   "statefulContracts": [
     "Engine"
@@ -50,5 +62,12 @@
     "_executeBatchedEntry",
     "executeBatchedTurns",
     "_packBatchPayload"
+  ],
+  "noopCalls": [
+    "_initializeOwner",
+    "_guardInitializeOwner"
+  ],
+  "skipBases": [
+    "Ownable"
   ]
 }
