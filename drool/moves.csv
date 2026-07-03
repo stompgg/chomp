@@ -1,57 +1,57 @@
-Name,Mon,Power,Stamina,Accuracy,Priority,Type,Class,DevDescription,UserDescription,InputType,UnlockLevel
-Eternal Grudge,Ghouliath,0,2,100,1,Yin,Self,"KO’s self. In return, halves the opponent's ATK and SpATK.",,none,0
-Infernal Flame,Ghouliath,120,2,85,0,Fire,Special,"Deals damage, 30% chance of inflicting Burn.",,none,0
-Wither Away,Ghouliath,60,3,100,0,Yin,Special,"Deals damage, and then inflicts Panic on both players.",,none,0
-Osteoporosis,Ghouliath,90,2,100,0,Yin,Physical,Deals damage.,,none,0
-Grave Affliction,Ghouliath,0,2,100,0,Yin,Other,"If the opposing mon has a status condition, both mons lose half their current HP.",,none,6
-Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opponent is attempting to switch out, deals heavy damage. Otherwise, deals damage to self.",,none,0
-Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,none,0
-Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,none,0
-Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,none,0
-Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to deal 130 damage at 1 stamina cost. Otherwise, deals 80 damage at 2 stamina cost.",,none,0
-Loop,Iblivion,0,1,100,0,Yang,Self,Sets all stats to +15/30/40% based on Baselight level. Does not stack.,,none,0
-Brightback,Iblivion,70,2,100,0,Yang,Physical,Deals damage. Consume 1 Baselight stack to heal for 50% of damage dealt.,,none,0
-Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none,0
-Chain Expansion,Inutia,0,1,100,0,Faith,Other,"Sets up battlefield effect with 4 charges, consumed by switch-ins on either side. An enemy switch-in takes damage scaled by its Faith weakness; a friendly switch-in heals 12.5% of max HP.",,none,0
-Initialize,Inutia,0,2,100,0,Faith,Self,"Boosts ATK/SpATK by 50%. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none,0
-Big Bite,Inutia,80,2,100,0,Faith,Physical,Deals damage.,,none,0
-Hit And Dip,Inutia,60,2,100,0,Faith,Special,"Deals damage, then swaps out.",,self-mon,0
-Sanctify,Inutia,0,2,100,0,Faith,Other,Applies Blessed status on a team member.,,self-mon,6
-Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by 75%.,,none,0
-Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none,0
-Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, 10% chance to cause Panic.",,none,0
-Infinite Love,Malalien,90,3,100,0,Cosmic,Special,"Deals damage, 10% chance to cause Sleep.",,none,0
-Foul Language,Malalien,60,2,100,0,Cyber,Special,Deals damage. Half of the damage done is taken as recoil.,,none,6
-Chill Out,Pengym,0,0,100,0,Ice,Other,Inflicts Frostbite on the opponent.,,none,0
-Deadlift,Pengym,0,2,100,0,Metal,Self,Increases ATK and DEF by 50%.,,none,0
-Deep Freeze,Pengym,90,3,100,0,Ice,Physical,"If the target has Frostbite, consumes Frostbite and does double damage (the target's SpATK returns to normal).",,none,0
-Pistol Squat,Pengym,80,2,100,-1,Metal,Physical,"Deals damage, then forces the enemy mon to switch to a random living teammate.",,none,0
-Gachachacha,Sofabbi,?,3,100,0,Cyber,Physical,"Uniformly random power from 0 to 200. Small chance (about 2% each) that the roll instead becomes a max-HP-sized attack on Sofabbi itself, or on the opponent; both run through the normal damage formula, so they can be survived.",,none,0
-Guest Feature,Sofabbi,75,3,100,0,Cyber,Physical,Attack Type is set to be the first Type of another selected party member.,,self-mon,0
-Unexpected Carrot,Sofabbi,120,4,100,0,Nature,Physical,Deals damage.,,none,0
-Snack Break,Sofabbi,0,1,100,0,Nature,Self,"Heal for 50% of health. Effectiveness reduces by half each time, until a min of 6.6%.",,none,0
-Electrocute,Volthare,90,2,100,0,Lightning,Special,"Deals damage, 10% chance to cause Zap. A Zapped mon skips its next turn.",,none,0
-Round Trip,Volthare,30,1,100,0,Lightning,Special,"Deals damage, then switches out.",,self-mon,0
-Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, 30% chance to inflict Zap.",,none,0
-Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Overclocks your team,,none,0
-Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals self by 50% of max HP and the opponent by 25% of Sofabbi's max HP (each subsequent use cuts the healing in half). Lowers opponent SpDEF by 50% until they switch out.,,none,0
-Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, 30% chance of Burn.",,none,0
-Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none,0
-Q5,Embursa,150,2,100,0,Fire,Special,"Deals 150 damage at the start of the 5th round after casting, to whichever enemy is active then.",,none,0
-Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none,0
-Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon (Aurox included) from a status condition. If successful, Aurox heals 50% of max HP and the target gains +1 stamina (this can exceed the stamina maximum). If the target has no status, the cast does nothing but still costs stamina.",,self-mon,0
-Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate 50% of all damage taken, its own recoil included. When activated for the first time each switch-in, Aurox heals 20% of max HP.",,none,0
-Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals 20% of max HP to self.,,none,0
-Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,Inflicts Sleep on self and opponent.,,none,0
-Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, 50% chance to steal 1 stamina from opponent.",,none,0
-Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any mon that gains stamina — the +1 regen included — takes 1/8 of its max HP per stack as damage, on both sides. A mon at full stamina gains nothing and is not taxed. Casting again adds a stack without resetting the countdown.",,none,0
-Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,none,0
-Invoke Taboo,Xmon,0,1,100,-1,Cosmic,Other,"Taboos the opponent's last used move. Until they switch out, if they use that move again they fall asleep.",,none,6
-Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,none,0
-Sneak Attack,Ekineki,60,2,100,1,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,opponent-mon,0
-Nine Nine Nine,Ekineki,0,1,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,none,0
-Overflow,Ekineki,90,3,100,0,Math,Special,Deals damage.,,none,0
-Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the resting mon gains +1 stamina, heals 12.5% max HP, and is swapped out. The next time your opponent rests, their mon loses 1 stamina, takes 12.5% max HP damage, and also swaps out.",,none,0
-Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,"Deals damage, 20% chance to inflict Panic.",,none,0
-Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"First use boosts defenses. Second use deals damage based on how much time has passed, and then resets.",,none,0
-Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at 33% chance.",,mode-select,0
+Name,Mon,Power,Stamina,Accuracy,Priority,Type,Class,DevDescription,UserDescription,InputType,UnlockLevel,Constants
+Eternal Grudge,Ghouliath,0,2,100,1,Yin,Self,"KO’s self. In return, halves the opponent's ATK and SpATK.",,none,0,
+Infernal Flame,Ghouliath,120,2,85,0,Fire,Special,"Deals damage, {EFFECT_ACCURACY} chance of inflicting Burn.",,none,0,EFFECT_ACCURACY=30
+Wither Away,Ghouliath,60,3,100,0,Yin,Special,"Deals damage, and then inflicts Panic on both players.",,none,0,
+Osteoporosis,Ghouliath,90,2,100,0,Yin,Physical,Deals damage.,,none,0,
+Grave Affliction,Ghouliath,0,2,100,0,Yin,Other,"If the opposing mon has a status condition, both mons lose half their current HP.",,none,6,
+Rock Pull,Gorillax,?,3,100,?,Earth,Physical,"If the opponent is attempting to switch out, deals heavy damage. Otherwise, deals damage to self.",,none,0,
+Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,none,0,
+Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,none,0,
+Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,none,0,
+Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to deal 130 damage at 1 stamina cost. Otherwise, deals 80 damage at 2 stamina cost.",,none,0,
+Loop,Iblivion,0,1,100,0,Yang,Self,Sets all stats to +{BOOST_PERCENT_LEVEL_1}/{BOOST_PERCENT_LEVEL_2}/{BOOST_PERCENT_LEVEL_3} based on Baselight level. Does not stack.,,none,0,BOOST_PERCENT_LEVEL_1=15;BOOST_PERCENT_LEVEL_2=30;BOOST_PERCENT_LEVEL_3=40
+Brightback,Iblivion,70,2,100,0,Yang,Physical,Deals damage. Consume 1 Baselight stack to heal for {HEAL_DENOM} of damage dealt.,,none,0,HEAL_DENOM=2
+Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none,0,
+Chain Expansion,Inutia,0,1,100,0,Faith,Other,"Sets up battlefield effect with 4 charges, consumed by switch-ins on either side. An enemy switch-in takes damage scaled by its Faith weakness; a friendly switch-in heals {HEAL_DENOM} of max HP.",,none,0,HEAL_DENOM=8;DAMAGE_1_DENOM=16;DAMAGE_2_DENOM=8;DAMAGE_3_DENOM=4
+Initialize,Inutia,0,2,100,0,Faith,Self,"Boosts ATK/SpATK by {ATTACK_BUFF_PERCENT}. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none,0,ATTACK_BUFF_PERCENT=50;SP_ATTACK_BUFF_PERCENT=50
+Big Bite,Inutia,80,2,100,0,Faith,Physical,Deals damage.,,none,0,
+Hit And Dip,Inutia,60,2,100,0,Faith,Special,"Deals damage, then swaps out.",,self-mon,0,
+Sanctify,Inutia,0,2,100,0,Faith,Other,Applies Blessed status on a team member.,,self-mon,6,
+Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by {SP_ATTACK_BUFF_PERCENT}.,,none,0,SP_ATTACK_BUFF_PERCENT=75
+Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none,0,
+Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Panic.",,none,0,EFFECT_ACCURACY=10
+Infinite Love,Malalien,90,3,100,0,Cosmic,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Sleep.",,none,0,EFFECT_ACCURACY=10
+Foul Language,Malalien,60,2,100,0,Cyber,Special,Deals damage. Half of the damage done is taken as recoil.,,none,6,
+Chill Out,Pengym,0,0,100,0,Ice,Other,Inflicts Frostbite on the opponent.,,none,0,
+Deadlift,Pengym,0,2,100,0,Metal,Self,Increases ATK and DEF by {ATTACK_BUFF_PERCENT}.,,none,0,ATTACK_BUFF_PERCENT=50;DEF_BUFF_PERCENT=50
+Deep Freeze,Pengym,90,3,100,0,Ice,Physical,"If the target has Frostbite, consumes Frostbite and does double damage (the target's SpATK returns to normal).",,none,0,
+Pistol Squat,Pengym,80,2,100,-1,Metal,Physical,"Deals damage, then forces the enemy mon to switch to a random living teammate.",,none,0,
+Gachachacha,Sofabbi,?,3,100,0,Cyber,Physical,"Uniformly random power from 0 to 200. Small chance (about 2% each) that the roll instead becomes a max-HP-sized attack on Sofabbi itself, or on the opponent; both run through the normal damage formula, so they can be survived.",,none,0,
+Guest Feature,Sofabbi,75,3,100,0,Cyber,Physical,Attack Type is set to be the first Type of another selected party member.,,self-mon,0,
+Unexpected Carrot,Sofabbi,120,4,100,0,Nature,Physical,Deals damage.,,none,0,
+Snack Break,Sofabbi,0,1,100,0,Nature,Self,"Heal for {DEFAULT_HEAL_DENOM} of health. Effectiveness reduces by half each time, until a min of 6.6%.",,none,0,DEFAULT_HEAL_DENOM=2
+Electrocute,Volthare,90,2,100,0,Lightning,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Zap. A Zapped mon skips its next turn.",,none,0,EFFECT_ACCURACY=10
+Round Trip,Volthare,30,1,100,0,Lightning,Special,"Deals damage, then switches out.",,self-mon,0,
+Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, {ZAP_ACCURACY} chance to inflict Zap.",,none,0,ZAP_ACCURACY=30
+Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Overclocks your team,,none,0,
+Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals self by {DEFAULT_HEAL_DENOM} of max HP and the opponent by 25% of max HP (each subsequent use cuts the healing in half). Lowers opponent SpDEF by {SP_DEF_PERCENT} until they switch out.,,none,0,DEFAULT_HEAL_DENOM=2;SP_DEF_PERCENT=50
+Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, {EFFECT_ACCURACY} chance of Burn.",,none,0,EFFECT_ACCURACY=30
+Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none,0,
+Q5,Embursa,150,2,100,0,Fire,Special,"Deals 150 damage at the start of the 5th round after casting, to whichever enemy is active then.",,none,0,
+Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none,0,
+Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon (Aurox included) from a status condition. If successful, Aurox heals {HEAL_PERCENT} of max HP and the target gains +1 stamina (this can exceed the stamina maximum). If the target has no status, the cast does nothing but still costs stamina.",,self-mon,0,HEAL_PERCENT=50
+Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate {HEAL_PERCENT} of all damage taken, its own recoil included. When activated for the first time each switch-in, Aurox heals {INITIAL_HEAL_PERCENT} of max HP.",,none,0,HEAL_PERCENT=50;INITIAL_HEAL_PERCENT=20
+Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals {SELF_DAMAGE_PERCENT} of max HP to self.,,none,0,SELF_DAMAGE_PERCENT=20
+Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,Inflicts Sleep on self and opponent.,,none,0,
+Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, {STAMINA_STEAL_PERCENT} chance to steal 1 stamina from opponent.",,none,0,STAMINA_STEAL_PERCENT=50
+Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any mon that gains stamina — the +1 regen included — takes {DAMAGE_DENOM:frac} of its max HP per stack as damage, on both sides. A mon at full stamina gains nothing and is not taxed. Casting again adds a stack without resetting the countdown.",,none,0,DAMAGE_DENOM=8
+Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,none,0,
+Invoke Taboo,Xmon,0,1,100,-1,Cosmic,Other,"Taboos the opponent's last used move. Until they switch out, if they use that move again they fall asleep.",,none,6,
+Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,none,0,
+Sneak Attack,Ekineki,60,2,100,1,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,opponent-mon,0,
+Nine Nine Nine,Ekineki,0,1,100,0,Math,Self,Sets crit rate to 90% on the next turn for all moves.,,none,0,
+Overflow,Ekineki,90,3,100,0,Math,Special,Deals damage.,,none,0,
+Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the resting mon gains +1 stamina, heals {HP_DENOM} max HP, and is swapped out. The next time your opponent rests, their mon loses 1 stamina, takes {HP_DENOM} max HP damage, and also swaps out.",,none,0,HP_DENOM=8
+Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,"Deals damage, {EFFECT_ACCURACY} chance to inflict Panic.",,none,0,EFFECT_ACCURACY=20
+Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"First use boosts defenses. Second use deals damage based on how much time has passed, and then resets.",,none,0,
+Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at {EFFECT_ACCURACY} chance.",,mode-select,0,EFFECT_ACCURACY=33

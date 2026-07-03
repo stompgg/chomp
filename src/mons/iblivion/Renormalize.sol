@@ -39,7 +39,7 @@ contract Renormalize is IMoveSet {
         BASELIGHT.setBaselightLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex, 3);
 
         // Clear Loop active flag so Loop can be used again
-        LOOP.clearLoopActive(engine, attackerPlayerIndex, attackerMonIndex);
+        LOOP.clearLoopActive(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Clear all StatBoost effects and reset stats to base values
         engine.clearAllStatBoosts(attackerPlayerIndex, attackerMonIndex);

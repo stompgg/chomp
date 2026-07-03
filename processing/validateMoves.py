@@ -10,7 +10,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class MoveData:
@@ -26,6 +26,8 @@ class MoveData:
     description: str
     extra_data: str
     unlock_level: int = 0
+    # Named %/denominator constants the move's .sol must match: [(NAME, VALUE), ...]
+    constants: List[Tuple[str, int]] = field(default_factory=list)
 
 @dataclass
 class ContractData:
@@ -40,6 +42,8 @@ class ContractData:
     extra_data_type: str = 'None'  # ExtraDataType enum variant; default matches StandardAttack
     is_standard_attack: bool = False
     is_custom_implementation: bool = False
+    # All plain-integer `constant NAME = <int>;` declarations found in the file
+    constants: Dict[str, int] = field(default_factory=dict)
 
 class MoveValidator:
     """Main validator class for checking move contracts against CSV data"""
@@ -113,6 +117,22 @@ class MoveValidator:
             return '?'
         return int(value)
 
+    def _parse_constants(self, raw: str) -> List[Tuple[str, int]]:
+        """Parse the Constants column: 'NAME=VAL;NAME=VAL' -> [(NAME, VAL), ...]"""
+        pairs: List[Tuple[str, int]] = []
+        for part in (raw or '').split(';'):
+            part = part.strip()
+            if not part:
+                continue
+            name, _, val = part.partition('=')
+            pairs.append((name.strip(), int(val.strip())))
+        return pairs
+
+    def _extract_all_constants(self, content: str) -> Dict[str, int]:
+        """Collect every plain-integer `constant NAME = <int>;` declaration (hex/expr forms ignored)"""
+        return {m.group(1): int(m.group(2))
+                for m in re.finditer(r'constant\s+(\w+)\s*=\s*(\d+)\s*;', content)}
+
     def load_csv_data(self) -> None:
         """Load and parse the moves CSV file"""
         with open(self.csv_path, 'r', encoding='utf-8') as file:
@@ -130,6 +150,7 @@ class MoveValidator:
                     description=row['DevDescription'], # Change to UserDescription later
                     extra_data=row.get('InputType', ''),
                     unlock_level=int((row.get('UnlockLevel') or '0').strip() or '0'),
+                    constants=self._parse_constants(row.get('Constants', '')),
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
                 self.moves_data[normalized_name] = move_data
@@ -167,6 +188,11 @@ class MoveValidator:
         # (JSON has no priority field = offset 0 = DEFAULT_PRIORITY)
         contract_data.priority = self.DEFAULT_PRIORITY
 
+        # Effect trigger chance lives in the effectAccuracy field; expose under EFFECT_ACCURACY.
+        effect_accuracy = data.get('effectAccuracy')
+        if effect_accuracy is not None:
+            contract_data.constants['EFFECT_ACCURACY'] = effect_accuracy
+
         return contract_data
 
     def parse_contract_file(self, file_path: str, mon_name: str = None) -> ContractData:
@@ -175,6 +201,8 @@ class MoveValidator:
 
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
+
+        contract_data.constants = self._extract_all_constants(content)
 
         # Check if it inherits from StandardAttack
         if 'StandardAttack' in content and 'is StandardAttack' in content:
@@ -212,6 +240,12 @@ class MoveValidator:
         contract_data.priority = self._extract_priority_value(params_block)
         contract_data.move_type = self._extract_enum_value(params_block, 'MOVE_TYPE', 'Type')
         contract_data.move_class = self._extract_enum_value(params_block, 'MOVE_CLASS', 'MoveClass')
+
+        # EFFECT_ACCURACY is a struct field, not a `constant`; expose it under that name so the
+        # Constants column can declare/validate the effect trigger chance uniformly.
+        effect_accuracy = self._extract_param_value(params_block, 'EFFECT_ACCURACY')
+        if effect_accuracy is not None:
+            contract_data.constants['EFFECT_ACCURACY'] = effect_accuracy
 
         return contract_data
 
@@ -406,6 +440,20 @@ class MoveValidator:
                 f"InputType mismatch: csv={csv_extra or 'none'} (expects ExtraDataType.{expected}), "
                 f"contract returns ExtraDataType.{contract_data.extra_data_type}"
             )
+
+        # Validate declared %/denominator constants against the contract source
+        for cname, cval in move_data.constants:
+            actual = contract_data.constants.get(cname)
+            if actual is None:
+                result['errors'].append(f"Constant {cname} not found in contract (expected: {cval})")
+            elif actual != cval:
+                result['errors'].append(f"Constant {cname} mismatch: contract={actual}, csv={cval}")
+
+        # Every {NAME} token in the description must resolve to a declared constant
+        declared = {name for name, _ in move_data.constants}
+        for token in re.findall(r'\{(\w+)(?::\w+)?\}', move_data.description or ''):
+            if token not in declared:
+                result['errors'].append(f"Description token {{{token}}} has no matching Constants entry")
 
         return result
 
@@ -617,11 +665,20 @@ class MoveValidator:
                     updated_params = re.sub(stamina_pattern, rf'\g<1>{move_data.stamina}', updated_params)
                     modified = True
 
-            # Update accuracy if there's a mismatch and it's not a complex move
+            # Update accuracy if there's a mismatch and it's not a complex move.
+            # \b keeps this from also matching the ACCURACY inside EFFECT_ACCURACY.
             if move_data.accuracy != '?' and isinstance(move_data.accuracy, int):
-                accuracy_pattern = r'(ACCURACY:\s*)(\d+)'
+                accuracy_pattern = r'(\bACCURACY:\s*)(\d+)'
                 if re.search(accuracy_pattern, updated_params):
                     updated_params = re.sub(accuracy_pattern, rf'\g<1>{move_data.accuracy}', updated_params)
+                    modified = True
+
+            # Update EFFECT_ACCURACY (effect trigger chance) if declared in the Constants column
+            consts = dict(move_data.constants)
+            if 'EFFECT_ACCURACY' in consts:
+                ea_pattern = r'(EFFECT_ACCURACY:\s*)(\d+)'
+                if re.search(ea_pattern, updated_params):
+                    updated_params = re.sub(ea_pattern, rf'\g<1>{consts["EFFECT_ACCURACY"]}', updated_params)
                     modified = True
 
             # Update priority if there's a mismatch and it's not a complex move
@@ -725,6 +782,15 @@ class MoveValidator:
                     content = re.sub(class_pattern, rf'\g<1>MoveClass.{move_data.move_class}\g<2>', content, flags=re.DOTALL)
                     modified = True
 
+        # Fix declared constant drift (name already present, value wrong). A missing constant
+        # can't be auto-added — it's reported and left for manual placement.
+        for cname, cval in move_data.constants:
+            pattern = rf'(constant\s+{re.escape(cname)}\s*=\s*)\d+'
+            new_content, n = re.subn(pattern, rf'\g<1>{cval}', content)
+            if n and new_content != content:
+                content = new_content
+                modified = True
+
         # Write back if modified
         if modified and content != original_content:
             with open(file_path, 'w', encoding='utf-8') as file:
@@ -756,6 +822,12 @@ class MoveValidator:
 
         if move_data.move_class and data.get('moveClass') != move_data.move_class:
             data['moveClass'] = move_data.move_class
+            modified = True
+
+        # Update effectAccuracy (effect trigger chance) if declared in the Constants column
+        consts = dict(move_data.constants)
+        if 'EFFECT_ACCURACY' in consts and data.get('effectAccuracy') != consts['EFFECT_ACCURACY']:
+            data['effectAccuracy'] = consts['EFFECT_ACCURACY']
             modified = True
 
         # JSON inline moves can't represent non-default accuracy or priority

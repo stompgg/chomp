@@ -14,14 +14,9 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {Baselight} from "./Baselight.sol";
 import {MoveMeta} from "../../Structs.sol";
 
-/**
- * Brightback Move for Iblivion
- * - Power: 70, Stamina: 2, Type: Yin, Class: Physical
- * - Consumes 1 Baselight stack to heal for 50% of damage dealt
- * - If no Baselight stack available, still deals damage but doesn't heal
- */
 contract Brightback is IMoveSet {
     uint32 public constant BASE_POWER = 70;
+    int32 public constant HEAL_DENOM = 2;
 
     ITypeCalculator immutable TYPE_CALCULATOR;
     Baselight immutable BASELIGHT;
@@ -66,7 +61,7 @@ contract Brightback is IMoveSet {
             BASELIGHT.decreaseBaselightLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex, 1);
 
             // Heal for half of damage done
-            int32 healAmount = damageDealt / 2;
+            int32 healAmount = damageDealt / HEAL_DENOM;
             int32 hpDelta = engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
 
             // Prevent overhealing

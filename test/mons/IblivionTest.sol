@@ -572,6 +572,75 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(attackAfterSecond, attackAfterFirst, "Attack should not change when Loop fails");
     }
 
+    function test_loopReArmsAfterSwitchOut() public {
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(brightback)));
+        moves[1] = uint256(uint160(address(unboundedStrike)));
+        moves[2] = uint256(uint160(address(loop)));
+        moves[3] = uint256(uint160(address(renormalize)));
+
+        Mon memory mon = Mon({
+            stats: MonStats({
+                hp: 1000,
+                stamina: 20,
+                speed: 100,
+                attack: 100,
+                defense: 100,
+                specialAttack: 100,
+                specialDefense: 100,
+                type1: Type.Yin,
+                type2: Type.None
+            }),
+            moves: moves,
+            ability: uint160(address(baselight))
+        });
+
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        // Both switch in mon 0
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Alice uses Loop on mon 0
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
+        assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active after first use");
+        assertTrue(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack) > 0, "Attack should be boosted"
+        );
+
+        // Alice switches out mon 0 -> mon 1: the marker re-arms and the Temp boost is dropped
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), uint16(0)
+        );
+        assertFalse(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should re-arm after switch-out");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack),
+            0,
+            "Temp boost should be cleared on switch-out"
+        );
+
+        // Alice switches back mon 1 -> mon 0
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Loop fires again on the fresh switch-in
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
+        assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active again after switching back in");
+        assertTrue(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack) > 0,
+            "Attack should be boosted again after re-arm"
+        );
+    }
+
     function test_loopBoostPercentages() public {
         // Test that Loop gives correct boosts at different Baselight levels
         // Level 1: 15%, Level 2: 30%, Level 3: 40%
