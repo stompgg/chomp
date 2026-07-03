@@ -107,6 +107,8 @@ class RustSymbols:
         self.ext_calls: Dict[Tuple[str, str], Optional['FuncSig']] = {}
         self.flatten_bases: Dict[str, list] = {}
         self.contract_defs: Dict[str, object] = {}  # name -> ContractDefinition
+        # (container, name) -> [(FuncSig, FunctionDefinition)] per overload
+        self.overloads: Dict[Tuple[Optional[str], str], list] = {}
 
     # ------------------------------------------------------------------
     # Construction
@@ -204,18 +206,41 @@ class RustSymbols:
                         mutability=func.mutability,
                     )
                     key = (contract.name, func.name)
+                    sym.overloads.setdefault(key, []).append((sig, func))
                     existing = sym.functions.get(key)
                     if existing is None or len(sig.param_types) > len(existing.param_types):
                         sym.functions[key] = sig
                         sym.function_defs[key] = func
         return sym
 
+    def lookup_overload(self, container: Optional[str], name: str, nargs: int):
+        """Exact-arity overload resolution: returns (FuncSig, name_suffix)
+        where the suffix is '' for the longest (canonical) overload and
+        '__{arity}' for shorter siblings (Rust has no overloading)."""
+        key = (container, name)
+        cands = self.overloads.get(key)
+        if cands is None:
+            for base in self.flatten_bases.get(container, []):
+                cands = self.overloads.get((base, name))
+                if cands is not None:
+                    break
+        if not cands:
+            return None
+        longest = max(len(s.param_types) for s, _ in cands)
+        for s, _ in cands:
+            if len(s.param_types) == nargs:
+                suffix = '' if len(s.param_types) == longest else f'__{nargs}'
+                return (s, suffix)
+        return None
+
     # ------------------------------------------------------------------
     # Phase 2: needs_world call-graph fixed point
     # ------------------------------------------------------------------
 
     def configure_world(self, stateful_contracts, interface_aliases, external_interfaces,
-                        stub_calls=(), flatten=None, included_containers=None) -> None:
+                        stub_calls=(), flatten=None, included_containers=None,
+                        stub_functions=()) -> None:
+        self.stub_functions = set(stub_functions)
         self.stateful_contracts = set(stateful_contracts)
         self.interface_aliases = dict(interface_aliases)
         self.external_interfaces = set(external_interfaces)
@@ -270,9 +295,14 @@ class RustSymbols:
             for f in dataclasses.fields(node):
                 walk(getattr(node, f.name), visit)
 
-        # Build per-function seed + call edges
+        # Build per-function seed + call edges. EVERY overload body is
+        # scanned (they share one FuncSig; the union decides).
         edges: Dict[Tuple[Optional[str], str], set] = {}
-        for key, func in self.function_defs.items():
+        scan_items = []
+        for key, cands in self.overloads.items():
+            for _sig, fd in cands:
+                scan_items.append((key, fd))
+        for key, func in scan_items:
             container, _ = key
             state_names = set(self.state_vars.get(container, {}).keys()) \
                 if container in self.stateful_contracts else set()
@@ -293,6 +323,8 @@ class RustSymbols:
                 if cls == 'Identifier':
                     if node.name in _state:
                         _seed[0] = True
+                    elif node.name == 'this':
+                        _seed[0] = True  # address(this) -> world.env.current_contract
                 elif cls == 'MemberAccess':
                     base = node.expression
                     if type(base).__name__ == 'Identifier' and base.name in ('msg', 'block', 'tx'):
@@ -327,12 +359,13 @@ class RustSymbols:
                                     break
 
             walk(func.body, visit)
-            if container in self.stateful_contracts:
-                seed[0] = True  # state access is pervasive; keep it uniform
+            # No blanket seed for stateful contracts: precision keeps pure
+            # bit-helpers worldless — fewer borrow conflicts at call sites
+            # and no world threading through hot math.
             sig = self.functions.get(key)
             if sig is not None:
                 sig.needs_world = sig.needs_world or seed[0]
-            edges[key] = callees
+            edges.setdefault(key, set()).update(callees)
 
         # Fixed point
         changed = True
@@ -344,6 +377,8 @@ class RustSymbols:
                     continue
                 for callee_key in callees:
                     callee = self.functions.get(callee_key)
+                    if callee is None:
+                        callee = self.lookup_function(callee_key[0], callee_key[1])
                     if callee is not None and callee.needs_world:
                         sig.needs_world = True
                         changed = True
@@ -373,24 +408,25 @@ class RustSymbols:
                     else:
                         roots[sname] = (contract, var_name, st.key or UNKNOWN)
 
-        for key, sig in self.functions.items():
-            func = self.function_defs.get(key)
-            if func is None:
-                sig.param_lowered = [None] * len(sig.param_types)
-                continue
-            lowered = []
-            for p, pt in zip(func.parameters, sig.param_types):
-                entry = None
-                if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
-                    if pt.kind == 'struct' and pt.name in roots:
-                        entry = roots[pt.name]
-                    else:
-                        entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
-                lowered.append(entry)
-            # Pad for overload-arity mismatch safety
-            while len(lowered) < len(sig.param_types):
-                lowered.append(None)
-            sig.param_lowered = lowered
+        # Every overload sig shares the canonical needs_world, then gets its
+        # own lowering (arities differ).
+        for key, cands in self.overloads.items():
+            canonical = self.functions.get(key)
+            for sig, func in cands:
+                if canonical is not None:
+                    sig.needs_world = canonical.needs_world
+                lowered = []
+                for p, pt in zip(func.parameters, sig.param_types):
+                    entry = None
+                    if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
+                        if pt.kind == 'struct' and pt.name in roots:
+                            entry = roots[pt.name]
+                        else:
+                            entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
+                    lowered.append(entry)
+                while len(lowered) < len(sig.param_types):
+                    lowered.append(None)
+                sig.param_lowered = lowered
 
     # Ext-call accumulation (ExternalCalls trait generation)
     def record_ext_call(self, iface: str, method: str) -> None:

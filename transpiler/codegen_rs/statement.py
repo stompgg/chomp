@@ -175,15 +175,21 @@ class RustStatementGenerator:
                 init = self._types.default_value(t)
             return f'{self.ind()}let mut {rust_ident(decl.name)}: {rust_t} = {init};'
 
-        # Tuple destructuring
+        # Tuple destructuring (typed: diverging inits like abi.decode stubs
+        # otherwise leave the pattern uninferrable)
         pats = []
+        tys = []
         for d in stmt.declarations:
             if d is None or not d.name:
                 pats.append('_')
+                tys.append('_')
             else:
                 pats.append(f'mut {rust_ident(d.name)}')
+                dt = self._infer.from_type_name(d.type_name)
+                tys.append(self._types.rust_type(dt) if dt.kind != 'unknown' else '_')
         init = self._expr.emit(stmt.initial_value) if stmt.initial_value else '()'
-        return f'{self.ind()}let ({", ".join(pats)}) = {init};'
+        annot = f': ({", ".join(tys)})' if any(t != '_' for t in tys) else ''
+        return f'{self.ind()}let ({", ".join(pats)}){annot} = {init};'
 
     def _gen_storage_local(self, decl, init: Optional[Expression], t: SolType,
                            rust_t: str) -> str:
@@ -218,6 +224,20 @@ class RustStatementGenerator:
             return False
 
         if contains_call(init):
+            # Place-selector helpers (`_getMonState(config, p, m)` — a single
+            # return of a ternary over places) INLINE into a substitution:
+            # a plain `&mut` binding would hold the battleConfig borrow across
+            # every intervening world access until the local's last use.
+            inlined = self._try_inline_place_helper(init)
+            if inlined is not None:
+                place, hoists = inlined
+                self._ctx.storage_locals[name] = {'place': place, 'key': None, 'root': None}
+                self._ctx.current_local_vars.add(name)
+                if decl.type_name is not None:
+                    self._ctx.var_types[name] = decl.type_name
+                lines = [f'{self.ind()}{h}' for h in hoists]
+                lines.append(f'{self.ind()}// storage local `{name}` inlined from place helper')
+                return '\n'.join(lines)
             self._ctx.storage_ref_locals.add(name)
             code, _ = self._expr.emit_typed(init)
             if isinstance(init, MemberAccess):
@@ -248,6 +268,80 @@ class RustStatementGenerator:
         if not lines:
             return f'{self.ind()}// storage local `{name}` substituted in place'
         return '\n'.join(lines)
+
+    def _try_inline_place_helper(self, init: Expression):
+        """If ``init`` is a call (possibly with a trailing member path) to a
+        same-container helper whose body is a single `return <place>;` over
+        its own params, inline it: bind value args to hoisted temps, storage
+        args to their existing substitutions, and emit the body as a place.
+        Returns (place_text, hoist_lines) or None."""
+        from ..parser.ast_nodes import FunctionCall as _FC, ReturnStatement as _Ret
+
+        trailing = []  # member path applied after the call: `.stats`
+        node = init
+        while isinstance(node, MemberAccess):
+            trailing.append(node.member)
+            node = node.expression
+        if not isinstance(node, _FC) or not isinstance(node.function, Identifier):
+            return None
+        fname = node.function.name
+        ov = self._symbols.lookup_overload(
+            self._ctx.current_class_name, fname, len(node.arguments)
+        ) if self._symbols else None
+        if ov is None:
+            return None
+        # find the matching def
+        fdef = None
+        for key in ((self._ctx.current_class_name, fname),):
+            for cand_sig, cand_def in self._symbols.overloads.get(key, []):
+                if len(cand_sig.param_types) == len(node.arguments):
+                    fdef = cand_def
+        if fdef is None:
+            for base in self._symbols.flatten_bases.get(self._ctx.current_class_name, []):
+                for cand_sig, cand_def in self._symbols.overloads.get((base, fname), []):
+                    if len(cand_sig.param_types) == len(node.arguments):
+                        fdef = cand_def
+        if fdef is None or fdef.body is None or len(fdef.body.statements) != 1:
+            return None
+        ret = fdef.body.statements[0]
+        if not isinstance(ret, _Ret) or ret.expression is None:
+            return None
+        if not _is_place_shape(ret.expression):
+            return None
+
+        hoists: list = []
+        saved = (dict(self._ctx.storage_locals), dict(self._ctx.alias_map),
+                 set(self._ctx.current_local_vars), dict(self._ctx.var_types))
+        try:
+            for p, arg in zip(fdef.parameters, node.arguments):
+                if getattr(p, 'storage_location', '') == 'storage':
+                    if isinstance(arg, Identifier) and arg.name in self._ctx.storage_locals:
+                        self._ctx.storage_locals[p.name] = self._ctx.storage_locals[arg.name]
+                    elif isinstance(arg, Identifier) and (
+                            arg.name in self._ctx.ref_params
+                            or arg.name in self._ctx.storage_ref_locals):
+                        # `&mut T` param/local: re-borrow through it per use.
+                        self._ctx.storage_locals[p.name] = {
+                            'place': f'(*{rust_ident(arg.name)})',
+                            'key': None, 'root': None,
+                        }
+                    else:
+                        return None  # storage arg we can't re-derive
+                else:
+                    tmp = self._ctx.fresh_temp('ph')
+                    hoists.append(f'let {tmp} = {self._expr.emit(arg)};')
+                    self._ctx.alias_map[p.name] = tmp
+                    self._ctx.current_local_vars.add(tmp)
+                    if p.type_name is not None:
+                        self._ctx.var_types[tmp] = p.type_name
+                        self._ctx.var_types[p.name] = p.type_name
+            place, _ = self._expr.emit_place(ret.expression, hoists)
+            for member in reversed(trailing):
+                place = f'{place}.{rust_ident(member)}'
+            return place, hoists
+        finally:
+            (self._ctx.storage_locals, self._ctx.alias_map,
+             self._ctx.current_local_vars, self._ctx.var_types) = saved
 
     def _maybe_record_alias(self, lhs: Expression, rhs: Expression, t: SolType) -> None:
         """`local = refParam` (whole memory array/struct): in Solidity both
@@ -497,7 +591,7 @@ class RustStatementGenerator:
             return f'{self.ind()}{rust_ident(expr.left.name)} = &mut {place};'
 
         lhs_code, _ = self._expr.emit_place(expr.left)
-        lhs_is_world_place = '.get_mut(' in lhs_code
+        lhs_is_world_place = '.get_mut(' in lhs_code or lhs_code.startswith('world.')
 
         if expr.operator == '=':
             if (isinstance(expr.left, Identifier)
@@ -690,6 +784,22 @@ def _panic_message(quoted: str) -> str:
     `{` or `}` would be parsed as a format placeholder (compile error or
     worse). Escape braces so the message is emitted verbatim."""
     return quoted.replace('{', '{{').replace('}', '}}')
+
+
+def _is_place_shape(expr) -> bool:
+    """Places only: identifiers, member/index paths, ternaries of places."""
+    from ..parser.ast_nodes import TernaryOperation as _T
+    if isinstance(expr, Identifier):
+        return True
+    if isinstance(expr, MemberAccess):
+        return _is_place_shape(expr.expression)
+    if isinstance(expr, IndexAccess):
+        return _is_place_shape(expr.base)  # index exprs may be arbitrary values
+    if isinstance(expr, _T):
+        return _is_place_shape(expr.true_expression) and _is_place_shape(expr.false_expression)
+    if isinstance(expr, TupleExpression) and len(expr.components) == 1:
+        return _is_place_shape(expr.components[0])
+    return False
 
 
 def _contains_continue(stmt: Statement) -> bool:

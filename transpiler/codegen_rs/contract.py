@@ -160,18 +160,23 @@ class RustContractGenerator:
                 f'state accesses will not compile'
             )
 
-        emitted_names = set()
+        # Emit every overload: the longest keeps the Solidity name, shorter
+        # siblings get an `__{arity}` suffix (call sites resolve by arity).
+        emitted = set()
         for cdef in all_defs:
             for func in cdef.functions:
-                if not func.name or func.name in emitted_names:
+                if not func.name:
                     continue
-                emitted_names.add(func.name)
-                # Resolve the sig under the DEFINING container so lowering
-                # info matches, but emit inside this module.
-                saved = self._ctx.current_class_name
-                self._ctx.current_class_name = name
-                lines.append(self._func.generate_function(func, receiver=None))
-                self._ctx.current_class_name = saved
+                sig_key = (func.name, len(func.parameters))
+                if sig_key in emitted:
+                    continue
+                emitted.add(sig_key)
+                ov = self._symbols.lookup_overload(cdef.name, func.name, len(func.parameters))
+                suffix = ov[1] if ov else ''
+                lines.append(self._func.generate_function(
+                    func, receiver=None, name_suffix=suffix,
+                    defining_container=cdef.name,
+                ))
 
         return '\n'.join(lines)
 

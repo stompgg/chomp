@@ -133,6 +133,11 @@ class RustExpressionGenerator:
             return code
         if actual.is_integer and expected.is_integer:
             return self._types.coerce(code, actual, expected)
+        if actual.kind == 'string' and expected.kind in ('bytes', 'bytes_fixed') \
+                and isinstance(expr, Literal):
+            # Solidity string literals coerce to bytes/bytesN contexts
+            # (`_runEffects(..., "")`); re-materialize in the byte type.
+            return self._literal_in(expr, expected)
         if actual.kind == 'string' and expected.kind == 'string':
             return code
         return code
@@ -156,6 +161,19 @@ class RustExpressionGenerator:
                     return f'{rust_ident(target.name)}::{enum_variant_ident(variants[v])}'
             return self._types.int_literal(v, UINT256)
         if lit.kind == 'string':
+            if target.kind == 'bytes':
+                # Solidity "" as bytes -> empty; other literals -> utf8 bytes
+                inner = lit.value.strip('"')
+                if not inner:
+                    return 'Vec::new()'
+                return f'{lit.value}.as_bytes().to_vec()'
+            if target.kind == 'bytes_fixed':
+                inner = lit.value.strip('"')
+                raw = inner.encode('utf-8')[:target.bytes_n].ljust(target.bytes_n, b'\x00')
+                if not any(raw):
+                    return 'B256::ZERO' if target.bytes_n == 32 else f'[0u8; {target.bytes_n}]'
+                b = ', '.join(f'0x{x:02x}' for x in raw)
+                return f'B256::new([{b}])' if target.bytes_n == 32 else f'[{b}]'
             return f'{lit.value}.to_string()'
         return lit.value
 
@@ -195,6 +213,8 @@ class RustExpressionGenerator:
         const = self._symbols.lookup_constant(name, self._ctx.current_class_name or None)
         if const is not None:
             return self._constant_ref(const), const.sol_type
+        if name == 'this':
+            return 'world.env.current_contract', ADDRESS
         if name in self._ctx.current_state_vars:
             if self._ctx.in_constructor:
                 return f'self_.{rust_ident(name)}', t
@@ -476,7 +496,7 @@ class RustExpressionGenerator:
             # contexts go through emit_place instead.
             base_code = self._emit_mapping_base(access.base)
             key = self.emit(access.index, base_t.key or UNKNOWN)
-            return f'{base_code}.get(&{key})', result_t
+            return f'{base_code}.get(&({key}))', result_t
         base_code, _ = self.emit_typed(access.base)
         idx = self._usize_index(access.index)
         return f'{base_code}[{idx}]', result_t
@@ -516,7 +536,7 @@ class RustExpressionGenerator:
                     tmp = self._ctx.fresh_temp('k')
                     hoists.append(f'let {tmp} = {key};')
                     key = tmp
-                return f'(*{base_code}.get_mut(&{key}))', t
+                return f'(*{base_code}.get_mut(&({key})))', t
             base_code, _ = self.emit_place(expr.base, hoists)
             idx = self._usize_index(expr.index)
             return f'{base_code}[{idx}]', t
@@ -614,11 +634,17 @@ class RustExpressionGenerator:
             if name == 'sha256':
                 return self._emit_hash('rt::sha256', call), BYTES32
 
-            # Same-container (or inherited/flattened) call
-            sig = self._symbols.lookup_function(self._ctx.current_class_name, name)
+            # Same-container (or inherited/flattened) call — arity-aware
+            # (Rust has no overloading; shorter overloads carry a suffix).
+            ov = self._symbols.lookup_overload(
+                self._ctx.current_class_name, name, len(call.arguments))
+            sig = ov[0] if ov else self._symbols.lookup_function(
+                self._ctx.current_class_name, name)
+            suffix = ov[1] if ov else ''
             if sig is not None:
-                return self._emit_direct_call(rust_ident(name), sig, call.arguments), \
-                    sig.return_type()
+                return self._emit_direct_call(
+                    rust_ident(name) + suffix, sig, call.arguments
+                ), sig.return_type()
 
             if name in getattr(self._symbols, 'stub_calls', set()):
                 self._ctx.info(f'stubbed call to {name} (configured stubCalls)')
@@ -643,7 +669,9 @@ class RustExpressionGenerator:
 
             # Library static call: Lib.fn(...)
             if isinstance(base, Identifier) and base.name in self._symbols.libraries:
-                sig = self._symbols.lookup_function(base.name, member)
+                ovl = self._symbols.lookup_overload(base.name, member, len(call.arguments))
+                sig = ovl[0] if ovl else self._symbols.lookup_function(base.name, member)
+                lib_suffix = ovl[1] if ovl else ''
                 if sig is not None:
                     if not self._symbols_included(base.name):
                         self._ctx.info(f'stubbed call into non-transpiled {base.name}.{member}')
@@ -657,7 +685,7 @@ class RustExpressionGenerator:
                     else:
                         prefix = ''
                     return self._emit_direct_call(
-                        f'{prefix}{rust_ident(member)}', sig, call.arguments
+                        f'{prefix}{rust_ident(member)}{lib_suffix}', sig, call.arguments
                     ), sig.return_type()
 
             # Interface method call through a value (an Address expression)
@@ -677,18 +705,48 @@ class RustExpressionGenerator:
         t = SolType('struct', name=name)
         fields = self._symbols.structs.get(name, [])
         self._register_type_use(name)
+
+        def field_value(arg: Expression, ftype: SolType) -> str:
+            code = self.emit(arg, ftype)
+            # Reusing one memory value across fields (or from a ref place)
+            # must copy, not move (Solidity memory assignment copies into
+            # the struct slotwise; TS aliases, but the gates watch that).
+            if not self._types.is_copy(ftype) and isinstance(
+                arg, (Identifier, MemberAccess, IndexAccess)
+            ):
+                return f'{code}.clone()'
+            return code
+
         parts = []
         if call.named_arguments:
             by_name = dict(call.named_arguments)
             for fname, ftype in fields:
                 if fname in by_name:
-                    parts.append(f'{rust_ident(fname)}: {self.emit(by_name[fname], ftype)}')
+                    parts.append(f'{rust_ident(fname)}: {field_value(by_name[fname], ftype)}')
                 else:
                     parts.append(f'{rust_ident(fname)}: {self._types.default_value(ftype)}')
         else:
             for (fname, ftype), arg in zip(fields, call.arguments):
-                parts.append(f'{rust_ident(fname)}: {self.emit(arg, ftype)}')
+                parts.append(f'{rust_ident(fname)}: {field_value(arg, ftype)}')
         return f'{rust_ident(name)} {{ {", ".join(parts)} }}', t
+
+    def _value_of(self, arg: Expression, ptype: SolType) -> str:
+        """Value emission for a hoisted call argument; clones when moving a
+        non-Copy value out of a reference place (Solidity external calls
+        copy — ABI encoding — so the clone is semantically exact) or out of
+        an owned local the caller may still use (loop bodies re-pass the
+        same `bytes` arg every iteration)."""
+        code = self.emit(arg, ptype)
+        if not self._types.is_copy(ptype) \
+                and (self._is_storage_ref_expr(arg) or self._rooted_at_local(arg)):
+            return f'{code}.clone()'
+        return code
+
+    def _rooted_at_local(self, e: Expression) -> bool:
+        node = e
+        while isinstance(node, (MemberAccess, IndexAccess)):
+            node = node.expression if isinstance(node, MemberAccess) else node.base
+        return isinstance(node, Identifier) and node.name in self._ctx.current_local_vars
 
     def _emit_hash(self, fn: str, call: FunctionCall) -> str:
         if len(call.arguments) != 1:
@@ -717,7 +775,16 @@ class RustExpressionGenerator:
         world-taking callees are LOWERED to their mapping keys (the callee
         re-derives the place from world — see FuncSig.param_lowered)."""
         if not sig.needs_world:
-            args = self._emit_args(sig, arguments)
+            shared = self._shared_storage_base(arguments)
+            if shared is not None:
+                return self._emit_call_with_shared_base(fn_path, sig, arguments, shared)
+            hoists: List[str] = []
+            args = self._emit_args(sig, arguments, hoists)
+            if hoists:
+                # Storage-place args hoist their mapping keys first so key
+                # computation (which may read world) finishes before the
+                # get_mut borrow starts.
+                return f'{{ {" ".join(hoists)} {fn_path}({args}) }}'
             return f'{fn_path}({args})'
         lines = []
         arg_names = []
@@ -740,16 +807,47 @@ class RustExpressionGenerator:
                 continue
             tmp = self._ctx.fresh_temp('a')
             if ptype.is_memory_ref:
-                code = self.emit(arg, ptype)
+                code = self._value_of(arg, ptype)
                 lines.append(f'let mut {tmp} = {code};')
                 arg_names.append(f'&mut {tmp}')
             else:
-                code = self.emit(arg, ptype)
+                code = self._value_of(arg, ptype)
                 lines.append(f'let {tmp} = {code};')
                 arg_names.append(tmp)
         body = ' '.join(lines)
         args = ', '.join(['world'] + arg_names)
         return f'{{ {body} {fn_path}({args}) }}'
+
+    def _shared_storage_base(self, arguments):
+        """When 2+ args read through the SAME substituted storage local
+        (e.g. `f(config.p0Effects, config.packedP0EffectsCount, ...)`), a
+        naive emission would call get_mut twice in one expression (E0499).
+        Returns the shared local name, or None."""
+        counts = {}
+        for arg in arguments:
+            node = arg
+            while isinstance(node, (MemberAccess, IndexAccess)):
+                node = node.expression if isinstance(node, MemberAccess) else node.base
+            if isinstance(node, Identifier) and node.name in self._ctx.storage_locals:
+                counts[node.name] = counts.get(node.name, 0) + 1
+        for name, n in counts.items():
+            if n >= 2:
+                return name
+        return None
+
+    def _emit_call_with_shared_base(self, fn_path: str, sig, arguments, base_name: str) -> str:
+        """Bind the shared storage place ONCE, pass field paths through it."""
+        base_place = self._ctx.storage_locals[base_name]['place']
+        tmp = self._ctx.fresh_temp('cfg')
+        saved = dict(self._ctx.storage_locals)
+        self._ctx.storage_locals[base_name] = dict(
+            saved[base_name], place=f'(*{tmp})'
+        )
+        try:
+            args = self._emit_args(sig, arguments)
+        finally:
+            self._ctx.storage_locals = saved
+        return f'{{ let {tmp} = &mut {base_place}; {fn_path}({args}) }}'
 
     def _storage_key_of(self, arg: Expression, root) -> str:
         """The KEY expression for a storage argument being lowered.
@@ -825,11 +923,11 @@ class RustExpressionGenerator:
                 ptype = impl_sig.param_types[i] if i < len(impl_sig.param_types) else UNKNOWN
                 tmp = self._ctx.fresh_temp('a')
                 if ptype.is_memory_ref:
-                    code = self.emit(arg, ptype)
+                    code = self._value_of(arg, ptype)
                     lines.insert(1, f'let mut {tmp} = {code};')
                     arg_names.append(f'&mut {tmp}')
                 else:
-                    code = self.emit(arg, ptype)
+                    code = self._value_of(arg, ptype)
                     lines.insert(1, f'let {tmp} = {code};')
                     arg_names.append(tmp)
             args = ', '.join(['world'] + arg_names)
@@ -849,7 +947,7 @@ class RustExpressionGenerator:
             for i, arg in enumerate(call.arguments):
                 ptype = sig.param_types[i] if sig and i < len(sig.param_types) else UNKNOWN
                 tmp = self._ctx.fresh_temp('a')
-                code = self.emit(arg, ptype)
+                code = self._value_of(arg, ptype)
                 lines.append(f'let {tmp} = {code};')
                 arg_names.append(tmp)
             args = ', '.join(['__target'] + arg_names)
@@ -874,23 +972,41 @@ class RustExpressionGenerator:
             return f'rt::todo("{msg}")'
         return f'rt::todo::<{self._types.rust_type(ret)}>("{msg}")'
 
-    def _emit_args(self, sig, arguments: List[Expression]) -> str:
+    def _emit_args(self, sig, arguments: List[Expression],
+                   hoists: Optional[List[str]] = None) -> str:
         parts = []
         for i, arg in enumerate(arguments):
             ptype = sig.param_types[i] if i < len(sig.param_types) else UNKNOWN
-            parts.append(self.emit_arg(arg, ptype))
+            parts.append(self.emit_arg(arg, ptype, hoists))
         return ', '.join(parts)
 
-    def emit_arg(self, arg: Expression, ptype: SolType) -> str:
+    def emit_arg(self, arg: Expression, ptype: SolType,
+                 hoists: Optional[List[str]] = None) -> str:
         """Emit a call argument honoring the callee's parameter passing mode.
         Interface-typed params are plain Address VALUES (Phase 2)."""
-        if ptype.is_memory_ref:
+        if ptype.is_memory_ref or ptype.kind == 'mapping':
             if self._is_storage_ref_expr(arg):
                 place, _ = self.emit_place(arg)
+                return f'&mut {place}'
+            if hoists is not None and self._is_state_place(arg):
+                # `f(battleConfig[key], ...)` — pass the storage place, not a
+                # clone; the mapping key hoists so its evaluation (possibly a
+                # world call) never overlaps the get_mut borrow.
+                place, _ = self.emit_place(arg, hoists)
                 return f'&mut {place}'
             code = self.emit(arg, ptype)
             return f'&mut ({code})'
         return self.emit(arg, ptype)
+
+    def _is_state_place(self, expr: Expression) -> bool:
+        """True when ``expr`` is an index/member path rooted at a state var
+        (a storage place living in world)."""
+        node = expr
+        while isinstance(node, (MemberAccess, IndexAccess)):
+            node = node.expression if isinstance(node, MemberAccess) else node.base
+        return isinstance(node, Identifier) \
+            and node.name in self._ctx.current_state_vars \
+            and node.name not in self._ctx.current_local_vars
 
     def _abi_token(self, arg: Expression) -> str:
         t = self._infer.infer(arg)

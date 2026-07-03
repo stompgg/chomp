@@ -111,10 +111,38 @@ class RustFunctionGenerator:
     # Function bodies
     # ------------------------------------------------------------------
 
-    def generate_function(self, func: FunctionDefinition, receiver: Optional[str]) -> str:
+    def _generate_stub(self, func: FunctionDefinition, sig, name_suffix: str = '') -> str:
+        """Configured stubFunctions: signature-faithful, body panics.
+        Used for on-chain-only flows (dual-signed buffer) whose bodies pull
+        in non-transpiled machinery (EIP712/ECDSA)."""
+        self._register_params(func, sig)
+        needs_world = bool(sig and sig.needs_world)
+        lowered = (getattr(sig, 'param_lowered', None) or []) if sig else []
+        params = []
+        for i, p in enumerate(func.parameters):
+            low = lowered[i] if i < len(lowered) else None
+            params.append(self.param_decl(p, i, lowered=low))
+        if needs_world:
+            params = ['world: &mut World'] + params
+            self._ctx.uses_world_type = True
+        ret = self.return_decl(func.return_parameters)
+        return (
+            f'{self._ctx.indent()}pub fn {rust_ident(func.name)}{name_suffix}({", ".join(params)}){ret} {{\n'
+            f'{self._ctx.indent()}    unimplemented!("stubFunction: {func.name} (on-chain-only flow)")\n'
+            f'{self._ctx.indent()}}}\n'
+        )
+
+    def generate_function(self, func: FunctionDefinition, receiver: Optional[str],
+                          name_suffix: str = '', defining_container: str = None) -> str:
         """receiver: retained for API compat; contracts now emit module-level
-        fns (the World model), so it is always None."""
-        sig = self._symbols.lookup_function(self._ctx.current_class_name, func.name)
+        fns (the World model), so it is always None. name_suffix
+        disambiguates shorter overloads (`__{arity}`)."""
+        container = defining_container or self._ctx.current_class_name
+        ov = self._symbols.lookup_overload(container, func.name, len(func.parameters)) \
+            if hasattr(self._symbols, 'lookup_overload') else None
+        sig = ov[0] if ov else self._symbols.lookup_function(container, func.name)
+        if func.name in getattr(self._symbols, 'stub_functions', set()):
+            return self._generate_stub(func, sig, name_suffix)
         self._register_params(func, sig)
         needs_world = bool(sig and sig.needs_world)
         self._ctx.current_fn_needs_world = needs_world
@@ -150,7 +178,7 @@ class RustFunctionGenerator:
 
         lines = []
         lines.append(
-            f'{self._ctx.indent()}pub fn {rust_ident(func.name)}{generics}'
+            f'{self._ctx.indent()}pub fn {rust_ident(func.name)}{name_suffix}{generics}'
             f'({", ".join(params)}){ret} {{'
         )
         self._ctx.indent_level += 1
@@ -197,6 +225,10 @@ class RustFunctionGenerator:
         self._stmt.named_returns = []
         self._stmt.return_types = []
         return '\n'.join(lines)
+
+
+def _unused(*_a):
+    pass
 
 
 def _all_paths_return(statements: List[Statement]) -> bool:

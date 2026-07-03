@@ -1,5 +1,5 @@
 {
-  "$comment": "Rust-backend config (see codegen_rs/PHASE2-DESIGN.md). includeFiles: emission allowlist (discovery always parses all of src/). statefulContracts get a <Name>State in the generated World; flatten merges base contracts into the child's module/state. interfaceAliases route interface-value calls to the single transpiled impl; externalInterfaces route to world.ext (harness mocks); everything else stubs loudly until the Phase-3 dispatch enums. stubCalls are bare names from non-transpiled bases (EIP712 dual-signed flow — on-chain-only).",
+  "$comment": "Rust-backend config (see codegen_rs/PHASE2-DESIGN.md). includeFiles: emission allowlist (discovery always parses all of src/). statefulContracts get a <Name>State in the generated World; flatten merges base contracts into the child's module/state. interfaceAliases route interface-value calls to the single transpiled impl; externalInterfaces route to world.ext (harness mocks); everything else stubs loudly until the Phase-3 dispatch enums. stubCalls are bare names from non-transpiled bases (EIP712 dual-signed flow \u2014 on-chain-only).",
   "includeFiles": [
     "Enums.sol",
     "Constants.sol",
@@ -19,16 +19,36 @@
     "moves/MoveSlotLib.sol",
     "moves/AttackCalculator.sol"
   ],
-  "statefulContracts": ["Engine"],
-  "flatten": { "Engine": ["MappingAllocator"] },
+  "statefulContracts": [
+    "Engine"
+  ],
+  "flatten": {
+    "Engine": [
+      "MappingAllocator"
+    ]
+  },
   "interfaceAliases": {
     "ITypeCalculator": "TypeCalculator",
     "IRandomnessOracle": "DefaultRandomnessOracle",
     "IEngine": "Engine"
   },
-  "externalInterfaces": ["ITeamRegistry", "IMatchmaker"],
+  "externalInterfaces": [
+    "ITeamRegistry",
+    "IMatchmaker"
+  ],
   "stubCalls": [
     "_hashTypedData",
     "_domainNameAndVersionMayChange"
+  ],
+  "stubFunctions": [
+    "submitTurnMoves",
+    "submitTurnMovesAndExecute",
+    "executeBuffered",
+    "getBufferedTurns",
+    "_validateAndPackTurn",
+    "_drainBuffer",
+    "_executeBatchedEntry",
+    "executeBatchedTurns",
+    "_packBatchPayload"
   ]
 }

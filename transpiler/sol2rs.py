@@ -153,6 +153,7 @@ class SolidityToRustTranspiler:
             stub_calls=self.config.stub_calls,
             flatten=self.config.flatten,
             included_containers=included_containers,
+            stub_functions=self.config.stub_functions,
         )
         symbols.compute_needs_world()
         self._symbols = symbols
