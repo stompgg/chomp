@@ -1,0 +1,12 @@
+{
+ "suite": "spec_enum_reverts",
+ "vectors": [
+  {
+   "inputs": [
+    "25073657980094697968178371701324145955329541633792572813258361403706309612084"
+   ],
+   "reverts": true,
+   "tag": "moveType nibble 15 -> Panic(0x21)"
+  }
+ ]
+}

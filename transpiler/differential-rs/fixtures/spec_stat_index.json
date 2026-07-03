@@ -1,0 +1,123 @@
+{
+ "suite": "spec_stat_index",
+ "vectors": [
+  {
+   "inputs": [
+    0
+   ],
+   "reverts": true,
+   "tag": "Hp underflows idx-3"
+  },
+  {
+   "inputs": [
+    1
+   ],
+   "reverts": true,
+   "tag": "Stamina underflows idx-3"
+  },
+  {
+   "inputs": [
+    2
+   ],
+   "outputs": [
+    "4"
+   ]
+  },
+  {
+   "inputs": [
+    3
+   ],
+   "outputs": [
+    "0"
+   ]
+  },
+  {
+   "inputs": [
+    4
+   ],
+   "outputs": [
+    "1"
+   ]
+  },
+  {
+   "inputs": [
+    5
+   ],
+   "outputs": [
+    "2"
+   ]
+  },
+  {
+   "inputs": [
+    6
+   ],
+   "outputs": [
+    "3"
+   ]
+  },
+  {
+   "inputs": [
+    7
+   ],
+   "outputs": [
+    "4"
+   ]
+  },
+  {
+   "inputs": [
+    10
+   ],
+   "outputs": [
+    "7"
+   ]
+  },
+  {
+   "inputs": [
+    "5"
+   ],
+   "outputs": [
+    8
+   ],
+   "tag": "toMonState"
+  },
+  {
+   "inputs": [
+    "6"
+   ],
+   "outputs": [
+    9
+   ],
+   "tag": "toMonState"
+  },
+  {
+   "inputs": [
+    "7"
+   ],
+   "outputs": [
+    10
+   ],
+   "tag": "toMonState"
+  },
+  {
+   "inputs": [
+    "8"
+   ],
+   "reverts": true,
+   "tag": "toMonState"
+  },
+  {
+   "inputs": [
+    "100"
+   ],
+   "reverts": true,
+   "tag": "toMonState"
+  },
+  {
+   "inputs": [
+    "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+   ],
+   "reverts": true,
+   "tag": "toMonState"
+  }
+ ]
+}

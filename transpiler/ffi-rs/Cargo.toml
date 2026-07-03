@@ -1,0 +1,14 @@
+# chomp-ffi: cdylib boundary for bun:ffi consumers (arena batch API — Phase 5).
+# Phase 0 ships a version probe so the build + FFI round-trip path is proven
+# before the batch run_games API lands.
+[package]
+name = "chomp-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chomp-engine = { path = "../engine" }
+chomp-rt = { path = "../runtime" }

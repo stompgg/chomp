@@ -1,0 +1,47 @@
+{
+ "suite": "spec_typecalc",
+ "vectors": [
+  {
+   "inputs": [
+    0,
+    1,
+    "3000000000"
+   ],
+   "reverts": true,
+   "tag": "x2 cell (0,1) with basePower*2 > uint32"
+  },
+  {
+   "inputs": [
+    0,
+    2,
+    "3000000000"
+   ],
+   "outputs": [
+    "3000000000"
+   ],
+   "tag": "neutral cell passes big basePower through"
+  },
+  {
+   "inputs": [
+    0,
+    13,
+    "3000000000"
+   ],
+   "outputs": [
+    "1500000000"
+   ],
+   "tag": "half cell divides without overflow"
+  },
+  {
+   "inputs": [
+    0,
+    0,
+    "3000000000"
+   ],
+   "outputs": [
+    "0"
+   ],
+   "tag": "immune cell"
+  }
+ ]
+}
