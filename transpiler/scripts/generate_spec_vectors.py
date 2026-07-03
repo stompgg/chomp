@@ -110,8 +110,13 @@ def spec_stat_index() -> None:
 def spec_enum_reverts() -> None:
     base_power, cls, prio, typ, stam = 55, 1, 2, 15, 3
     raw = (base_power << 248) | (cls << 246) | (prio << 244) | (typ << 240) | (stam << 236) | 0x1234
+    # One vector PER decode path: moveType and decodeMeta emit the enum-range
+    # check independently, and a single bundled probe would let a regression
+    # in one path hide behind the other's panic (proven by a surviving
+    # mutant). The runner dispatches on the tag.
     vectors = [
-        {'inputs': [str(raw)], 'reverts': True, 'tag': 'moveType nibble 15 -> Panic(0x21)'},
+        {'inputs': [str(raw)], 'reverts': True, 'tag': 'moveType'},
+        {'inputs': [str(raw)], 'reverts': True, 'tag': 'decodeMeta'},
     ]
     write_suite('spec_enum_reverts', vectors)
 
@@ -205,6 +210,33 @@ def spec_accumulate_wrap() -> None:
                 [str(x) for x in acc],
             ],
         })
+
+    # Checked underflow: `DENOM - boostPercent` sits OUTSIDE the unchecked
+    # block in _accumulateOne, so a Divide boost with percent > 100 reverts
+    # with Panic(0x11). Cover BOTH entry points of the shared core (a
+    # wrapping_sub mutant survived the gate without these).
+    def revert_case(sources, applies, tag):
+        vectors.append({
+            'inputs': [
+                ['100', '100', '100', '100', '100'],
+                [[[str(p) for p in pct], [str(c) for c in cnt], mul] for pct, cnt, mul in sources],
+                [[stat, str(pct), btype] for stat, pct, btype in applies],
+            ],
+            'reverts': True,
+            'tag': tag,
+        })
+
+    for pct in (101, 255):
+        revert_case(
+            [([pct, 0, 0, 0, 0], [1, 0, 0, 0, 0], [False, False, False, False, False])],
+            [],
+            f'accumulateBoosts divide lane pct={pct} underflows DENOM-pct',
+        )
+        revert_case(
+            [],
+            [(3, pct, 1)],  # StatBoostType.Divide == 1
+            f'accumulateBoostsToApply Divide pct={pct} underflows DENOM-pct',
+        )
     write_suite('spec_accumulate_wrap', vectors)
 
 
@@ -239,12 +271,32 @@ def spec_damage_core() -> None:
         'tag': 'volatility 200: 100 - roll%201 underflows uint32',
     })
 
-    # int32 overflow: attackerAttack = int32 max as u32, delta +1.
+    # int32 overflow in the stat adds: all four (attacker/defender x
+    # Physical/Special) branches emit the checked add independently — cover
+    # each with the non-target lanes benign so only the target add can trap.
     vectors.append({
         'inputs': ctx_inputs(0x7FFFFFFF, 1, 100, 0, 100, 0, 100, 0, 0, 14)
         + ['80', 0, '0', '12345', '0'],
         'reverts': True,
         'tag': 'int32(attackerAttack) + delta overflows i32',
+    })
+    vectors.append({
+        'inputs': ctx_inputs(100, 0, 100, 0, 0x7FFFFFFF, 1, 100, 0, 0, 14)
+        + ['80', 0, '0', '12345', '0'],
+        'reverts': True,
+        'tag': 'int32(defenderDef) + delta overflows i32',
+    })
+    vectors.append({
+        'inputs': ctx_inputs(100, 0, 0x7FFFFFFF, 1, 100, 0, 100, 0, 0, 14)
+        + ['80', 1, '0', '12345', '0'],
+        'reverts': True,
+        'tag': 'int32(attackerSpAtk) + delta overflows i32',
+    })
+    vectors.append({
+        'inputs': ctx_inputs(100, 0, 100, 0, 100, 0, 0x7FFFFFFF, 1, 0, 14)
+        + ['80', 1, '0', '12345', '0'],
+        'reverts': True,
+        'tag': 'int32(defenderSpDef) + delta overflows i32',
     })
     write_suite('spec_damage_core', vectors)
 

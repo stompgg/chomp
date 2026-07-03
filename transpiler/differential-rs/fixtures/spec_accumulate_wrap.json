@@ -186,6 +186,126 @@
      "0"
     ]
    ]
+  },
+  {
+   "inputs": [
+    [
+     "100",
+     "100",
+     "100",
+     "100",
+     "100"
+    ],
+    [
+     [
+      [
+       "101",
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "1",
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       false,
+       false,
+       false,
+       false,
+       false
+      ]
+     ]
+    ],
+    []
+   ],
+   "reverts": true,
+   "tag": "accumulateBoosts divide lane pct=101 underflows DENOM-pct"
+  },
+  {
+   "inputs": [
+    [
+     "100",
+     "100",
+     "100",
+     "100",
+     "100"
+    ],
+    [],
+    [
+     [
+      3,
+      "101",
+      1
+     ]
+    ]
+   ],
+   "reverts": true,
+   "tag": "accumulateBoostsToApply Divide pct=101 underflows DENOM-pct"
+  },
+  {
+   "inputs": [
+    [
+     "100",
+     "100",
+     "100",
+     "100",
+     "100"
+    ],
+    [
+     [
+      [
+       "255",
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "1",
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       false,
+       false,
+       false,
+       false,
+       false
+      ]
+     ]
+    ],
+    []
+   ],
+   "reverts": true,
+   "tag": "accumulateBoosts divide lane pct=255 underflows DENOM-pct"
+  },
+  {
+   "inputs": [
+    [
+     "100",
+     "100",
+     "100",
+     "100",
+     "100"
+    ],
+    [],
+    [
+     [
+      3,
+      "255",
+      1
+     ]
+    ]
+   ],
+   "reverts": true,
+   "tag": "accumulateBoostsToApply Divide pct=255 underflows DENOM-pct"
   }
  ]
 }

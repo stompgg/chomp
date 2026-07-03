@@ -233,9 +233,13 @@ fn statboost_accumulate_finalize() {
             let mut a = applies(&v.inputs[2]);
             StatBoostLib::accumulateBoostsToApply(&mut base, &mut a, &mut num, &mut acc);
             let finalized = StatBoostLib::finalizeBoostedStats(&mut base, &mut num, &mut acc);
-            assert_eq!(finalized, u32x5(&v.outputs[0]), "{name}[{i}] final");
-            assert_eq!(num, u32x5(&v.outputs[1]), "{name}[{i}] numBoosts");
-            assert_eq!(acc, u256x5(&v.outputs[2]), "{name}[{i}] accumulated");
+            // Revert vectors carry no outputs; indexing them would panic and
+            // SATISFY the revert expectation, masking a non-trapping engine.
+            if !v.reverts {
+                assert_eq!(finalized, u32x5(&v.outputs[0]), "{name}[{i}] final");
+                assert_eq!(num, u32x5(&v.outputs[1]), "{name}[{i}] numBoosts");
+                assert_eq!(acc, u256x5(&v.outputs[2]), "{name}[{i}] accumulated");
+            }
         });
     });
 }
@@ -305,6 +309,28 @@ fn statboost_denom_power() {
 #[test]
 fn moveslot_inline_decoding() {
     for_each(&["moveslot_inline", "spec_enum_reverts"], |name, i, v| {
+        // Revert vectors are FUNCTION-ATTRIBUTED via the tag: bundling all
+        // six decode calls under one catch_unwind would let a regression in
+        // one path hide behind another path's panic (a `% 15` mutant on
+        // moveType survived the bundled version of this gate).
+        if v.reverts {
+            let raw = as_u256(&v.inputs[0]);
+            let bk = B256::ZERO;
+            // Tag dispatch happens OUTSIDE run_vector: an unknown tag must
+            // fail the test, not be swallowed as a satisfied revert.
+            match v.tag.as_str() {
+                "moveType" => run_vector(name, i, v, || {
+                    let mut engine = PanicEngine;
+                    let _ = MoveSlotLib::moveType(raw, &mut engine, bk);
+                }),
+                "decodeMeta" => run_vector(name, i, v, || {
+                    let mut engine = PanicEngine;
+                    let _ = MoveSlotLib::decodeMeta(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
+                }),
+                other => panic!("{name}[{i}]: unknown revert tag `{other}` — add a dispatch arm"),
+            }
+            return;
+        }
         run_vector(name, i, v, || {
             let raw = as_u256(&v.inputs[0]);
             let bk = B256::ZERO;
@@ -322,7 +348,7 @@ fn moveslot_inline_decoding() {
             let move_type = MoveSlotLib::moveType(raw, &mut engine, bk);
             let stamina = MoveSlotLib::stamina(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
             let meta = MoveSlotLib::decodeMeta(raw, &mut engine, bk, U256::ZERO, U256::ZERO);
-            if !v.reverts {
+            {
                 assert_eq!(inline, as_bool(&v.outputs[0]), "{name}[{i}] isInline");
                 assert_eq!(base_power, as_u32(&v.outputs[1]), "{name}[{i}] basePower");
                 assert_eq!(move_class as u8, as_u8(&v.outputs[2]), "{name}[{i}] moveClass");

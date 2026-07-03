@@ -118,23 +118,50 @@ class RustSymbols:
 
         resolver = _TypeResolver(sym)
 
-        # Pass 2: full signatures now that all names resolve.
+        # Pass 2: constants FIRST (all scopes), then const-eval, and only
+        # then structs/signatures — fixed-array sizes named by constants
+        # (uint256[MOVE_LANES_PER_MON]) must resolve regardless of file
+        # order or constant-to-constant indirection, or the field silently
+        # degrades to Vec<T>.
         for rel_path, ast in asts.items():
             module = cls._module_path(rel_path)
-            for struct in ast.structs:
-                sym._record_struct(struct, resolver)
             for const in ast.constants:
                 sym._record_constant(const, resolver, container=None)
                 sym.module_of.setdefault(const.name, module)
+            for contract in ast.contracts:
+                for var in contract.state_variables:
+                    if var.mutability == 'constant':
+                        sym._record_constant(var, resolver, container=contract.name)
+
+        evaluator = ConstEvaluator(sym)
+        for _ in range(4):  # small fixed-point for cross-references
+            progressed = False
+            for const in sym.constants.values():
+                if const.value is None and const.initial_value is not None and not const.is_lazy:
+                    val = evaluator.eval(const.initial_value, const.sol_type)
+                    if val is not None:
+                        const.value = val
+                        progressed = True
+            if not progressed:
+                break
+        # Decide const vs LazyLock now, so references and definitions agree:
+        # lazy iff the initializer is neither const-evaluated numeric nor a
+        # literal-like cast (address(0xdead), bytes32(0), ...).
+        for const in sym.constants.values():
+            if const.value is None and const.initial_value is not None:
+                const.is_lazy = not _initializer_is_literal_like(const.initial_value)
+
+        # Pass 3: structs, state vars, and function signatures — every
+        # constant-sized array now sees its evaluated size.
+        for rel_path, ast in asts.items():
+            for struct in ast.structs:
+                sym._record_struct(struct, resolver)
             for contract in ast.contracts:
                 for struct in contract.structs:
                     sym._record_struct(struct, resolver)
                 state_types: Dict[str, SolType] = {}
                 for var in contract.state_variables:
-                    st = resolver.resolve(var.type_name)
-                    state_types[var.name] = st
-                    if var.mutability == 'constant':
-                        sym._record_constant(var, resolver, container=contract.name)
+                    state_types[var.name] = resolver.resolve(var.type_name)
                 sym.state_vars[contract.name] = state_types
                 for func in contract.functions:
                     if not func.name:
@@ -155,25 +182,6 @@ class RustSymbols:
                     existing = sym.functions.get(key)
                     if existing is None or len(sig.param_types) > len(existing.param_types):
                         sym.functions[key] = sig
-
-        # Pass 3: const-eval (constants may reference each other in any order).
-        evaluator = ConstEvaluator(sym)
-        for _ in range(4):  # small fixed-point for cross-references
-            progressed = False
-            for const in sym.constants.values():
-                if const.value is None and const.initial_value is not None and not const.is_lazy:
-                    val = evaluator.eval(const.initial_value, const.sol_type)
-                    if val is not None:
-                        const.value = val
-                        progressed = True
-            if not progressed:
-                break
-        # Decide const vs LazyLock now, so references and definitions agree:
-        # lazy iff the initializer is neither const-evaluated numeric nor a
-        # literal-like cast (address(0xdead), bytes32(0), ...).
-        for const in sym.constants.values():
-            if const.value is None and const.initial_value is not None:
-                const.is_lazy = not _initializer_is_literal_like(const.initial_value)
         return sym
 
     @staticmethod
@@ -338,83 +346,129 @@ class ConstEvaluator:
     constants, and parenthesized tuples. Time units are already desugared by
     the parser into ``lit * seconds`` multiplications.
 
+    Solidity evaluates constant expressions over UNTYPED literals in
+    arbitrary-precision rational arithmetic (``10 / 4 * 2`` is exactly 5),
+    while any subexpression involving a TYPED value (a declared constant,
+    a cast, ``type(T).max``) uses that type's truncating integer semantics.
+    Internally values are (Fraction, typed) pairs to reproduce both.
+
     Returns None for anything non-numeric (e.g. ``sha256(abi.encode(...))``,
     address literals) — those become LazyLock statics or special-cased
-    emissions instead.
+    emissions instead — and for a non-integral FINAL value (which could not
+    have type-checked in the Solidity source anyway).
     """
+
+    _MAX_POW_EXP = 100_000
 
     def __init__(self, symbols: RustSymbols):
         self._symbols = symbols
 
     def eval(self, expr: Expression, target: Optional[SolType] = None) -> Optional[int]:
-        v = self._eval(expr)
-        if v is None:
+        from fractions import Fraction
+        r = self._eval(expr)
+        if r is None:
             return None
-        if target is not None and target.is_integer and target.kind != 'intlit':
-            # Solidity constant initializers must fit the declared type.
-            return v
-        return v
+        frac, _typed = r
+        if frac.denominator != 1:
+            return None
+        return int(frac)
 
-    def _eval(self, expr: Expression) -> Optional[int]:
+    def _eval(self, expr: Expression):
+        from fractions import Fraction
+
+        def lit(v: int, typed: bool):
+            return (Fraction(v), typed)
+
         if isinstance(expr, Literal):
             if expr.kind in ('number', 'hex'):
                 try:
-                    return int(str(expr.value).replace('_', ''), 0)
+                    return lit(int(str(expr.value).replace('_', ''), 0), False)
                 except ValueError:
                     return None
             if expr.kind == 'bool':
-                return 1 if expr.value == 'true' else 0
+                return lit(1 if expr.value == 'true' else 0, False)
             return None
         if isinstance(expr, Identifier):
             const = self._symbols.lookup_constant(expr.name)
-            if const is not None:
-                return const.value
+            if const is not None and const.value is not None:
+                return lit(const.value, True)
             return None
         if isinstance(expr, UnaryOperation):
-            v = self._eval(expr.operand)
-            if v is None:
+            r = self._eval(expr.operand)
+            if r is None:
                 return None
+            v, typed = r
             if expr.operator == '-':
-                return -v
+                return (-v, typed)
             if expr.operator == '~':
-                return (~v) & ((1 << 256) - 1)
+                if v.denominator != 1:
+                    return None
+                return lit((~int(v)) & ((1 << 256) - 1), typed)
             return None
         if isinstance(expr, TupleExpression) and len(expr.components) == 1:
             return self._eval(expr.components[0])
         if isinstance(expr, BinaryOperation):
-            l = self._eval(expr.left)
-            r = self._eval(expr.right)
-            if l is None or r is None:
+            lr = self._eval(expr.left)
+            rr = self._eval(expr.right)
+            if lr is None or rr is None:
                 return None
+            l, lt = lr
+            r, rt = rr
+            typed = lt or rt
             op = expr.operator
             if op == '+':
-                return l + r
+                return (l + r, typed)
             if op == '-':
-                return l - r
+                return (l - r, typed)
             if op == '*':
-                return l * r
+                return (l * r, typed)
             if op == '/':
                 if r == 0:
                     return None
-                q = abs(l) // abs(r)
-                return q if (l >= 0) == (r >= 0) else -q
-            if op == '%':
-                if r == 0:
+                if not typed:
+                    return (l / r, False)  # exact rational division
+                # Typed division truncates toward zero (Solidity int semantics)
+                if l.denominator != 1 or r.denominator != 1:
                     return None
-                m = abs(l) % abs(r)
-                return m if l >= 0 else -m
+                li, ri = int(l), int(r)
+                q = abs(li) // abs(ri)
+                return lit(q if (li >= 0) == (ri >= 0) else -q, True)
+            if op == '%':
+                if r == 0 or l.denominator != 1 or r.denominator != 1:
+                    return None
+                li, ri = int(l), int(r)
+                m = abs(li) % abs(ri)
+                return lit(m if li >= 0 else -m, typed)
             if op == '**':
-                return l ** r
-            if op == '<<':
-                return l << r
-            if op == '>>':
-                return l >> r
-            if op == '&':
-                return l & r
-            if op == '|':
-                return l | r
-            if op == '^':
-                return l ^ r
+                if r.denominator != 1:
+                    return None
+                exp = int(r)
+                if abs(exp) > self._MAX_POW_EXP:
+                    return None
+                if l not in (0, 1, -1) and abs(exp) > 4096:
+                    return None  # guard pathological blowups
+                if exp < 0:
+                    if typed or l == 0:
+                        return None  # negative exponents are rational-only
+                    return (Fraction(1) / (l ** -exp), False)
+                return (l ** exp, typed)
+            if op in ('<<', '>>', '&', '|', '^'):
+                if l.denominator != 1 or r.denominator != 1:
+                    return None
+                li, ri = int(l), int(r)
+                if op == '<<':
+                    if ri > self._MAX_POW_EXP or ri < 0:
+                        return None
+                    return lit(li << ri, typed)
+                if op == '>>':
+                    if ri < 0:
+                        return None
+                    return lit(li >> ri, typed)
+                if op == '&':
+                    return lit(li & ri, typed)
+                if op == '|':
+                    return lit(li | ri, typed)
+                return lit(li ^ ri, typed)
             return None
         if isinstance(expr, TypeCast):
             return self._eval_cast(expr.type_name.name, expr.expression)
@@ -436,34 +490,39 @@ class ConstEvaluator:
                     if t is not None and t.is_integer:
                         if expr.member == 'max':
                             if t.kind == 'uint':
-                                return (1 << t.bits) - 1
-                            return (1 << (t.bits - 1)) - 1
+                                return lit((1 << t.bits) - 1, True)
+                            return lit((1 << (t.bits - 1)) - 1, True)
                         if expr.member == 'min':
                             if t.kind == 'uint':
-                                return 0
-                            return -(1 << (t.bits - 1))
+                                return lit(0, True)
+                            return lit(-(1 << (t.bits - 1)), True)
             # Library-qualified constant: Lib.CONST
             if isinstance(base, Identifier):
                 const = self._symbols.lookup_constant(expr.member, base.name)
-                if const is not None:
-                    return const.value
+                if const is not None and const.value is not None:
+                    from fractions import Fraction as _F
+                    return (_F(const.value), True)
             return None
         if isinstance(expr, TernaryOperation):
             c = self._eval(expr.condition)
             if c is None:
                 return None
-            return self._eval(expr.true_expression if c else expr.false_expression)
+            branch = expr.true_expression if c[0] != 0 else expr.false_expression
+            return self._eval(branch)
         return None
 
-    def _eval_cast(self, type_name: str, inner: Expression) -> Optional[int]:
-        v = self._eval(inner)
-        if v is None:
+    def _eval_cast(self, type_name: str, inner: Expression):
+        from fractions import Fraction
+        r = self._eval(inner)
+        if r is None:
             return None
+        v, _typed = r
+        if v.denominator != 1:
+            return None  # fractional -> integer conversion is a Solidity error
         t = parse_elementary(type_name)
         if t is None or not t.is_integer:
             return None
-        mask = (1 << t.bits) - 1
-        v &= mask
-        if t.kind == 'int' and v >= (1 << (t.bits - 1)):
-            v -= 1 << t.bits
-        return v
+        vi = int(v) & ((1 << t.bits) - 1)
+        if t.kind == 'int' and vi >= (1 << (t.bits - 1)):
+            vi -= 1 << t.bits
+        return (Fraction(vi), True)
