@@ -418,6 +418,16 @@ pub fn abi_encode(tokens: &[Token]) -> Vec<u8> {
     head
 }
 
+/// Head word `i` of an ABI encoding, for `abi.decode` over static tuples
+/// (every element one 32-byte head slot). Solidity reverts when the data is
+/// shorter than the head — the panic mirrors that.
+pub fn abi_word(data: &[u8], i: usize) -> U256 {
+    let start = i * 32;
+    let end = start + 32;
+    assert!(data.len() >= end, "abi.decode: data too short");
+    U256::from_be_slice(&data[start..end])
+}
+
 /// Solidity `abi.encodePacked(...)`: values at their declared widths, no
 /// padding, no length prefixes.
 pub fn abi_encode_packed(tokens: &[Token]) -> Vec<u8> {

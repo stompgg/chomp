@@ -658,12 +658,14 @@ class RustExpressionGenerator:
             base = func.expression
             member = func.member
 
-            # abi.encode / abi.encodePacked
+            # abi.encode / abi.encodePacked / abi.decode
             if isinstance(base, Identifier) and base.name == 'abi':
                 if member in ('encode', 'encodePacked'):
                     fn = 'rt::abi_encode' if member == 'encode' else 'rt::abi_encode_packed'
                     tokens = ', '.join(self._abi_token(a) for a in call.arguments)
                     return f'{fn}(&[{tokens}])', BYTES
+                if member == 'decode':
+                    return self._emit_abi_decode(call)
                 self._ctx.warn(f'abi.{member} not supported yet')
                 return f'unimplemented!("abi.{member}")', UNKNOWN
 
@@ -748,6 +750,50 @@ class RustExpressionGenerator:
             node = node.expression if isinstance(node, MemberAccess) else node.base
         return isinstance(node, Identifier) and node.name in self._ctx.current_local_vars
 
+    def _emit_abi_decode(self, call: FunctionCall):
+        """`abi.decode(data, (T1, T2, ...))` over STATIC tuples: every element
+        is one 32-byte head word. Dynamic/aggregate targets stay diagnosed
+        stubs until a use case appears. Conversion reuses the explicit-cast
+        machinery (enum range check = Panic 0x21, same as Solidity's decode
+        validation)."""
+        from ..parser.ast_nodes import TypeName as _TN
+        if len(call.arguments) != 2:
+            self._ctx.warn(f'abi.decode with {len(call.arguments)} args')
+            return 'unimplemented!("abi.decode arity")', UNKNOWN
+        types_arg = call.arguments[1]
+        comps = list(types_arg.components) \
+            if isinstance(types_arg, TupleExpression) else [types_arg]
+        targets = []
+        for c in comps:
+            if isinstance(c, Identifier):
+                targets.append(self._infer.from_type_name(_TN(name=c.name)))
+            elif isinstance(c, TypeCast):
+                targets.append(self._infer.from_type_name(c.type_name))
+            else:
+                self._ctx.warn('abi.decode: unsupported type expression')
+                return 'unimplemented!("abi.decode type expr")', UNKNOWN
+        for t in targets:
+            if t.kind not in ('uint', 'int', 'bool', 'address', 'enum',
+                              'bytes_fixed', 'interface', 'contract'):
+                self._ctx.warn(f'abi.decode of {t.kind} not supported yet')
+                return f'unimplemented!("abi.decode {t.kind}")', UNKNOWN
+        data_code = self.emit(call.arguments[0], BYTES)
+        d = self._ctx.fresh_temp('d')
+        parts = []
+        for i, t in enumerate(targets):
+            word = f'rt::abi_word({d}, {i})'
+            if t.kind == 'bool':
+                parts.append(f'({word} != U256::ZERO)')
+            elif t.kind == 'uint' and t.bits == 256:
+                parts.append(word)
+            else:
+                if t.kind == 'enum':
+                    self._register_type_use(t.name)
+                parts.append(self._types.cast(word, UINT256, t))
+        body = parts[0] if len(parts) == 1 else f'({", ".join(parts)})'
+        ret_t = targets[0] if len(targets) == 1 else SolType('tuple', members=tuple(targets))
+        return f'{{ let {d}: &[u8] = &{data_code}; {body} }}', ret_t
+
     def _emit_hash(self, fn: str, call: FunctionCall) -> str:
         if len(call.arguments) != 1:
             self._ctx.warn(f'{fn} with {len(call.arguments)} args')
@@ -800,6 +846,15 @@ class RustExpressionGenerator:
                     )
                     arg_names.append('unimplemented!("unlowerable storage param")')
                     continue
+                if low[0] == '!selector':
+                    place = self._selector_place_of(arg, lines)
+                    tmp = self._ctx.fresh_temp('a')
+                    lines.append(
+                        f'let {tmp} = &crate::world::sel('
+                        f'move |world: &mut World| &mut {place});'
+                    )
+                    arg_names.append(tmp)
+                    continue
                 key_code = self._storage_key_of(arg, low)
                 tmp = self._ctx.fresh_temp('a')
                 lines.append(f'let {tmp} = {key_code};')
@@ -848,6 +903,18 @@ class RustExpressionGenerator:
         finally:
             self._ctx.storage_locals = saved
         return f'{{ let {tmp} = &mut {base_place}; {fn_path}({args}) }}'
+
+    def _selector_place_of(self, arg: Expression, hoists: List[str]) -> str:
+        """Place text for a selector-lowered storage argument, valid inside a
+        `move |world: &mut World|` closure: the closure param shadows `world`
+        so the same substitution text re-derives the place per callee use;
+        hoisted key temps are Copy values captured by the move."""
+        if isinstance(arg, Identifier):
+            info = self._ctx.storage_locals.get(arg.name)
+            if info is not None:
+                return info['place']
+        place, _ = self.emit_place(arg, hoists)
+        return place
 
     def _storage_key_of(self, arg: Expression, root) -> str:
         """The KEY expression for a storage argument being lowered.

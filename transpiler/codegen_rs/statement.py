@@ -708,7 +708,10 @@ class RustStatementGenerator:
 
     def _gen_assembly(self, stmt: AssemblyStatement) -> str:
         import re
-        code = stmt.block.code
+        # The lexer re-joins Yul with spaces around every token
+        # (`monState . slot`, `mstore ( a , b )`); compact punctuation so the
+        # shape patterns below can match the canonical source spelling.
+        code = re.sub(r'\s*([().,])\s*', r'\1', stmt.block.code)
 
         # Shape 1: MonState sentinel slot-clear (startBattle recycling).
         # `let slot := X.slot ... eq(v, PACKED_CLEARED_MON_STATE) ... sstore`

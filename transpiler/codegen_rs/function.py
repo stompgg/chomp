@@ -43,6 +43,12 @@ class RustFunctionGenerator:
                    lowered=None) -> str:
         name = rust_ident(p.name if p.name else f'_arg{index}')
         t = self._infer.from_type_name(p.type_name)
+        if lowered is not None and lowered[0] == '!selector':
+            # Nested-mapping storage param of a world-taking fn: passed as a
+            # selector closure re-deriving the place from world per use.
+            inner = self._types.rust_type(lowered[1])
+            return (f'{name}_sel: &dyn for<\'w> Fn(&\'w mut World) '
+                    f'-> &\'w mut {inner}')
         if lowered is not None and lowered[0] != '!unsupported':
             # Storage param of a world-taking fn: passed as its mapping KEY;
             # the body re-derives the place from world per use.
@@ -78,7 +84,13 @@ class RustFunctionGenerator:
                 self._ctx.var_types[name] = p.type_name
             t = self._infer.from_type_name(p.type_name)
             low = lowered[i] if i < len(lowered) else None
-            if low is not None and low[0] != '!unsupported':
+            if low is not None and low[0] == '!selector':
+                self._ctx.storage_locals[name] = {
+                    'place': f'(*{rust_ident(name)}_sel(&mut *world))',
+                    'key': None,
+                    'root': low,
+                }
+            elif low is not None and low[0] != '!unsupported':
                 contract_field, var, _key_t = low
                 field = self._symbols.world_field_of(contract_field)
                 self._ctx.storage_locals[name] = {

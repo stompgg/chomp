@@ -421,6 +421,11 @@ class RustSymbols:
                     if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
                         if pt.kind == 'struct' and pt.name in roots:
                             entry = roots[pt.name]
+                        elif pt.kind == 'mapping':
+                            # No single key addresses a nested mapping; lower
+                            # to a SELECTOR closure that re-derives the place
+                            # from world per use (funnel: world::sel).
+                            entry = ('!selector', pt, None)
                         else:
                             entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
                     lowered.append(entry)
