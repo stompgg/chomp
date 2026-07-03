@@ -415,11 +415,14 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog='python3 -m transpiler',
-        description='extruder — source-to-source Solidity → TypeScript transpiler',
+        description='extruder — source-to-source Solidity → TypeScript/Rust transpiler',
         epilog='Subcommands: `python3 -m transpiler init <src>` to scaffold a config for a new project.',
     )
     parser.add_argument('input', nargs='?', help='Input Solidity file or directory')
-    parser.add_argument('-o', '--output', default='transpiler/ts-output', help='Output directory (or output file for --emit-replacement-stub)')
+    parser.add_argument('--target', choices=('ts', 'rust'), default='ts',
+                        help='Output language: ts (default) emits the TypeScript sim, '
+                             'rust emits the cargo workspace in transpiler/rs-output')
+    parser.add_argument('-o', '--output', default=None, help='Output directory (or output file for --emit-replacement-stub); defaults to transpiler/ts-output or transpiler/rs-output per --target')
     parser.add_argument('--stdout', action='store_true', help='Print to stdout instead of file')
     parser.add_argument('-d', '--discover', action='append', metavar='DIR',
                         help='Directory to scan for type discovery')
@@ -433,6 +436,17 @@ def main():
                              'Use -o to choose the output .ts path.')
 
     args = parser.parse_args()
+
+    if args.output is None:
+        args.output = 'transpiler/rs-output' if args.target == 'rust' else 'transpiler/ts-output'
+
+    # Mode: Rust target (shared front-end, codegen_rs back-end)
+    if args.target == 'rust':
+        if not args.input:
+            parser.error('input directory is required for --target rust')
+        from .sol2rs import run_rust_target
+        run_rust_target(args.input, args.output, args.overrides)
+        return
 
     # Mode: emit replacement stub
     if args.emit_replacement_stub:

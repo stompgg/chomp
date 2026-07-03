@@ -1,0 +1,20 @@
+{
+  "$comment": "Rust-backend allowlist. Emission is phased in: value layer + pure libs (Phase 0/1) now; engine core, effects, and mons land per PLAN phase gates. Type discovery always parses all of src/. dynInterfaces are interfaces emitted as callable Rust traits (`&mut dyn T` at internal-fn parameter positions); every other interface-typed value is an Address.",
+  "includeFiles": [
+    "Enums.sol",
+    "Constants.sol",
+    "Structs.sol",
+    "IEngine.sol",
+    "types/ITypeCalculator.sol",
+    "types/TypeCalcLib.sol",
+    "types/TypeCalculator.sol",
+    "lib/RNGLib.sol",
+    "lib/StatBoostLib.sol",
+    "lib/StaminaRegenLogic.sol",
+    "lib/SwitchTargetLib.sol",
+    "moves/IMoveSet.sol",
+    "moves/MoveSlotLib.sol",
+    "moves/AttackCalculator.sol"
+  ],
+  "dynInterfaces": ["IEngine", "ITypeCalculator", "IMoveSet"]
+}

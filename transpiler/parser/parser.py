@@ -735,9 +735,12 @@ class Parser:
             self.expect(TokenType.SEMICOLON)
             return ContinueStatement()
         elif self.match(TokenType.UNCHECKED):
-            # unchecked { ... } - parse as a regular block
+            # unchecked { ... } - parse as a block tagged is_unchecked so the
+            # Rust backend can emit wrapping arithmetic (TS backend ignores it)
             self.advance()  # skip 'unchecked'
-            return self.parse_block()
+            block = self.parse_block()
+            block.is_unchecked = True
+            return block
         elif self.match(TokenType.TRY):
             return self.parse_try_statement()
         elif self.match(TokenType.ASSEMBLY):
