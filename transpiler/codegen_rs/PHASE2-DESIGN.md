@@ -119,19 +119,28 @@ Engine's 8 assembly sites are 3 shapes; no Yul->Rust codegen:
   entry).
 Unknown assembly stays a loud `unimplemented!`.
 
-## Lockstep gate (Phase 2 exit)
+## Lockstep gate (Phase 2 exit) — DONE
 
-TS side: a bun script drives `sims/harness.ts` over scripted battles
-(fixed teams with inline moves, fixed per-turn move indices + salts) and
-dumps per-turn `TurnSnapshot`s + the address book to JSON. Rust side: the
-differential crate replays the same script through `World` and diffs every
-field per turn, reporting first divergence as `turn N, path, rust vs ts`.
+TS side: `scripts/generate_battle_vectors.ts` drives `sims/harness.ts` over
+scripted battles (fixed teams with inline moves, fixed per-turn move
+indices + salts) and dumps per-turn `TurnSnapshot`s to
+`differential-rs/fixtures/battle_replay.json`. Rust side:
+`differential-rs/tests/battle_replay.rs` replays the same script through
+`World` (ITeamRegistry mocked via `world.ext`, matchmaker approval set
+directly, `reset_transient()` per tx) and diffs every field per turn,
+reporting divergence as `[scenario turn N] field, left vs right`.
+
+Status: 5 scenarios / 35 turns bit-identical (1v1 basic, type matchups +
+special class + priority, speed-tie RNG coin flips, 2v2 voluntary + KO-
+forced switches, 3v3 mixed with no-op regen turns). Gate is mutation-
+verified (corrupted expectation fails with the right scenario/turn/field).
 
 ## Sequencing
 
-1. symbols: needs_world fixed point, world-contract/alias/external config.
+1. symbols: needs_world fixed point, world-contract/alias/external config. ✓
 2. emitters: world param + state paths + place mode + storage-local
-   substitution + env + dispatch + arg/RHS hoisting.
-3. world.rs + ExternalCalls generation; Yul known-block registry.
-4. Engine.sol compiles; Phase-1 gate updated (signature changes) and green.
-5. Lockstep runner + scripted battles; first-divergence loop until clean.
+   substitution + env + dispatch + arg/RHS hoisting. ✓
+3. world.rs + ExternalCalls generation; Yul known-block registry. ✓
+4. Engine.sol compiles; Phase-1 gate updated (signature changes) and green. ✓
+5. Lockstep runner + scripted battles; first-divergence loop until clean. ✓
+   (clean on first run — the Phase-0/1 value-layer gates did their job)
