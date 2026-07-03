@@ -308,8 +308,7 @@ class RustTypeConverter:
         if not frm_wide and not to_wide:
             out = f'{code_p} as {self.rust_type(to)}'
             if to.is_odd_width:
-                mask = (1 << to.bits) - 1
-                out = f'(({out}) & {self._fmt_int(mask)}{_NATIVE[to.mapped_bits][0 if to.kind=="uint" else 1]})'
+                out = self._truncate_native_odd(out, to)
             return out
 
         if not frm_wide and to_wide:
@@ -326,7 +325,7 @@ class RustTypeConverter:
                 else:
                     out = f'rt::i256_from_i128({code_p} as i128)'
             if to.is_odd_width:
-                out = f'rt::mask_bits({out}, {to.bits})'
+                out = self._truncate_wide_odd(out, to)
             return out
 
         if frm_wide and not to_wide:
@@ -340,8 +339,7 @@ class RustTypeConverter:
             if to.kind == 'int':
                 truncated = f'({truncated} as {_NATIVE[to.mapped_bits][1]})'
             if to.is_odd_width:
-                mask = (1 << to.bits) - 1
-                truncated = f'(({truncated}) & {self._fmt_int(mask)}{_NATIVE[to.mapped_bits][0 if to.kind=="uint" else 1]})'
+                truncated = self._truncate_native_odd(truncated, to)
             return truncated
 
         # wide -> wide
@@ -352,8 +350,27 @@ class RustTypeConverter:
         else:
             out = code
         if to.is_odd_width:
-            out = f'rt::mask_bits({out}, {to.bits})'
+            out = self._truncate_wide_odd(out, to)
         return out
+
+    def _truncate_native_odd(self, code: str, to: SolType) -> str:
+        """Truncate a native-representation value to an odd declared width.
+
+        Unsigned: AND-mask. Signed: Solidity intM(x) truncates to M bits AND
+        sign-extends into the wider representation — the shl/asr pair does
+        both (a plain mask would zero-extend: int24(-1) must stay -1, not
+        become 0xFFFFFF)."""
+        if to.kind == 'uint':
+            mask = (1 << to.bits) - 1
+            return f'(({code}) & {self._fmt_int(mask)}{_NATIVE[to.mapped_bits][0]})'
+        d = to.mapped_bits - to.bits
+        return f'((({code}) << {d}) >> {d})'
+
+    @staticmethod
+    def _truncate_wide_odd(code: str, to: SolType) -> str:
+        if to.kind == 'uint':
+            return f'rt::mask_bits({code}, {to.bits})'
+        return f'rt::mask_bits_signed({code}, {to.bits})'
 
 
 def is_wrapped(code: str) -> bool:

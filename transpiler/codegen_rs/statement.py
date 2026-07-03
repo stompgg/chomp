@@ -84,11 +84,20 @@ class RustStatementGenerator:
         if isinstance(stmt, ReturnStatement):
             return self._gen_return(stmt)
         if isinstance(stmt, BreakStatement):
+            top = self._ctx.loop_stack[-1] if self._ctx.loop_stack else None
+            if top is not None and top['body_label'] is not None:
+                # Inside the labeled body block an unlabeled `break` is
+                # rejected by Rust (E0695): target the loop label explicitly.
+                return f"{self.ind()}break {top['loop_label']};"
             return f'{self.ind()}break;'
         if isinstance(stmt, ContinueStatement):
-            if self._ctx.loop_depth > 0:
-                return f"{self.ind()}break '__body{self._ctx.loop_depth};"
-            return f'{self.ind()}continue;'
+            top = self._ctx.loop_stack[-1] if self._ctx.loop_stack else None
+            if top is None or top['kind'] == 'while':
+                # Plain `continue` re-tests a while condition — correct.
+                return f'{self.ind()}continue;'
+            # for / do-while: jump to the post-expression / condition check,
+            # which live after the labeled body block.
+            return f"{self.ind()}break {top['body_label']};"
         if isinstance(stmt, EmitStatement):
             return self._gen_emit(stmt)
         if isinstance(stmt, RevertStatement):
@@ -239,33 +248,29 @@ class RustStatementGenerator:
                 lines.append(self._gen_expr_stmt(stmt.init))
 
         cond = self._expr.emit(stmt.condition, BOOL) if stmt.condition is not None else 'true'
-        lines.append(f'{self.ind()}loop {{')
+        has_continue = stmt.body is not None and _contains_continue(stmt.body)
+        depth = len(self._ctx.loop_stack) + 1
+        body_label = f"'__body{depth}" if has_continue else None
+        loop_label = f"'__loop{depth}" if has_continue else None
+
+        loop_prefix = f'{loop_label}: ' if loop_label else ''
+        lines.append(f'{self.ind()}{loop_prefix}loop {{')
         self._ctx.indent_level += 1
+        # This break sits outside any labeled body block; unlabeled is fine.
         lines.append(f'{self.ind()}if !({cond}) {{ break; }}')
 
-        has_continue = stmt.body is not None and _contains_continue(stmt.body)
-        self._ctx.loop_depth += 1
-        label = f"'__body{self._ctx.loop_depth}"
+        self._ctx.loop_stack.append(
+            {'kind': 'for', 'body_label': body_label, 'loop_label': loop_label}
+        )
         if has_continue:
-            lines.append(f'{self.ind()}{label}: {{')
+            lines.append(f'{self.ind()}{body_label}: {{')
             self._ctx.indent_level += 1
-        else:
-            # No continue in the body: keep loop_depth bookkeeping consistent
-            # but emit no label. ContinueStatement handling above only fires
-            # when a label exists on some enclosing for; guard via depth reset.
-            pass
         if stmt.body is not None:
-            if has_continue:
-                self._gen_body(stmt.body, lines)
-            else:
-                depth = self._ctx.loop_depth
-                self._ctx.loop_depth = 0  # plain `continue` would be wrong; none present
-                self._gen_body(stmt.body, lines)
-                self._ctx.loop_depth = depth
+            self._gen_body(stmt.body, lines)
         if has_continue:
             self._ctx.indent_level -= 1
             lines.append(f'{self.ind()}}}')
-        self._ctx.loop_depth -= 1
+        self._ctx.loop_stack.pop()
 
         if stmt.post is not None:
             lines.append(self._gen_loose_expression(stmt.post))
@@ -281,22 +286,37 @@ class RustStatementGenerator:
         cond = self._expr.emit(stmt.condition, BOOL)
         lines.append(f'{self.ind()}while {cond} {{')
         self._ctx.indent_level += 1
-        depth = self._ctx.loop_depth
-        self._ctx.loop_depth = 0  # plain continue is correct in while loops
+        self._ctx.loop_stack.append({'kind': 'while', 'body_label': None, 'loop_label': None})
         self._gen_body(stmt.body, lines)
-        self._ctx.loop_depth = depth
+        self._ctx.loop_stack.pop()
         self._ctx.indent_level -= 1
         lines.append(f'{self.ind()}}}')
         return '\n'.join(lines)
 
     def _gen_do_while(self, stmt: DoWhileStatement) -> str:
+        # Solidity `continue` in do-while jumps to the CONDITION check, so the
+        # body gets the same labeled-block treatment as for-loops (a plain
+        # Rust `continue` would skip the trailing condition — wrong).
         lines = []
-        lines.append(f'{self.ind()}loop {{')
+        has_continue = _contains_continue(stmt.body)
+        depth = len(self._ctx.loop_stack) + 1
+        body_label = f"'__body{depth}" if has_continue else None
+        loop_label = f"'__loop{depth}" if has_continue else None
+
+        loop_prefix = f'{loop_label}: ' if loop_label else ''
+        lines.append(f'{self.ind()}{loop_prefix}loop {{')
         self._ctx.indent_level += 1
-        depth = self._ctx.loop_depth
-        self._ctx.loop_depth = 0
+        self._ctx.loop_stack.append(
+            {'kind': 'dowhile', 'body_label': body_label, 'loop_label': loop_label}
+        )
+        if has_continue:
+            lines.append(f'{self.ind()}{body_label}: {{')
+            self._ctx.indent_level += 1
         self._gen_body(stmt.body, lines)
-        self._ctx.loop_depth = depth
+        if has_continue:
+            self._ctx.indent_level -= 1
+            lines.append(f'{self.ind()}}}')
+        self._ctx.loop_stack.pop()
         cond = self._expr.emit(stmt.condition, BOOL)
         lines.append(f'{self.ind()}if !({cond}) {{ break; }}')
         self._ctx.indent_level -= 1
@@ -398,6 +418,16 @@ class RustStatementGenerator:
         lhs_code, _ = self._expr.emit_typed(expr.left)
 
         if expr.operator == '=':
+            if (isinstance(expr.left, Identifier)
+                    and expr.left.name in self._ctx.ref_params
+                    and lhs_t.is_memory_ref):
+                # Solidity rebinding a memory parameter (`arr = ...`) is a
+                # LOCAL rebind; the &mut model writes through to the caller.
+                # No phase-1 code does this — flag loudly if it appears.
+                self._ctx.warn(
+                    f'memory parameter `{expr.left.name}` is reassigned: the &mut '
+                    f'model writes through to the caller instead of rebinding locally'
+                )
             rhs = self._expr.emit(expr.right, lhs_t)
             rhs = self._clone_if_place(rhs, expr.right, lhs_t)
             out = f'{self.ind()}{lhs_code} = {rhs};'
@@ -410,7 +440,10 @@ class RustStatementGenerator:
         if op in ('<<', '>>'):
             amt = self._expr._shift_amount(expr.right)
             method = 'sol_shl' if op == '<<' else 'sol_shr'
-            return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({amt});'
+            out = f'{lhs_code}.{method}({amt})'
+            if op == '<<':
+                out = self._expr._mask_odd_width(out, lhs_t)
+            return f'{self.ind()}{lhs_code} = {out};'
 
         if lhs_t.is_wide:
             if op in ('+', '-', '*'):
@@ -420,12 +453,21 @@ class RustStatementGenerator:
                 if self._ctx.unchecked and lhs_t.kind == 'int':
                     method = 'wrapping_div' if op == '/' else 'wrapping_rem'
                     return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({rhs});'
+                if lhs_t.kind == 'int':
+                    # alloy's raw I256 Div/Rem only debug_assert on overflow
+                    # (release would silently wrap MIN /= -1); route through
+                    # the checked helpers like the expression path does.
+                    method = 'sol_div' if op == '/' else 'sol_rem'
+                    return f'{self.ind()}{lhs_code} = {lhs_code}.{method}({rhs});'
                 return f'{self.ind()}{lhs_code} = {lhs_code} {op} ({rhs});'
             return f'{self.ind()}{lhs_code} = {lhs_code} {op} ({rhs});'
 
         # native
         if self._ctx.unchecked and op in _NATIVE_UNCHECKED:
             return f'{self.ind()}{lhs_code} = {lhs_code}.{_NATIVE_UNCHECKED[op]}({rhs});'
+        if op == '%' and lhs_t.kind == 'int':
+            # Checked signed %=: Solidity's MIN % -1 == 0 (see rt::srem).
+            return f'{self.ind()}{lhs_code} = rt::srem({lhs_code}, {rhs});'
         return f'{self.ind()}{lhs_code} {op}= {rhs};'
 
     # ------------------------------------------------------------------

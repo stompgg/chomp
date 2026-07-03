@@ -117,7 +117,7 @@ class RustDefinitionGenerator:
     # ------------------------------------------------------------------
 
     def generate_constant(self, const: StateVariableDeclaration) -> str:
-        sig = self._symbols.constants.get(const.name)
+        sig = self._symbols.lookup_constant(const.name, self._ctx.current_class_name or None)
         t = sig.sol_type if sig else self._infer.from_type_name(const.type_name)
         rust_t = self._types.rust_type(t)
         name = rust_ident(const.name)

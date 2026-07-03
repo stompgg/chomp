@@ -69,7 +69,11 @@ class RustSymbols:
         self.structs: Dict[str, List[Tuple[str, SolType]]] = {}
         # struct name -> ordered raw TypeName list (for emission-time detail)
         self.struct_type_names: Dict[str, list] = {}
-        self.constants: Dict[str, ConstSig] = {}
+        # Keyed by (container, name): the same constant name can exist at file
+        # scope AND inside contracts with different types (live example:
+        # Constants.sol's uint256 SWITCH_PRIORITY vs FairCPU's uint32 one) —
+        # a bare-name table silently clobbers and mistypes emissions.
+        self.constants: Dict[Tuple[Optional[str], str], ConstSig] = {}
         self.interfaces: set = set()
         self.libraries: set = set()
         self.contracts: set = set()
@@ -193,13 +197,31 @@ class RustSymbols:
         self.struct_type_names[struct.name] = tns
 
     def _record_constant(self, var, resolver, container) -> None:
-        self.constants[var.name] = ConstSig(
+        self.constants[(container, var.name)] = ConstSig(
             name=var.name,
             sol_type=resolver.resolve(var.type_name),
             value=None,
             initial_value=var.initial_value,
             container=container,
         )
+
+    def lookup_constant(self, name: str, container: Optional[str] = None) -> Optional['ConstSig']:
+        """Scoped constant resolution: the current container's own constant
+        shadows a file-scope one of the same name (Solidity scoping); a
+        file-scope constant is preferred over some other contract's."""
+        if container is not None:
+            sig = self.constants.get((container, name))
+            if sig is not None:
+                return sig
+        sig = self.constants.get((None, name))
+        if sig is not None:
+            return sig
+        matches = [s for (cont, n), s in sorted(
+            self.constants.items(), key=lambda kv: (kv[0][0] or '', kv[0][1])
+        ) if n == name]
+        if len(matches) == 1:
+            return matches[0]
+        return None
 
     # ------------------------------------------------------------------
     # Queries
@@ -271,7 +293,7 @@ class _TypeResolver:
             if isinstance(size_expr, Literal) and size_expr.kind == 'number':
                 size = int(str(size_expr.value), 0)
             elif isinstance(size_expr, Identifier):
-                const = self._symbols.constants.get(size_expr.name)
+                const = self._symbols.lookup_constant(size_expr.name)
                 if const is not None and const.value is not None:
                     size = int(const.value)
                 else:
@@ -344,7 +366,7 @@ class ConstEvaluator:
                 return 1 if expr.value == 'true' else 0
             return None
         if isinstance(expr, Identifier):
-            const = self._symbols.constants.get(expr.name)
+            const = self._symbols.lookup_constant(expr.name)
             if const is not None:
                 return const.value
             return None
@@ -422,7 +444,7 @@ class ConstEvaluator:
                             return -(1 << (t.bits - 1))
             # Library-qualified constant: Lib.CONST
             if isinstance(base, Identifier):
-                const = self._symbols.constants.get(expr.member)
+                const = self._symbols.lookup_constant(expr.member, base.name)
                 if const is not None:
                     return const.value
             return None

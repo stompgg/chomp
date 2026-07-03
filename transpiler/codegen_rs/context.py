@@ -18,6 +18,9 @@ class RustCodeGenerationContext:
 
     # Variable tracking (name -> Solidity TypeName), mirrors the TS backend
     var_types: Dict[str, TypeName] = field(default_factory=dict)
+    # Contract-level slice of var_types (state vars); reset_for_function
+    # restores var_types from this so per-function locals never leak.
+    contract_var_types: Dict[str, TypeName] = field(default_factory=dict)
     current_local_vars: Set[str] = field(default_factory=set)
     current_state_vars: Set[str] = field(default_factory=set)
     # Parameters passed as `&mut T` (Solidity memory reference types)
@@ -33,8 +36,14 @@ class RustCodeGenerationContext:
     # True inside `unchecked { ... }` blocks -> wrapping arithmetic
     unchecked_depth: int = 0
 
-    # Loop nesting depth, for unique labeled-block names in for-desugaring
-    loop_depth: int = 0
+    # Enclosing-loop stack for break/continue emission. Each entry:
+    # {'kind': 'for'|'while'|'dowhile', 'body_label': str|None,
+    #  'loop_label': str|None}. for/do-while bodies containing `continue`
+    # are wrapped in a labeled block (continue -> break 'body); the loop
+    # itself is then labeled too because Rust rejects an UNLABELED `break`
+    # that sits syntactically inside a labeled block (E0695), so Solidity
+    # `break` becomes `break 'loop` there.
+    loop_stack: List[dict] = field(default_factory=list)
 
     # Names referenced in this file that live in other modules -> use lines
     used_types: Set[str] = field(default_factory=set)       # enums/structs
@@ -60,12 +69,13 @@ class RustCodeGenerationContext:
 
     def reset_for_contract(self) -> None:
         self.var_types = {}
+        self.contract_var_types = {}
         self.current_local_vars = set()
         self.current_state_vars = set()
         self.ref_params = set()
         self.dyn_params = set()
         self.unchecked_depth = 0
-        self.loop_depth = 0
+        self.loop_stack = []
 
     def reset_for_function(self) -> None:
         self.current_local_vars = set()
@@ -73,4 +83,7 @@ class RustCodeGenerationContext:
         self.dyn_params = set()
         self.alias_map = {}
         self.unchecked_depth = 0
-        self.loop_depth = 0
+        self.loop_stack = []
+        # Locals/params of the previous function must not leak into this
+        # one's type inference: restore the contract-level view (state vars).
+        self.var_types = dict(self.contract_var_types)

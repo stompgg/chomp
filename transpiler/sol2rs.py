@@ -80,6 +80,7 @@ LIB_RS_HEADER = """\
 #![allow(dead_code)]
 #![allow(unreachable_code)]
 #![allow(unreachable_patterns)]
+#![allow(unused_labels)]
 #![allow(special_module_name)]
 #![allow(clippy::all)]
 """

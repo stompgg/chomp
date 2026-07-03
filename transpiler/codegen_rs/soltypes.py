@@ -286,7 +286,7 @@ class TypeInferencer:
         if isinstance(size_expr, Literal) and size_expr.kind == 'number':
             return int(str(size_expr.value), 0)
         if isinstance(size_expr, Identifier):
-            const = self._symbols.constants.get(size_expr.name)
+            const = self._symbols.lookup_constant(size_expr.name)
             if const is not None and const.value is not None:
                 return int(const.value)
         return None
@@ -355,7 +355,7 @@ class TypeInferencer:
         tn = self._ctx.var_types.get(name)
         if tn is not None:
             return self.from_type_name(tn)
-        const = self._symbols.constants.get(name)
+        const = self._symbols.lookup_constant(name, self._ctx.current_class_name or None)
         if const is not None:
             return const.sol_type
         # Bare type name used as value (rare; e.g. enum in abi args)
@@ -455,7 +455,7 @@ class TypeInferencer:
                 return ADDRESS if member == 'origin' else UNKNOWN
             # Library constant: Lib.CONST
             if base.name in self._symbols.libraries or base.name in self._symbols.contracts:
-                const = self._symbols.constants.get(member)
+                const = self._symbols.lookup_constant(member, base.name)
                 if const is not None:
                     return const.sol_type
 

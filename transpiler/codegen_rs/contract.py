@@ -124,6 +124,9 @@ class RustContractGenerator:
             lines.append(f'    pub {rust_ident(var.name)}: {self._types.rust_type(t)},')
             self._ctx.current_state_vars.add(var.name)
             self._ctx.var_types[var.name] = var.type_name
+        # Snapshot the contract-level view: reset_for_function restores from
+        # this so one method's locals never leak into the next one's types.
+        self._ctx.contract_var_types = dict(self._ctx.var_types)
         lines.append('}')
         lines.append('')
 

@@ -72,8 +72,41 @@ impl SolOps for I256 {
     }
     #[inline(always)]
     fn sol_rem(self, rhs: Self) -> Self {
-        self.checked_rem(rhs).expect("panic: division by zero (0x12)")
+        // Solidity checked `%` only zero-checks the divisor: MIN % -1 is 0
+        // (EVM SMOD), NOT a Panic 0x11 — only DIVISION overflows there.
+        // alloy's checked_rem returns None for (MIN, -1), so wrap instead.
+        if rhs.is_zero() {
+            panic!("panic: division by zero (0x12)");
+        }
+        self.wrapping_rem(rhs)
     }
+}
+
+/// Checked native signed remainder with Solidity semantics: divisor 0 panics
+/// (0x12), iN::MIN % -1 yields 0 (Rust's `%` would panic under overflow
+/// checks; Solidity/EVM SMOD does not).
+pub trait SolSignedRem: Copy {
+    fn sol_srem(self, rhs: Self) -> Self;
+}
+
+macro_rules! impl_srem {
+    ($($t:ty),*) => {$(
+        impl SolSignedRem for $t {
+            #[inline(always)]
+            fn sol_srem(self, rhs: Self) -> Self {
+                if rhs == 0 {
+                    panic!("panic: division by zero (0x12)");
+                }
+                self.wrapping_rem(rhs)
+            }
+        }
+    )*};
+}
+impl_srem!(i8, i16, i32, i64, i128);
+
+#[inline(always)]
+pub fn srem<T: SolSignedRem>(lhs: T, rhs: T) -> T {
+    lhs.sol_srem(rhs)
 }
 
 // ---------------------------------------------------------------------------

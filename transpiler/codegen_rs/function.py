@@ -39,7 +39,7 @@ class RustFunctionGenerator:
     # Signatures
     # ------------------------------------------------------------------
 
-    def param_decl(self, p: VariableDeclaration, index: int) -> str:
+    def param_decl(self, p: VariableDeclaration, index: int, allow_mut: bool = True) -> str:
         name = rust_ident(p.name if p.name else f'_arg{index}')
         t = self._infer.from_type_name(p.type_name)
         if t.is_memory_ref:
@@ -47,7 +47,10 @@ class RustFunctionGenerator:
         if t.kind in ('interface', 'contract') and t.name in self._dyn_interfaces:
             self._ctx.used_traits.add(t.name)
             return f'{name}: &mut dyn {rust_ident(t.name)}'
-        return f'{name}: {self._types.rust_type(t)}'
+        # Solidity freely reassigns value parameters; bind them `mut`.
+        # (Trait method DECLARATIONS cannot carry patterns like `mut x`.)
+        prefix = 'mut ' if allow_mut else ''
+        return f'{prefix}{name}: {self._types.rust_type(t)}'
 
     def return_decl(self, params: List[VariableDeclaration]) -> str:
         if not params:
@@ -82,7 +85,7 @@ class RustFunctionGenerator:
     def trait_method_signature(self, func: FunctionDefinition) -> str:
         recv = '&self' if func.mutability in ('view', 'pure') else '&mut self'
         params = ', '.join(
-            [recv] + [self.param_decl(p, i) for i, p in enumerate(func.parameters)]
+            [recv] + [self.param_decl(p, i, allow_mut=False) for i, p in enumerate(func.parameters)]
         )
         ret = self.return_decl(func.return_parameters)
         return f'fn {rust_ident(func.name)}({params}){ret};'

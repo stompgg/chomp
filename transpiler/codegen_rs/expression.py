@@ -190,7 +190,7 @@ class RustExpressionGenerator:
             return f'(*{rust_ident(name)})', t
         if name in self._ctx.current_local_vars:
             return rust_ident(name), t
-        const = self._symbols.constants.get(name)
+        const = self._symbols.lookup_constant(name, self._ctx.current_class_name or None)
         if const is not None:
             return self._constant_ref(const), const.sol_type
         if name in self._ctx.current_state_vars:
@@ -239,7 +239,12 @@ class RustExpressionGenerator:
             l = self.emit(op.left, lt)
             amt = self._shift_amount(op.right)
             method = 'sol_shl' if operator == '<<' else 'sol_shr'
-            return f'{self._paren(op.left, l)}.{method}({amt})', lt
+            out = f'{self._paren(op.left, l)}.{method}({amt})'
+            if operator == '<<':
+                # Solidity truncates shl results to the DECLARED width; odd
+                # widths live in a wider representation, so mask explicitly.
+                out = self._mask_odd_width(out, lt)
+            return out, lt
 
         if operator == '**':
             base_t = self._infer.infer(op.left)
@@ -298,7 +303,8 @@ class RustExpressionGenerator:
                 method = _WRAPPING[operator] if self._ctx.unchecked else _CHECKED_WIDE[operator]
                 return f'{lp}.{method}({rp})'
             # '/' and '%': division by zero panics in both modes (Solidity
-            # semantics); I256 MIN/-1 goes through sol_div/sol_rem.
+            # semantics). Checked '%' of MIN % -1 is 0 in Solidity (only
+            # DIVISION overflows, Panic 0x11) — sol_rem implements that.
             if t.kind == 'int':
                 method = {'/': 'sol_div', '%': 'sol_rem'}[operator]
                 if self._ctx.unchecked:
@@ -311,7 +317,24 @@ class RustExpressionGenerator:
                 return f'{lp}.{_WRAPPING[operator]}({rp})'
             method = {'/': 'wrapping_div', '%': 'wrapping_rem'}[operator]
             return f'{lp}.{method}({rp})'
+        if operator == '%' and t.kind == 'int':
+            # Checked iN::MIN % -1: Solidity yields 0; Rust's `%` panics
+            # under overflow checks. rt::srem zero-checks then wraps.
+            return f'rt::srem({lp}, {rp})'
         return f'{lp} {operator} {rp}'
+
+    def _mask_odd_width(self, code: str, t: SolType) -> str:
+        """Truncate a result back to a declared odd width (uint96/168/...)."""
+        if not t.is_odd_width:
+            return code
+        if t.kind != 'uint':
+            self._ctx.warn(f'odd-width signed result not re-masked for {t}')
+            return code
+        if t.is_wide:
+            return f'rt::mask_bits({code}, {t.bits})'
+        mask = (1 << t.bits) - 1
+        mask_lit = self._types.int_literal(mask, SolType('uint', bits=t.mapped_bits))
+        return f'(({code}) & {mask_lit})'
 
     def _shift_amount(self, expr: Expression) -> str:
         t = self._infer.infer(expr)
@@ -347,11 +370,18 @@ class RustExpressionGenerator:
                 if self._ctx.unchecked:
                     return f'{self._paren(op.operand, code)}.wrapping_neg()', t
                 return f'{self._paren(op.operand, code)}.checked_neg().expect("panic: negation overflow")', t
+            if t.kind == 'int' and self._ctx.unchecked:
+                # unchecked -iN::MIN wraps in Solidity; plain `-` would panic
+                # under the workspace-wide overflow checks.
+                return f'{self._paren(op.operand, code)}.wrapping_neg()', t
             return f'-{self._paren(op.operand, code)}', t
         if op.operator == '~':
             t = self._infer.infer(op.operand)
             code = self.emit(op.operand, t)
-            return f'!{self._paren(op.operand, code)}', t
+            # Bitwise NOT sets every representation bit; odd widths must be
+            # truncated back to the declared width (Solidity semantics).
+            out = self._mask_odd_width(f'!{self._paren(op.operand, code)}', t)
+            return out, t
         if op.operator in ('++', '--'):
             # Only legal as a statement / for-loop post; the statement layer
             # rewrites those. Reaching here means value-position inc/dec.
@@ -389,7 +419,7 @@ class RustExpressionGenerator:
                     SolType('enum', name=base.name)
             # Library constant: Lib.CONST
             if base.name in self._symbols.libraries or base.name in self._symbols.contracts:
-                const = self._symbols.constants.get(member)
+                const = self._symbols.lookup_constant(member, base.name)
                 if const is not None and const.container == base.name:
                     if base.name != self._ctx.current_class_name:
                         self._ctx.used_modules.add(base.name)
