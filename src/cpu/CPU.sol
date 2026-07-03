@@ -274,21 +274,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
 
     function startBattle(ProposedBattle memory proposal) external returns (bytes32 battleKey) {
         (battleKey,) = ENGINE.computeBattleKey(proposal.p0, proposal.p1);
-        ENGINE.startBattle(
-            Battle({
-                p0: proposal.p0,
-                p0TeamIndex: proposal.p0TeamIndex,
-                p1: proposal.p1,
-                p1TeamIndex: proposal.p1TeamIndex,
-                teamRegistry: proposal.teamRegistry,
-                validator: proposal.validator,
-                rngOracle: proposal.rngOracle,
-                ruleset: proposal.ruleset,
-                engineHooks: proposal.engineHooks,
-                moveManager: proposal.moveManager,
-                matchmaker: proposal.matchmaker
-            })
-        );
+        ENGINE.startBattle(_toBattle(proposal));
     }
 
     /// @notice Bundle the caller's phantom team-config write with battle start. p1 is this CPU
@@ -299,24 +285,69 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(
             p.p0, p.monIndices, p.facetIds, p.moveSelections
         );
-
-        uint96 p1TeamIndex = uint96(uint16(uint160(p.p0)));
         (battleKey,) = ENGINE.computeBattleKey(p.p0, address(this));
-        ENGINE.startBattle(
-            Battle({
-                p0: p.p0,
-                p0TeamIndex: p.p0TeamIndex,
-                p1: address(this),
-                p1TeamIndex: p1TeamIndex,
-                teamRegistry: p.teamRegistry,
-                validator: p.validator,
-                rngOracle: p.rngOracle,
-                ruleset: p.ruleset,
-                engineHooks: p.engineHooks,
-                moveManager: p.moveManager,
-                matchmaker: p.matchmaker
-            })
-        );
+        ENGINE.startBattle(_toCustomBattle(p));
     }
 
+    /// @notice One-tx PvE flow: creates the battle AND plays the whole precomputed game in a
+    ///         single call, collapsing the `startBattle` + `executeGame` pair into one tx. Safe to
+    ///         conclude in the same block it's created in — see `Engine.startBattleAndExecuteBatchedTurns`.
+    ///         Committer binding: `msg.sender == proposal.p0`.
+    function executeGame(ProposedBattle memory proposal, bytes calldata moves) external returns (address winner) {
+        if (msg.sender != proposal.p0) {
+            revert NotP0();
+        }
+        uint256[] memory entries = _decodeMoves(moves);
+        bytes32 battleKey;
+        (battleKey,, winner) = ENGINE.startBattleAndExecuteBatchedTurns(_toBattle(proposal), entries);
+        _afterTurn(battleKey, proposal.p0, winner);
+    }
+
+    /// @notice `executeGame` variant for the phantom-team custom-battle flow — bundles the
+    ///         phantom team-config write, battle creation, and the whole precomputed game into
+    ///         one call. Committer binding: `msg.sender == p.p0`.
+    function executeGame(CustomBattleProposal calldata p, bytes calldata moves) external returns (address winner) {
+        if (msg.sender != p.p0) {
+            revert NotP0();
+        }
+        IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(
+            p.p0, p.monIndices, p.facetIds, p.moveSelections
+        );
+        uint256[] memory entries = _decodeMoves(moves);
+        bytes32 battleKey;
+        (battleKey,, winner) = ENGINE.startBattleAndExecuteBatchedTurns(_toCustomBattle(p), entries);
+        _afterTurn(battleKey, p.p0, winner);
+    }
+
+    function _toBattle(ProposedBattle memory proposal) private pure returns (Battle memory) {
+        return Battle({
+            p0: proposal.p0,
+            p0TeamIndex: proposal.p0TeamIndex,
+            p1: proposal.p1,
+            p1TeamIndex: proposal.p1TeamIndex,
+            teamRegistry: proposal.teamRegistry,
+            validator: proposal.validator,
+            rngOracle: proposal.rngOracle,
+            ruleset: proposal.ruleset,
+            engineHooks: proposal.engineHooks,
+            moveManager: proposal.moveManager,
+            matchmaker: proposal.matchmaker
+        });
+    }
+
+    function _toCustomBattle(CustomBattleProposal calldata p) private view returns (Battle memory) {
+        return Battle({
+            p0: p.p0,
+            p0TeamIndex: p.p0TeamIndex,
+            p1: address(this),
+            p1TeamIndex: uint96(uint16(uint160(p.p0))),
+            teamRegistry: p.teamRegistry,
+            validator: p.validator,
+            rngOracle: p.rngOracle,
+            ruleset: p.ruleset,
+            engineHooks: p.engineHooks,
+            moveManager: p.moveManager,
+            matchmaker: p.matchmaker
+        });
+    }
 }

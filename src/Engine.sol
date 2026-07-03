@@ -54,6 +54,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // signal — and the salt read collapses from two transient loads to one.
     uint256 private transient _turnP0Packed;
     uint256 private transient _turnP1Packed;
+    // Set for the duration of startBattleAndExecuteBatchedTurns so the concluding turn's
+    // _handleGameOver call doesn't trip GameStartsAndEndsSameBlock — that guard exists to stop a
+    // battle from being created and decided in one block, which is exactly what the bundled CPU
+    // create+play-whole-game flow intentionally does (the whole game is precomputed off-chain
+    // before the call, so there's no same-block manipulation surface to guard against here).
+    bool private transient _skipSameBlockGuard;
 
     // Errors
     error NoWriteAllowed();
@@ -146,6 +152,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     function startBattle(Battle memory battle) external {
+        _startBattle(battle);
+    }
+
+    /// @notice Core battle-creation logic shared by `startBattle` and
+    ///         `startBattleAndExecuteBatchedTurns`. Returns the battle key plus the storage key
+    ///         the caller needs to immediately continue into the same battle's storage (avoids a
+    ///         redundant `_getStorageKey` lookup in the bundled create+execute path).
+    function _startBattle(Battle memory battle) internal returns (bytes32 battleKey, bytes32 battleConfigKey) {
         // The matchmaker authorization gate is the ONLY matchmaker check: each player approving
         // the matchmaker is the trust grant. (The old validateMatch callback added no security —
         // a matchmaker could always return true — and every in-repo matchmaker validates its own
@@ -156,11 +170,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Compute battle key and update the nonce
-        (bytes32 battleKey, bytes32 pairHash) = computeBattleKey(battle.p0, battle.p1);
+        bytes32 pairHash;
+        (battleKey, pairHash) = computeBattleKey(battle.p0, battle.p1);
         pairHashNonces[pairHash] += 1;
 
         // Get the storage key for the battle config (reusable)
-        bytes32 battleConfigKey = _initializeStorageKey(battleKey);
+        battleConfigKey = _initializeStorageKey(battleKey);
         BattleConfig storage config = battleConfig[battleConfigKey];
 
         // Get previous team sizes to clear old mon states
@@ -528,6 +543,75 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // indexers get the full replay from a single Engine log (no per-CPU-address subscription).
         // Each turn is the low 152 bits of its entry — the p1 (CPU) salt is always 0 here, so it's
         // dropped — packed big-endian as 19 bytes via bytes19(bytes32(entry << 104)).
+        if (winner != address(0)) {
+            emit BattleCompleteWithBatchTurns(battleKey, _packBatchPayload(entries, executed, winner));
+        }
+    }
+
+    /// @notice Bundles battle creation with the CPU one-tx whole-game replay: the two calls a CPU
+    ///         battle previously needed (`startBattle` then `executeBatchedTurns`) collapse into
+    ///         one, so the second call's reads of storage the first call just wrote are warm
+    ///         instead of paying a fresh cold-SLOAD tx boundary.
+    /// @dev The whole game is precomputed off-chain before this call (same trust model as
+    ///      `executeBatchedTurns`/`executeGame`), so a battle created and concluded in the same
+    ///      block here is the intended common case, not a manipulation attempt — `_skipSameBlockGuard`
+    ///      suppresses `GameStartsAndEndsSameBlock` for the duration of this call only. This is the
+    ///      ONLY path that sets that flag; every other create/execute entrypoint keeps the guard.
+    ///      Keeps its own inlined copy of the batched-turn loop for the same reason
+    ///      `executeBatchedTurns` does (see the note on `_executeBatchedEntry`): factoring a shared
+    ///      2+ call-site helper previously cost ~1M gas across a real replay by defeating inlining.
+    function startBattleAndExecuteBatchedTurns(Battle memory battle, uint256[] calldata entries)
+        external
+        returns (bytes32 battleKey, uint64 executed, address winner)
+    {
+        bytes32 storageKey;
+        (battleKey, storageKey) = _startBattle(battle);
+        storageKeyForWrite = storageKey;
+        if (msg.sender != battle.moveManager) {
+            revert WrongCaller();
+        }
+
+        _skipSameBlockGuard = true;
+        for (uint256 i = 0; i < entries.length; i++) {
+            uint256 entry = entries[i];
+            uint8 p0Move = uint8(entry);
+            uint16 p0Extra = uint16(entry >> 8);
+            uint104 p0Salt = uint104(entry >> 24);
+            uint8 p1Move = uint8(entry >> 128);
+            uint16 p1Extra = uint16(entry >> 136);
+            uint104 p1Salt = uint104(entry >> 152);
+
+            // Live flag read (direct storage, warm after the first sub-turn).
+            uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+            if (flag == 2) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+            } else if (flag == 0) {
+                uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
+                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+            } else {
+                uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
+                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+            }
+
+            winner = _executeInternal(battleKey, storageKey, false, false);
+            executed++;
+            if (winner != address(0)) {
+                break;
+            }
+
+            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx.
+            _turnP0Packed = 0;
+            _turnP1Packed = 0;
+            tempRNG = 0;
+            koOccurredFlag = 0;
+            tempPreDamage = 0;
+            effectsDirtyBitmap = 0;
+        }
+        _skipSameBlockGuard = false;
+
         if (winner != address(0)) {
             emit BattleCompleteWithBatchTurns(battleKey, _packBatchPayload(entries, executed, winner));
         }
@@ -1263,7 +1347,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 storageKey = storageKeyForWrite;
         BattleConfig storage config = battleConfig[storageKey];
 
-        if (block.timestamp == config.startTimestamp) {
+        if (block.timestamp == config.startTimestamp && !_skipSameBlockGuard) {
             revert GameStartsAndEndsSameBlock();
         }
 

@@ -581,12 +581,11 @@ contract CPUTest is Test {
             moveManager: address(okayCPU),
             matchmaker: okayCPU
         });
-        vm.startPrank(ALICE);
+        vm.prank(ALICE);
         address[] memory makersToAdd = new address[](1);
         makersToAdd[0] = address(okayCPU);
         engine.updateMatchmakers(makersToAdd, new address[](0));
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-        vm.stopPrank();
+        (bytes32 battleKey,) = engine.computeBattleKey(ALICE, address(okayCPU));
 
         // Turn plan: [switch-to-0, attack, attack] with distinct player salts; CPU salt always 0.
         uint8[3] memory p0m = [uint8(SWITCH_MOVE_INDEX), uint8(1), uint8(1)];
@@ -599,9 +598,10 @@ contract CPUTest is Test {
         }
         assertEq(stream.length, 3 * 19, "19 bytes per turn");
 
+        // One-tx bundled flow: this single call creates the battle AND plays the whole stream.
         vm.recordLogs();
         vm.prank(ALICE);
-        okayCPU.executeGame(battleKey, stream);
+        okayCPU.executeGame(proposal, stream);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         // Batched execution must NOT emit per-turn MonMoves events (the submitter already holds every
@@ -702,15 +702,11 @@ contract CPUTest is Test {
             moveManager: address(okayCPU),
             matchmaker: okayCPU
         });
-        vm.startPrank(ALICE);
+        vm.prank(ALICE);
         address[] memory makersToAdd = new address[](1);
         makersToAdd[0] = address(okayCPU);
         engine.updateMatchmakers(makersToAdd, new address[](0));
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-        vm.stopPrank();
-
-        // Game must not start and end in the same block (Engine guards against it).
-        vm.warp(vm.getBlockTimestamp() + 1);
+        (bytes32 battleKey,) = engine.computeBattleKey(ALICE, address(okayCPU));
 
         // Turn 0: both send in mon 0 (switch). Turn 1: both attack (move 1) -> CPU mon (hp 1) KO'd.
         uint8[2] memory p0m = [uint8(SWITCH_MOVE_INDEX), uint8(1)];
@@ -722,9 +718,12 @@ contract CPUTest is Test {
             stream = abi.encodePacked(stream, p0m[i], uint16(0), p0s[i], p1m[i], uint16(0));
         }
 
+        // Bundled flow creates AND concludes the battle in this one call — same block as
+        // creation, which the two-tx flow could never do (Engine used to guard against it via
+        // GameStartsAndEndsSameBlock). Exercises that the bundled path's same-block allowance works.
         vm.recordLogs();
         vm.prank(ALICE);
-        okayCPU.executeGame(battleKey, stream);
+        okayCPU.executeGame(proposal, stream);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bytes32 plainSig = keccak256("BattleComplete(bytes32,address)");

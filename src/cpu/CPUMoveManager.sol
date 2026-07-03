@@ -110,27 +110,16 @@ abstract contract CPUMoveManager {
         _afterTurn(battleKey, p0, winner);
     }
 
-    /// @notice One-tx PvE flow: p0 submits the WHOLE game's moves (theirs + the CPU's, computed
-    ///         off-chain) plus their own per-turn salt, and the engine executes every turn in one tx —
-    ///         collapsing the N per-turn submit txs into one. The player supplies a salt each turn (the
-    ///         RNG entropy on their side); the CPU's salt is always 0x0, since a CPU has no move to
-    ///         hide. CPU-ONLY by construction — PvP routes through a different move manager
-    ///         (commit-reveal) and never reaches here.
+    /// @notice Decodes the one-tx PvE move stream: p0 submits the WHOLE game's moves (theirs + the
+    ///         CPU's, computed off-chain) plus their own per-turn salt; the CPU's salt is always
+    ///         0x0, since a CPU has no move to hide. Shared by `CPU.executeGame`'s overloads.
     /// @dev `moves` packs 19 bytes per turn: [p0Move 1 | p0Extra 2 | p0Salt 13 (104-bit) | p1Move 1 |
     ///      p1Extra 2]; the CPU's salt is omitted (0). Raw move indices (the engine applies
     ///      MOVE_INDEX_OFFSET). The CPU move is unverified — same trust model as `selectMoveWithCpuMove`
-    ///      (lying only handicaps the CPU). Committer binding: `msg.sender == p0`.
-    function executeGame(bytes32 battleKey, bytes calldata moves) external returns (address winner) {
-        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
-        if (msg.sender != rctx.p0) {
-            revert NotP0();
-        }
-        if (rctx.winnerIndex != 2) {
-            return address(0);
-        }
-
+    ///      (lying only handicaps the CPU).
+    function _decodeMoves(bytes calldata moves) internal pure returns (uint256[] memory entries) {
         uint256 numTurns = moves.length / 19;
-        uint256[] memory entries = new uint256[](numTurns);
+        entries = new uint256[](numTurns);
         for (uint256 i; i < numTurns; ++i) {
             uint256 off = i * 19;
             // One chunk load per turn (calldata slice -> bytes19; byte 0 lands in the high byte
@@ -145,8 +134,6 @@ abstract contract CPUMoveManager {
             // entry: p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104 (= 0).
             entries[i] = p0Move | (p0Extra << 8) | (p0Salt << 24) | (p1Move << 128) | (p1Extra << 136);
         }
-        (, winner) = ENGINE.executeBatchedTurns(battleKey, entries);
-        _afterTurn(battleKey, rctx.p0, winner);
     }
 
     /// @notice Assemble the CPU decision context from granular engine reads. The old wide
