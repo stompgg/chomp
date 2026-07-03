@@ -66,3 +66,6 @@ package.json
 
 
 docs/generated/
+# Rust transpiler output (regenerated like ts-output; sources of truth live in transpiler/{runtime-rs,differential-rs,ffi-rs})
+transpiler/rs-output/
+__pycache__/
