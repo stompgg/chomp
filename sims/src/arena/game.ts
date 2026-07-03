@@ -18,7 +18,7 @@ import { captureBattleView } from '../cpu/battle-view';
 import { NO_OP_INDEX, TEAM_SIZE } from '../cpu/constants';
 import { makeSimContext, startBattle, executeTurn, P0_ADDR, P1_ADDR, type SimContext } from '../harness';
 import { loadRoster } from '../util/csv-load';
-import { buildTeamMon } from './team';
+import { buildTeamMon, type DraftedMon } from './team';
 import { transposeEngine } from './transpose';
 import { makeRng, randomSalt } from './rng';
 import { MemoizedInlineRngOracle } from './rng-oracle';
@@ -49,9 +49,9 @@ export interface TurnHook {
 
 // Reuse chomp's startBattle, then flip the rngOracle to ZERO so the keccak256(p0Salt,p1Salt) inline
 // path runs (parity with munch's harness).
-function startArenaBattle(ctx: SimContext, teams: [number[], number[]]): `0x${string}` {
-  const p0Team = teams[0].map((id) => buildTeamMon(ctx, roster, id));
-  const p1Team = teams[1].map((id) => buildTeamMon(ctx, roster, id));
+function startArenaBattle(ctx: SimContext, teams: [DraftedMon[], DraftedMon[]]): `0x${string}` {
+  const p0Team = teams[0].map((dm) => buildTeamMon(ctx, roster, dm.id, dm.equip));
+  const p1Team = teams[1].map((dm) => buildTeamMon(ctx, roster, dm.id, dm.equip));
   const { battleKey } = startBattle(ctx, p0Team, p1Team);
   const engine = ctx.engine as any;
   const storageKey = engine._getStorageKey(battleKey);
@@ -61,7 +61,7 @@ function startArenaBattle(ctx: SimContext, teams: [number[], number[]]): `0x${st
 
 export function playGame(
   stratP1: CpuStrategy, stratP0: CpuStrategy,
-  teams: [number[], number[]], seed: number, maxTurns: number,
+  teams: [DraftedMon[], DraftedMon[]], seed: number, maxTurns: number,
   onBeforeExecute?: TurnHook,
 ): GameOutcome {
   const rng = makeRng(seed);

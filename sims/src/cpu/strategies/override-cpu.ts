@@ -71,9 +71,8 @@ export type OverrideScript = OverrideRule[];
  * list. Start small — one signature line per mon is enough to test the hypothesis.
  */
 export const OVERRIDE_SCRIPTS: Record<number, OverrideScript> = {
-  // Ghouliath (baseHp 303): fire Eternal Grudge (slot 0) on the turn it would otherwise be KO'd,
-  // while Rise From The Grave can still refund the self-KO. Once per game (the revive is one charge).
-  303: [{ move: 0, when: (c) => c.incomingLethal, once: true, label: 'Eternal Grudge on lethal' }],
+  // Ghouliath: EG-on-lethal tested negative twice in the v4 pass (48.3 / 48.9 vs hard 51.7 at 600
+  // games each, ungated and hpFrac<0.4-gated); script removed so later runs have a cleaner field.
 
   // Aurox (baseHp 400): the tank line — Iron Wall (slot 2) on a fresh, stamina-flush entry, then
   // Bull Rush (slot 3) as the default so Up Only ramps behind the regen.
@@ -82,20 +81,21 @@ export const OVERRIDE_SCRIPTS: Record<number, OverrideScript> = {
     { move: 3, label: 'Bull Rush' },
   ],
 
-  // Iblivion (baseHp 277): the battery line — Renormalize (slot 3) once on entry to set Baselight
-  // to 3, Loop (slot 1) once right after for the +40% tier, then Unbounded Strike (slot 0), which
-  // auto-empowers as Baselight re-accrues. (The stamina-gated refill cycle tested inconclusive:
-  // passive accrual means the refill gate almost never binds in the attacker line.)
+  // Iblivion (baseHp 277): the turn-1 Loop line (designer-requested recheck, v4 annotation) —
+  // Loop once on entry at the +15% Baselight-1 tier instead of spending two turns on the
+  // Renormalize battery; Baselight then accrues passively (3 by end of t2 -> empowered Unbounded
+  // Strike at t3), with Brightback sustain under half HP. The Renormalize-first battery tested
+  // flat four times (45.7/45.9/48.1 at 600, 45.6 at 1200) and 46.7 at the 2000-game anchor.
   277: [
-    { move: 3, once: true, label: 'Renormalize battery' },
-    { move: 1, once: true, label: 'Loop at +40%' },
+    { move: 1, once: true, label: 'Loop on entry (+15%)' },
     { move: 2, when: (c) => c.hpFrac < 0.5, label: 'Brightback sustain' },
     { move: 0, label: 'Unbounded Strike' },
   ],
 
-  // Xmon (baseHp 311): stack Night Terrors (slot 3) twice early while stamina is healthy — a free
-  // cast that converts 1 stamina per turn into 20 chip per stack — then fall through to hard.
-  311: [{ move: 3, when: (c) => c.stamina >= 3, maxUses: 2, label: 'Night Terrors stack' }],
+  // Xmon: script REMOVED in the v4 pass — Night Terrors x2 tested negative twice (43.3 pre-change
+  // and 41.3 post-change vs hard 46.6/45.4), and slot-keyed rules are corrupted for the four
+  // rotating-catalog mons (the slot-3 rule fired Invoke Taboo 30% of move-turns under rotation).
+  // Re-script only after the registry can key rules to move identity instead of battle slot.
 
   // Volthare (baseHp 310): prefer Mega Star Blast (slot 2) whenever affordable — testing whether
   // greedy's 7-point edge over hard on this mon reduces to one preferred-move rule (the shape
@@ -116,14 +116,15 @@ export const OVERRIDE_SCRIPTS: Record<number, OverrideScript> = {
     { move: 0, when: (c) => c.stamina < 3, maxUses: 2, label: 'Chill Out while saving' },
   ],
 
-  // Inutia (baseHp 351): the weave-and-pass line — Initialize (slot 1) on a fresh, safe entry, then
-  // Hit and Dip (slot 3) to pivot and pass the boost. NOTE: the pivot target is engine-picked, not
-  // frailest-partner-aware, so this tests "does weaving beat mono-attacking," not a hand-picked pass.
-  351: [
-    { move: 0, once: true, label: 'Arm Chain Expansion' },
-    { move: 1, when: (c) => c.hpFrac > 0.75, once: true, label: 'Initialize on entry' },
-    { move: 3, once: true, label: 'Hit and Dip pivot (pass the boost)' },
-  ],
+  // Inutia (baseHp 351): v4 isolation — arm Chain Expansion once, fall through to hard for
+  // everything else. (The earlier three-rule bundle incl. Initialize/Hit And Dip scored 51.6 vs
+  // hard 50.3 at 600; this isolates CE's share of that gain.)
+  351: [{ move: 0, once: true, label: 'Arm Chain Expansion' }],
+
+  // Ekineki: script REMOVED in the v4 pass — "NNN when stamina <= 2" tested sharply negative
+  // (50.8 vs fixed hard 56.7 at 2000 games): at <=2 stamina the following turn still can't afford
+  // Overflow, so the one-turn crit prime expired uncashed twice a game. The payable window is
+  // roughly "stamina exactly 3 with Overflow planned", which is too thin to script profitably.
 };
 
 export class OverrideCpu extends BaseCpuStrategy {

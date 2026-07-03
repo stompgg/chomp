@@ -5,7 +5,8 @@
  * but does its OWN type mapping and inline packing so it handles every CSV type name including "Faith"
  * (both `mon-builder.ts`'s TYPE_BY_NAME and `inline-pack.ts`'s TYPE_MAP predate the Mythic->Faith enum
  * rename and would throw). `typeToEnum` reads the `Type` enum by name directly, so it survives renames.
- * `monMoveSlots` is shared with `mon-meta.ts` so the usage-table labels line up with the engine's slots.
+ * `monCatalog` is shared with `mon-meta.ts` so the usage-table labels index the same catalog the draft
+ * selects a battle loadout from.
  */
 import { contracts as CONTRACT_REGISTRY } from '../../../transpiler/ts-output/factories';
 import { Type } from '../../../transpiler/ts-output/Enums';
@@ -36,11 +37,12 @@ type ResolvedSlot =
   | { kind: 'inline'; json: InlineMoveJson; name: string };
 
 /**
- * The mon's 4 move slots — implemented moves in CSV order, capped at 4 and padded by repeating the last
- * (the engine validator wants exactly 4 slots; padded duplicates are inert). Shared with mon-meta so the
- * usage labels index the same slots the engine stores.
+ * The mon's full implemented move catalog in learnset (CSV) order — every move with a contract or
+ * inline JSON, uncapped and unpadded. Lanes [0,4) are the level-0 moves; a 5th lane, where present, is
+ * the mon's level-6 unlock. Treating mons as max level means the whole catalog is selectable; the draft
+ * then picks which lanes fill the 4 battle slots. Throws if the mon resolves to zero moves.
  */
-export function monMoveSlots(roster: Roster, mon: MonRow): ResolvedSlot[] {
+export function monCatalog(roster: Roster, mon: MonRow): ResolvedSlot[] {
   const csvMoves = roster.movesByMon.get(mon.name) ?? [];
   const monDir = mon.name.toLowerCase();
   const slots: ResolvedSlot[] = [];
@@ -58,9 +60,26 @@ export function monMoveSlots(roster: Roster, mon: MonRow): ResolvedSlot[] {
     // Unimplemented move — skip (mirrors buildMonConfig).
   }
   if (slots.length === 0) throw new Error(`mon ${mon.name} has no resolvable moves`);
-  const four = slots.slice(0, 4);
-  while (four.length < 4) four.push(four[four.length - 1]);
-  return four;
+  return slots;
+}
+
+/** A mon drafted into a team slot: its id plus the catalog lanes it fields this draft (`equip`). */
+export interface DraftedMon {
+  id: number;
+  equip: number[];
+}
+
+/**
+ * Which catalog lanes fill a max-level mon's 4 battle slots. A mon with <=4 catalog moves fields all of
+ * them (no draw). A larger catalog — the level-6-unlock mons — drops one random lane per draft, so over a
+ * run every catalog move (including the level-6 move) gets played. Drops preserve ascending order, so
+ * slot 0 stays the mon's first move. The `rand` here MUST be a stream separate from the team-draw rng —
+ * that one is byte-locked to munch's for cross-repo team parity.
+ */
+export function draftMoveSelection(catalogLen: number, rand: () => number): number[] {
+  const pool = Array.from({ length: catalogLen }, (_, i) => i);
+  while (pool.length > 4) pool.splice(Math.floor(rand() * pool.length), 1);
+  return pool;
 }
 
 // Inline-move packing — mirrors sims/src/util/inline-pack.ts:packMove but with a type-robust map.
@@ -85,10 +104,16 @@ function resolveContractAddress(ctx: SimContext, name: string): bigint {
   return addressToUint(c._contractAddress);
 }
 
-export function buildTeamMon(ctx: SimContext, roster: Roster, monId: number): Structs.Mon {
+export function buildTeamMon(ctx: SimContext, roster: Roster, monId: number, equip?: number[]): Structs.Mon {
   const mon = roster.mons.find((m) => m.id === monId);
   if (!mon) throw new Error(`no mon with id ${monId}`);
-  const slots = monMoveSlots(roster, mon);
+  const catalog = monCatalog(roster, mon);
+  // Default loadout = the first up-to-4 catalog lanes (the level-0 moves); callers pass `equip` to field
+  // a specific max-level 4-of-N selection. Engine fields exactly 4 lanes, so pad a short loadout by
+  // repeating the last (duplicate lanes are inert).
+  const lanes = equip ?? Array.from({ length: Math.min(4, catalog.length) }, (_, i) => i);
+  const slots = lanes.map((i) => catalog[i]);
+  while (slots.length < 4) slots.push(slots[slots.length - 1]);
 
   const moves = slots.map((s) => {
     if (s.kind === 'contract') return resolveContractAddress(ctx, s.contractName);

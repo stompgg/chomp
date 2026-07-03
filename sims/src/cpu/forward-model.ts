@@ -167,6 +167,19 @@ export function forkBattle(e: any, bk: string): Hex {
   eng.__mutateBattleData(forkKey, cloneBattleData(srcData));
   eng.__mutateBattleConfig(forkKey, cloneBattleConfig(srcConfig));
 
+  // globalKV + globalKVKeySlots live OUTSIDE battleData/battleConfig, keyed by storageKey — and the
+  // locks / once-per-game flags of ~18 contracts live there (Initialize/Loop locks, the one-status-
+  // per-mon flag, Snack Break's halving ladder, Savior Complex, Modal Bolt modes, ...). Copy the
+  // source battle's entries under the fork key, or every forked turn sees them all as zero and the
+  // search rewards re-casting locked moves. Values are immutable strings/bigints, so a shallow
+  // per-entry copy through the auto-vivifying proxies is exact.
+  const srcKV = eng.globalKV[srcStorageKey] as Record<string, string>;
+  const dstKV = eng.globalKV[forkKey] as Record<string, string>;
+  for (const k of Object.keys(srcKV)) dstKV[k] = srcKV[k];
+  const srcSlots = eng.globalKVKeySlots[srcStorageKey] as Record<string, bigint>;
+  const dstSlots = eng.globalKVKeySlots[forkKey] as Record<string, bigint>;
+  for (const k of Object.keys(srcSlots)) dstSlots[k] = srcSlots[k];
+
   // No redirect: leaving battleKeyToStorageKey[forkKey] == 0 makes _getStorageKey(forkKey) return
   // forkKey itself, so battleConfig[forkKey] is the resolved slot for both reads and execution.
   return forkKey;
@@ -182,6 +195,8 @@ export function disposeFork(e: any, forkKey: string): void {
   const eng = e as any;
   delete eng.battleData[forkKey];
   delete eng.battleConfig[forkKey];
+  delete eng.globalKV[forkKey];
+  delete eng.globalKVKeySlots[forkKey];
 }
 
 // ---------------------------------------------------------------------------------------------
