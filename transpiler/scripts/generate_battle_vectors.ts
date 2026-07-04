@@ -486,5 +486,5 @@ scenarios.push(runScenario(
 
 const out = { scenarios };
 const path = join(FIXTURES, 'battle_replay.json');
-writeFileSync(path, JSON.stringify(out, null, 1));
+writeFileSync(path, JSON.stringify(out));
 console.log(`Wrote ${path} (${scenarios.length} scenarios, ${scenarios.reduce((n, s) => n + s.turns.length, 0)} turns)`);

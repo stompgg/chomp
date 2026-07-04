@@ -83,7 +83,7 @@ interface Vector {
 
 function writeSuite(name: string, vectors: Vector[]): void {
   const path = join(FIXTURES, `${name}.json`);
-  writeFileSync(path, JSON.stringify({ suite: name, vectors }, null, 1));
+  writeFileSync(path, JSON.stringify({ suite: name, vectors }));
   console.log(`wrote ${path} (${vectors.length} vectors)`);
 }
 

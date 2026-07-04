@@ -31,7 +31,7 @@ MULTIPLIERS_2 = 35843740606796099032740410262627249642837
 
 def write_suite(name: str, vectors: list) -> None:
     path = FIXTURES / f'{name}.json'
-    path.write_text(json.dumps({'suite': name, 'vectors': vectors}, indent=1))
+    path.write_text(json.dumps({'suite': name, 'vectors': vectors}))
     print(f'wrote {path} ({len(vectors)} vectors)')
 
 
