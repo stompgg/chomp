@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -149,9 +149,20 @@ struct Session {
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 
-fn registry() -> &'static Mutex<HashMap<u64, Session>> {
-    static REG: std::sync::OnceLock<Mutex<HashMap<u64, Session>>> = std::sync::OnceLock::new();
+/// Two-level locking: the registry mutex is held only long enough to clone
+/// the session Arc; each battle then serializes on ITS OWN mutex. bun
+/// Workers are threads in one process sharing these globals — with a single
+/// registry-wide lock held across engine execution, a worker pool would
+/// serialize completely.
+fn registry() -> &'static Mutex<HashMap<u64, Arc<Mutex<Session>>>> {
+    static REG: std::sync::OnceLock<Mutex<HashMap<u64, Arc<Mutex<Session>>>>> =
+        std::sync::OnceLock::new();
     REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Grab a session's Arc without holding the registry lock during the call.
+fn session(handle: u64) -> Option<Arc<Mutex<Session>>> {
+    registry().lock().unwrap().get(&handle).cloned()
 }
 
 fn hex_u256(s: &str) -> Option<U256> {
@@ -267,7 +278,10 @@ pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
     let Ok(session) = result else { return 0 };
 
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-    registry().lock().unwrap().insert(handle, session);
+    registry()
+        .lock()
+        .unwrap()
+        .insert(handle, Arc::new(Mutex::new(session)));
     handle
 }
 
@@ -282,8 +296,8 @@ pub unsafe extern "C" fn chomp_battle_validate(
     move_index: u8,
     extra_data: u16,
 ) -> i32 {
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return -1 };
+    let Some(sess) = session(handle) else { return -1 };
+    let mut s = sess.lock().unwrap();
     let key = match read_json(bk) {
         Some(raw) if !raw.is_empty() => match parse_b256(raw) {
             Some(k) => k,
@@ -374,8 +388,8 @@ pub unsafe extern "C" fn chomp_battle_turn(handle: u64, input_json: *const c_cha
     else {
         return std::ptr::null_mut();
     };
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let mut s = sess.lock().unwrap();
     let key = s.battle_key;
     let world = &mut s.world;
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -526,8 +540,8 @@ fn rich_state_json(world: &mut World, bk: B256, full: bool) -> String {
 pub unsafe extern "C" fn chomp_battle_kv(handle: u64, bk: *const c_char, key: u64) -> *mut c_char {
     let Some(raw) = read_json(bk) else { return std::ptr::null_mut() };
     let Some(k) = parse_b256(raw) else { return std::ptr::null_mut() };
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let mut s = sess.lock().unwrap();
     let world = &mut s.world;
     world.reset_transient(); // fresh-tx boundary
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -542,18 +556,19 @@ pub unsafe extern "C" fn chomp_battle_kv(handle: u64, bk: *const c_char, key: u6
 /// The session's battle key as a hex C string (free with chomp_str_free).
 #[no_mangle]
 pub extern "C" fn chomp_battle_key(handle: u64) -> *mut c_char {
-    let reg = registry().lock().unwrap();
-    let Some(s) = reg.get(&handle) else { return std::ptr::null_mut() };
-    out_string(format!("{:#x}", s.battle_key))
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let key = sess.lock().unwrap().battle_key;
+    out_string(format!("{:#x}", key))
 }
 
 /// Rich getter-backed state of the LIVE battle (free with chomp_str_free).
 #[no_mangle]
 pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let mut s = sess.lock().unwrap();
     let key = s.battle_key;
     s.world.reset_transient(); // fresh-tx boundary
+    let s = &mut *s;
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         rich_state_json(&mut s.world, key, true)
     }));
@@ -629,8 +644,8 @@ pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *con
     let Ok(input) = serde_json::from_str::<HypoInput>(raw) else {
         return std::ptr::null_mut();
     };
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let mut s = sess.lock().unwrap();
     let key = s.battle_key;
     let world = &mut s.world;
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -670,8 +685,8 @@ pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *con
 pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const c_char) -> i32 {
     let Some(raw) = read_json(fork_key) else { return -1 };
     let Some(fork) = parse_b256(raw) else { return -1 };
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return -1 };
+    let Some(sess) = session(handle) else { return -1 };
+    let mut s = sess.lock().unwrap();
     s.world.Engine.battleData.remove(&fork);
     s.world.Engine.battleConfig.remove(&fork);
     s.world.Engine.globalKV.remove(&fork);
@@ -682,16 +697,17 @@ pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const
 /// Current snapshot without executing a turn (free with chomp_str_free).
 #[no_mangle]
 pub extern "C" fn chomp_battle_snapshot(handle: u64) -> *mut c_char {
-    let mut reg = registry().lock().unwrap();
-    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
+    let mut s = sess.lock().unwrap();
     let key = s.battle_key;
+    let s = &mut *s;
     let snap = snapshot_json(&mut s.world, key);
     out_string(snap)
 }
 
 #[no_mangle]
 pub extern "C" fn chomp_battle_free(handle: u64) {
-    registry().lock().unwrap().remove(&handle);
+    registry().lock().unwrap().remove(&handle); // Arc drops when last user releases
 }
 
 /// Release a string returned by chomp_battle_turn / chomp_battle_snapshot.
