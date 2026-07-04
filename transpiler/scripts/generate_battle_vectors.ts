@@ -103,6 +103,9 @@ interface ScenarioOut {
   /** Contract name -> address, exported per scenario (the TS address
    * scheme is generation-order-dependent). Rust deploy_all consumes it. */
   addressBook: Record<string, string>;
+  /** The rngOracle address stored in BattleConfig — zero selects the
+   * engine's inline keccak(p0Salt, p1Salt) path (no oracle at all). */
+  rngOracle: string;
   turns: TurnRecord[];
 }
 
@@ -146,13 +149,14 @@ function runScenario(
   name: string, monsPerTeam: number,
   p0Cfg: HarnessMonConfig[], p1Cfg: HarnessMonConfig[],
   policy: Policy, maxTurns: number,
+  zeroRngOracle = false,
 ): ScenarioOut {
   const ctx: SimContext = makeSimContext({ monsPerTeam: BigInt(monsPerTeam) });
   return runBuiltScenario(
     ctx, name, monsPerTeam,
     p0Cfg.map((c) => buildMon(ctx, c)),
     p1Cfg.map((c) => buildMon(ctx, c)),
-    policy, maxTurns,
+    policy, maxTurns, zeroRngOracle,
   );
 }
 
@@ -160,9 +164,16 @@ function runBuiltScenario(
   ctx: SimContext, name: string, monsPerTeam: number,
   p0Team: Structs.Mon[], p1Team: Structs.Mon[],
   policy: Policy, maxTurns: number,
+  zeroRngOracle = false,
 ): ScenarioOut {
-  const started = startBattle(ctx, p0Team, p1Team);
+  const started = startBattle(ctx, p0Team, p1Team, { zeroRngOracle });
   const engine = ctx.engine as any;
+  // Export the oracle address ACTUALLY stored in config, not an assumption.
+  const storageKey = engine._getStorageKey(started.battleKey);
+  const storedOracle = engine.battleConfig[storageKey].rngOracle;
+  const rngOracleAddr: string = (storedOracle && storedOracle._contractAddress)
+    ? storedOracle._contractAddress
+    : '0x0000000000000000000000000000000000000000';
   const validate = (side: 0 | 1, moveIndex: number, extraData: number): boolean =>
     engine.validatePlayerMoveForBattle(
       started.battleKey, BigInt(moveIndex), BigInt(side), BigInt(extraData),
@@ -223,6 +234,7 @@ function runBuiltScenario(
     p0Team: p0Team.map(exportMon), p1Team: p1Team.map(exportMon),
     battleKey: started.battleKey,
     addressBook: exportAddressBook(ctx),
+    rngOracle: rngOracleAddr,
     turns,
   };
 }
@@ -439,21 +451,38 @@ const rosterPolicy: Policy = (t, _side, _snap, validate) => {
   const roster = loadRoster();
   const ids = roster.mons.map((m) => m.id).sort((a, b) => a - b);
   const pick = (list: number[]) => list.filter((id) => ids.includes(id));
-  const matchups: [string, number[], number[]][] = [
-    ['roster_3v3_a', pick([0, 1, 2]), pick([3, 4, 5])],
-    ['roster_3v3_b', pick([6, 7, 8]), pick([9, 10, 11])],
-    ['roster_2v2_c', pick([12, 2]), pick([7, 0])],
+  const matchups: [string, number[], number[], boolean][] = [
+    ['roster_3v3_a', pick([0, 1, 2]), pick([3, 4, 5]), false],
+    ['roster_3v3_b', pick([6, 7, 8]), pick([9, 10, 11]), false],
+    ['roster_2v2_c', pick([12, 2]), pick([7, 0]), false],
+    // Inline rng path (rngOracle = 0): the arena's Rust default — the
+    // engine hashes the salts itself, no oracle dispatch at all.
+    ['roster_3v3_zero_oracle', pick([1, 5, 10]), pick([4, 8, 12]), true],
   ];
-  for (const [name, p0Ids, p1Ids] of matchups) {
+  for (const [name, p0Ids, p1Ids, zeroOracle] of matchups) {
     const ctx = makeSimContext({ monsPerTeam: BigInt(p0Ids.length) });
     scenarios.push(runBuiltScenario(
       ctx, name, p0Ids.length,
       p0Ids.map((id) => buildTeamMon(ctx, roster, id)),
       p1Ids.map((id) => buildTeamMon(ctx, roster, id)),
-      rosterPolicy, 80,
+      rosterPolicy, 80, zeroOracle,
     ));
   }
 }
+
+// Zero-oracle variant of a status-effect battle: RNG feeds crits,
+// volatility, status rolls, and sleep wake-ups — cover them on the
+// inline path too.
+scenarios.push(runScenario(
+  'burn_zero_oracle', 1,
+  [cmon({ hp: 220, stamina: 20, speed: 9, attack: 50, defense: 50, spa: 55, spd: 50, type1: 4, type2: 14 },
+    ['SetAblaze'])],
+  [cmon({ hp: 220, stamina: 20, speed: 11, attack: 55, defense: 50, spa: 45, spd: 50, type1: 7, type2: 14 },
+    [{ basePower: 40, staminaCost: 1, moveType: 'Nature', moveClass: 'Physical' }])],
+  () => ({ moveIndex: 0, extraData: 0 }),
+  30,
+  true,
+));
 
 const out = { scenarios };
 const path = join(FIXTURES, 'battle_replay.json');

@@ -51,6 +51,9 @@ function battleCfg(sc: any) {
     p0Team: sc.p0Team,
     p1Team: sc.p1Team,
     addressBook: sc.addressBook ?? {},
+    // Recorded fixtures mirror whatever oracle the TS run stored; a live
+    // arena drive omits this and gets the inline zero-oracle path.
+    rngOracle: sc.rngOracle,
   };
 }
 

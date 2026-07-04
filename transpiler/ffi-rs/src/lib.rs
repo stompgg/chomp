@@ -59,7 +59,6 @@ const P1: Address = addr(0x02);
 const MATCHMAKER: Address = addr(0xcafe);
 const MOVE_MANAGER: Address = addr(0xbeef);
 const TEAM_REGISTRY: Address = addr(0xa55e);
-const RNG_ORACLE: Address = addr(0x99);
 const ENGINE_ADDR: Address = addr(0xe7);
 
 const fn addr(low: u16) -> Address {
@@ -93,6 +92,12 @@ struct BattleCfg {
     p1Team: Vec<MonJson>,
     #[serde(default)]
     addressBook: HashMap<String, String>,
+    /// Oracle address for BattleConfig. DEFAULT: zero — the engine's
+    /// inline keccak(p0Salt, p1Salt) path, no oracle dispatch (the arena
+    /// path; the TS memoized-oracle shim has no Rust counterpart on
+    /// purpose). Set explicitly only to mirror a recorded TS fixture.
+    #[serde(default)]
+    rngOracle: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -221,10 +226,11 @@ pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
             .filter_map(|(k, v)| Some((k.clone(), hex_address(v)?)))
             .collect();
         let engine_addr = book.get("Engine").copied().unwrap_or(ENGINE_ADDR);
-        let rng_oracle = book
-            .get("DefaultRandomnessOracle")
-            .copied()
-            .unwrap_or(RNG_ORACLE);
+        let rng_oracle = cfg
+            .rngOracle
+            .as_deref()
+            .and_then(hex_address)
+            .unwrap_or(Address::ZERO);
         if !book.is_empty() {
             let addr_of = move |name: &str| -> Address {
                 *book

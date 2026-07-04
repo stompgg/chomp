@@ -54,6 +54,10 @@ struct Scenario {
     battleKey: String,
     #[serde(default)]
     addressBook: HashMap<String, String>,
+    /// Oracle address stored in BattleConfig; zero = the engine's inline
+    /// keccak(p0Salt, p1Salt) path. Absent in older fixtures -> fallback.
+    #[serde(default)]
+    rngOracle: Option<String>,
     turns: Vec<Turn>,
 }
 
@@ -205,10 +209,13 @@ fn replay_scenario(sc: &Scenario) {
         .map(|(k, v)| (k.clone(), hex_address(v)))
         .collect();
     let engine_addr = book.get("Engine").copied().unwrap_or(ENGINE_ADDR);
-    let rng_oracle = book
-        .get("DefaultRandomnessOracle")
-        .copied()
-        .unwrap_or(RNG_ORACLE);
+    let rng_oracle = match &sc.rngOracle {
+        Some(a) => hex_address(a), // zero -> inline keccak path
+        None => book
+            .get("DefaultRandomnessOracle")
+            .copied()
+            .unwrap_or(RNG_ORACLE),
+    };
     if !book.is_empty() {
         let sc_name = sc.name.clone();
         let addr_of = move |name: &str| -> Address {
