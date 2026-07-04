@@ -1038,6 +1038,35 @@ class RustExpressionGenerator:
                 impl_sig.return_type(),
             )
 
+        if iface in getattr(self._symbols, 'dispatch_interfaces', set()):
+            # Address-based dispatch through the generated tables: the
+            # target's ContractId (registered by deploy_all) picks the
+            # transpiled module; dispatch pushes the msg.sender frame.
+            if sig is None:
+                self._ctx.warn(f'dispatch interface {iface} lacks method {member}')
+                return f'unimplemented!("{iface}.{member} unknown")', ret
+            target = self.emit(base, ADDRESS)
+            lines = [f'let __target = {target};']
+            arg_names = []
+            for i, arg in enumerate(call.arguments):
+                ptype = sig.param_types[i] if i < len(sig.param_types) else UNKNOWN
+                tmp = self._ctx.fresh_temp('a')
+                code = self._value_of(arg, ptype)
+                if ptype.is_memory_ref or ptype.kind == 'mapping':
+                    lines.append(f'let mut {tmp} = {code};')
+                    arg_names.append(f'&mut {tmp}')
+                else:
+                    lines.append(f'let {tmp} = {code};')
+                    arg_names.append(tmp)
+            args = ', '.join(['world', '__target'] + arg_names)
+            body = ' '.join(lines)
+            # Raw `{iface}_{member}` — the concatenation is never a keyword,
+            # unlike rust_ident(member) which would yield e.g. `r#move`.
+            return (
+                f'{{ {body} crate::dispatch::{iface}_{member}({args}) }}',
+                ret,
+            )
+
         if iface in self._symbols.external_interfaces:
             self._symbols.record_ext_call(iface, member)
             target = self.emit(base, ADDRESS)

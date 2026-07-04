@@ -16,6 +16,13 @@ use chomp_engine::moves::{AttackCalculator, MoveSlotLib};
 use chomp_engine::types::TypeCalculator;
 use chomp_engine::types::TypeCalcLib;
 use chomp_engine::Constants;
+use chomp_engine::world::{NoExternalCalls, World};
+
+/// Vectors only exercise inline-packed slots; dispatch is never reached, but
+/// the decoders' signatures thread world for the contract-slot paths.
+fn fresh_world() -> World {
+    World::new(Box::new(NoExternalCalls))
+}
 
 fn arr(v: &serde_json::Value) -> &Vec<serde_json::Value> {
     v.as_array().expect("expected JSON array")
@@ -317,10 +324,12 @@ fn moveslot_inline_decoding() {
             // fail the test, not be swallowed as a satisfied revert.
             match v.tag.as_str() {
                 "moveType" => run_vector(name, i, v, || {
-                    let _ = MoveSlotLib::moveType(raw, Address::ZERO, bk);
+                    let mut w = fresh_world();
+                    let _ = MoveSlotLib::moveType(&mut w, raw, Address::ZERO, bk);
                 }),
                 "decodeMeta" => run_vector(name, i, v, || {
-                    let _ = MoveSlotLib::decodeMeta(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
+                    let mut w = fresh_world();
+                    let _ = MoveSlotLib::decodeMeta(&mut w, raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
                 }),
                 other => panic!("{name}[{i}]: unknown revert tag `{other}` — add a dispatch arm"),
             }
@@ -336,12 +345,13 @@ fn moveslot_inline_decoding() {
                 assert_eq!(inline, as_bool(&v.outputs[0]), "{name}[{i}] isInline");
                 return;
             }
+            let mut w = fresh_world();
             let base_power = MoveSlotLib::basePower(raw, bk);
-            let move_class = MoveSlotLib::moveClass(raw, Address::ZERO, bk);
-            let priority = MoveSlotLib::priority(raw, Address::ZERO, bk, U256::ZERO);
-            let move_type = MoveSlotLib::moveType(raw, Address::ZERO, bk);
-            let stamina = MoveSlotLib::stamina(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
-            let meta = MoveSlotLib::decodeMeta(raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
+            let move_class = MoveSlotLib::moveClass(&mut w, raw, Address::ZERO, bk);
+            let priority = MoveSlotLib::priority(&mut w, raw, Address::ZERO, bk, U256::ZERO);
+            let move_type = MoveSlotLib::moveType(&mut w, raw, Address::ZERO, bk);
+            let stamina = MoveSlotLib::stamina(&mut w, raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
+            let meta = MoveSlotLib::decodeMeta(&mut w, raw, Address::ZERO, bk, U256::ZERO, U256::ZERO);
             {
                 assert_eq!(inline, as_bool(&v.outputs[0]), "{name}[{i}] isInline");
                 assert_eq!(base_power, as_u32(&v.outputs[1]), "{name}[{i}] basePower");

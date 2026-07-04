@@ -130,5 +130,10 @@
   ],
   "skipBases": [
     "Ownable"
+  ],
+  "dispatchInterfaces": [
+    "IMoveSet",
+    "IEffect",
+    "IAbility"
   ]
 }

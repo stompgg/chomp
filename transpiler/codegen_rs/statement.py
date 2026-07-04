@@ -209,6 +209,23 @@ class RustStatementGenerator:
         name = decl.name
 
         if init is None:
+            if self._ctx.current_fn_needs_world:
+                # Shape 3b: in a world-taking fn a held `&mut` would conflict
+                # with any later world call while the local is live. Bind a
+                # boxed selector closure instead; branch assignments install
+                # it, every use re-derives the place from world.
+                self._ctx.storage_locals[name] = {
+                    'place': f'(*{rust_ident(name)}_sel(&mut *world))',
+                    'key': None,
+                    'root': ('!deferred_sel', t, None),
+                }
+                self._ctx.current_local_vars.add(name)
+                if decl.type_name is not None:
+                    self._ctx.var_types[name] = decl.type_name
+                return (
+                    f'{self.ind()}let mut {rust_ident(name)}_sel: '
+                    f"Box<dyn for<'w> Fn(&'w mut World) -> &'w mut {rust_t}>;"
+                )
             self._ctx.storage_ref_locals.add(name)
             return f'{self.ind()}let mut {rust_ident(name)}: &mut {rust_t};'
 
@@ -583,6 +600,23 @@ class RustStatementGenerator:
                     lines.append(f'{self.ind()}{pat} = {tmp};')
                 else:
                     lines.append(f'{self.ind()}let _ = {tmp};')
+            return '\n'.join(lines)
+
+        # Deferred storage local (world fn) bound via a selector closure:
+        # each branch installs a re-deriving closure; every use re-borrows,
+        # so no &mut world crosses a later dispatch call (see shape 3b).
+        if (expr.operator == '=' and isinstance(expr.left, Identifier)
+                and self._ctx.storage_locals.get(expr.left.name, {}).get('root',
+                    None) is not None
+                and self._ctx.storage_locals[expr.left.name]['root'][0] == '!deferred_sel'):
+            hoists: list = []
+            place, _ = self._expr.emit_place(expr.right, hoists)
+            name = rust_ident(expr.left.name)
+            lines = [f'{self.ind()}{h}' for h in hoists]
+            lines.append(
+                f'{self.ind()}{name}_sel = Box::new(crate::world::sel('
+                f'move |world: &mut World| &mut {place}));'
+            )
             return '\n'.join(lines)
 
         # Deferred storage-ref local being (re)bound to a storage place:

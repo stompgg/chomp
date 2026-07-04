@@ -326,6 +326,40 @@ class RustSymbols:
                     if self.included_containers is not None:
                         self.included_containers.add(base)
 
+    def implements(self, name: str, iface: str) -> bool:
+        """Transitive base walk (contracts AND interfaces)."""
+        seen: set = set()
+        stack = [name]
+        while stack:
+            n = stack.pop()
+            if n == iface:
+                return True
+            if n in seen:
+                continue
+            seen.add(n)
+            cdef = self.contract_defs.get(n)
+            if cdef is not None:
+                stack.extend(getattr(cdef, 'base_contracts', []))
+        return False
+
+    def dispatchable_contracts(self) -> list:
+        """Concrete, included, non-base-only contracts — the ContractId
+        universe for address-based dispatch and deploy_all."""
+        out = []
+        seen: set = set()
+        for name, cdef in sorted(self.contract_defs.items()):
+            if name in seen:
+                continue
+            seen.add(name)
+            if getattr(cdef, 'kind', '') != 'contract':
+                continue
+            if name in self.base_contract_names:
+                continue
+            if self.included_containers is not None and name not in self.included_containers:
+                continue
+            out.append(name)
+        return out
+
     def constructor_needs_world(self, leaf: str) -> bool:
         """True when the leaf's constructor CHAIN (own body, base-ctor args,
         base bodies) reads env (msg/block/tx/this) or calls a world-needing
@@ -494,7 +528,8 @@ class RustSymbols:
                             # only propagates neediness through the callee edge
                             # (a pure impl keeps its callers pure); external
                             # dispatch always needs world (it lives on world.ext).
-                            for iface in self.external_interfaces:
+                            for iface in (self.external_interfaces
+                                          | getattr(self, 'dispatch_interfaces', set())):
                                 if (iface, fn.member) in self.functions:
                                     _seed[0] = True
                                     break

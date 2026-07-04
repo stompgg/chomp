@@ -190,6 +190,7 @@ class SolidityToRustTranspiler:
             print(f'Written: {out_path}')
 
         self._write_world_rs(engine_src, symbols)
+        self._write_dispatch_rs(engine_src, symbols)
         self._write_lib_rs(engine_src, emitted)
         self._write_workspace_files()
         self._sync_crates()
@@ -285,9 +286,22 @@ class SolidityToRustTranspiler:
         lines.append('}')
         lines.append('')
 
+        dispatchables = symbols.dispatchable_contracts()
+        lines.append('/// Every deployable transpiled contract; dispatch matches the')
+        lines.append('/// target address (registered by deploy_all) to its module.')
+        lines.append('#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]')
+        lines.append('pub enum ContractId {')
+        lines.append('    #[default]')
+        lines.append('    Unknown,')
+        for c in dispatchables:
+            lines.append(f'    {rust_ident(c)},')
+        lines.append('}')
+        lines.append('')
+
         lines.append('pub struct World {')
         lines.append('    pub env: Env,')
         lines.append('    pub ext: Box<dyn ExternalCalls>,')
+        lines.append('    pub contract_ids: rt::Mapping<Address, ContractId>,')
         for c in stateful:
             mod_path = '::'.join(symbols.module_of.get(c, (c,)))
             lines.append(f'    pub {rust_ident(c)}: crate::{mod_path}::{rust_ident(c)}State,')
@@ -298,6 +312,7 @@ class SolidityToRustTranspiler:
         lines.append('        Self {')
         lines.append('            env: Env::default(),')
         lines.append('            ext,')
+        lines.append('            contract_ids: rt::Mapping::new(),')
         for c in stateful:
             mod_path = '::'.join(symbols.module_of.get(c, (c,)))
             lines.append(f'            {rust_ident(c)}: crate::{mod_path}::{rust_ident(c)}State::default(),')
@@ -345,8 +360,158 @@ class SolidityToRustTranspiler:
         lines.append('}')
         lines.append('')
 
+        lines.extend(self._deploy_all_lines(symbols))
+
         (engine_src / 'world.rs').write_text('\n'.join(lines))
         print(f'Written: {engine_src / "world.rs"}')
+
+    def _deploy_all_lines(self, symbols) -> List[str]:
+        """`deploy_all(world, addr_of)`: registers every dispatchable's
+        ContractId under its harness-supplied address and constructs the
+        stateful ones, resolving interface-typed constructor args to dep
+        ADDRESSES with the same DependencyResolver the TS factories use —
+        the two backends wire identically by construction."""
+        from .codegen_rs.rust_types import rust_ident
+        from .dependency_resolver.resolver import DependencyResolver
+
+        dispatchables = symbols.dispatchable_contracts()
+        stateful = set(symbols.world_state_contracts())
+        resolver = DependencyResolver(
+            overrides_path=str(Path(__file__).parent / 'transpiler-config.json'),
+            known_classes=set(dispatchables),
+        )
+        resolver.add_aliases(self.config.interface_aliases)
+
+        out = [
+            '/// Register + construct every transpiled contract. `addr_of` is the',
+            '/// harness address book (the lockstep gate feeds the TS-exported one;',
+            '/// the arena assigns its own).',
+            'pub fn deploy_all(world: &mut World, addr_of: &dyn Fn(&str) -> Address) {',
+        ]
+        for c in dispatchables:
+            out.append(f'    world.contract_ids.set(addr_of("{c}"), ContractId::{rust_ident(c)});')
+        out.append('')
+        for c in dispatchables:
+            if c not in stateful:
+                continue
+            cdef = symbols.contract_defs.get(c)
+            ctor = cdef.constructor if cdef is not None else None
+            mod_path = '::'.join(symbols.module_of.get(c, (c,)))
+            if ctor is None:
+                continue  # default state is already in place
+            args = []
+            unsupported = None
+            params = [(p.name or f'_arg{i}', p.type_name.name if p.type_name else '')
+                      for i, p in enumerate(ctor.parameters)]
+            resolved = {
+                pn: r for pn, _pt, r in resolver.resolve_constructor_params(
+                    c, params,
+                    known_interfaces=set(symbols.interfaces),
+                    known_contracts=set(symbols.contracts),
+                )
+            }
+            for pname, ptype in params:
+                r = resolved.get(pname)
+                if r is None:
+                    unsupported = f'non-contract ctor param {pname}: {ptype}'
+                    break
+                if getattr(r, 'is_array', False):
+                    unsupported = f'array ctor param {pname}'
+                    break
+                impl = getattr(r, 'resolved_as', None)
+                if impl in (None, '@self'):
+                    args.append('Address::ZERO')
+                else:
+                    args.append(f'addr_of("{impl}")')
+            if unsupported is not None:
+                out.append(f'    // {c}: constructed by the harness ({unsupported})')
+                continue
+            if symbols.constructor_needs_world(c):
+                args = ['world'] + args
+            out.append(f'    let __s = crate::{mod_path}::construct({", ".join(args)});')
+            out.append(f'    world.{rust_ident(c)} = __s;')
+        out.append('}')
+        out.append('')
+        return out
+
+    def _write_dispatch_rs(self, engine_src: Path, symbols) -> None:
+        """Generated dispatch tables: one fn per dispatch-interface method,
+        matching the target address's ContractId to the implementor's
+        module (with the msg.sender frame push around the call)."""
+        from .codegen_rs.rust_types import RustTypeConverter, rust_ident
+        from .codegen_rs.context import RustCodeGenerationContext
+
+        ctx = RustCodeGenerationContext(current_file_path='dispatch')
+        types = RustTypeConverter(symbols, ctx)
+
+        dispatchables = symbols.dispatchable_contracts()
+        lines = [
+            '// Auto-generated by sol2rs — address-based interface dispatch',
+            '// (see PHASE3-DESIGN.md). deploy_all registers ContractIds.',
+            'use chomp_rt as rt;',
+            'use chomp_rt::{U256, I256, B256, Address};',
+            'use crate::world::{World, ContractId};',
+            '#[allow(unused_imports)] use crate::Structs::*;',
+            '#[allow(unused_imports)] use crate::Enums::*;',
+            '',
+        ]
+        for iface in sorted(getattr(symbols, 'dispatch_interfaces', set())):
+            impls = [c for c in dispatchables if symbols.implements(c, iface)]
+            methods = sorted(
+                {key[1] for key in symbols.functions if key[0] == iface}
+            )
+            for method in methods:
+                sig = symbols.lookup_function(iface, method)
+                if sig is None:
+                    continue
+                params = ['world: &mut World', 'target: Address']
+                arg_names = []
+                for pname, ptype in zip(sig.param_names, sig.param_types):
+                    n = rust_ident(pname) if pname else f'_arg{len(arg_names)}'
+                    rt_t = types.rust_type(ptype)
+                    if ptype.is_memory_ref or ptype.kind == 'mapping':
+                        params.append(f'{n}: &mut {rt_t}')
+                    else:
+                        params.append(f'{n}: {rt_t}')
+                    arg_names.append(n)
+                rets = [types.rust_type(t) for t in sig.return_types]
+                ret = '' if not rets else (
+                    f' -> {rets[0]}' if len(rets) == 1 else f' -> ({", ".join(rets)})'
+                )
+                lines.append(f'pub fn {iface}_{method}({", ".join(params)}){ret} {{')
+                lines.append('    let __id = world.contract_ids.get(&target);')
+                lines.append('    let __saved_sender = world.env.msg_sender;')
+                lines.append('    let __saved_contract = world.env.current_contract;')
+                lines.append('    world.env.msg_sender = world.env.current_contract;')
+                lines.append('    world.env.current_contract = target;')
+                lines.append('    let __r = match __id {')
+                for c in impls:
+                    impl_sig = symbols.lookup_function(c, method)
+                    if impl_sig is None:
+                        lines.append(
+                            f'        ContractId::{rust_ident(c)} => '
+                            f'panic!("{c} lacks {iface}.{method}"),'
+                        )
+                        continue
+                    mod_path = '::'.join(symbols.module_of.get(c, (c,)))
+                    call_args = (['world'] if impl_sig.needs_world else []) + arg_names
+                    lines.append(
+                        f'        ContractId::{rust_ident(c)} => '
+                        f'crate::{mod_path}::{rust_ident(method)}({", ".join(call_args)}),'
+                    )
+                lines.append(
+                    f'        __other => panic!("{iface}.{method}: no dispatch for '
+                    f'{{:?}} at {{:?}}", __other, target),'
+                )
+                lines.append('    };')
+                lines.append('    world.env.msg_sender = __saved_sender;')
+                lines.append('    world.env.current_contract = __saved_contract;')
+                lines.append('    __r')
+                lines.append('}')
+                lines.append('')
+
+        (engine_src / 'dispatch.rs').write_text('\n'.join(lines))
+        print(f'Written: {engine_src / "dispatch.rs"}')
 
     def _write_lib_rs(self, engine_src: Path, emitted: List[str]) -> None:
         # Build the nested module tree from emitted file paths.
@@ -373,6 +538,7 @@ class SolidityToRustTranspiler:
 
         emit_tree(tree, 0)
         lines.append('pub mod world;')
+        lines.append('pub mod dispatch;')
         lines.append('')
         (engine_src / 'lib.rs').write_text('\n'.join(lines))
         print(f'Written: {engine_src / "lib.rs"}')
