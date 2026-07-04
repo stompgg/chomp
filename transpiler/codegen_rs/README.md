@@ -104,7 +104,12 @@ transpiler/
   `transposeEngine` proxy), and a threaded `run_games` batch runner
   exposed as `chomp_run_games` — one FFI crossing per BATCH. Duck-typed
   `basePower`/`accuracy` probes ride the generated `try_*` dispatchers
-  (`duckDispatchMethods` in `transpiler-config-rust.json`). Gate:
+  (`duckDispatchMethods` in `transpiler-config-rust.json`). Gates (green):
   `bun transpiler/scripts/strategy_lockstep.ts` — the native strategies
-  must re-derive the TS strategies' moves turn-for-turn on identical
-  seeds, plus outcome equality.
+  re-derive the TS strategies' moves turn-for-turn on identical seeds
+  (200 games, every submission identical) — and
+  `bun transpiler/scripts/batch_benchmark.ts` — 2,000 games
+  outcome-identical to the TS engine + TS strategies reference.
+  Measured on the shared 2,000-game workload (4-core box): TS arena
+  0.70 games/s (long-run; ~5.4 fresh-process), Rust drive mode 12.6,
+  Rust batch 116 (1 thread) / 444 (4 threads).

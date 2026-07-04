@@ -205,7 +205,7 @@ pub fn pick_eval_override(
     let mut best: Option<Mv> = None;
     let mut best_score = f64::NEG_INFINITY;
 
-    let mut consider = |m: Mv, score: f64, chosen_score: &mut Option<f64>, best: &mut Option<Mv>, best_score: &mut f64| {
+    let consider = |m: Mv, score: f64, chosen_score: &mut Option<f64>, best: &mut Option<Mv>, best_score: &mut f64| {
         if m == chosen {
             *chosen_score = Some(score);
             return;
