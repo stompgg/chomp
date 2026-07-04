@@ -59,16 +59,71 @@ function startArenaBattle(ctx: SimContext, teams: [DraftedMon[], DraftedMon[]]):
   return battleKey;
 }
 
+export type EngineKind = 'ts' | 'rust';
+
+/** The engine surface one game runs against; the decision loop is engine-
+ * agnostic. `engine` answers every strategy/view read; `execute` runs a turn. */
+interface GameDrive {
+  engine: any;
+  battleKey: string;
+  execute(input: {
+    p0MoveIndex: number; p1MoveIndex: number;
+    p0Salt: bigint; p1Salt: bigint;
+    p0ExtraData: bigint; p1ExtraData: bigint;
+  }): void;
+  dispose(): void;
+}
+
+function makeTsDrive(ctx: SimContext, teams: [DraftedMon[], DraftedMon[]]): GameDrive {
+  const battleKey = startArenaBattle(ctx, teams);
+  return {
+    engine: ctx.engine as any,
+    battleKey,
+    execute: (input) => { executeTurn(ctx, battleKey, input); },
+    dispose: () => {},
+  };
+}
+
+function makeRustDrive(ctx: SimContext, teams: [DraftedMon[], DraftedMon[]]): GameDrive {
+  // Lazy import: TS-only arena runs never touch bun:ffi / the cdylib.
+  const { RustBattleAdapter } = require('./rust-engine') as typeof import('./rust-engine');
+  const p0Team = teams[0].map((dm) => buildTeamMon(ctx, roster, dm.id, dm.equip));
+  const p1Team = teams[1].map((dm) => buildTeamMon(ctx, roster, dm.id, dm.equip));
+  const adapter = new RustBattleAdapter();
+  const battleKey = adapter.start(ctx, p0Team, p1Team, TEAM_SIZE);
+  return {
+    engine: adapter,
+    battleKey,
+    execute: (input) => { adapter.executeTurn(input); },
+    dispose: () => { adapter.free(); },
+  };
+}
+
 export function playGame(
   stratP1: CpuStrategy, stratP0: CpuStrategy,
   teams: [DraftedMon[], DraftedMon[]], seed: number, maxTurns: number,
   onBeforeExecute?: TurnHook,
+  engineKind: EngineKind = 'ts',
 ): GameOutcome {
   const rng = makeRng(seed);
 
   const ctx = makeSimContext({ monsPerTeam: BigInt(TEAM_SIZE) });
-  const battleKey = startArenaBattle(ctx, teams);
-  const engine = ctx.engine as any;
+  const drive = engineKind === 'rust' ? makeRustDrive(ctx, teams) : makeTsDrive(ctx, teams);
+  try {
+    return runGameLoop(drive, stratP1, stratP0, rng, maxTurns, onBeforeExecute);
+  } finally {
+    drive.dispose();
+  }
+}
+
+function runGameLoop(
+  drive: GameDrive,
+  stratP1: CpuStrategy, stratP0: CpuStrategy,
+  rng: () => number, maxTurns: number,
+  onBeforeExecute?: TurnHook,
+): GameOutcome {
+  const engine = drive.engine;
+  const battleKey = drive.battleKey as `0x${string}`;
 
   const winnerNow = () => Number(engine.battleData[battleKey].winnerIndex);
 
@@ -106,7 +161,7 @@ export function playGame(
       // Salt is drawn ONLY for an acting side, p0 before p1 — matching munch's `toDecision(null)` skip.
       const p0Salt = p0Move ? randomSalt(rng) : 0n;
       const p1Salt = p1Move ? randomSalt(rng) : 0n;
-      executeTurn(ctx, battleKey, {
+      drive.execute({
         p0MoveIndex: p0Move ? p0Move.moveIndex : NO_OP_INDEX,
         p1MoveIndex: p1Move ? p1Move.moveIndex : NO_OP_INDEX,
         p0Salt,

@@ -136,14 +136,35 @@ class SolidityToRustTranspiler:
     # Emission
     # ------------------------------------------------------------------
 
+    def _expand_includes(self) -> List[str]:
+        """includeFiles entries may be globs (`mons/**/*.sol`) — a new mon
+        directory is picked up with zero config changes, like the TS target."""
+        out: List[str] = []
+        seen = set()
+        for include in self.config.include_files:
+            if any(ch in include for ch in '*?['):
+                matches = sorted(self.source_dir.glob(include))
+                if not matches:
+                    print(f'Warning: includeFiles glob {include!r} matched nothing')
+                for m in matches:
+                    rel = str(m.relative_to(self.source_dir))
+                    if rel not in seen:
+                        seen.add(rel)
+                        out.append(rel)
+            elif include not in seen:
+                seen.add(include)
+                out.append(include)
+        return out
+
     def run(self) -> bool:
         self._parse_all()
         symbols = RustSymbols.build(self._asts)
+        include_files = self._expand_includes()
 
         # World configuration: which containers are emitted (files in the
         # allowlist), aliases, harness-external interfaces, flattening.
         included_containers = set()
-        for include in self.config.include_files:
+        for include in include_files:
             rel = str(Path(include).with_suffix(''))
             ast = self._asts.get(rel)
             if ast is not None:
@@ -172,7 +193,7 @@ class SolidityToRustTranspiler:
         emitted: List[str] = []
         all_notes: List[tuple] = []
         ok = True
-        for include in self.config.include_files:
+        for include in include_files:
             rel = str(Path(include).with_suffix(''))
             ast = self._asts.get(rel)
             if ast is None:

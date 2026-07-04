@@ -271,18 +271,28 @@ pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
     handle
 }
 
-/// Engine-side legality check (inline validator), 1 = valid.
+/// Engine-side legality check (inline validator), 1 = valid. `bk_json` is
+/// the battle key as a JSON-less plain hex C string — the LIVE key or a
+/// fork key; pass null for the live battle.
 #[no_mangle]
-pub extern "C" fn chomp_battle_validate(
+pub unsafe extern "C" fn chomp_battle_validate(
     handle: u64,
+    bk: *const c_char,
     seat: u8,
     move_index: u8,
     extra_data: u16,
 ) -> i32 {
     let mut reg = registry().lock().unwrap();
     let Some(s) = reg.get_mut(&handle) else { return -1 };
-    let key = s.battle_key;
+    let key = match read_json(bk) {
+        Some(raw) if !raw.is_empty() => match parse_b256(raw) {
+            Some(k) => k,
+            None => return -1,
+        },
+        _ => s.battle_key,
+    };
     let world = &mut s.world;
+    world.reset_transient(); // fresh-tx boundary, like every TS top-level call
     let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         Engine::validatePlayerMoveForBattle(
             world,
@@ -297,6 +307,19 @@ pub extern "C" fn chomp_battle_validate(
         Ok(false) => 0,
         Err(_) => -1,
     }
+}
+
+fn parse_b256(raw: &str) -> Option<B256> {
+    let t = raw.strip_prefix("0x").unwrap_or(raw);
+    if t.len() != 64 {
+        return None;
+    }
+    let bytes = (0..64)
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&t[i..i + 2], 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .ok()?;
+    Some(B256::from_slice(&bytes))
 }
 
 fn snapshot_json(world: &mut World, battle_key: B256) -> String {
@@ -369,12 +392,278 @@ pub unsafe extern "C" fn chomp_battle_turn(handle: u64, input_json: *const c_cha
             p1_salt,
             input.p1ExtraData,
         );
+        world.reset_transient(); // tx over; reads below are boundary-clean
         snapshot_json(world, key)
     }));
     match out {
         Ok(snap) => out_string(snap),
         Err(_) => std::ptr::null_mut(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Rich state + forward-model forks (the arena adapter surface).
+//
+// The rich state is built ENTIRELY from transpiled engine getters — the TS
+// adapter is a dumb cache reader over this JSON; no engine semantics are
+// reimplemented on either side of the boundary.
+// ---------------------------------------------------------------------------
+
+fn hex<T: std::fmt::LowerHex>(v: T) -> String {
+    format!("{:#x}", v)
+}
+
+fn mon_json(world: &mut World, bk: B256, p: U256, i: U256) -> serde_json::Value {
+    use chomp_engine::Enums::MonStateIndexName;
+    let stats = Engine::getMonStatsForBattle(world, bk, p, i);
+    // state[j] / value[j] indexed by MonStateIndexName ordinal.
+    let state: Vec<i64> = (0u8..=8)
+        .map(|j| Engine::getMonStateForBattle(world, bk, p, i, MonStateIndexName::from_u8(j)) as i64)
+        .collect();
+    // value[] by MonStateIndexName ordinal; 7/8 (KO / skip flags) are not
+    // value-getter domain — zero placeholders keep the ordinals aligned so
+    // Type1 (9) / Type2 (10) land at their true indices.
+    let value: Vec<u32> = (0u8..=10)
+        .map(|j| match j {
+            7 | 8 => 0,
+            _ => Engine::getMonValueForBattle(world, bk, p, i, MonStateIndexName::from_u8(j)),
+        })
+        .collect();
+    let moves: Vec<String> = (0u64..4)
+        .map(|k| hex(Engine::getMoveForMonForBattle(world, bk, p, i, U256::from(k))))
+        .collect();
+    let (effs, idxs) = Engine::getEffects(world, bk, p, i);
+    let effects: Vec<serde_json::Value> = effs
+        .iter()
+        .zip(idxs.iter())
+        .map(|(e, ix)| {
+            json!({
+                "address": hex(e.effect),
+                "stepsBitmap": e.stepsBitmap,
+                "data": hex(e.data),
+                "index": u64::try_from(*ix).unwrap(),
+            })
+        })
+        .collect();
+    json!({
+        "stats": {
+            "hp": stats.hp, "stamina": stats.stamina, "speed": stats.speed,
+            "attack": stats.attack, "defense": stats.defense,
+            "specialAttack": stats.specialAttack, "specialDefense": stats.specialDefense,
+            "type1": stats.type1 as u8, "type2": stats.type2 as u8,
+        },
+        "state": state,
+        "value": value,
+        "moves": moves,
+        "effects": effects,
+    })
+}
+
+fn dcc_json(world: &mut World, bk: B256, atk: u64, def: u64) -> serde_json::Value {
+    let d = Engine::getDamageCalcContext(world, bk, U256::from(atk), U256::from(def));
+    json!({
+        "attackerMonIndex": d.attackerMonIndex, "defenderMonIndex": d.defenderMonIndex,
+        "attackerAttack": d.attackerAttack, "attackerAttackDelta": d.attackerAttackDelta,
+        "attackerSpAtk": d.attackerSpAtk, "attackerSpAtkDelta": d.attackerSpAtkDelta,
+        "defenderDef": d.defenderDef, "defenderDefDelta": d.defenderDefDelta,
+        "defenderSpDef": d.defenderSpDef, "defenderSpDefDelta": d.defenderSpDefDelta,
+        "defenderType1": d.defenderType1 as u8, "defenderType2": d.defenderType2 as u8,
+    })
+}
+
+fn rich_state_json(world: &mut World, bk: B256) -> String {
+    let ctx = Engine::getBattleContext(world, bk);
+    let mut sides = Vec::new();
+    for p in 0u64..2 {
+        let pi = U256::from(p);
+        let size = u64::try_from(Engine::getTeamSize(world, bk, pi)).unwrap();
+        let ko = Engine::getKOBitmap(world, bk, pi);
+        let dec = Engine::getMoveDecisionForBattleState(world, bk, pi);
+        let mons: Vec<serde_json::Value> = (0..size)
+            .map(|i| mon_json(world, bk, pi, U256::from(i)))
+            .collect();
+        sides.push(json!({
+            "teamSize": size,
+            "koBitmap": u64::try_from(ko).unwrap(),
+            "moveDecision": { "packedMoveIndex": dec.packedMoveIndex, "extraData": dec.extraData },
+            "mons": mons,
+        }));
+    }
+    let p1 = sides.pop().unwrap();
+    let p0 = sides.pop().unwrap();
+    json!({
+        "turnId": ctx.turnId,
+        "winnerIndex": ctx.winnerIndex,
+        "playerSwitchForTurnFlag": ctx.playerSwitchForTurnFlag,
+        "p0Active": ctx.p0ActiveMonIndex,
+        "p1Active": ctx.p1ActiveMonIndex,
+        "p0": p0,
+        "p1": p1,
+        "dcc01": dcc_json(world, bk, 0, 1),
+        "dcc10": dcc_json(world, bk, 1, 0),
+    })
+    .to_string()
+}
+
+/// Live `getGlobalKV` read (transpiled getter; works on fork keys too since
+/// forks stay resident until disposed). Mon metadata paths reach this
+/// (HeatBeaconLib priority boosts etc.). Returns the value as a hex C
+/// string, or null on error.
+#[no_mangle]
+pub unsafe extern "C" fn chomp_battle_kv(handle: u64, bk: *const c_char, key: u64) -> *mut c_char {
+    let Some(raw) = read_json(bk) else { return std::ptr::null_mut() };
+    let Some(k) = parse_b256(raw) else { return std::ptr::null_mut() };
+    let mut reg = registry().lock().unwrap();
+    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let world = &mut s.world;
+    world.reset_transient(); // fresh-tx boundary
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        hex(Engine::getGlobalKV(world, k, key))
+    }));
+    match out {
+        Ok(v) => out_string(v),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// The session's battle key as a hex C string (free with chomp_str_free).
+#[no_mangle]
+pub extern "C" fn chomp_battle_key(handle: u64) -> *mut c_char {
+    let reg = registry().lock().unwrap();
+    let Some(s) = reg.get(&handle) else { return std::ptr::null_mut() };
+    out_string(format!("{:#x}", s.battle_key))
+}
+
+/// Rich getter-backed state of the LIVE battle (free with chomp_str_free).
+#[no_mangle]
+pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
+    let mut reg = registry().lock().unwrap();
+    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let key = s.battle_key;
+    s.world.reset_transient(); // fresh-tx boundary
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        rich_state_json(&mut s.world, key)
+    }));
+    match out {
+        Ok(js) => out_string(js),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+static FORK_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Fork key: tag nibbles + counter — can never collide with a real keccak
+/// battle key in practice (mirrors the TS forward-model's key scheme).
+fn next_fork_key() -> B256 {
+    let n = FORK_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut b = [0u8; 32];
+    b[0] = 0xf0;
+    b[1] = 0xfc;
+    b[24..32].copy_from_slice(&n.to_be_bytes());
+    B256::new(b)
+}
+
+/// Clone the battle's state tree under a fresh fork key (mirrors the TS
+/// forward-model's forkBattle: battleData + battleConfig + the globalKV
+/// entries that hold move locks / once-per-game flags). No
+/// battleKeyToStorageKey redirect: _getStorageKey(fork) == fork.
+fn fork_battle(world: &mut World, bk: B256) -> B256 {
+    let sk = Engine::_getStorageKey(world, bk);
+    let fork = next_fork_key();
+    let data = world.Engine.battleData.get(&bk);
+    world.Engine.battleData.set(fork, data);
+    let cfg = world.Engine.battleConfig.get(&sk);
+    world.Engine.battleConfig.set(fork, cfg);
+    let kv = world.Engine.globalKV.get(&sk);
+    world.Engine.globalKV.set(fork, kv);
+    let slots = world.Engine.globalKVKeySlots.get(&sk);
+    world.Engine.globalKVKeySlots.set(fork, slots);
+    fork
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct HypoMove {
+    moveIndex: u8,
+    salt: String,
+    #[serde(default)]
+    extraData: u16,
+}
+
+#[derive(Deserialize)]
+struct HypoInput {
+    p0: Option<HypoMove>,
+    p1: Option<HypoMove>,
+}
+
+/// executeWithMoves's transient packing (Engine.sol): storedIndex offset for
+/// real move slots, IS_REAL_TURN_BIT, extraData in bits 8+, salt via _packTurn.
+fn pack_turn(mi: u8, salt: u128, extra: u16) -> U256 {
+    let stored = if mi < Constants::SWITCH_MOVE_INDEX { mi + Constants::MOVE_INDEX_OFFSET } else { mi };
+    let encoded = U256::from(stored as u16 | Constants::IS_REAL_TURN_BIT as u16)
+        | (U256::from(extra) << 8);
+    Engine::_packTurn(encoded, salt)
+}
+
+/// Fork the battle, run ONE hypothetical turn on the fork (silent, exactly
+/// the TS forward-model's applyHypotheticalMove semantics: moves written to
+/// the fork config + turn transients set for acting sides only), and return
+/// { forkKey, state }. The fork STAYS LIVE for follow-up reads until
+/// chomp_battle_dispose_fork — or battle_free reclaims everything.
+#[no_mangle]
+pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *const c_char) -> *mut c_char {
+    let Some(raw) = read_json(input_json) else { return std::ptr::null_mut() };
+    let Ok(input) = serde_json::from_str::<HypoInput>(raw) else {
+        return std::ptr::null_mut();
+    };
+    let mut reg = registry().lock().unwrap();
+    let Some(s) = reg.get_mut(&handle) else { return std::ptr::null_mut() };
+    let key = s.battle_key;
+    let world = &mut s.world;
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let fork = fork_battle(world, key);
+        world.reset_transient();
+        world.env.msg_sender = world.Engine.battleConfig.get_mut(&fork).moveManager;
+        if let Some(m) = &input.p0 {
+            let salt = m.salt.parse::<u128>().expect("bad p0 salt");
+            Engine::_setMoveInternal(
+                world.Engine.battleConfig.get_mut(&fork),
+                U256::ZERO, m.moveIndex, salt, m.extraData,
+            );
+            world.Engine._turnP0Packed = pack_turn(m.moveIndex, salt, m.extraData);
+        }
+        if let Some(m) = &input.p1 {
+            let salt = m.salt.parse::<u128>().expect("bad p1 salt");
+            Engine::_setMoveInternal(
+                world.Engine.battleConfig.get_mut(&fork),
+                U256::from(1u64), m.moveIndex, salt, m.extraData,
+            );
+            world.Engine._turnP1Packed = pack_turn(m.moveIndex, salt, m.extraData);
+        }
+        world.Engine.storageKeyForWrite = fork;
+        Engine::_executeInternal(world, fork, fork, false, false);
+        world.reset_transient(); // fork tx over; capture reads boundary-clean
+        let state = rich_state_json(world, fork);
+        format!("{{\"forkKey\":\"{fork:#x}\",\"state\":{state}}}")
+    }));
+    match out {
+        Ok(js) => out_string(js),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Reclaim a fork's cloned state (mirrors the TS disposeFork).
+#[no_mangle]
+pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const c_char) -> i32 {
+    let Some(raw) = read_json(fork_key) else { return -1 };
+    let Some(fork) = parse_b256(raw) else { return -1 };
+    let mut reg = registry().lock().unwrap();
+    let Some(s) = reg.get_mut(&handle) else { return -1 };
+    s.world.Engine.battleData.remove(&fork);
+    s.world.Engine.battleConfig.remove(&fork);
+    s.world.Engine.globalKV.remove(&fork);
+    s.world.Engine.globalKVKeySlots.remove(&fork);
+    1
 }
 
 /// Current snapshot without executing a turn (free with chomp_str_free).

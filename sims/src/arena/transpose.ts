@@ -68,6 +68,12 @@ export function transposeEngine(engine: any): any {
           const r = val.apply(target, args);
           return [r[1], r[0]];
         };
+      } else if (name === '__runHypotheticalFork') {
+        // Rust-adapter forward model: the two hypothetical-move args are in
+        // the strategy's (transposed) p0/p1 convention — swap them for the
+        // raw seat, mirroring how the TS path's flipped _setMoveInternal /
+        // swapped __mutate_turnP*Packed achieve the same thing.
+        out = (...args: any[]) => val.apply(target, [args[1], args[0]]);
       } else if (name === 'getBattleContext') {
         out = (...args: any[]) => {
           const ctx = val.apply(target, args);
