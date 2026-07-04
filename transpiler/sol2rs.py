@@ -252,7 +252,8 @@ class SolidityToRustTranspiler:
 
         # ExternalCalls trait from accumulated call sites
         lines.append('/// Harness-provided contracts (team registry, matchmaker mocks).')
-        lines.append('pub trait ExternalCalls {')
+        lines.append('/// `Send` so FFI battle sessions can live in a handle registry.')
+        lines.append('pub trait ExternalCalls: Send {')
         for (iface, method), sig in sorted(symbols.ext_calls.items()):
             if sig is None:
                 lines.append(f'    // unresolved: {iface}.{method}')
