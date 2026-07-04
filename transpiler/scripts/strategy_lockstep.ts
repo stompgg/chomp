@@ -48,6 +48,8 @@ const PAIRS: [string, string][] = [
   ['hard', 'greedy'],
   ['greedy', 'hard'],
   ['greedy', 'greedy'],
+  ['override', 'greedy'],
+  ['override', 'hard'],
 ];
 
 interface WorkItem {
@@ -68,7 +70,7 @@ type Turn = [PlayerMove | null, PlayerMove | null]; // [p0, p1]
 // ---------------------------------------------------------------------------
 // TS reference leg (TS engine + TS strategies), tracing per-turn moves.
 // ---------------------------------------------------------------------------
-console.log(`strategy lockstep: ${GAMES} games (hard/greedy pairs), maxTurns=${MAX_TURNS}`);
+console.log(`strategy lockstep: ${GAMES} games (hard/greedy/override pairs), maxTurns=${MAX_TURNS}`);
 const tsTraces: Turn[][] = [];
 const tsOutcomes: { winner: 0 | 1 | null; turns: number }[] = [];
 const t0 = performance.now();

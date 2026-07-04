@@ -16,6 +16,7 @@ use chomp_rt::{Address, B256};
 use crate::greedy;
 use crate::hard::{self, HardState};
 use crate::jsrng::{random_salt, JsRng};
+use crate::override_cpu::{self, OverrideState};
 use crate::sim::Sim;
 use crate::view::{capture_view, Mv, Seat, NO_OP_INDEX};
 
@@ -23,6 +24,7 @@ use crate::view::{capture_view, Mv, Seat, NO_OP_INDEX};
 pub enum StrategyKind {
     Hard,
     Greedy,
+    Override,
 }
 
 impl StrategyKind {
@@ -30,6 +32,7 @@ impl StrategyKind {
         match name {
             "hard" => Some(StrategyKind::Hard),
             "greedy" => Some(StrategyKind::Greedy),
+            "override" => Some(StrategyKind::Override),
             _ => None,
         }
     }
@@ -60,18 +63,35 @@ pub struct GameOutcome {
     pub trace: Vec<TurnTrace>,
 }
 
+/// Per-seat mutable strategy state (`createState()` in the TS framework).
+enum StratState {
+    Hard(HardState),
+    Greedy,
+    Override(OverrideState),
+}
+
+impl StratState {
+    fn new(kind: StrategyKind) -> StratState {
+        match kind {
+            StrategyKind::Hard => StratState::Hard(HardState::default()),
+            StrategyKind::Greedy => StratState::Greedy,
+            StrategyKind::Override => StratState::Override(OverrideState::default()),
+        }
+    }
+}
+
 struct SeatState {
-    kind: StrategyKind,
     seat: Seat,
-    hard: HardState,
+    state: StratState,
     last_own_move: Mv,
 }
 
 fn decide_one(sim: &mut Sim, s: &mut SeatState, pm: Mv, rng: &mut JsRng) -> Mv {
     let view = capture_view(sim, s.seat, sim.battle_key);
-    match s.kind {
-        StrategyKind::Hard => hard::decide(sim, s.seat, &view, pm, rng, &mut s.hard),
-        StrategyKind::Greedy => greedy::decide(sim, s.seat, &view, pm, rng),
+    match &mut s.state {
+        StratState::Hard(st) => hard::decide(sim, s.seat, &view, pm, rng, st),
+        StratState::Greedy => greedy::decide(sim, s.seat, &view, pm, rng),
+        StratState::Override(st) => override_cpu::decide(sim, s.seat, &view, pm, rng, st),
     }
 }
 
@@ -87,15 +107,13 @@ pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) 
 
     let mut seats = [
         SeatState {
-            kind: spec.p0_strategy,
             seat: Seat { cpu: 0 },
-            hard: HardState::default(),
+            state: StratState::new(spec.p0_strategy),
             last_own_move: Mv { move_index: 0, extra_data: 0 },
         },
         SeatState {
-            kind: spec.p1_strategy,
             seat: Seat { cpu: 1 },
-            hard: HardState::default(),
+            state: StratState::new(spec.p1_strategy),
             last_own_move: Mv { move_index: 0, extra_data: 0 },
         },
     ];

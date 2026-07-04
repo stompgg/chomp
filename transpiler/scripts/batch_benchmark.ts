@@ -53,7 +53,7 @@ const STRAT_PAIRS: [string, string][] = [
   ['override', 'greedy'],
   ['override', 'hard'],
 ];
-const PORTED = new Set(['hard', 'greedy']);
+const PORTED = new Set(['hard', 'greedy', 'override']);
 
 interface WorkItem {
   idx: number;
@@ -71,7 +71,7 @@ for (let i = 0; i < GAMES; i++) {
   });
 }
 const ported = work.filter((w) => PORTED.has(w.strats[0]) && PORTED.has(w.strats[1]));
-console.log(`workload: ${ported.length}/${GAMES} games have fully-ported pairs (hard/greedy)`);
+console.log(`workload: ${ported.length}/${GAMES} games have fully-ported pairs`);
 
 // Reference outcomes from the arena_benchmark TS-engine leg.
 const tsRef = new Map<number, { winner: number | null; turns: number }>();
