@@ -46,6 +46,8 @@ members = ["engine", "runtime", "differential", "ffi"]
 # contract call must revert.
 [profile.release]
 overflow-checks = true
+lto = "thin"
+codegen-units = 1
 
 [profile.bench]
 overflow-checks = true

@@ -413,7 +413,7 @@ fn hex<T: std::fmt::LowerHex>(v: T) -> String {
     format!("{:#x}", v)
 }
 
-fn mon_json(world: &mut World, bk: B256, p: U256, i: U256) -> serde_json::Value {
+fn mon_json(world: &mut World, bk: B256, p: U256, i: U256, full: bool) -> serde_json::Value {
     use chomp_engine::Enums::MonStateIndexName;
     let stats = Engine::getMonStatsForBattle(world, bk, p, i);
     // state[j] / value[j] indexed by MonStateIndexName ordinal.
@@ -429,23 +429,7 @@ fn mon_json(world: &mut World, bk: B256, p: U256, i: U256) -> serde_json::Value 
             _ => Engine::getMonValueForBattle(world, bk, p, i, MonStateIndexName::from_u8(j)),
         })
         .collect();
-    let moves: Vec<String> = (0u64..4)
-        .map(|k| hex(Engine::getMoveForMonForBattle(world, bk, p, i, U256::from(k))))
-        .collect();
-    let (effs, idxs) = Engine::getEffects(world, bk, p, i);
-    let effects: Vec<serde_json::Value> = effs
-        .iter()
-        .zip(idxs.iter())
-        .map(|(e, ix)| {
-            json!({
-                "address": hex(e.effect),
-                "stepsBitmap": e.stepsBitmap,
-                "data": hex(e.data),
-                "index": u64::try_from(*ix).unwrap(),
-            })
-        })
-        .collect();
-    json!({
+    let mut out = json!({
         "stats": {
             "hp": stats.hp, "stamina": stats.stamina, "speed": stats.speed,
             "attack": stats.attack, "defense": stats.defense,
@@ -454,9 +438,31 @@ fn mon_json(world: &mut World, bk: B256, p: U256, i: U256) -> serde_json::Value 
         },
         "state": state,
         "value": value,
-        "moves": moves,
-        "effects": effects,
-    })
+    });
+    if full {
+        // Fork views (forward-model hypotheticals) never read moves/effects;
+        // omitting them halves the dump cost. The TS adapter throws loudly
+        // if a lite state's missing section is ever read.
+        let moves: Vec<String> = (0u64..4)
+            .map(|k| hex(Engine::getMoveForMonForBattle(world, bk, p, i, U256::from(k))))
+            .collect();
+        let (effs, idxs) = Engine::getEffects(world, bk, p, i);
+        let effects: Vec<serde_json::Value> = effs
+            .iter()
+            .zip(idxs.iter())
+            .map(|(e, ix)| {
+                json!({
+                    "address": hex(e.effect),
+                    "stepsBitmap": e.stepsBitmap,
+                    "data": hex(e.data),
+                    "index": u64::try_from(*ix).unwrap(),
+                })
+            })
+            .collect();
+        out["moves"] = json!(moves);
+        out["effects"] = json!(effects);
+    }
+    out
 }
 
 fn dcc_json(world: &mut World, bk: B256, atk: u64, def: u64) -> serde_json::Value {
@@ -471,38 +477,45 @@ fn dcc_json(world: &mut World, bk: B256, atk: u64, def: u64) -> serde_json::Valu
     })
 }
 
-fn rich_state_json(world: &mut World, bk: B256) -> String {
+fn rich_state_json(world: &mut World, bk: B256, full: bool) -> String {
     let ctx = Engine::getBattleContext(world, bk);
     let mut sides = Vec::new();
     for p in 0u64..2 {
         let pi = U256::from(p);
         let size = u64::try_from(Engine::getTeamSize(world, bk, pi)).unwrap();
         let ko = Engine::getKOBitmap(world, bk, pi);
-        let dec = Engine::getMoveDecisionForBattleState(world, bk, pi);
         let mons: Vec<serde_json::Value> = (0..size)
-            .map(|i| mon_json(world, bk, pi, U256::from(i)))
+            .map(|i| mon_json(world, bk, pi, U256::from(i), full))
             .collect();
-        sides.push(json!({
+        let mut side = json!({
             "teamSize": size,
             "koBitmap": u64::try_from(ko).unwrap(),
-            "moveDecision": { "packedMoveIndex": dec.packedMoveIndex, "extraData": dec.extraData },
             "mons": mons,
-        }));
+        });
+        if full {
+            let dec = Engine::getMoveDecisionForBattleState(world, bk, pi);
+            side["moveDecision"] =
+                json!({ "packedMoveIndex": dec.packedMoveIndex, "extraData": dec.extraData });
+        }
+        sides.push(side);
     }
     let p1 = sides.pop().unwrap();
     let p0 = sides.pop().unwrap();
-    json!({
+    let mut out = json!({
         "turnId": ctx.turnId,
         "winnerIndex": ctx.winnerIndex,
         "playerSwitchForTurnFlag": ctx.playerSwitchForTurnFlag,
         "p0Active": ctx.p0ActiveMonIndex,
         "p1Active": ctx.p1ActiveMonIndex,
+        "lite": !full,
         "p0": p0,
         "p1": p1,
-        "dcc01": dcc_json(world, bk, 0, 1),
-        "dcc10": dcc_json(world, bk, 1, 0),
-    })
-    .to_string()
+    });
+    if full {
+        out["dcc01"] = dcc_json(world, bk, 0, 1);
+        out["dcc10"] = dcc_json(world, bk, 1, 0);
+    }
+    out.to_string()
 }
 
 /// Live `getGlobalKV` read (transpiled getter; works on fork keys too since
@@ -542,7 +555,7 @@ pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
     let key = s.battle_key;
     s.world.reset_transient(); // fresh-tx boundary
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        rich_state_json(&mut s.world, key)
+        rich_state_json(&mut s.world, key, true)
     }));
     match out {
         Ok(js) => out_string(js),
@@ -643,7 +656,7 @@ pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *con
         world.Engine.storageKeyForWrite = fork;
         Engine::_executeInternal(world, fork, fork, false, false);
         world.reset_transient(); // fork tx over; capture reads boundary-clean
-        let state = rich_state_json(world, fork);
+        let state = rich_state_json(world, fork, false);
         format!("{{\"forkKey\":\"{fork:#x}\",\"state\":{state}}}")
     }));
     match out {

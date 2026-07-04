@@ -71,14 +71,16 @@ function takeString(p: number | bigint, what: string): string {
 interface RsMon {
   stats: Record<string, number>;
   state: number[]; // indexed by MonStateIndexName ordinal, 0..8
-  value: number[]; // indexed by MonStateIndexName ordinal, 0..6
-  moves: string[];
-  effects: { address: string; stepsBitmap: number; data: string; index: number }[];
+  value: number[]; // indexed by MonStateIndexName ordinal, 0..10 (7/8 are 0)
+  /** Absent on LITE fork states (forward-model views never read these). */
+  moves?: string[];
+  effects?: { address: string; stepsBitmap: number; data: string; index: number }[];
 }
 interface RsSide {
   teamSize: number;
   koBitmap: number;
-  moveDecision: { packedMoveIndex: number; extraData: number };
+  /** Absent on LITE fork states. */
+  moveDecision?: { packedMoveIndex: number; extraData: number };
   mons: RsMon[];
 }
 interface RsState {
@@ -89,8 +91,10 @@ interface RsState {
   p1Active: number;
   p0: RsSide;
   p1: RsSide;
-  dcc01: Record<string, number>;
-  dcc10: Record<string, number>;
+  /** True for fork states: moves/effects/moveDecision/dcc omitted. */
+  lite?: boolean;
+  dcc01?: Record<string, number>;
+  dcc10?: Record<string, number>;
 }
 
 export interface RustMonInput {
@@ -259,6 +263,7 @@ export class RustBattleAdapter {
 
   getMoveDecisionForBattleState(bk: string, playerIndex: bigint) {
     const d = this.side(this.state(bk), playerIndex).moveDecision;
+    if (!d) throw new Error('rust-engine: moveDecision read on a LITE fork state — extend the fork dump');
     return { packedMoveIndex: BigInt(d.packedMoveIndex), extraData: BigInt(d.extraData) };
   }
 
@@ -281,7 +286,9 @@ export class RustBattleAdapter {
   }
 
   getMoveForMonForBattle(bk: string, playerIndex: bigint, monIndex: bigint, moveIndex: bigint): bigint | undefined {
-    const w = this.mon(bk, playerIndex, monIndex).moves[Number(moveIndex)];
+    const lanes = this.mon(bk, playerIndex, monIndex).moves;
+    if (!lanes) throw new Error('rust-engine: moves read on a LITE fork state — extend the fork dump');
+    const w = lanes[Number(moveIndex)];
     if (w === undefined) return undefined;
     const v = BigInt(w);
     // Mirror the TS engine: an empty lane reads as undefined so
@@ -293,7 +300,9 @@ export class RustBattleAdapter {
     const want = (typeof effectAddress === 'bigint'
       ? '0x' + effectAddress.toString(16)
       : effectAddress).toLowerCase().replace(/^0x0*/, '0x');
-    for (const e of this.mon(bk, playerIndex, monIndex).effects) {
+    const effects = this.mon(bk, playerIndex, monIndex).effects;
+    if (!effects) throw new Error('rust-engine: effects read on a LITE fork state — extend the fork dump');
+    for (const e of effects) {
       const have = e.address.toLowerCase().replace(/^0x0*/, '0x');
       if (have === want) return [true, BigInt(e.index), e.data];
     }
@@ -303,6 +312,7 @@ export class RustBattleAdapter {
   getDamageCalcContext(bk: string, attackerPlayerIndex: bigint, defenderPlayerIndex: bigint) {
     const s = this.state(bk);
     const d = Number(attackerPlayerIndex) === 0 ? s.dcc01 : s.dcc10;
+    if (!d) throw new Error('rust-engine: dcc read on a LITE fork state — extend the fork dump');
     return {
       attackerMonIndex: BigInt(d.attackerMonIndex), defenderMonIndex: BigInt(d.defenderMonIndex),
       attackerAttack: BigInt(d.attackerAttack), attackerAttackDelta: BigInt(d.attackerAttackDelta),
