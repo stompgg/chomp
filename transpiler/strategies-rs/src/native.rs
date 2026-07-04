@@ -27,6 +27,89 @@ pub const WALL_DAMAGE_PCT: i64 = 5;
 /// before the eval-veto overrides it.
 pub const EVAL_OVERRIDE_MARGIN: f64 = 200.0;
 
+// ---------------------------------------------------------------------------
+// Per-decision fork memo.
+//
+// Within one `decide` the live battle state is frozen and forks consume no
+// rng, so a hypothetical turn is a pure function of (p0 action, p1 action,
+// salt) — re-executing a duplicate is wasted work, and hard's decision tree
+// overlaps on ~15-25% of its forks (the measure baseline reappears as the
+// eval-veto's rest candidate and as the hoisted incoming-damage child;
+// cross-check / anti-wall switch scores reappear inside the veto). Elision
+// is unobservable: identical inputs give bit-identical views and scores.
+//
+// Cached forks stay LIVE until `dispose_all` (scores are computed lazily
+// from fork state, exactly like the TS LazyMonView reads), so the owner
+// must dispose when its decision ends.
+// ---------------------------------------------------------------------------
+
+struct CacheEntry {
+    p0: Option<(u8, u16)>,
+    p1: (u8, u16),
+    salt: u128,
+    fork_key: B256,
+    view: BattleView,
+    score: Option<f64>,
+}
+
+#[derive(Default)]
+pub struct ForkCache {
+    entries: Vec<CacheEntry>,
+}
+
+impl ForkCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Fork-or-reuse: returns a cache index for the (p0, p1, salt)
+    /// hypothetical (virtual-side submissions; both sides share `salt` at
+    /// every call site). Linear scan — a decision makes tens of forks.
+    pub fn fork(&mut self, sim: &mut Sim, seat: Seat, p0: Option<HypoMove>, p1: HypoMove) -> usize {
+        let p0_key = p0.map(|m| (m.move_index, m.extra_data));
+        let p1_key = (p1.move_index, p1.extra_data);
+        if let Some(i) = self
+            .entries
+            .iter()
+            .position(|e| e.p0 == p0_key && e.p1 == p1_key && e.salt == p1.salt)
+        {
+            return i;
+        }
+        let fork_key = apply_hypothetical(sim, seat, p0, Some(p1));
+        let view = capture_view(sim, seat, fork_key);
+        self.entries.push(CacheEntry {
+            p0: p0_key,
+            p1: p1_key,
+            salt: p1.salt,
+            fork_key,
+            view,
+            score: None,
+        });
+        self.entries.len() - 1
+    }
+
+    pub fn view(&self, idx: usize) -> &BattleView {
+        &self.entries[idx].view
+    }
+
+    /// Lazily computed, cached position score (fork must still be live).
+    pub fn score(&mut self, sim: &mut Sim, seat: Seat, idx: usize) -> f64 {
+        if let Some(s) = self.entries[idx].score {
+            return s;
+        }
+        let s = score_state(sim, seat, &self.entries[idx].view);
+        self.entries[idx].score = Some(s);
+        s
+    }
+
+    /// Reclaim every cached fork (call when the decision ends).
+    pub fn dispose_all(&mut self, sim: &mut Sim) {
+        for e in self.entries.drain(..) {
+            sim.dispose_fork(e.fork_key);
+        }
+    }
+}
+
 /// Uniform pick inside the similar-damage band (within 85% of best).
 /// Index into `moves`/`damages`, or -1 if no move deals damage.
 pub fn pick_similar_damage_move(damages: &[i64], rng: &mut JsRng) -> isize {
@@ -58,6 +141,7 @@ pub struct ForkPick {
 pub fn anti_wall_switch(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     view: &BattleView,
     metas: &[MoveMeta],
     moves: &[Mv],
@@ -108,7 +192,7 @@ pub fn anti_wall_switch(
             let mut best = qualified[0].0;
             let mut best_score = f64::NEG_INFINITY;
             for &(idx, _) in &qualified {
-                let s = fork_score_action(sim, seat, fp.reveal_idx, fp.reveal_extra, switches[idx], fp.salt);
+                let s = fork_score_action(sim, seat, fc, fp.reveal_idx, fp.reveal_extra, switches[idx], fp.salt);
                 if s > best_score {
                     best_score = s;
                     best = idx;
@@ -150,6 +234,7 @@ pub struct MeasuredMoves {
 pub fn fork_measure_move_damages(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     reveal_idx: u8,
     reveal_extra: u16,
     moves: &[Mv],
@@ -157,28 +242,18 @@ pub fn fork_measure_move_damages(
 ) -> MeasuredMoves {
     let p0 = reveal_hypo(reveal_idx, reveal_extra, salt);
 
-    let base_key = apply_hypothetical(
-        sim, seat,
-        Some(p0),
-        Some(HypoMove { move_index: NO_OP_INDEX, salt, extra_data: 0 }),
-    );
-    let base = capture_view(sim, seat, base_key);
-    let defender_mon_index = base.opp_active;
-    let base_hp = base.p0[defender_mon_index].hp;
-    sim.dispose_fork(base_key);
+    let base = fc.fork(sim, seat, Some(p0), HypoMove { move_index: NO_OP_INDEX, salt, extra_data: 0 });
+    let (defender_mon_index, base_hp) = {
+        let v = fc.view(base);
+        (v.opp_active, v.p0[v.opp_active].hp)
+    };
 
     let mut damages = Vec::with_capacity(moves.len());
     let mut scores = Vec::with_capacity(moves.len());
     for m in moves {
-        let child_key = apply_hypothetical(
-            sim, seat,
-            Some(p0),
-            Some(HypoMove { move_index: m.move_index, salt, extra_data: m.extra_data }),
-        );
-        let child = capture_view(sim, seat, child_key);
-        let dealt = base_hp - child.p0[defender_mon_index].hp;
-        scores.push(score_state(sim, seat, &child));
-        sim.dispose_fork(child_key);
+        let child = fc.fork(sim, seat, Some(p0), HypoMove { move_index: m.move_index, salt, extra_data: m.extra_data });
+        let dealt = base_hp - fc.view(child).p0[defender_mon_index].hp;
+        scores.push(fc.score(sim, seat, child));
         damages.push(if dealt > 0 { dealt } else { 0 });
     }
     MeasuredMoves { damages, scores, defender_mon_index }
@@ -190,6 +265,7 @@ pub fn fork_measure_move_damages(
 pub fn pick_eval_override(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     reveal_idx: u8,
     reveal_extra: u16,
     chosen: Mv,
@@ -218,13 +294,13 @@ pub fn pick_eval_override(
         consider(moves[i], move_scores[i]);
     }
     for &m in switches.iter().chain(no_op.iter()) {
-        let s = fork_score_action(sim, seat, reveal_idx, reveal_extra, m, salt);
+        let s = fork_score_action(sim, seat, fc, reveal_idx, reveal_extra, m, salt);
         consider(m, s);
     }
 
     let chosen_score = chosen_score.unwrap_or_else(|| {
         // Chosen wasn't among the enumerated candidates — score it directly.
-        fork_score_action(sim, seat, reveal_idx, reveal_extra, chosen, salt)
+        fork_score_action(sim, seat, fc, reveal_idx, reveal_extra, chosen, salt)
     });
 
     match best {
@@ -279,6 +355,7 @@ pub fn ev_scale_damages(
 pub fn fork_measure_incoming_damage(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     opp_move_index: u8,
     opp_extra_data: u16,
     switch_target: Option<usize>,
@@ -293,24 +370,23 @@ pub fn fork_measure_incoming_damage(
         Some(t) => HypoMove { move_index: SWITCH_MOVE_INDEX, salt, extra_data: t as u16 },
     };
 
-    let baseline_key = apply_hypothetical(
+    let baseline = fc.fork(
         sim, seat,
         Some(HypoMove { move_index: NO_OP_INDEX, salt, extra_data: 0 }),
-        Some(our_action),
+        our_action,
     );
-    let baseline = capture_view(sim, seat, baseline_key);
-    let our_mon = switch_target.unwrap_or(baseline.cpu_active);
-    let base_hp = baseline.p1[our_mon].hp;
-    sim.dispose_fork(baseline_key);
+    let (our_mon, base_hp) = {
+        let v = fc.view(baseline);
+        let our_mon = switch_target.unwrap_or(v.cpu_active);
+        (our_mon, v.p1[our_mon].hp)
+    };
 
-    let child_key = apply_hypothetical(
+    let child = fc.fork(
         sim, seat,
         Some(HypoMove { move_index: opp_move_index, salt, extra_data: opp_extra_data }),
-        Some(our_action),
+        our_action,
     );
-    let child = capture_view(sim, seat, child_key);
-    let dealt = base_hp - child.p1[our_mon].hp;
-    sim.dispose_fork(child_key);
+    let dealt = base_hp - fc.view(child).p1[our_mon].hp;
     if dealt > 0 {
         dealt
     } else {
@@ -322,19 +398,17 @@ pub fn fork_measure_incoming_damage(
 pub fn fork_score_action(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     reveal_idx: u8,
     reveal_extra: u16,
     action: Mv,
     salt: u128,
 ) -> f64 {
     let p0 = reveal_hypo(reveal_idx, reveal_extra, salt);
-    let child_key = apply_hypothetical(
+    let child = fc.fork(
         sim, seat,
         Some(p0),
-        Some(HypoMove { move_index: action.move_index, salt, extra_data: action.extra_data }),
+        HypoMove { move_index: action.move_index, salt, extra_data: action.extra_data },
     );
-    let child = capture_view(sim, seat, child_key);
-    let s = score_state(sim, seat, &child);
-    sim.dispose_fork(child_key);
-    s
+    fc.score(sim, seat, child)
 }

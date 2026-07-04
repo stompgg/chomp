@@ -17,7 +17,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::hard::{self, HardState};
 use crate::jsrng::JsRng;
-use crate::native::fork_measure_incoming_damage;
+use crate::native::{fork_measure_incoming_damage, ForkCache};
 use crate::sim::Sim;
 use crate::view::{
     calculate_valid_moves, mon_current_hp, mon_current_speed, mon_current_stamina, mon_max_hp,
@@ -140,10 +140,12 @@ fn build_ctx(
     // a fork that fails on an odd state just reads as non-lethal.
     let mut incoming_lethal = false;
     if pm.move_index < SWITCH_MOVE_INDEX {
+        let mut fc = ForkCache::new();
         incoming_lethal = catch_unwind(AssertUnwindSafe(|| {
-            fork_measure_incoming_damage(sim, seat, pm.move_index, pm.extra_data, None, 0) >= cur_hp
+            fork_measure_incoming_damage(sim, seat, &mut fc, pm.move_index, pm.extra_data, None, 0) >= cur_hp
         }))
         .unwrap_or(false);
+        fc.dispose_all(sim);
     }
 
     OverrideCtx {

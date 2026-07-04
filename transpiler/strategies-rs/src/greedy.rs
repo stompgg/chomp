@@ -4,13 +4,10 @@
 //! ported — the arena's `greedy` never enables it, and with one sample the
 //! risk-adjusted score IS the sample (mean of one, exact in f64).
 
-use crate::evaluator::score_state;
 use crate::jsrng::JsRng;
+use crate::native::ForkCache;
 use crate::sim::{HypoMove, Sim};
-use crate::view::{
-    apply_hypothetical, calculate_valid_moves, capture_view, pick_uniform, BattleView, Mv, Seat,
-    NO_OP_INDEX,
-};
+use crate::view::{calculate_valid_moves, pick_uniform, BattleView, Mv, Seat, NO_OP_INDEX};
 
 pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, rng: &mut JsRng) -> Mv {
     let bk = view.bk;
@@ -35,6 +32,7 @@ pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, rng: &mut Js
     // On a forced-switch turn (switchFlag === 1) p0 does not act.
     let p0_acts = view.switch_flag != 1;
 
+    let mut fc = ForkCache::new();
     let mut best: Vec<Mv> = Vec::new();
     let mut best_score = f64::NEG_INFINITY;
     for cand in candidates {
@@ -43,14 +41,12 @@ pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, rng: &mut Js
         } else {
             None
         };
-        let fork_key = apply_hypothetical(
+        let child = fc.fork(
             sim, seat,
             p0_move,
-            Some(HypoMove { move_index: cand.move_index, salt, extra_data: cand.extra_data }),
+            HypoMove { move_index: cand.move_index, salt, extra_data: cand.extra_data },
         );
-        let result_view = capture_view(sim, seat, fork_key);
-        let score = score_state(sim, seat, &result_view);
-        sim.dispose_fork(fork_key);
+        let score = fc.score(sim, seat, child);
 
         if score > best_score {
             best_score = score;
@@ -59,6 +55,7 @@ pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, rng: &mut Js
             best.push(cand);
         }
     }
+    fc.dispose_all(sim);
 
     pick_uniform(best.len(), rng).map(|i| best[i]).unwrap_or(best[0])
 }

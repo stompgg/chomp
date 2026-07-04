@@ -12,8 +12,8 @@ use chomp_rt::{B256, U256};
 use crate::jsrng::JsRng;
 use crate::native::{
     anti_wall_switch, ev_scale_damages, fork_measure_incoming_damage, fork_measure_move_damages,
-    fork_score_action, pick_eval_override, pick_similar_damage_move, ForkPick, MeasuredMoves,
-    WALL_DAMAGE_PCT,
+    fork_score_action, pick_eval_override, pick_similar_damage_move, ForkCache, ForkPick,
+    MeasuredMoves, WALL_DAMAGE_PCT,
 };
 use crate::shared::{
     build_damage_calc_context, clear_move_used_bits_on_switch_in, compute_move_damages,
@@ -162,6 +162,7 @@ fn check_ko_bypass(
 fn find_best_switch_candidate(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     bk: B256,
     opponent_mon_index: usize,
     opponent_move_index: u8,
@@ -188,7 +189,7 @@ fn find_best_switch_candidate(
             0
         };
         let dmg = static_dmg.max(fork_measure_incoming_damage(
-            sim, seat, opponent_move_index, opponent_extra_data, Some(candidate_mon_index), salt,
+            sim, seat, fc, opponent_move_index, opponent_extra_data, Some(candidate_mon_index), salt,
         ));
 
         let max_hp = mon_max_hp(sim, seat, bk, VCPU, candidate_mon_index);
@@ -211,6 +212,7 @@ fn find_best_switch_candidate(
 fn evaluate_defensive_switch(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     bk: B256,
     active_mon_index: usize,
     opponent_mon_index: usize,
@@ -245,7 +247,7 @@ fn evaluate_defensive_switch(
     }
 
     let (best_idx, best_damage_pct, best_survives) = find_best_switch_candidate(
-        sim, seat, bk, opponent_mon_index, opponent_move_index, opponent_extra_data,
+        sim, seat, fc, bk, opponent_mon_index, opponent_move_index, opponent_extra_data,
         opp_move_slot, opp_move_class, switches, salt,
     );
 
@@ -340,7 +342,9 @@ pub fn decide(
     rng: &mut JsRng,
     st: &mut HardState,
 ) -> Mv {
-    let (mv, bitmap) = decide_inner(sim, seat, view, pm, rng, st.move_used_bitmap);
+    let mut fc = ForkCache::new();
+    let (mv, bitmap) = decide_inner(sim, seat, view, pm, rng, st.move_used_bitmap, &mut fc);
+    fc.dispose_all(sim);
     st.move_used_bitmap = bitmap; // every TS return path goes through DONE
     mv
 }
@@ -351,6 +355,7 @@ pub fn decide(
 fn arb(
     sim: &mut Sim,
     seat: Seat,
+    fc: &mut ForkCache,
     bk: B256,
     player_move_index: u8,
     player_extra_data: u16,
@@ -363,8 +368,8 @@ fn arb(
     move_used_bitmap: &mut u32,
 ) -> Mv {
     let better = pick_eval_override(
-        sim, seat, player_move_index, player_extra_data, m, moves, move_scores, switches, no_op,
-        salt_seed,
+        sim, seat, fc, player_move_index, player_extra_data, m, moves, move_scores, switches,
+        no_op, salt_seed,
     );
     match better {
         None => m,
@@ -379,6 +384,7 @@ fn arb(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decide_inner(
     sim: &mut Sim,
     seat: Seat,
@@ -386,6 +392,7 @@ fn decide_inner(
     pm: Mv,
     rng: &mut JsRng,
     mut move_used_bitmap: u32,
+    fc: &mut ForkCache,
 ) -> (Mv, u32) {
     let bk = view.bk;
 
@@ -444,7 +451,7 @@ fn decide_inner(
     let static_damages = compute_move_damages(&mut attack_ctx, &metas, moves);
     let salt_seed = (turn_id(sim, bk) + 1) as u128;
     let measured: MeasuredMoves =
-        fork_measure_move_damages(sim, seat, player_move_index, player_extra_data, moves, salt_seed);
+        fork_measure_move_damages(sim, seat, fc, player_move_index, player_extra_data, moves, salt_seed);
     let maxed: Vec<i64> = static_damages
         .iter()
         .zip(measured.damages.iter())
@@ -458,7 +465,7 @@ fn decide_inner(
     macro_rules! arb_ret {
         ($m:expr) => {{
             let r = arb(
-                sim, seat, bk, player_move_index, player_extra_data, $m, moves,
+                sim, seat, fc, bk, player_move_index, player_extra_data, $m, moves,
                 &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap,
             );
             return (r, move_used_bitmap);
@@ -484,7 +491,7 @@ fn decide_inner(
         // True reveal damage from the sim; the static estimate stays as the
         // floor only when the fork measures nothing (fixed-salt miss).
         let measured_to_us =
-            fork_measure_incoming_damage(sim, seat, player_move_index, player_extra_data, None, salt_seed);
+            fork_measure_incoming_damage(sim, seat, fc, player_move_index, player_extra_data, None, salt_seed);
         if measured_to_us > 0 {
             damage_to_us = measured_to_us;
         }
@@ -556,7 +563,7 @@ fn decide_inner(
                 player_move_index,
             );
         let (should_switch, switch_idx) = evaluate_defensive_switch(
-            sim, seat, bk, active_mon_index, opponent_mon_index, player_move_index,
+            sim, seat, fc, bk, active_mon_index, opponent_mon_index, player_move_index,
             player_extra_data, switches, severe_damage_pct, ko_bypass_fires, opp_move_slot,
             opp_move_class, damage_to_us, salt_seed,
         );
@@ -564,7 +571,7 @@ fn decide_inner(
             // Cross-check: only switch if the fork says it beats staying in.
             let stay_idx = find_best_damage_move(&metas, moves, &damages);
             let sw_score = fork_score_action(
-                sim, seat, player_move_index, player_extra_data, switches[switch_idx], salt_seed,
+                sim, seat, fc, player_move_index, player_extra_data, switches[switch_idx], salt_seed,
             );
             if stay_idx < 0 || sw_score >= measured.scores[stay_idx as usize] {
                 move_used_bitmap = clear_move_used_bits_on_switch_in(
@@ -579,7 +586,7 @@ fn decide_inner(
     // ── P5.5: Anti-wall stalemate-breaker ──
     if !switches.is_empty() {
         let anti_wall_idx = anti_wall_switch(
-            sim, seat, view, &metas, moves, &damages, switches,
+            sim, seat, fc, view, &metas, moves, &damages, switches,
             Some(ForkPick {
                 reveal_idx: player_move_index,
                 reveal_extra: player_extra_data,
@@ -626,7 +633,7 @@ fn decide_inner(
         }
     }
     for &m in switches.iter().chain(no_op.iter()) {
-        let s = fork_score_action(sim, seat, player_move_index, player_extra_data, m, salt_seed);
+        let s = fork_score_action(sim, seat, fc, player_move_index, player_extra_data, m, salt_seed);
         if s > fb_score {
             fb_score = s;
             fb_best = m;
