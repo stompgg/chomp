@@ -220,6 +220,10 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     /// @notice The player's selected battle-slot set for `monId` as an 8-bit lane bitmap. Returns
     /// the default (lanes [0, MOVES_PER_MON)) when unconfigured (stored value 0).
     function getMoveSelection(address player, uint256 monId) external view override returns (uint8) {
+        return _getMoveSelection(player, monId);
+    }
+
+    function _getMoveSelection(address player, uint256 monId) internal view returns (uint8) {
         uint256 bucket = monId / MONS_PER_EXP_BUCKET;
         uint256 lane = monId % MONS_PER_EXP_BUCKET;
         uint8 stored = uint8((selectedMoveBitmap[player][bucket] >> (lane * MOVE_SEL_BITS_PER_MON)) & MOVE_SEL_MASK);

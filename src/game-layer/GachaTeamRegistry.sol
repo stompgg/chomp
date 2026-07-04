@@ -338,6 +338,39 @@ contract GachaTeamRegistry is
         }
     }
 
+    /// @notice One-call hydration of a player's whole collection: owned mon ids plus each mon's
+    /// exp, level, facet unlock bitmap, equipped facet, and move-selection bitmap. Collapses the
+    /// getOwned → per-mon-detail fan-out (previously two client round-trips) into a single read.
+    function getOwnedMonDetails(address player)
+        external
+        view
+        returns (
+            uint256[] memory monIds,
+            uint256[] memory exp,
+            uint256[] memory levels,
+            uint16[] memory facetUnlocked,
+            uint8[] memory facetEquipped,
+            uint8[] memory moveSelections
+        )
+    {
+        monIds = monsOwned[player].values();
+        uint256 len = monIds.length;
+        exp = new uint256[](len);
+        levels = new uint256[](len);
+        facetUnlocked = new uint16[](len);
+        facetEquipped = new uint8[](len);
+        moveSelections = new uint8[](len);
+        for (uint256 i; i < len;) {
+            uint256 id = monIds[i];
+            uint256 e = _getExp(player, id);
+            exp[i] = e;
+            levels[i] = _levelForExp(e);
+            (facetUnlocked[i], facetEquipped[i]) = getFacetData(player, id);
+            moveSelections[i] = _getMoveSelection(player, id);
+            unchecked { ++i; }
+        }
+    }
+
     // Returns each side's team with active-facet ±5% deltas folded into stats. Engine consumes
     // these directly at startBattle — no separate delta channel. Whitelisted (CPU) sides pull
     // facets from the per-(user, opponent) phantom slot the human caller configured via

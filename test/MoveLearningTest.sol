@@ -266,4 +266,47 @@ contract MoveLearningTest is Test {
         assertEq(registry.getMoveSelection(ALICE, 0), 0x07);
         assertEq(registry.getMoveSelection(ALICE, 3), 0x0B);
     }
+
+    // ====================================================================
+    // getOwnedMonDetails (one-call hydration resolver)
+    // ====================================================================
+
+    // The resolver must be byte-for-byte equivalent to composing getOwned + the per-mon getters it
+    // folds, so cross-check every lane rather than hardcoding brittle expected values.
+    function test_getOwnedMonDetails_matchesPerMonGetters() public {
+        // Non-default state: level mon 0 (drives facet-unlock draws) and set a non-default loadout.
+        _level(ALICE, 0, 65535);
+        vm.prank(ALICE);
+        registry.assignMoves(_one(0), _bm(0x0D));
+
+        (
+            uint256[] memory monIds,
+            uint256[] memory exp,
+            uint256[] memory levels,
+            uint16[] memory facetUnlocked,
+            uint8[] memory facetEquipped,
+            uint8[] memory moveSelections
+        ) = registry.getOwnedMonDetails(ALICE);
+
+        uint256[] memory owned = registry.getOwned(ALICE);
+        assertGt(owned.length, 0, "alice owns mons");
+        assertEq(monIds.length, owned.length, "len matches getOwned");
+
+        (uint256[] memory expBatch, uint256[] memory lvlBatch) = registry.getExpAndLevelsForMons(ALICE, owned);
+
+        for (uint256 i; i < monIds.length; ++i) {
+            assertEq(monIds[i], owned[i], "ordering matches getOwned");
+            assertEq(exp[i], expBatch[i], "exp");
+            assertEq(levels[i], lvlBatch[i], "level");
+            (uint16 unlocked, uint8 equipped) = registry.getFacetData(ALICE, monIds[i]);
+            assertEq(facetUnlocked[i], unlocked, "facet unlocked");
+            assertEq(facetEquipped[i], equipped, "facet equipped");
+            assertEq(moveSelections[i], registry.getMoveSelection(ALICE, monIds[i]), "move selection");
+        }
+
+        // Sanity: the assigned loadout actually surfaces (not just default-vs-default agreement).
+        assertEq(monIds[0], 0, "mon 0 is first owned");
+        assertEq(moveSelections[0], 0x0D, "non-default loadout reflected");
+        assertGt(facetUnlocked[0], 0, "leveling unlocked at least one facet");
+    }
 }
