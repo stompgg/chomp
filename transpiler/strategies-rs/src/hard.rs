@@ -4,7 +4,7 @@
 //! anti-wall pivot, and the eval-veto wrapper. Every phase, threshold and
 //! rng draw mirrors the TS source order.
 
-use chomp_engine::moves::MoveSlotLib;
+use chomp_engine::Constants;
 use chomp_engine::Enums::MoveClass;
 use chomp_engine::Structs::{DamageCalcContext, MoveMeta};
 use chomp_rt::{B256, U256};
@@ -24,15 +24,33 @@ use crate::shared::{
 };
 use crate::sim::Sim;
 use crate::view::{
-    damage_calc_context, mon_current_hp, mon_current_speed, mon_current_stamina, mon_skip_turn,
-    mon_value, move_slot, turn_id, BattleView, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU,
-    VOPP,
+    calculate_valid_moves, damage_calc_context, mon_current_hp, mon_current_speed,
+    mon_current_stamina, mon_max_hp, mon_skip_turn, move_slot, slot_move_class, slot_priority,
+    turn_id, BattleView, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
-use chomp_engine::Enums::MonStateIndexName;
-
 /// SWITCH priority in the Engine's priority comparison.
-const SWITCH_PRIORITY: i64 = 6;
+const SWITCH_PRIORITY: i64 = Constants::SWITCH_PRIORITY.as_limbs()[0] as i64;
+
+/// Per-mon setup-move config (`BETTER_CPU_MON_CONFIG`): values stored as
+/// moveIndex+1, 0 = unset. Only CONFIG_SETUP_MOVE is populated — the
+/// switch-in / preferred lanes stay inert, like the TS table.
+fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
+    if config_key != CONFIG_SETUP_MOVE {
+        return 0;
+    }
+    match mon_index {
+        1 => 2,  // Inutia   -> Initialize     (slot 1)
+        2 => 1,  // Malalien -> Triple Think   (slot 0)
+        3 => 2,  // Iblivion -> Loop           (slot 1)
+        6 => 2,  // Pengym   -> Deadlift       (slot 1)
+        7 => 3,  // Embursa  -> Heat Beacon    (slot 2)
+        9 => 3,  // Aurox    -> Iron Wall      (slot 2)
+        11 => 3, // Ekineki  -> Nine Nine Nine (slot 2)
+        12 => 1, // Nirvamma -> Hard Reset     (slot 0)
+        _ => 0,
+    }
+}
 
 /// Per-battle persistent state: the configured-move lane bitmap (the
 /// on-chain cpuMoveUsedBitmap semantics — setup fires once per switch-in).
@@ -48,14 +66,7 @@ fn build_metas(sim: &mut Sim, seat: Seat, bk: B256, active_mon_index: usize) -> 
     (0..4)
         .map(|i| {
             let slot = move_slot(sim, seat, bk, VCPU, active_mon_index, i).unwrap_or(U256::ZERO);
-            MoveSlotLib::decodeMeta(
-                &mut sim.world,
-                slot,
-                sim.engine_addr,
-                bk,
-                U256::from(VCPU as u64), // VIRTUAL index (proxy semantics)
-                U256::from(active_mon_index as u64),
-            )
+            crate::view::decode_meta(sim, bk, VCPU, active_mon_index, slot)
         })
         .collect()
 }
@@ -83,8 +94,7 @@ fn we_go_first(
     } else {
         let raw = move_slot(sim, seat, bk, VOPP, opponent_mon_index, opponent_move_index as usize)
             .expect("opponent move slot");
-        MoveSlotLib::priority(&mut sim.world, raw, sim.engine_addr, bk, U256::from(VOPP as u64))
-            as i64
+        slot_priority(sim, bk, VOPP, raw) as i64
     };
 
     if our_priority > opp_priority {
@@ -181,7 +191,7 @@ fn find_best_switch_candidate(
             sim, seat, opponent_move_index, opponent_extra_data, Some(candidate_mon_index), salt,
         ));
 
-        let max_hp = mon_value(sim, seat, bk, VCPU, candidate_mon_index, MonStateIndexName::Hp);
+        let max_hp = mon_max_hp(sim, seat, bk, VCPU, candidate_mon_index);
         let cur_hp = mon_current_hp(sim, seat, bk, VCPU, candidate_mon_index);
 
         let damage_pct = if max_hp > 0 { floor_div(dmg * 100, max_hp) } else { MAX_SAFE_INTEGER };
@@ -224,7 +234,7 @@ fn evaluate_defensive_switch(
         return (false, 0);
     }
 
-    let our_max_hp = mon_value(sim, seat, bk, VCPU, active_mon_index, MonStateIndexName::Hp);
+    let our_max_hp = mon_max_hp(sim, seat, bk, VCPU, active_mon_index);
     let our_cur_hp = mon_current_hp(sim, seat, bk, VCPU, active_mon_index);
 
     let damage_pct_to_us = floor_div(damage_to_us * 100, our_max_hp);
@@ -263,7 +273,7 @@ fn is_free_turn_reveal(
     else {
         return false; // unreadable slot (TS catch path)
     };
-    let opp_class = MoveSlotLib::moveClass(&mut sim.world, slot, sim.engine_addr, bk);
+    let opp_class = slot_move_class(sim, bk, slot);
     if opp_class != MoveClass::Other && opp_class != MoveClass::Self_ {
         return false;
     }
@@ -286,7 +296,8 @@ fn free_turn_pick(
     let opponent_mon_index = view.opp_active;
 
     // Configured switch-in move on this safe turn.
-    let (idx, bm) = try_configured_move(move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0);
+    let (idx, bm) =
+        try_configured_move(better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0);
     move_used_bitmap = bm;
     if idx >= 0 {
         return (Some(moves[idx as usize]), move_used_bitmap);
@@ -309,7 +320,8 @@ fn free_turn_pick(
             view.p1.len(), view.cpu_ko, view.p0.len(), view.opp_ko,
             view.opp_active, cpu_stamina,
         ) {
-            let (idx, bm) = try_configured_move(move_used_bitmap, active_mon_index, moves, CONFIG_SETUP_MOVE, 8);
+            let (idx, bm) =
+                try_configured_move(better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SETUP_MOVE, 8);
             move_used_bitmap = bm;
             if idx >= 0 {
                 return (Some(moves[idx as usize]), move_used_bitmap);
@@ -385,7 +397,7 @@ fn decide_inner(
     let severe_damage_pct = SEVERE_DAMAGE_PCT_HELL;
 
     // Enumerate valid options + decode the active mon's metas.
-    let valid = crate::view::calculate_valid_moves(sim, seat, bk, rng);
+    let valid = calculate_valid_moves(sim, seat, bk, rng);
     let (no_op, moves, switches) = (&valid.no_op, &valid.moves, &valid.switches);
     let metas = build_metas(sim, seat, bk, view.cpu_active);
 
@@ -440,6 +452,19 @@ fn decide_inner(
         .collect();
     let damages = ev_scale_damages(sim, seat, bk, active_mon_index, moves, &maxed);
 
+    // The TS `return ARB(m, phase)` one-liner: eval-veto the tree's pick,
+    // then write the bitmap back (DONE). All invariant args are locals in
+    // scope at every expansion site.
+    macro_rules! arb_ret {
+        ($m:expr) => {{
+            let r = arb(
+                sim, seat, bk, player_move_index, player_extra_data, $m, moves,
+                &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap,
+            );
+            return (r, move_used_bitmap);
+        }};
+    }
+
     // Hoist the opp-threat computation ONCE (P2 + P5 both consume it).
     let mut opp_move_slot: Option<U256> = None;
     let mut opp_move_class: Option<MoveClass> = None;
@@ -448,7 +473,7 @@ fn decide_inner(
         if let Some(slot) =
             move_slot(sim, seat, bk, VOPP, opponent_mon_index, player_move_index as usize)
         {
-            let mc = MoveSlotLib::moveClass(&mut sim.world, slot, sim.engine_addr, bk);
+            let mc = slot_move_class(sim, bk, slot);
             opp_move_slot = Some(slot);
             opp_move_class = Some(mc);
             if mc == MoveClass::Physical || mc == MoveClass::Special {
@@ -476,11 +501,7 @@ fn decide_inner(
                 moves[ko_move_idx as usize].move_index, player_move_index,
             )
         {
-            let r = arb(
-                sim, seat, bk, player_move_index, player_extra_data, moves[ko_move_idx as usize],
-                moves, &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap,
-            );
-            return (r, move_used_bitmap);
+            arb_ret!(moves[ko_move_idx as usize]);
         }
         // else: opponent outspeeds us and can KO — fall through to P5.
     }
@@ -490,48 +511,32 @@ fn decide_inner(
         let (picked, bm) = free_turn_pick(sim, seat, view, move_used_bitmap, &metas, moves, &damages);
         move_used_bitmap = bm;
         if let Some(m) = picked {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data, m, moves,
-                &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(m);
         }
         if !moves.is_empty() {
             let best_move = pick_similar_damage_move(&damages, rng);
             if best_move >= 0 {
-                let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                    moves[best_move as usize], moves, &measured.scores, switches, no_op,
-                    salt_seed, &mut move_used_bitmap);
-                return (r, move_used_bitmap);
+                arb_ret!(moves[best_move as usize]);
             }
         }
-        let r = arb(sim, seat, bk, player_move_index, player_extra_data, no_op[0], moves,
-            &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-        return (r, move_used_bitmap); // rest on free turn
+        arb_ret!(no_op[0]); // rest on free turn
     }
 
     // ── P4: Opponent is Resting ── (same free-turn punish as P3)
     if player_move_index == NO_OP_INDEX {
         if moves.is_empty() {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data, no_op[0], moves,
-                &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap); // both rest
+            arb_ret!(no_op[0]); // both rest
         }
         let (picked, bm) = free_turn_pick(sim, seat, view, move_used_bitmap, &metas, moves, &damages);
         move_used_bitmap = bm;
         if let Some(m) = picked {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data, m, moves,
-                &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(m);
         }
         let best_move = pick_similar_damage_move(&damages, rng);
         if best_move >= 0 {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                moves[best_move as usize], moves, &measured.scores, switches, no_op,
-                salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(moves[best_move as usize]);
         }
-        let r = arb(sim, seat, bk, player_move_index, player_extra_data, no_op[0], moves,
-            &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-        return (r, move_used_bitmap);
+        arb_ret!(no_op[0]);
     }
 
     // ── P4.5: Free-turn setup-punishment — 0-power Self/Other reveal.
@@ -539,9 +544,7 @@ fn decide_inner(
         let (picked, bm) = free_turn_pick(sim, seat, view, move_used_bitmap, &metas, moves, &damages);
         move_used_bitmap = bm;
         if let Some(m) = picked {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data, m, moves,
-                &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(m);
         }
     }
 
@@ -567,15 +570,9 @@ fn decide_inner(
                 move_used_bitmap = clear_move_used_bits_on_switch_in(
                     sim, seat, bk, move_used_bitmap, switches[switch_idx].extra_data as usize,
                 );
-                let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                    switches[switch_idx], moves, &measured.scores, switches, no_op, salt_seed,
-                    &mut move_used_bitmap);
-                return (r, move_used_bitmap);
+                arb_ret!(switches[switch_idx]);
             }
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                moves[stay_idx as usize], moves, &measured.scores, switches, no_op, salt_seed,
-                &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(moves[stay_idx as usize]);
         }
     }
 
@@ -593,37 +590,29 @@ fn decide_inner(
             move_used_bitmap = clear_move_used_bits_on_switch_in(
                 sim, seat, bk, move_used_bitmap, switches[anti_wall_idx as usize].extra_data as usize,
             );
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                switches[anti_wall_idx as usize], moves, &measured.scores, switches, no_op,
-                salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(switches[anti_wall_idx as usize]);
         }
     }
 
     // ── P6: Default — Best Damaging Move (sampled from the 85% band) ──
     if !moves.is_empty() {
-        let (idx, bm) = try_configured_move(move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0);
+        let (idx, bm) = try_configured_move(
+            better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0,
+        );
         move_used_bitmap = bm;
         if idx >= 0 {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data, moves[idx as usize],
-                moves, &measured.scores, switches, no_op, salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(moves[idx as usize]);
         }
 
-        let preferred_move = try_preferred_move(active_mon_index, &mut attack_ctx, &metas, moves);
+        let preferred_move =
+            try_preferred_move(better_cpu_config, active_mon_index, &mut attack_ctx, &metas, moves);
         if preferred_move >= 0 {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                moves[preferred_move as usize], moves, &measured.scores, switches, no_op,
-                salt_seed, &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(moves[preferred_move as usize]);
         }
 
         let best_move = pick_similar_damage_move(&damages, rng);
         if best_move >= 0 {
-            let r = arb(sim, seat, bk, player_move_index, player_extra_data,
-                moves[best_move as usize], moves, &measured.scores, switches, no_op, salt_seed,
-                &mut move_used_bitmap);
-            return (r, move_used_bitmap);
+            arb_ret!(moves[best_move as usize]);
         }
     }
 

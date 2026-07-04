@@ -20,8 +20,7 @@ import type { DraftedMon } from '../../sims/src/arena/team';
 import { makeSimContext } from '../../sims/src/harness';
 import { loadRoster } from '../../sims/src/util/csv-load';
 import { buildTeamMon } from '../../sims/src/arena/team';
-import { contractAddresses } from '../ts-output/runtime';
-import { ffi, cstr, takeString, monToJson } from '../../sims/src/arena/rust-engine';
+import { buildAddressBook, ffi, cstr, takeString, monToJson } from '../../sims/src/arena/rust-engine';
 
 const GAMES = Number(process.argv[2] ?? 3000);
 const THREAD_COUNTS = (process.argv[3] ?? '1,4').split(',').map(Number);
@@ -87,10 +86,7 @@ if (tsRef.size < GAMES) {
 // Serialize teams once (addresses are deterministic across contexts).
 const ctx = makeSimContext({ monsPerTeam: BigInt(TEAM_SIZE) });
 const roster = loadRoster();
-const addressBook: Record<string, string> = {};
-for (const name of (ctx.container as any).getRegisteredNames()) {
-  addressBook[name] = contractAddresses.getAddress(name);
-}
+const addressBook = buildAddressBook(ctx);
 const games = ported.map((w) => ({
   seed: w.seed,
   maxTurns: MAX_TURNS,

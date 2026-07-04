@@ -17,10 +17,6 @@ const LIB = join(ROOT, 'rs-output', 'target', 'release', 'libchomp_ffi.so');
 const lib = dlopen(LIB, {
   chomp_ffi_version: { args: [], returns: FFIType.u32 },
   chomp_battle_new: { args: [FFIType.ptr], returns: FFIType.u64 },
-  chomp_battle_validate: {
-    args: [FFIType.u64, FFIType.u8, FFIType.u8, FFIType.u16],
-    returns: FFIType.i32,
-  },
   chomp_battle_turn: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.ptr },
   chomp_battle_snapshot: { args: [FFIType.u64], returns: FFIType.ptr },
   chomp_battle_free: { args: [FFIType.u64], returns: FFIType.void },

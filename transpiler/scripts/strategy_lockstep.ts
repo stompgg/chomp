@@ -17,8 +17,7 @@ import type { PlayerMove } from '../../sims/src/cpu/strategy';
 import { makeSimContext } from '../../sims/src/harness';
 import { loadRoster } from '../../sims/src/util/csv-load';
 import { buildTeamMon } from '../../sims/src/arena/team';
-import { contractAddresses } from '../ts-output/runtime';
-import { ffi, cstr, takeString, monToJson } from '../../sims/src/arena/rust-engine';
+import { buildAddressBook, ffi, cstr, takeString, monToJson } from '../../sims/src/arena/rust-engine';
 
 const GAMES = Number(process.argv[2] ?? 40);
 const MAX_TURNS = 150;
@@ -94,10 +93,7 @@ console.log(`[ts]   ${GAMES} games in ${tsSec.toFixed(1)}s (${(GAMES / tsSec).to
 // ---------------------------------------------------------------------------
 const ctx = makeSimContext({ monsPerTeam: BigInt(TEAM_SIZE) });
 const roster = loadRoster();
-const addressBook: Record<string, string> = {};
-for (const name of (ctx.container as any).getRegisteredNames()) {
-  addressBook[name] = contractAddresses.getAddress(name);
-}
+const addressBook = buildAddressBook(ctx);
 const cfg = {
   monsPerTeam: TEAM_SIZE,
   addressBook,

@@ -38,13 +38,18 @@ pub fn random_salt(rng: &mut JsRng) -> u128 {
 mod tests {
     use super::*;
 
-    // Golden values from the TS reference (bun: makeRng(12345)).
+    // Golden values from the TS reference (bun: makeRng(12345) — the first
+    // three draws, and the salt drawn after one draw). Catches any
+    // mulberry32 transcription slip without needing a full lockstep run.
     #[test]
-    fn matches_ts_stream_shape() {
+    fn matches_ts_golden_stream() {
         let mut r = JsRng::new(12345);
-        let first = r.next();
-        assert!((0.0..1.0).contains(&first));
-        let salt = random_salt(&mut r);
-        assert!(salt < 1u128 << 104);
+        assert_eq!(r.next(), 0.97972826776094735);
+        assert_eq!(r.next(), 0.30675226449966431);
+        assert_eq!(r.next(), 0.48420542152598500);
+
+        let mut r2 = JsRng::new(12345);
+        r2.next();
+        assert_eq!(random_salt(&mut r2), 5692147205139852277246476461845u128);
     }
 }

@@ -9,7 +9,8 @@ dependency knowledge) and emits a cargo workspace:
       engine/             (generated crate: one .rs per transpiled .sol)
       runtime/            (hand-written crate, synced from transpiler/runtime-rs)
       differential/       (hand-written crate, synced from transpiler/differential-rs)
-      ffi/                (hand-written cdylib stub, synced from transpiler/ffi-rs)
+      ffi/                (hand-written cdylib, synced from transpiler/ffi-rs)
+      strategies/         (hand-written crate, synced from transpiler/strategies-rs)
 
 Which files are emitted is governed by ``transpiler-config-rust.json``'s
 ``includeFiles`` allowlist — the Rust backend is being brought up phase by
@@ -638,12 +639,20 @@ class SolidityToRustTranspiler:
         ):
             src = base / src_name
             if not src.is_dir():
-                print(f'Warning: {src} missing; workspace member {dst_name} not synced')
-                continue
+                # A missing source crate would otherwise surface as a
+                # confusing cargo workspace-member error much later.
+                raise RuntimeError(f'{src} missing; cannot sync workspace member {dst_name}')
             dst = self.output_dir / dst_name
             if dst.exists():
                 shutil.rmtree(dst)
             shutil.copytree(src, dst, ignore=shutil.ignore_patterns('target', 'Cargo.lock'))
+            # rs-output is gitignored: a hand edit to the copy compiles and
+            # then vanishes on the next sync. Make the trap visible.
+            (dst / 'README-SYNCED.md').write_text(
+                f'SYNCED COPY of transpiler/{src_name} — DO NOT EDIT HERE.\n'
+                f'Edits are silently overwritten (and unrecoverable: this tree is\n'
+                f'gitignored) on the next sol2rs run. Edit transpiler/{src_name}.\n'
+            )
             print(f'Synced: {src} -> {dst}')
 
 

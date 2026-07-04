@@ -78,6 +78,10 @@ pub struct Sim {
     pub world: World,
     pub battle_key: B256,
     pub engine_addr: Address,
+    /// (p0, p1) team sizes, immutable after `startBattle` — cached because
+    /// the transpiled `getTeamSize` getter deep-clones the whole
+    /// BattleConfig per call, and view captures read sizes per fork.
+    team_sizes: (usize, usize),
 }
 
 static FORK_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -157,12 +161,46 @@ impl Sim {
         };
         world.env.msg_sender = MATCHMAKER;
         Engine::startBattle(&mut world, &mut battle);
-        Sim { world, battle_key, engine_addr }
+        let sk = Engine::_getStorageKey(&mut world, battle_key);
+        let ts = world.Engine.battleConfig.get_mut(&sk).teamSizes;
+        let team_sizes = ((ts & 0x0f) as usize, (ts >> 4) as usize);
+        Sim { world, battle_key, engine_addr, team_sizes }
     }
 
     /// winnerIndex off the live battle data (2 = battle still running).
     pub fn winner_index(&mut self) -> u8 {
         self.world.Engine.battleData.get(&self.battle_key).winnerIndex
+    }
+
+    /// Team size for a PHYSICAL player index (same on every fork — sizes
+    /// never change after battle start).
+    pub fn team_size_phys(&self, phys: U256) -> usize {
+        if phys == U256::ZERO {
+            self.team_sizes.0
+        } else {
+            self.team_sizes.1
+        }
+    }
+
+    /// Engine-side legality check at a fresh-tx boundary. Every TS
+    /// top-level call resets transient storage; owning that reset here
+    /// keeps validate reads boundary-clean for the FFI and the native
+    /// game loop alike.
+    pub fn validate_move(&mut self, bk: B256, phys_player: U256, move_index: u8, extra_data: u16) -> bool {
+        self.world.reset_transient();
+        Engine::validatePlayerMoveForBattle(
+            &mut self.world,
+            bk,
+            U256::from(move_index as u64),
+            phys_player,
+            extra_data,
+        )
+    }
+
+    /// `getGlobalKV` at a fresh-tx boundary (works on fork keys too).
+    pub fn global_kv(&mut self, bk: B256, key: u64) -> U256 {
+        self.world.reset_transient();
+        Engine::getGlobalKV(&mut self.world, bk, key)
     }
 
     /// Execute one real turn (both submissions), like the TS harness's

@@ -15,8 +15,8 @@ use crate::shared::{
 };
 use crate::sim::{HypoMove, Sim};
 use crate::view::{
-    apply_hypothetical, capture_view, mon_current_hp, mon_stats, move_slot, BattleView, Mv, Seat,
-    NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    apply_hypothetical, capture_view, mon_current_hp, mon_stats, move_slot, pick_uniform,
+    slot_external_accuracy, BattleView, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 /// A matchup is "walled" if our best move does LESS than this % of the
@@ -41,7 +41,7 @@ pub fn pick_similar_damage_move(damages: &[i64], rng: &mut JsRng) -> isize {
     }
     let threshold = floor_div(best_damage * SIMILAR_DAMAGE_THRESHOLD, 100);
     let band: Vec<usize> = (0..damages.len()).filter(|&i| damages[i] >= threshold).collect();
-    band[(rng.next() * band.len() as f64).floor() as usize] as isize
+    band[pick_uniform(band.len(), rng).unwrap()] as isize
 }
 
 /// The reveal a fork-scored pivot pick measures against.
@@ -199,53 +199,33 @@ pub fn pick_eval_override(
     no_op: &[Mv],
     salt: u128,
 ) -> Option<Mv> {
-    let p0 = reveal_hypo(reveal_idx, reveal_extra, salt);
-
     let mut chosen_score: Option<f64> = None;
     let mut best: Option<Mv> = None;
     let mut best_score = f64::NEG_INFINITY;
 
-    let consider = |m: Mv, score: f64, chosen_score: &mut Option<f64>, best: &mut Option<Mv>, best_score: &mut f64| {
+    let mut consider = |m: Mv, score: f64| {
         if m == chosen {
-            *chosen_score = Some(score);
+            chosen_score = Some(score);
             return;
         }
-        if score > *best_score {
-            *best_score = score;
-            *best = Some(m);
+        if score > best_score {
+            best_score = score;
+            best = Some(m);
         }
     };
 
     for i in 0..moves.len() {
-        consider(moves[i], move_scores[i], &mut chosen_score, &mut best, &mut best_score);
+        consider(moves[i], move_scores[i]);
     }
     for &m in switches.iter().chain(no_op.iter()) {
-        let child_key = apply_hypothetical(
-            sim, seat,
-            Some(p0),
-            Some(HypoMove { move_index: m.move_index, salt, extra_data: m.extra_data }),
-        );
-        let child = capture_view(sim, seat, child_key);
-        let s = score_state(sim, seat, &child);
-        sim.dispose_fork(child_key);
-        consider(m, s, &mut chosen_score, &mut best, &mut best_score);
+        let s = fork_score_action(sim, seat, reveal_idx, reveal_extra, m, salt);
+        consider(m, s);
     }
 
-    let chosen_score = match chosen_score {
-        Some(s) => s,
-        None => {
-            // Chosen wasn't among the enumerated candidates — score it directly.
-            let child_key = apply_hypothetical(
-                sim, seat,
-                Some(p0),
-                Some(HypoMove { move_index: chosen.move_index, salt, extra_data: chosen.extra_data }),
-            );
-            let child = capture_view(sim, seat, child_key);
-            let s = score_state(sim, seat, &child);
-            sim.dispose_fork(child_key);
-            s
-        }
-    };
+    let chosen_score = chosen_score.unwrap_or_else(|| {
+        // Chosen wasn't among the enumerated candidates — score it directly.
+        fork_score_action(sim, seat, reveal_idx, reveal_extra, chosen, salt)
+    });
 
     match best {
         Some(b) if best_score >= chosen_score + EVAL_OVERRIDE_MARGIN => Some(b),
@@ -278,8 +258,7 @@ pub fn ev_scale_damages(
             if MoveSlotLib::isInline(slot) {
                 return d;
             }
-            let target = MoveSlotLib::toIMoveSet(slot);
-            match chomp_engine::dispatch::try_accuracy(&mut sim.world, target, bk) {
+            match slot_external_accuracy(sim, bk, slot) {
                 None => d,
                 Some(acc) => {
                     let acc = acc as i64;

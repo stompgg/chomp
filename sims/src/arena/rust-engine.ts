@@ -34,10 +34,16 @@ import type { SimContext } from '../harness';
 const LIB_PATH = process.env.CHOMP_FFI_LIB
   ?? join(import.meta.dir, '..', '..', '..', 'transpiler', 'rs-output', 'target', 'release', 'libchomp_ffi.so');
 
+/** Expected chomp_ffi_version (major << 16 | minor). Bump in lockstep with
+ * ffi-rs on every exported-signature change — the assert below turns silent
+ * ABI drift into an immediate load-time failure. */
+const EXPECTED_FFI_VERSION = (0 << 16) | 3;
+
 let _lib: any = null;
 export function ffi(): any {
   if (_lib === null) {
     _lib = dlopen(LIB_PATH, {
+      chomp_ffi_version: { args: [], returns: FFIType.u32 },
       chomp_battle_new: { args: [FFIType.ptr], returns: FFIType.u64 },
       chomp_battle_validate: {
         args: [FFIType.u64, FFIType.ptr, FFIType.u8, FFIType.u8, FFIType.u16],
@@ -53,8 +59,23 @@ export function ffi(): any {
       chomp_run_games: { args: [FFIType.ptr], returns: FFIType.ptr },
       chomp_str_free: { args: [FFIType.ptr], returns: FFIType.void },
     });
+    const v = Number(_lib.symbols.chomp_ffi_version());
+    if (v !== EXPECTED_FFI_VERSION) {
+      throw new Error(`chomp_ffi ABI mismatch: lib=${v.toString(16)} expected=${EXPECTED_FFI_VERSION.toString(16)} — rebuild rs-output or update EXPECTED_FFI_VERSION`);
+    }
   }
   return _lib;
+}
+
+/** The container's full contract address book, as the Rust side expects it —
+ * every battle (handle or batch) must be configured with the SAME book the
+ * TS address registry assigned, so metadata resolution lines up. */
+export function buildAddressBook(ctx: SimContext): Record<string, string> {
+  const book: Record<string, string> = {};
+  for (const name of ctx.container.getRegisteredNames()) {
+    book[name] = contractAddresses.getAddress(name);
+  }
+  return book;
 }
 
 export function cstr(s: string): Buffer {
@@ -98,13 +119,6 @@ interface RsState {
   dcc10?: Record<string, number>;
 }
 
-export interface RustMonInput {
-  stats: {
-    hp: bigint; stamina: bigint; speed: bigint; attack: bigint; defense: bigint;
-    specialAttack: bigint; specialDefense: bigint;
-  } & { type1?: unknown; type2?: unknown };
-}
-
 export function monToJson(m: Structs.Mon): unknown {
   return {
     hp: Number(m.stats.hp), stamina: Number(m.stats.stamina), speed: Number(m.stats.speed),
@@ -141,10 +155,7 @@ export class RustBattleAdapter {
   /** Start a Rust battle with the container's OWN address book so TS-side
    * metadata resolution (moveSlotLib/decodeMeta by address) lines up. */
   start(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[], monsPerTeam: number): string {
-    const addressBook: Record<string, string> = {};
-    for (const name of ctx.container.getRegisteredNames()) {
-      addressBook[name] = contractAddresses.getAddress(name);
-    }
+    const addressBook = buildAddressBook(ctx);
     const cfg = {
       monsPerTeam,
       p0Team: p0Team.map(monToJson),

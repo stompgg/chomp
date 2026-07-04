@@ -60,6 +60,5 @@ pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, rng: &mut Js
         }
     }
 
-    let chosen = pick_uniform(best.len(), rng).map(|i| best[i]).unwrap_or(best[0]);
-    chosen
+    pick_uniform(best.len(), rng).map(|i| best[i]).unwrap_or(best[0])
 }

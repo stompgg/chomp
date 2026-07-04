@@ -14,16 +14,16 @@
 
 use chomp_engine::moves::MoveSlotLib;
 use chomp_engine::types::TypeCalcLib;
-use chomp_engine::Engine;
-use chomp_engine::Enums::{ExtraDataType, MonStateIndexName, Type};
-use chomp_engine::Structs::{DamageCalcContext, MonStats};
+use chomp_engine::{Constants, Engine};
+use chomp_engine::Enums::{ExtraDataType, MonStateIndexName, MoveClass, Type};
+use chomp_engine::Structs::{DamageCalcContext, MonStats, MoveMeta};
 use chomp_rt::{B256, U256};
 
 use crate::jsrng::JsRng;
 use crate::sim::{HypoMove, Sim};
 
-pub const SWITCH_MOVE_INDEX: u8 = 125;
-pub const NO_OP_INDEX: u8 = 126;
+pub use chomp_engine::Constants::SWITCH_MOVE_INDEX;
+pub const NO_OP_INDEX: u8 = Constants::NO_OP_MOVE_INDEX;
 
 /// Virtual player index: the CPU is always 1, the opponent always 0.
 pub const VCPU: u8 = 1;
@@ -86,8 +86,10 @@ pub fn active_mon_indices(sim: &mut Sim, seat: Seat, bk: B256) -> (usize, usize)
     }
 }
 
-pub fn team_size(sim: &mut Sim, seat: Seat, bk: B256, vp: u8) -> usize {
-    u64::try_from(Engine::getTeamSize(&mut sim.world, bk, seat.phys(vp))).unwrap() as usize
+/// Team size (constant per battle, valid for fork keys too — served from
+/// the Sim cache; the transpiled getter deep-clones BattleConfig per call).
+pub fn team_size(sim: &Sim, seat: Seat, vp: u8) -> usize {
+    sim.team_size_phys(seat.phys(vp))
 }
 
 pub fn ko_bitmap(sim: &mut Sim, seat: Seat, bk: B256, vp: u8) -> u32 {
@@ -166,6 +168,51 @@ pub fn type_effectiveness(attack: Type, defender: Type, scale: u32) -> i64 {
     TypeCalcLib::getTypeEffectiveness(attack, defender, scale) as i64
 }
 
+// ---------------------------------------------------------------------------
+// Move-slot wrappers — the ONE place the "virtual index by design" rule
+// lives. Meta / priority calls and the duck-typed probes receive the
+// VIRTUAL player index unmapped, reproducing the TS transpose proxy's
+// reach exactly (its known hole included: HeatBeacon-style priority
+// boosts read the KV slot of the VIRTUAL index). Everything else about a
+// slot decodes from the packed word or contract immutables.
+// ---------------------------------------------------------------------------
+
+pub fn decode_meta(sim: &mut Sim, bk: B256, vp: u8, mon: usize, slot: U256) -> MoveMeta {
+    MoveSlotLib::decodeMeta(
+        &mut sim.world,
+        slot,
+        sim.engine_addr,
+        bk,
+        U256::from(vp as u64),
+        U256::from(mon as u64),
+    )
+}
+
+pub fn slot_move_class(sim: &mut Sim, bk: B256, slot: U256) -> MoveClass {
+    MoveSlotLib::moveClass(&mut sim.world, slot, sim.engine_addr, bk)
+}
+
+pub fn slot_move_type(sim: &mut Sim, bk: B256, slot: U256) -> Type {
+    MoveSlotLib::moveType(&mut sim.world, slot, sim.engine_addr, bk)
+}
+
+pub fn slot_priority(sim: &mut Sim, bk: B256, vp: u8, slot: U256) -> u32 {
+    MoveSlotLib::priority(&mut sim.world, slot, sim.engine_addr, bk, U256::from(vp as u64))
+}
+
+/// External move's `basePower(battleKey)` — duck-typed probe, 0 for moves
+/// that don't expose it (the TS try/`typeof`-guard path).
+pub fn slot_external_base_power(sim: &mut Sim, bk: B256, slot: U256) -> u32 {
+    let target = MoveSlotLib::toIMoveSet(slot);
+    chomp_engine::dispatch::try_basePower(&mut sim.world, target, bk).unwrap_or(0)
+}
+
+/// External move's `accuracy(battleKey)` — duck-typed probe, None when absent.
+pub fn slot_external_accuracy(sim: &mut Sim, bk: B256, slot: U256) -> Option<u32> {
+    let target = MoveSlotLib::toIMoveSet(slot);
+    chomp_engine::dispatch::try_accuracy(&mut sim.world, target, bk)
+}
+
 /// Virtual-side hypothetical turn: fork + silent execute with the seat's
 /// p0/p1 mapped to physical sides (the transposed `__runHypotheticalFork`
 /// arg swap). Returns the fork key.
@@ -207,9 +254,8 @@ pub struct BattleView {
     pub p1: Vec<MonSnap>,
 }
 
-fn read_side(sim: &mut Sim, seat: Seat, bk: B256, vp: u8) -> Vec<MonSnap> {
-    let size = team_size(sim, seat, bk, vp);
-    let ko = ko_bitmap(sim, seat, bk, vp);
+fn read_side(sim: &mut Sim, seat: Seat, bk: B256, vp: u8, ko: u32) -> Vec<MonSnap> {
+    let size = team_size(sim, seat, vp);
     (0..size)
         .map(|i| {
             let max_hp = mon_max_hp(sim, seat, bk, vp, i);
@@ -222,15 +268,17 @@ fn read_side(sim: &mut Sim, seat: Seat, bk: B256, vp: u8) -> Vec<MonSnap> {
 /// Read-once snapshot at `bk` (live key or fork key).
 pub fn capture_view(sim: &mut Sim, seat: Seat, bk: B256) -> BattleView {
     let (opp_active, cpu_active) = active_mon_indices(sim, seat, bk);
+    let cpu_ko = ko_bitmap(sim, seat, bk, VCPU);
+    let opp_ko = ko_bitmap(sim, seat, bk, VOPP);
     BattleView {
         bk,
         switch_flag: switch_flag(sim, seat, bk),
         cpu_active,
         opp_active,
-        cpu_ko: ko_bitmap(sim, seat, bk, VCPU),
-        opp_ko: ko_bitmap(sim, seat, bk, VOPP),
-        p0: read_side(sim, seat, bk, VOPP),
-        p1: read_side(sim, seat, bk, VCPU),
+        cpu_ko,
+        opp_ko,
+        p0: read_side(sim, seat, bk, VOPP, opp_ko),
+        p1: read_side(sim, seat, bk, VCPU, cpu_ko),
     }
 }
 
@@ -265,20 +313,14 @@ pub struct ValidMoves {
 }
 
 fn validate(sim: &mut Sim, seat: Seat, bk: B256, move_index: u8, extra_data: u16) -> bool {
-    Engine::validatePlayerMoveForBattle(
-        &mut sim.world,
-        bk,
-        U256::from(move_index as u64),
-        seat.phys(VCPU),
-        extra_data,
-    )
+    sim.validate_move(bk, seat.phys(VCPU), move_index, extra_data)
 }
 
 /// The three candidate buckets. `rng` draws extraData targets for
 /// Self/Opponent-index moves in the exact TS order (stream parity).
 pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, rng: &mut JsRng) -> ValidMoves {
     let t_id = turn_id(sim, bk);
-    let p1_team_size = team_size(sim, seat, bk, VCPU);
+    let p1_team_size = team_size(sim, seat, VCPU);
 
     // Turn 0: every team slot is an (unvalidated) switch-in choice.
     if t_id == 0 {
@@ -317,32 +359,23 @@ pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, rng: &mut JsRn
         let mut extra_data_to_use: u16 = 0;
 
         if !MoveSlotLib::isInline(slot) {
-            // Meta decode takes the VIRTUAL player index (see module docs).
-            let edt = MoveSlotLib::decodeMeta(
-                &mut sim.world,
-                slot,
-                sim.engine_addr,
-                bk,
-                U256::from(VCPU as u64),
-                U256::from(active_mon_index as u64),
-            )
-            .extraDataType;
+            let edt = decode_meta(sim, bk, VCPU, active_mon_index, slot).extraDataType;
 
             if edt == ExtraDataType::SelfTeamIndex {
                 if valid_switch_indices.is_empty() {
                     continue;
                 }
-                let r = (rng.next() * valid_switch_indices.len() as f64).floor() as usize;
+                let r = pick_uniform(valid_switch_indices.len(), rng).unwrap();
                 extra_data_to_use = valid_switch_indices[r] as u16;
             } else if edt == ExtraDataType::OpponentNonKOTeamIndex {
-                let opponent_team_size = team_size(sim, seat, bk, VOPP);
+                let opponent_team_size = team_size(sim, seat, VOPP);
                 let opp_ko = ko_bitmap(sim, seat, bk, VOPP);
                 let valid_targets: Vec<usize> =
                     (0..opponent_team_size).filter(|j| (opp_ko & (1 << j)) == 0).collect();
                 if valid_targets.is_empty() {
                     continue;
                 }
-                let r = (rng.next() * valid_targets.len() as f64).floor() as usize;
+                let r = pick_uniform(valid_targets.len(), rng).unwrap();
                 extra_data_to_use = valid_targets[r] as u16;
             }
             // None / InclusiveRange fall through with extraData 0.

@@ -28,6 +28,9 @@ pub enum StrategyKind {
 }
 
 impl StrategyKind {
+    /// Names are a contract with the TS registry (`sims/src/cpu/registry.ts`)
+    /// and the pair lists in `strategy_lockstep.ts` / `batch_benchmark.ts` —
+    /// keep all four in sync when adding a strategy.
     pub fn parse(name: &str) -> Option<StrategyKind> {
         match name {
             "hard" => Some(StrategyKind::Hard),
@@ -135,18 +138,16 @@ pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) 
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let (s0, _) = seats.split_at_mut(1);
-            let mv = decide_one(&mut sim, &mut s0[0], peek, &mut rng);
-            s0[0].last_own_move = mv;
+            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
         // p1 seat replies with the true reveal (production semantics).
         let mut p1_move: Option<Mv> = None;
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let (_, s1) = seats.split_at_mut(1);
-            let mv = decide_one(&mut sim, &mut s1[0], peek, &mut rng);
-            s1[0].last_own_move = mv;
+            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
 
@@ -175,11 +176,6 @@ pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) 
     }
 }
 
-pub struct GameResult {
-    pub idx: usize,
-    pub outcome: Result<GameOutcome, String>,
-}
-
 fn run_one(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> Result<GameOutcome, String> {
     catch_unwind(AssertUnwindSafe(|| play_game(spec, book, trace))).map_err(|e| {
         e.downcast_ref::<String>()
@@ -191,23 +187,20 @@ fn run_one(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> Res
 
 /// Run a batch of independent games, optionally across threads (each game
 /// owns its whole world, so parallelism is trivially safe). Results come
-/// back in spec order.
+/// back in spec order; a panicking game yields Err instead of poisoning
+/// the batch.
 pub fn run_games(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
     trace: bool,
-) -> Vec<GameResult> {
+) -> Vec<Result<GameOutcome, String>> {
     if threads <= 1 || specs.len() <= 1 {
-        return specs
-            .iter()
-            .enumerate()
-            .map(|(idx, spec)| GameResult { idx, outcome: run_one(spec, book, trace) })
-            .collect();
+        return specs.iter().map(|spec| run_one(spec, book, trace)).collect();
     }
 
     let n = threads.min(specs.len());
-    let mut slots: Vec<Option<GameResult>> = Vec::with_capacity(specs.len());
+    let mut slots: Vec<Option<Result<GameOutcome, String>>> = Vec::with_capacity(specs.len());
     slots.resize_with(specs.len(), || None);
     let slots = std::sync::Mutex::new(slots);
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -219,7 +212,7 @@ pub fn run_games(
                 if idx >= specs.len() {
                     break;
                 }
-                let r = GameResult { idx, outcome: run_one(&specs[idx], book, trace) };
+                let r = run_one(&specs[idx], book, trace);
                 slots.lock().unwrap()[idx] = Some(r);
             });
         }

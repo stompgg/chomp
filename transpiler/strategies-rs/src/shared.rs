@@ -13,8 +13,8 @@ use chomp_rt::{Address, B256, U256};
 
 use crate::sim::Sim;
 use crate::view::{
-    mon_state, mon_stats, mon_value, move_slot, type_effectiveness, Mv, Seat, SWITCH_MOVE_INDEX,
-    VCPU, VOPP,
+    mon_current_hp, mon_max_hp, mon_state, mon_stats, mon_value, move_slot, slot_external_base_power,
+    slot_move_class, slot_move_type, type_effectiveness, Mv, Seat, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 /// JS Number.MAX_SAFE_INTEGER — the TS sentinel for "least-of" scans.
@@ -77,34 +77,17 @@ pub fn build_damage_calc_context(
     ctx
 }
 
-/// External move's `basePower(battleKey)` — duck-typed probe, 0 for moves
-/// that don't expose it (the TS try/`typeof`-guard path).
-fn external_base_power(sim: &mut Sim, bk: B256, raw_move_slot: U256) -> u32 {
-    let target = MoveSlotLib::toIMoveSet(raw_move_slot);
-    chomp_engine::dispatch::try_basePower(&mut sim.world, target, bk).unwrap_or(0)
-}
-
-/// Port of `_estimateDamage`: deterministic estimate (accuracy=100,
-/// volatility=0, rng=50, critRate=0) for a raw slot against a prepared
-/// context. Returns 0 for non-damaging / unreadable moves.
-pub fn estimate_damage(
-    sim: &mut Sim,
-    bk: B256,
+/// The deterministic estimator call both `_estimateDamage` ports share:
+/// accuracy=100 (always hits), volatility=0, rng=50, critRate=0, clamped
+/// to 0. The zero TYPE_CALCULATOR address is fine — it resolves statically.
+fn deterministic_damage(
     ctx: &mut DamageCalcContext,
-    raw_move_slot: U256,
+    base_power: u32,
+    move_type: Type,
     move_class: MoveClass,
 ) -> i64 {
-    let base_power = if MoveSlotLib::isInline(raw_move_slot) {
-        MoveSlotLib::basePower(raw_move_slot, bk)
-    } else {
-        external_base_power(sim, bk, raw_move_slot)
-    };
-    if base_power == 0 {
-        return 0;
-    }
-    let move_type = MoveSlotLib::moveType(&mut sim.world, raw_move_slot, sim.engine_addr, bk);
     let (damage, _) = AttackCalculator::_calculateDamageFromContext(
-        Address::ZERO, // TypeCalculator resolves statically; the address is unused
+        Address::ZERO,
         ctx,
         base_power,
         100,
@@ -121,27 +104,33 @@ pub fn estimate_damage(
     }
 }
 
+/// Port of `_estimateDamage`: deterministic estimate for a raw slot
+/// against a prepared context. 0 for non-damaging / unreadable moves.
+pub fn estimate_damage(
+    sim: &mut Sim,
+    bk: B256,
+    ctx: &mut DamageCalcContext,
+    raw_move_slot: U256,
+    move_class: MoveClass,
+) -> i64 {
+    let base_power = if MoveSlotLib::isInline(raw_move_slot) {
+        MoveSlotLib::basePower(raw_move_slot, bk)
+    } else {
+        slot_external_base_power(sim, bk, raw_move_slot)
+    };
+    if base_power == 0 {
+        return 0;
+    }
+    let move_type = slot_move_type(sim, bk, raw_move_slot);
+    deterministic_damage(ctx, base_power, move_type, move_class)
+}
+
 /// Port of `_estimateDamageMeta`: like estimate_damage off a pre-decoded meta.
 pub fn estimate_damage_meta(ctx: &mut DamageCalcContext, meta: &MoveMeta) -> i64 {
     if meta.basePower == 0 {
         return 0;
     }
-    let (damage, _) = AttackCalculator::_calculateDamageFromContext(
-        Address::ZERO,
-        ctx,
-        meta.basePower,
-        100,
-        U256::ZERO,
-        meta.moveType,
-        meta.moveClass,
-        U256::from(50u64),
-        U256::ZERO,
-    );
-    if damage > 0 {
-        damage as i64
-    } else {
-        0
-    }
+    deterministic_damage(ctx, meta.basePower, meta.moveType, meta.moveClass)
 }
 
 /// Port of `_getMoveBasePower`: basePower of a raw slot, 0 for non-attacks.
@@ -149,7 +138,7 @@ pub fn get_move_base_power(sim: &mut Sim, bk: B256, raw_move_slot: U256) -> i64 
     if MoveSlotLib::isInline(raw_move_slot) {
         MoveSlotLib::basePower(raw_move_slot, bk) as i64
     } else {
-        external_base_power(sim, bk, raw_move_slot) as i64
+        slot_external_base_power(sim, bk, raw_move_slot) as i64
     }
 }
 
@@ -181,9 +170,7 @@ pub fn find_ko_move(
     moves: &[Mv],
     damages: &[i64],
 ) -> isize {
-    let defender_base_hp = mon_value(sim, seat, bk, VOPP, defender_mon_index, MonStateIndexName::Hp);
-    let defender_hp_delta = mon_state(sim, seat, bk, VOPP, defender_mon_index, MonStateIndexName::Hp);
-    let defender_current_hp = defender_base_hp + defender_hp_delta;
+    let defender_current_hp = mon_current_hp(sim, seat, bk, VOPP, defender_mon_index);
     if defender_current_hp <= 0 {
         return -1;
     }
@@ -251,19 +238,11 @@ pub fn offensive_matchup_score(cand1: Type, cand2: Type, opp1: Type, opp2: Type)
     score
 }
 
-/// The inline `defensiveScore` block of `_selectLead`.
+/// The inline `defensiveScore` block of `_selectLead` — the same formula
+/// as the offensive score with the roles swapped (opponent offense vs
+/// candidate defense): identical calls, guards, and summation order.
 pub fn defensive_matchup_score(opp1: Type, opp2: Type, cand1: Type, cand2: Type) -> i64 {
-    let mut score = type_effectiveness(opp1, cand1, 10);
-    if cand2 != Type::None {
-        score += type_effectiveness(opp1, cand2, 10);
-    }
-    if opp2 != Type::None {
-        score += type_effectiveness(opp2, cand1, 10);
-        if cand2 != Type::None {
-            score += type_effectiveness(opp2, cand2, 10);
-        }
-    }
-    score
+    offensive_matchup_score(opp1, opp2, cand1, cand2)
 }
 
 /// Port of `_selectLead`: dual-type-scored lead among the turn-0 switches;
@@ -332,7 +311,7 @@ pub fn select_best_switch(
     let slot = move_slot(sim, seat, bk, VOPP, opponent_mon_index, opponent_move_index as usize);
     let (opp_move_slot, opp_move_class, can_estimate) = match slot {
         Some(s) => {
-            let mc = MoveSlotLib::moveClass(&mut sim.world, s, sim.engine_addr, bk);
+            let mc = slot_move_class(sim, bk, s);
             (s, mc, mc == MoveClass::Physical || mc == MoveClass::Special)
         }
         None => (U256::ZERO, MoveClass::Physical, false),
@@ -362,34 +341,20 @@ pub fn select_best_switch(
 // Per-mon strategy config
 // ---------------------------------------------------------------------------
 
-/// The hard CPU's per-mon setup config (`BETTER_CPU_MON_CONFIG`): values
-/// stored as moveIndex+1, 0 = unset. Only CONFIG_SETUP_MOVE is populated.
-pub fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
-    if config_key != CONFIG_SETUP_MOVE {
-        return 0;
-    }
-    match mon_index {
-        1 => 2,  // Inutia   -> Initialize     (slot 1)
-        2 => 1,  // Malalien -> Triple Think   (slot 0)
-        3 => 2,  // Iblivion -> Loop           (slot 1)
-        6 => 2,  // Pengym   -> Deadlift       (slot 1)
-        7 => 3,  // Embursa  -> Heat Beacon    (slot 2)
-        9 => 3,  // Aurox    -> Iron Wall      (slot 2)
-        11 => 3, // Ekineki  -> Nine Nine Nine (slot 2)
-        12 => 1, // Nirvamma -> Hard Reset     (slot 0)
-        _ => 0,
-    }
-}
+/// Per-mon strategy config — the stand-in for `monConfig[monIndex][key]`,
+/// passed in by the owning strategy (values are moveIndex+1, 0 = unset).
+pub type MonConfig = fn(mon_index: usize, config_key: usize) -> u16;
 
 /// Port of `_tryConfiguredMove`: (index into `moves` or -1, new bitmap).
 pub fn try_configured_move(
+    config: MonConfig,
     used_bitmap: u32,
     active_mon_index: usize,
     moves: &[Mv],
     config_key: usize,
     lane_bit_offset: usize,
 ) -> (isize, u32) {
-    let config_value = better_cpu_config(active_mon_index, config_key);
+    let config_value = config(active_mon_index, config_key);
     if config_value == 0 {
         return (-1, used_bitmap);
     }
@@ -420,9 +385,8 @@ pub fn clear_move_used_bits_on_switch_in(
     let mut new_bitmap = used_bitmap & !(1u32 << mon_idx);
 
     if used_bitmap & setup_bit != 0 {
-        let max_hp = mon_value(sim, seat, bk, VCPU, mon_idx, MonStateIndexName::Hp);
-        let hp_delta = mon_state(sim, seat, bk, VCPU, mon_idx, MonStateIndexName::Hp);
-        let current_hp = max_hp + hp_delta;
+        let max_hp = mon_max_hp(sim, seat, bk, VCPU, mon_idx);
+        let current_hp = max_hp + mon_state(sim, seat, bk, VCPU, mon_idx, MonStateIndexName::Hp);
         if current_hp * 2 > max_hp {
             new_bitmap &= !setup_bit;
         }
@@ -434,12 +398,13 @@ pub fn clear_move_used_bits_on_switch_in(
 /// damage. Inert for the hard CPU (CONFIG_PREFERRED_MOVE is never set) but
 /// kept for structural parity with the TS decision tree.
 pub fn try_preferred_move(
+    config: MonConfig,
     active_mon_index: usize,
     ctx: &mut DamageCalcContext,
     metas: &[MoveMeta],
     moves: &[Mv],
 ) -> isize {
-    let config_value = better_cpu_config(active_mon_index, CONFIG_PREFERRED_MOVE);
+    let config_value = config(active_mon_index, CONFIG_PREFERRED_MOVE);
     if config_value == 0 {
         return -1;
     }
@@ -479,15 +444,10 @@ pub fn try_preferred_move(
 // Utility
 // ---------------------------------------------------------------------------
 
-/// Port of `_popcount8`.
+/// Port of `_popcount8` (hardware popcount over the low 8 bits — output
+/// identical to the TS/Solidity bit loop for every input).
 pub fn popcount8(bitmap: u32) -> i64 {
-    let mut count = 0i64;
-    for i in 0..8 {
-        if (bitmap >> i) & 1 == 1 {
-            count += 1;
-        }
-    }
-    count
+    (bitmap & 0xff).count_ones() as i64
 }
 
 /// Port of `_hasMomentum`: more mons alive, or on a tie at least as much

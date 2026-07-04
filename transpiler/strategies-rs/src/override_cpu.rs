@@ -115,17 +115,12 @@ fn script_for(base_hp: i64) -> Option<&'static [OverrideRule]> {
     }
 }
 
+#[derive(Default)]
 pub struct OverrideState {
     pub turn: u32,
     /// Fire counts keyed by (active mon slot, rule index) — per game.
     pub uses: HashMap<(usize, usize), u32>,
     pub fallback: HardState,
-}
-
-impl Default for OverrideState {
-    fn default() -> Self {
-        Self { turn: 0, uses: HashMap::new(), fallback: HardState::default() }
-    }
 }
 
 fn build_ctx(
@@ -203,7 +198,6 @@ pub fn decide(
                 }
             }
             st.uses.insert(key, fired + 1);
-            let _ = r.label;
             return Mv {
                 move_index: affordable.move_index,
                 extra_data: r.extra_data.unwrap_or(affordable.extra_data),
