@@ -456,14 +456,64 @@ pub fn abi_encode_packed(tokens: &[Token]) -> Vec<u8> {
 // Storage mapping (zero-default reads, like unwritten EVM storage)
 // ---------------------------------------------------------------------------
 
+/// FxHash (the rustc hasher): a fast non-cryptographic word mixer. Storage
+/// keys here are keccak-derived words and small indices in an
+/// adversary-free simulator, so SipHash's DoS resistance buys nothing and
+/// taxes every storage access. Safe for `Mapping` because its API exposes
+/// no iteration — hash order cannot leak into behavior.
+#[derive(Default, Clone)]
+pub struct FxHasher {
+    hash: u64,
+}
+
+impl FxHasher {
+    #[inline]
+    fn add(&mut self, word: u64) {
+        self.hash = (self.hash.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
+
+impl std::hash::Hasher for FxHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut b = [0u8; 8];
+            b[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(b));
+        }
+    }
+    #[inline]
+    fn write_u8(&mut self, v: u8) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u32(&mut self, v: u32) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u64(&mut self, v: u64) {
+        self.add(v);
+    }
+    #[inline]
+    fn write_usize(&mut self, v: usize) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+}
+
+type FxBuild = std::hash::BuildHasherDefault<FxHasher>;
+
 #[derive(Clone, Debug, Default)]
 pub struct Mapping<K: Eq + Hash + Clone, V: Clone + Default> {
-    inner: HashMap<K, V>,
+    inner: HashMap<K, V, FxBuild>,
 }
 
 impl<K: Eq + Hash + Clone, V: Clone + Default> Mapping<K, V> {
     pub fn new() -> Self {
-        Mapping { inner: HashMap::new() }
+        Mapping { inner: HashMap::default() }
     }
 
     /// Read: missing keys are Solidity zero values.
