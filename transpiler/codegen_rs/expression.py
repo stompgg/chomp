@@ -573,8 +573,8 @@ class RustExpressionGenerator:
     def _emit_cast(self, type_name: TypeName, inner: Expression):
         target = self._infer.from_type_name(type_name)
 
-        # Literal folding: uint8(3), bytes32(0), address(0xdead)...
-        if isinstance(inner, Literal) and inner.kind in ('number', 'hex'):
+        # Literal folding: uint8(3), bytes32(0), address(0xdead), bytes32("X")
+        if isinstance(inner, Literal) and inner.kind in ('number', 'hex', 'string'):
             return self._literal_in(inner, target), target
         if isinstance(inner, UnaryOperation) and inner.operator == '-' \
                 and isinstance(inner.operand, Literal):
@@ -988,6 +988,15 @@ class RustExpressionGenerator:
         if alias is not None and self._symbols_included(alias):
             impl_sig = self._symbols.lookup_function(alias, member)
             if impl_sig is None:
+                # Solidity auto-generates getters for public state vars;
+                # the impl has no such function — read the world field.
+                svar = self._symbols.state_vars.get(alias, {}).get(member)
+                if svar is not None and not call.arguments:
+                    field = self._symbols.world_field_of(alias)
+                    code = f'world.{rust_ident(field)}.{rust_ident(member)}'
+                    if not self._types.is_copy(svar):
+                        code = f'{code}.clone()'
+                    return code, svar
                 self._ctx.warn(f'alias {iface}->{alias} lacks method {member}')
                 return f'unimplemented!("{alias}.{member} missing")', ret
             if alias != self._ctx.current_class_name:

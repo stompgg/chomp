@@ -231,6 +231,10 @@ class RustContractGenerator:
         self._func._register_params(func, None)
         self._ctx.in_constructor = True
         params = [self._func.param_decl(p, i) for i, p in enumerate(func.parameters)]
+        if self._symbols.constructor_needs_world(name):
+            params = ['world: &mut World'] + params
+            self._ctx.uses_world_type = True
+            self._ctx.current_fn_needs_world = True
         lines = [
             f'{self._ctx.indent()}pub fn construct({", ".join(params)}) -> {rust_ident(name)}State {{',
         ]

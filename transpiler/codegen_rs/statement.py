@@ -571,7 +571,9 @@ class RustStatementGenerator:
                     pats.append('_')
                 else:
                     code, _ = self._expr.emit_typed(comp)
-                    pats.append(code)
+                    # Skipped slots can surface as empty identifiers
+                    # (`(, x) = f()`), not just None components.
+                    pats.append(code if code.strip() else '_')
             rhs = self._expr.emit(expr.right)
             # Rust has no tuple-assignment; destructure into temps then move.
             tmp_names = [f'__t{i}' for i in range(len(pats))]

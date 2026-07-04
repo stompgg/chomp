@@ -326,6 +326,60 @@ class RustSymbols:
                     if self.included_containers is not None:
                         self.included_containers.add(base)
 
+    def constructor_needs_world(self, leaf: str) -> bool:
+        """True when the leaf's constructor CHAIN (own body, base-ctor args,
+        base bodies) reads env (msg/block/tx/this) or calls a world-needing
+        function — `construct` then takes `world: &mut World`."""
+        import dataclasses
+
+        found = [False]
+
+        def visit(node):
+            cls = type(node).__name__
+            if cls == 'Identifier' and node.name == 'this':
+                found[0] = True
+            elif cls == 'MemberAccess':
+                b = node.expression
+                if type(b).__name__ == 'Identifier' and b.name in ('msg', 'block', 'tx'):
+                    found[0] = True
+            elif cls == 'FunctionCall':
+                fn = node.function
+                if type(fn).__name__ == 'Identifier':
+                    if fn.name in getattr(self, 'noop_calls', set()):
+                        return
+                    sig = self.lookup_function(leaf, fn.name) or self.functions.get((None, fn.name))
+                    if sig is not None and sig.needs_world:
+                        found[0] = True
+
+        def walk(node):
+            if node is None or found[0]:
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+                return
+            if isinstance(node, dict):
+                for item in node.values():
+                    walk(item)
+                return
+            if not dataclasses.is_dataclass(node):
+                return
+            visit(node)
+            for f in dataclasses.fields(node):
+                walk(getattr(node, f.name))
+
+        def scan_chain(cname):
+            cdef = self.contract_defs.get(cname)
+            if cdef is None or cdef.constructor is None:
+                return
+            walk(cdef.constructor.body)
+            for bcc in getattr(cdef.constructor, 'base_constructor_calls', []):
+                walk(bcc.arguments)
+                scan_chain(bcc.base_name)
+
+        scan_chain(leaf)
+        return found[0]
+
     def world_state_contracts(self) -> list:
         """Contracts that own a <Name>State field in World: derived-stateful,
         concrete, included, and not base-only."""
@@ -366,6 +420,11 @@ class RustSymbols:
                 return
             if isinstance(node, (list, tuple)):
                 for item in node:
+                    walk(item, visit)
+                return
+            if isinstance(node, dict):
+                # named_arguments / call_options are Dict[str, Expression]
+                for item in node.values():
                     walk(item, visit)
                 return
             if not dataclasses.is_dataclass(node):
@@ -441,7 +500,13 @@ class RustSymbols:
                                     break
                             for iface, alias in self.interface_aliases.items():
                                 if (iface, fn.member) in self.functions:
-                                    _callees.add((alias, fn.member))
+                                    if fn.member in self.state_vars.get(alias, {}) \
+                                            and (alias, fn.member) not in self.functions:
+                                        # public-state-var getter: emitted as
+                                        # a world field read at the call site
+                                        _seed[0] = True
+                                    else:
+                                        _callees.add((alias, fn.member))
                                     break
 
             walk(func.body, visit)
