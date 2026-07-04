@@ -3618,6 +3618,3413 @@
      }
     }
    ]
+  },
+  {
+   "name": "roster_3v3_a",
+   "monsPerTeam": 3,
+   "p0Team": [
+    {
+     "hp": 303,
+     "stamina": 5,
+     "speed": 181,
+     "attack": 157,
+     "defense": 202,
+     "specialAttack": 151,
+     "specialDefense": 202,
+     "type1": 0,
+     "type2": 4,
+     "moves": [
+      "0x31c55d8c32f3e876f",
+      "0x345f34c49769a4fed",
+      "0x880801756a5ec",
+      "0x5a00200000000000000000000000000000000000000000000000000000000000"
+     ],
+     "ability": "0x1a8e5ab64d1766552ff9e"
+    },
+    {
+     "hp": 351,
+     "stamina": 5,
+     "speed": 229,
+     "attack": 171,
+     "defense": 189,
+     "specialAttack": 175,
+     "specialDefense": 192,
+     "type1": 9,
+     "type2": 14,
+     "moves": [
+      "0x5d43fcb2336e74eb2f",
+      "0x73375aabda7d6",
+      "0x5009200000000000000000000000000000000000000000000000000000000000",
+      "0x3a92bc1514aa"
+     ],
+     "ability": "0x1b0929d4e767256a"
+    },
+    {
+     "hp": 258,
+     "stamina": 5,
+     "speed": 308,
+     "attack": 121,
+     "defense": 125,
+     "specialAttack": 322,
+     "specialDefense": 151,
+     "type1": 12,
+     "type2": 14,
+     "moves": [
+      "0xffa342e89f3b59",
+      "0x644c300000000000000000000000000000000000000000000000000000000000",
+      "0x504b30a0000000000000000000000000000000000000000000f2685f714a795a",
+      "0x5a4d30a0000000000000000000000000000000000000000000fc262888e4d5c6"
+     ],
+     "ability": "0x34fe97e9c2c8"
+    }
+   ],
+   "p1Team": [
+    {
+     "hp": 277,
+     "stamina": 5,
+     "speed": 256,
+     "attack": 199,
+     "defense": 164,
+     "specialAttack": 180,
+     "specialDefense": 168,
+     "type1": 1,
+     "type2": 10,
+     "moves": [
+      "0xe35d6a451ffb025eadd",
+      "0x243aee",
+      "0x68e399d6e830d",
+      "0xf89b9e20554250"
+     ],
+     "ability": "0x35b80bdfe8cf"
+    },
+    {
+     "hp": 407,
+     "stamina": 5,
+     "speed": 129,
+     "attack": 302,
+     "defense": 175,
+     "specialAttack": 112,
+     "specialDefense": 176,
+     "type1": 2,
+     "type2": 14,
+     "moves": [
+      "0x224e4edcba2",
+      "0x5f02300000000000000000000000000000000000000000000000000000000000",
+      "0x460a200000000000000000000000000000000000000000000000000000000000",
+      "0x2802100000000000000000000000000000000000000000000000000000000000"
+     ],
+     "ability": "0x7529757b"
+    },
+    {
+     "hp": 333,
+     "stamina": 5,
+     "speed": 175,
+     "attack": 180,
+     "defense": 201,
+     "specialAttack": 120,
+     "specialDefense": 269,
+     "type1": 7,
+     "type2": 14,
+     "moves": [
+      "0xd82ac91f45f67f",
+      "0x1a67a4626565763e",
+      "0x7807400000000000000000000000000000000000000000000000000000000000",
+      "0x823b675003daf"
+     ],
+     "ability": "0x2ffebe9eb559f3056"
+    }
+   ],
+   "battleKey": "0xf4571890950622f8d141d5d6775026302075e6849e324ee960fec7a06a6de011",
+   "addressBook": {
+    "IAbility": "0x000000000000000000000000000001e1bae018a2",
+    "IEngine": "0x0000000000000000000000000000000f91a3cbed",
+    "IMoveSet": "0x000000000000000000000000000001e44c8d8e4b",
+    "IMoveSetWithRange": "0x0000000000000000002d7dcab352e3b7a09346b3",
+    "IRandomnessOracle": "0x0000000000000000002d9459e731b55db293b626",
+    "ITypeCalculator": "0x000000000000000000000c27ff52965bc72dae8b",
+    "ActusReus": "0x000000000000000000000000000034fe97e9c2c8",
+    "Adaptor": "0x0000000000000000000000000000000e1ea53c6d",
+    "Angery": "0x000000000000000000000000000000007529757b",
+    "AttackCalculator": "0x0000000000000000000156314fafb9391dd93fd7",
+    "Baselight": "0x000000000000000000000000000035b80bdfe8cf",
+    "BlessedStatus": "0x000000000000000000000002f8b8c8650ca83b57",
+    "Brightback": "0x00000000000000000000000000068e399d6e830d",
+    "BubbleBop": "0x00000000000000000000000000003634a10c9584",
+    "BullRush": "0x000000000000000000000000000001bfb3aaffb9",
+    "BurnStatus": "0x000000000000000000000000000690c84f9c12d0",
+    "CarrotHarvest": "0x000000000000000000000002ffebe9eb559f3056",
+    "ChainExpansion": "0x00000000000000000000005d43fcb2336e74eb2f",
+    "Chronoffense": "0x00000000000000000000000018d9eb73d937a210",
+    "ContagiousSlumber": "0x0000000000000000002a8a569b653c1aa841f375",
+    "Deadlift": "0x000000000000000000000000000001c921df3da3",
+    "DeepFreeze": "0x0000000000000000000000000006b42400fb9ed8",
+    "DefaultRandomnessOracle": "0x000000000008dfa2d37afdb625930398bcb9740f",
+    "Dreamcatcher": "0x00000000000000000000000019500b4d43ef8b7c",
+    "DualShock": "0x000000000000000000000000000037c1a461677e",
+    "Engine": "0x000000000000000000000000000000007bfce67b",
+    "EternalGrudge": "0x0000000000000000000000031c55d8c32f3e876f",
+    "FoulLanguage": "0x00000000000000000000000019fd61297fd938d3",
+    "FrostbiteStatus": "0x000000000000000000000bd42ef9e908574038ca",
+    "Gachachacha": "0x00000000000000000000000000d82ac91f45f67f",
+    "GildedRecovery": "0x0000000000000000000000629e2ee25600760eec",
+    "GraveAffliction": "0x000000000000000000000bfc9f863c8db1f98e7d",
+    "GuestFeature": "0x0000000000000000000000001a67a4626565763e",
+    "HardReset": "0x00000000000000000000000000003a5f4d6f6725",
+    "HeatBeacon": "0x0000000000000000000000000007143afea92e96",
+    "HeatBeaconLib": "0x00000000000000000000000337cb3d4929d5f7bf",
+    "HitAndDip": "0x00000000000000000000000000003a92bc1514aa",
+    "HoneyBribe": "0x00000000000000000000000000071c4d523c75e5",
+    "InfernalFlame": "0x00000000000000000000000345f34c49769a4fed",
+    "Initialize": "0x00000000000000000000000000073375aabda7d6",
+    "Interweaving": "0x0000000000000000000000001b0929d4e767256a",
+    "InvokeTaboo": "0x00000000000000000000000000df45359c54baa5",
+    "IronWall": "0x000000000000000000000000000001ebf15d3afb",
+    "Loop": "0x0000000000000000000000000000000000243aee",
+    "MegaStarBlast": "0x0000000000000000000000036e82ae4a3428da7f",
+    "ModalBolt": "0x00000000000000000000000000003e96f8beaaee",
+    "MoveSlotLib": "0x00000000000000000000000000eb02c6ed465ec5",
+    "NightTerrors": "0x0000000000000000000000001cbcbcb60fb085f4",
+    "NineNineNine": "0x0000000000000000000000001cbd61c6faef7ba4",
+    "NineNineNineLib": "0x000000000000000000000d107a95728ba2d1737f",
+    "Overclock": "0x0000000000000000000000000000405149eca3c9",
+    "Overflow": "0x00000000000000000000000000000213236c1852",
+    "PanicStatus": "0x00000000000000000000000000f2685f714a795a",
+    "PistolSquat": "0x00000000000000000000000000f32ce913434925",
+    "PostWorkout": "0x00000000000000000000000000f3bd2bde36f5f0",
+    "PreemptiveShock": "0x000000000000000000000d6e13ba6e82ef37738d",
+    "Q5": "0x0000000000000000000000000000000000000a39",
+    "RNGLib": "0x000000000000000000000000000000009059fd4b",
+    "Renormalize": "0x00000000000000000000000000f89b9e20554250",
+    "RiseFromTheGrave": "0x00000000000000000001a8e5ab64d1766552ff9e",
+    "RockPull": "0x00000000000000000000000000000224e4edcba2",
+    "RoundTrip": "0x0000000000000000000000000000427b772542ec",
+    "Sanctify": "0x000000000000000000000000000002287a9c7d65",
+    "SaviorComplex": "0x000000000000000000000003aedc294b3a26a907",
+    "SetAblaze": "0x000000000000000000000000000043017adc1e1f",
+    "SignedCommitLib": "0x000000000000000000000ddd5d09399d54a30a44",
+    "SleepStatus": "0x00000000000000000000000000fc262888e4d5c6",
+    "SnackBreak": "0x000000000000000000000000000823b675003daf",
+    "SneakAttack": "0x00000000000000000000000000fc5625aac4fa9b",
+    "Somniphobia": "0x00000000000000000000000000fc74b96d5d1e4f",
+    "StaminaRegen": "0x0000000000000000000000001e9f905aa7b2af6f",
+    "StaminaRegenLogic": "0x0000000000000000003441ab814cc21f4a849d23",
+    "StandardAttack": "0x000000000000000000000072f4ff4be12f3303c7",
+    "StandardAttackFactory": "0x00000000000002e063abf96fb187e4b29f13b608",
+    "StatBoostLib": "0x0000000000000000000000001e9f94cf30e56aca",
+    "StatusEffectLib": "0x000000000000000000000debad3adc2440329397",
+    "SwitchTargetLib": "0x000000000000000000000deffd0dd5158994fe96",
+    "Tinderclaws": "0x00000000000000000000000000fece69fd8ac840",
+    "TripleThink": "0x00000000000000000000000000ffa342e89f3b59",
+    "TypeCalcLib": "0x000000000000000000000000010050b5af700f8d",
+    "TypeCalculator": "0x00000000000000000000007483b046eb279c6242",
+    "UnboundedStrike": "0x000000000000000000000e35d6a451ffb025eadd",
+    "UpOnly": "0x00000000000000000000000000000000975bc94f",
+    "ValidatorLogic": "0x00000000000000000000007621b6e1d8f44c03a4",
+    "VitalSiphon": "0x0000000000000000000000000104a5e4a7071c82",
+    "VolatilePunch": "0x000000000000000000000003d47917c4a2d0851c",
+    "WitherAway": "0x000000000000000000000000000880801756a5ec",
+    "ZapStatus": "0x00000000000000000000000000004855354dafa7"
+   },
+   "turns": [
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "11845382773675326086005485806859",
+     "p1Salt": "9545804957542773673757937151226",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "1",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "20173044443556873394841069886211",
+     "p1Salt": "14746334977997319149010327846243",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "2",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -76,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "12058643835493770709326594998952",
+     "p1Salt": "19356465483389325336845369065602",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "3",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -178,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -85,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 3,
+     "p0Salt": "5028291669701930828795911944103",
+     "p1Salt": "7479785576590686302427958644998",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "4",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -178,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -85,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 0,
+     "p0Salt": "10568934642767575008636197233722",
+     "p1Salt": "14537755350460290601402926396731",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "5",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -303,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -85,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 125,
+     "p1MoveIndex": 126,
+     "p0Salt": "18398029339233307422736115005814",
+     "p1Salt": "0",
+     "p0ExtraData": 1,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "6",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -303,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -85,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "15251989538013975250299529793774",
+     "p1Salt": "9543613074393949667323641944529",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "7",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -303,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -32,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -232,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "20262285129883862385945197887548",
+     "p1Salt": "16948085238777460079040101899631",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "8",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -32,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 125,
+     "p0Salt": "0",
+     "p1Salt": "14085806084752242053782777490116",
+     "p0ExtraData": 0,
+     "p1ExtraData": 1,
+     "expect": {
+      "turnId": "9",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -32,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "4321893335519243554421784272527",
+     "p1Salt": "16257862172198594128153818416525",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "10",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -103,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "10469850622396336589765536446248",
+     "p1Salt": "157417812397853527199766057295",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "11",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -226,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -110,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 3,
+     "p0Salt": "2419047751118655465006518016903",
+     "p1Salt": "1274889473635159445915934796313",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "12",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -254,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -110,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 2,
+     "p0Salt": "6311556889201079296504421874034",
+     "p1Salt": "8215181897950471810754112699549",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "13",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -110,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 125,
+     "p1MoveIndex": 126,
+     "p0Salt": "12080503881815577922195912986374",
+     "p1Salt": "0",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "14",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -265,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -110,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "17393650911176290494012809511054",
+     "p1Salt": "9784705899271274994678876899573",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "15",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -303,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 125,
+     "p1MoveIndex": 126,
+     "p0Salt": "11872238148721785509861229859047",
+     "p1Salt": "0",
+     "p0ExtraData": 2,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "16",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -303,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 3,
+     "p0Salt": "17491773574817371064706078095344",
+     "p1Salt": "17034682932076342411474781317172",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "17",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -98,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -303,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 3,
+     "p0Salt": "14587504570424726735128397607652",
+     "p1Salt": "20221395720487024621561116402548",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "18",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -98,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -597,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 125,
+     "p0Salt": "0",
+     "p1Salt": "6723180864709997943092287671947",
+     "p0ExtraData": 0,
+     "p1ExtraData": 2,
+     "expect": {
+      "turnId": "19",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -98,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -597,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -20,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 3,
+     "p0Salt": "14307479314302812969869995197955",
+     "p1Salt": "12511494964455204988594890328045",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "20",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -98,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -597,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 0,
+     "p0Salt": "14858888134237262597520937440180",
+     "p1Salt": "17820643015849029304798845520905",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "20",
+      "winnerIndex": 1,
+      "p0Active": 2,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -388,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -362,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -304,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -354,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -597,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "roster_3v3_b",
+   "monsPerTeam": 3,
+   "p0Team": [
+    {
+     "hp": 371,
+     "stamina": 5,
+     "speed": 149,
+     "attack": 212,
+     "defense": 191,
+     "specialAttack": 233,
+     "specialDefense": 172,
+     "type1": 6,
+     "type2": 14,
+     "moves": [
+      "0xc606400000000000000000000000000000000000000bd42ef9e908574038ca",
+      "0x1c921df3da3",
+      "0x6b42400fb9ed8",
+      "0xf32ce913434925"
+     ],
+     "ability": "0xf3bd2bde36f5f0"
+    },
+    {
+     "hp": 420,
+     "stamina": 5,
+     "speed": 111,
+     "attack": 141,
+     "defense": 220,
+     "specialAttack": 190,
+     "specialDefense": 161,
+     "type1": 4,
+     "type2": 14,
+     "moves": [
+      "0x71c4d523c75e5",
+      "0x43017adc1e1f",
+      "0x7143afea92e96",
+      "0xa39"
+     ],
+     "ability": "0xfece69fd8ac840"
+    },
+    {
+     "hp": 310,
+     "stamina": 5,
+     "speed": 311,
+     "attack": 120,
+     "defense": 184,
+     "specialAttack": 255,
+     "specialDefense": 176,
+     "type1": 8,
+     "type2": 12,
+     "moves": [
+      "0x5a4820a0000000000000000000000000000000000000000000004855354dafa7",
+      "0x427b772542ec",
+      "0x36e82ae4a3428da7f",
+      "0x37c1a461677e"
+     ],
+     "ability": "0xd6e13ba6e82ef37738d"
+    }
+   ],
+   "p1Team": [
+    {
+     "hp": 400,
+     "stamina": 5,
+     "speed": 100,
+     "attack": 150,
+     "defense": 230,
+     "specialAttack": 100,
+     "specialDefense": 220,
+     "type1": 5,
+     "type2": 14,
+     "moves": [
+      "0x3d47917c4a2d0851c",
+      "0x629e2ee25600760eec",
+      "0x1ebf15d3afb",
+      "0x1bfb3aaffb9"
+     ],
+     "ability": "0x975bc94f"
+    },
+    {
+     "hp": 311,
+     "stamina": 5,
+     "speed": 285,
+     "attack": 123,
+     "defense": 179,
+     "specialAttack": 222,
+     "specialDefense": 185,
+     "type1": 13,
+     "type2": 14,
+     "moves": [
+      "0x2a8a569b653c1aa841f375",
+      "0x104a5e4a7071c82",
+      "0xfc74b96d5d1e4f",
+      "0x1cbcbcb60fb085f4"
+     ],
+     "ability": "0x19500b4d43ef8b7c"
+    },
+    {
+     "hp": 299,
+     "stamina": 5,
+     "speed": 266,
+     "attack": 130,
+     "defense": 180,
+     "specialAttack": 280,
+     "specialDefense": 175,
+     "type1": 3,
+     "type2": 14,
+     "moves": [
+      "0x3634a10c9584",
+      "0xfc5625aac4fa9b",
+      "0x1cbd61c6faef7ba4",
+      "0x213236c1852"
+     ],
+     "ability": "0x3aedc294b3a26a907"
+    }
+   ],
+   "battleKey": "0xf4571890950622f8d141d5d6775026302075e6849e324ee960fec7a06a6de011",
+   "addressBook": {
+    "IAbility": "0x000000000000000000000000000001e1bae018a2",
+    "IEngine": "0x0000000000000000000000000000000f91a3cbed",
+    "IMoveSet": "0x000000000000000000000000000001e44c8d8e4b",
+    "IMoveSetWithRange": "0x0000000000000000002d7dcab352e3b7a09346b3",
+    "IRandomnessOracle": "0x0000000000000000002d9459e731b55db293b626",
+    "ITypeCalculator": "0x000000000000000000000c27ff52965bc72dae8b",
+    "ActusReus": "0x000000000000000000000000000034fe97e9c2c8",
+    "Adaptor": "0x0000000000000000000000000000000e1ea53c6d",
+    "Angery": "0x000000000000000000000000000000007529757b",
+    "AttackCalculator": "0x0000000000000000000156314fafb9391dd93fd7",
+    "Baselight": "0x000000000000000000000000000035b80bdfe8cf",
+    "BlessedStatus": "0x000000000000000000000002f8b8c8650ca83b57",
+    "Brightback": "0x00000000000000000000000000068e399d6e830d",
+    "BubbleBop": "0x00000000000000000000000000003634a10c9584",
+    "BullRush": "0x000000000000000000000000000001bfb3aaffb9",
+    "BurnStatus": "0x000000000000000000000000000690c84f9c12d0",
+    "CarrotHarvest": "0x000000000000000000000002ffebe9eb559f3056",
+    "ChainExpansion": "0x00000000000000000000005d43fcb2336e74eb2f",
+    "Chronoffense": "0x00000000000000000000000018d9eb73d937a210",
+    "ContagiousSlumber": "0x0000000000000000002a8a569b653c1aa841f375",
+    "Deadlift": "0x000000000000000000000000000001c921df3da3",
+    "DeepFreeze": "0x0000000000000000000000000006b42400fb9ed8",
+    "DefaultRandomnessOracle": "0x000000000008dfa2d37afdb625930398bcb9740f",
+    "Dreamcatcher": "0x00000000000000000000000019500b4d43ef8b7c",
+    "DualShock": "0x000000000000000000000000000037c1a461677e",
+    "Engine": "0x000000000000000000000000000000007bfce67b",
+    "EternalGrudge": "0x0000000000000000000000031c55d8c32f3e876f",
+    "FoulLanguage": "0x00000000000000000000000019fd61297fd938d3",
+    "FrostbiteStatus": "0x000000000000000000000bd42ef9e908574038ca",
+    "Gachachacha": "0x00000000000000000000000000d82ac91f45f67f",
+    "GildedRecovery": "0x0000000000000000000000629e2ee25600760eec",
+    "GraveAffliction": "0x000000000000000000000bfc9f863c8db1f98e7d",
+    "GuestFeature": "0x0000000000000000000000001a67a4626565763e",
+    "HardReset": "0x00000000000000000000000000003a5f4d6f6725",
+    "HeatBeacon": "0x0000000000000000000000000007143afea92e96",
+    "HeatBeaconLib": "0x00000000000000000000000337cb3d4929d5f7bf",
+    "HitAndDip": "0x00000000000000000000000000003a92bc1514aa",
+    "HoneyBribe": "0x00000000000000000000000000071c4d523c75e5",
+    "InfernalFlame": "0x00000000000000000000000345f34c49769a4fed",
+    "Initialize": "0x00000000000000000000000000073375aabda7d6",
+    "Interweaving": "0x0000000000000000000000001b0929d4e767256a",
+    "InvokeTaboo": "0x00000000000000000000000000df45359c54baa5",
+    "IronWall": "0x000000000000000000000000000001ebf15d3afb",
+    "Loop": "0x0000000000000000000000000000000000243aee",
+    "MegaStarBlast": "0x0000000000000000000000036e82ae4a3428da7f",
+    "ModalBolt": "0x00000000000000000000000000003e96f8beaaee",
+    "MoveSlotLib": "0x00000000000000000000000000eb02c6ed465ec5",
+    "NightTerrors": "0x0000000000000000000000001cbcbcb60fb085f4",
+    "NineNineNine": "0x0000000000000000000000001cbd61c6faef7ba4",
+    "NineNineNineLib": "0x000000000000000000000d107a95728ba2d1737f",
+    "Overclock": "0x0000000000000000000000000000405149eca3c9",
+    "Overflow": "0x00000000000000000000000000000213236c1852",
+    "PanicStatus": "0x00000000000000000000000000f2685f714a795a",
+    "PistolSquat": "0x00000000000000000000000000f32ce913434925",
+    "PostWorkout": "0x00000000000000000000000000f3bd2bde36f5f0",
+    "PreemptiveShock": "0x000000000000000000000d6e13ba6e82ef37738d",
+    "Q5": "0x0000000000000000000000000000000000000a39",
+    "RNGLib": "0x000000000000000000000000000000009059fd4b",
+    "Renormalize": "0x00000000000000000000000000f89b9e20554250",
+    "RiseFromTheGrave": "0x00000000000000000001a8e5ab64d1766552ff9e",
+    "RockPull": "0x00000000000000000000000000000224e4edcba2",
+    "RoundTrip": "0x0000000000000000000000000000427b772542ec",
+    "Sanctify": "0x000000000000000000000000000002287a9c7d65",
+    "SaviorComplex": "0x000000000000000000000003aedc294b3a26a907",
+    "SetAblaze": "0x000000000000000000000000000043017adc1e1f",
+    "SignedCommitLib": "0x000000000000000000000ddd5d09399d54a30a44",
+    "SleepStatus": "0x00000000000000000000000000fc262888e4d5c6",
+    "SnackBreak": "0x000000000000000000000000000823b675003daf",
+    "SneakAttack": "0x00000000000000000000000000fc5625aac4fa9b",
+    "Somniphobia": "0x00000000000000000000000000fc74b96d5d1e4f",
+    "StaminaRegen": "0x0000000000000000000000001e9f905aa7b2af6f",
+    "StaminaRegenLogic": "0x0000000000000000003441ab814cc21f4a849d23",
+    "StandardAttack": "0x000000000000000000000072f4ff4be12f3303c7",
+    "StandardAttackFactory": "0x00000000000002e063abf96fb187e4b29f13b608",
+    "StatBoostLib": "0x0000000000000000000000001e9f94cf30e56aca",
+    "StatusEffectLib": "0x000000000000000000000debad3adc2440329397",
+    "SwitchTargetLib": "0x000000000000000000000deffd0dd5158994fe96",
+    "Tinderclaws": "0x00000000000000000000000000fece69fd8ac840",
+    "TripleThink": "0x00000000000000000000000000ffa342e89f3b59",
+    "TypeCalcLib": "0x000000000000000000000000010050b5af700f8d",
+    "TypeCalculator": "0x00000000000000000000007483b046eb279c6242",
+    "UnboundedStrike": "0x000000000000000000000e35d6a451ffb025eadd",
+    "UpOnly": "0x00000000000000000000000000000000975bc94f",
+    "ValidatorLogic": "0x00000000000000000000007621b6e1d8f44c03a4",
+    "VitalSiphon": "0x0000000000000000000000000104a5e4a7071c82",
+    "VolatilePunch": "0x000000000000000000000003d47917c4a2d0851c",
+    "WitherAway": "0x000000000000000000000000000880801756a5ec",
+    "ZapStatus": "0x00000000000000000000000000004855354dafa7"
+   },
+   "turns": [
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "10091203164026316746401108576689",
+     "p1Salt": "19669898562917356060720865751122",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "1",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "13783954058175351393773339303047",
+     "p1Salt": "10838223409930015064317901299294",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "2",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "11283351958966756071373613892008",
+     "p1Salt": "20215879088984893864232497951558",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "3",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -114,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "13431954854600116409892965261457",
+     "p1Salt": "16378791279070963255686144016039",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "4",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -156,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 0,
+     "p0Salt": "57070841498417578383048149714",
+     "p1Salt": "316721233735345142196565245249",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "5",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -322,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -18,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "20198229650152610797793102635485",
+     "p1Salt": "16089717544498185564034001499589",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "6",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -36,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 125,
+     "p1MoveIndex": 126,
+     "p0Salt": "5732659318056754658558581548044",
+     "p1Salt": "0",
+     "p0ExtraData": 1,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "7",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -36,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 1,
+     "p0Salt": "1219387155301874955821126303820",
+     "p1Salt": "7240937058393573902321917148891",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "8",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -26,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -54,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 2,
+     "p0Salt": "3441474626387005194358638729804",
+     "p1Salt": "7586832254852521396812972322762",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "9",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -26,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -18,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 2,
+     "p0Salt": "8987378174429979823333411577926",
+     "p1Salt": "19613573081283804517766052282298",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "10",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -52,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -193,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 2,
+     "p0Salt": "10739688429979669280060400289183",
+     "p1Salt": "7684686314560082897378140162169",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "11",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -52,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -211,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 2,
+     "p0Salt": "18498230356119716334558777229047",
+     "p1Salt": "15054955735161957308912233138991",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "12",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -78,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -229,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 2,
+     "p0Salt": "4911526230414150756627391327567",
+     "p1Salt": "5928660476388220989936246871677",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "13",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 2,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -104,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 125,
+     "p0Salt": "0",
+     "p1Salt": "16051653670073412326578253011417",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "14",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -104,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -204,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 126,
+     "p0Salt": "6092330240230623263317658454509",
+     "p1Salt": "6812265175623719860298554016521",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "15",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -130,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -229,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "8386946701506686603462096506774",
+     "p1Salt": "4105826834603404483593389741897",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "16",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -191,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -334,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "17864298188724397768895027357171",
+     "p1Salt": "15551650503194805797862792670575",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "17",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -191,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -359,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "2480502776091176681875769017613",
+     "p1Salt": "806328058566425239742493360673",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "18",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -191,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 125,
+     "p0Salt": "0",
+     "p1Salt": "12066744780302314677667228627796",
+     "p0ExtraData": 0,
+     "p1ExtraData": 1,
+     "expect": {
+      "turnId": "19",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -191,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "13561799792052895942354179580731",
+     "p1Salt": "11021229707184598848101922624535",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "20",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -219,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 0,
+     "p0Salt": "7390585516989751652750135609550",
+     "p1Salt": "18012190858418046936683706616597",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "21",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -263,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "6274039706299595277581966759408",
+     "p1Salt": "3062241896833071493004786206150",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "22",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -404,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -142,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "11462733989896701946834595933904",
+     "p1Salt": "17139866486462593111016498804051",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "23",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -456,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -180,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 3,
+     "p0Salt": "13323890178382117112859660275448",
+     "p1Salt": "500754203054698373641217309874",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "24",
+      "winnerIndex": 2,
+      "p0Active": 2,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -456,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -227,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 0,
+     "p0Salt": "18385334354395185286141335208539",
+     "p1Salt": "13144802399549584104214404090322",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "24",
+      "winnerIndex": 0,
+      "p0Active": 2,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -371,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -456,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -625,
+        "staminaDelta": -1,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -396,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -464,
+        "staminaDelta": -3,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "roster_2v2_c",
+   "monsPerTeam": 2,
+   "p0Team": [
+    {
+     "hp": 373,
+     "stamina": 5,
+     "speed": 177,
+     "attack": 202,
+     "defense": 168,
+     "specialAttack": 140,
+     "specialDefense": 202,
+     "type1": 11,
+     "type2": 14,
+     "moves": [
+      "0x3a5f4d6f6725",
+      "0x500b3140000000000000000000000000000000000000000000f2685f714a795a",
+      "0x18d9eb73d937a210",
+      "0x3e96f8beaaee"
+     ],
+     "ability": "0xe1ea53c6d"
+    },
+    {
+     "hp": 258,
+     "stamina": 5,
+     "speed": 308,
+     "attack": 121,
+     "defense": 125,
+     "specialAttack": 322,
+     "specialDefense": 151,
+     "type1": 12,
+     "type2": 14,
+     "moves": [
+      "0xffa342e89f3b59",
+      "0x644c300000000000000000000000000000000000000000000000000000000000",
+      "0x504b30a0000000000000000000000000000000000000000000f2685f714a795a",
+      "0x5a4d30a0000000000000000000000000000000000000000000fc262888e4d5c6"
+     ],
+     "ability": "0x34fe97e9c2c8"
+    }
+   ],
+   "p1Team": [
+    {
+     "hp": 420,
+     "stamina": 5,
+     "speed": 111,
+     "attack": 141,
+     "defense": 220,
+     "specialAttack": 190,
+     "specialDefense": 161,
+     "type1": 4,
+     "type2": 14,
+     "moves": [
+      "0x71c4d523c75e5",
+      "0x43017adc1e1f",
+      "0x7143afea92e96",
+      "0xa39"
+     ],
+     "ability": "0xfece69fd8ac840"
+    },
+    {
+     "hp": 303,
+     "stamina": 5,
+     "speed": 181,
+     "attack": 157,
+     "defense": 202,
+     "specialAttack": 151,
+     "specialDefense": 202,
+     "type1": 0,
+     "type2": 4,
+     "moves": [
+      "0x31c55d8c32f3e876f",
+      "0x345f34c49769a4fed",
+      "0x880801756a5ec",
+      "0x5a00200000000000000000000000000000000000000000000000000000000000"
+     ],
+     "ability": "0x1a8e5ab64d1766552ff9e"
+    }
+   ],
+   "battleKey": "0xf4571890950622f8d141d5d6775026302075e6849e324ee960fec7a06a6de011",
+   "addressBook": {
+    "IAbility": "0x000000000000000000000000000001e1bae018a2",
+    "IEngine": "0x0000000000000000000000000000000f91a3cbed",
+    "IMoveSet": "0x000000000000000000000000000001e44c8d8e4b",
+    "IMoveSetWithRange": "0x0000000000000000002d7dcab352e3b7a09346b3",
+    "IRandomnessOracle": "0x0000000000000000002d9459e731b55db293b626",
+    "ITypeCalculator": "0x000000000000000000000c27ff52965bc72dae8b",
+    "ActusReus": "0x000000000000000000000000000034fe97e9c2c8",
+    "Adaptor": "0x0000000000000000000000000000000e1ea53c6d",
+    "Angery": "0x000000000000000000000000000000007529757b",
+    "AttackCalculator": "0x0000000000000000000156314fafb9391dd93fd7",
+    "Baselight": "0x000000000000000000000000000035b80bdfe8cf",
+    "BlessedStatus": "0x000000000000000000000002f8b8c8650ca83b57",
+    "Brightback": "0x00000000000000000000000000068e399d6e830d",
+    "BubbleBop": "0x00000000000000000000000000003634a10c9584",
+    "BullRush": "0x000000000000000000000000000001bfb3aaffb9",
+    "BurnStatus": "0x000000000000000000000000000690c84f9c12d0",
+    "CarrotHarvest": "0x000000000000000000000002ffebe9eb559f3056",
+    "ChainExpansion": "0x00000000000000000000005d43fcb2336e74eb2f",
+    "Chronoffense": "0x00000000000000000000000018d9eb73d937a210",
+    "ContagiousSlumber": "0x0000000000000000002a8a569b653c1aa841f375",
+    "Deadlift": "0x000000000000000000000000000001c921df3da3",
+    "DeepFreeze": "0x0000000000000000000000000006b42400fb9ed8",
+    "DefaultRandomnessOracle": "0x000000000008dfa2d37afdb625930398bcb9740f",
+    "Dreamcatcher": "0x00000000000000000000000019500b4d43ef8b7c",
+    "DualShock": "0x000000000000000000000000000037c1a461677e",
+    "Engine": "0x000000000000000000000000000000007bfce67b",
+    "EternalGrudge": "0x0000000000000000000000031c55d8c32f3e876f",
+    "FoulLanguage": "0x00000000000000000000000019fd61297fd938d3",
+    "FrostbiteStatus": "0x000000000000000000000bd42ef9e908574038ca",
+    "Gachachacha": "0x00000000000000000000000000d82ac91f45f67f",
+    "GildedRecovery": "0x0000000000000000000000629e2ee25600760eec",
+    "GraveAffliction": "0x000000000000000000000bfc9f863c8db1f98e7d",
+    "GuestFeature": "0x0000000000000000000000001a67a4626565763e",
+    "HardReset": "0x00000000000000000000000000003a5f4d6f6725",
+    "HeatBeacon": "0x0000000000000000000000000007143afea92e96",
+    "HeatBeaconLib": "0x00000000000000000000000337cb3d4929d5f7bf",
+    "HitAndDip": "0x00000000000000000000000000003a92bc1514aa",
+    "HoneyBribe": "0x00000000000000000000000000071c4d523c75e5",
+    "InfernalFlame": "0x00000000000000000000000345f34c49769a4fed",
+    "Initialize": "0x00000000000000000000000000073375aabda7d6",
+    "Interweaving": "0x0000000000000000000000001b0929d4e767256a",
+    "InvokeTaboo": "0x00000000000000000000000000df45359c54baa5",
+    "IronWall": "0x000000000000000000000000000001ebf15d3afb",
+    "Loop": "0x0000000000000000000000000000000000243aee",
+    "MegaStarBlast": "0x0000000000000000000000036e82ae4a3428da7f",
+    "ModalBolt": "0x00000000000000000000000000003e96f8beaaee",
+    "MoveSlotLib": "0x00000000000000000000000000eb02c6ed465ec5",
+    "NightTerrors": "0x0000000000000000000000001cbcbcb60fb085f4",
+    "NineNineNine": "0x0000000000000000000000001cbd61c6faef7ba4",
+    "NineNineNineLib": "0x000000000000000000000d107a95728ba2d1737f",
+    "Overclock": "0x0000000000000000000000000000405149eca3c9",
+    "Overflow": "0x00000000000000000000000000000213236c1852",
+    "PanicStatus": "0x00000000000000000000000000f2685f714a795a",
+    "PistolSquat": "0x00000000000000000000000000f32ce913434925",
+    "PostWorkout": "0x00000000000000000000000000f3bd2bde36f5f0",
+    "PreemptiveShock": "0x000000000000000000000d6e13ba6e82ef37738d",
+    "Q5": "0x0000000000000000000000000000000000000a39",
+    "RNGLib": "0x000000000000000000000000000000009059fd4b",
+    "Renormalize": "0x00000000000000000000000000f89b9e20554250",
+    "RiseFromTheGrave": "0x00000000000000000001a8e5ab64d1766552ff9e",
+    "RockPull": "0x00000000000000000000000000000224e4edcba2",
+    "RoundTrip": "0x0000000000000000000000000000427b772542ec",
+    "Sanctify": "0x000000000000000000000000000002287a9c7d65",
+    "SaviorComplex": "0x000000000000000000000003aedc294b3a26a907",
+    "SetAblaze": "0x000000000000000000000000000043017adc1e1f",
+    "SignedCommitLib": "0x000000000000000000000ddd5d09399d54a30a44",
+    "SleepStatus": "0x00000000000000000000000000fc262888e4d5c6",
+    "SnackBreak": "0x000000000000000000000000000823b675003daf",
+    "SneakAttack": "0x00000000000000000000000000fc5625aac4fa9b",
+    "Somniphobia": "0x00000000000000000000000000fc74b96d5d1e4f",
+    "StaminaRegen": "0x0000000000000000000000001e9f905aa7b2af6f",
+    "StaminaRegenLogic": "0x0000000000000000003441ab814cc21f4a849d23",
+    "StandardAttack": "0x000000000000000000000072f4ff4be12f3303c7",
+    "StandardAttackFactory": "0x00000000000002e063abf96fb187e4b29f13b608",
+    "StatBoostLib": "0x0000000000000000000000001e9f94cf30e56aca",
+    "StatusEffectLib": "0x000000000000000000000debad3adc2440329397",
+    "SwitchTargetLib": "0x000000000000000000000deffd0dd5158994fe96",
+    "Tinderclaws": "0x00000000000000000000000000fece69fd8ac840",
+    "TripleThink": "0x00000000000000000000000000ffa342e89f3b59",
+    "TypeCalcLib": "0x000000000000000000000000010050b5af700f8d",
+    "TypeCalculator": "0x00000000000000000000007483b046eb279c6242",
+    "UnboundedStrike": "0x000000000000000000000e35d6a451ffb025eadd",
+    "UpOnly": "0x00000000000000000000000000000000975bc94f",
+    "ValidatorLogic": "0x00000000000000000000007621b6e1d8f44c03a4",
+    "VitalSiphon": "0x0000000000000000000000000104a5e4a7071c82",
+    "VolatilePunch": "0x000000000000000000000003d47917c4a2d0851c",
+    "WitherAway": "0x000000000000000000000000000880801756a5ec",
+    "ZapStatus": "0x00000000000000000000000000004855354dafa7"
+   },
+   "turns": [
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "15947377583847353471377501462306",
+     "p1Salt": "10761916579532029118761198775495",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "1",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "18133020966199547047578021721268",
+     "p1Salt": "11943039593684387424588431014029",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "2",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -71,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "8026099027057228036141119810627",
+     "p1Salt": "17581968186571793637597444214575",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "3",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -103,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -71,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 3,
+     "p0Salt": "10968830895733925984857155919503",
+     "p1Salt": "12132263877764768507846162177666",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "4",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -126,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -71,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "19859993949636838434454064871398",
+     "p1Salt": "12263922953286938966930905106281",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "5",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": 0,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 1,
+     "p1MoveIndex": 1,
+     "p0Salt": "3440548802786271720430912385416",
+     "p1Salt": "7743254172167326129066451250793",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "6",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -117,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -161,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "9738735734458041125909553797230",
+     "p1Salt": "17904635876575787349199658465863",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "7",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -178,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -293,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 126,
+     "p0Salt": "12587826372382857891228055078176",
+     "p1Salt": "3795384967271282928892126271263",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "8",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -178,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -293,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 0,
+     "p0Salt": "14608593897560687214395655800816",
+     "p1Salt": "9086818532689420633892730737675",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "9",
+      "winnerIndex": 2,
+      "p0Active": 1,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -293,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 125,
+     "p1MoveIndex": 126,
+     "p0Salt": "39068849223838795116059306654",
+     "p1Salt": "0",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "10",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -80,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -293,
+        "staminaDelta": -2,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 2,
+     "p0Salt": "8101676398098626449153040073196",
+     "p1Salt": "321375254837039487862303734372",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "11",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -185,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -1013,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 125,
+     "p0Salt": "0",
+     "p1Salt": "8139870526135660052731586922273",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "12",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -185,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -1013,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 0,
+     "p1MoveIndex": 126,
+     "p0Salt": "4511478467857103952556567116130",
+     "p1Salt": "4629161964403254933538361481746",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "13",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -208,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -1013,
+        "staminaDelta": -4,
+        "isKnockedOut": true
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 126,
+     "p1MoveIndex": 2,
+     "p0Salt": "11662642332089082455620897374654",
+     "p1Salt": "8083254480637986048052845582642",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "14",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 0,
+      "p0States": [
+       {
+        "hpDelta": -208,
+        "staminaDelta": 0,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -123,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -302,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 2,
+     "p1MoveIndex": 126,
+     "p0Salt": "18905414855741491566136149619700",
+     "p1Salt": "14587318523625594420707090029798",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "15",
+      "winnerIndex": 2,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -254,
+        "staminaDelta": -1,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -175,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -302,
+        "staminaDelta": -3,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    },
+    {
+     "p0MoveIndex": 3,
+     "p1MoveIndex": 3,
+     "p0Salt": "7440224801435527408223699248377",
+     "p1Salt": "3044223859439271612181492349340",
+     "p0ExtraData": 0,
+     "p1ExtraData": 0,
+     "expect": {
+      "turnId": "15",
+      "winnerIndex": 1,
+      "p0Active": 0,
+      "p1Active": 1,
+      "p0States": [
+       {
+        "hpDelta": -393,
+        "staminaDelta": 0,
+        "isKnockedOut": true
+       },
+       {
+        "hpDelta": -325,
+        "staminaDelta": -2,
+        "isKnockedOut": true
+       }
+      ],
+      "p1States": [
+       {
+        "hpDelta": -175,
+        "staminaDelta": -5,
+        "isKnockedOut": false
+       },
+       {
+        "hpDelta": -302,
+        "staminaDelta": -4,
+        "isKnockedOut": false
+       }
+      ]
+     }
+    }
+   ]
   }
  ]
 }

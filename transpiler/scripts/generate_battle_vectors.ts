@@ -18,8 +18,11 @@ import {
   makeSimContext, buildMon, startBattle, executeTurn,
   type SimContext, type HarnessMonConfig, type TurnSnapshot,
 } from '../../sims/src/harness';
+import { buildTeamMon } from '../../sims/src/arena/team';
+import { loadRoster } from '../../sims/src/util/csv-load';
 import { contractAddresses } from '../ts-output/runtime';
 import * as Constants from '../ts-output/Constants';
+import type * as Structs from '../ts-output/Structs';
 
 const FIXTURES = join(import.meta.dir, '..', 'differential-rs', 'fixtures');
 mkdirSync(FIXTURES, { recursive: true });
@@ -122,9 +125,12 @@ function exportMon(m: ReturnType<typeof buildMon>): any {
   };
 }
 
-/** A per-turn decision when the side acts normally (flag lets it move). */
-type Policy = (turn: number, side: 0 | 1, snap: TurnSnapshot | null) =>
-  { moveIndex: number; extraData: number };
+/** A per-turn decision when the side acts normally (flag lets it move).
+ * `validate` runs the engine's own inline-validator check for the side. */
+type Policy = (
+  turn: number, side: 0 | 1, snap: TurnSnapshot | null,
+  validate: (side: 0 | 1, moveIndex: number, extraData: number) => boolean,
+) => { moveIndex: number; extraData: number };
 
 /** Lowest alive, non-active team slot (forced/voluntary switch target). */
 function switchTarget(snap: TurnSnapshot, side: 0 | 1): number {
@@ -142,10 +148,25 @@ function runScenario(
   policy: Policy, maxTurns: number,
 ): ScenarioOut {
   const ctx: SimContext = makeSimContext({ monsPerTeam: BigInt(monsPerTeam) });
-  const p0Team = p0Cfg.map((c) => buildMon(ctx, c));
-  const p1Team = p1Cfg.map((c) => buildMon(ctx, c));
+  return runBuiltScenario(
+    ctx, name, monsPerTeam,
+    p0Cfg.map((c) => buildMon(ctx, c)),
+    p1Cfg.map((c) => buildMon(ctx, c)),
+    policy, maxTurns,
+  );
+}
+
+function runBuiltScenario(
+  ctx: SimContext, name: string, monsPerTeam: number,
+  p0Team: Structs.Mon[], p1Team: Structs.Mon[],
+  policy: Policy, maxTurns: number,
+): ScenarioOut {
   const started = startBattle(ctx, p0Team, p1Team);
   const engine = ctx.engine as any;
+  const validate = (side: 0 | 1, moveIndex: number, extraData: number): boolean =>
+    engine.validatePlayerMoveForBattle(
+      started.battleKey, BigInt(moveIndex), BigInt(side), BigInt(extraData),
+    ) as boolean;
 
   const turns: TurnRecord[] = [];
   let last: TurnSnapshot | null = null;
@@ -160,12 +181,12 @@ function runScenario(
     if (p0Acts) {
       p0Move = flag === 0 && last
         ? { moveIndex: SWITCH, extraData: switchTarget(last, 0) }
-        : policy(t, 0, last);
+        : policy(t, 0, last, validate);
     }
     if (p1Acts) {
       p1Move = flag === 1 && last
         ? { moveIndex: SWITCH, extraData: switchTarget(last, 1) }
-        : policy(t, 1, last);
+        : policy(t, 1, last, validate);
     }
     const p0Salt = p0Acts ? salt() : 0n;
     const p1Salt = p1Acts ? salt() : 0n;
@@ -399,6 +420,40 @@ scenarios.push(runScenario(
   (t) => ({ moveIndex: t === 0 ? 0 : (t % 3 === 0 ? 0 : 1), extraData: 0 }),
   30,
 ));
+
+// ---------------------------------------------------------------------------
+// Phase-4 scenarios: the REAL roster (drool CSV stats, contract moves +
+// abilities). Policy rotates move slots, validated by the engine's own
+// inline validator; invalid slots fall through, no-op as last resort.
+// ---------------------------------------------------------------------------
+
+const rosterPolicy: Policy = (t, _side, _snap, validate) => {
+  for (let k = 0; k < 4; k++) {
+    const mi = (t + k) % 4;
+    if (validate(_side, mi, 0)) return { moveIndex: mi, extraData: 0 };
+  }
+  return { moveIndex: NO_OP, extraData: 0 };
+};
+
+{
+  const roster = loadRoster();
+  const ids = roster.mons.map((m) => m.id).sort((a, b) => a - b);
+  const pick = (list: number[]) => list.filter((id) => ids.includes(id));
+  const matchups: [string, number[], number[]][] = [
+    ['roster_3v3_a', pick([0, 1, 2]), pick([3, 4, 5])],
+    ['roster_3v3_b', pick([6, 7, 8]), pick([9, 10, 11])],
+    ['roster_2v2_c', pick([12, 2]), pick([7, 0])],
+  ];
+  for (const [name, p0Ids, p1Ids] of matchups) {
+    const ctx = makeSimContext({ monsPerTeam: BigInt(p0Ids.length) });
+    scenarios.push(runBuiltScenario(
+      ctx, name, p0Ids.length,
+      p0Ids.map((id) => buildTeamMon(ctx, roster, id)),
+      p1Ids.map((id) => buildTeamMon(ctx, roster, id)),
+      rosterPolicy, 80,
+    ));
+  }
+}
 
 const out = { scenarios };
 const path = join(FIXTURES, 'battle_replay.json');
