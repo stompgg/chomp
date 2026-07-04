@@ -110,6 +110,9 @@ transpiler/
   (200 games, every submission identical) — and
   `bun transpiler/scripts/batch_benchmark.ts` — 2,000 games
   outcome-identical to the TS engine + TS strategies reference.
-  Measured on the shared 2,000-game workload (4-core box): TS arena
-  0.70 games/s (long-run; ~5.4 fresh-process), Rust drive mode 12.6,
-  Rust batch 116 (1 thread) / 444 (4 threads).
+  Measured on the shared 3,000-game workload (4-core box): TS arena
+  ~0.7 games/s (long-run; ~5.5 fresh-process), Rust drive mode ~13,
+  Rust batch 274 (1 thread) / 1,062 (4 threads) after the perf pass
+  (per-decision fork memo + FxHash storage maps; fat LTO tested neutral
+  and -C target-cpu=native tested ~25% slower on the virtualized box —
+  both deliberately not used).

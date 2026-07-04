@@ -45,6 +45,10 @@ members = ["engine", "runtime", "differential", "ffi", "strategies"]
 # Solidity 0.8 checked arithmetic relies on native overflow panics in EVERY
 # profile. Do not turn this off: release builds would silently wrap where a
 # contract call must revert.
+#
+# Build-knob notes (measured on the 3,000-game batch workload): lto = "fat"
+# was within noise of "thin" at 2x the link time, and -C target-cpu=native
+# was ~25% SLOWER on the virtualized build box — neither is worth baking in.
 [profile.release]
 overflow-checks = true
 lto = "thin"
