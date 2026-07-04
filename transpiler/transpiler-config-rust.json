@@ -66,5 +66,9 @@
     "IMoveSet",
     "IEffect",
     "IAbility"
+  ],
+  "duckDispatchMethods": [
+    "basePower",
+    "accuracy"
   ]
 }

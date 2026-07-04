@@ -90,5 +90,21 @@ transpiler/
   (TypeCalcLib, TypeCalculator, RNGLib, StatBoostLib, StaminaRegenLogic,
   SwitchTargetLib, MoveSlotLib, AttackCalculator) + IEngine/ITypeCalculator/
   IMoveSet traits, all bit-identical over the fixture corpus.
-- **Phase 2+ (next):** Engine core per the plan — storage model, turn loop,
-  Yul decision, then dispatch enums, effects, roster, arena FFI batch API.
+- **Phases 2–4 (done):** Engine core (world/storage model, turn loop, Yul
+  hand-ports), inheritance flattening, effects + full 13-mon roster,
+  ContractId dispatch tables — gated by battle-replay lockstep fixtures
+  (158 recorded turns) and the full-roster arena drive.
+- **Phase 5 (done):** `chomp-ffi` cdylib (handle-based battle API, rich
+  getter-backed state, native forward-model forks) + the arena
+  `--engine rust` drive mode; 27-game move-for-move lockstep gate.
+- **Phase 6 (batch mode):** native strategy port in
+  `transpiler/strategies-rs` (crate `chomp-strategies`): hard + greedy
+  CPUs, engine-view/battle-view readers, evaluator, forward-model probes,
+  the game loop with `Seat` transposition (the Rust equivalent of the TS
+  `transposeEngine` proxy), and a threaded `run_games` batch runner
+  exposed as `chomp_run_games` — one FFI crossing per BATCH. Duck-typed
+  `basePower`/`accuracy` probes ride the generated `try_*` dispatchers
+  (`duckDispatchMethods` in `transpiler-config-rust.json`). Gate:
+  `bun transpiler/scripts/strategy_lockstep.ts` — the native strategies
+  must re-derive the TS strategies' moves turn-for-turn on identical
+  seeds, plus outcome equality.

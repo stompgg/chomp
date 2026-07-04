@@ -1,6 +1,8 @@
-# chomp-ffi: cdylib boundary for bun:ffi consumers (arena batch API — Phase 5).
-# Phase 0 ships a version probe so the build + FFI round-trip path is proven
-# before the batch run_games API lands.
+# chomp-ffi: cdylib boundary for bun:ffi consumers.
+# Two surfaces: the handle-based per-battle API (arena drive mode — one
+# crossing per engine read batch) and chomp_run_games (batch mode — whole
+# games run natively, one crossing per batch). Harness semantics live in
+# chomp-strategies::sim; this crate is parsing + JSON only.
 [package]
 name = "chomp-ffi"
 version = "0.1.0"
@@ -12,5 +14,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 chomp-engine = { path = "../engine" }
 chomp-rt = { path = "../runtime" }
+chomp-strategies = { path = "../strategies" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -50,17 +50,18 @@ export function ffi(): any {
       chomp_battle_hypothetical: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.ptr },
       chomp_battle_dispose_fork: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.i32 },
       chomp_battle_free: { args: [FFIType.u64], returns: FFIType.void },
+      chomp_run_games: { args: [FFIType.ptr], returns: FFIType.ptr },
       chomp_str_free: { args: [FFIType.ptr], returns: FFIType.void },
     });
   }
   return _lib;
 }
 
-function cstr(s: string): Buffer {
+export function cstr(s: string): Buffer {
   return Buffer.from(s + '\0', 'utf8');
 }
 
-function takeString(p: number | bigint, what: string): string {
+export function takeString(p: number | bigint, what: string): string {
   if (!p) throw new Error(`rust-engine: ${what} returned null (engine revert or bad input)`);
   const s = new CString(p as any).toString();
   ffi().symbols.chomp_str_free(p as any);
@@ -104,7 +105,7 @@ export interface RustMonInput {
   } & { type1?: unknown; type2?: unknown };
 }
 
-function monToJson(m: Structs.Mon): unknown {
+export function monToJson(m: Structs.Mon): unknown {
   return {
     hp: Number(m.stats.hp), stamina: Number(m.stats.stamina), speed: Number(m.stats.speed),
     attack: Number(m.stats.attack), defense: Number(m.stats.defense),

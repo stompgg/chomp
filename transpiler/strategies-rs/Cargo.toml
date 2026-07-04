@@ -1,0 +1,15 @@
+# chomp-strategies: native port of the arena CPU strategies (hard, greedy)
+# plus the game/decide loop, driving the transpiled engine in-process (batch
+# mode — one FFI crossing per BATCH instead of per engine read).
+#
+# The verification bar is the same as every transpiler phase: on identical
+# seeds/teams these strategies must re-derive, turn by turn, the exact moves
+# the TS strategies pick (see transpiler/scripts/strategy_lockstep.ts).
+[package]
+name = "chomp-strategies"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chomp-engine = { path = "../engine" }
+chomp-rt = { path = "../runtime" }

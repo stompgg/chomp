@@ -1,13 +1,15 @@
-//! chomp-ffi — cdylib surface for bun:ffi (Phase 5: arena drive).
+//! chomp-ffi — cdylib surface for bun:ffi.
 //!
 //! Handle-based battle API with a JSON boundary: the engine executes
 //! native (no bigint), one FFI crossing per call. Strings returned by
-//! `chomp_battle_*` are heap CStrings — release them with
-//! `chomp_str_free`.
+//! `chomp_battle_*` / `chomp_run_games` are heap CStrings — release them
+//! with `chomp_str_free`.
 //!
 //!   chomp_battle_new(cfg_json)   -> handle (0 = error; see cfg below)
-//!   chomp_battle_validate(h, seat, moveIndex, extraData) -> 1/0
+//!   chomp_battle_validate(h, bk, seat, moveIndex, extraData) -> 1/0
 //!   chomp_battle_turn(h, input_json) -> snapshot json (null on error)
+//!   chomp_run_games(cfg_json)    -> results json (batch mode: whole
+//!                                   games with native strategies)
 //!   chomp_battle_free(h)
 //!
 //! cfg JSON: { monsPerTeam, p0Team: [Mon], p1Team: [Mon],
@@ -17,6 +19,10 @@
 //! book) + ability (hex).
 //! turn JSON: { p0MoveIndex, p1MoveIndex, p0Salt, p1Salt,
 //!              p0ExtraData, p1ExtraData } (salts are decimal strings).
+//!
+//! Harness semantics (world setup, turn boundaries, hypothetical forks)
+//! live in chomp_strategies::sim — ONE implementation shared with the
+//! native batch runner; this crate only parses and serializes.
 
 use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
@@ -26,17 +32,19 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use serde_json::json;
 
-use chomp_engine::world::{deploy_all, ExternalCalls, World};
+use chomp_engine::world::World;
 use chomp_engine::Enums::Type;
-use chomp_engine::Structs::{Battle, Mon, MonStats};
+use chomp_engine::Structs::{Mon, MonStats};
 use chomp_engine::{Constants, Engine};
 use chomp_rt::{Address, B256, U256};
+use chomp_strategies::game::{run_games, GameSpec, StrategyKind};
+use chomp_strategies::sim::{HypoMove, Sim};
 
 /// ABI/version probe: returns (major << 16 | minor). bun:ffi smoke tests
 /// call this to prove symbol resolution + calling convention.
 #[no_mangle]
 pub extern "C" fn chomp_ffi_version() -> u32 {
-    (0u32 << 16) | 2u32
+    (0u32 << 16) | 3u32
 }
 
 /// Cheap end-to-end proof that the emitted engine code is linked in and
@@ -53,20 +61,6 @@ pub extern "C" fn chomp_type_effectiveness(attacker: u8, defender: u8, base_powe
 // ---------------------------------------------------------------------------
 // Battle sessions
 // ---------------------------------------------------------------------------
-
-const P0: Address = addr(0x01);
-const P1: Address = addr(0x02);
-const MATCHMAKER: Address = addr(0xcafe);
-const MOVE_MANAGER: Address = addr(0xbeef);
-const TEAM_REGISTRY: Address = addr(0xa55e);
-const ENGINE_ADDR: Address = addr(0xe7);
-
-const fn addr(low: u16) -> Address {
-    let mut b = [0u8; 20];
-    b[18] = (low >> 8) as u8;
-    b[19] = (low & 0xff) as u8;
-    Address::new(b)
-}
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -94,8 +88,7 @@ struct BattleCfg {
     addressBook: HashMap<String, String>,
     /// Oracle address for BattleConfig. DEFAULT: zero — the engine's
     /// inline keccak(p0Salt, p1Salt) path, no oracle dispatch (the arena
-    /// path; the TS memoized-oracle shim has no Rust counterpart on
-    /// purpose). Set explicitly only to mirror a recorded TS fixture.
+    /// path). Set explicitly only to mirror a recorded TS fixture.
     #[serde(default)]
     rngOracle: Option<String>,
 }
@@ -113,38 +106,8 @@ struct TurnInput {
     p1ExtraData: u16,
 }
 
-struct HarnessExt {
-    p0_team: Vec<Mon>,
-    p1_team: Vec<Mon>,
-}
-
-impl ExternalCalls for HarnessExt {
-    fn ITeamRegistry_getTeams(
-        &mut self,
-        _t: Address,
-        _p0: Address,
-        _i0: U256,
-        _p1: Address,
-        _i1: U256,
-    ) -> (Vec<Mon>, Vec<Mon>) {
-        (self.p0_team.clone(), self.p1_team.clone())
-    }
-
-    fn ITeamRegistry_getExpAndLevelsForTeams(
-        &mut self,
-        _t: Address,
-        _p0: Address,
-        _i0: U256,
-        _p1: Address,
-        _i1: U256,
-    ) -> (Vec<U256>, Vec<U256>, Vec<U256>, Vec<U256>, Vec<U256>, Vec<U256>) {
-        panic!("getExpAndLevelsForTeams not on the battle path");
-    }
-}
-
 struct Session {
-    world: World,
-    battle_key: B256,
+    sim: Sim,
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
@@ -183,6 +146,12 @@ fn hex_address(s: &str) -> Option<Address> {
     Some(Address::new(raw))
 }
 
+fn parse_book(book: &HashMap<String, String>) -> HashMap<String, Address> {
+    book.iter()
+        .filter_map(|(k, v)| Some((k.clone(), hex_address(v)?)))
+        .collect()
+}
+
 fn to_mon(m: &MonJson) -> Option<Mon> {
     Some(Mon {
         stats: MonStats {
@@ -201,6 +170,10 @@ fn to_mon(m: &MonJson) -> Option<Mon> {
     })
 }
 
+fn to_team(team: &[MonJson]) -> Option<Vec<Mon>> {
+    team.iter().map(to_mon).collect()
+}
+
 unsafe fn read_json<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         return None;
@@ -217,63 +190,18 @@ fn out_string(s: String) -> *mut c_char {
 pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
     let Some(raw) = read_json(cfg_json) else { return 0 };
     let Ok(cfg) = serde_json::from_str::<BattleCfg>(raw) else { return 0 };
-    let (Some(p0_team), Some(p1_team)) = (
-        cfg.p0Team.iter().map(to_mon).collect::<Option<Vec<_>>>(),
-        cfg.p1Team.iter().map(to_mon).collect::<Option<Vec<_>>>(),
-    ) else {
+    let (Some(p0_team), Some(p1_team)) = (to_team(&cfg.p0Team), to_team(&cfg.p1Team)) else {
         return 0;
     };
+    let book = parse_book(&cfg.addressBook);
+    let rng_oracle = cfg
+        .rngOracle
+        .as_deref()
+        .and_then(hex_address)
+        .unwrap_or(Address::ZERO);
 
-    let result = std::panic::catch_unwind(move || {
-        let mut world = World::new(Box::new(HarnessExt { p0_team, p1_team }));
-        world.Engine = Engine::construct(
-            U256::from(cfg.monsPerTeam),
-            Constants::GAME_MOVES_PER_MON,
-        );
-
-        let book: HashMap<String, Address> = cfg
-            .addressBook
-            .iter()
-            .filter_map(|(k, v)| Some((k.clone(), hex_address(v)?)))
-            .collect();
-        let engine_addr = book.get("Engine").copied().unwrap_or(ENGINE_ADDR);
-        let rng_oracle = cfg
-            .rngOracle
-            .as_deref()
-            .and_then(hex_address)
-            .unwrap_or(Address::ZERO);
-        if !book.is_empty() {
-            let addr_of = move |name: &str| -> Address {
-                *book
-                    .get(name)
-                    .unwrap_or_else(|| panic!("address book missing `{name}`"))
-            };
-            deploy_all(&mut world, &addr_of);
-        }
-
-        world.env.current_contract = engine_addr;
-        world.env.block_timestamp = U256::from(1_800_000_000u64);
-        world.env.block_number = U256::from(1u64);
-        world.Engine.isMatchmakerFor.get_mut(&P0).set(MATCHMAKER, true);
-        world.Engine.isMatchmakerFor.get_mut(&P1).set(MATCHMAKER, true);
-
-        let (battle_key, _) = Engine::computeBattleKey(&mut world, P0, P1);
-        let mut battle = Battle {
-            p0: P0,
-            p0TeamIndex: 0,
-            p1: P1,
-            p1TeamIndex: 0,
-            teamRegistry: TEAM_REGISTRY,
-            validator: Address::ZERO,
-            rngOracle: rng_oracle,
-            ruleset: Constants::INLINE_STAMINA_REGEN_RULESET,
-            moveManager: MOVE_MANAGER,
-            matchmaker: MATCHMAKER,
-            engineHooks: Vec::new(),
-        };
-        world.env.msg_sender = MATCHMAKER;
-        Engine::startBattle(&mut world, &mut battle);
-        Session { world, battle_key }
+    let result = std::panic::catch_unwind(move || Session {
+        sim: Sim::new(cfg.monsPerTeam, p0_team, p1_team, &book, rng_oracle),
     });
     let Ok(session) = result else { return 0 };
 
@@ -285,9 +213,8 @@ pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
     handle
 }
 
-/// Engine-side legality check (inline validator), 1 = valid. `bk_json` is
-/// the battle key as a JSON-less plain hex C string — the LIVE key or a
-/// fork key; pass null for the live battle.
+/// Engine-side legality check (inline validator), 1 = valid. `bk` is a
+/// plain hex C string — the LIVE key or a fork key; null = live battle.
 #[no_mangle]
 pub unsafe extern "C" fn chomp_battle_validate(
     handle: u64,
@@ -303,9 +230,9 @@ pub unsafe extern "C" fn chomp_battle_validate(
             Some(k) => k,
             None => return -1,
         },
-        _ => s.battle_key,
+        _ => s.sim.battle_key,
     };
-    let world = &mut s.world;
+    let world = &mut s.sim.world;
     world.reset_transient(); // fresh-tx boundary, like every TS top-level call
     let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         Engine::validatePlayerMoveForBattle(
@@ -390,15 +317,9 @@ pub unsafe extern "C" fn chomp_battle_turn(handle: u64, input_json: *const c_cha
     };
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
-    let key = s.battle_key;
-    let world = &mut s.world;
+    let s = &mut *s;
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        world.reset_transient();
-        world.env.block_timestamp = world.env.block_timestamp + U256::from(1u64);
-        world.env.msg_sender = MOVE_MANAGER;
-        Engine::executeWithMoves(
-            world,
-            key,
+        s.sim.execute_turn(
             input.p0MoveIndex,
             p0_salt,
             input.p0ExtraData,
@@ -406,8 +327,7 @@ pub unsafe extern "C" fn chomp_battle_turn(handle: u64, input_json: *const c_cha
             p1_salt,
             input.p1ExtraData,
         );
-        world.reset_transient(); // tx over; reads below are boundary-clean
-        snapshot_json(world, key)
+        snapshot_json(&mut s.sim.world, s.sim.battle_key)
     }));
     match out {
         Ok(snap) => out_string(snap),
@@ -542,7 +462,7 @@ pub unsafe extern "C" fn chomp_battle_kv(handle: u64, bk: *const c_char, key: u6
     let Some(k) = parse_b256(raw) else { return std::ptr::null_mut() };
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
-    let world = &mut s.world;
+    let world = &mut s.sim.world;
     world.reset_transient(); // fresh-tx boundary
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         hex(Engine::getGlobalKV(world, k, key))
@@ -557,7 +477,7 @@ pub unsafe extern "C" fn chomp_battle_kv(handle: u64, bk: *const c_char, key: u6
 #[no_mangle]
 pub extern "C" fn chomp_battle_key(handle: u64) -> *mut c_char {
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
-    let key = sess.lock().unwrap().battle_key;
+    let key = sess.lock().unwrap().sim.battle_key;
     out_string(format!("{:#x}", key))
 }
 
@@ -566,11 +486,11 @@ pub extern "C" fn chomp_battle_key(handle: u64) -> *mut c_char {
 pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
-    let key = s.battle_key;
-    s.world.reset_transient(); // fresh-tx boundary
     let s = &mut *s;
+    let key = s.sim.battle_key;
+    s.sim.world.reset_transient(); // fresh-tx boundary
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        rich_state_json(&mut s.world, key, true)
+        rich_state_json(&mut s.sim.world, key, true)
     }));
     match out {
         Ok(js) => out_string(js),
@@ -578,40 +498,9 @@ pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
     }
 }
 
-static FORK_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-/// Fork key: tag nibbles + counter — can never collide with a real keccak
-/// battle key in practice (mirrors the TS forward-model's key scheme).
-fn next_fork_key() -> B256 {
-    let n = FORK_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut b = [0u8; 32];
-    b[0] = 0xf0;
-    b[1] = 0xfc;
-    b[24..32].copy_from_slice(&n.to_be_bytes());
-    B256::new(b)
-}
-
-/// Clone the battle's state tree under a fresh fork key (mirrors the TS
-/// forward-model's forkBattle: battleData + battleConfig + the globalKV
-/// entries that hold move locks / once-per-game flags). No
-/// battleKeyToStorageKey redirect: _getStorageKey(fork) == fork.
-fn fork_battle(world: &mut World, bk: B256) -> B256 {
-    let sk = Engine::_getStorageKey(world, bk);
-    let fork = next_fork_key();
-    let data = world.Engine.battleData.get(&bk);
-    world.Engine.battleData.set(fork, data);
-    let cfg = world.Engine.battleConfig.get(&sk);
-    world.Engine.battleConfig.set(fork, cfg);
-    let kv = world.Engine.globalKV.get(&sk);
-    world.Engine.globalKV.set(fork, kv);
-    let slots = world.Engine.globalKVKeySlots.get(&sk);
-    world.Engine.globalKVKeySlots.set(fork, slots);
-    fork
-}
-
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
-struct HypoMove {
+struct HypoMoveJson {
     moveIndex: u8,
     salt: String,
     #[serde(default)]
@@ -620,22 +509,20 @@ struct HypoMove {
 
 #[derive(Deserialize)]
 struct HypoInput {
-    p0: Option<HypoMove>,
-    p1: Option<HypoMove>,
+    p0: Option<HypoMoveJson>,
+    p1: Option<HypoMoveJson>,
 }
 
-/// executeWithMoves's transient packing (Engine.sol): storedIndex offset for
-/// real move slots, IS_REAL_TURN_BIT, extraData in bits 8+, salt via _packTurn.
-fn pack_turn(mi: u8, salt: u128, extra: u16) -> U256 {
-    let stored = if mi < Constants::SWITCH_MOVE_INDEX { mi + Constants::MOVE_INDEX_OFFSET } else { mi };
-    let encoded = U256::from(stored as u16 | Constants::IS_REAL_TURN_BIT as u16)
-        | (U256::from(extra) << 8);
-    Engine::_packTurn(encoded, salt)
+fn to_hypo(m: &HypoMoveJson) -> HypoMove {
+    HypoMove {
+        move_index: m.moveIndex,
+        salt: m.salt.parse::<u128>().expect("bad salt"),
+        extra_data: m.extraData,
+    }
 }
 
-/// Fork the battle, run ONE hypothetical turn on the fork (silent, exactly
-/// the TS forward-model's applyHypotheticalMove semantics: moves written to
-/// the fork config + turn transients set for acting sides only), and return
+/// Fork the battle, run ONE hypothetical turn on the fork (silent — the TS
+/// forward-model's applyHypotheticalMove semantics), and return
 /// { forkKey, state }. The fork STAYS LIVE for follow-up reads until
 /// chomp_battle_dispose_fork — or battle_free reclaims everything.
 #[no_mangle]
@@ -646,32 +533,13 @@ pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *con
     };
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
-    let key = s.battle_key;
-    let world = &mut s.world;
+    let s = &mut *s;
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let fork = fork_battle(world, key);
-        world.reset_transient();
-        world.env.msg_sender = world.Engine.battleConfig.get_mut(&fork).moveManager;
-        if let Some(m) = &input.p0 {
-            let salt = m.salt.parse::<u128>().expect("bad p0 salt");
-            Engine::_setMoveInternal(
-                world.Engine.battleConfig.get_mut(&fork),
-                U256::ZERO, m.moveIndex, salt, m.extraData,
-            );
-            world.Engine._turnP0Packed = pack_turn(m.moveIndex, salt, m.extraData);
-        }
-        if let Some(m) = &input.p1 {
-            let salt = m.salt.parse::<u128>().expect("bad p1 salt");
-            Engine::_setMoveInternal(
-                world.Engine.battleConfig.get_mut(&fork),
-                U256::from(1u64), m.moveIndex, salt, m.extraData,
-            );
-            world.Engine._turnP1Packed = pack_turn(m.moveIndex, salt, m.extraData);
-        }
-        world.Engine.storageKeyForWrite = fork;
-        Engine::_executeInternal(world, fork, fork, false, false);
-        world.reset_transient(); // fork tx over; capture reads boundary-clean
-        let state = rich_state_json(world, fork, false);
+        let fork = s.sim.apply_hypothetical(
+            input.p0.as_ref().map(to_hypo),
+            input.p1.as_ref().map(to_hypo),
+        );
+        let state = rich_state_json(&mut s.sim.world, fork, false);
         format!("{{\"forkKey\":\"{fork:#x}\",\"state\":{state}}}")
     }));
     match out {
@@ -686,11 +554,7 @@ pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const
     let Some(raw) = read_json(fork_key) else { return -1 };
     let Some(fork) = parse_b256(raw) else { return -1 };
     let Some(sess) = session(handle) else { return -1 };
-    let mut s = sess.lock().unwrap();
-    s.world.Engine.battleData.remove(&fork);
-    s.world.Engine.battleConfig.remove(&fork);
-    s.world.Engine.globalKV.remove(&fork);
-    s.world.Engine.globalKVKeySlots.remove(&fork);
+    sess.lock().unwrap().sim.dispose_fork(fork);
     1
 }
 
@@ -699,9 +563,9 @@ pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const
 pub extern "C" fn chomp_battle_snapshot(handle: u64) -> *mut c_char {
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
-    let key = s.battle_key;
     let s = &mut *s;
-    let snap = snapshot_json(&mut s.world, key);
+    let key = s.sim.battle_key;
+    let snap = snapshot_json(&mut s.sim.world, key);
     out_string(snap)
 }
 
@@ -710,7 +574,101 @@ pub extern "C" fn chomp_battle_free(handle: u64) {
     registry().lock().unwrap().remove(&handle); // Arc drops when last user releases
 }
 
-/// Release a string returned by chomp_battle_turn / chomp_battle_snapshot.
+// ---------------------------------------------------------------------------
+// Batch mode: whole games with NATIVE strategies — one crossing per batch.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct BatchGameJson {
+    seed: u32,
+    maxTurns: u32,
+    /// Physical-seat strategies ("hard" | "greedy").
+    p0Strategy: String,
+    p1Strategy: String,
+    p0Team: Vec<MonJson>,
+    p1Team: Vec<MonJson>,
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+struct BatchCfg {
+    monsPerTeam: u64,
+    #[serde(default)]
+    addressBook: HashMap<String, String>,
+    /// Worker threads (games are independent worlds). Default 1.
+    #[serde(default)]
+    threads: Option<usize>,
+    /// Record per-turn submissions (the lockstep gate's compare key).
+    #[serde(default)]
+    trace: bool,
+    games: Vec<BatchGameJson>,
+}
+
+/// Run a batch of games natively (strategies + engine in-process).
+/// Returns { results: [ { winnerSeat, turns, moves?, error? } ] } — free
+/// with chomp_str_free; null on unparseable cfg.
+#[no_mangle]
+pub unsafe extern "C" fn chomp_run_games(cfg_json: *const c_char) -> *mut c_char {
+    let Some(raw) = read_json(cfg_json) else { return std::ptr::null_mut() };
+    let Ok(cfg) = serde_json::from_str::<BatchCfg>(raw) else {
+        return std::ptr::null_mut();
+    };
+    let book = parse_book(&cfg.addressBook);
+
+    let mut specs: Vec<GameSpec> = Vec::with_capacity(cfg.games.len());
+    for g in &cfg.games {
+        let (Some(p0_strategy), Some(p1_strategy)) =
+            (StrategyKind::parse(&g.p0Strategy), StrategyKind::parse(&g.p1Strategy))
+        else {
+            return std::ptr::null_mut(); // unknown strategy name
+        };
+        let (Some(p0_team), Some(p1_team)) = (to_team(&g.p0Team), to_team(&g.p1Team)) else {
+            return std::ptr::null_mut();
+        };
+        specs.push(GameSpec {
+            seed: g.seed,
+            max_turns: g.maxTurns,
+            mons_per_team: cfg.monsPerTeam,
+            p0_team,
+            p1_team,
+            p0_strategy,
+            p1_strategy,
+        });
+    }
+
+    let results = run_games(&specs, &book, cfg.threads.unwrap_or(1), cfg.trace);
+    let results_json: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| match &r.outcome {
+            Ok(o) => {
+                let mut v = json!({
+                    "winnerSeat": o.winner_seat,
+                    "turns": o.turns,
+                });
+                if cfg.trace {
+                    let moves: Vec<serde_json::Value> = o
+                        .trace
+                        .iter()
+                        .map(|t| {
+                            let enc = |m: Option<chomp_strategies::view::Mv>| match m {
+                                Some(m) => json!([m.move_index, m.extra_data]),
+                                None => json!(null),
+                            };
+                            json!([enc(t.p0), enc(t.p1)])
+                        })
+                        .collect();
+                    v["moves"] = json!(moves);
+                }
+                v
+            }
+            Err(e) => json!({ "error": e }),
+        })
+        .collect();
+    out_string(json!({ "results": results_json }).to_string())
+}
+
+/// Release a string returned by any chomp_* JSON entry point.
 #[no_mangle]
 pub unsafe extern "C" fn chomp_str_free(ptr: *mut c_char) {
     if !ptr.is_null() {
