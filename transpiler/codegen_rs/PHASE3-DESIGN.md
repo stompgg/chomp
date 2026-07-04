@@ -1,4 +1,12 @@
-# Phase 3 — effects, moves, abilities: full dispatch (design)
+# Phase 3 — effects, moves, abilities: full dispatch — DONE
+
+Status: complete. All 13 mons + 8 effects + StandardAttack transpile and
+compile; dispatch.rs (23 fns over IMoveSet/IEffect/IAbility) routes by
+ContractId; deploy_all mirrors the TS factories' dep wiring. Lockstep
+gate: 10 scenarios / 60 turns bit-identical, including burn / frostbite /
+zap / sleep status effects, the Overclock battlefield effect,
+PreemptiveShock switch-in ability activations, and stat-boost
+interactions. Mutation-verified.
 
 Phase 2 landed the World model with Engine as the only stateful contract
 and interface dispatch stubbed. Phase 3 transpiles every effect / move /

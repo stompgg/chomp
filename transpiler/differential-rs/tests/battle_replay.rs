@@ -8,9 +8,11 @@
 
 #![allow(non_snake_case)]
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
-use chomp_engine::world::{ExternalCalls, World};
+use chomp_engine::world::{deploy_all, ExternalCalls, World};
 use chomp_engine::Structs::{Battle, Mon, MonStats};
 use chomp_engine::Enums::Type;
 use chomp_engine::{Constants, Engine};
@@ -50,6 +52,8 @@ struct Scenario {
     p0Team: Vec<FixtureMon>,
     p1Team: Vec<FixtureMon>,
     battleKey: String,
+    #[serde(default)]
+    addressBook: HashMap<String, String>,
     turns: Vec<Turn>,
 }
 
@@ -99,6 +103,16 @@ struct ExpectMonState {
 fn hex_u256(s: &str) -> U256 {
     let t = s.strip_prefix("0x").unwrap_or(s);
     U256::from_str_radix(t, 16).expect("bad hex u256 in fixture")
+}
+
+fn hex_address(s: &str) -> Address {
+    let t = s.strip_prefix("0x").unwrap_or(s);
+    let padded = format!("{:0>40}", t);
+    let raw: Vec<u8> = (0..40)
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&padded[i..i + 2], 16).expect("bad hex byte"))
+        .collect();
+    Address::from_slice(&raw)
 }
 
 fn hex_b256(s: &str) -> B256 {
@@ -182,7 +196,30 @@ fn replay_scenario(sc: &Scenario) {
         U256::from(sc.monsPerTeam),
         Constants::GAME_MOVES_PER_MON,
     );
-    world.env.current_contract = ENGINE_ADDR;
+
+    // TS-exported address book: register every contract's ContractId and
+    // construct dispatchable states with identical dep wiring.
+    let book: HashMap<String, Address> = sc
+        .addressBook
+        .iter()
+        .map(|(k, v)| (k.clone(), hex_address(v)))
+        .collect();
+    let engine_addr = book.get("Engine").copied().unwrap_or(ENGINE_ADDR);
+    let rng_oracle = book
+        .get("DefaultRandomnessOracle")
+        .copied()
+        .unwrap_or(RNG_ORACLE);
+    if !book.is_empty() {
+        let sc_name = sc.name.clone();
+        let addr_of = move |name: &str| -> Address {
+            *book.get(name).unwrap_or_else(|| {
+                panic!("[{sc_name}] address book missing contract `{name}`")
+            })
+        };
+        deploy_all(&mut world, &addr_of);
+    }
+
+    world.env.current_contract = engine_addr;
     world.env.block_timestamp = U256::from(1_800_000_000u64);
     world.env.block_number = U256::from(1u64);
 
@@ -205,7 +242,7 @@ fn replay_scenario(sc: &Scenario) {
         p1TeamIndex: 0,
         teamRegistry: TEAM_REGISTRY,
         validator: Address::ZERO, // inline validator path
-        rngOracle: RNG_ORACLE,
+        rngOracle: rng_oracle,
         ruleset: Constants::INLINE_STAMINA_REGEN_RULESET,
         moveManager: MOVE_MANAGER,
         matchmaker: MATCHMAKER,

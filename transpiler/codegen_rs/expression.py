@@ -985,6 +985,12 @@ class RustExpressionGenerator:
         ret = sig.return_type() if sig else UNKNOWN
 
         alias = self._symbols.interface_aliases.get(iface)
+        if alias is None and iface in self._symbols.contracts \
+                and self._symbols_included(iface):
+            # Method call through a CONCRETE contract-typed value
+            # (`OVERCLOCK.applyOverclock(...)`): statically routed to that
+            # contract's module — same shape as an aliased interface.
+            alias = iface
         if alias is not None and self._symbols_included(alias):
             impl_sig = self._symbols.lookup_function(alias, member)
             if impl_sig is None:

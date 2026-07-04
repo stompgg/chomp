@@ -543,6 +543,12 @@ class RustSymbols:
                                     else:
                                         _callees.add((alias, fn.member))
                                     break
+                            # Concrete contract-typed values route statically
+                            # into that contract's module (edge by member
+                            # name — over-approximate, always safe).
+                            for cname in self.contracts:
+                                if (cname, fn.member) in self.functions:
+                                    _callees.add((cname, fn.member))
 
             walk(func.body, visit)
             # No blanket seed for stateful contracts: precision keeps pure

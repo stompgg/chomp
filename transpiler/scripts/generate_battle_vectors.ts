@@ -18,6 +18,7 @@ import {
   makeSimContext, buildMon, startBattle, executeTurn,
   type SimContext, type HarnessMonConfig, type TurnSnapshot,
 } from '../../sims/src/harness';
+import { contractAddresses } from '../ts-output/runtime';
 import * as Constants from '../ts-output/Constants';
 
 const FIXTURES = join(import.meta.dir, '..', 'differential-rs', 'fixtures');
@@ -96,7 +97,18 @@ interface ScenarioOut {
   p0Team: any[];
   p1Team: any[];
   battleKey: string;
+  /** Contract name -> address, exported per scenario (the TS address
+   * scheme is generation-order-dependent). Rust deploy_all consumes it. */
+  addressBook: Record<string, string>;
   turns: TurnRecord[];
+}
+
+function exportAddressBook(ctx: SimContext): Record<string, string> {
+  const book: Record<string, string> = {};
+  for (const name of ctx.container.getRegisteredNames()) {
+    book[name] = contractAddresses.getAddress(name);
+  }
+  return book;
 }
 
 function exportMon(m: ReturnType<typeof buildMon>): any {
@@ -189,7 +201,34 @@ function runScenario(
     name, monsPerTeam,
     p0Team: p0Team.map(exportMon), p1Team: p1Team.map(exportMon),
     battleKey: started.battleKey,
+    addressBook: exportAddressBook(ctx),
     turns,
+  };
+}
+
+/** Mon with contract-move slots and/or a named ability. */
+function cmon(stats: {
+  hp: number; stamina: number; speed: number; attack: number; defense: number;
+  spa: number; spd: number; type1: number; type2: number;
+}, moves: (string | MoveSpec)[], ability: string | null = null): HarnessMonConfig {
+  return {
+    stats: {
+      hp: BigInt(stats.hp), stamina: BigInt(stats.stamina), speed: BigInt(stats.speed),
+      attack: BigInt(stats.attack), defense: BigInt(stats.defense),
+      specialAttack: BigInt(stats.spa), specialDefense: BigInt(stats.spd),
+    },
+    type1: stats.type1, type2: stats.type2,
+    moves: moves.map((m) => typeof m === 'string'
+      ? { kind: 'contract' as const, contractName: m }
+      : {
+          kind: 'inline' as const,
+          json: {
+            name: 'V', basePower: m.basePower, staminaCost: m.staminaCost,
+            moveType: m.moveType as any, moveClass: m.moveClass,
+            effectAccuracy: 0, effect: null, priority: m.priority ?? 0,
+          },
+        }),
+    ability,
   };
 }
 
@@ -289,6 +328,77 @@ scenarios.push(runScenario(
     80,
   ));
 }
+
+// ---------------------------------------------------------------------------
+// Phase-3 scenarios: CONTRACT moves (real dispatch), status effects, ability
+// ---------------------------------------------------------------------------
+
+// 6. Burn: SetAblaze is a StandardAttack with EFFECT=BurnStatus — chip damage
+// per turn plus the attack-halving stat boost through the inlined engine path.
+scenarios.push(runScenario(
+  'burn_setablaze', 1,
+  [cmon({ hp: 220, stamina: 20, speed: 9, attack: 50, defense: 50, spa: 55, spd: 50, type1: 4, type2: 14 },
+    ['SetAblaze'])],
+  [cmon({ hp: 220, stamina: 20, speed: 11, attack: 55, defense: 50, spa: 45, spd: 50, type1: 7, type2: 14 },
+    [{ basePower: 40, staminaCost: 1, moveType: 'Nature', moveClass: 'Physical' }])],
+  () => ({ moveIndex: 0, extraData: 0 }),
+  30,
+));
+
+// 7. Frostbite: DeepFreeze applies FrostbiteStatus (special-attack halving +
+// per-turn chip), against a special attacker so the halving is observable.
+scenarios.push(runScenario(
+  'frostbite_deepfreeze', 1,
+  [cmon({ hp: 200, stamina: 20, speed: 12, attack: 45, defense: 50, spa: 60, spd: 55, type1: 6, type2: 14 },
+    ['DeepFreeze'])],
+  [cmon({ hp: 200, stamina: 20, speed: 10, attack: 40, defense: 55, spa: 65, spd: 45, type1: 3, type2: 14 },
+    [{ basePower: 45, staminaCost: 1, moveType: 'Liquid', moveClass: 'Special' }])],
+  () => ({ moveIndex: 0, extraData: 0 }),
+  30,
+));
+
+// 8. Zap + battlefield effect: DualShock (ZapStatus, Overclock global).
+scenarios.push(runScenario(
+  'zap_dualshock', 1,
+  [cmon({ hp: 190, stamina: 20, speed: 13, attack: 45, defense: 45, spa: 60, spd: 50, type1: 8, type2: 14 },
+    ['DualShock'])],
+  [cmon({ hp: 210, stamina: 20, speed: 9, attack: 55, defense: 55, spa: 40, spd: 55, type1: 2, type2: 14 },
+    [{ basePower: 45, staminaCost: 1, moveType: 'Earth', moveClass: 'Physical' }])],
+  () => ({ moveIndex: 0, extraData: 0 }),
+  30,
+));
+
+// 9. Ability on switch-in: PreemptiveShock activates on every send-in;
+// 2v2 with a mid-fight voluntary switch re-triggers it.
+scenarios.push(runScenario(
+  'ability_preemptive_shock', 2,
+  [cmon({ hp: 130, stamina: 12, speed: 12, attack: 50, defense: 45, spa: 50, spd: 45, type1: 8, type2: 14 },
+    [{ basePower: 45, staminaCost: 1, moveType: 'Lightning', moveClass: 'Special' }], 'PreemptiveShock'),
+   cmon({ hp: 140, stamina: 12, speed: 8, attack: 45, defense: 55, spa: 45, spd: 55, type1: 5, type2: 14 },
+    [{ basePower: 40, staminaCost: 1, moveType: 'Metal', moveClass: 'Physical' }], 'PreemptiveShock')],
+  [cmon({ hp: 150, stamina: 12, speed: 10, attack: 50, defense: 50, spa: 50, spd: 50, type1: 3, type2: 14 },
+    [{ basePower: 48, staminaCost: 1, moveType: 'Liquid', moveClass: 'Physical' }]),
+   cmon({ hp: 150, stamina: 12, speed: 11, attack: 48, defense: 48, spa: 48, spd: 48, type1: 10, type2: 14 },
+    [{ basePower: 45, staminaCost: 1, moveType: 'Air', moveClass: 'Physical' }])],
+  (t, side, snap) => {
+    if (t === 2 && side === 0 && snap) {
+      try { return { moveIndex: SWITCH, extraData: switchTarget(snap, 0) }; } catch { /* bench dead */ }
+    }
+    return { moveIndex: 0, extraData: 0 };
+  },
+  40,
+));
+
+// 10. Sleep: ContagiousSlumber (SleepStatus — turn-skip with RNG wake).
+scenarios.push(runScenario(
+  'sleep_contagious_slumber', 1,
+  [cmon({ hp: 200, stamina: 20, speed: 12, attack: 45, defense: 50, spa: 55, spd: 50, type1: 0, type2: 14 },
+    ['ContagiousSlumber', { basePower: 45, staminaCost: 1, moveType: 'Yin', moveClass: 'Special' }])],
+  [cmon({ hp: 200, stamina: 20, speed: 10, attack: 55, defense: 50, spa: 45, spd: 50, type1: 1, type2: 14 },
+    [{ basePower: 45, staminaCost: 1, moveType: 'Yang', moveClass: 'Physical' }])],
+  (t) => ({ moveIndex: t === 0 ? 0 : (t % 3 === 0 ? 0 : 1), extraData: 0 }),
+  30,
+));
 
 const out = { scenarios };
 const path = join(FIXTURES, 'battle_replay.json');
