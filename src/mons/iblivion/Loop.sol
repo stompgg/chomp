@@ -7,12 +7,12 @@ import "../../Enums.sol";
 import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
-import {Baselight} from "./Baselight.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {Baselight} from "./Baselight.sol";
 
 /**
  * Loop Move for Iblivion
@@ -26,6 +26,7 @@ contract Loop is IMoveSet, BasicEffect {
     uint8 public constant BOOST_PERCENT_LEVEL_3 = 40;
 
     Baselight immutable BASELIGHT;
+
     constructor(Baselight _BASELIGHT) {
         BASELIGHT = _BASELIGHT;
     }
@@ -37,8 +38,12 @@ contract Loop is IMoveSet, BasicEffect {
     // The marker effect is planted once (first Loop of the battle) and never removed; its extraData
     // is the armed/used flag (1 = used this switch-in, 0 = armed). onMonSwitchOut resets it to 0,
     // so the slot count stays at 1 for the whole battle instead of churning tombstones every cycle.
-    function isLoopActive(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (bool) {
-        (, , bytes32 data) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
+    function isLoopActive(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        public
+        view
+        returns (bool)
+    {
+        (,, bytes32 data) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
         return data != bytes32(0);
     }
 
@@ -95,29 +100,19 @@ contract Loop is IMoveSet, BasicEffect {
         // Apply stat boosts to all 5 stats (Attack, Defense, SpecialAttack, SpecialDefense, Speed)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](5);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Attack,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Attack, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         statBoosts[1] = StatBoostToApply({
-            stat: MonStateIndexName.Defense,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Defense, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         statBoosts[2] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialAttack,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.SpecialAttack, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         statBoosts[3] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialDefense,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.SpecialDefense, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         statBoosts[4] = StatBoostToApply({
-            stat: MonStateIndexName.Speed,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Speed, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
 
         // Use Temp flag so boosts are removed on switch out
@@ -129,7 +124,7 @@ contract Loop is IMoveSet, BasicEffect {
         return 0x8020;
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
         pure
         override
@@ -174,5 +169,4 @@ contract Loop is IMoveSet, BasicEffect {
             basePower: 0
         });
     }
-
 }

@@ -37,12 +37,18 @@ contract Baselight is IAbility, BasicEffect {
         level = uint256(data);
     }
 
-    function getBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (uint256) {
+    function getBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        public
+        view
+        returns (uint256)
+    {
         (,, uint256 level) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         return level;
     }
 
-    function setBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 level) public {
+    function setBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 level)
+        public
+    {
         if (level > MAX_BASELIGHT_LEVEL) {
             level = MAX_BASELIGHT_LEVEL;
         }
@@ -52,8 +58,15 @@ contract Baselight is IAbility, BasicEffect {
         }
     }
 
-    function decreaseBaselightLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 amount) public {
-        (bool exists, uint256 effectIndex, uint256 currentLevel) = _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
+    function decreaseBaselightLevel(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        uint256 amount
+    ) public {
+        (bool exists, uint256 effectIndex, uint256 currentLevel) =
+            _findBaselightEffect(engine, battleKey, playerIndex, monIndex);
         if (exists) {
             uint256 newLevel = amount >= currentLevel ? 0 : currentLevel - amount;
             engine.editEffect(playerIndex, effectIndex, bytes32(newLevel));
@@ -75,7 +88,7 @@ contract Baselight is IAbility, BasicEffect {
         return 0x8004;
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override

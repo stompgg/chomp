@@ -15,6 +15,7 @@ import {EIP712} from "./lib/EIP712.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
 import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
+import {TargetLib} from "./lib/TargetLib.sol";
 import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
@@ -1449,18 +1450,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
                 // Get active mon indices for both players
                 BattleData storage battle = battleData[battleKey];
-                uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-                uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+                uint256 activesPacked = TargetLib.singlesActives(
+                    _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+                );
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(
-                    IEngine(address(this)),
-                    battleKey,
-                    tempRNG,
-                    extraData,
-                    targetIndex,
-                    monIndex,
-                    p0ActiveMonIndex,
-                    p1ActiveMonIndex
+                    IEngine(address(this)), battleKey, tempRNG, extraData, targetIndex, monIndex, activesPacked
                 );
             }
             if (!removeAfterRun) {
@@ -1572,9 +1567,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             BattleData storage battle = battleData[battleKey];
-            uint256 p0Active = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-            uint256 p1Active = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-            effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, p0Active, p1Active);
+            uint256 activesPacked = TargetLib.singlesActives(
+                _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+            );
+            effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, activesPacked);
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
@@ -2623,9 +2619,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKeyForWrite];
 
-        // Get active mon indices for both players (passed to all effect hooks)
-        uint256 p0ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
-        uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
+        // Packed actives word (one 8-bit lane per absolute slot) passed to all effect hooks
+        uint256 activesPacked = TargetLib.singlesActives(
+            _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+        );
 
         uint256 monIndex = (playerIndex == 2) ? 0 : _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
@@ -2684,8 +2681,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     eff.stepsBitmap,
                     eff.data,
                     uint96(slotIndex),
-                    p0ActiveMonIndex,
-                    p1ActiveMonIndex
+                    activesPacked
                 );
 
                 // Re-read count if a new effect was added during this iteration
@@ -2713,8 +2709,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint16 stepsBitmap,
         bytes32 data,
         uint96 slotIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) private {
         // Use stored bitmap instead of external call to shouldRunAtStep()
         if ((stepsBitmap & (1 << uint8(round))) == 0) {
@@ -2733,16 +2728,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
-            battleKeyForWrite,
-            effect,
-            rng,
-            data,
-            playerIndex,
-            monIndex,
-            round,
-            extraEffectsData,
-            p0ActiveMonIndex,
-            p1ActiveMonIndex
+            battleKeyForWrite, effect, rng, data, playerIndex, monIndex, round, extraEffectsData, activesPacked
         );
 
         // If we need to remove or update the effect
@@ -2762,73 +2748,32 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 monIndex,
         EffectStep round,
         bytes memory extraEffectsData,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) private returns (bytes32 updatedExtraData, bool removeAfterRun) {
         IEngine self = IEngine(address(this));
         if (round == EffectStep.RoundStart) {
-            return
-                effect.onRoundStart(
-                    self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
-                );
+            return effect.onRoundStart(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.RoundEnd) {
-            return
-                effect.onRoundEnd(self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+            return effect.onRoundEnd(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.OnMonSwitchIn) {
-            return
-                effect.onMonSwitchIn(
-                    self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
-                );
+            return effect.onMonSwitchIn(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.OnMonSwitchOut) {
-            return effect.onMonSwitchOut(
-                self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
-            );
+            return effect.onMonSwitchOut(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.AfterDamage) {
             (int32 damage, uint256 source) = abi.decode(extraEffectsData, (int32, uint256));
             return effect.onAfterDamage(
-                self,
-                battleKey,
-                rng,
-                data,
-                playerIndex,
-                monIndex,
-                p0ActiveMonIndex,
-                p1ActiveMonIndex,
-                damage,
-                source
+                self, battleKey, rng, data, playerIndex, monIndex, activesPacked, damage, source
             );
         } else if (round == EffectStep.PreDamage) {
             uint256 source = abi.decode(extraEffectsData, (uint256));
-            return effect.onPreDamage(
-                self,
-                battleKey,
-                rng,
-                data,
-                playerIndex,
-                monIndex,
-                p0ActiveMonIndex,
-                p1ActiveMonIndex,
-                source
-            );
+            return effect.onPreDamage(self, battleKey, rng, data, playerIndex, monIndex, activesPacked, source);
         } else if (round == EffectStep.AfterMove) {
-            return
-                effect.onAfterMove(
-                    self, battleKey, rng, data, playerIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex
-                );
+            return effect.onAfterMove(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.OnUpdateMonState) {
             (uint256 statePlayerIndex, uint256 stateMonIndex, MonStateIndexName stateVarIndex, int32 valueToAdd) =
                 abi.decode(extraEffectsData, (uint256, uint256, MonStateIndexName, int32));
             return effect.onUpdateMonState(
-                self,
-                battleKey,
-                rng,
-                data,
-                statePlayerIndex,
-                stateMonIndex,
-                p0ActiveMonIndex,
-                p1ActiveMonIndex,
-                stateVarIndex,
-                valueToAdd
+                self, battleKey, rng, data, statePlayerIndex, stateMonIndex, activesPacked, stateVarIndex, valueToAdd
             );
         }
     }

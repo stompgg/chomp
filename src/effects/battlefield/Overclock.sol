@@ -5,6 +5,7 @@ import "../../Enums.sol";
 import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {BasicEffect} from "../BasicEffect.sol";
 import {IEffect} from "../IEffect.sol";
 
@@ -64,14 +65,10 @@ contract Overclock is BasicEffect {
         // Apply stat boosts (speed buff / sp def debuff)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Speed,
-            boostPercent: SPEED_PERCENT,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Speed, boostPercent: SPEED_PERCENT, boostType: StatBoostType.Multiply
         });
         statBoosts[1] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialDefense,
-            boostPercent: SP_DEF_PERCENT,
-            boostType: StatBoostType.Divide
+            stat: MonStateIndexName.SpecialDefense, boostPercent: SP_DEF_PERCENT, boostType: StatBoostType.Divide
         });
         engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
@@ -81,16 +78,13 @@ contract Overclock is BasicEffect {
         engine.removeStatBoost(playerIndex, monIndex, StatBoostFlag.Temp);
     }
 
-    function onApply(
-        IEngine engine,
-        bytes32,
-        uint256,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+    function onApply(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256 activesPacked)
+        external
+        override
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
+        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
+        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
         uint256 playerIndex = uint256(extraData);
 
         // Apply stat change to the team of the player who summoned Overclock
@@ -101,7 +95,7 @@ contract Overclock is BasicEffect {
         return (_pack(playerIndex, DEFAULT_DURATION), false);
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override
@@ -123,7 +117,6 @@ contract Overclock is BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint256 playerIndex = _playerOf(extraData);
@@ -134,7 +127,7 @@ contract Overclock is BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundStart(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundStart(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override
@@ -143,15 +136,12 @@ contract Overclock is BasicEffect {
         return (extraData, false);
     }
 
-    function onRemove(
-        IEngine engine,
-        bytes32,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    ) external override {
+    function onRemove(IEngine engine, bytes32, bytes32 extraData, uint256, uint256, uint256 activesPacked)
+        external
+        override
+    {
+        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
+        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
         uint256 playerIndex = _playerOf(extraData);
         uint256 activeMonIndex = playerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
         // Reset stat changes from the mon on the team of the player who summoned Overclock.

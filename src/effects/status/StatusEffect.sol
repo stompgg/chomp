@@ -9,8 +9,8 @@ abstract contract StatusEffect is BasicEffect {
     // Whether or not to add the effect if the step condition is met
     function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
         public
-        virtual
         view
+        virtual
         override
         returns (bool)
     {
@@ -34,7 +34,7 @@ abstract contract StatusEffect is BasicEffect {
     ///      whenever this runs — the old guard re-read of the same key was a pure ~700-gas
     ///      round-trip. No non-engine caller exists (and a direct caller could already write the
     ///      flag via setGlobalKV, so this is not a trust boundary).
-    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
         public
         virtual
         override
@@ -45,7 +45,11 @@ abstract contract StatusEffect is BasicEffect {
         return (extraData, removeAfterRun);
     }
 
-    function onRemove(IEngine engine, bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256) public virtual override {
+    function onRemove(IEngine engine, bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
+        public
+        virtual
+        override
+    {
         // On remove, reset the status flag
         engine.setGlobalKV(StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex), 0);
     }

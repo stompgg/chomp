@@ -7,13 +7,13 @@ import "../../Enums.sol";
 import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {AttackCalculator} from "../../moves/AttackCalculator.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {AttackCalculator} from "../../moves/AttackCalculator.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
@@ -80,7 +80,15 @@ contract SneakAttack is IMoveSet, BasicEffect {
         });
 
         (int32 damage,) = AttackCalculator._calculateDamageFromContext(
-            TYPE_CALCULATOR, ctx, BASE_POWER, DEFAULT_ACCURACY, DEFAULT_VOL, Type.Liquid, MoveClass.Special, rng, effectiveCritRate
+            TYPE_CALCULATOR,
+            ctx,
+            BASE_POWER,
+            DEFAULT_ACCURACY,
+            DEFAULT_VOL,
+            Type.Liquid,
+            MoveClass.Special,
+            rng,
+            effectiveCritRate
         );
 
         if (damage != 0) {
@@ -117,7 +125,7 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return 0x8020;
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
         pure
         override
@@ -140,5 +148,4 @@ contract SneakAttack is IMoveSet, BasicEffect {
             basePower: 0
         });
     }
-
 }

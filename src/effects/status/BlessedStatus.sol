@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract BlessedStatus is StatusEffect {
@@ -30,10 +31,9 @@ contract BlessedStatus is StatusEffect {
         bytes32 data,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, activesPacked);
         return (bytes32(DURATION), false);
     }
 
@@ -46,7 +46,6 @@ contract BlessedStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external pure override returns (bytes32, bool) {
         rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex)));
@@ -62,7 +61,6 @@ contract BlessedStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32, bool removeAfterRun) {
         _heal(engine, battleKey, targetIndex, monIndex);
@@ -82,11 +80,10 @@ contract BlessedStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override {
         _heal(engine, battleKey, targetIndex, monIndex);
-        super.onRemove(engine, battleKey, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, extraData, targetIndex, monIndex, activesPacked);
     }
 
     // Heal maxHp/HEAL_DENOM, clamped so we never overheal (copy of the ChainExpansion clamp).

@@ -5,8 +5,8 @@ pragma solidity ^0.8.0;
 // @inline-ability: singleton-local
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {EffectInstance} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -23,7 +23,7 @@ contract Angery is IAbility, BasicEffect {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -38,16 +38,19 @@ contract Angery is IAbility, BasicEffect {
         return 0x8044;
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onRoundEnd(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint256 numCharges = uint256(extraData);
         if (numCharges == CHARGE_COUNT) {
             // Heal
-            int32 healAmount =
-                int32(
+            int32 healAmount = int32(
                     engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
                 ) / MAX_HP_DENOM;
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
@@ -58,7 +61,7 @@ contract Angery is IAbility, BasicEffect {
         }
     }
 
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32, uint256)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, int32, uint256)
         external
         pure
         override

@@ -27,21 +27,17 @@ contract HardReset is IMoveSet, BasicEffect {
         return "Hard Reset";
     }
 
-    function move(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256 attackerPlayerIndex,
-        uint256,
-        uint256,
-        uint16,
-        uint256
-    ) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256)
+        external
+    {
         // Per-caster uniqueness: addEffect(2, _, ...) discards monIndex and getEffects(2, _) ignores
         // its filter, so caster identity must be carried in extraData and decoded here.
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)
-                && (uint256(effects[i].data) & CASTER_INDEX_BIT) == attackerPlayerIndex) {
+            if (
+                address(effects[i].effect) == address(this)
+                    && (uint256(effects[i].data) & CASTER_INDEX_BIT) == attackerPlayerIndex
+            ) {
                 return;
             }
         }
@@ -95,7 +91,6 @@ contract HardReset is IMoveSet, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32, bool) {
         MoveDecision memory dec = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
@@ -112,8 +107,7 @@ contract HardReset is IMoveSet, BasicEffect {
             int32 cur = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
             if (cur < -1) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 2);
-            }
-            else if (cur < 0) {
+            } else if (cur < 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
             }
             int32 maxHp = int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
@@ -153,13 +147,9 @@ contract HardReset is IMoveSet, BasicEffect {
         return (bytes32(ed), ownFired && oppFired);
     }
 
-    function _forceSwap(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256 playerIndex,
-        uint256 currentMonIndex,
-        uint256 rng
-    ) internal {
+    function _forceSwap(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 currentMonIndex, uint256 rng)
+        internal
+    {
         int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, playerIndex, currentMonIndex, rng);
         if (target != -1) {
             engine.switchActiveMon(playerIndex, uint256(uint32(target)));

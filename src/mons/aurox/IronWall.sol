@@ -3,15 +3,14 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import {MoveMeta} from "../../Structs.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract IronWall is IMoveSet, BasicEffect {
-
     int32 public constant HEAL_PERCENT = 50;
     int32 public constant INITIAL_HEAL_PERCENT = 20;
 
@@ -91,26 +90,30 @@ contract IronWall is IMoveSet, BasicEffect {
         return 0x8060;
     }
 
-    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32 damageDealt, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onAfterDamage(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        int32 damageDealt,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Calculate 50% of the damage taken
         int32 healAmount = (damageDealt * HEAL_PERCENT) / 100;
         // Heal only if not KO'ed
         if (
             healAmount > 0
-                && engine.getMonStateForBattle(
-                        battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
-                    ) == 0
+                && engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 0
         ) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
         }
         return (extraData, false);
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
         pure
         override

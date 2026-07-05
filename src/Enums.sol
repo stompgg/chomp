@@ -86,3 +86,15 @@ enum EngineHookStep {
     OnRoundEnd,
     OnBattleEnd
 }
+
+// Legal target domain for a move's targetBits nibble (top 4 bits of extraData).
+// AnyOtherSlot is 0 so inline move words (all StandardAttack-shaped) default to it (D28).
+// In singles the nibble is ignored and targeting is implied (the opposing active).
+enum TargetSpec {
+    AnyOtherSlot, // exactly 1 bit: either opposing slot or the ally slot (not self)
+    None, // no slot target: targetBits must be 0 (payload-driven or untargeted moves)
+    SelfOnly, // exactly 1 bit: the attacker's own slot
+    OpponentSlot, // exactly 1 bit: an opposing slot
+    AllySlot, // exactly 1 bit: the ally slot
+    AnySubset // any nonzero subset of the 4 slots (multi-target capable)
+}

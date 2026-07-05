@@ -6,12 +6,12 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract Q5 is IMoveSet, BasicEffect {
     uint256 public constant DELAY = 5;
@@ -36,7 +36,9 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256)
+        external
+    {
         // Add effect to global effects
         engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
@@ -72,16 +74,11 @@ contract Q5 is IMoveSet, BasicEffect {
         return 0x8002;
     }
 
-    function onRoundStart(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256 rng,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256,
-        uint256
-    ) external override returns (bytes32, bool) {
+    function onRoundStart(IEngine engine, bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256, uint256)
+        external
+        override
+        returns (bytes32, bool)
+    {
         (uint256 turnCount, uint256 attackerPlayerIndex) = _unpackExtraData(extraData);
         if (turnCount == DELAY) {
             // Deal damage
@@ -118,5 +115,4 @@ contract Q5 is IMoveSet, BasicEffect {
             basePower: 0
         });
     }
-
 }

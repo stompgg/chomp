@@ -6,6 +6,7 @@ import {IEngine} from "../../src/IEngine.sol";
 import {StatBoostToApply} from "../../src/Structs.sol";
 
 import {StatusEffect} from "../../src/effects/status/StatusEffect.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 
 contract SpAtkDebuffEffect is StatusEffect {
     uint8 constant SP_ATTACK_PERCENT = 50;
@@ -26,22 +27,15 @@ contract SpAtkDebuffEffect is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    )
-        public
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+        uint256 activesPacked
+    ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Call parent to set status flag
-        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
 
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialAttack,
-            boostPercent: SP_ATTACK_PERCENT,
-            boostType: StatBoostType.Divide
+            stat: MonStateIndexName.SpecialAttack, boostPercent: SP_ATTACK_PERCENT, boostType: StatBoostType.Divide
         });
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
@@ -55,10 +49,9 @@ contract SpAtkDebuffEffect is StatusEffect {
         bytes32 data,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override {
-        super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, data, targetIndex, monIndex, activesPacked);
 
         // Reset the special attack reduction
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);

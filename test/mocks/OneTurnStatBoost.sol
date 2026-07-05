@@ -9,7 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract OneTurnStatBoost is BasicEffect {
-
     function name() external pure override returns (string memory) {
         return "";
     }
@@ -24,10 +23,11 @@ contract OneTurnStatBoost is BasicEffect {
     // distinguishing "both hooks ran" from "only onApply ran" (+1).
     function _boost() private pure returns (StatBoostToApply[] memory boosts) {
         boosts = new StatBoostToApply[](1);
-        boosts[0] = StatBoostToApply({stat: MonStateIndexName.Attack, boostPercent: 100, boostType: StatBoostType.Multiply});
+        boosts[0] =
+            StatBoostToApply({stat: MonStateIndexName.Attack, boostPercent: 100, boostType: StatBoostType.Multiply});
     }
 
-    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -37,7 +37,7 @@ contract OneTurnStatBoost is BasicEffect {
     }
 
     // Adds another bonus (merges with the onApply boost), then removes this effect.
-    function onRoundEnd(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

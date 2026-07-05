@@ -9,7 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract InstantDeathOnSwitchInEffect is BasicEffect {
-
     function name() external pure override returns (string memory) {
         return "Instant Death On Switch";
     }
@@ -20,7 +19,7 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
     }
 
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)
-    function onMonSwitchIn(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onMonSwitchIn(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../../src/IEngine.sol";
-import {IAbility} from "../../src/abilities/IAbility.sol";
-import {IEffect} from "../../src/effects/IEffect.sol";
-import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 import "../../src/Structs.sol";
+import {IAbility} from "../../src/abilities/IAbility.sol";
+import {BasicEffect} from "../../src/effects/BasicEffect.sol";
+import {IEffect} from "../../src/effects/IEffect.sol";
 
 /// @notice Mock ability that follows the singleton self-register pattern (type 0x01).
 /// Registers itself as an effect on switch-in with idempotency check.
@@ -28,7 +28,7 @@ contract MockSingletonAbility is IAbility, BasicEffect {
         return 0x8040; // ALWAYS_APPLIES | AfterDamage
     }
 
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32, uint256)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, int32, uint256)
         external
         pure
         override

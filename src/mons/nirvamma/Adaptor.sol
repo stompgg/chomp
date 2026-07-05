@@ -38,17 +38,11 @@ contract Adaptor is IAbility, BasicEffect {
         return 0x240;
     }
 
-    function onPreDamage(
-        IEngine engine,
-        bytes32,
-        uint256,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256,
-        uint256,
-        uint256 source
-    ) external override returns (bytes32, bool) {
+    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256 source)
+        external
+        override
+        returns (bytes32, bool)
+    {
         if (extraData == bytes32(source)) {
             int32 running = engine.getPreDamage();
             engine.setPreDamage(running / DAMAGE_DENOM);
@@ -61,7 +55,6 @@ contract Adaptor is IAbility, BasicEffect {
         bytes32,
         uint256,
         bytes32 extraData,
-        uint256,
         uint256,
         uint256,
         uint256,

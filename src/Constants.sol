@@ -58,12 +58,12 @@ uint16 constant STAT_BOOST_STEPS = 0x8020;
 
 // Sentinel ruleset address: when passed as battle.ruleset, the Engine adds
 // inline StaminaRegen as a global effect without calling an external contract.
-address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A);  // "STA"mina
+address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A); // "STA"mina
 
 // Sentinel moveManager address: when a battle's moveManager is set to this, the battle uses the
 // Engine's built-in dual-signed buffer flow (submitTurnMoves / executeBuffered) instead of an
 // external ICommitManager contract. The built-in submit/drain entrypoints require this sentinel.
-address constant BUILTIN_DUAL_SIGNED_MANAGER = address(0x5165);  // "SIGS" - built-in dual-signed
+address constant BUILTIN_DUAL_SIGNED_MANAGER = address(0x5165); // "SIGS" - built-in dual-signed
 
 // Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
 uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
@@ -107,3 +107,25 @@ uint256 constant STREAK_GRACE_WINDOW = 36 hours;
 // Quest rewards — single multiplier applied to both gacha pts and exp.
 uint256 constant QUEST_REWARD_MULT = 2;
 uint256 constant MAX_PREDICATES_PER_QUEST = 6;
+
+// --- 2v2 slots & targeting ---
+
+// Battle modes (stored in BattleConfig; 0 keeps recycled-storage singles battles valid).
+uint8 constant BATTLE_MODE_SINGLES = 0;
+uint8 constant BATTLE_MODE_DOUBLES = 1;
+uint8 constant BATTLE_MODE_MULTI = 2;
+
+// The 16-bit move extraData splits [targetBits 4 | movePayload 12]. The nibble is a bitmask
+// over absolute slots (side * 2 + slotIndex); the payload keeps all pre-2v2 uses (largest
+// consumers: team indices 0-7, ModalBolt modes 0-2). Singles ignores the nibble.
+uint16 constant EXTRA_DATA_PAYLOAD_MASK = 0x0FFF;
+uint256 constant TARGET_BITS_SHIFT = 12;
+
+// activesPacked: one 8-bit lane per absolute slot carrying that slot's active roster index.
+uint256 constant EMPTY_ACTIVE_LANE = 0xFF;
+// Singles actives word: lanes 1 and 3 (each side's slot-1) are always empty.
+uint256 constant SINGLES_EMPTY_LANES = 0xFF00FF00;
+
+// Inline move word: TargetSpec lives in 4 of the spare bits (160-227); 0 = AnyOtherSlot,
+// so every already-generated inline attack word decodes to the D28 default.
+uint256 constant INLINE_TARGET_SPEC_SHIFT = 224;

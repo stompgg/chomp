@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract PanicStatus is StatusEffect {
@@ -26,7 +27,6 @@ contract PanicStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external pure override returns (bytes32, bool) {
         // Set rng to be unique to the target index and mon index
@@ -46,10 +46,9 @@ contract PanicStatus is StatusEffect {
         bytes32 data,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, activesPacked);
         return (bytes32(DURATION), false);
     }
 
@@ -61,16 +60,13 @@ contract PanicStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32, bool removeAfterRun) {
         // Get current stamina delta of the target mon
-        int32 staminaDelta =
-            engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+        int32 staminaDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
 
         // If the stamina is less than the max stamina, then reduce stamina by 1 (as long as it's not already 0)
-        uint32 maxStamina =
-            engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+        uint32 maxStamina = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
         if (staminaDelta + int32(maxStamina) > 0) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -1);
         }

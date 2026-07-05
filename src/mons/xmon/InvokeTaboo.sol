@@ -7,9 +7,9 @@ import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {IEffect} from "../../effects/IEffect.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {IEffect} from "../../effects/IEffect.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract InvokeTaboo is IMoveSet, BasicEffect {
     IEffect immutable SLEEP_STATUS;
@@ -83,7 +83,6 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32, bool) {
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
@@ -96,7 +95,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override

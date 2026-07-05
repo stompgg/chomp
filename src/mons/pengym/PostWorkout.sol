@@ -20,7 +20,7 @@ contract PostWorkout is IAbility, BasicEffect {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -34,11 +34,15 @@ contract PostWorkout is IAbility, BasicEffect {
         return 0x8020;
     }
 
-    function onMonSwitchOut(IEngine engine, bytes32 battleKey, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onMonSwitchOut(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
         uint192 statusAddress = engine.getGlobalKV(battleKey, keyForMon);
 
@@ -48,7 +52,8 @@ contract PostWorkout is IAbility, BasicEffect {
 
             // Get the index of the effect and remove it
             uint256 effectIndex;
-            (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
+            (EffectInstance[] memory effects, uint256[] memory indices) =
+                engine.getEffects(battleKey, targetIndex, monIndex);
             for (uint256 i; i < effects.length; i++) {
                 if (address(effects[i].effect) == address(statusEffect)) {
                     effectIndex = indices[i];

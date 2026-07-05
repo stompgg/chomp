@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
@@ -17,6 +17,7 @@ contract Tinderclaws is IAbility, BasicEffect {
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
     IEffect immutable BURN_STATUS;
+
     constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
     }
@@ -49,7 +50,6 @@ contract Tinderclaws is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
@@ -82,7 +82,6 @@ contract Tinderclaws is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         bool isBurned = _isBurned(engine, battleKey, targetIndex, monIndex);

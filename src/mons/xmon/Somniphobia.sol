@@ -3,12 +3,12 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract Somniphobia is IMoveSet, BasicEffect {
     uint256 public constant DURATION = 4;
@@ -22,7 +22,15 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return "Somniphobia";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 defenderMonIndex, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderMonIndex,
+        uint16,
+        uint256
+    ) external {
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
@@ -78,7 +86,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
         uint256 playerIndex,
         uint256 monIndex,
         uint256,
-        uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {
@@ -96,11 +103,15 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onMonSwitchIn(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32, bool) {
         // Global coordinator only: apply the punisher to the mon that just switched in.
         if (uint256(extraData) & PUNISHER_MARKER == 0) {
             _applyPunisher(engine, battleKey, targetIndex, monIndex);
@@ -108,7 +119,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override
@@ -118,7 +129,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, uint256(extraData) & PUNISHER_MARKER != 0);
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         view
         override
@@ -151,5 +162,4 @@ contract Somniphobia is IMoveSet, BasicEffect {
             basePower: 0
         });
     }
-
 }

@@ -5,12 +5,12 @@ pragma solidity ^0.8.0;
 // @inline-ability: singleton-local
 
 import "../../Enums.sol";
-import {MonStateIndexName, EffectInstance} from "../../Structs.sol";
+import {EffectInstance, MonStateIndexName} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
-import {IEffect} from "../../effects/IEffect.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {IEffect} from "../../effects/IEffect.sol";
 
 contract Dreamcatcher is IAbility, BasicEffect {
     int32 public constant HEAL_DENOM = 16;
@@ -21,7 +21,7 @@ contract Dreamcatcher is IAbility, BasicEffect {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -42,7 +42,6 @@ contract Dreamcatcher is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
-        uint256,
         uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd

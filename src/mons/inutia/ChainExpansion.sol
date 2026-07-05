@@ -7,10 +7,10 @@ import "../../Enums.sol";
 import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract ChainExpansion is IMoveSet, BasicEffect {
     uint128 public constant CHARGES = 4;
@@ -33,9 +33,11 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256)
+        external
+    {
         // Check if the ability is already applied globally
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 2);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -78,11 +80,15 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         playerIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onMonSwitchIn(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32, bool) {
         (uint256 chargesLeft, uint256 ownerIndex) = _decodeState(extraData);
         // If it's a friendly mon, then we heal (flat 1/8 of max HP)
         if (targetIndex == ownerIndex) {
@@ -116,14 +122,14 @@ contract ChainExpansion is IMoveSet, BasicEffect {
             } else if (scale > 4) {
                 damageDenom = DAMAGE_3_DENOM;
             }
-            int32 damageToDeal =
-                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / damageDenom;
+            int32 damageToDeal = int32(
+                engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
+            ) / damageDenom;
             engine.dealDamage(targetIndex, monIndex, damageToDeal);
         }
         if (chargesLeft == 1) {
             return (bytes32(0), true);
-        }
-        else {
+        } else {
             return (_encodeState(uint128(chargesLeft - 1), uint128(ownerIndex)), false);
         }
     }
@@ -146,5 +152,4 @@ contract ChainExpansion is IMoveSet, BasicEffect {
             basePower: 0
         });
     }
-
 }
