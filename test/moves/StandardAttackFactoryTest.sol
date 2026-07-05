@@ -10,6 +10,7 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {TypeCalculator} from "../../src/types/TypeCalculator.sol";
 import {Test} from "forge-std/Test.sol";
+import "../../src/Constants.sol";
 
 contract StandardAttackFactoryTest is Test {
     StandardAttackFactory public factory;
@@ -19,7 +20,7 @@ contract StandardAttackFactoryTest is Test {
     IEngine constant DUMMY_ENGINE = IEngine(address(0));
 
     function setUp() public {
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         typeCalc = new TypeCalculator();
         factory = new StandardAttackFactory(typeCalc);
     }

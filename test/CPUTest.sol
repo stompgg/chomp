@@ -10,7 +10,6 @@ import "../src/Structs.sol";
 import {Engine} from "../src/Engine.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {OkayCPU} from "../src/cpu/OkayCPU.sol";
 
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
@@ -32,7 +31,6 @@ import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
 contract CPUTest is Test {
     Engine engine;
     DefaultCommitManager commitManager;
-    DefaultValidator validator;
     DefaultRandomnessOracle defaultOracle;
     TestTypeCalculator typeCalc;
     TestTeamRegistry teamRegistry;
@@ -44,12 +42,9 @@ contract CPUTest is Test {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
         mockCPURNG = new MockCPURNG();
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         typeCalc = new TestTypeCalculator();
         teamRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -199,10 +194,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -211,7 +202,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -250,10 +240,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -262,7 +248,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -303,10 +288,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -315,7 +296,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -364,11 +344,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -377,7 +352,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -421,11 +395,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -434,7 +403,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -478,11 +446,6 @@ contract CPUTest is Test {
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -491,7 +454,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -562,9 +524,6 @@ contract CPUTest is Test {
         OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
         teamRegistry.setTeam(address(okayCPU), team);
         teamRegistry.setTeam(ALICE, team);
-        DefaultValidator v = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -573,7 +532,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: v,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
@@ -683,9 +641,6 @@ contract CPUTest is Test {
         OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
         teamRegistry.setTeam(address(okayCPU), cpuTeam);
         teamRegistry.setTeam(ALICE, aliceTeam);
-        DefaultValidator v = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -694,7 +649,6 @@ contract CPUTest is Test {
             ),
             p1: address(okayCPU),
             p1TeamIndex: 0,
-            validator: v,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,

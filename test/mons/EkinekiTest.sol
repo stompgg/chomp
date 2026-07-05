@@ -8,7 +8,6 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
@@ -55,7 +54,7 @@ contract EkinekiTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -108,13 +107,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -129,20 +123,15 @@ contract EkinekiTest is Test, BattleHelper {
         assertTrue(bobHpDelta < 0, "Bob should have taken damage from Bubble Bop");
 
         // Now do a fresh battle with single hit to compare
-        Engine engine2 = new Engine(0, 0);
+        Engine engine2 = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         DefaultCommitManager commitManager2 = new DefaultCommitManager(IEngine(address(engine2)));
         DefaultMatchmaker matchmaker2 = new DefaultMatchmaker(engine2);
         TestTeamRegistry registry2 = new TestTeamRegistry();
         registry2.setTeam(ALICE, aliceTeam);
         registry2.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator2 = new DefaultValidator(
-            IEngine(address(engine2)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey2 =
-            _startBattle(validator2, engine2, mockOracle, registry2, matchmaker2, address(commitManager2));
+            _startBattle(engine2, mockOracle, registry2, matchmaker2, address(commitManager2));
         _commitRevealExecuteForAliceAndBob(
             engine2, commitManager2, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -181,13 +170,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -228,13 +212,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -280,13 +259,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -349,13 +323,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -444,13 +413,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -543,13 +507,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -652,13 +611,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice selects mon 0 (with savior complex) - no KO'd mons
         _commitRevealExecuteForAliceAndBob(
@@ -708,13 +662,8 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)

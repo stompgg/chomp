@@ -8,18 +8,17 @@ import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
+import "src/Constants.sol";
 
 contract SignedMatchmakerTest is Test, BattleHelper {
 
     Engine engine;
-    DefaultValidator validator;
     DefaultRandomnessOracle rngOracle;
     DefaultCommitManager commitManager;
     SignedMatchmaker matchmaker;
@@ -37,13 +36,9 @@ contract SignedMatchmakerTest is Test, BattleHelper {
         p1 = vm.addr(P1_PK);
 
         // Deploy contracts
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         rngOracle = new DefaultRandomnessOracle();
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 100})
-        );
         teamRegistry = new TestTeamRegistry();
         matchmaker = new SignedMatchmaker(engine);
 
@@ -76,7 +71,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 p1: p1,
                 p1TeamIndex: p1TeamIndex,
                 teamRegistry: teamRegistry,
-                validator: validator,
                 rngOracle: rngOracle,
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
@@ -98,7 +92,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 p1: offer.battle.p1,
                 p1TeamIndex: 0, // Always sign with 0
                 teamRegistry: offer.battle.teamRegistry,
-                validator: offer.battle.validator,
                 rngOracle: offer.battle.rngOracle,
                 ruleset: offer.battle.ruleset,
                 moveManager: offer.battle.moveManager,
@@ -265,7 +258,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 p1: address(0),
                 p1TeamIndex: 0,
                 teamRegistry: teamRegistry,
-                validator: validator,
                 rngOracle: rngOracle,
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
@@ -295,7 +287,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 p1: address(0),
                 p1TeamIndex: 0,
                 teamRegistry: teamRegistry,
-                validator: validator,
                 rngOracle: rngOracle,
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),
@@ -327,7 +318,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 p1: address(0),
                 p1TeamIndex: 0,
                 teamRegistry: teamRegistry,
-                validator: validator,
                 rngOracle: rngOracle,
                 ruleset: IRuleset(address(0)),
                 moveManager: address(commitManager),

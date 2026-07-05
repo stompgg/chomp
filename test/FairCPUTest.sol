@@ -10,7 +10,6 @@ import "../src/Structs.sol";
 import {Engine} from "../src/Engine.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {FairCPU} from "../src/cpu/FairCPU.sol";
 
 import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
@@ -56,7 +55,7 @@ contract FairCPUTest is Test {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
         mockCPURNG = new MockCPURNG();
         typeCalc = new TestTypeCalculator();
@@ -125,15 +124,6 @@ contract FairCPUTest is Test {
         teamRegistry.setTeam(ALICE, aliceTeam);
         teamRegistry.setTeam(address(cpu), cpuTeam);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({
-                MONS_PER_TEAM: uint32(aliceTeam.length),
-                MOVES_PER_MON: maxMoves,
-                TIMEOUT_DURATION: 10
-            })
-        );
-
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
@@ -142,7 +132,6 @@ contract FairCPUTest is Test {
             ),
             p1: address(cpu),
             p1TeamIndex: 0,
-            validator: validatorToUse,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,

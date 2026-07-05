@@ -10,6 +10,7 @@ import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
+import "src/Constants.sol";
 
 /// @notice Covers GachaTeamRegistry.migrate(): the self-service, one-shot import of a
 /// player's full progression state (ownership, profile slot, exp, facets, teams) from an
@@ -32,7 +33,7 @@ contract GachaMigrationTest is Test {
         // currentDay > 0 so daily-gated branches behave; mirrors GachaTeamRegistryTest.
         vm.warp(2 days);
 
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         mockRNG = new MockGachaRNG();
 
         // ----- Old (source) registry: no predecessor. -----

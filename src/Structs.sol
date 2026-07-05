@@ -5,7 +5,6 @@ import {MOVE_LANES_PER_MON} from "./Constants.sol";
 import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostType, TargetSpec, Type} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
-import {IValidator} from "./IValidator.sol";
 import {IEffect} from "./effects/IEffect.sol";
 import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
@@ -19,7 +18,6 @@ struct ProposedBattle {
     address p1;
     uint96 p1TeamIndex;
     ITeamRegistry teamRegistry;
-    IValidator validator;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
@@ -38,7 +36,6 @@ struct CustomBattleProposal {
     uint8[] facetIds;
     uint8[] moveSelections;
     ITeamRegistry teamRegistry;
-    IValidator validator;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
@@ -59,7 +56,6 @@ struct Battle {
     address p1;
     uint96 p1TeamIndex;
     ITeamRegistry teamRegistry;
-    IValidator validator;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
@@ -112,7 +108,6 @@ struct BattleData {
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
 struct BattleConfig {
-    IValidator validator;
     uint96 packedP0EffectsCount; // 6 (PLAYER_EFFECT_BITS) bits for up to 16 mons for p0
     IRandomnessOracle rngOracle;
     uint96 packedP1EffectsCount;
@@ -173,7 +168,6 @@ struct EngineHookInstance {
 
 // View struct for getBattle - contains array instead of mapping for memory return
 struct BattleConfigView {
-    IValidator validator;
     IRandomnessOracle rngOracle;
     address moveManager;
     uint24 globalEffectsLength;
@@ -303,7 +297,6 @@ struct BattleContext {
     uint8 playerSwitchForTurnFlag;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
-    address validator;
     address moveManager;
 }
 
@@ -353,7 +346,6 @@ struct CPUContext {
     bytes32 battleKey;
     address p0;
     address p1;
-    address validator;
     uint8 winnerIndex; // 2 = no winner
     uint8 playerSwitchForTurnFlag;
     uint64 turnId;

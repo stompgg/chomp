@@ -8,7 +8,6 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
@@ -139,7 +138,6 @@ contract GachaFacetsBattleTest is Test {
             p1: CPU,
             p1TeamIndex: cpuPhantomIndex,
             teamRegistry: registry,
-            validator: IValidator(address(0)), // inline validation
             rngOracle: mockOracle,
             ruleset: IRuleset(address(0)),
             moveManager: address(commitManager),

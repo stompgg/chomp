@@ -10,7 +10,6 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
@@ -40,7 +39,6 @@ contract PengymTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     StandardAttackFactory attackFactory;
     PostWorkout postWorkout;
     PanicStatus panicStatus;
@@ -51,10 +49,7 @@ contract PengymTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         postWorkout = new PostWorkout();
@@ -173,7 +168,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -348,7 +343,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -425,10 +420,6 @@ contract PengymTest is Test, BattleHelper {
     }
 
     function test_chillOutAndDeepFreeze() public {
-        // Create a new validator with 2 moves per mon
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
 
         StandardAttack chillOut = attackFactory.createAttack(ATTACK_PARAMS({
             BASE_POWER: 0, STAMINA_COST: 0, ACCURACY: 100,
@@ -465,7 +456,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -502,9 +493,6 @@ contract PengymTest is Test, BattleHelper {
     }
 
     function test_pistolSquat() public {
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         PistolSquat ps = new PistolSquat(typeCalc);
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(ps)));
@@ -569,7 +557,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Precomputed seed: forced-switch target walks the team in order and PistolSquat doesn't crit
         mockOracle.setRNG(5);

@@ -7,7 +7,6 @@ import "../../src/Structs.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngineHook} from "../../src/IEngineHook.sol";
-import {IValidator} from "../../src/IValidator.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IRandomnessOracle} from "../../src/rng/IRandomnessOracle.sol";
 import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
@@ -73,18 +72,16 @@ abstract contract BattleHelper is Test {
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
         DefaultMatchmaker matchmaker,
         address moveManager
     ) internal returns (bytes32) {
-        return _startBattle(validator, engine, rngOracle, defaultRegistry, matchmaker, new IEngineHook[](0), moveManager);
+        return _startBattle(engine, rngOracle, defaultRegistry, matchmaker, new IEngineHook[](0), moveManager);
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
@@ -92,11 +89,10 @@ abstract contract BattleHelper is Test {
         IEngineHook[] memory engineHooks,
         address moveManager
     ) internal returns (bytes32) {
-        return _startBattle(validator, engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager);
+        return _startBattle(engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager);
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
@@ -129,7 +125,6 @@ abstract contract BattleHelper is Test {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: rngOracle,
             ruleset: ruleset,
             engineHooks: engineHooks,

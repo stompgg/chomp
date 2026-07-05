@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
@@ -118,7 +117,6 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
                 p1: p1,
                 p1TeamIndex: 0,
                 teamRegistry: defaultRegistry,
-                validator: IValidator(address(0)),
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
                 moveManager: BUILTIN_DUAL_SIGNED_MANAGER,

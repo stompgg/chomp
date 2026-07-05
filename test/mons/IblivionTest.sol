@@ -9,7 +9,6 @@ import {Test} from "forge-std/Test.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -37,7 +36,6 @@ contract IblivionTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -52,10 +50,7 @@ contract IblivionTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
@@ -105,7 +100,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
@@ -147,7 +142,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -221,7 +216,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -286,7 +281,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -364,7 +359,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -435,7 +430,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -494,7 +489,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -549,7 +544,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -602,7 +597,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both switch in mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -674,7 +669,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -729,7 +724,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -777,7 +772,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -830,7 +825,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -910,7 +905,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -1007,7 +1002,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(

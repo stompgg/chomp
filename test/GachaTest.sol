@@ -6,7 +6,6 @@ import "../src/Engine.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
@@ -16,6 +15,7 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 
 import "./mocks/TestTeamRegistry.sol";
+import "src/Constants.sol";
 
 contract GachaTest is Test, BattleHelper {
     DefaultRandomnessOracle defaultOracle;
@@ -27,7 +27,7 @@ contract GachaTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
         defaultRegistry = new TestTeamRegistry();
         mockRNG = new MockGachaRNG();
@@ -173,11 +173,9 @@ contract GachaTest is Test, BattleHelper {
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        DefaultValidator validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0}));
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
@@ -247,13 +245,10 @@ contract GachaTest is Test, BattleHelper {
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        DefaultValidator validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0})
-        );
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
         bytes32 battleKey =
-            _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
 
         // Advance time to avoid GameStartsAndEndsSameBlock error
         vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
@@ -324,15 +319,12 @@ contract GachaTest is Test, BattleHelper {
         });
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: 0}));
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
 
         // ---- First battle ----
         bytes32 battleKey =
-            _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
         vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
@@ -358,7 +350,7 @@ contract GachaTest is Test, BattleHelper {
 
         // ---- Second battle ----
         battleKey =
-            _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
         vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));

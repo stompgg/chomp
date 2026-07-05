@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
@@ -23,7 +22,6 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
 
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator validator;
     ITypeCalculator typeCalc;
     DefaultRandomnessOracle defaultOracle;
     TestTeamRegistry defaultRegistry;
@@ -31,11 +29,8 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: TIMEOUT})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -73,14 +68,14 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
     }
 
     function test_cannotCommitForArbitraryBattleKey() public {
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         vm.startPrank(CARL);
         vm.expectRevert(DefaultCommitManager.NotP0OrP1.selector);
         commitManager.commitMove(battleKey, "");
     }
 
     function test_NotYetRevealed() public {
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice commits
         vm.startPrank(ALICE);
@@ -94,7 +89,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
     }
 
     function test_RevealBeforeSelfCommit() public {
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         // Alice sets commitment
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -122,7 +117,7 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
 
     function test_BattleAlreadyComplete() public {
         vm.warp(1);
-        bytes32 battleKey = _startBattle(validator, engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
         // Run past MAX_BATTLE_DURATION so anyone can force-end the stalled battle (awards p0).
         vm.warp(MAX_BATTLE_DURATION + 2);
         engine.end(battleKey);

@@ -10,7 +10,6 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
@@ -39,7 +38,6 @@ contract GhouliathTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     RiseFromTheGrave riseFromTheGrave;
     IMoveSet osteoporosis;
     WitherAway witherAway;
@@ -54,10 +52,7 @@ contract GhouliathTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         standardAttackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         riseFromTheGrave = new RiseFromTheGrave();
@@ -149,7 +144,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -255,7 +250,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -345,7 +340,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -447,7 +442,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -499,7 +494,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -533,10 +528,6 @@ contract GhouliathTest is Test, BattleHelper {
         internal
         returns (bytes32 battleKey)
     {
-        DefaultValidator validator2 = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
 
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceMove0)));
@@ -567,7 +558,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        battleKey = _startBattle(validator2, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

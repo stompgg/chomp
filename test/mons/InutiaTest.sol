@@ -8,7 +8,6 @@ import "../../src/Constants.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import "../../src/Structs.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
@@ -44,7 +43,7 @@ contract InutiaTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         interweaving = new Interweaving();
         blessedStatus = new BlessedStatus();
@@ -55,10 +54,6 @@ contract InutiaTest is Test, BattleHelper {
 
     // Sanctify gives Inutia the Blessed status, which heals maxHp/16 at the end of each turn.
     function test_sanctifyBlessedHeals() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
 
         uint256[] memory aliceMoves = new uint256[](1);
         aliceMoves[0] = uint256(uint160(address(sanctify)));
@@ -94,7 +89,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -175,12 +170,8 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
-
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Store Bob's mon initial Attack stat
         int32 bobInitialAttack = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
@@ -217,11 +208,6 @@ contract InutiaTest is Test, BattleHelper {
     function test_initialize() public {
         Initialize initialize = new Initialize();
 
-        // Create a validator with 2 mons and 1 move per mon
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(initialize)));
 
@@ -249,7 +235,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Send in mons
         _commitRevealExecuteForAliceAndBob(
@@ -316,9 +302,6 @@ contract InutiaTest is Test, BattleHelper {
     function test_chainExpansion() public {
         TypeCalculator tc = new TypeCalculator();
         ChainExpansion ce = new ChainExpansion(tc);
-        DefaultValidator v = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
 
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(ce)));
@@ -399,7 +382,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(v, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)

@@ -8,7 +8,6 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
@@ -63,7 +62,7 @@ contract XmonTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -84,11 +83,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -157,11 +152,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -255,17 +246,12 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         // Battle with the StaminaRegen global effect so resting / round-end actually regen stamina.
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
 
-        bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
         );
 
         // Both players select their first mon
@@ -339,15 +325,10 @@ contract XmonTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
-        bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -394,11 +375,7 @@ contract XmonTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -434,15 +411,10 @@ contract XmonTest is Test, BattleHelper {
         team[1] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
-        bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -484,11 +456,7 @@ contract XmonTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -527,11 +495,7 @@ contract XmonTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -593,11 +557,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -661,12 +621,9 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        // One validator governs both sides; size it for the larger (2-mon) team.
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
+        // One validator governs both sides;
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice sends mon 0, Bob sends mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -752,16 +709,12 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         // Create ruleset with StaminaRegen
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager));
 
         // Alice sends in fast mon, Bob sends in slow mon
         _commitRevealExecuteForAliceAndBob(
@@ -864,15 +817,8 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         // Use the sentinel address that flips Engine into `hasInlineStaminaRegen` mode.
-        bytes32 battleKey = _startBattle(
-            validator,
-            engine,
+        bytes32 battleKey = _startBattle(engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -942,11 +888,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -1009,11 +951,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -1097,11 +1035,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(

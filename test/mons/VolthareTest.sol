@@ -10,9 +10,7 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IValidator} from "../../src/IValidator.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -41,7 +39,6 @@ contract VolthareTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     PreemptiveShock preemptiveShock;
     Overclock overclock;
     StandardAttackFactory attackFactory;
@@ -51,10 +48,7 @@ contract VolthareTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         overclock = new Overclock();
         preemptiveShock = new PreemptiveShock(ITypeCalculator(address(typeCalc)));
@@ -117,7 +111,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -195,12 +189,8 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -292,11 +282,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players send in their mons
         _commitRevealExecuteForAliceAndBob(
@@ -381,17 +367,8 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        // Start a battle
-        bytes32 battleKey = _startBattle(
-            new DefaultValidator(
-                IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-            ),
-            engine,
-            mockOracle,
-            defaultRegistry,
-            matchmaker,
-            address(commitManager)
-        );
+        bytes32 battleKey =
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(

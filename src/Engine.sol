@@ -151,18 +151,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @notice Start a 2-slot battle (BATTLE_MODE_DOUBLES for now; Multi arrives with the
-    ///         4-seat work). 2-slot modes require inline validation (validator == address(0)) —
-    ///         the deprecated external validators are singles-only.
+    ///         4-seat work).
     function startBattleV2(Battle memory battle, uint8 battleMode) external {
         if (battleMode > BATTLE_MODE_DOUBLES) {
             revert InvalidBattleConfig();
         }
-        if (battleMode != BATTLE_MODE_SINGLES) {
-            // 2-slot battles: inline validation only (external validators are singles-shaped),
-            // and the built-in dual-signed buffer stays singles-only until its v2 payloads land.
-            if (address(battle.validator) != address(0) || battle.moveManager == BUILTIN_DUAL_SIGNED_MANAGER) {
-                revert InvalidBattleConfig();
-            }
+        // The built-in dual-signed buffer stays singles-only until its v2 payloads land.
+        if (battleMode != BATTLE_MODE_SINGLES && battle.moveManager == BUILTIN_DUAL_SIGNED_MANAGER) {
+            revert InvalidBattleConfig();
         }
         _startBattle(battle, battleMode);
     }
@@ -225,14 +221,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Store the battle config (update fields individually to preserve effects mapping slots).
         // Writes are grouped by storage slot with no calls in between so via-IR coalesces each
-        // group into one read-modify-write: slot 0 = validator + packedP0EffectsCount, slot 1 =
+        // group into one read-modify-write: slot 0 = packedP0EffectsCount + rngOracle, slot 1 =
         // rngOracle + packedP1EffectsCount. Slot 2's many fields (moveManager, koBitmaps,
         // teamSizes, ...) are deferred to ONE consolidated block after the last external call —
         // the getTeams/ruleset/hook calls are storage barriers that would otherwise split them
         // into ~6 separate RMWs.
-        if (address(config.validator) != address(battle.validator)) {
-            config.validator = battle.validator;
-        }
         config.packedP0EffectsCount = 0;
         if (address(config.rngOracle) != address(battle.rngOracle)) {
             config.rngOracle = battle.rngOracle;
@@ -375,23 +368,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.playerEffectStepsUnion = 0;
         config.engineHookStepsUnion = hookStepsUnion;
         config.battleMode = battleMode;
-
-        // Build teams array for validation
-        Mon[][] memory teams = new Mon[][](2);
-        teams[0] = p0Team;
-        teams[1] = p1Team;
-
-        // Validate the battle config (skip if using inline validation)
-        if (address(battle.validator) != address(0)) {
-            if (!battle.validator
-                    .validateGameStart(
-                        battle.p0, battle.p1, teams, battle.teamRegistry, battle.p0TeamIndex, battle.p1TeamIndex
-                    )) {
-                revert InvalidBattleConfig();
-            }
-        }
-        // NOTE: in case where we do inline validation, we currently skip the game start validation logic
-        // (we'll fix this in a later version)
 
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
             for (uint256 i = 0; i < numHooks;) {
@@ -2317,18 +2293,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleData storage battle = battleData[battleKey];
         uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
-        // Use the validator to check if the switch is valid
-        bool isValid;
-        if (address(config.validator) == address(0)) {
-            // Use inline validation (no external call)
-            bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
-            isValid = ValidatorLogic.validateSwitch(
-                battle.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
-            );
-        } else {
-            // Use external validator
-            isValid = config.validator.validateSwitch(battleKey, playerIndex, monToSwitchIndex);
-        }
+        // Inline switch validation (no external call)
+        bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
+        bool isValid = ValidatorLogic.validateSwitch(
+            battle.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
+        );
         if (isValid) {
             // Only call the internal switch function if the switch is valid
             _handleSwitch(battleKey, config, battle, playerIndex, monToSwitchIndex, activeMonIndex);
@@ -2639,29 +2608,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 IEngine self = IEngine(address(this));
                 IMoveSet moveSet = IMoveSet(address(uint160(rawMoveSlot)));
 
-                // Call validateSpecificMoveSelection again to ensure it is still valid to execute
-                bool isValid;
-                bool inlineValidation = address(config.validator) == address(0);
-                if (inlineValidation) {
+                // Re-validate stamina affordability at execution time (inline; no validator)
+                {
                     uint32 baseStamina = activeMon.stats.stamina;
                     int32 staminaDelta = currentMonState.staminaDelta;
                     int256 effectiveDelta =
                         staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
                     uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
                     uint32 moveStamina = moveSet.stamina(self, battleKey, playerIndex, activeMonIndex);
-                    isValid = moveStamina <= currentStamina;
+                    if (moveStamina > currentStamina) {
+                        return playerSwitchForTurnFlag;
+                    }
                     staminaCost = int32(moveStamina);
-                } else {
-                    isValid = config.validator
-                    .validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData);
-                }
-                if (!isValid) {
-                    return playerSwitchForTurnFlag;
-                }
-
-                // Deduct stamina and execute (MonMoves already emitted upfront in execute())
-                if (!inlineValidation) {
-                    staminaCost = int32(moveSet.stamina(self, battleKey, playerIndex, activeMonIndex));
                 }
                 _deductStamina(currentMonState, staminaCost);
 
@@ -4042,7 +4000,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _getTeamLevels(config.teamRegistry, data.p0, data.p0TeamIndex, data.p1, data.p1TeamIndex);
 
         BattleConfigView memory configView = BattleConfigView({
-            validator: config.validator,
             rngOracle: config.rngOracle,
             moveManager: config.moveManager,
             globalEffectsLength: config.globalEffectsLength,
@@ -4163,12 +4120,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
 
-        // If external validator exists, delegate to it
-        if (address(config.validator) != address(0)) {
-            return config.validator.validatePlayerMove(battleKey, moveIndex, playerIndex, extraData);
-        }
-
-        // Inline validation when validator is address(0)
+        // Inline validation (the engine is the only validator)
         BattleData storage data = battleData[battleKey];
         uint256 activeMonIndex = _unpackActiveMonIndex(data.activeMonIndex, playerIndex);
         MonState storage activeMonState = _getMonState(config, playerIndex, activeMonIndex);
@@ -4439,7 +4391,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.playerSwitchForTurnFlag = data.playerSwitchForTurnFlag;
         ctx.p0ActiveMonIndex = uint8(data.activeMonIndex & 0xFF);
         ctx.p1ActiveMonIndex = uint8(data.activeMonIndex >> 8);
-        ctx.validator = address(config.validator);
         ctx.moveManager = config.moveManager;
     }
 

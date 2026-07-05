@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
-import {IValidator} from "../IValidator.sol";
 import {BattleContext, PlayerDecisionData} from "../Structs.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {EIP712} from "../lib/EIP712.sol";
@@ -132,12 +131,6 @@ contract SignedCommitManager is DefaultCommitManager, EIP712 {
         address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
         if (msg.sender != player) {
             revert PlayerNotAllowed();
-        }
-
-        if (ctx.validator != address(0)) {
-            if (!IValidator(ctx.validator).validatePlayerMove(battleKey, moveIndex, playerIndex, extraData)) {
-                revert InvalidMove(msg.sender);
-            }
         }
 
         ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);

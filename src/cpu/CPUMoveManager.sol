@@ -160,7 +160,6 @@ abstract contract CPUMoveManager {
         ctx.battleKey = battleKey;
         ctx.p0 = bctx.p0;
         ctx.p1 = bctx.p1;
-        ctx.validator = bctx.validator;
         ctx.winnerIndex = bctx.winnerIndex;
         ctx.playerSwitchForTurnFlag = bctx.playerSwitchForTurnFlag;
         ctx.turnId = bctx.turnId;

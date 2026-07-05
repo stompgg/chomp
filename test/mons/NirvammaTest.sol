@@ -8,7 +8,6 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
@@ -44,7 +43,7 @@ contract NirvammaTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -122,13 +121,8 @@ contract NirvammaTest is Test, BattleHelper {
 
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // both players send in mon 0
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
@@ -263,13 +257,8 @@ contract NirvammaTest is Test, BattleHelper {
         team[1] = caster;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
         );
@@ -327,13 +316,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[1] = filler;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
         );
@@ -448,13 +432,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[0] = bob;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
         battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
         );
@@ -575,13 +554,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[1] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
         );

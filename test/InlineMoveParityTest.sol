@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
@@ -88,7 +87,6 @@ contract InlineMoveParityTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: IValidator(address(0)),
             rngOracle: mockOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),

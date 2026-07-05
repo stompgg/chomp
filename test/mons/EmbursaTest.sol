@@ -10,9 +10,7 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IValidator} from "../../src/IValidator.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -40,7 +38,6 @@ contract EmbursaTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -48,10 +45,7 @@ contract EmbursaTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
@@ -83,12 +77,8 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         // Start battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -205,9 +195,6 @@ contract EmbursaTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
-        );
 
         // Set Ablaze test
         // Start battle
@@ -217,7 +204,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Alice uses Set Ablaze, Bob uses KO move
         // Verify Alice's priority boost is cleared
         // Verify Alice's mon is KO'ed but Bob has taken damage
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Advance time to avoid GameStartsAndEndsSameBlock error
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -250,7 +237,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Alice uses Heat Beacon, Bob does nothing
         // Alice uses Heat Beacon again, Bob uses KO Move
         // Verify Alice's mon is KO'ed but Bob's mon now has 2x Dummy status
-        battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Advance time to avoid GameStartsAndEndsSameBlock error
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -271,7 +258,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Alice uses Heat Beacon, Bob does nothing
         // Alice uses Q5, Bob uses KO move
         // Verify Q5 was applied to global effects, verify Alice is KOed
-        battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -291,7 +278,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Alice uses Heat Beacon, Bob does nothing
         // Alice uses Honey Bribe, Bob uses KO move
         // Verify Honey Bribe applied stat boost to Bob's mon, verify Alice is KOed
-        battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -359,12 +346,8 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         vm.warp(vm.getBlockTimestamp() + 1);
 
@@ -461,12 +444,8 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         vm.warp(vm.getBlockTimestamp() + 1);
 
@@ -583,11 +562,7 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Advance time to avoid GameStartsAndEndsSameBlock error
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -672,11 +647,7 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

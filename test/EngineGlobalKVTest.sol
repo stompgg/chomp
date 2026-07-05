@@ -7,7 +7,6 @@ import "../src/Constants.sol";
 import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
@@ -26,7 +25,6 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     DefaultMatchmaker matchmaker;
     MockKVWriterMove kvMove;
-    DefaultValidator validator;
 
     // Arbitrary keys used throughout the tests.
     uint16 constant KEY_A = 33;
@@ -39,14 +37,10 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         kvMove = new MockKVWriterMove();
-        validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
     }
 
     /// @dev Team with one mon that knows only the mock KV-writer move.
@@ -68,7 +62,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         Mon[] memory team = _buildTeam();
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -79,7 +73,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         Mon[] memory team = _buildTeam();
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        battleKey2 = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey2 = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

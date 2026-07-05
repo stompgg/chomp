@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
@@ -31,7 +30,6 @@ import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 contract RecycledKeyHygieneTest is Test, BattleHelper {
     Engine engine;
     DefaultCommitManager commitManager;
-    DefaultValidator twoMoveValidator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -42,11 +40,8 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        twoMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 100})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -93,9 +88,7 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
     }
 
     function _startBattleWithRuleset(IRuleset ruleset) internal returns (bytes32) {
-        return _startBattle(
-            twoMoveValidator,
-            engine,
+        return _startBattle(engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -256,14 +249,7 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        // DefaultValidator requires exact move counts, so battle 2 gets its own 1-move validator.
-        DefaultValidator oneMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
-        );
-        bytes32 battleKey2 = _startBattle(
-            oneMoveValidator,
-            engine,
+        bytes32 battleKey2 = _startBattle(engine,
             mockOracle,
             defaultRegistry,
             matchmaker,

@@ -10,7 +10,6 @@ import "../src/Structs.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {IRuleset} from "../src/IRuleset.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
@@ -165,7 +164,6 @@ contract DoublesEngineTest is Test {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: registry,
-            validator: IValidator(address(0)),
             rngOracle: IRandomnessOracle(address(0)),
             ruleset: IRuleset(ruleset),
             moveManager: address(this),
@@ -556,7 +554,6 @@ contract DoublesEngineTest is Test {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: registry,
-            validator: IValidator(address(0)),
             rngOracle: IRandomnessOracle(address(0)),
             ruleset: IRuleset(address(0)),
             moveManager: address(this),

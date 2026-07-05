@@ -7,7 +7,6 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {Facets} from "../src/game-layer/Facets.sol";
@@ -57,7 +56,7 @@ contract GachaTeamRegistryTest is Test {
         // the daily-multiplier / quest-eligibility branches never trigger on the first battle.
         vm.warp(2 days);
 
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         mockRNG = new MockGachaRNG();
 
         gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
@@ -491,41 +490,6 @@ contract GachaTeamRegistryTest is Test {
         assertEq(aliceTeam[0].stats.hp, 105, "Alice mon 0 HP boosted by facet 1");
         assertEq(aliceTeam[1].stats.hp, 100, "Alice mon 1 unaffected (no facet)");
         assertEq(bobTeam[0].stats.hp, 100, "Bob unaffected (human, no unlocked facets)");
-    }
-
-    function test_defaultValidator_acceptsPhantomTeam() public {
-        DefaultValidator validator = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: MONS_PER_TEAM, MOVES_PER_MON: MOVES_PER_MON, TIMEOUT_DURATION: 0})
-        );
-
-        vm.stopPrank();
-        _allowOnly(CPU);
-
-        // CPU needs at least one regular team so getTeamCount(CPU) > 0.
-        uint256[] memory cpuRegularTeam = new uint256[](MONS_PER_TEAM);
-        cpuRegularTeam[0] = 0;
-        cpuRegularTeam[1] = 1;
-        gachaTeamRegistry.setTeamForUser(CPU, 0, cpuRegularTeam, new uint8[](MONS_PER_TEAM));
-
-        vm.startPrank(ALICE);
-        uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
-        aliceTeam[0] = ALICE_TEAM_MON_0;
-        aliceTeam[1] = ALICE_TEAM_MON_1;
-        gachaTeamRegistry.createTeam(aliceTeam);
-
-        uint256[] memory phantomTeam = new uint256[](MONS_PER_TEAM);
-        phantomTeam[0] = unownedMonId;
-        phantomTeam[1] = 0;
-        gachaTeamRegistry.setOpponentTeam(CPU, phantomTeam, _zeroFacets(), _zeroMoves());
-        vm.stopPrank();
-
-        Mon[][] memory teams = new Mon[][](2);
-        teams[0] = gachaTeamRegistry.getTeam(ALICE, 0);
-        teams[1] = gachaTeamRegistry.getTeam(CPU, uint256(uint16(uint160(ALICE))));
-
-        bool ok = validator.validateGameStart(ALICE, CPU, teams, gachaTeamRegistry, 0, uint256(uint16(uint160(ALICE))));
-        assertTrue(ok);
     }
 
     // =====================================================================

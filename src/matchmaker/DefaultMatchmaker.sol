@@ -58,7 +58,6 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         return keccak256(
             abi.encodePacked(
                 proposal.p0TeamHash,
-                proposal.validator,
                 proposal.rngOracle,
                 proposal.ruleset,
                 proposal.teamRegistry,
@@ -97,9 +96,6 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
         }
         if (address(existingBattle.teamRegistry) != address(proposal.teamRegistry)) {
             existingBattle.teamRegistry = proposal.teamRegistry;
-        }
-        if (address(existingBattle.validator) != address(proposal.validator)) {
-            existingBattle.validator = proposal.validator;
         }
         if (address(existingBattle.rngOracle) != address(proposal.rngOracle)) {
             existingBattle.rngOracle = proposal.rngOracle;
@@ -151,7 +147,6 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                     p1: proposal.p1,
                     p1TeamIndex: proposal.p1TeamIndex,
                     teamRegistry: proposal.teamRegistry,
-                    validator: proposal.validator,
                     rngOracle: proposal.rngOracle,
                     ruleset: proposal.ruleset,
                     engineHooks: proposal.engineHooks,
@@ -188,7 +183,6 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                 p1: proposal.p1,
                 p1TeamIndex: proposal.p1TeamIndex,
                 teamRegistry: proposal.teamRegistry,
-                validator: proposal.validator,
                 rngOracle: proposal.rngOracle,
                 ruleset: proposal.ruleset,
                 engineHooks: proposal.engineHooks,

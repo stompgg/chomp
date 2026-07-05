@@ -7,7 +7,6 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
@@ -117,7 +116,6 @@ contract SourceCaptureEffect is BasicEffect {
 contract PreDamageHookTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator validator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -128,11 +126,8 @@ contract PreDamageHookTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -171,7 +166,7 @@ contract PreDamageHookTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // Both players switch to mon index 0 (turn 0 setup).
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -251,12 +246,8 @@ contract PreDamageHookTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator threeMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 3, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         bytes32 battleKey =
-            _startBattle(threeMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -326,12 +317,8 @@ contract PreDamageHookTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator threeMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 3, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         bytes32 battleKey =
-            _startBattle(threeMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

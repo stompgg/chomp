@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {IEffect} from "../src/effects/IEffect.sol";  // Used by EffectAbility
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
@@ -66,11 +65,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         uint256 teamSize = aliceTeam.length > bobTeam.length ? aliceTeam.length : bobTeam.length;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-        DefaultValidator validator = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: teamSize, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
-        );
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
     }
 
     function _monWithAbility(uint256 ability) internal pure returns (Mon memory mon) {

@@ -9,7 +9,6 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
@@ -133,8 +132,7 @@ contract StartBattleGasTest is Test, GasMeasure {
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE, p0TeamIndex: ti, p0TeamHash: teamHash,
             p1: CPU, p1TeamIndex: cpuPhantomIndex,
-            teamRegistry: registry, validator: IValidator(address(0)),
-            rngOracle: mockOracle, ruleset: IRuleset(address(0)),
+            teamRegistry: registry,            rngOracle: mockOracle, ruleset: IRuleset(address(0)),
             moveManager: address(commitManager), matchmaker: matchmaker, engineHooks: new IEngineHook[](0)
         });
         vm.prank(ALICE);

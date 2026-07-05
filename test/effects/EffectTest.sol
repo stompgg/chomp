@@ -9,7 +9,6 @@ import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
 import {IEngineHook} from "../../src/IEngineHook.sol";
@@ -44,7 +43,6 @@ import {DirectStatWriteMove} from "../mocks/DirectStatWriteMove.sol";
 contract EffectTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator oneMonOneMoveValidator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -75,11 +73,8 @@ contract EffectTest is Test, BattleHelper {
      */
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        oneMonOneMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
 
@@ -140,7 +135,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -223,15 +218,11 @@ contract EffectTest is Test, BattleHelper {
         team[0] = mon;
         team[1] = mon;
 
-        DefaultValidator twoMonOneMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-
         // Register both teams
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(twoMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -277,10 +268,6 @@ contract EffectTest is Test, BattleHelper {
         team[0] = fastMon;
         team[1] = slowMon;
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: 1, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
@@ -298,7 +285,7 @@ contract EffectTest is Test, BattleHelper {
         - Alice is asleep, Bob does nothing, Alice switches to mon index 1, should be successful
         */
 
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
@@ -386,7 +373,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, fastTeam);
         defaultRegistry.setTeam(BOB, slowTeam);
 
-        bytes32 battleKey = _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -471,7 +458,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -618,11 +605,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, fastTeam);
         defaultRegistry.setTeam(BOB, slowTeam);
 
-        DefaultValidator validatorTouse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-
-        bytes32 battleKey = _startBattle(validatorTouse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move of the game has to be selecting their mons (both index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -720,8 +703,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(
-            oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
         );
 
         // First move of the game has to be selecting their mons (both index 0)
@@ -797,7 +779,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: both switch in their mons
         _commitRevealExecuteForAliceAndBob(
@@ -858,7 +840,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey =
-            _startBattle(oneMonOneMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch both mons in (turnId 0 -> 1).
         _commitRevealExecuteForAliceAndBob(
@@ -957,14 +939,10 @@ contract EffectTest is Test, BattleHelper {
         Mon[] memory slowTeam = new Mon[](2);
         slowTeam[0] = slowMon;
         slowTeam[1] = slowMon;
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         defaultRegistry.setTeam(ALICE, fastTeam);
         defaultRegistry.setTeam(BOB, slowTeam);
 
-        battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

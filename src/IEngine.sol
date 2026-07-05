@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import "./Enums.sol";
 
-import "./IValidator.sol";
 import "./Structs.sol";
 import "./effects/IEffect.sol";
 import "./moves/IMoveSet.sol";

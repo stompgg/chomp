@@ -28,7 +28,6 @@ import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {IRuleset} from "../src/IRuleset.sol";
-import {IValidator} from "../src/IValidator.sol";
 
 import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
@@ -177,8 +176,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         BattleOffer memory offer = BattleOffer({
             battle: Battle({
                 p0: p0, p0TeamIndex: 0, p1: p1, p1TeamIndex: 0,
-                teamRegistry: registry, validator: IValidator(address(0)),
-                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
+                teamRegistry: registry,                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
                 moveManager: moveManager, matchmaker: maker, engineHooks: new IEngineHook[](0)
             }),
             pairHashNonce: nonce

@@ -11,7 +11,6 @@ import "../src/Structs.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
 
 
@@ -116,7 +115,6 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
                 p1: p1,
                 p1TeamIndex: 0,
                 teamRegistry: defaultRegistry,
-                validator: IValidator(address(0)),
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: ruleset,
                 moveManager: address(signedCommitManager),

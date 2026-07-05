@@ -9,9 +9,7 @@ import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IValidator} from "../../src/IValidator.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -32,7 +30,6 @@ contract StatBoostsTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    IValidator validator;
     StatBoostsMove statBoostMove;
     DefaultMatchmaker matchmaker;
 
@@ -40,10 +37,7 @@ contract StatBoostsTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Create the StatBoosts effect and move
@@ -100,7 +94,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -274,7 +268,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -373,12 +367,8 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         // Both players select their first mon (index 0)
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -546,13 +536,8 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         bytes32 battleKey =
-            _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -605,7 +590,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

@@ -174,12 +174,10 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         return RNG.getRNG(seed);
     }
 
-    /// @notice Validate a candidate CPU move. For the inline validator (ctx.validator == 0) we
-    ///         run ValidatorLogic directly against the data the engine already handed us in the
-    ///         context — skipping the storage re-resolution, config/state SLOADs, and move slot
-    ///         SLOAD that Engine.validatePlayerMoveForBattle would repeat on every call. When an
-    ///         external validator is attached we still round-trip through the engine so the
-    ///         validator's rules remain authoritative.
+    /// @notice Validate a candidate CPU move by running ValidatorLogic directly against the
+    ///         data the engine already handed us in the context — skipping the storage
+    ///         re-resolution, config/state SLOADs, and move slot SLOAD that
+    ///         Engine.validatePlayerMoveForBattle would repeat on every call.
     /// @dev NUM_MOVES and ctx.p1TeamSize are used as bounds. In production both match the engine's
     ///      DEFAULT_MOVES_PER_MON / DEFAULT_MONS_PER_TEAM; the CPU's own iteration already bounds
     ///      moveIndex below NUM_MOVES and monToSwitchIndex below p1TeamSize, so the basic/switch
@@ -188,10 +186,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         internal
         returns (bool)
     {
-        if (ctx.validator == address(0)) {
-            return _inlineValidateCPUMove(ctx, moveIndex, extraData);
-        }
-        return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
+        return _inlineValidateCPUMove(ctx, moveIndex, extraData);
     }
 
     /// @notice Variant of `_validateCPUMove` that uses a pre-decoded `MoveMeta` for stamina,
@@ -200,10 +195,7 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
         internal
         returns (bool)
     {
-        if (ctx.validator == address(0)) {
-            return _inlineValidateCPUMoveWithMeta(ctx, moveIndex, extraData, meta);
-        }
-        return ENGINE.validatePlayerMoveForBattle(ctx.battleKey, moveIndex, 1, extraData);
+        return _inlineValidateCPUMoveWithMeta(ctx, moveIndex, extraData, meta);
     }
 
     function _inlineValidateCPUMove(CPUContext memory ctx, uint8 moveIndex, uint16 extraData)
@@ -281,7 +273,6 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 p1: proposal.p1,
                 p1TeamIndex: proposal.p1TeamIndex,
                 teamRegistry: proposal.teamRegistry,
-                validator: proposal.validator,
                 rngOracle: proposal.rngOracle,
                 ruleset: proposal.ruleset,
                 engineHooks: proposal.engineHooks,
@@ -309,7 +300,6 @@ abstract contract CPU is CPUMoveManager, ICPU, ICPURNG, IMatchmaker {
                 p1: address(this),
                 p1TeamIndex: p1TeamIndex,
                 teamRegistry: p.teamRegistry,
-                validator: p.validator,
                 rngOracle: p.rngOracle,
                 ruleset: p.ruleset,
                 engineHooks: p.engineHooks,
