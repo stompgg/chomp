@@ -75,6 +75,14 @@ interface IEngine {
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
         returns (address winner);
+    // 2-slot battles (Doubles/Multi)
+    function startBattleV2(Battle memory battle, uint8 battleMode) external;
+    function executeWithSlotMoves(bytes32 battleKey, uint256 side0Packed, uint256 side1Packed)
+        external
+        returns (address winner);
+    function setMoveForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex, uint8 moveIndex, uint16 extraData)
+        external;
+    function getActiveSlots(bytes32 battleKey) external view returns (uint256[4] memory slots);
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
         external
         returns (uint64 executed, address winner);

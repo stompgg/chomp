@@ -91,10 +91,16 @@ struct BattleData {
     // buffer's pure staging tx (submitTurnMoves) skip its only battleConfig access — a cold
     // sentinel SLOAD (~2.2k per stage tx). Lives in slot 0's spare bits.
     bool usesBuiltinManager;
+    // Slot-1 active lanes for 2-slot modes: [side0 slot1: bits 0-7 | side1 slot1: bits 8-15],
+    // EMPTY_ACTIVE_LANE = no mon. Singles battles init it to 0 and never touch it, keeping the
+    // legacy activeMonIndex packing byte-identical; lives in slot 0's remaining spare bits.
+    uint16 activeMonExt;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
+    // Singles: 0/1 = that side switches, 2 = both act. 2-slot modes: 2 = full turn, else
+    // 0x80 | (4-bit absolute-slot mask) = only masked slots act (forced switches).
     uint8 playerSwitchForTurnFlag;
-    uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
+    uint16 activeMonIndex; // Packed: lower 8 bits = side0 slot0, upper 8 bits = side1 slot0
     uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
     uint16 turnId;
     // Built-in dual-signed buffer (BUILTIN_DUAL_SIGNED_MANAGER battles): per-turn entries staged via
@@ -134,6 +140,10 @@ struct BattleConfig {
     // Packs into slot 3 with the salts + player union; p0Move/p1Move shift to the next slot
     // (which also makes the game-over move-slot clear a single-slot write).
     uint16 engineHookStepsUnion; //  16
+    // BATTLE_MODE_* (0 = singles). Rides slot 3's spare bits so the per-turn mode gate
+    // piggybacks on the engineHookStepsUnion SLOAD; rewritten every startBattle (recycled
+    // storage must never leak a previous battle's mode).
+    uint8 battleMode; //   8
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
