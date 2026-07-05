@@ -6,9 +6,10 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IEffect} from "../../effects/IEffect.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract ContagiousSlumber is IMoveSet {
     IEffect immutable SLEEP_STATUS;
@@ -26,10 +27,12 @@ contract ContagiousSlumber is IMoveSet {
         bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         // Apply sleep to self
         engine.addEffect(attackerPlayerIndex, attackerMonIndex, SLEEP_STATUS, "");
 
@@ -64,6 +67,7 @@ contract ContagiousSlumber is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -72,5 +76,4 @@ contract ContagiousSlumber is IMoveSet {
             basePower: 0
         });
     }
-
 }

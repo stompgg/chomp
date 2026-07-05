@@ -46,6 +46,7 @@ library AttackCalculator {
         ITypeCalculator, /* TYPE_CALCULATOR — unused, see above */
         bytes32, /* battleKey — unused, the engine resolves its own transient context */
         uint256 attackerPlayerIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy, // out of 100
         uint256 volatility,
@@ -55,7 +56,7 @@ library AttackCalculator {
         uint256 critRate // out of 100
     ) internal returns (int32, bytes32) {
         return ENGINE.dispatchCustomAttack(
-            attackerPlayerIndex, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
+            attackerPlayerIndex, targetBits, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
         );
     }
 
@@ -76,15 +77,7 @@ library AttackCalculator {
         // Use batch getter to reduce external calls (7 -> 1)
         DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerPlayerIndex, defenderPlayerIndex);
         return _calculateDamageFromContext(
-            TYPE_CALCULATOR,
-            ctx,
-            basePower,
-            accuracy,
-            volatility,
-            attackType,
-            attackSupertype,
-            rng,
-            critRate
+            TYPE_CALCULATOR, ctx, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
         );
     }
 
@@ -168,9 +161,7 @@ library AttackCalculator {
         // is bounded by int32 max; this widening also covers any future tuning headroom.
         uint256 rawDamage = uint256(critNum) * scaledBasePower * attackStat * rngScaling
             / (uint256(defenceStat) * RNG_SCALING_DENOM * critDenom);
-        int32 damage = rawDamage > uint256(uint32(type(int32).max))
-            ? type(int32).max
-            : int32(uint32(rawDamage));
+        int32 damage = rawDamage > uint256(uint32(type(int32).max)) ? type(int32).max : int32(uint32(rawDamage));
         // Handle the case where the type immunity results in 0 damage
         if (scaledBasePower == 0) {
             eventType = MOVE_TYPE_IMMUNITY_EVENT_TYPE;

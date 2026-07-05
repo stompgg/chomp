@@ -71,7 +71,8 @@ contract Loop is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -161,6 +162,7 @@ contract Loop is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

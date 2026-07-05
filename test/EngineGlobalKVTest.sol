@@ -29,12 +29,12 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     DefaultValidator validator;
 
     // Arbitrary keys used throughout the tests.
-    uint16 constant KEY_A = 1001;
-    uint16 constant KEY_B = 1002;
-    uint16 constant KEY_C = 1003;
-    uint16 constant KEY_D = 1004;
-    uint16 constant KEY_E = 1005;
-    uint16 constant KEY_F = 1006;
+    uint16 constant KEY_A = 33;
+    uint16 constant KEY_B = 34;
+    uint16 constant KEY_C = 35;
+    uint16 constant KEY_D = 36;
+    uint16 constant KEY_E = 37;
+    uint16 constant KEY_F = 38;
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
@@ -126,8 +126,8 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         bytes32 firstPacked = view1.globalKVEntries[0].value;
 
         // Second call re-writes via encoded value bump so we can confirm it changed.
-        // Layout: bits 0..9 = key, bits 10..15 = value.
-        uint16 extraData = KEY_A | (uint16(42) << 10);
+        // Layout: bits 0..5 = key, bits 6..11 = value (12-bit payload).
+        uint16 extraData = KEY_A | (uint16(42) << 6);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, extraData, 0);
 
         (BattleConfigView memory view2,) = engine.getBattle(battleKey);

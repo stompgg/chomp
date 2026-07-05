@@ -38,7 +38,7 @@ interface IEngine {
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint32 volatility,
@@ -51,6 +51,7 @@ interface IEngine {
     ) external returns (int32 damage, bytes32 eventType);
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint256 volatility,
@@ -142,8 +143,5 @@ interface IEngine {
         view
         returns (DamageCalcContext memory);
     function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
-    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MonState[] memory);
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex) external view returns (MonState[] memory);
 }

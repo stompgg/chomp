@@ -2,18 +2,26 @@
 
 pragma solidity ^0.8.0;
 
-import {ExtraDataType, MoveClass, Type} from "../../src/Enums.sol";
+import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {MoveMeta} from "../../src/Structs.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract EditEffectAttack is IMoveSet {
-
     function name() external pure returns (string memory) {
         return "Edit Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint16 extraData, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external {
         // Unpack extraData (16 bits): bits 0..1 = targetIndex (0=p0, 1=p1, 2=global),
         // bits 2..15 = effectIndex.
         uint256 targetIndex = uint256(extraData) & 0x3;
@@ -51,6 +59,7 @@ contract EditEffectAttack is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -59,5 +68,4 @@ contract EditEffectAttack is IMoveSet {
             basePower: 0
         });
     }
-
 }

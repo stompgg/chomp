@@ -11,8 +11,8 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
-import {Baselight} from "./Baselight.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {Baselight} from "./Baselight.sol";
 
 contract Brightback is IMoveSet {
     uint32 public constant BASE_POWER = 70;
@@ -35,7 +35,8 @@ contract Brightback is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
@@ -44,6 +45,7 @@ contract Brightback is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -62,7 +64,8 @@ contract Brightback is IMoveSet {
 
             // Heal for half of damage done
             int32 healAmount = damageDealt / HEAL_DENOM;
-            int32 hpDelta = engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+            int32 hpDelta =
+                engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
 
             // Prevent overhealing
             if (hpDelta + healAmount > 0) {
@@ -100,6 +103,7 @@ contract Brightback is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -108,5 +112,4 @@ contract Brightback is IMoveSet {
             basePower: 0
         });
     }
-
 }

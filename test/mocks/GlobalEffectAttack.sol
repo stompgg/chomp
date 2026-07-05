@@ -33,7 +33,16 @@ contract GlobalEffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
         engine.addEffect(2, 0, EFFECT, bytes32(attackerPlayerIndex));
     }
 
@@ -67,6 +76,7 @@ contract GlobalEffectAttack is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -75,5 +85,4 @@ contract GlobalEffectAttack is IMoveSet {
             basePower: 0
         });
     }
-
 }

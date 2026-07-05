@@ -7,6 +7,7 @@ import {IAbility} from "../../abilities/IAbility.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IEngine} from "../../IEngine.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract PreemptiveShock is IAbility {
 
@@ -29,6 +30,7 @@ contract PreemptiveShock is IAbility {
             TYPE_CALCULATOR,
             battleKey,
             playerIndex,
+            TargetLib.impliedSinglesTargetBits(playerIndex),
             BASE_POWER,
             100,
             DEFAULT_VOL,

@@ -15,7 +15,14 @@ library MoveSlotLib {
         return raw >> 160 != 0;
     }
 
-    function basePower(uint256 raw, bytes32 /* battleKey */) internal pure returns (uint32) {
+    function basePower(
+        uint256 raw,
+        bytes32 /* battleKey */
+    )
+        internal
+        pure
+        returns (uint32)
+    {
         if (raw >> 160 != 0) {
             return uint32((raw >> 248) & 0xFF);
         }
@@ -85,7 +92,9 @@ library MoveSlotLib {
             meta.priority = uint32(DEFAULT_PRIORITY + ((raw >> 244) & 0x3));
             meta.moveType = Type(uint8((raw >> 240) & 0xF));
             meta.stamina = uint32((raw >> 236) & 0xF);
-            meta.extraDataType = ExtraDataType.None; // inline moves have no target data
+            meta.extraDataType = ExtraDataType.None; // inline moves have no payload data
+            // 0 in the spare bits = AnyOtherSlot, so pre-2v2 generated words decode to the default
+            meta.targetSpec = TargetSpec(uint8((raw >> INLINE_TARGET_SPEC_SHIFT) & 0xF));
             return meta;
         }
         meta = IMoveSet(address(uint160(raw))).getMeta(engine, battleKey, playerIndex, monIndex);

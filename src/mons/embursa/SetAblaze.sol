@@ -8,6 +8,7 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -39,15 +40,23 @@ contract SetAblaze is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
         engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
         // Clear the priority boost
         if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
@@ -55,7 +64,12 @@ contract SetAblaze is StandardAttack {
         }
     }
 
-    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view override returns (uint32) {
+    function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
+        public
+        view
+        override
+        returns (uint32)
+    {
         return DEFAULT_PRIORITY + HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex);
     }
     // Inherits StandardAttack.getMeta, which delegates to priority() / stamina() / etc. —

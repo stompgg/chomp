@@ -30,7 +30,16 @@ contract ForceSwitchMove is IMoveSet {
         return "Force Switch";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint16 extraData, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external {
         // Pack: bit 0 = playerIndex (0 or 1), bits 1..15 = monToSwitchIndex
         uint256 playerIndex = uint256(extraData) & 0x1;
         uint256 monToSwitchIndex = uint256(extraData) >> 1;
@@ -69,6 +78,7 @@ contract ForceSwitchMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -77,5 +87,4 @@ contract ForceSwitchMove is IMoveSet {
             basePower: 0
         });
     }
-
 }

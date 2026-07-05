@@ -5,8 +5,8 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {MoveMeta} from "../../src/Structs.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 /// @notice Test-only move that writes a single, caller-chosen (key, value) pair to globalKV.
 /// @dev extraData layout (16 bits total): bits 0..9 = key (≤1023), bits 10..15 = value (≤63).
@@ -18,9 +18,18 @@ contract MockKVWriterMove is IMoveSet {
         return "MockKVWriter";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint16 extraData, uint256) external {
-        uint64 key = uint64(extraData) & 0x3FF; // 10 bits
-        uint192 value = uint192(uint256(extraData) >> 10); // 6 bits
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external {
+        uint64 key = uint64(extraData) & 0x3F; // 6 bits (12-bit payload budget)
+        uint192 value = uint192(uint256(extraData) >> 6); // 6 bits
         if (value == 0) {
             value = 1;
         }
@@ -53,6 +62,7 @@ contract MockKVWriterMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -61,5 +71,4 @@ contract MockKVWriterMove is IMoveSet {
             basePower: 0
         });
     }
-
 }

@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 import {MOVE_LANES_PER_MON} from "./Constants.sol";
-import {Type, MonStateIndexName, StatBoostType, MoveClass, ExtraDataType} from "./Enums.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostType, TargetSpec, Type} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
 import {IValidator} from "./IValidator.sol";
 import {IEffect} from "./effects/IEffect.sol";
+import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {IRandomnessOracle} from "./rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 
 // Used by DefaultMatchmaker
 struct ProposedBattle {
@@ -149,15 +149,15 @@ struct BattleConfig {
 }
 
 struct EffectInstance {
-    IEffect effect;       // 160 bits
-    uint16 stepsBitmap;   // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
+    IEffect effect; // 160 bits
+    uint16 stepsBitmap; // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
     // 80 bits unused in slot 0
-    bytes32 data;         // 256 bits in slot 1
+    bytes32 data; // 256 bits in slot 1
 }
 
 struct EngineHookInstance {
-    IEngineHook hook;     // 160 bits (packed with stepsBitmap in slot 0)
-    uint16 stepsBitmap;   // 16 bits - packs with hook in slot 0 (bit i = runs at EngineHookStep(i))
+    IEngineHook hook; // 160 bits (packed with stepsBitmap in slot 0)
+    uint16 stepsBitmap; // 16 bits - packs with hook in slot 0 (bit i = runs at EngineHookStep(i))
     // 80 bits unused in slot 0
 }
 
@@ -324,6 +324,7 @@ struct MoveMeta {
     Type moveType;
     MoveClass moveClass;
     ExtraDataType extraDataType;
+    TargetSpec targetSpec; // legal domain for the targetBits nibble (ignored in singles)
     uint32 priority;
     uint32 stamina;
     uint32 basePower; // 0 for moves that don't deal damage
@@ -363,7 +364,7 @@ struct CPUContext {
 struct BattleEndContext {
     address p0;
     address p1;
-    address winner;          // address(0) = draw
+    address winner; // address(0) = draw
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     uint8 p0KOBitmap;

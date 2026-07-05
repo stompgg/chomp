@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
+import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
@@ -22,21 +22,18 @@ contract Deadlift is IMoveSet {
         bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
         // Apply the buffs
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Attack,
-            boostPercent: ATTACK_BUFF_PERCENT,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Attack, boostPercent: ATTACK_BUFF_PERCENT, boostType: StatBoostType.Multiply
         });
         statBoosts[1] = StatBoostToApply({
-            stat: MonStateIndexName.Defense,
-            boostPercent: DEF_BUFF_PERCENT,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Defense, boostPercent: DEF_BUFF_PERCENT, boostType: StatBoostType.Multiply
         });
         engine.addStatBoost(attackerPlayerIndex, attackerMonIndex, statBoosts, StatBoostFlag.Temp);
     }
@@ -67,6 +64,7 @@ contract Deadlift is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -75,5 +73,4 @@ contract Deadlift is IMoveSet {
             basePower: 0
         });
     }
-
 }

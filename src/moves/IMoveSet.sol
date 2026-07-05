@@ -7,12 +7,18 @@ import "../Structs.sol";
 
 interface IMoveSet {
     function name() external view returns (string memory);
+    /// @param targetBits Absolute-slot bitmask chosen by the player (top nibble of the wire
+    ///        extraData). In singles the engine passes the implied target (the opposing slot).
+    /// @param activesPacked Every slot's active roster index (one 8-bit lane per absolute slot,
+    ///        EMPTY_ACTIVE_LANE = none) — resolve targets via TargetLib without engine calls.
+    /// @param extraData The move's 12-bit payload (engine pre-masks the target nibble off).
     function move(
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external;

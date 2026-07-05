@@ -12,6 +12,7 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract Q5 is IMoveSet, BasicEffect {
     uint256 public constant DELAY = 5;
@@ -36,9 +37,16 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint128).max;
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256)
-        external
-    {
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
         // Add effect to global effects
         engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
 
@@ -87,6 +95,7 @@ contract Q5 is IMoveSet, BasicEffect {
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
+                TargetLib.impliedSinglesTargetBits(attackerPlayerIndex),
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
@@ -107,6 +116,7 @@ contract Q5 is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

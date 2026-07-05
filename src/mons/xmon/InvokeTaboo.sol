@@ -3,12 +3,13 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, SWITCH_MOVE_INDEX} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
+import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract InvokeTaboo is IMoveSet, BasicEffect {
@@ -27,10 +28,12 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, defenderPlayerIndex);
@@ -110,6 +113,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

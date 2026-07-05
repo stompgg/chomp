@@ -9,9 +9,9 @@ import "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
+import {MoveMeta} from "../../Structs.sol";
 import {Baselight} from "./Baselight.sol";
 import {Loop} from "./Loop.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract Renormalize is IMoveSet {
     Baselight immutable BASELIGHT;
@@ -31,7 +31,8 @@ contract Renormalize is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -71,6 +72,7 @@ contract Renormalize is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -79,5 +81,4 @@ contract Renormalize is IMoveSet {
             basePower: 0
         });
     }
-
 }

@@ -17,9 +17,16 @@ contract DirectStatWriteMove is IMoveSet {
         return "Direct Stat Write";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256, uint16, uint256)
-        external
-    {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
         // Forbidden: stat deltas may only be changed through add/removeStatBoost.
         engine.updateMonState(attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Attack, 1);
     }
@@ -54,6 +61,7 @@ contract DirectStatWriteMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

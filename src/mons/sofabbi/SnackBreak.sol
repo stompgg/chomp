@@ -6,8 +6,8 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract SnackBreak is IMoveSet {
     uint256 public constant DEFAULT_HEAL_DENOM = 2;
@@ -41,7 +41,8 @@ contract SnackBreak is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -88,6 +89,7 @@ contract SnackBreak is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -96,5 +98,4 @@ contract SnackBreak is IMoveSet {
             basePower: 0
         });
     }
-
 }

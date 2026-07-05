@@ -6,10 +6,10 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract GuestFeature is IMoveSet {
     uint32 public constant BASE_POWER = 75;
@@ -29,7 +29,8 @@ contract GuestFeature is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external {
@@ -41,6 +42,7 @@ contract GuestFeature is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -77,6 +79,7 @@ contract GuestFeature is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -85,5 +88,4 @@ contract GuestFeature is IMoveSet {
             basePower: 0
         });
     }
-
 }

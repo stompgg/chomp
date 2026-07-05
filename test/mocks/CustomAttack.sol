@@ -9,6 +9,7 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
@@ -54,18 +55,23 @@ contract CustomAttack is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external {
-        _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, extraData, rng);
+        _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked, extraData, rng);
     }
 
     function priority(IEngine engine, bytes32 battleKey, uint256 playerIndex) public view returns (uint32) {
         return _standardAttack.priority(engine, battleKey, playerIndex);
     }
 
-    function stamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) public view returns (uint32) {
+    function stamina(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        public
+        view
+        returns (uint32)
+    {
         return _standardAttack.stamina(engine, battleKey, playerIndex, monIndex);
     }
 
@@ -107,6 +113,7 @@ contract CustomAttack is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -115,5 +122,4 @@ contract CustomAttack is IMoveSet {
             basePower: 0
         });
     }
-
 }

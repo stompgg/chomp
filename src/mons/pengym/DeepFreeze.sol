@@ -4,10 +4,11 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { MoveMeta } from "../../Structs.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -27,7 +28,11 @@ contract DeepFreeze is IMoveSet {
         return "Deep Freeze";
     }
 
-    function _frostbiteExists(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal view returns (int32) {
+    function _frostbiteExists(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
+        internal
+        view
+        returns (int32)
+    {
         // Targeted lookup: engine scans for FROSTBITE internally, no full-array build.
         (bool exists, uint256 idx,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(FROSTBITE));
         return exists ? int32(int256(idx)) : int32(-1);
@@ -38,10 +43,12 @@ contract DeepFreeze is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint32 damageToDeal = BASE_POWER;
         int32 frostbiteIndex = _frostbiteExists(engine, battleKey, otherPlayerIndex, defenderMonIndex);
@@ -56,6 +63,7 @@ contract DeepFreeze is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            targetBits,
             damageToDeal,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -92,6 +100,7 @@ contract DeepFreeze is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -100,5 +109,4 @@ contract DeepFreeze is IMoveSet {
             basePower: 0
         });
     }
-
 }

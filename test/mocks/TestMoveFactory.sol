@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {MoveMeta} from "../../src/Structs.sol";
-import {MoveClass, Type, ExtraDataType} from "../../src/Enums.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract TestMove is IMoveSet {
-
     MoveClass private _moveClass;
     Type private _moveType;
     uint32 private _staminaCost;
@@ -24,7 +24,17 @@ contract TestMove is IMoveSet {
         return "Test Move";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 opponentIndex = (attackerPlayerIndex + 1) % 2;
         engine.dealDamage(opponentIndex, defenderMonIndex, _damage);
     }
@@ -55,6 +65,7 @@ contract TestMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -66,8 +77,10 @@ contract TestMove is IMoveSet {
 }
 
 contract TestMoveFactory {
-
-    function createMove(MoveClass moveClassToUse, Type moveTypeToUse, uint32 staminaCost, int32 damage) external returns (IMoveSet) {
+    function createMove(MoveClass moveClassToUse, Type moveTypeToUse, uint32 staminaCost, int32 damage)
+        external
+        returns (IMoveSet)
+    {
         return new TestMove(moveClassToUse, moveTypeToUse, staminaCost, damage);
     }
 }

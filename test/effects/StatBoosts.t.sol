@@ -136,7 +136,7 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            _packStatBoost(0, 0, statIndex, int32(10)), // Alice boosts her own mon by 10%
+            _packStatBoost(0, statIndex, int32(10)), // Alice boosts her own mon by 10%
             0 // Bob does nothing
         );
 
@@ -165,7 +165,7 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            _packStatBoost(0, 0, statIndex, int32(10)), 0 // Bob does nothing
+            _packStatBoost(0, statIndex, int32(10)), 0 // Bob does nothing
         );
 
         // Verify the stat was boosted further
@@ -297,7 +297,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0, // Alice uses stat boost move
                 NO_OP_MOVE_INDEX, // Bob does nothing
-                _packStatBoost(0, 0, statIndices[i], int32(2)), // Alice boosts her own mon by +2
+                _packStatBoost(0, statIndices[i], int32(2)), // Alice boosts her own mon by +2
                 0 // Bob does nothing
             );
 
@@ -390,7 +390,7 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(50)), // Alice boosts her own mon by 50%
+            _packStatBoost(0, uint256(MonStateIndexName.SpecialAttack), int32(50)), // Alice boosts her own mon by 50%
             0 // Bob does nothing
         );
 
@@ -444,7 +444,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0,
                 NO_OP_MOVE_INDEX,
-                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                _packStatBoost(0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
                 0
             );
         }
@@ -469,7 +469,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0,
                 NO_OP_MOVE_INDEX,
-                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                _packStatBoost(0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
                 0
             );
         }
@@ -495,7 +495,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0,
                 NO_OP_MOVE_INDEX,
-                _packStatBoost(0, 0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
+                _packStatBoost(0, uint256(MonStateIndexName.SpecialAttack), int32(75)),
                 0
             );
         }
@@ -566,7 +566,7 @@ contract StatBoostsTest is Test, BattleHelper {
                 battleKey,
                 0,
                 NO_OP_MOVE_INDEX,
-                _packStatBoost(0, 0, uint256(MonStateIndexName.Attack), int32(75)),
+                _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(75)),
                 0
             );
         }

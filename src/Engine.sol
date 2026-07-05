@@ -13,8 +13,8 @@ import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
 import {ECDSA} from "./lib/ECDSA.sol";
 import {EIP712} from "./lib/EIP712.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
-import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {StaminaRegenLogic} from "./lib/StaminaRegenLogic.sol";
+import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {TargetLib} from "./lib/TargetLib.sol";
 import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
@@ -151,8 +151,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // the matchmaker is the trust grant. (The old validateMatch callback added no security —
         // a matchmaker could always return true — and every in-repo matchmaker validates its own
         // offers before calling startBattle, so it was removed.)
-        if (!isMatchmakerFor[battle.p0][address(battle.matchmaker)] || !isMatchmakerFor[battle.p1][address(battle.matchmaker)])
-        {
+        if (
+            !isMatchmakerFor[battle.p0][address(battle.matchmaker)]
+                || !isMatchmakerFor[battle.p1][address(battle.matchmaker)]
+        ) {
             revert MatchmakerNotAuthorized();
         }
 
@@ -496,14 +498,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (flag == 2) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
-                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
-                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+                _turnP0Packed =
+                    _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                _turnP1Packed =
+                    _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             } else if (flag == 0) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
-                _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                _turnP0Packed =
+                    _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
             } else {
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
-                _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+                _turnP1Packed =
+                    _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             }
 
             winner = _executeInternal(battleKey, storageKey, false, false);
@@ -702,10 +708,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         packed = turnId % 2 == 0 ? packedMoves : (packedMoves >> 128) | (packedMoves << 128);
     }
 
-    function _drainBuffer(bytes32 battleKey, bytes32 storageKey)
-        internal
-        returns (uint64 executed, address winner)
-    {
+    function _drainBuffer(bytes32 battleKey, bytes32 storageKey) internal returns (uint64 executed, address winner) {
         BattleData storage data = battleData[battleKey];
         uint64 startTurn = data.turnId;
         uint256 numBuffered = data.numBuffered;
@@ -740,8 +743,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         storageKeyForWrite = storageKey;
 
         for (uint256 i = 0; i < numBuffered; i++) {
-            if (_executeBatchedEntry(battleKey, storageKey, moveBuffer[storageKey][startTurn + uint64(i)]) != address(0))
-            {
+            if (
+                _executeBatchedEntry(battleKey, storageKey, moveBuffer[storageKey][startTurn + uint64(i)]) != address(0)
+            ) {
                 data.numBuffered = 0; // game ended mid-buffer; the current entry does not execute
                 return;
             }
@@ -1341,10 +1345,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Union bit FIRST: OnUpdateMonState has a single listener game-wide, so the bit is clear
         // in almost every battle — short-circuiting on it skips the per-mon count SLOAD entirely
         // (this path fires on every stat-boost delta write, up to 5 per boost application).
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
-            && (playerIndex == 0
-                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0) {
+        if (
+            (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
+                && (playerIndex == 0
+                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
+        ) {
             _runEffects(
                 battleKey,
                 tempRNG,
@@ -1624,7 +1630,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             EffectInstance storage eff = effects[baseSlot + i];
             if (address(eff.effect) == STAT_BOOST_ADDRESS) {
                 eff.effect = IEffect(TOMBSTONE_ADDRESS);
-                unchecked { ++removeCount; }
+                unchecked {
+                    ++removeCount;
+                }
             }
         }
         if (removeCount == 0) return;
@@ -1699,8 +1707,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // straight from the caller's entries (no pack -> unpack round-trip).
         bytes32 newData;
         if (found) {
-            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) =
-                StatBoostLib.unpackBoostData(existingData);
+            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) = StatBoostLib.unpackBoostData(existingData);
             (uint8[5] memory fp, uint8[5] memory fc, bool[5] memory fm) =
                 StatBoostLib.mergeExistingAndNewBoosts(ep, ec, em, statBoostsToApply);
             newData = StatBoostLib.packBoostDataWithArrays(key, isPerm, fp, fc, fm);
@@ -1820,8 +1827,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) private {
-        uint32[5] memory newBoostedStats =
-            StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        uint32[5] memory newBoostedStats = StatBoostLib.finalizeBoostedStats(
+            baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
+        );
         MonState storage st = _getMonState(config, targetIndex, monIndex);
 
         // Listener gate hoisted ONCE per apply (was paid inside _updateMonStateInternal per stat).
@@ -1832,8 +1840,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // sentinel-aware add, minus its 2 TLOADs + 2 mapping keccaks + enum chain per stat.
         bool hasListener = (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
             && (targetIndex == 0
-                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0;
+                        ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                        : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0;
 
         for (uint256 i; i < 5; ++i) {
             // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
@@ -1842,7 +1850,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 continue;
             }
             if (hasListener) {
-                _updateMonStateInternal(targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd);
+                _updateMonStateInternal(
+                    targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd
+                );
             } else {
                 int32 newDelta = int32(newBoostedStats[i]) - int32(baseStats[i]);
                 if (i == 0) st.attackDelta = newDelta;
@@ -1883,7 +1893,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         for (uint256 i; i < monEffectCount; ++i) {
             EffectInstance storage eff = effects[baseSlot + i];
             if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
-            (bool effIsPerm, , uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
+            (bool effIsPerm,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
                 StatBoostLib.unpackBoostData(eff.data);
             if (!effIsPerm) {
                 eff.effect = IEffect(TOMBSTONE_ADDRESS); // temp sources all expire on switch-out
@@ -1978,13 +1988,21 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // so the lazy >0 check stays fresh-safe.
         uint16 stepsUnion = config.playerEffectStepsUnion;
         bool ranPreDamage;
-        if ((stepsUnion & uint16(1 << uint8(EffectStep.PreDamage))) != 0
-            && (playerIndex == 0
-                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0) {
+        if (
+            (stepsUnion & uint16(1 << uint8(EffectStep.PreDamage))) != 0
+                && (playerIndex == 0
+                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
+        ) {
             tempPreDamage = damage;
             _runEffects(
-                battleKeyForWrite, tempRNG, playerIndex, playerIndex, EffectStep.PreDamage, abi.encode(source), type(uint256).max
+                battleKeyForWrite,
+                tempRNG,
+                playerIndex,
+                playerIndex,
+                EffectStep.PreDamage,
+                abi.encode(source),
+                type(uint256).max
             );
             damage = tempPreDamage;
             tempPreDamage = 0;
@@ -2013,10 +2031,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (ranPreDamage) {
             stepsUnion = config.playerEffectStepsUnion;
         }
-        if ((stepsUnion & uint16(1 << uint8(EffectStep.AfterDamage))) != 0
-            && (playerIndex == 0
-                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0) {
+        if (
+            (stepsUnion & uint16(1 << uint8(EffectStep.AfterDamage))) != 0
+                && (playerIndex == 0
+                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
+        ) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
@@ -2142,7 +2162,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint32 volatility,
@@ -2158,7 +2178,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKeyForWrite];
-        uint256 defenderPlayerIndex = 1 - attackerPlayerIndex;
+        // Resolve the target slot to (side, active mon). Slot-1 lanes arrive with the 2v2
+        // turn loop; in singles the engine always passes the opposing slot-0 bit.
+        uint256 defenderPlayerIndex = TargetLib.sideOf(TargetLib.lowestSlot(targetBits));
+        uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex);
         uint256 attackerMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, attackerPlayerIndex);
 
         return _dispatchStandardAttackInternal(
@@ -2191,6 +2214,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      damage when `damage != 0`.
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint256 volatility,
@@ -2204,7 +2228,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKeyForWrite];
-        uint256 defenderPlayerIndex = 1 - attackerPlayerIndex;
+        // Same slot resolution as dispatchStandardAttack (slot-1 lanes arrive with 2v2).
+        uint256 defenderPlayerIndex = TargetLib.sideOf(TargetLib.lowestSlot(targetBits));
         uint256 attackerMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, attackerPlayerIndex);
         uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex);
 
@@ -2292,9 +2317,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData)
-        external
-    {
+    function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external {
         bool isInsideExecute = _turnP0Packed != 0 || _turnP1Packed != 0;
 
         bool isForCurrentBattle = battleKeyForWrite == battleKey;
@@ -2506,7 +2529,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (moveIndex == SWITCH_MOVE_INDEX) {
             // Validate switch target before mutating state. Each gate silently no-ops — an invalid
             // switch leaves the player stuck (same state machine as if they missed the timeout window).
-            uint256 monToSwitchIndex = uint256(move.extraData);
+            uint256 monToSwitchIndex = uint256(move.extraData & EXTRA_DATA_PAYLOAD_MASK);
             uint256 teamSize = (playerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
             if (monToSwitchIndex >= teamSize) {
                 return playerSwitchForTurnFlag;
@@ -2576,9 +2599,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     isValid = moveStamina <= currentStamina;
                     staminaCost = int32(moveStamina);
                 } else {
-                    isValid = config.validator.validateSpecificMoveSelection(
-                        battleKey, moveIndex, playerIndex, move.extraData
-                    );
+                    isValid = config.validator
+                    .validateSpecificMoveSelection(battleKey, moveIndex, playerIndex, move.extraData);
                 }
                 if (!isValid) {
                     return playerSwitchForTurnFlag;
@@ -2590,8 +2612,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 }
                 _deductStamina(currentMonState, staminaCost);
 
-                uint256 defenderMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1 - playerIndex);
-                moveSet.move(self, battleKey, playerIndex, activeMonIndex, defenderMonIndex, move.extraData, tempRNG);
+                moveSet.move(
+                    self,
+                    battleKey,
+                    playerIndex,
+                    activeMonIndex,
+                    TargetLib.impliedSinglesTargetBits(playerIndex),
+                    TargetLib.singlesActives(
+                        _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+                    ),
+                    move.extraData & EXTRA_DATA_PAYLOAD_MASK,
+                    tempRNG
+                );
             }
         }
 
@@ -2761,9 +2793,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return effect.onMonSwitchOut(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.AfterDamage) {
             (int32 damage, uint256 source) = abi.decode(extraEffectsData, (int32, uint256));
-            return effect.onAfterDamage(
-                self, battleKey, rng, data, playerIndex, monIndex, activesPacked, damage, source
-            );
+            return
+                effect.onAfterDamage(self, battleKey, rng, data, playerIndex, monIndex, activesPacked, damage, source);
         } else if (round == EffectStep.PreDamage) {
             uint256 source = abi.decode(extraEffectsData, (uint256));
             return effect.onPreDamage(self, battleKey, rng, data, playerIndex, monIndex, activesPacked, source);
@@ -3006,7 +3037,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 p1ActiveMonIndex
     ) private {
         if (round == EffectStep.RoundEnd) {
-            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) return;
+            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) {
+                return;
+            }
             _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
             _inlineRegenStaminaForMon(config, 1, p1ActiveMonIndex);
         } else if (round == EffectStep.AfterMove) {
@@ -3020,20 +3053,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev Mirrors the storage write that StaminaRegenLogic used to do, then fires
     /// OnUpdateMonState so per-mon listeners (e.g. Dreamcatcher) see the +1 stamina —
     /// matching the external StaminaRegen effect path, which goes through updateMonState.
-    function _inlineRegenStaminaForMon(
-        BattleConfig storage config,
-        uint256 playerIndex,
-        uint256 monIndex
-    ) private {
+    function _inlineRegenStaminaForMon(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
         MonState storage monState = playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
         if (monState.staminaDelta >= 0) return;
         monState.staminaDelta += 1;
         // Union bit first (single OnUpdateMonState listener game-wide) — skips the count SLOAD
         // on the up-to-two regen ticks every round end.
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
-            && (playerIndex == 0
-                    ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                    : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0) {
+        if (
+            (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
+                && (playerIndex == 0
+                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
+                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
+        ) {
             _runEffects(
                 battleKeyForWrite,
                 tempRNG,
@@ -3372,13 +3403,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return result;
     }
 
-    function _getTeamLevels(
-        ITeamRegistry registry,
-        address p0,
-        uint256 p0TeamIndex,
-        address p1,
-        uint256 p1TeamIndex
-    ) internal view returns (TeamLevelInfo memory p0Levels, TeamLevelInfo memory p1Levels) {
+    function _getTeamLevels(ITeamRegistry registry, address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
+        internal
+        view
+        returns (TeamLevelInfo memory p0Levels, TeamLevelInfo memory p1Levels)
+    {
         if (address(registry) == address(0)) {
             uint256[] memory empty = new uint256[](0);
             p0Levels = TeamLevelInfo({monIds: empty, exp: empty, levels: empty});
@@ -3432,7 +3461,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Switch validation
         if (isSwitch) {
-            uint256 monToSwitchIndex = uint256(extraData);
+            uint256 monToSwitchIndex = uint256(extraData & EXTRA_DATA_PAYLOAD_MASK);
             bool isTargetKnockedOut = _getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut;
             return ValidatorLogic.validateSwitch(
                 data.turnId, activeMonIndex, monToSwitchIndex, isTargetKnockedOut, DEFAULT_MONS_PER_TEAM
@@ -3635,7 +3664,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             for (uint256 i; i < len;) {
                 EffectInstance storage e = config.globalEffects[i];
                 if (address(e.effect) == effectAddr) return (true, i, e.data);
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
             return (false, 0, bytes32(0));
         }
@@ -3647,7 +3678,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 slotIndex = baseSlot + i;
             EffectInstance storage e = effects[slotIndex];
             if (address(e.effect) == effectAddr) return (true, slotIndex, e.data);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return (false, 0, bytes32(0));
     }
@@ -3749,12 +3782,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (playerIndex == 0) {
             for (uint256 i; i < size;) {
                 states[i] = config.p0States[i];
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
         } else {
             for (uint256 i; i < size;) {
                 states[i] = config.p1States[i];
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
         }
     }

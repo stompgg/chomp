@@ -2,11 +2,19 @@
 
 pragma solidity ^0.8.0;
 
-import {SWITCH_MOVE_INDEX, SWITCH_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_PRIORITY, DEFAULT_CRIT_RATE, MOVE_INDEX_MASK} from "../../Constants.sol";
+import {
+    DEFAULT_ACCURACY,
+    DEFAULT_CRIT_RATE,
+    DEFAULT_PRIORITY,
+    DEFAULT_VOL,
+    MOVE_INDEX_MASK,
+    SWITCH_MOVE_INDEX,
+    SWITCH_PRIORITY
+} from "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import { MoveDecision, MoveMeta } from "../../Structs.sol";
+import {MoveDecision, MoveMeta} from "../../Structs.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -25,7 +33,11 @@ contract RockPull is IMoveSet {
         return "Rock Pull";
     }
 
-    function _didOtherPlayerChooseSwitch(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) internal view returns (bool) {
+    function _didOtherPlayerChooseSwitch(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
+        internal
+        view
+        returns (bool)
+    {
         // Check MoveDecision for other player
         uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         MoveDecision memory otherPlayerMove = engine.getMoveDecisionForBattleState(battleKey, otherPlayerIndex);
@@ -39,7 +51,8 @@ contract RockPull is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
@@ -50,6 +63,7 @@ contract RockPull is IMoveSet {
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
+                targetBits,
                 OPPONENT_BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
@@ -108,6 +122,7 @@ contract RockPull is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -116,5 +131,4 @@ contract RockPull is IMoveSet {
             basePower: 0
         });
     }
-
 }

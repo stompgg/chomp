@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -23,7 +23,8 @@ contract IronWall is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -75,6 +76,7 @@ contract IronWall is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

@@ -4,11 +4,12 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { EffectInstance, MoveMeta } from "../../Structs.sol";
+import {EffectInstance, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -32,7 +33,11 @@ contract MegaStarBlast is IMoveSet {
         return "Mega Star Blast";
     }
 
-    function _checkForOverclock(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) internal view returns (int32) {
+    function _checkForOverclock(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
+        internal
+        view
+        returns (int32)
+    {
         // Check all global effects to see if Overclock is active and the player index matches
         (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i; i < effects.length; i++) {
@@ -53,10 +58,12 @@ contract MegaStarBlast is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         // Check if Overclock is active
         uint32 acc = BASE_ACCURACY;
         int32 overclockIndex = _checkForOverclock(engine, battleKey, attackerPlayerIndex);
@@ -72,6 +79,7 @@ contract MegaStarBlast is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            targetBits,
             BASE_POWER,
             acc,
             DEFAULT_VOL,
@@ -116,6 +124,7 @@ contract MegaStarBlast is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -124,5 +133,4 @@ contract MegaStarBlast is IMoveSet {
             basePower: 0
         });
     }
-
 }

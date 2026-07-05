@@ -7,8 +7,9 @@ import "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract GraveAffliction is IMoveSet {
     // Both mons lose 1/FRACTION_DENOM of their current HP.
@@ -23,10 +24,12 @@ contract GraveAffliction is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
         // Only fires if the opposing mon currently has a status condition. The StatusEffect base sets
@@ -74,6 +77,7 @@ contract GraveAffliction is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

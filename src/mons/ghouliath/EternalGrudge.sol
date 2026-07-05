@@ -4,9 +4,10 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
+import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract EternalGrudge is IMoveSet {
@@ -22,17 +23,17 @@ contract EternalGrudge is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         // Apply the debuff (50% debuff to both attack and special attack)
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Attack,
-            boostPercent: ATTACK_DEBUFF_PERCENT,
-            boostType: StatBoostType.Divide
+            stat: MonStateIndexName.Attack, boostPercent: ATTACK_DEBUFF_PERCENT, boostType: StatBoostType.Divide
         });
         statBoosts[1] = StatBoostToApply({
             stat: MonStateIndexName.SpecialAttack,
@@ -76,6 +77,7 @@ contract EternalGrudge is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -84,5 +86,4 @@ contract EternalGrudge is IMoveSet {
             basePower: 0
         });
     }
-
 }

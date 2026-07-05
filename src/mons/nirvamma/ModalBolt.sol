@@ -3,11 +3,12 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
+import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {IMoveSetWithRange} from "../../moves/IMoveSetWithRange.sol";
 
@@ -50,7 +51,8 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external {
@@ -88,7 +90,7 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
-            defenderMonIndex,
+            targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -134,6 +136,7 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

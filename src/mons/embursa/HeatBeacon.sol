@@ -6,10 +6,11 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract HeatBeacon is IMoveSet {
     IEffect immutable BURN_STATUS;
@@ -27,10 +28,12 @@ contract HeatBeacon is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         // Apply burn to opposing mon
         uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
@@ -70,6 +73,7 @@ contract HeatBeacon is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -78,5 +82,4 @@ contract HeatBeacon is IMoveSet {
             basePower: 0
         });
     }
-
 }

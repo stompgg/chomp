@@ -7,10 +7,10 @@ import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract SelfSwitchAndDamageMove is IMoveSet {
-
     int32 immutable DAMAGE;
 
     constructor(int32 power) {
@@ -21,7 +21,17 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         return "Self Switch And Damage Move";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16 extraData, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 monToSwitchIndex = uint256(extraData);
 
         // Deal damage first to opponent
@@ -62,6 +72,7 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -70,5 +81,4 @@ contract SelfSwitchAndDamageMove is IMoveSet {
             basePower: 0
         });
     }
-
 }

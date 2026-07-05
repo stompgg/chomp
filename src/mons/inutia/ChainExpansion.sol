@@ -33,9 +33,16 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         return keccak256(abi.encode(playerIndex, monIndex, name()));
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256)
-        external
-    {
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
         // Check if the ability is already applied globally
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 2);
         for (uint256 i = 0; i < effects.length; i++) {
@@ -144,6 +151,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

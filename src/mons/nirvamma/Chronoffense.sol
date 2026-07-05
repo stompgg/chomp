@@ -3,11 +3,12 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type} from "../../Enums.sol";
+import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract Chronoffense is IMoveSet {
@@ -28,7 +29,8 @@ contract Chronoffense is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
@@ -43,14 +45,10 @@ contract Chronoffense is IMoveSet {
             // Buff SpDef by 25%
             StatBoostToApply[] memory boosts = new StatBoostToApply[](2);
             boosts[0] = StatBoostToApply({
-                stat: MonStateIndexName.SpecialDefense,
-                boostPercent: BOOST_PERCENT,
-                boostType: StatBoostType.Multiply
+                stat: MonStateIndexName.SpecialDefense, boostPercent: BOOST_PERCENT, boostType: StatBoostType.Multiply
             });
             boosts[1] = StatBoostToApply({
-                stat: MonStateIndexName.Defense,
-                boostPercent: BOOST_PERCENT,
-                boostType: StatBoostType.Multiply
+                stat: MonStateIndexName.Defense, boostPercent: BOOST_PERCENT, boostType: StatBoostType.Multiply
             });
             engine.addStatBoost(attackerPlayerIndex, attackerMonIndex, boosts, StatBoostFlag.Temp);
             return;
@@ -64,7 +62,7 @@ contract Chronoffense is IMoveSet {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
-            defenderMonIndex,
+            targetBits,
             uint32(bp),
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -106,6 +104,7 @@ contract Chronoffense is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

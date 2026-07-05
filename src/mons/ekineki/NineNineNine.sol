@@ -6,8 +6,8 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract NineNineNine is IMoveSet {
@@ -17,7 +17,16 @@ contract NineNineNine is IMoveSet {
         return "Nine Nine Nine";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
         // Set crit boost for the next turn
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
         uint64 key = NineNineNineLib._getKey(attackerPlayerIndex);
@@ -50,6 +59,7 @@ contract NineNineNine is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),

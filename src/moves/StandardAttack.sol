@@ -49,11 +49,12 @@ contract StandardAttack is IMoveSet, Ownable {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256,
         uint16,
         uint256 rng
     ) public virtual {
-        _move(engine, battleKey, attackerPlayerIndex, defenderMonIndex, rng);
+        _move(engine, battleKey, attackerPlayerIndex, targetBits, rng);
     }
 
     /// @dev Routes through engine.dispatchStandardAttack which collapses the previous three
@@ -62,14 +63,14 @@ contract StandardAttack is IMoveSet, Ownable {
     ///      production deploys TYPE_CALCULATOR as TypeCalculator (a thin wrapper around
     ///      TypeCalcLib), so the chart is the same. The injected TYPE_CALCULATOR is no
     ///      longer consulted on the attack path — only the engine's internal chart.
-    function _move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderMonIndex, uint256 rng)
+    function _move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 targetBits, uint256 rng)
         internal
         virtual
         returns (int32 damage, bytes32 eventType)
     {
         return engine.dispatchStandardAttack(
             attackerPlayerIndex,
-            defenderMonIndex,
+            targetBits,
             basePower(battleKey),
             accuracy(battleKey),
             volatility(battleKey),
@@ -150,6 +151,10 @@ contract StandardAttack is IMoveSet, Ownable {
         return ExtraDataType.None;
     }
 
+    function targetSpec() public pure virtual returns (TargetSpec) {
+        return TargetSpec.AnyOtherSlot;
+    }
+
     function name() external view virtual returns (string memory) {
         return _name;
     }
@@ -168,6 +173,7 @@ contract StandardAttack is IMoveSet, Ownable {
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
+            targetSpec: targetSpec(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: basePower(battleKey)

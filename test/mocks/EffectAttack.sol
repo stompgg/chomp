@@ -8,6 +8,7 @@ import "../../src/Structs.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract EffectAttack is IMoveSet {
@@ -33,7 +34,17 @@ contract EffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
         engine.addEffect(targetIndex, defenderMonIndex, EFFECT, bytes32(0));
     }
@@ -68,6 +79,7 @@ contract EffectAttack is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             extraDataType: extraDataType(),
@@ -76,5 +88,4 @@ contract EffectAttack is IMoveSet {
             basePower: 0
         });
     }
-
 }
