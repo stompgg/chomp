@@ -54,17 +54,20 @@ transpiler/
 
 ## Correctness gates
 
-- `cargo test` in `rs-output` runs ~3,900 golden vectors:
-  - **TS-oracle suites** (`scripts/generate_rust_vectors.ts`): the TS
-    transpiled libs are bit-exact *within game domains*; sweeps stay inside
-    them (full 15×15 type matrix, fuzzed damage cores, pack/unpack
-    round-trips, the merge-aliasing probe, keccak/abi paths, constants).
-  - **Spec suites** (`scripts/generate_spec_vectors.py`): JS bigints neither
-    trap nor wrap, so checked-arith reverts, enum-range panics, and
-    mod-2²⁵⁶ wrap paths are encoded directly in Python (arbitrary precision
-    + masking = exact EVM arithmetic). When forge is available, these become
-    Foundry-derived vectors per the plan's oracle hierarchy.
-- `chomp-rt` unit tests pin ABI/keccak/shift/pow semantics standalone.
+All gates run the two stacks LIVE against each other (no recorded
+fixtures — the fixture-based golden-vector and battle-replay layers were
+retired when the project shifted to prototyping; they live in git
+history if bit-level parity ever needs re-proving):
+
+- `bun transpiler/scripts/arena_rust_lockstep.ts` — drive mode: TS
+  strategies over both engines, move-for-move equality.
+- `bun transpiler/scripts/strategy_lockstep.ts` — batch mode: native
+  strategies must re-derive the TS strategies' moves turn-by-turn on
+  identical seeds, plus outcome equality.
+- `bun transpiler/scripts/batch_benchmark.ts` — mass outcome
+  cross-check on the shared multi-thousand-game workload + games/s.
+- `chomp-rt` / `chomp-strategies` unit tests pin ABI/keccak/shift/pow
+  and the mulberry32 golden stream standalone (`cargo test`).
 - `python3 -m unittest transpiler.test_transpiler` — TS target unaffected.
 
 ## Known, deliberate divergences (watched by the gates)
@@ -92,8 +95,8 @@ transpiler/
   IMoveSet traits, all bit-identical over the fixture corpus.
 - **Phases 2–4 (done):** Engine core (world/storage model, turn loop, Yul
   hand-ports), inheritance flattening, effects + full 13-mon roster,
-  ContractId dispatch tables — gated by battle-replay lockstep fixtures
-  (158 recorded turns) and the full-roster arena drive.
+  ContractId dispatch tables — gated at the time by battle-replay
+  lockstep fixtures (since retired) and the full-roster arena drive.
 - **Phase 5 (done):** `chomp-ffi` cdylib (handle-based battle API, rich
   getter-backed state, native forward-model forks) + the arena
   `--engine rust` drive mode; 27-game move-for-move lockstep gate.

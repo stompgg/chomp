@@ -40,8 +40,8 @@ use chomp_rt::{Address, B256, U256};
 use chomp_strategies::game::{run_games, GameSpec, StrategyKind};
 use chomp_strategies::sim::{HypoMove, Sim};
 
-/// ABI/version probe: returns (major << 16 | minor). bun:ffi smoke tests
-/// call this to prove symbol resolution + calling convention.
+/// ABI/version probe: returns (major << 16 | minor). rust-engine.ts
+/// asserts this at dlopen so exported-signature drift fails at load time.
 #[no_mangle]
 pub extern "C" fn chomp_ffi_version() -> u32 {
     (0u32 << 16) | 3u32
