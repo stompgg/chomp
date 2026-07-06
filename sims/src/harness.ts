@@ -169,14 +169,7 @@ export interface StartedBattle {
   p1Team: Structs.Mon[];
 }
 
-export interface StartBattleOptions {
-  /** Zero address selects the engine's INLINE rng path
-   * (keccak256(p0Salt, p1Salt)) — no oracle call at all. Default keeps the
-   * container's IRandomnessOracle, which computes the same value. */
-  zeroRngOracle?: boolean;
-}
-
-export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[], opts: StartBattleOptions = {}): StartedBattle {
+export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): StartedBattle {
   const { engine, teamRegistry, matchmaker } = ctx;
   const p0Idx = teamRegistry.registerTeam(P0_ADDR, p0Team);
   const p1Idx = teamRegistry.registerTeam(P1_ADDR, p1Team);
@@ -186,9 +179,7 @@ export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Stru
   (engine as any).__mutateIsMatchmakerFor(P1_ADDR, matchmaker._contractAddress, true);
 
   const validator = { _contractAddress: '0x0000000000000000000000000000000000000000' } as any; // inline validator path
-  const rngOracle = opts.zeroRngOracle
-    ? ({ _contractAddress: '0x0000000000000000000000000000000000000000' } as any)
-    : ctx.container.resolve<any>('IRandomnessOracle');
+  const rngOracle = ctx.container.resolve<any>('IRandomnessOracle');
   const ruleset = { _contractAddress: INLINE_STAMINA_REGEN_RULESET } as any;
   const battle: Structs.Battle = {
     p0: P0_ADDR,
