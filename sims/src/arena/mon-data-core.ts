@@ -10,7 +10,7 @@ import { getCpuStrategy } from '../cpu';
 import { MonMetadata } from '../cpu/mon-meta';
 import { activeMonIndices } from '../cpu/engine-view';
 import { makeRng } from './rng';
-import { playGame, type EngineKind } from './game';
+import { playGame } from './game';
 import { draftMoveSelection, type DraftedMon } from './team';
 
 export interface MonRec {
@@ -53,7 +53,7 @@ export function newShardResult(): ShardResult {
 }
 
 /** Run one (strategy, seed) unit — the two seat-swapped games — tallying into `res`. */
-export function runPair(stratKey: string, seed: number, maxTurns: number, res: ShardResult, engine: EngineKind = 'ts'): void {
+export function runPair(stratKey: string, seed: number, maxTurns: number, res: ShardResult): void {
   const s = getCpuStrategy(stratKey);
   if (!s) throw new Error(`unknown strategy "${stratKey}"`);
   const rec = res.rec;
@@ -86,7 +86,7 @@ export function runPair(stratKey: string, seed: number, maxTurns: number, res: S
       if (info.p0Move && info.p0Move.moveIndex < 4) tally(t[0][a0], info.p0Move.moveIndex);
       if (info.p1Move && info.p1Move.moveIndex < 4) tally(t[1][a1], info.p1Move.moveIndex);
     };
-    const out = playGame(s, s, t, seed, maxTurns, hook, engine);
+    const out = playGame(s, s, t, seed, maxTurns, hook);
     res.totalGames++;
     if ('error' in out) { res.errors++; continue; }
     const drew = out.winnerSeat === null;
@@ -106,9 +106,9 @@ export function runPair(stratKey: string, seed: number, maxTurns: number, res: S
 }
 
 /** Run a list of work units into a fresh result (the unit of work a worker processes). */
-export function runItems(items: WorkItem[], maxTurns: number, engine: EngineKind = 'ts'): ShardResult {
+export function runItems(items: WorkItem[], maxTurns: number): ShardResult {
   const res = newShardResult();
-  for (const it of items) runPair(it.strat, it.seed, maxTurns, res, engine);
+  for (const it of items) runPair(it.strat, it.seed, maxTurns, res);
   return res;
 }
 

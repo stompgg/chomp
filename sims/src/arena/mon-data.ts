@@ -43,9 +43,6 @@ if (strategies.includes('override') && !prediction) {
   process.exit(1);
 }
 
-const engine = argVal('--engine', 'ts') as 'ts' | 'rust';
-if (engine !== 'ts' && engine !== 'rust') throw new Error(`--engine must be ts or rust, got "${engine}"`);
-
 // Validate strategies up front so a bad key fails fast (not inside a worker).
 for (const strat of strategies) {
   if (!getCpuStrategy(strat)) throw new Error(`unknown strategy "${strat}"`);
@@ -70,7 +67,7 @@ async function runParallel(nw: number): Promise<ShardResult> {
     const w = new Worker(new URL('./mon-data-worker.ts', import.meta.url).href, { type: 'module' });
     w.onmessage = (e: MessageEvent) => { resolve(e.data as ShardResult); w.terminate(); };
     w.onerror = (err) => { w.terminate(); reject(err); };
-    w.postMessage({ items: sd, maxTurns, engine });
+    w.postMessage({ items: sd, maxTurns });
   })));
   const agg = newShardResult();
   for (const p of partials) mergeInto(agg, p);
@@ -78,7 +75,7 @@ async function runParallel(nw: number): Promise<ShardResult> {
 }
 
 const nw = Math.min(workers, items.length);
-const res = nw <= 1 ? runItems(items, maxTurns, engine) : await runParallel(nw);
+const res = nw <= 1 ? runItems(items, maxTurns) : await runParallel(nw);
 const { rec, totalGames, errors } = res;
 
 const ids: number[] = Object.keys(MonMetadata).map(Number);

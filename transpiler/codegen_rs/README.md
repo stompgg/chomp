@@ -29,9 +29,8 @@ transpiler/
   runtime-rs/            hand-written chomp-rt crate (source of truth; synced to rs-output/runtime)
   ffi-rs/                bun:ffi cdylib (handle battle API + chomp_run_games batch runner)
   strategies-rs/         native CPU strategies + game loop (hard, greedy, override)
-  scripts/arena_rust_lockstep.ts     drive-mode gate (TS strategies over both engines)
-  scripts/strategy_lockstep.ts       batch-mode gate (per-turn move equality vs TS)
-  scripts/batch_benchmark.ts         mass outcome cross-check + games/s
+  scripts/batch_benchmark.ts         whole-game batches on the native stack, games/s
+  scripts/workload.ts                shared deterministic workload generation
   rs-output/             GENERATED cargo workspace (gitignored, like ts-output)
 ```
 
@@ -52,20 +51,18 @@ transpiler/
 | runtime-computed constants (`sha256(abi.encode("…"))`) | `LazyLock` statics — derivation stays in code |
 | mappings (struct fields) | `rt::Mapping` (HashMap with Solidity zero-default reads) |
 
-## Correctness gates
+## Verification status
 
-All gates run the two stacks LIVE against each other (no recorded
-fixtures — the fixture-based golden-vector and battle-replay layers were
-retired when the project shifted to prototyping; they live in git
-history if bit-level parity ever needs re-proving):
+The Rust stack was brought up under strict verification — per-function
+golden vectors, recorded battle-replay fixtures, a drive-mode adapter
+(TS strategies playing on the Rust engine), and live lockstep gates
+proving move-for-move equality on thousands of games — and then
+DECOUPLED once trusted: all of that machinery is retired (git history
+has it), and the Rust side may now diverge freely as the prototyping
+substrate. What still runs:
 
-- `bun transpiler/scripts/arena_rust_lockstep.ts` — drive mode: TS
-  strategies over both engines, move-for-move equality.
-- `bun transpiler/scripts/strategy_lockstep.ts` — batch mode: native
-  strategies must re-derive the TS strategies' moves turn-by-turn on
-  identical seeds, plus outcome equality.
-- `bun transpiler/scripts/batch_benchmark.ts` — mass outcome
-  cross-check on the shared multi-thousand-game workload + games/s.
+- `bun transpiler/scripts/batch_benchmark.ts` — whole-game batches on
+  the native stack, games/s + turns/s.
 - `chomp-rt` / `chomp-strategies` unit tests pin ABI/keccak/shift/pow
   and the mulberry32 golden stream standalone (`cargo test`).
 - `python3 -m unittest transpiler.test_transpiler` — TS target unaffected.
@@ -97,25 +94,29 @@ history if bit-level parity ever needs re-proving):
   hand-ports), inheritance flattening, effects + full 13-mon roster,
   ContractId dispatch tables — gated at the time by battle-replay
   lockstep fixtures (since retired) and the full-roster arena drive.
-- **Phase 5 (done):** `chomp-ffi` cdylib (handle-based battle API, rich
-  getter-backed state, native forward-model forks) + the arena
-  `--engine rust` drive mode; 27-game move-for-move lockstep gate.
-- **Phase 6 (batch mode):** native strategy port in
-  `transpiler/strategies-rs` (crate `chomp-strategies`): hard + greedy
-  CPUs, engine-view/battle-view readers, evaluator, forward-model probes,
-  the game loop with `Seat` transposition (the Rust equivalent of the TS
-  `transposeEngine` proxy), and a threaded `run_games` batch runner
-  exposed as `chomp_run_games` — one FFI crossing per BATCH. Duck-typed
-  `basePower`/`accuracy` probes ride the generated `try_*` dispatchers
-  (`duckDispatchMethods` in `transpiler-config-rust.json`). Gates (green):
-  `bun transpiler/scripts/strategy_lockstep.ts` — the native strategies
-  re-derive the TS strategies' moves turn-for-turn on identical seeds
-  (200 games, every submission identical) — and
-  `bun transpiler/scripts/batch_benchmark.ts` — 2,000 games
-  outcome-identical to the TS engine + TS strategies reference.
-  Measured on the shared 3,000-game workload (4-core box): TS arena
-  ~0.7 games/s (long-run; ~5.5 fresh-process), Rust drive mode ~13,
-  Rust batch 274 (1 thread) / 1,062 (4 threads) after the perf pass
-  (per-decision fork memo + FxHash storage maps; fat LTO tested neutral
-  and -C target-cpu=native tested ~25% slower on the virtualized box —
-  both deliberately not used).
+- **Phase 5 (done):** `chomp-ffi` cdylib + the arena `--engine rust`
+  drive mode (TS strategies over the Rust engine), verified by a
+  27-game move-for-move lockstep gate. The drive mode and its handle
+  API were retired at decoupling; batch mode superseded them.
+- **Phase 6 (batch mode, done):** native strategy port in
+  `transpiler/strategies-rs` (crate `chomp-strategies`): hard, greedy
+  and override CPUs, engine-view/battle-view readers, evaluator,
+  forward-model probes, the game loop with `Seat` transposition, and a
+  threaded `run_games` batch runner exposed as `chomp_run_games` — one
+  FFI crossing per BATCH. Duck-typed `basePower`/`accuracy` probes ride
+  the generated `try_*` dispatchers (`duckDispatchMethods` in
+  `transpiler-config-rust.json`). Verified before decoupling: every
+  turn's submissions identical to the TS strategies across hundreds of
+  games, and 3,000 games outcome-identical. Measured on the 3,000-game
+  workload (4-core box): TS arena ~0.7 games/s (long-run; ~5.5
+  fresh-process), Rust batch ~230–330 (1 thread) / ~880–1,270
+  (4 threads) after the perf pass — the shared VM's throughput swings
+  ~40% between runs on identical code, so compare knobs within one
+  session only (per-decision fork memo + FxHash storage maps kept;
+  fat LTO tested neutral and -C target-cpu=native tested ~25% slower
+  on the virtualized box — both deliberately not used).
+- **Decoupling (current state):** the stacks are separate. bun feeds
+  `chomp_run_games` a batch config (teams from the CSVs + the TS
+  container's address book) — that is the only remaining seam. The Rust
+  side may diverge from TS freely; port-backs to the game's CPU mode
+  carry no bit-identicality requirement.

@@ -493,20 +493,24 @@ backend (`codegen_rs/`, native ints instead of bigint — see
 ```bash
 python3 -m transpiler src/ --target rust     # emit transpiler/rs-output (cargo workspace)
 cd transpiler/rs-output && cargo build --release   # engine + chomp_ffi cdylib + strategies
-# Correctness gates (live TS-vs-Rust, no recorded fixtures):
-bun transpiler/scripts/arena_rust_lockstep.ts      # drive mode: 27 games move-for-move
-bun transpiler/scripts/strategy_lockstep.ts        # batch mode: per-turn move equality
-bun transpiler/scripts/batch_benchmark.ts          # mass outcome cross-check + games/s
+bun transpiler/scripts/batch_benchmark.ts          # whole-game batches, games/s
 ```
 
 The full engine, all mons/effects, and the three CPU strategies (hard,
 greedy, override) are transpiled/ported; batch mode runs whole games
-natively (~275 games/s single-thread, ~1,060 at 4 threads on a 4-core
-box). Emission is allowlisted in `transpiler-config-rust.json`.
-`rs-output/` is regenerated (gitignored); hand-written crates live in
-`transpiler/{runtime-rs,ffi-rs,strategies-rs}`. The retired per-function
-golden-vector suites (TS-oracle/spec fixtures + `differential-rs`) live
-in git history if bit-level lib parity ever needs re-proving.
+natively (~230–330 games/s single-thread, ~880–1,270 at 4 threads on a
+4-core box whose throughput varies run-to-run) behind ONE seam: bun
+serializes teams + the address book into
+`chomp_run_games`. The stacks are DECOUPLED — the Rust side was ported
+move-for-move against TS and then cut loose; it may diverge freely as
+the prototyping substrate, and port-backs to the TS game carry no
+bit-identicality requirement. Emission is allowlisted in
+`transpiler-config-rust.json`. `rs-output/` is regenerated (gitignored);
+hand-written crates live in `transpiler/{runtime-rs,ffi-rs,strategies-rs}`.
+The verification-era machinery (golden-vector suites, battle-replay
+fixtures, the drive-mode adapter that let TS strategies play on the Rust
+engine, and the lockstep gates) lives in git history if parity ever
+needs re-proving.
 
 **Known limitation — TODO when a second codebase needs it.** The transpiler hardcodes three TS namespace names (`Enums`, `Structs`, `Constants`) for type-only Solidity files. File-type detection is content-based (a file with only enums maps to the `Enums` namespace regardless of filename), but the *namespace name itself* is fixed, and only structs are tracked per source path. A codebase that splits types across multiple files (e.g. `PoolStructs.sol` + `OrderStructs.sol`, or `Errors.sol`) would produce colliding imports. To generalize: add `enum_paths` / `constant_paths` to `transpiler/type_system/registry.py` mirroring `struct_paths`, derive the namespace name from each source file's basename, and have `imports.py:_generate_module_imports` emit one `import * as <Basename>` per actually-referenced source module instead of three blanket imports.
 

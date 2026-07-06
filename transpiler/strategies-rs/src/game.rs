@@ -29,8 +29,8 @@ pub enum StrategyKind {
 
 impl StrategyKind {
     /// Names are a contract with the TS registry (`sims/src/cpu/registry.ts`)
-    /// and the pair lists in `strategy_lockstep.ts` / `batch_benchmark.ts` —
-    /// keep all four in sync when adding a strategy.
+    /// and `workload.ts`'s STRAT_PAIRS — keep them in sync when adding a
+    /// strategy.
     pub fn parse(name: &str) -> Option<StrategyKind> {
         match name {
             "hard" => Some(StrategyKind::Hard),
@@ -62,7 +62,7 @@ pub struct GameOutcome {
     /// 0 / 1, or None for a turn-cap draw (stalemate).
     pub winner_seat: Option<u8>,
     pub turns: u32,
-    /// Per-turn submissions when tracing (the lockstep gate's compare key).
+    /// Per-turn submissions when tracing.
     pub trace: Vec<TurnTrace>,
 }
 

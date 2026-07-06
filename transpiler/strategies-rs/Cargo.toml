@@ -2,9 +2,9 @@
 # override) plus the game/decide loop, driving the transpiled engine
 # in-process (batch mode — one FFI crossing per BATCH instead of per read).
 #
-# The verification bar is the same as every transpiler phase: on identical
-# seeds/teams these strategies must re-derive, turn by turn, the exact moves
-# the TS strategies pick (see transpiler/scripts/strategy_lockstep.ts).
+# Ported move-for-move against the TS strategies (verified by the retired
+# lockstep gates); the stacks are now decoupled — future Rust changes need
+# not preserve bit-identicality.
 [package]
 name = "chomp-strategies"
 version = "0.1.0"

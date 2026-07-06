@@ -185,13 +185,6 @@ impl Sim {
         )
     }
 
-    /// `getGlobalKV` at a fresh-tx boundary (works on fork keys too).
-    /// FFI-only surface: the transpiled getter deep-clones the whole KV map
-    /// per call — do NOT reach for this from per-fork strategy code.
-    pub fn global_kv(&mut self, bk: B256, key: u64) -> U256 {
-        self.world.reset_transient();
-        Engine::getGlobalKV(&mut self.world, bk, key)
-    }
 
     /// Execute one real turn (both submissions), like the TS harness's
     /// `executeTurn`: fresh-tx boundary, +1s block time, moveManager sender.

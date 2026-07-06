@@ -192,10 +192,6 @@ export function forkBattle(e: any, bk: string): Hex {
  * is scored, or the fork maps grow without bound across a session.
  */
 export function disposeFork(e: any, forkKey: string): void {
-  if (typeof e.__disposeFork === 'function') {
-    e.__disposeFork(forkKey);
-    return;
-  }
   const eng = e as any;
   delete eng.battleData[forkKey];
   delete eng.battleConfig[forkKey];
@@ -239,13 +235,6 @@ export function applyHypotheticalMove(
   p0: HypotheticalMove | null,
   p1: HypotheticalMove | null,
 ): BattleView {
-  // Rust-engine adapter: the fork + silent turn run natively; the returned
-  // fork key reads through `e` (transposed or not) like any battle key, so
-  // the view capture below stays the single source of view shape.
-  if (typeof e.__runHypotheticalFork === 'function') {
-    const forkKey = e.__runHypotheticalFork(p0, p1);
-    return captureBattleView(e, forkKey);
-  }
   const eng = e as any;
   const forkKey = forkBattle(eng, bk);
   const config = eng.battleConfig[forkKey];

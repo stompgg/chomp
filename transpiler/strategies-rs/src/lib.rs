@@ -1,16 +1,15 @@
 //! Native CPU strategies + game loop over the transpiled engine.
 //!
 //! Rust port of the arena decision stack (`sims/src/cpu/*` + the
-//! `sims/src/arena/game.ts` loop), 1:1 with the TS reference: every
-//! branch, threshold, float operation and RNG draw happens in the same
-//! order, so identical (seed, teams, strategies) produce identical games.
-//! All three arena strategies — `hard`, `greedy`, `override` — are
-//! ported; TS-only helpers they never call are deliberately absent.
+//! `sims/src/arena/game.ts` loop). All three arena strategies — `hard`,
+//! `greedy`, `override` — were ported 1:1 against the TS reference and
+//! verified move-for-move by the (since retired) lockstep gates; the
+//! JS-exact rng/float mirroring in here is frozen heritage from that
+//! era, not an ongoing constraint.
 //!
-//! The two stacks are peers: Rust is the fast experimentation substrate
-//! and may run ahead while testing strategy changes, but anything that
-//! ships to the game's CPU mode must be ported back to TS — the
-//! `strategy_lockstep` gate defines the sync point between them.
+//! The stacks are decoupled: Rust is the fast experimentation substrate
+//! and may diverge freely; anything shipping to the game's CPU mode is
+//! ported back to TS on its own terms (no bit-for-bit requirement).
 //!
 //! Seat convention: strategies are written as if the CPU is p1 and the
 //! opponent p0 (inherited from the on-chain CPUs). The p0 seat plays

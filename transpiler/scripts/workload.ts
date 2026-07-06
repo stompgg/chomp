@@ -1,12 +1,11 @@
-// Shared deterministic workload generation for the arena gate/benchmark
-// scripts. batch_benchmark cross-checks per-game against a previously
-// recorded arena_benchmark run, so the xorshift stream, draw order, pair
-// rotation, and seed base MUST stay bit-identical across scripts — hence
-// ONE copy of all of it.
+// Shared deterministic workload generation for the arena benchmark /
+// comparison scripts: one copy of the xorshift stream, draw order, pair
+// rotation, and seat mapping so every consumer sees the same games for a
+// given (seed, seedBase).
 
 import { TEAM_SIZE } from '../../sims/src/cpu/constants';
 import { buildTeamMon, type DraftedMon } from '../../sims/src/arena/team';
-import { monToJson } from '../../sims/src/arena/rust-engine';
+import { monToJson } from '../../sims/src/arena/rust-ffi';
 
 export const NUM_MONS = 13;
 

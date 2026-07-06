@@ -1,8 +1,7 @@
-# chomp-ffi: cdylib boundary for bun:ffi consumers.
-# Two surfaces: the handle-based per-battle API (arena drive mode — one
-# crossing per engine read batch) and chomp_run_games (batch mode — whole
-# games run natively, one crossing per batch). Harness semantics live in
-# chomp-strategies::sim; this crate is parsing + JSON only.
+# chomp-ffi: cdylib boundary for bun:ffi consumers — batch mode only.
+# chomp_run_games plays whole games natively (one crossing per batch).
+# Harness semantics live in chomp-strategies::sim; this crate is parsing
+# + JSON only.
 [package]
 name = "chomp-ffi"
 version = "0.1.0"
