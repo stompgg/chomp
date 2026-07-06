@@ -63,7 +63,7 @@ contract Interweaving is IAbility, BasicEffect {
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Mirror-slot ruling: the debuff lands opposite Inutia's own slot.
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 oppSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        uint256 oppSlot = TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         if (oppSlot == NO_SLOT) {
             return (extraData, false);
         }

@@ -46,10 +46,9 @@ abstract contract BatchHelper is SignedCommitHelper {
         );
     }
 
-    /// @notice Build a single-sig `TurnSubmission` whose revealer signature targets the Engine's
-    ///         built-in dual-signed domain (for BUILTIN_DUAL_SIGNED_MANAGER battles).
-    /// @dev Picks committer/revealer from the side wire words by turnId parity and signs with
-    ///      the revealer's key.
+    /// @notice Build a dual-signed SLOT turn submission for the Engine's built-in domain:
+    ///         committer/revealer picked from the side wire words by turnId parity, signed
+    ///         with the revealer's key.
     function _buildSlotTurnSubmissionForEngine(
         address engineAddr,
         bytes32 battleKey,

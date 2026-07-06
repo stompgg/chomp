@@ -16,6 +16,7 @@ import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 
 import {IEngine} from "../src/IEngine.sol";
 
+import {defaultBattle, sideWord, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {OrderRecorderAbility} from "./mocks/OrderRecorderAbility.sol";
 import {StatBoostsMove} from "./mocks/StatBoostsMove.sol";
@@ -73,8 +74,7 @@ contract FastAllySpeedBoost is IMoveSet {
     }
 }
 
-/// @notice Doubles (2-slot) engine core: dynamic scheduler, per-action KO continuation, fizzle,
-///         forced-switch masks, exhausted slots, bench collisions, per-slot regen. Mocks only.
+/// @notice Doubles engine core: scheduler, fizzle, forced switches, per-slot regen.
 contract DoublesEngineTest is Test {
     address constant ALICE = address(0x1);
     address constant BOB = address(0x2);
@@ -129,10 +129,6 @@ contract DoublesEngineTest is Test {
         engine.updateMatchmakers(toAdd, toRemove);
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
     function _mkMon(uint32 hp, uint32 speed, IMoveSet move0) internal view returns (Mon memory mon) {
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(move0)));
@@ -157,37 +153,16 @@ contract DoublesEngineTest is Test {
     function _startDoubles(Mon[] memory aTeam, Mon[] memory bTeam, address ruleset) internal {
         registry.setTeam(ALICE, aTeam);
         registry.setTeam(BOB, bTeam);
-        Battle memory battle = Battle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p1: BOB,
-            p1TeamIndex: 0,
-            p2: address(0),
-            p2TeamIndex: 0,
-            p3: address(0),
-            p3TeamIndex: 0,
-            teamRegistry: registry,
-            rngOracle: IRandomnessOracle(address(0)),
-            ruleset: IRuleset(ruleset),
-            moveManager: address(this),
-            matchmaker: IMatchmaker(address(this)),
-            engineHooks: new IEngineHook[](0)
-        });
+        Battle memory battle = defaultBattle(ALICE, BOB, registry, address(this), IMatchmaker(address(this)));
+        battle.ruleset = IRuleset(ruleset);
         (battleKey,) = engine.computeBattleKey(ALICE, BOB);
         engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
         // Game over in the same block as start reverts; every test may finish the battle.
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
-    /// @dev Wire word per side: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
     function _side(uint8 m0, uint16 e0, uint8 m1, uint16 e1) internal pure returns (uint256) {
-        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32)
-            | (uint256(uint104(0xABCDEF)) << 48);
-    }
-
-    /// @dev extraData for a targeted attack: target nibble (bit per absolute slot) + payload.
-    function _target(uint256 absSlot) internal pure returns (uint16) {
-        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
+        return sideWord(m0, e0, m1, e1, uint104(0xABCDEF));
     }
 
     function _turn0(uint16 a0Lead, uint16 a1Lead, uint16 b0Lead, uint16 b1Lead) internal {
@@ -273,7 +248,7 @@ contract DoublesEngineTest is Test {
         _startDoubles(aTeam, bTeam, address(0));
         // A submits attacks on turn 0 — engine coerces both lanes to legal send-ins.
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1)
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B0)), _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1)
         );
         uint256[4] memory slots = engine.getActiveSlots(battleKey);
         assertTrue(slots[0] != EMPTY_ACTIVE_LANE && slots[1] != EMPTY_ACTIVE_LANE, "A lanes filled");
@@ -289,7 +264,7 @@ contract DoublesEngineTest is Test {
 
         // Everyone attacks A0/B0 weakly; B1 uses the priority attack -> acts first.
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B0)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         uint256[2][] memory expected = new uint256[2][](4);
         expected[0] = _pair(1, 1); // B1 (priority)
@@ -315,7 +290,7 @@ contract DoublesEngineTest is Test {
         // re-evaluated order then puts A1 behind B0 (20) but ahead of B1 (10).
         // Locked-at-turn-start ordering would have run A1 last (D1).
         engine.executeWithSlotMoves(
-            battleKey, _side(0, uint16(1), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, uint16(1), 0, targetBits(B0)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         uint256[2][] memory expected = new uint256[2][](4);
         expected[0] = _pair(0, 0); // A0 boosts A1 (priority)
@@ -338,7 +313,7 @@ contract DoublesEngineTest is Test {
         recorder.clear();
 
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B1)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
 
         // A0 kills B0; A1 and B1 still act (D1/D7); B0's action is simply lost.
@@ -362,7 +337,7 @@ contract DoublesEngineTest is Test {
 
         // Both A slots target B0; A0 kills it, A1's attack fizzles (D2) but the stamina is spent.
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B0)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Stamina), -2, "A1 stamina spent");
         // B0 took exactly A0's 100 (the fizzled hit added nothing).
@@ -376,7 +351,7 @@ contract DoublesEngineTest is Test {
 
         // A0 punches its ally A1 (D4).
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(A1), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(0, targetBits(A1), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -10, "ally took the hit");
     }
@@ -392,7 +367,7 @@ contract DoublesEngineTest is Test {
         _startDoubles(aTeam, bTeam, address(0));
         _turn0(0, 1, 0, 1);
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B1)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(engine.getBattleContext(battleKey).playerSwitchForTurnFlag, uint8(0x80 | (1 << B0)));
         recorder.clear();
@@ -414,7 +389,7 @@ contract DoublesEngineTest is Test {
         _turn0(0, 1, 0, 1);
 
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B1)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(
             engine.getBattleContext(battleKey).playerSwitchForTurnFlag,
@@ -437,14 +412,14 @@ contract DoublesEngineTest is Test {
 
         // A0 kills B0. No replacement exists -> no mask; the slot is exhausted (D6).
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), NO_OP_MOVE_INDEX, 0), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), NO_OP_MOVE_INDEX, 0), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(engine.getBattleContext(battleKey).playerSwitchForTurnFlag, 2, "no switch turn: exhausted");
         recorder.clear();
 
         // Next full turn: B0's lane carries NO_OP filler; only three actors run.
         engine.executeWithSlotMoves(
-            battleKey, _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, 0, _target(A0))
+            battleKey, _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, 0, targetBits(A0))
         );
         uint256 afterMoves;
         for (uint256 i; i < recorder.count(); ++i) {
@@ -492,7 +467,7 @@ contract DoublesEngineTest is Test {
 
         // Turn 1: everyone attacks (cost 2), round-end regen +1 -> all at -1.
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B0)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Stamina), -1);
@@ -500,7 +475,7 @@ contract DoublesEngineTest is Test {
         // Turn 2: A0 rests (+1 on AfterMove, +1 at round end -> back to 0 ... capped at 0 by
         // delta<0 guard); the attackers land at -1-2+1 = -2.
         engine.executeWithSlotMoves(
-            battleKey, _side(NO_OP_MOVE_INDEX, 0, 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(NO_OP_MOVE_INDEX, 0, 0, targetBits(B0)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0, "rest + regen");
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Stamina), -2, "attacker");
@@ -518,7 +493,7 @@ contract DoublesEngineTest is Test {
         recorder.clear();
 
         address winner = engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(B0), 0, _target(B1)), _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
         );
         assertEq(winner, ALICE, "side wipe -> side 0 wins");
         assertEq(engine.getWinner(battleKey), ALICE);
@@ -597,22 +572,7 @@ contract DoublesEngineTest is Test {
         team[1] = _mkMon(1000, 10, killAttack);
         registry.setTeam(ALICE, team);
         registry.setTeam(BOB, team);
-        Battle memory battle = Battle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p1: BOB,
-            p1TeamIndex: 0,
-            p2: address(0),
-            p2TeamIndex: 0,
-            p3: address(0),
-            p3TeamIndex: 0,
-            teamRegistry: registry,
-            rngOracle: IRandomnessOracle(address(0)),
-            ruleset: IRuleset(address(0)),
-            moveManager: address(this),
-            matchmaker: IMatchmaker(address(this)),
-            engineHooks: new IEngineHook[](0)
-        });
+        Battle memory battle = defaultBattle(ALICE, BOB, registry, address(this), IMatchmaker(address(this)));
         (battleKey,) = engine.computeBattleKey(ALICE, BOB);
         engine.startBattleWithMode(battle, BATTLE_MODE_SINGLES);
         vm.warp(vm.getBlockTimestamp() + 1);

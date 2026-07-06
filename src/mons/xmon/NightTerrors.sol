@@ -106,7 +106,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // mirror of the attacker's slot (kit-audit ruling for untargeted opponent effects).
         (, uint64 terrorCount) = _unpackExtraData(extraData);
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 defenderSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        uint256 defenderSlot = TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         if (defenderSlot == NO_SLOT) {
             return (extraData, false);
         }

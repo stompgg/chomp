@@ -9,7 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
-import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";

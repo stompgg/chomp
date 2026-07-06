@@ -209,23 +209,23 @@ contract DefaultCommitManager is ICommitManager {
             revert AlreadyRevealed();
         }
 
-        // 6) Store revealed move and extra data for the current player
+        // 5) Store revealed move and extra data for the current player
         // Update their last move timestamp and num moves revealed
         ENGINE.setMove(battleKey, currentPlayerIndex, moveIndex, salt, extraData);
         currentPd.lastMoveTimestamp = uint96(block.timestamp);
         currentPd.numMovesRevealed = uint16(turnId + 1);
 
-        // 7) Store empty move for other player if it's a turn where only a single player has to make a move
+        // 6) Store empty move for other player if it's a turn where only a single player has to make a move
         if (playerSwitchForTurnFlag == 0 || playerSwitchForTurnFlag == 1) {
             // TODO: add this later to mutate the engine directly
             otherPd.lastMoveTimestamp = uint96(block.timestamp);
             otherPd.numMovesRevealed = uint16(turnId + 1);
         }
 
-        // 8) Emit move reveal event before game engine execution
+        // 7) Emit move reveal event before game engine execution
         // emit MoveReveal(battleKey, msg.sender, moveIndex);
 
-        // 9) Auto execute if desired/available
+        // 8) Auto execute if desired/available
         if (autoExecute) {
             // We can execute if:
             // - it's a single player turn (no other commitments to wait on)

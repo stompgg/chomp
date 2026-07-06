@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
-import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract BlessedStatus is StatusEffect {

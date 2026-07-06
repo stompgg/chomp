@@ -13,6 +13,7 @@ import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
+import {defaultBattle, signOffer} from "./abstract/SlotWire.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import "src/Constants.sol";
 
@@ -63,42 +64,21 @@ contract SignedMatchmakerTest is Test, BattleHelper {
         view
         returns (BattleOffer memory)
     {
-        return BattleOffer({
-            battle: Battle({
-                p0: p0,
-                p0TeamIndex: p0TeamIndex,
-                p1: p1,
-                p1TeamIndex: p1TeamIndex,
-                p2: address(0),
-                p2TeamIndex: 0,
-                p3: address(0),
-                p3TeamIndex: 0,
-                teamRegistry: teamRegistry,
-                rngOracle: rngOracle,
-                ruleset: IRuleset(address(0)),
-                moveManager: address(commitManager),
-                matchmaker: matchmaker,
-                engineHooks: new IEngineHook[](0)
-            }),
-            pairHashNonce: pairHashNonce,
-            battleMode: BATTLE_MODE_SINGLES
-        });
+        Battle memory battle = defaultBattle(p0, p1, teamRegistry, address(commitManager), matchmaker);
+        battle.p0TeamIndex = p0TeamIndex;
+        battle.p1TeamIndex = p1TeamIndex;
+        battle.rngOracle = rngOracle;
+        return BattleOffer({battle: battle, pairHashNonce: pairHashNonce, battleMode: BATTLE_MODE_SINGLES});
     }
 
-    /// @dev Signs a BattleOffer with p0's private key, assuming p1TeamIndex = 0 for signing
     function _signOffer(BattleOffer memory offer) internal view returns (bytes memory) {
-        // hashBattleOfferForSigning blinds every team index itself (D31).
-        bytes32 digest = matchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
-        return abi.encodePacked(r, s, v);
+        return signOffer(matchmaker, P0_PK, offer, 0);
     }
 
     /// @dev Signs the OPEN form (p1 seat open = canonical bit 2), regardless of the concrete
     ///      p1 in `offer` — mirrors a creator publishing an LFG offer.
     function _signOpenOffer(BattleOffer memory offer) internal view returns (bytes memory) {
-        bytes32 digest = matchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 4));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
-        return abi.encodePacked(r, s, v);
+        return signOffer(matchmaker, P0_PK, offer, 4);
     }
 
     /*
@@ -332,7 +312,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
             battleMode: BATTLE_MODE_SINGLES
         });
 
-        // p0 signs the OPEN form; the filler submits the assembled offer with themselves seated
         bytes memory signature = _signOpenOffer(offer);
 
         offer.battle.p1 = p1;
@@ -376,7 +355,6 @@ contract SignedMatchmakerTest is Test, BattleHelper {
             battleMode: BATTLE_MODE_SINGLES
         });
 
-        // p0 signs the OPEN form; the filler submits the assembled offer with themselves seated
         bytes memory signature = _signOpenOffer(offer);
 
         offer.battle.p1 = p1;

@@ -75,7 +75,7 @@ abstract contract SignedCommitHelper is Test {
         );
     }
 
-    /// @notice Sign a DualSignedReveal against the Engine's built-in-flow domain.
+    /// @notice Sign a DualSignedSlotReveal against the Engine's built-in-flow domain.
     function _signDualSlotRevealForEngine(
         address engineAddr,
         uint256 privateKey,

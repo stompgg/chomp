@@ -24,10 +24,6 @@ library TargetLib {
         return (activesPacked >> (absSlot << 3)) & 0xFF;
     }
 
-    function isEmptyLane(uint256 lane) internal pure returns (bool) {
-        return lane == EMPTY_ACTIVE_LANE;
-    }
-
     function withLane(uint256 activesPacked, uint256 absSlot, uint256 monIndex) internal pure returns (uint256) {
         uint256 shift = absSlot << 3;
         return (activesPacked & ~(uint256(0xFF) << shift)) | (monIndex << shift);
@@ -62,6 +58,7 @@ library TargetLib {
     ///      to its partner when the mirror lane is empty; NO_SLOT when the opposing side is vacant.
     ///      Occupancy only — a KO'd occupant is still returned (damage/boosts on it no-op).
     function mirrorOpposingSlot(uint256 activesPacked, uint256 ownSlot) internal pure returns (uint256) {
+        if (ownSlot == NO_SLOT) return NO_SLOT; // benched owner: propagate rather than alias slot 6
         uint256 mirror = ownSlot ^ 2;
         if (activeAt(activesPacked, mirror) != EMPTY_ACTIVE_LANE) return mirror;
         uint256 partner = mirror ^ 1;

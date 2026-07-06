@@ -10,8 +10,7 @@ import {CPUMoveManager} from "./CPUMoveManager.sol";
 import {Battle, CustomBattleProposal, ProposedBattle} from "../Structs.sol";
 
 /// @notice On-chain CPU host: self-registers as an approved matchmaker, hosts PvE battles, and
-///         relays client-computed CPU moves through the engine (see CPUMoveManager). Move decisions
-///         are computed off-chain, so there is no on-chain strategy here.
+///         relays client-computed CPU moves through the engine (see CPUMoveManager).
 contract CPU is CPUMoveManager, IMatchmaker {
     constructor(IEngine engine) CPUMoveManager(engine) {}
 

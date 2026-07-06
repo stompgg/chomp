@@ -5,7 +5,6 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 
-import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
 

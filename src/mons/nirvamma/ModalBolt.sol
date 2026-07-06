@@ -8,7 +8,6 @@ import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract ModalBolt is IMoveSet {

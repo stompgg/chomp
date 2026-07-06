@@ -8,7 +8,6 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
-import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";

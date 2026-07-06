@@ -27,7 +27,6 @@ import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {ActusReus} from "../../src/mons/malalien/ActusReus.sol";
 import {FoulLanguage} from "../../src/mons/malalien/FoulLanguage.sol";
 import {TripleThink} from "../../src/mons/malalien/TripleThink.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract MalalienTest is Test, BattleHelper {
     Engine engine;

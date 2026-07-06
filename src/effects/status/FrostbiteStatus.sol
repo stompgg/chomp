@@ -5,7 +5,6 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {StatBoostToApply} from "../../Structs.sol";
 
-import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract FrostbiteStatus is StatusEffect {

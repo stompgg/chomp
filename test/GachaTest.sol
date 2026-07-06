@@ -16,6 +16,7 @@ import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
+import {defaultBattle, sideWord, targetBits} from "./abstract/SlotWire.sol";
 import "./mocks/TestTeamRegistry.sol";
 import "src/Constants.sol";
 
@@ -425,25 +426,9 @@ contract GachaTest is Test, BattleHelper {
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
         (bytes32 battleKey,) = engine.computeBattleKey(ALICE, BOB);
-        engine.startBattleWithMode(
-            Battle({
-                p0: ALICE,
-                p0TeamIndex: 0,
-                p1: BOB,
-                p1TeamIndex: 0,
-                p2: address(0),
-                p2TeamIndex: 0,
-                p3: address(0),
-                p3TeamIndex: 0,
-                teamRegistry: defaultRegistry,
-                rngOracle: IRandomnessOracle(address(0)),
-                ruleset: IRuleset(address(0)),
-                moveManager: address(this),
-                matchmaker: IMatchmaker(address(this)),
-                engineHooks: hooks
-            }),
-            BATTLE_MODE_DOUBLES
-        );
+        Battle memory battle = defaultBattle(ALICE, BOB, defaultRegistry, address(this), IMatchmaker(address(this)));
+        battle.engineHooks = hooks;
+        engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
         vm.warp(vm.getBlockTimestamp() + 1);
         mockRNG.setRNG(1);
 
@@ -451,17 +436,15 @@ contract GachaTest is Test, BattleHelper {
         uint104 salt = uint104(0xD0B);
         engine.executeWithSlotMoves(
             battleKey,
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32)
-                | (uint256(salt) << 48),
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32) | (uint256(salt) << 48)
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, salt),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, salt)
         );
-        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
-        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+        uint16 targetB0 = targetBits(2);
+        uint16 targetB1 = targetBits(3);
         address winner = engine.executeWithSlotMoves(
             battleKey,
-            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
-                | (uint256(salt) << 48),
-            uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+            sideWord(0, targetB0, 0, targetB1, salt),
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt)
         );
         assertEq(winner, ALICE);
 
@@ -522,25 +505,11 @@ contract GachaTest is Test, BattleHelper {
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
         (battleKey,) = engine.computePartyKey(ALICE, BOB, CARL, DAVE);
-        engine.startBattleWithMode(
-            Battle({
-                p0: ALICE,
-                p0TeamIndex: 0,
-                p1: BOB,
-                p1TeamIndex: 0,
-                p2: CARL,
-                p2TeamIndex: 0,
-                p3: DAVE,
-                p3TeamIndex: 0,
-                teamRegistry: defaultRegistry,
-                rngOracle: IRandomnessOracle(address(0)),
-                ruleset: IRuleset(address(0)),
-                moveManager: address(this),
-                matchmaker: IMatchmaker(address(this)),
-                engineHooks: hooks
-            }),
-            BATTLE_MODE_MULTI
-        );
+        Battle memory battle = defaultBattle(ALICE, BOB, defaultRegistry, address(this), IMatchmaker(address(this)));
+        battle.p2 = CARL;
+        battle.p3 = DAVE;
+        battle.engineHooks = hooks;
+        engine.startBattleWithMode(battle, BATTLE_MODE_MULTI);
         vm.warp(vm.getBlockTimestamp() + 1);
         mockRNG.setRNG(1);
     }
@@ -548,29 +517,26 @@ contract GachaTest is Test, BattleHelper {
     /// @dev Drives side 0 through a full side-1 wipe (4 kill rounds x 2 mons, forced switches
     ///      stepping through each seat quarter).
     function _runMultiSideWipe(bytes32 battleKey) internal {
-        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
-        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+        uint16 targetB0 = targetBits(2);
+        uint16 targetB1 = targetBits(3);
         uint104 salt = uint104(0xD0B);
         // Turn 0: all four slots send in their quarter leads (0 and 4).
         engine.executeWithSlotMoves(
             battleKey,
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32)
-                | (uint256(salt) << 48),
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32) | (uint256(salt) << 48)
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, salt),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, salt)
         );
         for (uint256 round; round < 4; ++round) {
             engine.executeWithSlotMoves(
                 battleKey,
-                uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
-                    | (uint256(salt) << 48),
-                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+                sideWord(0, targetB0, 0, targetB1, salt),
+                sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt)
             );
             if (engine.getWinner(battleKey) != address(0)) break;
             engine.executeWithSlotMoves(
                 battleKey,
-                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48),
-                uint256(SWITCH_MOVE_INDEX) | (uint256(round + 1) << 8) | (uint256(SWITCH_MOVE_INDEX) << 24)
-                    | (uint256(round + 5) << 32) | (uint256(salt) << 48)
+                sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt),
+                sideWord(SWITCH_MOVE_INDEX, uint16(round + 1), SWITCH_MOVE_INDEX, uint16(round + 5), salt)
             );
         }
         assertEq(engine.getWinner(battleKey), ALICE);
@@ -701,55 +667,37 @@ contract GachaTest is Test, BattleHelper {
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
         (bytes32 battleKey,) = engine.computePartyKey(ALICE, BOB, CARL, DAVE);
-        engine.startBattleWithMode(
-            Battle({
-                p0: ALICE,
-                p0TeamIndex: 0,
-                p1: BOB,
-                p1TeamIndex: 0,
-                p2: CARL,
-                p2TeamIndex: 0,
-                p3: DAVE,
-                p3TeamIndex: 0,
-                teamRegistry: defaultRegistry,
-                rngOracle: IRandomnessOracle(address(0)),
-                ruleset: IRuleset(address(0)),
-                moveManager: address(this),
-                matchmaker: IMatchmaker(address(this)),
-                engineHooks: hooks
-            }),
-            BATTLE_MODE_MULTI
-        );
+        Battle memory battle = defaultBattle(ALICE, BOB, defaultRegistry, address(this), IMatchmaker(address(this)));
+        battle.p2 = CARL;
+        battle.p3 = DAVE;
+        battle.engineHooks = hooks;
+        engine.startBattleWithMode(battle, BATTLE_MODE_MULTI);
         vm.warp(vm.getBlockTimestamp() + 1);
         mockRNG.setRNG(1);
         vm.recordLogs();
 
         uint104 salt = uint104(0xD0B);
-        uint16 targetA1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 1));
-        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
-        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+        uint16 targetA1 = targetBits(1);
+        uint16 targetB0 = targetBits(2);
+        uint16 targetB1 = targetBits(3);
 
         // Turn 0: quarter leads (0 and 4) everywhere.
         engine.executeWithSlotMoves(
             battleKey,
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32)
-                | (uint256(salt) << 48),
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32) | (uint256(salt) << 48)
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, salt),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, salt)
         );
 
         // Round 1: BOB's speed-50 lead KOs CARL's lead first; side 0 then KOs it back. A1 is
         // dead before acting so B1 survives the round.
         engine.executeWithSlotMoves(
-            battleKey,
-            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
-                | (uint256(salt) << 48),
-            uint256(0) | (uint256(targetA1) << 8) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+            battleKey, sideWord(0, targetB0, 0, targetB1, salt), sideWord(0, targetA1, NO_OP_MOVE_INDEX, 0, salt)
         );
         // Forced switches: A slot 1 refills from CARL's quarter (5), B slot 0 from BOB's (1).
         engine.executeWithSlotMoves(
             battleKey,
-            uint256(NO_OP_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(5) << 32) | (uint256(salt) << 48),
-            uint256(SWITCH_MOVE_INDEX) | (uint256(1) << 8) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+            sideWord(NO_OP_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 5, salt),
+            sideWord(SWITCH_MOVE_INDEX, 1, NO_OP_MOVE_INDEX, 0, salt)
         );
 
         // Side 1 remaining: 1,2,3 (BOB) + 4..7 (DAVE); actives (1, 4). Kill rounds (1,4)
@@ -758,16 +706,14 @@ contract GachaTest is Test, BattleHelper {
         for (uint256 round; round < 4; ++round) {
             engine.executeWithSlotMoves(
                 battleKey,
-                uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
-                    | (uint256(salt) << 48),
-                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+                sideWord(0, targetB0, 0, targetB1, salt),
+                sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt)
             );
             if (engine.getWinner(battleKey) != address(0)) break;
             engine.executeWithSlotMoves(
                 battleKey,
-                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48),
-                uint256(SWITCH_MOVE_INDEX) | (uint256(round + 2) << 8) | (uint256(SWITCH_MOVE_INDEX) << 24)
-                    | (uint256(round + 5) << 32) | (uint256(salt) << 48)
+                sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt),
+                sideWord(SWITCH_MOVE_INDEX, uint16(round + 2), SWITCH_MOVE_INDEX, uint16(round + 5), salt)
             );
         }
         assertEq(engine.getWinner(battleKey), ALICE);

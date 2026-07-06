@@ -12,6 +12,7 @@ import {CPU} from "../src/cpu/CPU.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
 import {CPUMoveManager} from "../src/cpu/CPUMoveManager.sol";
+import {sideWord, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
@@ -327,14 +328,6 @@ contract CPUTest is Test {
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
-    function _sideWord(uint8 m0, uint16 e0, uint8 m1, uint16 e1, uint104 salt) internal pure returns (uint256) {
-        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32) | (uint256(salt) << 48);
-    }
-
-    function _targetBits(uint256 absSlot) internal pure returns (uint16) {
-        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
-    }
-
     /// @dev Stream slices: big-endian tails of the wire side words (side 1's salt is dropped).
     function _streamTurn(uint256 side0Word, uint256 side1Word) internal pure returns (bytes memory) {
         return abi.encodePacked(bytes19(bytes32(side0Word << 104)), bytes6(bytes32(side1Word << 208)));
@@ -354,10 +347,10 @@ contract CPUTest is Test {
         CPU cpu = new CPU(engine);
         bytes32 battleKey = _startDoublesVsCpu(cpu);
 
-        uint256 t0s0 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
-        uint256 t0s1 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
-        uint256 t1s0 = _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2));
-        uint256 t1s1 = _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
         bytes memory stream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
         assertEq(stream.length, 2 * 25, "25 bytes per turn");
 
@@ -390,14 +383,14 @@ contract CPUTest is Test {
         CPU cpu = new CPU(engine);
         bytes32 battleKey = _startDoublesVsCpu(cpu);
 
-        uint256 t0s0 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
-        uint256 t0s1 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
-        uint256 t1s0 = _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2));
-        uint256 t1s1 = _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
         bytes memory winningStream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
         bytes memory garbageTail = _streamTurn(
-            _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCCC3)),
-            _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCCC3)),
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
         );
 
         vm.recordLogs();
@@ -428,7 +421,7 @@ contract CPUTest is Test {
         vm.prank(ALICE);
         cpu.selectSlotMovesWithCpuMoves(
             battleKey,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1)),
             SWITCH_MOVE_INDEX,
             0,
             SWITCH_MOVE_INDEX,
@@ -437,7 +430,7 @@ contract CPUTest is Test {
         vm.prank(ALICE);
         cpu.selectSlotMovesWithCpuMoves(
             battleKey,
-            _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2)),
+            sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2)),
             NO_OP_MOVE_INDEX,
             0,
             NO_OP_MOVE_INDEX,

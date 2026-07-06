@@ -6,7 +6,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {StatBoostToApply} from "../../src/Structs.sol";
 
 import {StatusEffect} from "../../src/effects/status/StatusEffect.sol";
-import {TargetLib} from "../../src/lib/TargetLib.sol";
 
 contract SpAtkDebuffEffect is StatusEffect {
     uint8 constant SP_ATTACK_PERCENT = 50;

@@ -6,21 +6,16 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IEngineHook} from "../src/IEngineHook.sol";
-import {IRuleset} from "../src/IRuleset.sol";
-import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
-import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 
 import {BatchHelper} from "./abstract/BatchHelper.sol";
+import {defaultBattle, sideWord, signOffer, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
-/// @notice Doubles end-to-end flows: signed offers with a battle mode, and the built-in
-///         dual-signed slot buffer (stage / drain / combined submit). Mocks only.
+/// @notice Doubles signed offers + the built-in dual-signed slot buffer flows.
 contract DoublesFlowsTest is BatchHelper {
     uint256 constant P0_PK = 0xA11CE;
     uint256 constant P1_PK = 0xB0B;
@@ -64,10 +59,6 @@ contract DoublesFlowsTest is BatchHelper {
         engine.updateMatchmakers(toAdd, toRemove);
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
     function _mkMon(uint32 hp, uint32 speed, IMoveSet move0) internal view returns (Mon memory mon) {
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(move0)));
@@ -91,22 +82,7 @@ contract DoublesFlowsTest is BatchHelper {
     function _offer(uint8 battleMode) internal view returns (BattleOffer memory offer) {
         (, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
         offer = BattleOffer({
-            battle: Battle({
-                p0: p0,
-                p0TeamIndex: 0,
-                p1: p1,
-                p1TeamIndex: 0,
-                p2: address(0),
-                p2TeamIndex: 0,
-                p3: address(0),
-                p3TeamIndex: 0,
-                teamRegistry: registry,
-                rngOracle: IRandomnessOracle(address(0)),
-                ruleset: IRuleset(address(0)),
-                moveManager: BUILTIN_DUAL_SIGNED_MANAGER,
-                matchmaker: signedMatchmaker,
-                engineHooks: new IEngineHook[](0)
-            }),
+            battle: defaultBattle(p0, p1, registry, BUILTIN_DUAL_SIGNED_MANAGER, signedMatchmaker),
             pairHashNonce: engine.pairHashNonces(pairHash),
             battleMode: battleMode
         });
@@ -116,35 +92,18 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_DOUBLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         (battleKey,) = engine.computeBattleKey(p0, p1);
+        bytes[4] memory seatSigs;
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
         vm.prank(p1);
-        {
-            bytes[4] memory seatSigs;
-            seatSigs[0] = abi.encodePacked(r, s, v);
-            signedMatchmaker.startGame(offer, 0, seatSigs);
-        }
+        signedMatchmaker.startGame(offer, 0, seatSigs);
         vm.warp(vm.getBlockTimestamp() + 1);
-    }
-
-    /// @dev Wire word per side: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
-    function _sideWord(uint8 m0, uint16 e0, uint8 m1, uint16 e1, uint104 salt) internal pure returns (uint256) {
-        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32) | (uint256(salt) << 48);
-    }
-
-    function _target(uint256 absSlot) internal pure returns (uint16) {
-        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
-    }
-
-    function _committerFor(uint64 turnId) internal view returns (address) {
-        return turnId % 2 == 0 ? p0 : p1;
     }
 
     function _combinedSlotTurn(uint64 turnId, uint256 side0, uint256 side1) internal {
         (uint256 committerPacked, uint256 revealerPacked, bytes32 r, bytes32 vs) =
             _buildSlotTurnSubmissionForEngine(address(engine), battleKey, turnId, side0, side1, P0_PK, P1_PK);
-        vm.prank(_committerFor(turnId));
+        vm.prank(_committerFor(turnId, p0, p1));
         engine.submitSlotTurnMovesAndExecute(battleKey, committerPacked, revealerPacked, r, vs);
         engine.resetCallContext();
     }
@@ -152,15 +111,15 @@ contract DoublesFlowsTest is BatchHelper {
     function _stageSlotTurn(uint64 turnId, uint256 side0, uint256 side1) internal {
         (uint256 committerPacked, uint256 revealerPacked, bytes32 r, bytes32 vs) =
             _buildSlotTurnSubmissionForEngine(address(engine), battleKey, turnId, side0, side1, P0_PK, P1_PK);
-        vm.prank(_committerFor(turnId));
+        vm.prank(_committerFor(turnId, p0, p1));
         engine.submitSlotTurnMoves(battleKey, committerPacked, revealerPacked, r, vs);
     }
 
     function _sendInLeads(uint64 turnId) internal {
         _combinedSlotTurn(
             turnId,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAA)),
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xBBB))
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAA)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xBBB))
         );
     }
 
@@ -173,27 +132,19 @@ contract DoublesFlowsTest is BatchHelper {
         bTeam[1] = _mkMon(100, 10, weakAttack);
     }
 
-    // ---------------------------------------------------------------------
-    // Tests
-    // ---------------------------------------------------------------------
-
     function test_signedOffer_startsDoublesBattle() public {
         (Mon[] memory aTeam, Mon[] memory bTeam) = _standardTeams();
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_DOUBLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
+        bytes[4] memory seatSigs;
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
         (bytes32 expectedKey,) = engine.computeBattleKey(p0, p1);
 
         vm.expectEmit(true, false, false, true);
         emit Engine.SlotBattleStart(expectedKey, p0, p1, BATTLE_MODE_DOUBLES, address(0), address(0));
         vm.prank(p1);
-        {
-            bytes[4] memory seatSigs;
-            seatSigs[0] = abi.encodePacked(r, s, v);
-            signedMatchmaker.startGame(offer, 0, seatSigs);
-        }
+        signedMatchmaker.startGame(offer, 0, seatSigs);
 
         battleKey = expectedKey;
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -211,16 +162,12 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p1, bTeam);
         // p0 signs a SINGLES offer; p1 tries to start it as Doubles.
         BattleOffer memory signedOffer = _offer(BATTLE_MODE_SINGLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(signedOffer, 0));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         BattleOffer memory tampered = _offer(BATTLE_MODE_DOUBLES);
+        bytes[4] memory seatSigs;
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, signedOffer, 0);
         vm.prank(p1);
         vm.expectRevert(SignedMatchmaker.InvalidSignature.selector);
-        {
-            bytes[4] memory seatSigs;
-            seatSigs[0] = abi.encodePacked(r, s, v);
-            signedMatchmaker.startGame(tampered, 0, seatSigs);
-        }
+        signedMatchmaker.startGame(tampered, 0, seatSigs);
     }
 
     function test_combinedSlotTurns_fullBattle() public {
@@ -229,8 +176,8 @@ contract DoublesFlowsTest is BatchHelper {
         _sendInLeads(0);
 
         // Turn 1: A kills both B actives (side wipe, no bench) -> p0 wins.
-        uint256 side0 = _sideWord(0, _target(2), 0, _target(3), uint104(0xA1));
-        uint256 side1 = _sideWord(0, _target(0), 0, _target(0), uint104(0xB1));
+        uint256 side0 = sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xA1));
+        uint256 side1 = sideWord(0, targetBits(0), 0, targetBits(0), uint104(0xB1));
         vm.expectEmit(true, false, false, true);
         emit Engine.SlotMovesSubmitted(battleKey, side0, side1);
         _combinedSlotTurn(1, side0, side1);
@@ -242,10 +189,10 @@ contract DoublesFlowsTest is BatchHelper {
         (Mon[] memory aTeam, Mon[] memory bTeam) = _standardTeams();
         _startDoublesViaOffer(aTeam, bTeam);
 
-        uint256 t0side0 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAA));
-        uint256 t0side1 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xBBB));
-        uint256 t1side0 = _sideWord(0, _target(2), NO_OP_MOVE_INDEX, 0, uint104(0xA1));
-        uint256 t1side1 = _sideWord(0, _target(0), NO_OP_MOVE_INDEX, 0, uint104(0xB1));
+        uint256 t0side0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAA));
+        uint256 t0side1 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xBBB));
+        uint256 t1side0 = sideWord(0, targetBits(2), NO_OP_MOVE_INDEX, 0, uint104(0xA1));
+        uint256 t1side1 = sideWord(0, targetBits(0), NO_OP_MOVE_INDEX, 0, uint104(0xB1));
         _stageSlotTurn(0, t0side0, t0side1);
         _stageSlotTurn(1, t1side0, t1side1);
 
@@ -282,8 +229,8 @@ contract DoublesFlowsTest is BatchHelper {
             address(engine),
             battleKey,
             0,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 1),
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 2),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 1),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 2),
             P0_PK,
             P1_PK
         );
@@ -306,15 +253,11 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_SINGLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         (battleKey,) = engine.computeBattleKey(p0, p1);
+        bytes[4] memory seatSigs;
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
         vm.prank(p1);
-        {
-            bytes[4] memory seatSigs;
-            seatSigs[0] = abi.encodePacked(r, s, v);
-            signedMatchmaker.startGame(offer, 0, seatSigs);
-        }
+        signedMatchmaker.startGame(offer, 0, seatSigs);
 
         vm.prank(p0);
         vm.expectRevert(Engine.WrongBattleMode.selector);

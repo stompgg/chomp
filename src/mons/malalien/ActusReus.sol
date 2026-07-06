@@ -46,8 +46,7 @@ contract ActusReus is IAbility, BasicEffect {
         uint256,
         uint256 activesPacked
     ) external view override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        // Arm if EITHER opposing occupant fell after Malalien's move (kit-audit ruling: the
-        // singles check was "the opposing active"; with two opposing slots we arm on any).
+        // Arm if EITHER opposing occupant fell after Malalien's move (kit ruling).
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
         uint256 oppSlot0 = otherPlayerIndex << 1;
         uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot0);
@@ -83,7 +82,7 @@ contract ActusReus is IAbility, BasicEffect {
         // Mirror-slot ruling: the speed halving lands opposite Malalien's slot (its lane still
         // holds it at the KO instant).
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 oppSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        uint256 oppSlot = TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         // Check if we have an indictment
         if (uint256(extraData) == 1) {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed

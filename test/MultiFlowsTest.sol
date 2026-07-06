@@ -6,22 +6,17 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IEngineHook} from "../src/IEngineHook.sol";
-import {IRuleset} from "../src/IRuleset.sol";
-import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 
 import {BatchHelper} from "./abstract/BatchHelper.sol";
+import {defaultBattle, sideWord, signOffer, signSeatFill, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
-/// @notice Multi (2v2, 4 seats) end-to-end flows: party matchmaking (named seats, open-seat
-///         fills, CPU seats), the seat-quarter roster partition, and the D18 human-only
-///         committer/revealer rotation on the built-in dual-signed buffer. Mocks only.
+/// @notice Multi (4-seat) flows: party matchmaking, seat-quarter partition, D18 rotation.
 contract MultiFlowsTest is BatchHelper {
     uint256 constant P0_PK = 0xA11CE;
     uint256 constant P1_PK = 0xB0B;
@@ -73,10 +68,6 @@ contract MultiFlowsTest is BatchHelper {
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
     function _seats() internal view returns (address[] memory seats) {
         seats = new address[](4);
         seats[0] = p0;
@@ -120,23 +111,10 @@ contract MultiFlowsTest is BatchHelper {
         registry.setTeam(p3, _mkTeam(100, 10, weakAttack));
     }
 
-    function _battle(address moveManager) internal view returns (Battle memory) {
-        return Battle({
-            p0: p0,
-            p0TeamIndex: 0,
-            p1: p1,
-            p1TeamIndex: 0,
-            p2: p2,
-            p2TeamIndex: 0,
-            p3: p3,
-            p3TeamIndex: 0,
-            teamRegistry: registry,
-            rngOracle: IRandomnessOracle(address(0)),
-            ruleset: IRuleset(address(0)),
-            moveManager: moveManager,
-            matchmaker: IMatchmaker(address(this)),
-            engineHooks: new IEngineHook[](0)
-        });
+    function _battle(address moveManager) internal view returns (Battle memory battle) {
+        battle = defaultBattle(p0, p1, registry, moveManager, IMatchmaker(address(this)));
+        battle.p2 = p2;
+        battle.p3 = p3;
     }
 
     function _offer() internal view returns (BattleOffer memory offer) {
@@ -148,28 +126,6 @@ contract MultiFlowsTest is BatchHelper {
         });
     }
 
-    function _signOpenDigest(uint256 pk, BattleOffer memory offer, uint8 openSeatsMask)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, openSeatsMask));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
-    function _signSeatFill(uint256 pk, BattleOffer memory offer, uint8 openSeatsMask, uint8 seatIndex)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 openDigest =
-            signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, openSeatsMask));
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashSeatFill(openDigest, seatIndex));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     function _startDirect() internal {
         _setDefaultTeams();
         (battleKey,) = engine.computePartyKey(p0, p1, p2, p3);
@@ -177,26 +133,17 @@ contract MultiFlowsTest is BatchHelper {
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
-    /// @dev Wire word per side: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
-    function _sideWord(uint8 m0, uint16 e0, uint8 m1, uint16 e1, uint104 salt) internal pure returns (uint256) {
-        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32) | (uint256(salt) << 48);
-    }
-
-    function _target(uint256 absSlot) internal pure returns (uint16) {
-        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
-    }
-
     /// @dev Turn 0: every slot sends in its quarter's lead (slot-0 lanes mon 0, slot-1 lanes mon 4).
     function _sendInLeads() internal {
         engine.executeWithSlotMoves(
             battleKey,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA)),
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB))
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB))
         );
     }
 
     function _noOpWord(uint104 salt) internal pure returns (uint256) {
-        return _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt);
+        return sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt);
     }
 
     // ---------------------------------------------------------------------
@@ -285,9 +232,9 @@ contract MultiFlowsTest is BatchHelper {
         BattleOffer memory offer = _offer();
         bytes[4] memory seatSigs;
         // Canonical order [p0, p2, p1, p3]; p3 submits so its slot stays empty (msg.sender rule).
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, 0);
-        seatSigs[1] = _signOpenDigest(P2_PK, offer, 0);
-        seatSigs[2] = _signOpenDigest(P1_PK, offer, 0);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
+        seatSigs[1] = signOffer(signedMatchmaker, P2_PK, offer, 0);
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
 
         (bytes32 expectedKey,) = engine.computePartyKey(p0, p1, p2, p3);
         vm.expectEmit(true, false, false, true);
@@ -300,8 +247,8 @@ contract MultiFlowsTest is BatchHelper {
         _setDefaultTeams();
         BattleOffer memory offer = _offer();
         bytes[4] memory seatSigs;
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, 0);
-        seatSigs[2] = _signOpenDigest(P1_PK, offer, 0);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
         // p2 (canonical seat 1) neither signed nor submits.
         vm.prank(p3);
         vm.expectRevert(SignedMatchmaker.MissingConsent.selector);
@@ -318,9 +265,9 @@ contract MultiFlowsTest is BatchHelper {
         uint8 mask = 8;
 
         bytes[4] memory seatSigs;
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, mask);
-        seatSigs[1] = _signOpenDigest(P2_PK, offer, mask);
-        seatSigs[3] = _signSeatFill(P3_PK, offer, mask, 3);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, mask);
+        seatSigs[1] = signOffer(signedMatchmaker, P2_PK, offer, mask);
+        seatSigs[3] = signSeatFill(signedMatchmaker, P3_PK, offer, mask, 3);
 
         offer.battle.p3 = p3; // submitter seats the joiner before submission
         (bytes32 key,) = engine.computePartyKey(p0, p1, p2, p3); // pre-start nonce
@@ -336,8 +283,8 @@ contract MultiFlowsTest is BatchHelper {
         BattleOffer memory offer = _offer();
         offer.battle.moveManager = address(this); // CPU battles ride a manager (D19)
         bytes[4] memory seatSigs;
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, 0);
-        seatSigs[1] = _signOpenDigest(P2_PK, offer, 0);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
+        seatSigs[1] = signOffer(signedMatchmaker, P2_PK, offer, 0);
         // p3 is a whitelisted opponent: no signature lane needed. p1 submits.
         (bytes32 key,) = engine.computePartyKey(p0, p1, p2, p3); // pre-start nonce
         vm.prank(p1);
@@ -350,9 +297,9 @@ contract MultiFlowsTest is BatchHelper {
         BattleOffer memory offer = _offer();
         offer.battle.p2 = p1;
         bytes[4] memory seatSigs;
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, 0);
-        seatSigs[1] = _signOpenDigest(P1_PK, offer, 0);
-        seatSigs[2] = _signOpenDigest(P1_PK, offer, 0);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
+        seatSigs[1] = signOffer(signedMatchmaker, P1_PK, offer, 0);
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
         vm.prank(p3);
         vm.expectRevert(Engine.InvalidBattleConfig.selector);
         signedMatchmaker.startGame(offer, 0, seatSigs);
@@ -363,9 +310,9 @@ contract MultiFlowsTest is BatchHelper {
         BattleOffer memory offer = _offer();
         offer.pairHashNonce += 1;
         bytes[4] memory seatSigs;
-        seatSigs[0] = _signOpenDigest(P0_PK, offer, 0);
-        seatSigs[1] = _signOpenDigest(P2_PK, offer, 0);
-        seatSigs[2] = _signOpenDigest(P1_PK, offer, 0);
+        seatSigs[0] = signOffer(signedMatchmaker, P0_PK, offer, 0);
+        seatSigs[1] = signOffer(signedMatchmaker, P2_PK, offer, 0);
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
         vm.prank(p3);
         vm.expectRevert(SignedMatchmaker.InvalidNonce.selector);
         signedMatchmaker.startGame(offer, 0, seatSigs);
@@ -380,8 +327,8 @@ contract MultiFlowsTest is BatchHelper {
         // Slot-1 lanes ask for mon 0 (out of quarter) — coerced to the quarter's first legal (4).
         engine.executeWithSlotMoves(
             battleKey,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 0, uint104(0xAAA)),
-            _sideWord(SWITCH_MOVE_INDEX, 2, SWITCH_MOVE_INDEX, 6, uint104(0xBBB))
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 0, uint104(0xAAA)),
+            sideWord(SWITCH_MOVE_INDEX, 2, SWITCH_MOVE_INDEX, 6, uint104(0xBBB))
         );
         uint256[4] memory slots = engine.getActiveSlots(battleKey);
         assertEq(slots[0], 0, "A0 lead from seat-0 quarter");
@@ -395,7 +342,7 @@ contract MultiFlowsTest is BatchHelper {
         _sendInLeads();
         // A0 tries to switch into p2's quarter (mon 5); A1 tries p0's quarter (mon 1).
         engine.executeWithSlotMoves(
-            battleKey, _sideWord(SWITCH_MOVE_INDEX, 5, SWITCH_MOVE_INDEX, 1, uint104(0xA1)), _noOpWord(uint104(0xB1))
+            battleKey, sideWord(SWITCH_MOVE_INDEX, 5, SWITCH_MOVE_INDEX, 1, uint104(0xA1)), _noOpWord(uint104(0xB1))
         );
         uint256[4] memory slots = engine.getActiveSlots(battleKey);
         assertEq(slots[0], 0, "cross-quarter switch fizzles (A0)");
@@ -403,7 +350,7 @@ contract MultiFlowsTest is BatchHelper {
 
         // Legal in-quarter switches work.
         engine.executeWithSlotMoves(
-            battleKey, _sideWord(SWITCH_MOVE_INDEX, 1, SWITCH_MOVE_INDEX, 5, uint104(0xA2)), _noOpWord(uint104(0xB2))
+            battleKey, sideWord(SWITCH_MOVE_INDEX, 1, SWITCH_MOVE_INDEX, 5, uint104(0xA2)), _noOpWord(uint104(0xB2))
         );
         slots = engine.getActiveSlots(battleKey);
         assertEq(slots[0], 1);
@@ -458,8 +405,8 @@ contract MultiFlowsTest is BatchHelper {
 
     function test_rotation_fourHumansFullCycle() public {
         _startBuiltin();
-        uint256 side0SendIn = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA));
-        uint256 side1SendIn = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB));
+        uint256 side0SendIn = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA));
+        uint256 side1SendIn = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB));
 
         // Turn 0 must come from p0 (canonical seat 0): p2 committing is rejected.
         {
@@ -483,8 +430,8 @@ contract MultiFlowsTest is BatchHelper {
 
     function test_rotation_wrongRevealerSignatureRejected() public {
         _startBuiltin();
-        uint256 side0SendIn = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA));
-        uint256 side1SendIn = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB));
+        uint256 side0SendIn = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA));
+        uint256 side1SendIn = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB));
         // Turn 0's revealer is p1 (mirror seat); a p3 signature must be rejected.
         bytes memory sig = _signDualSlotRevealForEngine(
             address(engine), P3_PK, battleKey, 0, keccak256(abi.encodePacked(side0SendIn)), side1SendIn
@@ -507,8 +454,8 @@ contract MultiFlowsTest is BatchHelper {
         uint8 cpuMask = 2;
         _submitRotatingTurn(
             0,
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA)),
-            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB)),
             cpuMask
         );
         // One full 3-human cycle plus wrap: t1 = p1 -> p0, t2 = p3 -> p0, t3 = p0 -> p3.
@@ -529,10 +476,6 @@ contract MultiFlowsTest is BatchHelper {
         engine.submitSlotTurnMovesAndExecute(battleKey, side0Word, side1Word, r, vs);
     }
 
-    // ---------------------------------------------------------------------
-    // Full battle: side wipe across quarters ends the game
-    // ---------------------------------------------------------------------
-
     function test_multiFullBattle_sideWipeAcrossQuarters() public {
         _startDirect();
         _sendInLeads();
@@ -541,15 +484,15 @@ contract MultiFlowsTest is BatchHelper {
         for (uint256 round; round < 4; ++round) {
             engine.executeWithSlotMoves(
                 battleKey,
-                _sideWord(0, _target(2), 0, _target(3), uint104(0xA0 + uint8(round))),
-                _sideWord(0, _target(0), 0, _target(0), uint104(0xB0 + uint8(round)))
+                sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xA0 + uint8(round))),
+                sideWord(0, targetBits(0), 0, targetBits(0), uint104(0xB0 + uint8(round)))
             );
             if (engine.getWinner(battleKey) != address(0)) break;
             // Forced-switch turn: each KO'd B slot brings its quarter's next mon.
             engine.executeWithSlotMoves(
                 battleKey,
                 _noOpWord(uint104(0xC0 + uint8(round))),
-                _sideWord(
+                sideWord(
                     SWITCH_MOVE_INDEX,
                     uint16(round + 1),
                     SWITCH_MOVE_INDEX,

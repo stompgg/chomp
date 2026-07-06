@@ -8,16 +8,14 @@ import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
 import {Engine} from "../../src/Engine.sol";
-import {IEngineHook} from "../../src/IEngineHook.sol";
-import {IRuleset} from "../../src/IRuleset.sol";
 import {IMatchmaker} from "../../src/matchmaker/IMatchmaker.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
-import {IRandomnessOracle} from "../../src/rng/IRandomnessOracle.sol";
 
 import {Q5} from "../../src/mons/embursa/Q5.sol";
 import {HitAndDip} from "../../src/mons/inutia/HitAndDip.sol";
 import {Interweaving} from "../../src/mons/inutia/Interweaving.sol";
 
+import {defaultBattle, sideWord, targetBits} from "../abstract/SlotWire.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
@@ -69,34 +67,13 @@ contract DoublesKitTest is Test {
         registry.setTeam(BOB, bTeam);
         (battleKey,) = engine.computeBattleKey(ALICE, BOB);
         engine.startBattleWithMode(
-            Battle({
-                p0: ALICE,
-                p0TeamIndex: 0,
-                p1: BOB,
-                p1TeamIndex: 0,
-                p2: address(0),
-                p2TeamIndex: 0,
-                p3: address(0),
-                p3TeamIndex: 0,
-                teamRegistry: registry,
-                rngOracle: IRandomnessOracle(address(0)),
-                ruleset: IRuleset(address(0)),
-                moveManager: address(this),
-                matchmaker: IMatchmaker(address(this)),
-                engineHooks: new IEngineHook[](0)
-            }),
-            BATTLE_MODE_DOUBLES
+            defaultBattle(ALICE, BOB, registry, address(this), IMatchmaker(address(this))), BATTLE_MODE_DOUBLES
         );
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
     function _side(uint8 m0, uint16 e0, uint8 m1, uint16 e1) internal pure returns (uint256) {
-        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32)
-            | (uint256(uint104(0xC0FFEE)) << 48);
-    }
-
-    function _target(uint256 absSlot) internal pure returns (uint16) {
-        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
+        return sideWord(m0, e0, m1, e1, uint104(0xC0FFEE));
     }
 
     function _turn0() internal {
@@ -129,7 +106,7 @@ contract DoublesKitTest is Test {
 
         // A0 arms Q5 at absolute slot 3 (B slot 1, occupied by B mon 1).
         engine.executeWithSlotMoves(
-            battleKey, _side(0, _target(3), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(0, targetBits(3), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
 
         // B1 pivots out: mon 2 takes the doomed slot.
@@ -163,7 +140,7 @@ contract DoublesKitTest is Test {
         // A1 hits B0 and dips to bench mon 2.
         engine.executeWithSlotMoves(
             battleKey,
-            _side(NO_OP_MOVE_INDEX, 0, 0, _target(2) | uint16(2)),
+            _side(NO_OP_MOVE_INDEX, 0, 0, targetBits(2) | uint16(2)),
             _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
 

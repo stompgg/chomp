@@ -21,9 +21,8 @@ abstract contract CPUMoveManager {
         engine.updateMatchmakers(self, empty);
     }
 
-    /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move (computed
-    ///         client-side) in one tx, and the engine executes them directly — NO on-chain context
-    ///         load and NO on-chain move computation.
+    /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move
+    ///         (computed client-side) in one tx, and the engine executes them directly.
     /// @dev Trust model: the CPU move is not verified. Lying only makes the CPU play worse against
     ///      p0 (a self-inflicted handicap), so there's no on-chain incentive to cheat in PvE; an
     ///      off-chain server/replay can still validate the CPU move if rewards depend on it. Committer

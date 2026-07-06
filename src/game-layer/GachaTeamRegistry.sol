@@ -693,8 +693,7 @@ contract GachaTeamRegistry is
     /// @dev Multi settlement: same formulas per human seat, KO/exp over the seat's quarter of
     ///      the 8-mon side roster (the engine fixes seat teams at 4). CPU seats emit a zero lane.
     function _onMultiBattleEnd(bytes32 battleKey, BattleEndContext memory ctx) private {
-        // No rewards on timeout/forfeit: one side's full roster must be KO'd.
-        if (ctx.p0KOBitmap != 0xFF && ctx.p1KOBitmap != 0xFF) return;
+        if (ctx.p0KOBitmap != 0xFF && ctx.p1KOBitmap != 0xFF) return; // same timeout gate as above
 
         QuestGate memory qg;
         uint256[4] memory lanes;
