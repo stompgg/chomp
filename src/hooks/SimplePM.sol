@@ -20,6 +20,7 @@ contract SimplePM is Ownable {
     error TooLate(uint256 turnId);
     error GameNotOver(bytes32 battleKey);
     error InvalidBattle(bytes32 battleKey);
+    error HasWinningShares(bytes32 battleKey);
 
     event sharesBought(bytes32 indexed battleKey, uint256 amount, bool isP0);
 
@@ -63,7 +64,9 @@ contract SimplePM is Ownable {
         emit sharesBought(battleKey, depositValue, isP0);
     }
 
-    function claimShares(bytes32 battleKey) public {
+    // Redeems each claimant's winning shares to that claimant, so anyone can relay a bulk claim for
+    // holders who never manually claimed. Per-battle terms are hoisted out of the loop.
+    function claimShares(bytes32 battleKey, address[] calldata claimants) public {
         address winner = ENGINE.getWinner(battleKey);
         if (winner == address(0)) {
             revert GameNotOver(battleKey);
@@ -71,29 +74,54 @@ contract SimplePM is Ownable {
         bool isP0Winner = winner == ENGINE.getBattleContext(battleKey).p0;
 
         PMEntry storage marketDetails = marketForBattle[battleKey];
-        uint256 sharesToRedeem = sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance;
-        uint256 totalWinningShares = marketForBattle[battleKey].p0Shares;
-        if (!isP0Winner) {
-            sharesToRedeem = sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance;
-            totalWinningShares = marketForBattle[battleKey].p1Shares;
-        }
-        sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance = 0;
-        sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance = 0;
-        uint256 redemptionAmount = marketDetails.totalDeposits * sharesToRedeem / totalWinningShares;
-        if (redemptionAmount > 0) {
-            (bool _s,) = payable(msg.sender).call{value: redemptionAmount}("");
-            (_s);
+        uint256 totalDeposits = marketDetails.totalDeposits;
+        uint256 totalWinningShares = isP0Winner ? marketDetails.p0Shares : marketDetails.p1Shares;
+
+        for (uint256 i; i < claimants.length; i++) {
+            address claimant = claimants[i];
+            PMBalance storage balance = sharesPerUserForBattle[battleKey][claimant];
+            uint256 sharesToRedeem = isP0Winner ? balance.p0SharesBalance : balance.p1SharesBalance;
+
+            // Winning shares get redeemed; losing shares are worthless. Zero both before paying (CEI).
+            balance.p0SharesBalance = 0;
+            balance.p1SharesBalance = 0;
+
+            // Skips zero-share claimants, which also dodges the 0/0 revert when nobody bet the winner.
+            if (sharesToRedeem == 0) {
+                continue;
+            }
+            uint256 redemptionAmount = totalDeposits * sharesToRedeem / totalWinningShares;
+            if (redemptionAmount > 0) {
+                (bool s,) = payable(claimant).call{value: redemptionAmount}("");
+                if (!s) {
+                    // Restore the winning balance so a rejecting recipient can retry, and skip the rest.
+                    if (isP0Winner) {
+                        balance.p0SharesBalance = uint128(sharesToRedeem);
+                    } else {
+                        balance.p1SharesBalance = uint128(sharesToRedeem);
+                    }
+                }
+            }
         }
     }
 
+    // Recovers a single battle's deposits, only when the winning side has no shares (nobody bet the
+    // winner) so claimShares can never distribute the pot. Scoped to this battle's totalDeposits.
     function rescue(bytes32 battleKey) public onlyOwner {
         address winner = ENGINE.getWinner(battleKey);
         if (winner == address(0)) {
             revert GameNotOver(battleKey);
         }
-        uint256 remaining = address(this).balance;
-        if (remaining > 0) {
-            (bool _s,) = payable(msg.sender).call{value: remaining}("");
+        bool isP0Winner = winner == ENGINE.getBattleContext(battleKey).p0;
+        PMEntry storage marketDetails = marketForBattle[battleKey];
+        uint256 totalWinningShares = isP0Winner ? marketDetails.p0Shares : marketDetails.p1Shares;
+        if (totalWinningShares != 0) {
+            revert HasWinningShares(battleKey);
+        }
+        uint256 amount = marketDetails.totalDeposits;
+        marketDetails.totalDeposits = 0;
+        if (amount > 0) {
+            (bool _s,) = payable(msg.sender).call{value: amount}("");
             (_s);
         }
     }
