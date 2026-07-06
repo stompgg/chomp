@@ -537,7 +537,9 @@ library EnumerableSetLib {
             result := shr(96, sload(add(rootSlot, i)))
             result := mul(result, iszero(eq(result, _ZERO_SENTINEL)))
         }
-        if (i >= length(set)) revert IndexOutOfBounds();
+        if (i >= length(set)) {
+            revert IndexOutOfBounds();
+        }
     }
 
     /// @dev Returns the element at index `i` in the set.
@@ -547,7 +549,9 @@ library EnumerableSetLib {
             result := sload(add(result, i))
             result := mul(result, iszero(eq(result, _ZERO_SENTINEL)))
         }
-        if (i >= length(set)) revert IndexOutOfBounds();
+        if (i >= length(set)) {
+            revert IndexOutOfBounds();
+        }
     }
 
     /// @dev Returns the element at index `i` in the set.

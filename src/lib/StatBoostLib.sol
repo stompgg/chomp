@@ -116,7 +116,9 @@ library StatBoostLib {
         uint256[5] memory accumulatedNumeratorPerStat
     ) internal pure {
         for (uint256 k = 0; k < 5; k++) {
-            if (boostCounts[k] == 0) continue;
+            if (boostCounts[k] == 0) {
+                continue;
+            }
             _accumulateOne(
                 k, boostPercents[k], boostCounts[k], isMul[k], baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
             );
@@ -167,14 +169,30 @@ library StatBoostLib {
     }
 
     function denomPower(uint256 exp) internal pure returns (uint256) {
-        if (exp == 0) return 1;
-        if (exp == 1) return 100;
-        if (exp == 2) return 10000;
-        if (exp == 3) return 1000000;
-        if (exp == 4) return 100000000;
-        if (exp == 5) return 10000000000;
-        if (exp == 6) return 1000000000000;
-        if (exp == 7) return 100000000000000;
+        if (exp == 0) {
+            return 1;
+        }
+        if (exp == 1) {
+            return 100;
+        }
+        if (exp == 2) {
+            return 10000;
+        }
+        if (exp == 3) {
+            return 1000000;
+        }
+        if (exp == 4) {
+            return 100000000;
+        }
+        if (exp == 5) {
+            return 10000000000;
+        }
+        if (exp == 6) {
+            return 1000000000000;
+        }
+        if (exp == 7) {
+            return 100000000000000;
+        }
         // Fallback for larger exponents — unchecked so high total stack counts don't revert. 100 =
         // 2^2 * 25, so 100^exp wraps to 0 mod 2^256 once exp >= 128; substitute 1 so the apply-time
         // division can't divide by zero — the resulting raw value is garbage but the clamp contains it.
@@ -239,12 +257,16 @@ library StatBoostLib {
     // WARNING: assumes MonStateIndexName ordering Hp(0), Stamina(1), Speed(2), Attack(3)...
     function monStateIndexToStatBoostIndex(MonStateIndexName statIndex) internal pure returns (uint256) {
         uint256 idx = uint256(statIndex);
-        if (idx == 2) return 4; // Speed
+        if (idx == 2) {
+            return 4; // Speed
+        }
         return idx - 3;
     }
 
     function statBoostIndexToMonStateIndex(uint256 statBoostIndex) internal pure returns (MonStateIndexName) {
-        if (statBoostIndex == 4) return MonStateIndexName.Speed;
+        if (statBoostIndex == 4) {
+            return MonStateIndexName.Speed;
+        }
         return MonStateIndexName(statBoostIndex + 3);
     }
 }

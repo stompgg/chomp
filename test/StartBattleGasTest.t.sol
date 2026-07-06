@@ -56,7 +56,9 @@ contract StartBattleGasTest is Test, GasMeasure {
         commitManager = new DefaultCommitManager(engine);
         matchmaker = new DefaultMatchmaker(engine);
 
-        while (registry.getQuestPoolLength() > 0) registry.removeQuest(0);
+        while (registry.getQuestPoolLength() > 0) {
+            registry.removeQuest(0);
+        }
 
         address[] memory none = new address[](0);
         bytes32[] memory noK = new bytes32[](0);
@@ -179,14 +181,20 @@ contract StartBattleGasTest is Test, GasMeasure {
         returns (uint256 sstores, uint256 zToNz, uint256 nzToNz, uint256 noop, uint256 sloads)
     {
         for (uint256 i; i < acc.length; i++) {
-            if (acc[i].account != who) continue;
+            if (acc[i].account != who) {
+                continue;
+            }
             Vm.StorageAccess[] memory sa = acc[i].storageAccesses;
             for (uint256 j; j < sa.length; j++) {
                 if (sa[j].isWrite) {
                     sstores++;
-                    if (sa[j].previousValue == bytes32(0) && sa[j].newValue != bytes32(0)) zToNz++;
-                    else if (sa[j].previousValue == sa[j].newValue) noop++;
-                    else nzToNz++;
+                    if (sa[j].previousValue == bytes32(0) && sa[j].newValue != bytes32(0)) {
+                        zToNz++;
+                    } else if (sa[j].previousValue == sa[j].newValue) {
+                        noop++;
+                    } else {
+                        nzToNz++;
+                    }
                 } else {
                     sloads++;
                 }

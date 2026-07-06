@@ -187,7 +187,9 @@ contract DoublesEngineTest is Test {
         uint256 seen;
         for (uint256 i; i < recorder.count(); ++i) {
             (EffectStep step, uint256 side, uint256 mon) = recorder.entryAt(i);
-            if (step != EffectStep.AfterMove) continue;
+            if (step != EffectStep.AfterMove) {
+                continue;
+            }
             assertTrue(seen < expected.length, "more actions than expected");
             assertEq(side, expected[seen][0], "action order: side");
             assertEq(mon, expected[seen][1], "action order: mon");
@@ -501,7 +503,9 @@ contract DoublesEngineTest is Test {
         uint256 afterMoves;
         for (uint256 i; i < recorder.count(); ++i) {
             (EffectStep step,,) = recorder.entryAt(i);
-            if (step == EffectStep.AfterMove) afterMoves++;
+            if (step == EffectStep.AfterMove) {
+                afterMoves++;
+            }
         }
         assertEq(afterMoves, 1, "remaining actions stop at game over");
     }

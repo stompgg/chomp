@@ -76,7 +76,9 @@ abstract contract Quests is Ownable {
 
     function _encodeQuest(Predicate[] memory preds) internal pure returns (uint256 packed) {
         uint256 count = preds.length;
-        if (count > MAX_PREDICATES_PER_QUEST) revert TooManyPredicates();
+        if (count > MAX_PREDICATES_PER_QUEST) {
+            revert TooManyPredicates();
+        }
         for (uint256 i; i < count;) {
             Predicate memory p = preds[i];
             uint256 lane = uint256(uint8(p.op)) | (uint256(uint8(p.cmp)) << 5) | (uint256(p.negate ? 1 : 0) << 8)
@@ -117,13 +119,17 @@ abstract contract Quests is Ownable {
     }
 
     function editQuest(uint256 questId, Predicate[] memory preds) external onlyOwner {
-        if (questId >= _questPoolLength) revert InvalidQuestId();
+        if (questId >= _questPoolLength) {
+            revert InvalidQuestId();
+        }
         questPool[questId].packed = _encodeQuest(preds);
     }
 
     function removeQuest(uint256 questId) external onlyOwner {
         uint256 last = _questPoolLength;
-        if (questId >= last) revert InvalidQuestId();
+        if (questId >= last) {
+            revert InvalidQuestId();
+        }
         last -= 1;
         if (questId != last) {
             questPool[questId] = questPool[last];
@@ -156,7 +162,9 @@ abstract contract Quests is Ownable {
     }
 
     function getQuest(uint256 questId) external view returns (uint256 packed, uint256 count) {
-        if (questId >= _questPoolLength) revert InvalidQuestId();
+        if (questId >= _questPoolLength) {
+            revert InvalidQuestId();
+        }
         packed = questPool[questId].packed;
         count = (packed >> COUNT_SHIFT) & COUNT_MASK;
     }
@@ -168,7 +176,9 @@ abstract contract Quests is Ownable {
     function getActiveQuest() external view returns (uint32 activeDay, uint32 activeQuestId) {
         activeDay = _currentDay();
         uint256 len = _questPoolLength;
-        if (len == 0) return (activeDay, 0);
+        if (len == 0) {
+            return (activeDay, 0);
+        }
         activeQuestId = uint32(uint256(keccak256(abi.encode(activeDay))) % len);
     }
 
@@ -188,12 +198,24 @@ abstract contract Quests is Ownable {
     // ----- Eval -----
 
     function _compare(int256 extracted, uint8 cmp, int256 operand) internal pure returns (bool) {
-        if (cmp == uint8(Cmp.EQ)) return extracted == operand;
-        if (cmp == uint8(Cmp.NE)) return extracted != operand;
-        if (cmp == uint8(Cmp.LT)) return extracted < operand;
-        if (cmp == uint8(Cmp.LE)) return extracted <= operand;
-        if (cmp == uint8(Cmp.GT)) return extracted > operand;
-        if (cmp == uint8(Cmp.GE)) return extracted >= operand;
+        if (cmp == uint8(Cmp.EQ)) {
+            return extracted == operand;
+        }
+        if (cmp == uint8(Cmp.NE)) {
+            return extracted != operand;
+        }
+        if (cmp == uint8(Cmp.LT)) {
+            return extracted < operand;
+        }
+        if (cmp == uint8(Cmp.LE)) {
+            return extracted <= operand;
+        }
+        if (cmp == uint8(Cmp.GT)) {
+            return extracted > operand;
+        }
+        if (cmp == uint8(Cmp.GE)) {
+            return extracted >= operand;
+        }
         revert InvalidOpcode();
     }
 
@@ -214,8 +236,12 @@ abstract contract Quests is Ownable {
             (uint8 op, uint8 cmp, bool negate, uint16 arg, int16 operand) = _decodePredicate(lane);
             int256 extracted = _extract(op, arg, ctx, playerIndex, battleKey);
             bool ok = _compare(extracted, cmp, int256(operand));
-            if (negate) ok = !ok;
-            if (!ok) return false;
+            if (negate) {
+                ok = !ok;
+            }
+            if (!ok) {
+                return false;
+            }
             unchecked {
                 ++i;
             }

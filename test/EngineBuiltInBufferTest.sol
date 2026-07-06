@@ -36,8 +36,11 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
             address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK
         );
         vm.prank(turnId % 2 == 0 ? p0 : p1);
-        if (combined) engine.submitTurnMovesAndExecute(battleKey, packedMoves, r, vs);
-        else engine.submitTurnMoves(battleKey, packedMoves, r, vs);
+        if (combined) {
+            engine.submitTurnMovesAndExecute(battleKey, packedMoves, r, vs);
+        } else {
+            engine.submitTurnMoves(battleKey, packedMoves, r, vs);
+        }
         engine.resetCallContext();
     }
 

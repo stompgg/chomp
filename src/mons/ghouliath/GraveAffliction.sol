@@ -30,7 +30,9 @@ contract GraveAffliction is IMoveSet {
         uint256
     ) external {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == NO_SLOT) return; // no chosen target (defensive; the engine fizzles first)
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
         uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 

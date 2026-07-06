@@ -532,7 +532,9 @@ contract GachaTest is Test, BattleHelper {
                 sideWord(0, targetB0, 0, targetB1, salt),
                 sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt)
             );
-            if (engine.getWinner(battleKey) != address(0)) break;
+            if (engine.getWinner(battleKey) != address(0)) {
+                break;
+            }
             engine.executeWithSlotMoves(
                 battleKey,
                 sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt),
@@ -561,7 +563,9 @@ contract GachaTest is Test, BattleHelper {
         bytes32 topic = keccak256("GachaMultiEvent(bytes32,uint256,uint256,uint256,uint256)");
         uint256 found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].emitter != emitter || logs[i].topics[0] != topic) continue;
+            if (logs[i].emitter != emitter || logs[i].topics[0] != topic) {
+                continue;
+            }
             assertEq(logs[i].topics[1], battleKey);
             (uint256 s0, uint256 s1, uint256 s2, uint256 s3) =
                 abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
@@ -709,7 +713,9 @@ contract GachaTest is Test, BattleHelper {
                 sideWord(0, targetB0, 0, targetB1, salt),
                 sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt)
             );
-            if (engine.getWinner(battleKey) != address(0)) break;
+            if (engine.getWinner(battleKey) != address(0)) {
+                break;
+            }
             engine.executeWithSlotMoves(
                 battleKey,
                 sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, salt),

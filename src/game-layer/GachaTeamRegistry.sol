@@ -216,8 +216,12 @@ contract GachaTeamRegistry is
         external
         onlyOwner
     {
-        if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
-        if (facetIds.length != monIndices.length) revert FacetArgsLengthMismatch();
+        if (slot >= MAX_TEAMS_PER_PLAYER) {
+            revert InvalidTeamIndex();
+        }
+        if (facetIds.length != monIndices.length) {
+            revert FacetArgsLengthMismatch();
+        }
 
         // Team write. _packTeam validates length + dedup.
         uint256 packedTeam = _packTeam(monIndices);
@@ -236,7 +240,9 @@ contract GachaTeamRegistry is
         bool dirty;
         for (uint256 i; i < monIndices.length;) {
             uint8 facetId = facetIds[i];
-            if (facetId > TOTAL_FACETS) revert InvalidFacetId();
+            if (facetId > TOTAL_FACETS) {
+                revert InvalidFacetId();
+            }
             uint256 monId = monIndices[i];
             uint256 bucket = monId / MONS_PER_FACET_BUCKET;
             uint256 lane = monId % MONS_PER_FACET_BUCKET;
@@ -277,7 +283,9 @@ contract GachaTeamRegistry is
         uint8[] memory facetIds,
         uint8[] memory moveSelections
     ) external {
-        if (!isWhitelistedOpponent(opponent)) revert NotWhitelistedOpponent();
+        if (!isWhitelistedOpponent(opponent)) {
+            revert NotWhitelistedOpponent();
+        }
         _setOpponentTeam(opponent, msg.sender, monIndices, facetIds, moveSelections);
     }
 
@@ -290,7 +298,9 @@ contract GachaTeamRegistry is
         uint8[] memory facetIds,
         uint8[] memory moveSelections
     ) external override {
-        if (!isWhitelistedOpponent(msg.sender)) revert NotWhitelistedOpponent();
+        if (!isWhitelistedOpponent(msg.sender)) {
+            revert NotWhitelistedOpponent();
+        }
         _setOpponentTeam(msg.sender, user, monIndices, facetIds, moveSelections);
     }
 
@@ -327,7 +337,9 @@ contract GachaTeamRegistry is
         uint256 packedMoves;
         for (uint256 i; i < facetIds.length;) {
             uint8 facetId = facetIds[i];
-            if (facetId > TOTAL_FACETS) revert InvalidFacetId();
+            if (facetId > TOTAL_FACETS) {
+                revert InvalidFacetId();
+            }
             packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
             packedMoves |= uint256(moveSelections[i]) << (i * OPP_MOVE_BITS_PER_SLOT);
             unchecked {
@@ -528,15 +540,29 @@ contract GachaTeamRegistry is
     }
 
     function _applyFacetToStats(MonStats memory stats, uint8 facetId) private pure {
-        if (facetId == 0) return;
+        if (facetId == 0) {
+            return;
+        }
         StatDelta memory d = _computeFacetDelta(stats, facetId);
         // Truncated ±5% can't underflow a uint32 stat for positive bases.
-        if (d.hp != 0) stats.hp = uint32(int32(stats.hp) + int32(d.hp));
-        if (d.atk != 0) stats.attack = uint32(int32(stats.attack) + int32(d.atk));
-        if (d.spAtk != 0) stats.specialAttack = uint32(int32(stats.specialAttack) + int32(d.spAtk));
-        if (d.def != 0) stats.defense = uint32(int32(stats.defense) + int32(d.def));
-        if (d.spDef != 0) stats.specialDefense = uint32(int32(stats.specialDefense) + int32(d.spDef));
-        if (d.speed != 0) stats.speed = uint32(int32(stats.speed) + int32(d.speed));
+        if (d.hp != 0) {
+            stats.hp = uint32(int32(stats.hp) + int32(d.hp));
+        }
+        if (d.atk != 0) {
+            stats.attack = uint32(int32(stats.attack) + int32(d.atk));
+        }
+        if (d.spAtk != 0) {
+            stats.specialAttack = uint32(int32(stats.specialAttack) + int32(d.spAtk));
+        }
+        if (d.def != 0) {
+            stats.defense = uint32(int32(stats.defense) + int32(d.def));
+        }
+        if (d.spDef != 0) {
+            stats.specialDefense = uint32(int32(stats.specialDefense) + int32(d.spDef));
+        }
+        if (d.speed != 0) {
+            stats.speed = uint32(int32(stats.speed) + int32(d.speed));
+        }
     }
 
     // =====================================================================
@@ -544,8 +570,12 @@ contract GachaTeamRegistry is
     // =====================================================================
 
     function firstRoll(uint256 starterId) external returns (uint256[] memory rolledIds) {
-        if (monsOwned[msg.sender].length() > 0) revert AlreadyFirstRolled();
-        if (starterId >= NUM_STARTERS) revert InvalidStarterId();
+        if (monsOwned[msg.sender].length() > 0) {
+            revert AlreadyFirstRolled();
+        }
+        if (starterId >= NUM_STARTERS) {
+            revert InvalidStarterId();
+        }
 
         rolledIds = new uint256[](INITIAL_ROLLS);
         rolledIds[0] = starterId;
@@ -556,7 +586,9 @@ contract GachaTeamRegistry is
     }
 
     function roll(uint256 numRolls) external returns (uint256[] memory rolledIds) {
-        if (monsOwned[msg.sender].length() == monIds.length()) revert NoMoreStock();
+        if (monsOwned[msg.sender].length() == monIds.length()) {
+            revert NoMoreStock();
+        }
         uint256 cost = numRolls * ROLL_COST;
         uint256 data = playerData[msg.sender];
         uint256 currentPoints = uint128(data);
@@ -609,9 +641,13 @@ contract GachaTeamRegistry is
     /// clobbering. Run catalog setup (createMon) before players migrate.
     function migrate() external {
         GachaTeamRegistry prev = PREVIOUS_REGISTRY;
-        if (address(prev) == address(0)) revert NoPreviousRegistry();
+        if (address(prev) == address(0)) {
+            revert NoPreviousRegistry();
+        }
         address player = msg.sender;
-        if (migrated[player]) revert AlreadyMigrated();
+        if (migrated[player]) {
+            revert AlreadyMigrated();
+        }
         migrated[player] = true;
 
         // Profile slot — verbatim whole word.
@@ -661,8 +697,12 @@ contract GachaTeamRegistry is
     /// (`PREVIOUS_REGISTRY` unset) or the player has already imported.
     function needsMigration(address player) external view returns (bool) {
         GachaTeamRegistry prev = PREVIOUS_REGISTRY;
-        if (address(prev) == address(0)) return false;
-        if (migrated[player]) return false;
+        if (address(prev) == address(0)) {
+            return false;
+        }
+        if (migrated[player]) {
+            return false;
+        }
         return prev.balanceOf(player) > 0;
     }
 
@@ -678,7 +718,9 @@ contract GachaTeamRegistry is
     function onRoundEnd(bytes32) external override {}
 
     function onBattleEnd(bytes32 battleKey) external override {
-        if (msg.sender != address(ENGINE)) revert NotEngine();
+        if (msg.sender != address(ENGINE)) {
+            revert NotEngine();
+        }
 
         BattleEndContext memory ctx = ENGINE.getBattleEndContext(battleKey);
 
@@ -689,7 +731,9 @@ contract GachaTeamRegistry is
 
         // No rewards on timeout/forfeit: at least one side must have all mons KO'd.
         uint8 allKOd = uint8((1 << MONS_PER_TEAM) - 1);
-        if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
+        if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) {
+            return;
+        }
 
         uint256 packed0 = playerData[ctx.p0];
         uint256 packed1 = playerData[ctx.p1];
@@ -709,14 +753,18 @@ contract GachaTeamRegistry is
     /// @dev Multi settlement: same formulas per human seat, KO/exp over the seat's quarter of
     ///      the 8-mon side roster (the engine fixes seat teams at 4). CPU seats emit a zero lane.
     function _onMultiBattleEnd(bytes32 battleKey, BattleEndContext memory ctx) private {
-        if (ctx.p0KOBitmap != 0xFF && ctx.p1KOBitmap != 0xFF) return; // same timeout gate as above
+        if (ctx.p0KOBitmap != 0xFF && ctx.p1KOBitmap != 0xFF) {
+            return; // same timeout gate as above
+        }
 
         QuestGate memory qg;
         uint256[4] memory lanes;
         for (uint256 seatIndex; seatIndex < 4; ++seatIndex) {
             (address player,,,) = _seatSettleParams(ctx, seatIndex);
             uint256 packed = playerData[player];
-            if (packed & IS_CPU_BIT != 0) continue;
+            if (packed & IS_CPU_BIT != 0) {
+                continue;
+            }
             lanes[seatIndex] = _settleHumanSeat(battleKey, ctx, seatIndex, packed, qg);
         }
         emit GachaMultiEvent(battleKey, lanes[0], lanes[1], lanes[2], lanes[3]);
@@ -746,10 +794,15 @@ contract GachaTeamRegistry is
             return (player, teamIdx, koBitmap, won);
         }
         uint256 side = seatIndex >> 1;
-        if (seatIndex == 0) (player, teamIdx) = (ctx.p0, ctx.p0TeamIndex);
-        else if (seatIndex == 1) (player, teamIdx) = (ctx.p2, ctx.p2TeamIndex);
-        else if (seatIndex == 2) (player, teamIdx) = (ctx.p1, ctx.p1TeamIndex);
-        else (player, teamIdx) = (ctx.p3, ctx.p3TeamIndex);
+        if (seatIndex == 0) {
+            (player, teamIdx) = (ctx.p0, ctx.p0TeamIndex);
+        } else if (seatIndex == 1) {
+            (player, teamIdx) = (ctx.p2, ctx.p2TeamIndex);
+        } else if (seatIndex == 2) {
+            (player, teamIdx) = (ctx.p1, ctx.p1TeamIndex);
+        } else {
+            (player, teamIdx) = (ctx.p3, ctx.p3TeamIndex);
+        }
         uint8 sideKO = side == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
         koBitmap = uint8((sideKO >> ((seatIndex & 1) * 4)) & 0x0F);
         won = ctx.winner != address(0) && ctx.winner == (side == 0 ? ctx.p0 : ctx.p1);
@@ -864,7 +917,9 @@ contract GachaTeamRegistry is
             if (bucket != lastBucket) {
                 if (lastBucket != type(uint256).max) {
                     packedExpForMon[player][lastBucket] = expSlot;
-                    if (facetDirty) facetData[player][lastBucket] = facetSlot;
+                    if (facetDirty) {
+                        facetData[player][lastBucket] = facetSlot;
+                    }
                 }
                 expSlot = packedExpForMon[player][bucket];
                 facetLoaded = false;
@@ -877,13 +932,17 @@ contract GachaTeamRegistry is
             uint256 baseExp = alive == 1 ? EXP_PER_SURVIVING_MON : EXP_PER_KOD_MON;
             uint256 gain = (baseExp + streakFlat) * expMult;
             uint256 newExp = oldExp + gain;
-            if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
+            if (newExp > EXP_PER_MON_CAP) {
+                newExp = EXP_PER_MON_CAP;
+            }
             expSlot =
                 (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON))) | (newExp << (lane * EXP_BITS_PER_MON));
 
             // Track actual gain for the event (post-cap), saturating at lane width.
             uint256 actualGain = newExp - oldExp;
-            if (actualGain > GE_EXP_LANE_MASK) actualGain = GE_EXP_LANE_MASK;
+            if (actualGain > GE_EXP_LANE_MASK) {
+                actualGain = GE_EXP_LANE_MASK;
+            }
             expFacetPacked |= actualGain << (GE_EXP_SHIFT + j * GE_EXP_BITS_PER_MON);
 
             // Facet draws on level crossings
@@ -903,7 +962,9 @@ contract GachaTeamRegistry is
 
         if (lastBucket != type(uint256).max) {
             packedExpForMon[player][lastBucket] = expSlot;
-            if (facetDirty) facetData[player][lastBucket] = facetSlot;
+            if (facetDirty) {
+                facetData[player][lastBucket] = facetSlot;
+            }
         }
     }
 
@@ -942,7 +1003,9 @@ contract GachaTeamRegistry is
     }
 
     function _assertExpAssigner() internal view override {
-        if (!isAssigner[msg.sender]) revert NotAssigner();
+        if (!isAssigner[msg.sender]) {
+            revert NotAssigner();
+        }
     }
 
     function _monRegistrySize() internal view override returns (uint256) {
@@ -988,7 +1051,9 @@ contract GachaTeamRegistry is
         if (opcode == Op.HAS_MON_ID) {
             uint256 packedTeam = _readTeamLane(player, teamIdx);
             for (uint256 i; i < MONS_PER_TEAM; ++i) {
-                if (((packedTeam >> (i * BITS_PER_MON_INDEX)) & ONES_MASK) == uint256(arg)) return 1;
+                if (((packedTeam >> (i * BITS_PER_MON_INDEX)) & ONES_MASK) == uint256(arg)) {
+                    return 1;
+                }
             }
             return 0;
         }
@@ -1024,7 +1089,9 @@ contract GachaTeamRegistry is
             for (uint256 i; i < MONS_PER_TEAM;) {
                 uint256 monId = (packedTeam >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
                 uint256 lvl = _levelForExp(_getExp(player, monId));
-                if (isMin ? lvl < acc : lvl > acc) acc = lvl;
+                if (isMin ? lvl < acc : lvl > acc) {
+                    acc = lvl;
+                }
                 unchecked {
                     ++i;
                 }
@@ -1039,7 +1106,9 @@ contract GachaTeamRegistry is
                 uint256 bucket = monId / MONS_PER_FACET_BUCKET;
                 uint256 lane = monId % MONS_PER_FACET_BUCKET;
                 (, uint8 assignedFacet) = _readFacetSlotForMon(facetData[player][bucket], lane);
-                if (assignedFacet != 0) ++count;
+                if (assignedFacet != 0) {
+                    ++count;
+                }
                 unchecked {
                     ++i;
                 }
@@ -1053,7 +1122,9 @@ contract GachaTeamRegistry is
             uint256 hi = ctx.isMultiMode ? quarterShift + 4 : states.length;
             for (uint256 i = quarterShift; i < hi;) {
                 int256 d = states[i].hpDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(states[i].hpDelta);
-                if (isMin ? d < acc : d > acc) acc = d;
+                if (isMin ? d < acc : d > acc) {
+                    acc = d;
+                }
                 unchecked {
                     ++i;
                 }

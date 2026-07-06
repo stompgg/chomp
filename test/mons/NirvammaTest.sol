@@ -74,7 +74,9 @@ contract NirvammaTest is Test, BattleHelper {
     {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, targetIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == eff) return true;
+            if (address(effects[i].effect) == eff) {
+                return true;
+            }
         }
         return false;
     }
@@ -82,7 +84,9 @@ contract NirvammaTest is Test, BattleHelper {
     function _countGlobalsOf(bytes32 battleKey, address eff) internal view returns (uint256 n) {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == eff) n++;
+            if (address(effects[i].effect) == eff) {
+                n++;
+            }
         }
     }
 

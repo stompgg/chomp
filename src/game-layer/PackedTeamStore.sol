@@ -61,10 +61,14 @@ abstract contract PackedTeamStore is ITeamRegistry {
     }
 
     function deleteTeam(uint256 slot) external virtual override {
-        if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
+        if (slot >= MAX_TEAMS_PER_PLAYER) {
+            revert InvalidTeamIndex();
+        }
         uint256 packed = teamOrderPacked[msg.sender];
         uint256 liveBit = uint256(1) << (LIVE_BITMAP_SHIFT + slot);
-        if (packed & liveBit == 0) revert TeamNotLive();
+        if (packed & liveBit == 0) {
+            revert TeamNotLive();
+        }
 
         // Operate on the order region in isolation so the splice can't pull liveBitmap bits
         // into positions ≥ count. The invariant "positions ≥ live count == 0" lets createTeam
@@ -93,7 +97,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         override
     {
         _packedTeamValidateOwnership(newMonIndices);
-        if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) revert TeamNotLive();
+        if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) {
+            revert TeamNotLive();
+        }
         _checkForDuplicates(newMonIndices);
 
         uint256 groupKey = teamIndex >> 2;
@@ -102,7 +108,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         uint256 n = teamMonIndicesToOverride.length;
         for (uint256 i; i < n;) {
             uint256 monId = newMonIndices[i];
-            if (monId > ONES_MASK) revert MonIdTooLarge();
+            if (monId > ONES_MASK) {
+                revert MonIdTooLarge();
+            }
             uint256 monShift = laneShift + teamMonIndicesToOverride[i] * BITS_PER_MON_INDEX;
             group = (group & ~(ONES_MASK << monShift)) | (monId << monShift);
             unchecked {
@@ -116,7 +124,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         uint256 packed = teamOrderPacked[user];
         uint256 liveBitmap = (packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK;
         uint256 free = (~liveBitmap) & LIVE_BITMAP_MASK;
-        if (free == 0) revert TeamCapReached();
+        if (free == 0) {
+            revert TeamCapReached();
+        }
         slot = _ctz(free);
 
         _writeTeamLane(user, slot, _packTeam(monIndices));
@@ -147,7 +157,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     }
 
     function _assertTeamLive(address player, uint256 teamIndex) internal view {
-        if (_packedTeamIsCpuOpponent(player)) return;
+        if (_packedTeamIsCpuOpponent(player)) {
+            return;
+        }
         if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
             revert InvalidTeamIndex();
         }
@@ -156,7 +168,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     /// @dev Variant for callers that already resolved the CPU-opponent flag (saves the
     ///      _packedTeamIsCpuOpponent playerData re-read when checking both sides in one call).
     function _assertTeamLive(address player, uint256 teamIndex, bool isCpuOpponent) internal view {
-        if (isCpuOpponent) return;
+        if (isCpuOpponent) {
+            return;
+        }
         if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
             revert InvalidTeamIndex();
         }
@@ -175,7 +189,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     function _popcount(uint256 x) internal pure virtual returns (uint8 count) {
         unchecked {
             for (uint256 v = x; v != 0; v >>= 1) {
-                if (v & 1 == 1) ++count;
+                if (v & 1 == 1) {
+                    ++count;
+                }
             }
         }
     }
@@ -195,7 +211,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         }
         for (uint256 i; i < MONS_PER_TEAM;) {
             uint256 id = monIndices[i];
-            if (id > ONES_MASK) revert MonIdTooLarge();
+            if (id > ONES_MASK) {
+                revert MonIdTooLarge();
+            }
             packed |= id << (i * BITS_PER_MON_INDEX);
             unchecked {
                 ++i;

@@ -373,9 +373,13 @@ contract MultiFlowsTest is BatchHelper {
         uint256 side0Count;
         uint256 n;
         for (uint256 i; i < 4; ++i) {
-            if (cpuMask & (1 << i) != 0) continue;
+            if (cpuMask & (1 << i) != 0) {
+                continue;
+            }
             humans[n++] = canonicalPks[i];
-            if (i < 2) ++side0Count;
+            if (i < 2) {
+                ++side0Count;
+            }
         }
         uint256 ci = turnId % n;
         committerPk = humans[ci];
@@ -487,7 +491,9 @@ contract MultiFlowsTest is BatchHelper {
                 sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xA0 + uint8(round))),
                 sideWord(0, targetBits(0), 0, targetBits(0), uint104(0xB0 + uint8(round)))
             );
-            if (engine.getWinner(battleKey) != address(0)) break;
+            if (engine.getWinner(battleKey) != address(0)) {
+                break;
+            }
             // Forced-switch turn: each KO'd B slot brings its quarter's next mon.
             engine.executeWithSlotMoves(
                 battleKey,

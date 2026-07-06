@@ -40,7 +40,9 @@ abstract contract EIP712 {
 
         string memory name;
         string memory version;
-        if (!_domainNameAndVersionMayChange()) (name, version) = _domainNameAndVersion();
+        if (!_domainNameAndVersionMayChange()) {
+            (name, version) = _domainNameAndVersion();
+        }
         bytes32 nameHash = _domainNameAndVersionMayChange() ? bytes32(0) : keccak256(bytes(name));
         bytes32 versionHash = _domainNameAndVersionMayChange() ? bytes32(0) : keccak256(bytes(version));
         _cachedNameHash = nameHash;
@@ -96,7 +98,9 @@ abstract contract EIP712 {
             separator = _buildDomainSeparator();
         } else {
             separator = _cachedDomainSeparator;
-            if (_cachedDomainSeparatorInvalidated()) separator = _buildDomainSeparator();
+            if (_cachedDomainSeparatorInvalidated()) {
+                separator = _buildDomainSeparator();
+            }
         }
     }
 
@@ -119,7 +123,9 @@ abstract contract EIP712 {
             digest = _buildDomainSeparator();
         } else {
             digest = _cachedDomainSeparator;
-            if (_cachedDomainSeparatorInvalidated()) digest = _buildDomainSeparator();
+            if (_cachedDomainSeparatorInvalidated()) {
+                digest = _buildDomainSeparator();
+            }
         }
         assembly ("memory-safe") {
             // Compute the digest.

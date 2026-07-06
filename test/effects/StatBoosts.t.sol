@@ -212,11 +212,21 @@ contract StatBoostsTest is Test, BattleHelper {
     }
 
     function getStatName(uint256 statIndex) internal pure returns (string memory) {
-        if (statIndex == uint256(MonStateIndexName.Attack)) return "Attack";
-        if (statIndex == uint256(MonStateIndexName.Defense)) return "Defense";
-        if (statIndex == uint256(MonStateIndexName.SpecialAttack)) return "Special Attack";
-        if (statIndex == uint256(MonStateIndexName.SpecialDefense)) return "Special Defense";
-        if (statIndex == uint256(MonStateIndexName.Speed)) return "Speed";
+        if (statIndex == uint256(MonStateIndexName.Attack)) {
+            return "Attack";
+        }
+        if (statIndex == uint256(MonStateIndexName.Defense)) {
+            return "Defense";
+        }
+        if (statIndex == uint256(MonStateIndexName.SpecialAttack)) {
+            return "Special Attack";
+        }
+        if (statIndex == uint256(MonStateIndexName.SpecialDefense)) {
+            return "Special Defense";
+        }
+        if (statIndex == uint256(MonStateIndexName.Speed)) {
+            return "Speed";
+        }
         return "Unknown";
     }
 

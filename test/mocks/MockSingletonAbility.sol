@@ -18,7 +18,9 @@ contract MockSingletonAbility is IAbility, BasicEffect {
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) return;
+            if (address(effects[i].effect) == address(this)) {
+                return;
+            }
         }
         engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }

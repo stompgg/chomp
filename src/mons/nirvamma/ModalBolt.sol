@@ -69,7 +69,9 @@ contract ModalBolt is IMoveSet {
                     break;
                 }
             }
-            if (!found) return;
+            if (!found) {
+                return;
+            }
         }
         uint256 mask = uint256(1) << mode;
 

@@ -935,9 +935,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 side0Humans;
             uint256 numHumans;
             for (uint256 i; i < 4; ++i) {
-                if (cpuSeatMask & (1 << i) != 0) continue;
+                if (cpuSeatMask & (1 << i) != 0) {
+                    continue;
+                }
                 humans[numHumans++] = _seatAt(data, ms, i);
-                if (i < 2) ++side0Humans;
+                if (i < 2) {
+                    ++side0Humans;
+                }
             }
             uint256 committerCursor = turnId % numHumans;
             committer = humans[committerCursor];
@@ -976,9 +980,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         view
         returns (address)
     {
-        if (canonicalIndex == 0) return data.p0;
-        if (canonicalIndex == 1) return ms.p2;
-        if (canonicalIndex == 2) return data.p1;
+        if (canonicalIndex == 0) {
+            return data.p0;
+        }
+        if (canonicalIndex == 1) {
+            return ms.p2;
+        }
+        if (canonicalIndex == 2) {
+            return data.p1;
+        }
         return ms.p3;
     }
 
@@ -1587,7 +1597,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Free the key used for battle configs so other battles can use it
         _freeStorageKey(battleKey, storageKey);
-        if (emitBattleComplete) emit BattleComplete(battleKey, winner);
+        if (emitBattleComplete) {
+            emit BattleComplete(battleKey, winner);
+        }
     }
 
     /**
@@ -1722,13 +1734,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
             for (uint256 i; i < effectCount; i++) {
                 uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
-                if (address(config.p0Effects[slotIndex].effect) == effectAddr) return true;
+                if (address(config.p0Effects[slotIndex].effect) == effectAddr) {
+                    return true;
+                }
             }
         } else {
             effectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
             for (uint256 i; i < effectCount; i++) {
                 uint256 slotIndex = _getEffectSlotIndex(monIndex, i);
-                if (address(config.p1Effects[slotIndex].effect) == effectAddr) return true;
+                if (address(config.p1Effects[slotIndex].effect) == effectAddr) {
+                    return true;
+                }
             }
         }
         return false;
@@ -1759,7 +1775,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         uint256 monIndex
     ) internal {
-        if (rawAbility == 0) return;
+        if (rawAbility == 0) {
+            return;
+        }
         if (rawAbility >> 160 != 0) {
             _inlineAbilityActivation(config, rawAbility, playerIndex, monIndex);
         } else {
@@ -1902,7 +1920,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         IEffect effect = eff.effect;
-        if (address(effect) == TOMBSTONE_ADDRESS) return;
+        if (address(effect) == TOMBSTONE_ADDRESS) {
+            return;
+        }
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             BattleData storage battle = battleData[battleKey];
@@ -1936,7 +1956,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         StatBoostToApply[] calldata statBoostsToApply,
         StatBoostFlag boostFlag
     ) external {
-        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
         uint168 key = StatBoostLib.generateKeyNoSalt(targetIndex, monIndex, msg.sender);
         _addStatBoostWithKey(targetIndex, monIndex, statBoostsToApply, boostFlag == StatBoostFlag.Perm, key);
     }
@@ -1944,14 +1966,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @notice Remove the msg.sender-keyed stat-boost source of the given permanence (if any) and
     ///         recompute the mon's boosted stats.
     function removeStatBoost(uint256 targetIndex, uint256 monIndex, StatBoostFlag boostFlag) external {
-        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
         uint168 key = StatBoostLib.generateKeyNoSalt(targetIndex, monIndex, msg.sender);
         _removeStatBoostWithKey(targetIndex, monIndex, key, boostFlag == StatBoostFlag.Perm);
     }
 
     /// @notice Remove every stat-boost source on a mon and reset its stats to base values.
     function clearAllStatBoosts(uint256 targetIndex, uint256 monIndex) external {
-        if (battleKeyForWrite == bytes32(0)) revert NoWriteAllowed();
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
         mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
@@ -1968,7 +1994,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 }
             }
         }
-        if (removeCount == 0) return;
+        if (removeCount == 0) {
+            return;
+        }
 
         // Reset to base by applying with empty aggregation.
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
@@ -2023,7 +2051,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 tombstoneSlot = slotIndex;
                 continue;
             }
-            if (effAddr != STAT_BOOST_ADDRESS) continue;
+            if (effAddr != STAT_BOOST_ADDRESS) {
+                continue;
+            }
             bytes32 data = eff.data;
             (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
                 StatBoostLib.unpackBoostData(data);
@@ -2081,7 +2111,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         for (uint256 i; i < monEffectCount; ++i) {
             uint256 slotIndex = baseSlot + i;
             EffectInstance storage eff = effects[slotIndex];
-            if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
+            if (address(eff.effect) != STAT_BOOST_ADDRESS) {
+                continue;
+            }
             (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
                 StatBoostLib.unpackBoostData(eff.data);
             if (existingKey == key && effIsPerm == isPerm) {
@@ -2092,7 +2124,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
         }
 
-        if (!found) return;
+        if (!found) {
+            return;
+        }
         effects[foundSlot].effect = IEffect(TOMBSTONE_ADDRESS);
         _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
@@ -2188,11 +2222,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             } else {
                 int32 newDelta = int32(newBoostedStats[i]) - int32(baseStats[i]);
-                if (i == 0) st.attackDelta = newDelta;
-                else if (i == 1) st.defenceDelta = newDelta;
-                else if (i == 2) st.specialAttackDelta = newDelta;
-                else if (i == 3) st.specialDefenceDelta = newDelta;
-                else st.speedDelta = newDelta;
+                if (i == 0) {
+                    st.attackDelta = newDelta;
+                } else if (i == 1) {
+                    st.defenceDelta = newDelta;
+                } else if (i == 2) {
+                    st.specialAttackDelta = newDelta;
+                } else if (i == 3) {
+                    st.specialDefenceDelta = newDelta;
+                } else {
+                    st.speedDelta = newDelta;
+                }
             }
         }
     }
@@ -2201,11 +2241,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      treating the cleared sentinel as 0.
     function _statBoostCurrentDelta(MonState storage st, uint256 i) private view returns (int32) {
         int32 d;
-        if (i == 0) d = st.attackDelta;
-        else if (i == 1) d = st.defenceDelta;
-        else if (i == 2) d = st.specialAttackDelta;
-        else if (i == 3) d = st.specialDefenceDelta;
-        else d = st.speedDelta;
+        if (i == 0) {
+            d = st.attackDelta;
+        } else if (i == 1) {
+            d = st.defenceDelta;
+        } else if (i == 2) {
+            d = st.specialAttackDelta;
+        } else if (i == 3) {
+            d = st.specialDefenceDelta;
+        } else {
+            d = st.speedDelta;
+        }
         return d == CLEARED_MON_STATE_SENTINEL ? int32(0) : d;
     }
 
@@ -2225,7 +2271,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         for (uint256 i; i < monEffectCount; ++i) {
             EffectInstance storage eff = effects[baseSlot + i];
-            if (address(eff.effect) != STAT_BOOST_ADDRESS) continue;
+            if (address(eff.effect) != STAT_BOOST_ADDRESS) {
+                continue;
+            }
             (bool effIsPerm,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
                 StatBoostLib.unpackBoostData(eff.data);
             if (!effIsPerm) {
@@ -2605,8 +2653,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         uint256 absSlot = (playerIndex << 1) | (slotIndex & 1);
         uint256 currentActive = _slotActive(battle, absSlot);
-        if (!_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) return;
-        if (battle.turnId != 0 && monToSwitchIndex == currentActive) return;
+        if (!_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) {
+            return;
+        }
+        if (battle.turnId != 0 && monToSwitchIndex == currentActive) {
+            return;
+        }
         _handleSlotSwitch(battleKey, config, battle, absSlot, monToSwitchIndex, currentActive);
     }
 
@@ -2643,7 +2695,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check for game over and/or KOs
             (uint256 playerSwitchForTurnFlag, bool isGameOver) = _checkForGameOverOrKO(config, battle, playerIndex);
-            if (isGameOver) return;
+            if (isGameOver) {
+                return;
+            }
 
             // Set the player switch for turn flag
             battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
@@ -2768,8 +2822,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 p1ActiveMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
             bool isP0KO = (p0KOBitmap & (1 << p0ActiveMonIndex)) != 0;
             bool isP1KO = (p1KOBitmap & (1 << p1ActiveMonIndex)) != 0;
-            if (isP0KO && !isP1KO) playerSwitchForTurnFlag = 0;
-            else if (!isP0KO && isP1KO) playerSwitchForTurnFlag = 1;
+            if (isP0KO && !isP1KO) {
+                playerSwitchForTurnFlag = 0;
+            } else if (!isP0KO && isP1KO) {
+                playerSwitchForTurnFlag = 1;
+            }
             return (playerSwitchForTurnFlag, false);
         }
 
@@ -3612,7 +3669,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             for (uint256 s; s < 4;) {
                 if (mask & (1 << s) != 0) {
                     _handleSlotAction(battleKey, config, battle, s, true);
-                    if (battle.winnerIndex != 2) return 2;
+                    if (battle.winnerIndex != 2) {
+                        return 2;
+                    }
                 }
                 unchecked {
                     ++s;
@@ -3640,11 +3699,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 gLen = config.globalEffectsLength;
         if (gLen != 0) {
             _runEffectsForMon(config, battle, rng, 2, 2, 0, EffectStep.RoundStart, "", gLen);
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
         }
         if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundStart);
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
         }
 
         // Greedy dynamic scheduler (D1/D27): locked priority, live speed, fresh jitter per pick.
@@ -3653,14 +3716,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 numActed;
         for (uint256 pick; pick < 4;) {
             uint256 slot = _pickNextSlot(config, battle, lockedPriorities, actedMask, rng, pick, turnZero);
-            if (slot == NO_SLOT) break;
+            if (slot == NO_SLOT) {
+                break;
+            }
             actedMask |= (1 << slot);
             actionOrder |= slot << (numActed << 3);
             unchecked {
                 ++numActed;
             }
             _handleSlotAction(battleKey, config, battle, slot, false);
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
 
             // Actor AfterMove effects (own list if alive, then globals) + rest regen (D6: an
             // exhausted/KO'd actor was skipped above and earns nothing here either).
@@ -3679,7 +3746,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (gLen != 0) {
                 _runEffectsForMon(config, battle, rng, 2, side, actorMon, EffectStep.AfterMove, "", gLen);
             }
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
             if (inlineRegen && actorAlive) {
                 MoveDecision memory fresh = _getCurrentTurnMoveForSlot(side, slot & 1);
                 if (StaminaRegenLogic._isRestingMove(fresh.packedMoveIndex)) {
@@ -3704,7 +3773,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     ++k;
                 }
             }
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
         }
 
         // RoundEnd: global pass, per-slot lists in re-evaluated speed order (D29), then regen
@@ -3712,11 +3783,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         gLen = config.globalEffectsLength;
         if (gLen != 0) {
             _runEffectsForMon(config, battle, rng, 2, 2, 0, EffectStep.RoundEnd, "", gLen);
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
         }
         if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundEnd);
-            if (battle.winnerIndex != 2) return 2;
+            if (battle.winnerIndex != 2) {
+                return 2;
+            }
         }
         if (inlineRegen) {
             for (uint256 s; s < 4;) {
@@ -3831,13 +3906,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 side = absSlot >> 1;
         MoveDecision memory move = _getCurrentTurnMoveForSlot(side, absSlot & 1);
         uint8 stored = move.packedMoveIndex & MOVE_INDEX_MASK;
-        if (stored == 0) return; // lane not populated
+        if (stored == 0) {
+            return; // lane not populated
+        }
         uint8 moveIndex = stored >= SWITCH_MOVE_INDEX ? stored : stored - MOVE_INDEX_OFFSET;
         uint256 activeMon = _slotActive(battle, absSlot);
 
         if (activeMon == EMPTY_ACTIVE_LANE) {
             // Empty lane acts only as a turn-0 send-in.
-            if (battle.turnId != 0) return;
+            if (battle.turnId != 0) {
+                return;
+            }
             moveIndex = SWITCH_MOVE_INDEX;
         } else {
             MonState storage currentMonState = _getMonState(config, side, activeMon);
@@ -3847,7 +3926,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
             // D6/D7: on a full turn a KO'd active (exhausted slot or mid-turn casualty) loses
             // its action outright — no stamina, no rest, nothing.
-            if (!isForcedSwitchTurn && currentMonState.isKnockedOut) return;
+            if (!isForcedSwitchTurn && currentMonState.isKnockedOut) {
+                return;
+            }
             if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
                 moveIndex = SWITCH_MOVE_INDEX;
                 (uint256 coerced,) = _firstLegalSwitchTarget(config, battle, absSlot);
@@ -3863,16 +3944,24 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 // no slot starts the battle vacant.
                 (monToSwitchIndex,) = _firstLegalSwitchTarget(config, battle, absSlot);
             }
-            if (!_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) return;
-            if (battle.turnId != 0 && monToSwitchIndex == activeMon) return;
+            if (!_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) {
+                return;
+            }
+            if (battle.turnId != 0 && monToSwitchIndex == activeMon) {
+                return;
+            }
             _handleSlotSwitch(battleKey, config, battle, absSlot, monToSwitchIndex, activeMon);
         } else if (moveIndex == NO_OP_MOVE_INDEX) {
             // Rest — the AfterMove regen pass handles the stamina tick.
         } else {
             StoredMon storage attackerMon = _getTeamMon(config, side, activeMon);
-            if (moveIndex >= MOVE_LANES_PER_MON) return;
+            if (moveIndex >= MOVE_LANES_PER_MON) {
+                return;
+            }
             uint256 rawMoveSlot = attackerMon.moves[moveIndex];
-            if (rawMoveSlot == 0) return;
+            if (rawMoveSlot == 0) {
+                return;
+            }
 
             bool isInlineAttack = rawMoveSlot >> 160 != 0;
 
@@ -3891,7 +3980,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 int32 currentStamina = (staminaDelta == CLEARED_MON_STATE_SENTINEL)
                     ? int32(attackerMon.stats.stamina)
                     : int32(attackerMon.stats.stamina) + staminaDelta;
-                if (currentStamina < staminaCost) return;
+                if (currentStamina < staminaCost) {
+                    return;
+                }
             }
             _deductStamina(st, staminaCost);
 
@@ -3905,7 +3996,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (targetBits != 0) {
                 tSlot = TargetLib.lowestSlot(targetBits);
                 tMon = _slotActive(battle, tSlot);
-                if (tMon == EMPTY_ACTIVE_LANE || _getMonState(config, tSlot >> 1, tMon).isKnockedOut) return;
+                if (tMon == EMPTY_ACTIVE_LANE || _getMonState(config, tSlot >> 1, tMon).isKnockedOut) {
+                    return;
+                }
             } else if (isInlineAttack) {
                 return;
             }
@@ -3957,8 +4050,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 target
     ) private view returns (bool) {
         (uint256 rosterLo, uint256 rosterHi) = _slotRosterBounds(config, absSlot);
-        if (target < rosterLo || target >= rosterHi) return false;
-        if (_getMonState(config, absSlot >> 1, target).isKnockedOut) return false;
+        if (target < rosterLo || target >= rosterHi) {
+            return false;
+        }
+        if (_getMonState(config, absSlot >> 1, target).isKnockedOut) {
+            return false;
+        }
         return target != _slotActive(battle, absSlot ^ 1);
     }
 
@@ -4044,9 +4141,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 doneMask;
         for (uint256 pick; pick < 4;) {
             uint256 slot = _pickNextSlot(config, battle, 0, doneMask, rng, 16 + pick, false);
-            if (slot == NO_SLOT) break;
+            if (slot == NO_SLOT) {
+                break;
+            }
             doneMask |= (1 << slot);
-            if (battle.winnerIndex != 2) return;
+            if (battle.winnerIndex != 2) {
+                return;
+            }
             uint256 side = slot >> 1;
             uint256 mon = _slotActive(battle, slot);
             uint256 cnt = side == 0
@@ -4195,7 +4296,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else if (round == EffectStep.AfterMove) {
             // Fetch packedMoveIndex via helper - resolves to transient during executeWithMoves, storage otherwise.
             uint8 packedMoveIndex = _getCurrentTurnMove(config, playerIndex).packedMoveIndex;
-            if (!StaminaRegenLogic._isRestingMove(packedMoveIndex)) return;
+            if (!StaminaRegenLogic._isRestingMove(packedMoveIndex)) {
+                return;
+            }
             _inlineRegenStaminaForMon(config, playerIndex, monIndex);
         }
     }
@@ -4205,7 +4308,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// matching the external StaminaRegen effect path, which goes through updateMonState.
     function _inlineRegenStaminaForMon(BattleConfig storage config, uint256 playerIndex, uint256 monIndex) private {
         MonState storage monState = playerIndex == 0 ? config.p0States[monIndex] : config.p1States[monIndex];
-        if (monState.staminaDelta >= 0) return;
+        if (monState.staminaDelta >= 0) {
+            return;
+        }
         monState.staminaDelta += 1;
         // Union bit first (single OnUpdateMonState listener game-wide) — skips the count SLOAD
         // on the up-to-two regen ticks every round end.
@@ -4246,7 +4351,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint104 p1Salt
     ) private {
         // Skip the emit entirely if neither player submitted this turn.
-        if (p0Move.packedMoveIndex == 0 && p1Move.packedMoveIndex == 0) return;
+        if (p0Move.packedMoveIndex == 0 && p1Move.packedMoveIndex == 0) {
+            return;
+        }
 
         uint256 p0MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 0);
         uint256 p1MonIndex = _unpackActiveMonIndex(battle.activeMonIndex, 1);
@@ -4288,8 +4395,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         view
         returns (uint256)
     {
-        if (effectIndex == 2) return config.globalEffectsLength;
-        if (effectIndex == 0) return _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+        if (effectIndex == 2) {
+            return config.globalEffectsLength;
+        }
+        if (effectIndex == 0) {
+            return _getMonEffectCount(config.packedP0EffectsCount, monIndex);
+        }
         return _getMonEffectCount(config.packedP1EffectsCount, monIndex);
     }
 
@@ -4819,7 +4930,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 len = config.globalEffectsLength;
             for (uint256 i; i < len;) {
                 EffectInstance storage e = config.globalEffects[i];
-                if (address(e.effect) == effectAddr) return (true, i, e.data);
+                if (address(e.effect) == effectAddr) {
+                    return (true, i, e.data);
+                }
                 unchecked {
                     ++i;
                 }
@@ -4833,7 +4946,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         for (uint256 i; i < monEffectCount;) {
             uint256 slotIndex = baseSlot + i;
             EffectInstance storage e = effects[slotIndex];
-            if (address(e.effect) == effectAddr) return (true, slotIndex, e.data);
+            if (address(e.effect) == effectAddr) {
+                return (true, slotIndex, e.data);
+            }
             unchecked {
                 ++i;
             }

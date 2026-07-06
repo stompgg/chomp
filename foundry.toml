@@ -25,3 +25,7 @@ stackAllocation = true
 
 [fmt]
 sort_imports = true
+# forge 1.5.x's formatter DROPS THE BRACES of one-line multi-statement if bodies under the
+# default/preserve/single modes ("if (c) { a; break; }" -> unconditional break). "multi" is
+# the one mode whose rewrite is brace-correct — verified on if+break / if+else / for shapes.
+single_line_statement_blocks = "multi"

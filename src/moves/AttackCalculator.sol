@@ -30,8 +30,12 @@ library AttackCalculator {
         int32 damage,
         uint32 effectAccuracy
     ) internal pure returns (bool) {
-        if (effectAccuracy == 0) return false;
-        if (basePower > 0 && damage <= 0) return false;
+        if (effectAccuracy == 0) {
+            return false;
+        }
+        if (basePower > 0 && damage <= 0) {
+            return false;
+        }
         uint256 effectRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "EFFECT")));
         return effectRng % 100 < effectAccuracy;
     }

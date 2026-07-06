@@ -50,7 +50,9 @@ library StaminaRegenLogic {
         // getter was removed); this external-regen path is not the production hot path, so the extra
         // SLOADs are acceptable.
         uint256 playerSwitchForTurnFlag = engine.getBattleContext(battleKey).playerSwitchForTurnFlag;
-        if (!_shouldRegenOnRoundEnd(playerSwitchForTurnFlag)) return;
+        if (!_shouldRegenOnRoundEnd(playerSwitchForTurnFlag)) {
+            return;
+        }
         _regenStaminaExternal(engine, battleKey, 0, p0ActiveMonIndex);
         _regenStaminaExternal(engine, battleKey, 1, p1ActiveMonIndex);
     }
@@ -58,7 +60,9 @@ library StaminaRegenLogic {
     /// @notice External AfterMove entry point — gated on the same NoOp check as the inline path.
     function onAfterMoveExternal(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
-        if (!_isRestingMove(moveDecision.packedMoveIndex)) return;
+        if (!_isRestingMove(moveDecision.packedMoveIndex)) {
+            return;
+        }
         _regenStaminaExternal(engine, battleKey, targetIndex, monIndex);
     }
 }

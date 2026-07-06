@@ -87,10 +87,14 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     // ----- IGachaPointsAssigner -----
 
     function assignPoints(address player, uint256 amount) external override {
-        if (!isAssigner[msg.sender]) revert NotAssigner();
+        if (!isAssigner[msg.sender]) {
+            revert NotAssigner();
+        }
         uint256 data = playerData[player];
         uint256 newPoints = (data & POINTS_MASK_128) + amount;
-        if (newPoints > POINTS_MASK_128) revert PointsOverflow();
+        if (newPoints > POINTS_MASK_128) {
+            revert PointsOverflow();
+        }
         playerData[player] = (data & ~POINTS_MASK_128) | newPoints;
     }
 }

@@ -219,7 +219,9 @@ contract GachaMigrationTest is Test {
 
     function _lowestUnlocked(uint16 unlocked) internal pure returns (uint8) {
         for (uint8 i; i < 12; i++) {
-            if (unlocked & uint16(1 << i) != 0) return i + 1; // facetId is 1-indexed
+            if (unlocked & uint16(1 << i) != 0) {
+                return i + 1; // facetId is 1-indexed
+            }
         }
         return 0;
     }

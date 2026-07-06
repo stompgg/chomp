@@ -28,7 +28,9 @@ contract SaviorComplex is IAbility {
 
         // Count KO'd mons via bitmap popcount
         uint256 koBitmap = engine.getKOBitmap(battleKey, playerIndex);
-        if (koBitmap == 0) return;
+        if (koBitmap == 0) {
+            return;
+        }
         uint256 koCount = 0;
         for (uint256 bits = koBitmap; bits != 0; bits >>= 1) {
             koCount += bits & 1;

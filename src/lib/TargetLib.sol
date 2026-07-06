@@ -48,8 +48,12 @@ library TargetLib {
     ///      always resolves to the side's slot 0.
     function slotOfMon(uint256 activesPacked, uint256 side, uint256 monIndex) internal pure returns (uint256) {
         uint256 s0 = side << 1;
-        if (activeAt(activesPacked, s0) == monIndex) return s0;
-        if (activeAt(activesPacked, s0 | 1) == monIndex) return s0 | 1;
+        if (activeAt(activesPacked, s0) == monIndex) {
+            return s0;
+        }
+        if (activeAt(activesPacked, s0 | 1) == monIndex) {
+            return s0 | 1;
+        }
         return NO_SLOT;
     }
 
@@ -58,21 +62,35 @@ library TargetLib {
     ///      to its partner when the mirror lane is empty; NO_SLOT when the opposing side is vacant.
     ///      Occupancy only — a KO'd occupant is still returned (damage/boosts on it no-op).
     function mirrorOpposingSlot(uint256 activesPacked, uint256 ownSlot) internal pure returns (uint256) {
-        if (ownSlot == NO_SLOT) return NO_SLOT; // benched owner: propagate rather than alias slot 6
+        if (ownSlot == NO_SLOT) {
+            return NO_SLOT; // benched owner: propagate rather than alias slot 6
+        }
         uint256 mirror = ownSlot ^ 2;
-        if (activeAt(activesPacked, mirror) != EMPTY_ACTIVE_LANE) return mirror;
+        if (activeAt(activesPacked, mirror) != EMPTY_ACTIVE_LANE) {
+            return mirror;
+        }
         uint256 partner = mirror ^ 1;
-        if (activeAt(activesPacked, partner) != EMPTY_ACTIVE_LANE) return partner;
+        if (activeAt(activesPacked, partner) != EMPTY_ACTIVE_LANE) {
+            return partner;
+        }
         return NO_SLOT;
     }
 
     /// @dev Lowest set slot bit in targetBits (0-3); NO_SLOT if none. Single-target moves resolve
     ///      "the defender" through this.
     function lowestSlot(uint256 targetBits) internal pure returns (uint256) {
-        if (targetBits & 1 != 0) return 0;
-        if (targetBits & 2 != 0) return 1;
-        if (targetBits & 4 != 0) return 2;
-        if (targetBits & 8 != 0) return 3;
+        if (targetBits & 1 != 0) {
+            return 0;
+        }
+        if (targetBits & 2 != 0) {
+            return 1;
+        }
+        if (targetBits & 4 != 0) {
+            return 2;
+        }
+        if (targetBits & 8 != 0) {
+            return 3;
+        }
         return NO_SLOT;
     }
 }

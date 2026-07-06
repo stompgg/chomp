@@ -37,7 +37,9 @@ abstract contract GasMeasure is CommonBase {
         // Size the dedup scratch to the actual access count in THIS window (not a fixed large
         // array), so calling _tally once per turn doesn't blow up cumulative memory across a battle.
         uint256 cap;
-        for (uint256 i; i < accesses.length; i++) cap += accesses[i].storageAccesses.length;
+        for (uint256 i; i < accesses.length; i++) {
+            cap += accesses[i].storageAccesses.length;
+        }
         bytes32[] memory keys = new bytes32[](cap);
         uint16[] memory writes = new uint16[](cap);
         bool[] memory reads = new bool[](cap);
@@ -72,21 +74,38 @@ abstract contract GasMeasure is CommonBase {
                 bytes32 key = keccak256(abi.encode(a.account, a.slot));
                 uint256 idx = keyCount;
                 for (uint256 k; k < keyCount; k++) {
-                    if (keys[k] == key) { idx = k; break; }
+                    if (keys[k] == key) {
+                        idx = k;
+                        break;
+                    }
                 }
-                if (idx == keyCount) { keys[idx] = key; keyCount++; }
+                if (idx == keyCount) {
+                    keys[idx] = key;
+                    keyCount++;
+                }
                 if (a.isWrite) {
                     t.totalSstore++;
-                    if (!reads[idx] && writes[idx] == 0) t.coldWriteTouch++;
-                    if (a.previousValue == bytes32(0) && a.newValue != bytes32(0)) t.zToNz++;
-                    else if (a.previousValue != bytes32(0) && a.newValue == bytes32(0)) t.nzToZ++;
-                    else if (a.previousValue != a.newValue) t.nzToNz++;
-                    else t.noop++;
+                    if (!reads[idx] && writes[idx] == 0) {
+                        t.coldWriteTouch++;
+                    }
+                    if (a.previousValue == bytes32(0) && a.newValue != bytes32(0)) {
+                        t.zToNz++;
+                    } else if (a.previousValue != bytes32(0) && a.newValue == bytes32(0)) {
+                        t.nzToZ++;
+                    } else if (a.previousValue != a.newValue) {
+                        t.nzToNz++;
+                    } else {
+                        t.noop++;
+                    }
                     writes[idx]++;
                 } else {
                     t.totalSload++;
-                    if (!reads[idx] && writes[idx] == 0) { t.coldSload++; reads[idx] = true; }
-                    else t.warmSload++;
+                    if (!reads[idx] && writes[idx] == 0) {
+                        t.coldSload++;
+                        reads[idx] = true;
+                    } else {
+                        t.warmSload++;
+                    }
                 }
             }
         }
@@ -129,7 +148,9 @@ abstract contract GasMeasure is CommonBase {
     ///      on forge 1.5.1 this re-prices slots but NOT the account access itself; treat the
     ///      resulting scalar as directional and `prodStorageGas` as the grounded number.
     function _coolAll(address[] memory addrs) internal {
-        for (uint256 i; i < addrs.length; i++) vm.cool(addrs[i]);
+        for (uint256 i; i < addrs.length; i++) {
+            vm.cool(addrs[i]);
+        }
     }
 
     /// @notice Snapshot one scenario: the deterministic access tally, the conservative synthetic

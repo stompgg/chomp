@@ -235,7 +235,9 @@ contract CPUTest is Test {
         bytes memory payload;
         uint256 batchCount;
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter != address(engine)) continue;
+            if (logs[i].emitter != address(engine)) {
+                continue;
+            }
             assertTrue(logs[i].topics[0] != plainSig, "batched path must NOT emit plain BattleComplete");
             if (logs[i].topics[0] == batchSig) {
                 batchCount++;
@@ -401,7 +403,9 @@ contract CPUTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 batchSig = keccak256("BattleCompleteWithBatchSlotTurns(bytes32,bytes)");
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].topics[0] != batchSig) continue;
+            if (logs[i].topics[0] != batchSig) {
+                continue;
+            }
             bytes memory payload = abi.decode(logs[i].data, (bytes));
             assertEq(payload.length, 20 + 2 * 25, "only the executed turns are replayed");
             assertEq(payload, abi.encodePacked(winner, winningStream));

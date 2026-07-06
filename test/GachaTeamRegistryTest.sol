@@ -1954,7 +1954,9 @@ contract GachaTeamRegistryTest is Test {
         // Exactly one facet bit should be unlocked.
         uint256 count;
         for (uint256 i; i < 12; ++i) {
-            if (unlocked & (1 << i) != 0) count++;
+            if (unlocked & (1 << i) != 0) {
+                count++;
+            }
         }
         assertEq(count, 1, "one facet drawn");
     }

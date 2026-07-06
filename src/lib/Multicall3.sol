@@ -71,7 +71,9 @@ contract Multicall3 {
             Result memory result = returnData[i];
             call = calls[i];
             (result.success, result.returnData) = call.target.call(call.callData);
-            if (requireSuccess) require(result.success, "Multicall3: call failed");
+            if (requireSuccess) {
+                require(result.success, "Multicall3: call failed");
+            }
             unchecked {
                 ++i;
             }

@@ -44,7 +44,9 @@ abstract contract Facets {
     // boostIdx = (facetId-1)/3 ; nerfOffset = (facetId-1)%3 ;
     // nerfIdx = nerfOffset < boostIdx ? nerfOffset : nerfOffset + 1
     function _facetDef(uint8 facetId) internal pure returns (StatGroup boost, StatGroup nerf) {
-        if (facetId < 1 || facetId > TOTAL_FACETS) revert InvalidFacetId();
+        if (facetId < 1 || facetId > TOTAL_FACETS) {
+            revert InvalidFacetId();
+        }
         unchecked {
             uint256 idx = uint256(facetId) - 1;
             uint256 boostIdx = idx / 3;
@@ -109,7 +111,9 @@ abstract contract Facets {
     function _popcount(uint256 x) internal pure virtual returns (uint8 count) {
         unchecked {
             for (uint256 v = x; v != 0; v >>= 1) {
-                if (v & 1 == 1) ++count;
+                if (v & 1 == 1) {
+                    ++count;
+                }
             }
         }
     }
@@ -127,9 +131,15 @@ abstract contract Facets {
     }
 
     function _facetPctsForBoost(StatGroup boost) private pure returns (uint256 boostPct, uint256 costPct) {
-        if (boost == StatGroup.HP) return (BOOST_PCT_HP, COST_PCT_HP);
-        if (boost == StatGroup.Atk) return (BOOST_PCT_ATK, COST_PCT_ATK);
-        if (boost == StatGroup.Def) return (BOOST_PCT_DEF, COST_PCT_DEF);
+        if (boost == StatGroup.HP) {
+            return (BOOST_PCT_HP, COST_PCT_HP);
+        }
+        if (boost == StatGroup.Atk) {
+            return (BOOST_PCT_ATK, COST_PCT_ATK);
+        }
+        if (boost == StatGroup.Def) {
+            return (BOOST_PCT_DEF, COST_PCT_DEF);
+        }
         return (BOOST_PCT_SPEED, COST_PCT_SPEED);
     }
 
@@ -175,14 +185,18 @@ abstract contract Facets {
         uint256 bucket = monId / MONS_PER_FACET_BUCKET;
         uint256 lane = monId % MONS_PER_FACET_BUCKET;
         (, uint8 facetId) = _readFacetSlotForMon(facetData[player][bucket], lane);
-        if (facetId == 0) return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
+        if (facetId == 0) {
+            return StatDelta({hp: 0, atk: 0, spAtk: 0, def: 0, spDef: 0, speed: 0});
+        }
         return _computeFacetDelta(_getMonStatsForFacets(monId), facetId);
     }
 
     // ----- Bulk assignment (free swap) -----
 
     function assignFacets(uint256[] calldata monIds, uint8[] calldata facetIds) public virtual {
-        if (monIds.length != facetIds.length) revert FacetArgsLengthMismatch();
+        if (monIds.length != facetIds.length) {
+            revert FacetArgsLengthMismatch();
+        }
         uint256 len = monIds.length;
         uint256 lastBucket = type(uint256).max;
         uint256 currentSlot;
@@ -190,8 +204,12 @@ abstract contract Facets {
         for (uint256 i; i < len;) {
             uint256 monId = monIds[i];
             uint8 facetId = facetIds[i];
-            if (facetId > TOTAL_FACETS) revert InvalidFacetId();
-            if (!_isFacetMonOwned(msg.sender, monId)) revert NotFacetOwner();
+            if (facetId > TOTAL_FACETS) {
+                revert InvalidFacetId();
+            }
+            if (!_isFacetMonOwned(msg.sender, monId)) {
+                revert NotFacetOwner();
+            }
             uint256 bucket = monId / MONS_PER_FACET_BUCKET;
             uint256 lane = monId % MONS_PER_FACET_BUCKET;
             if (bucket != lastBucket) {
@@ -203,7 +221,9 @@ abstract contract Facets {
                 dirty = false;
             }
             (uint16 unlockedBitmap,) = _readFacetSlotForMon(currentSlot, lane);
-            if (facetId != 0 && (unlockedBitmap & uint16(1 << (facetId - 1))) == 0) revert FacetNotUnlocked();
+            if (facetId != 0 && (unlockedBitmap & uint16(1 << (facetId - 1))) == 0) {
+                revert FacetNotUnlocked();
+            }
             currentSlot = _writeFacetSlotForMon(currentSlot, lane, unlockedBitmap, facetId);
             dirty = true;
             unchecked {

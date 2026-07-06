@@ -44,7 +44,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         bytes32[] memory values
     ) external onlyOwner {
         // Sequential monIds required so packedExpForMon / facetData buckets stay dense.
-        if (monId != monIds.length()) revert NonSequentialMonId();
+        if (monId != monIds.length()) {
+            revert NonSequentialMonId();
+        }
         MonStats storage existingMon = monStats[monId];
         // No mon has 0 hp and 0 stamina
         if (existingMon.hp != 0 && existingMon.stamina != 0) {
@@ -53,13 +55,17 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         monIds.add(monId);
         monStats[monId] = _monStats;
         uint256 numMoves = allowedMoves.length;
-        if (numMoves > CATALOG_MOVE_LANES) revert TooManyMoves();
+        if (numMoves > CATALOG_MOVE_LANES) {
+            revert TooManyMoves();
+        }
         uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
         for (uint256 i; i < numMoves; ++i) {
             row[i] = allowedMoves[i];
         }
         uint256 numAbilities = allowedAbilities.length;
-        if (numAbilities > 1) revert TooManyAbilities();
+        if (numAbilities > 1) {
+            revert TooManyAbilities();
+        }
         if (numAbilities == 1) {
             monAbility[monId] = allowedAbilities[0];
         }
@@ -97,7 +103,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
                 }
             }
             uint256 numMovesToAdd = movesToAdd.length;
-            if (n + numMovesToAdd > CATALOG_MOVE_LANES) revert TooManyMoves();
+            if (n + numMovesToAdd > CATALOG_MOVE_LANES) {
+                revert TooManyMoves();
+            }
             uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
             for (uint256 i; i < CATALOG_MOVE_LANES; ++i) {
                 if (i < n) {
@@ -234,24 +242,56 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
         uint256 m6 = row[6];
         uint256 m7 = row[7];
         uint256 n;
-        if (m0 != 0) ++n;
-        if (m1 != 0) ++n;
-        if (m2 != 0) ++n;
-        if (m3 != 0) ++n;
-        if (m4 != 0) ++n;
-        if (m5 != 0) ++n;
-        if (m6 != 0) ++n;
-        if (m7 != 0) ++n;
+        if (m0 != 0) {
+            ++n;
+        }
+        if (m1 != 0) {
+            ++n;
+        }
+        if (m2 != 0) {
+            ++n;
+        }
+        if (m3 != 0) {
+            ++n;
+        }
+        if (m4 != 0) {
+            ++n;
+        }
+        if (m5 != 0) {
+            ++n;
+        }
+        if (m6 != 0) {
+            ++n;
+        }
+        if (m7 != 0) {
+            ++n;
+        }
         vals = new uint256[](n);
         uint256 w;
-        if (m0 != 0) vals[w++] = m0;
-        if (m1 != 0) vals[w++] = m1;
-        if (m2 != 0) vals[w++] = m2;
-        if (m3 != 0) vals[w++] = m3;
-        if (m4 != 0) vals[w++] = m4;
-        if (m5 != 0) vals[w++] = m5;
-        if (m6 != 0) vals[w++] = m6;
-        if (m7 != 0) vals[w++] = m7;
+        if (m0 != 0) {
+            vals[w++] = m0;
+        }
+        if (m1 != 0) {
+            vals[w++] = m1;
+        }
+        if (m2 != 0) {
+            vals[w++] = m2;
+        }
+        if (m3 != 0) {
+            vals[w++] = m3;
+        }
+        if (m4 != 0) {
+            vals[w++] = m4;
+        }
+        if (m5 != 0) {
+            vals[w++] = m5;
+        }
+        if (m6 != 0) {
+            vals[w++] = m6;
+        }
+        if (m7 != 0) {
+            vals[w++] = m7;
+        }
     }
 
     /// @dev Materialize the full lane-indexed move row (length CATALOG_MOVE_LANES, zeros included).
@@ -322,7 +362,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
     }
 
     function isValidMove(uint256 monId, uint256 moveSlot) external view override returns (bool) {
-        if (moveSlot == 0) return false;
+        if (moveSlot == 0) {
+            return false;
+        }
         uint256[CATALOG_MOVE_LANES] storage row = monMoveRows[monId];
         return row[0] == moveSlot || row[1] == moveSlot || row[2] == moveSlot || row[3] == moveSlot
             || row[4] == moveSlot || row[5] == moveSlot || row[6] == moveSlot || row[7] == moveSlot;

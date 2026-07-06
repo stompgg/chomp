@@ -57,7 +57,9 @@ contract SleepStatus is StatusEffect {
         // Rewrite the sleeper's own slot; a benched sleeper (possible mid-pass in 2-slot
         // battles) has no pending move to overwrite.
         uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (slot == NO_SLOT) return;
+        if (slot == NO_SLOT) {
+            return;
+        }
         MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex != SWITCH_MOVE_INDEX) {

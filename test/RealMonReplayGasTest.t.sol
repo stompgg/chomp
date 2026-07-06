@@ -285,13 +285,17 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         internal
         returns (uint256 gasUsed)
     {
-        if (measure) _coolEngineAndMgr();
+        if (measure) {
+            _coolEngineAndMgr();
+        }
         vm.prank(sender);
         uint256 g0 = gasleft();
         (bool ok,) = target.call(cd);
         uint256 raw = g0 - gasleft();
         require(ok, "measured call reverted");
-        if (measure) gasUsed = raw + _calldataCost(cd);
+        if (measure) {
+            gasUsed = raw + _calldataCost(cd);
+        }
     }
 
     // ---- LEGACY (per-turn, 2-sig executeWithDualSignedMoves as on main) ----

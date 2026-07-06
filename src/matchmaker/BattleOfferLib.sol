@@ -16,9 +16,15 @@ library BattleOfferLib {
 
     /// @dev Canonical seat order [p0, p2, p1, p3] (side-major) — matches the engine's rotation.
     function seatAt(Battle memory battle, uint256 canonicalIndex) internal pure returns (address) {
-        if (canonicalIndex == 0) return battle.p0;
-        if (canonicalIndex == 1) return battle.p2;
-        if (canonicalIndex == 2) return battle.p1;
+        if (canonicalIndex == 0) {
+            return battle.p0;
+        }
+        if (canonicalIndex == 1) {
+            return battle.p2;
+        }
+        if (canonicalIndex == 2) {
+            return battle.p1;
+        }
         return battle.p3;
     }
 

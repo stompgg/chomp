@@ -87,7 +87,9 @@ contract InlineAbilityParityTest is Test, BattleHelper {
     {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
-            if (address(effects[i].effect) == effectAddr) return true;
+            if (address(effects[i].effect) == effectAddr) {
+                return true;
+            }
         }
         return false;
     }
@@ -99,7 +101,9 @@ contract InlineAbilityParityTest is Test, BattleHelper {
     {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
-            if (address(effects[i].effect) == effectAddr) count++;
+            if (address(effects[i].effect) == effectAddr) {
+                count++;
+            }
         }
     }
 

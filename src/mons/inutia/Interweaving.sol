@@ -25,7 +25,9 @@ contract Interweaving is IAbility, BasicEffect {
         uint256 oppSlot = ownSlot ^ 2;
         if (lanes[oppSlot] == EMPTY_ACTIVE_LANE) {
             oppSlot ^= 1;
-            if (lanes[oppSlot] == EMPTY_ACTIVE_LANE) return;
+            if (lanes[oppSlot] == EMPTY_ACTIVE_LANE) {
+                return;
+            }
         }
         uint256 otherPlayerIndex = oppSlot >> 1;
         uint256 otherPlayerActiveMonIndex = lanes[oppSlot];
