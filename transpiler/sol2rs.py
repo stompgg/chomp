@@ -95,7 +95,6 @@ LIB_RS_HEADER = """\
 class RustTranspilerConfig:
     def __init__(self, data: dict):
         self.include_files: List[str] = data.get('includeFiles', [])
-        self.dyn_interfaces: Set[str] = set(data.get('dynInterfaces', []))  # legacy, unused
         self.stateful_contracts: Set[str] = set(data.get('statefulContracts', []))
         self.interface_aliases: dict = data.get('interfaceAliases', {})
         self.external_interfaces: Set[str] = set(data.get('externalInterfaces', []))
@@ -211,7 +210,7 @@ class SolidityToRustTranspiler:
                 print(f'Error: include file {include} was not parsed')
                 ok = False
                 continue
-            generator = RustCodeGenerator(symbols, self.config.dyn_interfaces, rel)
+            generator = RustCodeGenerator(symbols, rel)
             code = generator.generate(ast)
             all_notes.extend(generator.notes)
 
@@ -417,8 +416,8 @@ class SolidityToRustTranspiler:
 
         out = [
             '/// Register + construct every transpiled contract. `addr_of` is the',
-            '/// harness address book (the lockstep gate feeds the TS-exported one;',
-            '/// the arena assigns its own).',
+            '/// harness address book — the arena feeds the TS container\'s exported',
+            '/// book so addresses match TS-side metadata resolution.',
             'pub fn deploy_all(world: &mut World, addr_of: &dyn Fn(&str) -> Address) {',
         ]
         for c in dispatchables:

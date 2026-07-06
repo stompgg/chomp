@@ -66,6 +66,9 @@ impl ForkCache {
     /// hypothetical (virtual-side submissions; both sides share `salt` at
     /// every call site). Linear scan — a decision makes tens of forks.
     pub fn fork(&mut self, sim: &mut Sim, seat: Seat, p0: Option<HypoMove>, p1: HypoMove) -> usize {
+        // The key covers p1.salt only; a mismatched-salt caller would alias
+        // entries silently, so keep the shared-salt invariant loud.
+        debug_assert!(p0.map_or(true, |m| m.salt == p1.salt));
         let p0_key = p0.map(|m| (m.move_index, m.extra_data));
         let p1_key = (p1.move_index, p1.extra_data);
         if let Some(i) = self

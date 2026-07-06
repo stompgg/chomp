@@ -488,7 +488,7 @@ cd transpiler && npm install && npx vitest run
 
 **Rust target (sim performance).** The same front-end also drives a Rust
 backend (`codegen_rs/`, native ints instead of bigint — see
-`transpiler/codegen_rs/README.md` and the PLAN):
+`transpiler/codegen_rs/README.md`):
 
 ```bash
 python3 -m transpiler src/ --target rust     # emit transpiler/rs-output (cargo workspace)

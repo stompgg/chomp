@@ -37,7 +37,7 @@ const LIB_PATH = process.env.CHOMP_FFI_LIB
 /** Expected chomp_ffi_version (major << 16 | minor). Bump in lockstep with
  * ffi-rs on every exported-signature change — the assert below turns silent
  * ABI drift into an immediate load-time failure. */
-const EXPECTED_FFI_VERSION = (0 << 16) | 3;
+const EXPECTED_FFI_VERSION = (0 << 16) | 4;
 
 let _lib: any = null;
 export function ffi(): any {

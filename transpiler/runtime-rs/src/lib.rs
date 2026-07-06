@@ -456,11 +456,13 @@ pub fn abi_encode_packed(tokens: &[Token]) -> Vec<u8> {
 // Storage mapping (zero-default reads, like unwritten EVM storage)
 // ---------------------------------------------------------------------------
 
-/// FxHash (the rustc hasher): a fast non-cryptographic word mixer. Storage
-/// keys here are keccak-derived words and small indices in an
-/// adversary-free simulator, so SipHash's DoS resistance buys nothing and
-/// taxes every storage access. Safe for `Mapping` because its API exposes
-/// no iteration — hash order cannot leak into behavior.
+/// FxHash, vendored from the rustc-hash 1.x algorithm (kept inline to stay
+/// dependency-free — any drift from upstream is a deliberate choice, not an
+/// accident). A fast non-cryptographic word mixer: storage keys here are
+/// keccak-derived words and small indices in an adversary-free simulator,
+/// so SipHash's DoS resistance buys nothing and taxes every storage access.
+/// Safe for `Mapping` because its API exposes no iteration — hash order
+/// cannot leak into behavior.
 #[derive(Default, Clone)]
 pub struct FxHasher {
     hash: u64,
@@ -585,9 +587,11 @@ mod tests {
         let enc = abi_encode(&[Token::Str("MoveMiss".to_string())]);
         assert_eq!(enc.len(), 96);
         let digest = sha256(&enc);
-        // Value cross-checked against the TS sim (viem encodeAbiParameters +
-        // sha256) in the differential fixtures; here we only pin the shape.
-        assert_ne!(digest, B256::ZERO);
+        // Pinned digest of sha256(offset(0x20) ++ len(8) ++ padded "MoveMiss").
+        assert_eq!(
+            format!("{digest}"),
+            "0x6f6345c78aae6673b83f2eb9bd47536b05ac4786f8c998e4a6259d5a0ef9f21e"
+        );
     }
 
     #[test]

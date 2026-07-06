@@ -1,13 +1,13 @@
 # sol2rs — the Rust backend (`--target rust`)
 
-Solidity → Rust transpilation for simulation performance (see `PLAN`:
-Solidity → Rust transpiler backend). Shares the entire front-end with the
-TypeScript target (lexer, parser, type discovery); emits a cargo workspace
-instead of a TS module tree.
+Solidity → Rust transpilation for simulation performance. Shares the
+entire front-end with the TypeScript target (lexer, parser, type
+discovery); emits a cargo workspace instead of a TS module tree.
 
 ```bash
 python3 -m transpiler src/ --target rust        # emit transpiler/rs-output
-cd transpiler/rs-output && cargo test           # differential gate
+cd transpiler/rs-output && cargo build --release   # engine + cdylib + strategies
+cd transpiler/rs-output && cargo test           # chomp-rt + strategies unit tests
 ```
 
 ## Layout
@@ -25,13 +25,13 @@ transpiler/
     contract.py          library -> module fns, interface -> trait, contract -> struct+impl
     generator.py         per-file orchestration + `use` collection
   sol2rs.py              driver: parse-all discovery, allowlisted emission, workspace scaffold
-  transpiler-config-rust.json   includeFiles allowlist + dynInterfaces
+  transpiler-config-rust.json   includeFiles allowlist + world/dispatch config
   runtime-rs/            hand-written chomp-rt crate (source of truth; synced to rs-output/runtime)
-  differential-rs/       differential gate crate + fixtures/ (synced to rs-output/differential)
-  ffi-rs/                bun:ffi cdylib stub (batch API lands in Phase 5)
-  scripts/generate_rust_vectors.ts   TS-oracle fixture generator (bun)
-  scripts/generate_spec_vectors.py   Solidity-semantics fixtures for trap/wrap paths
-  scripts/gen_mock_engine.py         regenerates PanicEngine from the emitted IEngine trait
+  ffi-rs/                bun:ffi cdylib (handle battle API + chomp_run_games batch runner)
+  strategies-rs/         native CPU strategies + game loop (hard, greedy, override)
+  scripts/arena_rust_lockstep.ts     drive-mode gate (TS strategies over both engines)
+  scripts/strategy_lockstep.ts       batch-mode gate (per-turn move equality vs TS)
+  scripts/batch_benchmark.ts         mass outcome cross-check + games/s
   rs-output/             GENERATED cargo workspace (gitignored, like ts-output)
 ```
 
@@ -48,7 +48,7 @@ transpiler/
 | enum casts | checked `from_u8` on the **full** source value (Panic 0x21 parity) |
 | memory arrays/structs as params | `&mut T`; identifiers read through `(*p)`; whole-array `local = param` assignment records an intra-function **alias** so later reads match Solidity's reference semantics |
 | interfaces | callable *parameter* positions in the `dynInterfaces` set → `&mut dyn Trait`; every other interface-typed value is its on-chain identity, an `Address`. Method calls on an address emit a loud `unimplemented!` until the Phase-3 dispatch enums |
-| `keccak256`/`sha256`/`abi.encode(Packed)` | `chomp-rt` (alloy keccak, sha2, hand-rolled head/tail ABI encoding pinned by golden vectors) |
+| `keccak256`/`sha256`/`abi.encode(Packed)` | `chomp-rt` (alloy keccak, sha2, hand-rolled head/tail ABI encoding pinned by chomp-rt unit tests) |
 | runtime-computed constants (`sha256(abi.encode("…"))`) | `LazyLock` statics — derivation stays in code |
 | mappings (struct fields) | `rt::Mapping` (HashMap with Solidity zero-default reads) |
 

@@ -1,7 +1,7 @@
 // Strategy-port lockstep gate: the NATIVE Rust strategies (chomp_run_games,
 // batch mode) must re-derive, turn by turn, the exact moves the TS
 // strategies pick on identical (seed, teams, pairing) — and land the same
-// (winner, turns). This is the phase gate for the hard/greedy port.
+// (winner, turns). This is the sync gate between the two strategy stacks.
 //
 //   bun transpiler/scripts/strategy_lockstep.ts [games]
 //
@@ -12,71 +12,32 @@ import { ptr } from 'bun:ffi';
 import { playGame } from '../../sims/src/arena/game';
 import { getCpuStrategy } from '../../sims/src/cpu/registry';
 import { TEAM_SIZE } from '../../sims/src/cpu/constants';
-import type { DraftedMon } from '../../sims/src/arena/team';
 import type { PlayerMove } from '../../sims/src/cpu/strategy';
 import { makeSimContext } from '../../sims/src/harness';
 import { loadRoster } from '../../sims/src/util/csv-load';
-import { buildTeamMon } from '../../sims/src/arena/team';
-import { buildAddressBook, ffi, cstr, takeString, monToJson } from '../../sims/src/arena/rust-engine';
+import { buildAddressBook, ffi, cstr, takeString } from '../../sims/src/arena/rust-engine';
+import { buildBatchGames, buildWork } from './workload';
 
 const GAMES = Number(process.argv[2] ?? 40);
 const MAX_TURNS = 150;
-const NUM_MONS = 13;
 
-// Deterministic workload (xorshift32) — hard/greedy pairs only (the two
-// ported strategies).
-let wseed = 0x5eedf00d >>> 0;
-function wrand(): number {
-  wseed ^= wseed << 13; wseed >>>= 0;
-  wseed ^= wseed >> 17;
-  wseed ^= wseed << 5; wseed >>>= 0;
-  return wseed / 0x100000000;
-}
-function drawTeam(): DraftedMon[] {
-  const pool = Array.from({ length: NUM_MONS }, (_, i) => i);
-  const ids: number[] = [];
-  for (let k = 0; k < TEAM_SIZE; k++) {
-    ids.push(pool.splice(Math.floor(wrand() * pool.length), 1)[0]);
-  }
-  return ids.map((id) => ({ id, equip: undefined as any }));
-}
-
-// [p1Strategy, p0Strategy] — matching playGame(stratP1, stratP0, ...).
-const PAIRS: [string, string][] = [
-  ['hard', 'hard'],
-  ['hard', 'greedy'],
-  ['greedy', 'hard'],
-  ['greedy', 'greedy'],
-  ['override', 'greedy'],
-  ['override', 'hard'],
-];
-
-interface WorkItem {
-  idx: number;
-  p1Strategy: string;
-  p0Strategy: string;
-  teams: [DraftedMon[], DraftedMon[]];
-  seed: number;
-}
-const work: WorkItem[] = [];
-for (let i = 0; i < GAMES; i++) {
-  const [p1s, p0s] = PAIRS[i % PAIRS.length];
-  work.push({ idx: i, p1Strategy: p1s, p0Strategy: p0s, teams: [drawTeam(), drawTeam()], seed: 20_000 + i });
-}
+// Own seed/seed-base (distinct games from the benchmark workload), same
+// shared generator + pair rotation.
+const work = buildWork(GAMES, 0x5eedf00d, 20_000);
 
 type Turn = [PlayerMove | null, PlayerMove | null]; // [p0, p1]
 
 // ---------------------------------------------------------------------------
 // TS reference leg (TS engine + TS strategies), tracing per-turn moves.
 // ---------------------------------------------------------------------------
-console.log(`strategy lockstep: ${GAMES} games (hard/greedy/override pairs), maxTurns=${MAX_TURNS}`);
+console.log(`strategy lockstep: ${GAMES} games (all strategy pairs), maxTurns=${MAX_TURNS}`);
 const tsTraces: Turn[][] = [];
 const tsOutcomes: { winner: 0 | 1 | null; turns: number }[] = [];
 const t0 = performance.now();
 for (const w of work) {
   const trace: Turn[] = [];
   const out = playGame(
-    getCpuStrategy(w.p1Strategy)!, getCpuStrategy(w.p0Strategy)!,
+    getCpuStrategy(w.strats[0])!, getCpuStrategy(w.strats[1])!,
     w.teams, w.seed, MAX_TURNS,
     ({ p0Move, p1Move }) => { trace.push([p0Move, p1Move]); },
     'ts',
@@ -93,23 +54,17 @@ console.log(`[ts]   ${GAMES} games in ${tsSec.toFixed(1)}s (${(GAMES / tsSec).to
 // ---------------------------------------------------------------------------
 const ctx = makeSimContext({ monsPerTeam: BigInt(TEAM_SIZE) });
 const roster = loadRoster();
-const addressBook = buildAddressBook(ctx);
 const cfg = {
   monsPerTeam: TEAM_SIZE,
-  addressBook,
+  addressBook: buildAddressBook(ctx),
   threads: 1,
   trace: true,
-  games: work.map((w) => ({
-    seed: w.seed,
-    maxTurns: MAX_TURNS,
-    p0Strategy: w.p0Strategy,
-    p1Strategy: w.p1Strategy,
-    p0Team: w.teams[0].map((dm) => monToJson(buildTeamMon(ctx, roster, dm.id, dm.equip))),
-    p1Team: w.teams[1].map((dm) => monToJson(buildTeamMon(ctx, roster, dm.id, dm.equip))),
-  })),
+  games: buildBatchGames(ctx, roster, work, MAX_TURNS),
 };
+// Payload built outside the timed window (several MB of JSON stringify).
+const payload = cstr(JSON.stringify(cfg));
 const t1 = performance.now();
-const rawOut = ffi().symbols.chomp_run_games(ptr(cstr(JSON.stringify(cfg))));
+const rawOut = ffi().symbols.chomp_run_games(ptr(payload));
 const rsSec = (performance.now() - t1) / 1000;
 const parsed = JSON.parse(takeString(rawOut, 'chomp_run_games')) as {
   results: { winnerSeat: 0 | 1 | null; turns: number; moves?: ([number, number] | null)[][]; error?: string }[];
@@ -127,7 +82,7 @@ const complain = (msg: string) => {
 
 for (let i = 0; i < GAMES; i++) {
   const r = parsed.results[i];
-  const label = `game ${i} (p1=${work[i].p1Strategy} p0=${work[i].p0Strategy} seed=${work[i].seed})`;
+  const label = `game ${i} (p1=${work[i].strats[0]} p0=${work[i].strats[1]} seed=${work[i].seed})`;
   if (r.error) { complain(`${label}: rust error: ${r.error}`); continue; }
   const ts = tsOutcomes[i];
   if (r.winnerSeat !== ts.winner || r.turns !== ts.turns) {

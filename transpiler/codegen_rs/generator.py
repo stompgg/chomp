@@ -34,10 +34,8 @@ PRELUDE = (
 class RustCodeGenerator:
     """Generates one Rust module from one Solidity SourceUnit."""
 
-    def __init__(self, symbols: RustSymbols, dyn_interfaces: Set[str],
-                 rel_path: str):
+    def __init__(self, symbols: RustSymbols, rel_path: str):
         self._symbols = symbols
-        self._dyn_interfaces = dyn_interfaces
         self._rel_path = rel_path
         self._module = RustSymbols._module_path(rel_path)
 
@@ -48,14 +46,12 @@ class RustCodeGenerator:
         self._stmt = RustStatementGenerator(self._ctx, self._expr, self._types, self._infer, symbols)
         self._func = RustFunctionGenerator(
             self._ctx, symbols, self._expr, self._stmt, self._types, self._infer,
-            dyn_interfaces,
         )
         self._defs = RustDefinitionGenerator(
             self._ctx, symbols, self._types, self._expr, self._infer,
         )
         self._contract = RustContractGenerator(
             self._ctx, symbols, self._types, self._func, self._defs, self._infer,
-            dyn_interfaces,
         )
 
     @property

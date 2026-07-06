@@ -14,9 +14,9 @@
 //!
 //! cfg JSON: { monsPerTeam, p0Team: [Mon], p1Team: [Mon],
 //!             addressBook?: {name: "0x.."} }
-//! Mon JSON mirrors the lockstep fixture: stats fields + type1/type2 (u8)
-//! + moves (hex u256 words: inline-packed or contract addresses from the
-//! book) + ability (hex).
+//! Mon JSON matches rust-engine.ts's monToJson: stats fields + type1/type2
+//! (u8) + moves (hex u256 words: inline-packed or contract addresses from
+//! the book) + ability (hex).
 //! turn JSON: { p0MoveIndex, p1MoveIndex, p0Salt, p1Salt,
 //!              p0ExtraData, p1ExtraData } (salts are decimal strings).
 //!
@@ -44,7 +44,7 @@ use chomp_strategies::sim::{HypoMove, Sim};
 /// asserts this at dlopen so exported-signature drift fails at load time.
 #[no_mangle]
 pub extern "C" fn chomp_ffi_version() -> u32 {
-    (0u32 << 16) | 3u32
+    (0u32 << 16) | 4u32
 }
 
 /// Cheap end-to-end proof that the emitted engine code is linked in and
@@ -86,11 +86,6 @@ struct BattleCfg {
     p1Team: Vec<MonJson>,
     #[serde(default)]
     addressBook: HashMap<String, String>,
-    /// Oracle address for BattleConfig. DEFAULT: zero — the engine's
-    /// inline keccak(p0Salt, p1Salt) path, no oracle dispatch (the arena
-    /// path). Set explicitly only to mirror a recorded TS fixture.
-    #[serde(default)]
-    rngOracle: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -186,14 +181,9 @@ pub unsafe extern "C" fn chomp_battle_new(cfg_json: *const c_char) -> u64 {
         return 0;
     };
     let book = parse_book(&cfg.addressBook);
-    let rng_oracle = cfg
-        .rngOracle
-        .as_deref()
-        .and_then(hex_address)
-        .unwrap_or(Address::ZERO);
 
     let result = std::panic::catch_unwind(move || {
-        Sim::new(cfg.monsPerTeam, p0_team, p1_team, &book, rng_oracle)
+        Sim::new(cfg.monsPerTeam, p0_team, p1_team, &book)
     });
     let Ok(sim) = result else { return 0 };
 
@@ -239,13 +229,18 @@ fn parse_b256(raw: &str) -> Option<B256> {
     raw.parse::<B256>().ok() // optionally-0x-prefixed, exactly 64 nibbles
 }
 
-fn snapshot_json(world: &mut World, battle_key: B256) -> String {
+/// Post-turn snapshot. The TS adapter discards the content — the non-null
+/// return is chomp_battle_turn's success/revert token — but the payload
+/// keeps the turn API debuggable from a bare dlopen.
+fn snapshot_json(sim: &mut Sim) -> String {
+    let battle_key = sim.battle_key;
+    let sizes = (sim.team_size_phys(U256::ZERO), sim.team_size_phys(U256::from(1u64)));
+    let world = &mut sim.world;
     let storage_key = Engine::_getStorageKey(world, battle_key);
     let data = world.Engine.battleData.get(&battle_key);
-    let team_sizes = world.Engine.battleConfig.get_mut(&storage_key).teamSizes;
     let norm = |v: i32| if v == Constants::CLEARED_MON_STATE_SENTINEL { 0 } else { v };
     let mut side_states = |p1: bool| -> Vec<serde_json::Value> {
-        let size = if p1 { team_sizes >> 4 } else { team_sizes & 0x0f } as usize;
+        let size = if p1 { sizes.1 } else { sizes.0 };
         (0..size)
             .map(|i| {
                 let cfg = world.Engine.battleConfig.get_mut(&storage_key);
@@ -301,7 +296,7 @@ pub unsafe extern "C" fn chomp_battle_turn(handle: u64, input_json: *const c_cha
             p1_salt,
             input.p1ExtraData,
         );
-        snapshot_json(&mut s.world, s.battle_key)
+        snapshot_json(s)
     }));
     match out {
         Ok(snap) => out_string(snap),
@@ -385,11 +380,16 @@ fn dcc_json(world: &mut World, bk: B256, atk: u64, def: u64) -> serde_json::Valu
     })
 }
 
-fn rich_state_json(world: &mut World, bk: B256, full: bool) -> String {
+fn rich_state_json(sim: &mut Sim, bk: B256, full: bool) -> String {
+    // Sizes come from the Sim cache — the transpiled getTeamSize getter
+    // deep-clones the whole BattleConfig per call (valid on fork keys too;
+    // sizes never change after battle start).
+    let sizes = [sim.team_size_phys(U256::ZERO), sim.team_size_phys(U256::from(1u64))];
+    let world = &mut sim.world;
     let ctx = Engine::getBattleContext(world, bk);
     let mut side_json = |p: u64| -> serde_json::Value {
         let pi = U256::from(p);
-        let size = u64::try_from(Engine::getTeamSize(world, bk, pi)).unwrap();
+        let size = sizes[p as usize] as u64;
         let ko = Engine::getKOBitmap(world, bk, pi);
         let mons: Vec<serde_json::Value> = (0..size)
             .map(|i| mon_json(world, bk, pi, U256::from(i), full))
@@ -454,15 +454,16 @@ pub extern "C" fn chomp_battle_key(handle: u64) -> *mut c_char {
 }
 
 /// Rich getter-backed state of the LIVE battle (free with chomp_str_free).
+/// Transients are already boundary-clean: every Sim entry point (incl.
+/// Sim::new) trail-resets, so no local reset is needed here.
 #[no_mangle]
 pub extern "C" fn chomp_battle_state(handle: u64) -> *mut c_char {
     let Some(sess) = session(handle) else { return std::ptr::null_mut() };
     let mut s = sess.lock().unwrap();
     let s = &mut *s;
     let key = s.battle_key;
-    s.world.reset_transient(); // fresh-tx boundary
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        rich_state_json(&mut s.world, key, true)
+        rich_state_json(s, key, true)
     }));
     match out {
         Ok(js) => out_string(js),
@@ -511,7 +512,7 @@ pub unsafe extern "C" fn chomp_battle_hypothetical(handle: u64, input_json: *con
             input.p0.as_ref().map(to_hypo),
             input.p1.as_ref().map(to_hypo),
         );
-        let state = rich_state_json(&mut s.world, fork, false);
+        let state = rich_state_json(s, fork, false);
         format!("{{\"forkKey\":\"{}\",\"state\":{state}}}", hex(fork))
     }));
     match out {
@@ -528,22 +529,6 @@ pub unsafe extern "C" fn chomp_battle_dispose_fork(handle: u64, fork_key: *const
     let Some(sess) = session(handle) else { return -1 };
     sess.lock().unwrap().dispose_fork(fork);
     1
-}
-
-/// Current snapshot without executing a turn (free with chomp_str_free).
-#[no_mangle]
-pub extern "C" fn chomp_battle_snapshot(handle: u64) -> *mut c_char {
-    let Some(sess) = session(handle) else { return std::ptr::null_mut() };
-    let mut s = sess.lock().unwrap();
-    let s = &mut *s;
-    let key = s.battle_key;
-    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        snapshot_json(&mut s.world, key)
-    }));
-    match out {
-        Ok(snap) => out_string(snap),
-        Err(_) => std::ptr::null_mut(),
-    }
 }
 
 #[no_mangle]

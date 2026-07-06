@@ -13,7 +13,6 @@
 //!    engine reader resolves the fork at `battleConfig[forkKey]`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use chomp_engine::world::{deploy_all, ExternalCalls, World};
 use chomp_engine::Structs::{Battle, Mon};
@@ -82,19 +81,9 @@ pub struct Sim {
     /// the transpiled `getTeamSize` getter deep-clones the whole
     /// BattleConfig per call, and view captures read sizes per fork.
     team_sizes: (usize, usize),
-}
-
-static FORK_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-/// Fork key: tag nibbles + counter — can never collide with a real keccak
-/// battle key in practice (mirrors the TS forward-model's key scheme).
-fn next_fork_key() -> B256 {
-    let n = FORK_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut b = [0u8; 32];
-    b[0] = 0xf0;
-    b[1] = 0xfc;
-    b[24..32].copy_from_slice(&n.to_be_bytes());
-    B256::new(b)
+    /// Per-battle fork counter (keys are map identities scoped to THIS
+    /// world, so no cross-Sim coordination is needed).
+    fork_counter: u64,
 }
 
 /// executeWithMoves's transient packing (Engine.sol): storedIndex offset
@@ -110,15 +99,13 @@ pub fn pack_turn(mi: u8, salt: u128, extra: u16) -> U256 {
 impl Sim {
     /// Stand up a battle world. `book` maps contract names to addresses
     /// (the arena's exported address book); when empty, no contracts are
-    /// deployed (inline-only battles). `rng_oracle` is Address::ZERO for
-    /// the engine's inline keccak(p0Salt, p1Salt) path — the arena
-    /// default — or a recorded fixture's oracle address.
+    /// deployed (inline-only battles). The rng oracle is always zero —
+    /// the engine's inline keccak(p0Salt, p1Salt) path.
     pub fn new(
         mons_per_team: u64,
         p0_team: Vec<Mon>,
         p1_team: Vec<Mon>,
         book: &HashMap<String, Address>,
-        rng_oracle: Address,
     ) -> Sim {
         let mut world = World::new(Box::new(HarnessExt {
             p0_team,
@@ -153,7 +140,7 @@ impl Sim {
             p1TeamIndex: 0,
             teamRegistry: TEAM_REGISTRY,
             validator: Address::ZERO,
-            rngOracle: rng_oracle,
+            rngOracle: Address::ZERO,
             ruleset: Constants::INLINE_STAMINA_REGEN_RULESET,
             moveManager: MOVE_MANAGER,
             matchmaker: MATCHMAKER,
@@ -161,10 +148,11 @@ impl Sim {
         };
         world.env.msg_sender = MATCHMAKER;
         Engine::startBattle(&mut world, &mut battle);
+        world.reset_transient(); // startBattle's tx is over; reads start boundary-clean
         let sk = Engine::_getStorageKey(&mut world, battle_key);
         let ts = world.Engine.battleConfig.get_mut(&sk).teamSizes;
         let team_sizes = ((ts & 0x0f) as usize, (ts >> 4) as usize);
-        Sim { world, battle_key, engine_addr, team_sizes }
+        Sim { world, battle_key, engine_addr, team_sizes, fork_counter: 0 }
     }
 
     /// winnerIndex off the live battle data (2 = battle still running).
@@ -198,6 +186,8 @@ impl Sim {
     }
 
     /// `getGlobalKV` at a fresh-tx boundary (works on fork keys too).
+    /// FFI-only surface: the transpiled getter deep-clones the whole KV map
+    /// per call — do NOT reach for this from per-fork strategy code.
     pub fn global_kv(&mut self, bk: B256, key: u64) -> U256 {
         self.world.reset_transient();
         Engine::getGlobalKV(&mut self.world, bk, key)
@@ -223,15 +213,26 @@ impl Sim {
         world.reset_transient(); // tx over; subsequent reads are boundary-clean
     }
 
+    /// Fork key: tag nibbles + counter — can never collide with a real
+    /// keccak battle key in practice (mirrors the TS forward-model's scheme).
+    fn next_fork_key(&mut self) -> B256 {
+        self.fork_counter += 1;
+        let mut b = [0u8; 32];
+        b[0] = 0xf0;
+        b[1] = 0xfc;
+        b[24..32].copy_from_slice(&self.fork_counter.to_be_bytes());
+        B256::new(b)
+    }
+
     /// Clone the live battle's state tree under a fresh fork key
     /// (battleData + battleConfig + the globalKV entries holding move
     /// locks / once-per-game flags). No storage-key redirect:
     /// `_getStorageKey(fork) == fork`.
     fn fork_battle(&mut self) -> B256 {
         let bk = self.battle_key;
+        let fork = self.next_fork_key();
         let world = &mut self.world;
         let sk = Engine::_getStorageKey(world, bk);
-        let fork = next_fork_key();
         let data = world.Engine.battleData.get(&bk);
         world.Engine.battleData.set(fork, data);
         let cfg = world.Engine.battleConfig.get(&sk);

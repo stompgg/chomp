@@ -1,6 +1,6 @@
-# chomp-strategies: native port of the arena CPU strategies (hard, greedy)
-# plus the game/decide loop, driving the transpiled engine in-process (batch
-# mode — one FFI crossing per BATCH instead of per engine read).
+# chomp-strategies: native port of the arena CPU strategies (hard, greedy,
+# override) plus the game/decide loop, driving the transpiled engine
+# in-process (batch mode — one FFI crossing per BATCH instead of per read).
 #
 # The verification bar is the same as every transpiler phase: on identical
 # seeds/teams these strategies must re-derive, turn by turn, the exact moves

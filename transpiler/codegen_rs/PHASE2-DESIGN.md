@@ -1,5 +1,9 @@
 # Phase 2 design: stateful contracts, the World model, and dispatch
 
+> **Historical design note.** The fixture/battle-replay gates described
+> here were retired when the project shifted to prototyping; correctness
+> is now carried by the live lockstep gates (README "Correctness gates").
+
 Goal state (per PLAN): the arena runs CPU battles on the Rust engine.
 Phase 2 lands the engine core (storage + turn loop) behind a battle-replay
 lockstep gate; Phase 3 adds effect/move/ability dispatch enums; Phase 5 the

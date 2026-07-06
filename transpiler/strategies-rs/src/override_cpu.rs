@@ -137,7 +137,9 @@ fn build_ctx(
     let opp_idx = view.opp_active;
 
     // Incoming lethal: only meaningful when the opponent actually attacks;
-    // a fork that fails on an odd state just reads as non-lethal.
+    // a fork that fails on an odd state just reads as non-lethal. (A panic
+    // mid-fork can strand that fork's cloned maps until the per-game world
+    // drops — bounded, and the TS reference leaks the same way.)
     let mut incoming_lethal = false;
     if pm.move_index < SWITCH_MOVE_INDEX {
         let mut fc = ForkCache::new();

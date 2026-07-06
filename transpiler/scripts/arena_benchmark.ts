@@ -13,57 +13,15 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { playGame, type EngineKind } from '../../sims/src/arena/game';
 import { getCpuStrategy } from '../../sims/src/cpu/registry';
-import { TEAM_SIZE } from '../../sims/src/cpu/constants';
-import type { DraftedMon } from '../../sims/src/arena/team';
+import { buildWork, STRAT_PAIRS } from './workload';
 
 const GAMES = Number(process.argv[2] ?? 3000);
 const MAX_TURNS = 150;
 const OUT = `/tmp/arena_bench_${GAMES}.jsonl`;
-const NUM_MONS = 13;
 
-// Deterministic workload generation (xorshift32) — identical for both engines.
-let wseed = 0xbeefcafe >>> 0;
-function wrand(): number {
-  wseed ^= wseed << 13; wseed >>>= 0;
-  wseed ^= wseed >> 17;
-  wseed ^= wseed << 5; wseed >>>= 0;
-  return wseed / 0x100000000;
-}
-
-function drawTeam(): DraftedMon[] {
-  const pool = Array.from({ length: NUM_MONS }, (_, i) => i);
-  const ids: number[] = [];
-  for (let k = 0; k < TEAM_SIZE; k++) {
-    ids.push(pool.splice(Math.floor(wrand() * pool.length), 1)[0]);
-  }
-  return ids.map((id) => ({ id, equip: undefined as any }));
-}
-
-const STRAT_PAIRS: [string, string][] = [
-  ['hard', 'hard'],
-  ['hard', 'greedy'],
-  ['greedy', 'hard'],
-  ['greedy', 'greedy'],
-  ['override', 'greedy'],
-  ['override', 'hard'],
-];
-
-interface WorkItem {
-  idx: number;
-  strats: [string, string];
-  teams: [DraftedMon[], DraftedMon[]];
-  seed: number;
-}
-
-const work: WorkItem[] = [];
-for (let i = 0; i < GAMES; i++) {
-  work.push({
-    idx: i,
-    strats: STRAT_PAIRS[i % STRAT_PAIRS.length],
-    teams: [drawTeam(), drawTeam()],
-    seed: 10_000 + i,
-  });
-}
+// Deterministic workload — identical for both engines, and re-derivable by
+// batch_benchmark.ts (same seed constants) for its outcome cross-check.
+const work = buildWork(GAMES, 0xbeefcafe, 10_000);
 
 interface GameResult {
   engine: EngineKind;

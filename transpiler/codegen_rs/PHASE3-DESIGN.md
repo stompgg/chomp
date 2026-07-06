@@ -1,5 +1,9 @@
 # Phase 3 — effects, moves, abilities: full dispatch — DONE
 
+> **Historical design note.** The fixture/battle-replay gates described
+> here were retired when the project shifted to prototyping; correctness
+> is now carried by the live lockstep gates (README "Correctness gates").
+
 Status: complete. All 13 mons + 8 effects + StandardAttack transpile and
 compile; dispatch.rs (23 fns over IMoveSet/IEffect/IAbility) routes by
 ContractId; deploy_all mirrors the TS factories' dep wiring. Lockstep

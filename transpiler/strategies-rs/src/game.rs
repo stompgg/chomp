@@ -100,13 +100,7 @@ fn decide_one(sim: &mut Sim, s: &mut SeatState, pm: Mv, rng: &mut JsRng) -> Mv {
 
 pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> GameOutcome {
     let mut rng = JsRng::new(spec.seed);
-    let mut sim = Sim::new(
-        spec.mons_per_team,
-        spec.p0_team.clone(),
-        spec.p1_team.clone(),
-        book,
-        Address::ZERO, // inline keccak(p0Salt, p1Salt) rng — the arena path
-    );
+    let mut sim = Sim::new(spec.mons_per_team, spec.p0_team.clone(), spec.p1_team.clone(), book);
 
     let mut seats = [
         SeatState {

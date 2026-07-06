@@ -25,15 +25,13 @@ if TYPE_CHECKING:
 class RustFunctionGenerator:
     def __init__(self, ctx: 'RustCodeGenerationContext', symbols: 'RustSymbols',
                  expr: 'RustExpressionGenerator', stmt: 'RustStatementGenerator',
-                 types: 'RustTypeConverter', inferencer: 'TypeInferencer',
-                 dyn_interfaces: Set[str]):
+                 types: 'RustTypeConverter', inferencer: 'TypeInferencer'):
         self._ctx = ctx
         self._symbols = symbols
         self._expr = expr
         self._stmt = stmt
         self._types = types
         self._infer = inferencer
-        self._dyn_interfaces = dyn_interfaces
 
     # ------------------------------------------------------------------
     # Signatures

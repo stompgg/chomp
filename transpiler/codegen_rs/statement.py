@@ -365,7 +365,7 @@ class RustStatementGenerator:
         names now alias one memory object. Redirect the param name to the
         owned local so later reads/writes see the same values (bit-correct
         for intra-function aliasing; the caller-side copy boundary is the
-        documented &mut-param model divergence the differential gates watch).
+        documented &mut-param model divergence the lockstep gates watch).
         """
         if not t.is_memory_ref:
             return
@@ -378,7 +378,7 @@ class RustStatementGenerator:
         """Memory-to-memory assignment ALIASES in Solidity; Rust copies. For
         Copy types the copy is bit-identical; for non-Copy (Vec-backed) we
         clone and record the (documented) alias-vs-copy divergence, which the
-        differential gates watch for."""
+        lockstep gates watch for."""
         if self._types.is_copy(t):
             return code
         if isinstance(expr, (Identifier, IndexAccess, MemberAccess)):
