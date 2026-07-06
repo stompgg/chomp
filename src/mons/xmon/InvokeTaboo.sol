@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, SWITCH_MOVE_INDEX} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -33,8 +33,10 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
         MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, defenderPlayerIndex);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
@@ -68,10 +70,6 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
-    }
-
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
     }
 
     // Steps: OnMonSwitchOut (0x20), AfterMove (0x80), ALWAYS_APPLIES (0x8000)
@@ -116,7 +114,6 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

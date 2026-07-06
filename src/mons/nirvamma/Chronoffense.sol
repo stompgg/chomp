@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type, TargetSpec} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -94,10 +94,6 @@ contract Chronoffense is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -107,7 +103,6 @@ contract Chronoffense is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

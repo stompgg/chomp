@@ -7,8 +7,7 @@ import "../src/Constants.sol";
 // Fundamental entities
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {ICPURNG} from "../src/rng/ICPURNG.sol";
+import {CPU} from "../src/cpu/CPU.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
@@ -55,13 +54,13 @@ contract EngineAndPeriphery is Script {
             new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(previousGachaRegistry));
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
         
-        BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
-        deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
+        CPU cpu = new CPU(engine);
+        deployedContracts.push(DeployData({name: "CPU", contractAddress: address(cpu)}));
 
         // Whitelist the single CPU so users can setOpponentTeam / startCustomBattle against it.
         {
             address[] memory toAllow = new address[](1);
-            toAllow[0] = address(betterCPU);
+            toAllow[0] = address(cpu);
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }

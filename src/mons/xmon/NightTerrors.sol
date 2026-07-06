@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -86,10 +86,6 @@ contract NightTerrors is IMoveSet, BasicEffect {
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Special;
-    }
-
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
     }
 
     // Steps: RoundEnd, OnMonSwitchOut
@@ -177,7 +173,6 @@ contract NightTerrors is IMoveSet, BasicEffect {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

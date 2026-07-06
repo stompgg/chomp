@@ -45,7 +45,10 @@ contract PistolSquat is StandardAttack {
         uint16,
         uint256 rng
     ) public override {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 otherPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Deal the damage
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
@@ -62,7 +65,6 @@ contract PistolSquat is StandardAttack {
         );
 
         // Deal damage and then force a switch if the opposing mon is not KO'ed
-        uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
         bool isKOed = engine.getMonStateForBattle(
             battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
         ) == 1;

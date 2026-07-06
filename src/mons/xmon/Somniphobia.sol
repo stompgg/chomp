@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -33,8 +33,10 @@ contract Somniphobia is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
         if (exists) {
@@ -70,10 +72,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
     function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
         return MoveClass.Other;
-    }
-
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
     }
 
     // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
@@ -160,7 +158,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

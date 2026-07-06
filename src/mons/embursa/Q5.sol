@@ -72,10 +72,6 @@ contract Q5 is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     // Effect implementation
     // Steps: RoundStart
     function getStepsBitmap() external pure override returns (uint16) {
@@ -119,7 +115,6 @@ contract Q5 is IMoveSet, BasicEffect {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

@@ -29,10 +29,9 @@ interface IMoveSet {
         returns (uint32);
     function moveType(IEngine engine, bytes32 battleKey) external view returns (Type);
     function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass);
-    function extraDataType() external view returns (ExtraDataType);
 
     /// @notice Bundled metadata read. Returns moveType / moveClass / priority / stamina /
-    ///         basePower / extraDataType in a single staticcall so callers that need several
+    ///         basePower / targetSpec in a single staticcall so callers that need several
     ///         metadata fields per decision avoid N separate external calls.
     /// @dev For moves that don't deal damage, return `basePower == 0`. Implementations that
     ///      don't read engine/battleKey/playerIndex/monIndex may ignore those parameters; they

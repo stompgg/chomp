@@ -84,10 +84,6 @@ contract GildedRecovery is IMoveSet {
         return MoveClass.Self;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.SelfTeamIndex;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -97,7 +93,6 @@ contract GildedRecovery is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

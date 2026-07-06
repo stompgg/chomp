@@ -45,7 +45,10 @@ contract VitalSiphon is StandardAttack {
         uint16,
         uint256 rng
     ) public override {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Deal the damage
         (int32 damage,) = engine.dispatchStandardAttack(
             attackerPlayerIndex,
@@ -65,7 +68,6 @@ contract VitalSiphon is StandardAttack {
         // break symmetry on mirror matchups.
         uint256 stealRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STAMINA_STEAL")));
         if (damage > 0 && stealRng % 100 >= STAMINA_STEAL_PERCENT) {
-            uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
 
             // Check if opponent has at least 1 stamina
             int32 defenderStamina = engine.getMonStateForBattle(

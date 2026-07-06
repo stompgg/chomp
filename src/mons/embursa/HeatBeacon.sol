@@ -33,9 +33,11 @@ contract HeatBeacon is IMoveSet {
         uint16,
         uint256
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Apply burn to opposing mon
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
 
         // Clear the priority boost
@@ -63,10 +65,6 @@ contract HeatBeacon is IMoveSet {
         return MoveClass.Self;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         view
@@ -76,7 +74,6 @@ contract HeatBeacon is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

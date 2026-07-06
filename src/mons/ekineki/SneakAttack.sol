@@ -116,10 +116,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.OpponentNonKOTeamIndex;
-    }
-
     // IEffect implementation — local effect that cleans up on switch-out
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
@@ -144,7 +140,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

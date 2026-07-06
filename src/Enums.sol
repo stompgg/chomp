@@ -73,13 +73,6 @@ enum StatBoostFlag {
     Perm
 }
 
-enum ExtraDataType {
-    None,
-    SelfTeamIndex,
-    OpponentNonKOTeamIndex,
-    InclusiveRange
-}
-
 enum EngineHookStep {
     OnBattleStart,
     OnRoundStart,

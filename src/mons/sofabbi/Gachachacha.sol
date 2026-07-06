@@ -47,11 +47,13 @@ contract Gachachacha is IMoveSet {
         uint16,
         uint256 rng
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Mix in attacker player index to break symmetry on mirror matchups
         uint256 chance = RNGLib.mixForAttacker(rng, attackerPlayerIndex) % OPP_KO_THRESHOLD_R;
         uint32 basePower;
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 playerForCalculator = attackerPlayerIndex;
         if (chance <= SELF_KO_THRESHOLD_L) {
             basePower = uint32(chance);
@@ -95,10 +97,6 @@ contract Gachachacha is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -108,7 +106,6 @@ contract Gachachacha is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

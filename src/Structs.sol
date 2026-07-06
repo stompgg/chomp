@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {MOVE_LANES_PER_MON} from "./Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, StatBoostType, TargetSpec, Type} from "./Enums.sol";
+import {MonStateIndexName, MoveClass, StatBoostType, TargetSpec, Type} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
 import {IEffect} from "./effects/IEffect.sol";
@@ -323,14 +323,13 @@ struct DamageCalcContext {
     Type defenderType2;
 }
 
-// Bundled move metadata returned by IMoveSet.getMeta. Batches the five separate
-// getters (moveType / moveClass / priority / stamina / basePower) + extraDataType into
+// Bundled move metadata returned by IMoveSet.getMeta. Batches the separate
+// getters (moveType / moveClass / priority / stamina / basePower / targetSpec) into
 // one staticcall. MoveSlotLib.decodeMeta handles both inline moves (pure bit ops) and
 // external moves (one getMeta call) uniformly.
 struct MoveMeta {
     Type moveType;
     MoveClass moveClass;
-    ExtraDataType extraDataType;
     TargetSpec targetSpec; // legal domain for the targetBits nibble (ignored in singles)
     uint32 priority;
     uint32 stamina;

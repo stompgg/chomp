@@ -48,8 +48,10 @@ contract DeepFreeze is IMoveSet {
         uint16,
         uint256 rng
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
-        uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 otherPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         uint32 damageToDeal = BASE_POWER;
         int32 frostbiteIndex = _frostbiteExists(engine, battleKey, otherPlayerIndex, defenderMonIndex);
         // Remove frostbite if it exists, and double the damage dealt
@@ -90,10 +92,6 @@ contract DeepFreeze is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -103,7 +101,6 @@ contract DeepFreeze is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

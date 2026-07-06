@@ -63,7 +63,10 @@ contract MegaStarBlast is IMoveSet {
         uint16,
         uint256 rng
     ) external {
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Check if Overclock is active
         uint32 acc = BASE_ACCURACY;
         int32 overclockIndex = _checkForOverclock(engine, battleKey, attackerPlayerIndex);
@@ -92,7 +95,6 @@ contract MegaStarBlast is IMoveSet {
         if (damage > 0) {
             uint256 rng2 = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "ZAP")));
             if (rng2 % 100 < ZAP_ACCURACY) {
-                uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
                 engine.addEffect(defenderPlayerIndex, defenderMonIndex, ZAP_STATUS, "");
             }
         }
@@ -114,10 +116,6 @@ contract MegaStarBlast is IMoveSet {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -127,7 +125,6 @@ contract MegaStarBlast is IMoveSet {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

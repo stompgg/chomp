@@ -3,16 +3,15 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MoveClass, Type, TargetSpec} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {IMoveSetWithRange} from "../../moves/IMoveSetWithRange.sol";
 
-contract ModalBolt is IMoveSet, IMoveSetWithRange {
+contract ModalBolt is IMoveSet {
     uint32 public constant BASE_POWER = 90;
     uint8 public constant EFFECT_ACCURACY = 33;
 
@@ -122,14 +121,6 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.InclusiveRange;
-    }
-
-    function extraDataRange() public pure returns (uint16, uint16) {
-        return (MODE_FIRE, MODE_LIGHTNING);
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
@@ -139,7 +130,6 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
             targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: BASE_POWER

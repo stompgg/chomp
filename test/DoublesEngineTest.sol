@@ -61,15 +61,10 @@ contract FastAllySpeedBoost is IMoveSet {
         return MoveClass.Self;
     }
 
-    function extraDataType() external pure returns (ExtraDataType) {
-        return ExtraDataType.SelfTeamIndex;
-    }
-
     function getMeta(IEngine, bytes32, uint256, uint256) external pure returns (MoveMeta memory) {
         return MoveMeta({
             moveType: Type.Air,
             moveClass: MoveClass.Self,
-            extraDataType: ExtraDataType.SelfTeamIndex,
             targetSpec: TargetSpec.None,
             priority: DEFAULT_PRIORITY + 2,
             stamina: 0,

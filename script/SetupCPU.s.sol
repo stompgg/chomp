@@ -20,7 +20,7 @@ contract SetupCPU is Script {
 
         GachaTeamRegistry gachaTeamRegistry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
         string[] memory cpuPlayers = new string[](1);
-        cpuPlayers[0] = "BETTER_CPU";
+        cpuPlayers[0] = "CPU";
 
         uint256[] memory monIndices = new uint256[](4);
         uint8[] memory facetIds = new uint8[](4);
