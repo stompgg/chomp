@@ -6,6 +6,8 @@ import {StaminaRegenLogic} from "../lib/StaminaRegenLogic.sol";
 import {TargetLib} from "../lib/TargetLib.sol";
 import {BasicEffect} from "./BasicEffect.sol";
 
+/// @dev Singles test scaffolding: prod uses the engine-inline regen (which is slot-aware);
+///      this external effect only regens each side's slot-0 lane in 2-slot battles.
 contract StaminaRegen is BasicEffect {
     function name() external pure override returns (string memory) {
         return "Stamina Regen";

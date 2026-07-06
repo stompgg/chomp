@@ -9,10 +9,10 @@ import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
 import {SwitchTargetLib} from "../../lib/SwitchTargetLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract PistolSquat is StandardAttack {
     constructor(ITypeCalculator TYPE_CALCULATOR)
@@ -71,7 +71,7 @@ contract PistolSquat is StandardAttack {
         if (!isKOed) {
             int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, otherPlayerIndex, defenderMonIndex, rng);
             if (target != -1) {
-                engine.switchActiveMon(otherPlayerIndex, uint256(uint32(target)));
+                engine.switchActiveMonForSlot(otherPlayerIndex, targetSlot & 1, uint256(uint32(target)));
             }
         }
     }

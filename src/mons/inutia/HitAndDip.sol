@@ -38,7 +38,7 @@ contract HitAndDip is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16 extraData,
@@ -62,7 +62,11 @@ contract HitAndDip is StandardAttack {
         if (damage > 0) {
             // extraData contains the swap index as raw uint16
             uint256 swapIndex = uint256(extraData);
-            engine.switchActiveMon(attackerPlayerIndex, swapIndex);
+            engine.switchActiveMonForSlot(
+                attackerPlayerIndex,
+                TargetLib.slotOfMon(activesPacked, attackerPlayerIndex, attackerMonIndex) & 1,
+                swapIndex
+            );
         }
     }
 }

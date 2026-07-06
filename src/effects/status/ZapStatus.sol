@@ -56,10 +56,14 @@ contract ZapStatus is StatusEffect {
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // If we're at RoundStart and effect is still present, always set skip flag and mark as skipped, unless the selected move is a switch move
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (slot == 4) {
+            return (bytes32(uint256(0)), false); // benched: nothing to skip this round
+        }
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex == SWITCH_MOVE_INDEX) {
             return (bytes32(uint256(0)), false);

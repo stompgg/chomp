@@ -86,6 +86,11 @@ interface IEngine {
         uint8 moveIndex,
         uint16 extraData
     ) external;
+    function switchActiveMonForSlot(uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex) external;
+    function getMoveDecisionForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (MoveDecision memory);
     function getActiveSlots(bytes32 battleKey) external view returns (uint256[4] memory slots);
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
         external

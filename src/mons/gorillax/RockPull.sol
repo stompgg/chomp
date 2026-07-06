@@ -15,6 +15,7 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -33,16 +34,13 @@ contract RockPull is IMoveSet {
         return "Rock Pull";
     }
 
-    function _didOtherPlayerChooseSwitch(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
+    function _didTargetChooseSwitch(IEngine engine, bytes32 battleKey, uint256 targetSlot)
         internal
         view
         returns (bool)
     {
-        // Check MoveDecision for other player
-        uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        MoveDecision memory otherPlayerMove = engine.getMoveDecisionForBattleState(battleKey, otherPlayerIndex);
-        // Unpack the move index from packedMoveIndex
-        uint8 moveIndex = otherPlayerMove.packedMoveIndex & MOVE_INDEX_MASK;
+        MoveDecision memory targetMove = engine.getMoveDecisionForSlot(battleKey, targetSlot >> 1, targetSlot & 1);
+        uint8 moveIndex = targetMove.packedMoveIndex & MOVE_INDEX_MASK;
         return moveIndex == SWITCH_MOVE_INDEX;
     }
 
@@ -56,7 +54,8 @@ contract RockPull is IMoveSet {
         uint16,
         uint256 rng
     ) external {
-        if (_didOtherPlayerChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot != 4 && _didTargetChooseSwitch(engine, battleKey, targetSlot)) {
             // Deal damage to the opposing mon
             AttackCalculator._calculateDamage(
                 engine,
@@ -96,8 +95,23 @@ contract RockPull is IMoveSet {
         return 3;
     }
 
+    /// @dev priority() has no target context, so the punisher stance arms off EITHER opposing
+    ///      slot committing a switch; move() still requires the TARGETED slot to be switching
+    ///      for the punish branch (else the usual self-hit).
+    function _didAnyOpponentChooseSwitch(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
+        internal
+        view
+        returns (bool)
+    {
+        uint256 opp = (attackerPlayerIndex + 1) % 2;
+        if ((engine.getMoveDecisionForSlot(battleKey, opp, 0).packedMoveIndex & MOVE_INDEX_MASK) == SWITCH_MOVE_INDEX) {
+            return true;
+        }
+        return (engine.getMoveDecisionForSlot(battleKey, opp, 1).packedMoveIndex & MOVE_INDEX_MASK) == SWITCH_MOVE_INDEX;
+    }
+
     function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view returns (uint32) {
-        if (_didOtherPlayerChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
+        if (_didAnyOpponentChooseSwitch(engine, battleKey, attackerPlayerIndex)) {
             return uint32(SWITCH_PRIORITY) + 1;
         } else {
             return DEFAULT_PRIORITY;

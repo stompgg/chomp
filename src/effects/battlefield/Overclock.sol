@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "../../Enums.sol";
 import "../../Structs.sol";
 
+import {EMPTY_ACTIVE_LANE} from "../../Constants.sol";
 import {IEngine} from "../../IEngine.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {BasicEffect} from "../BasicEffect.sol";
@@ -83,13 +84,15 @@ contract Overclock is BasicEffect {
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
-        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
         uint256 playerIndex = uint256(extraData);
 
-        // Apply stat change to the team of the player who summoned Overclock
-        uint256 activeMonIndex = playerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
-        _applyStatChange(engine, playerIndex, activeMonIndex);
+        // Apply to every occupied lane of the summoner's side (side-scoped by design; with two
+        // actives both benefit — accepted stacking surface per D11).
+        _applyStatChange(engine, playerIndex, TargetLib.activeAt(activesPacked, playerIndex << 1));
+        uint256 partnerMon = TargetLib.activeAt(activesPacked, (playerIndex << 1) | 1);
+        if (partnerMon != EMPTY_ACTIVE_LANE) {
+            _applyStatChange(engine, playerIndex, partnerMon);
+        }
 
         // The returned extraData is what the engine stores: countdown starts here.
         return (_pack(playerIndex, DEFAULT_DURATION), false);
@@ -140,12 +143,13 @@ contract Overclock is BasicEffect {
         external
         override
     {
-        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
-        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
         uint256 playerIndex = _playerOf(extraData);
-        uint256 activeMonIndex = playerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
-        // Reset stat changes from the mon on the team of the player who summoned Overclock.
+        // Reset stat changes on every occupied lane of the summoner's side.
         // (No KV cleanup — the countdown lives in this effect's extraData, which dies with it.)
-        _removeStatChange(engine, playerIndex, activeMonIndex);
+        _removeStatChange(engine, playerIndex, TargetLib.activeAt(activesPacked, playerIndex << 1));
+        uint256 partnerMon = TargetLib.activeAt(activesPacked, (playerIndex << 1) | 1);
+        if (partnerMon != EMPTY_ACTIVE_LANE) {
+            _removeStatChange(engine, playerIndex, partnerMon);
+        }
     }
 }

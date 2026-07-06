@@ -2477,14 +2477,54 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @notice Slot-addressed pivot for 2-slot battles (self-switch and force-out moves resolve
+    ///         their slot via TargetLib.slotOfMon). Applies the same silent-no-op legality gates
+    ///         as the scheduler's switch action; the end-of-turn flag recompute covers the rest.
+    function switchActiveMonForSlot(uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex) external {
+        bytes32 battleKey = battleKeyForWrite;
+        if (battleKey == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        BattleData storage battle = battleData[battleKey];
+        // Flow-aware like the other slot surfaces: singles routes through the legacy switch
+        // (whose validation has no ally lane to collide with).
+        if (!battle.isTwoSlotMode) {
+            _switchActiveMonSingles(battleKey, config, battle, playerIndex, monToSwitchIndex);
+            return;
+        }
+        uint256 absSlot = (playerIndex << 1) | (slotIndex & 1);
+        uint256 currentActive = _slotActive(battle, absSlot);
+        uint256 teamSize = (playerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+        if (monToSwitchIndex >= teamSize) return;
+        if (_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) return;
+        if (monToSwitchIndex == _slotActive(battle, absSlot ^ 1)) return;
+        if (battle.turnId != 0 && monToSwitchIndex == currentActive) return;
+        _handleSlotSwitch(battleKey, config, battle, absSlot, monToSwitchIndex, currentActive);
+    }
+
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external {
         bytes32 battleKey = battleKeyForWrite;
         if (battleKey == bytes32(0)) {
             revert NoWriteAllowed();
         }
-
-        BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKey];
+        // 2-slot battles must address the vacating slot explicitly (switchActiveMonForSlot);
+        // the singles-shaped call cannot say which slot leaves, so it no-ops like any other
+        // invalid switch rather than corrupting a lane.
+        if (battle.isTwoSlotMode) {
+            return;
+        }
+        _switchActiveMonSingles(battleKey, battleConfig[storageKeyForWrite], battle, playerIndex, monToSwitchIndex);
+    }
+
+    function _switchActiveMonSingles(
+        bytes32 battleKey,
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 playerIndex,
+        uint256 monToSwitchIndex
+    ) private {
         uint256 activeMonIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
 
         // Inline switch validation (no external call)
@@ -3226,6 +3266,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @notice Mid-execute per-slot move rewrite for 2-slot battles (the slot-aware analog of
     ///         setMove's transient path — e.g. a sleep effect overwriting a victim's move).
+    /// @dev Effects rewrite a specific mon's pending move through this (e.g. sleep -> NO_OP)
+    ///      without knowing the battle mode: 2-slot battles hit the slot's transient lane;
+    ///      singles (slotIndex 0) routes through setMove so the legacy storage flow still works.
     function setMoveForSlot(
         bytes32 battleKey,
         uint256 playerIndex,
@@ -3236,6 +3279,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleKeyForWrite != battleKey) {
             revert NoWriteAllowed();
         }
+        if (!battleData[battleKey].isTwoSlotMode) {
+            _setMoveViaFlow(battleKey, playerIndex, moveIndex, extraData);
+            return;
+        }
         uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
         uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
         uint256 shift = 104 + slotIndex * 24;
@@ -3243,6 +3290,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP0Packed = (_turnP0Packed & ~(uint256(0xFFFFFF) << shift)) | (encoded << shift);
         } else {
             _turnP1Packed = (_turnP1Packed & ~(uint256(0xFFFFFF) << shift)) | (encoded << shift);
+        }
+    }
+
+    /// @dev The mid-execute half of setMove (transient when populated, storage otherwise).
+    function _setMoveViaFlow(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint16 extraData) private {
+        bool isInsideExecute = _turnP0Packed != 0 || _turnP1Packed != 0;
+        if (isInsideExecute) {
+            uint8 storedMoveIndex = moveIndex < SWITCH_MOVE_INDEX ? moveIndex + MOVE_INDEX_OFFSET : moveIndex;
+            uint256 encoded = (uint256(storedMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(extraData) << 8);
+            if (playerIndex == 0) {
+                _turnP0Packed = _packTurn(encoded, 0);
+            } else {
+                _turnP1Packed = _packTurn(encoded, 0);
+            }
+        } else {
+            _setMoveInternal(battleConfig[_getStorageKey(battleKey)], playerIndex, moveIndex, 0, extraData);
         }
     }
 
@@ -4428,6 +4491,20 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
         return _getTeamMon(config, playerIndex, monIndex).moves[moveIndex];
+    }
+
+    /// @notice Per-slot current-turn move. Effects resolve their mon's slot via
+    ///         TargetLib.slotOfMon and read through this — mode-agnostic (singles slot 0
+    ///         falls back to the flow-aware singles read).
+    function getMoveDecisionForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (MoveDecision memory)
+    {
+        if (battleData[battleKey].isTwoSlotMode) {
+            return _getCurrentTurnMoveForSlot(playerIndex, slotIndex & 1);
+        }
+        return _getCurrentTurnMove(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
     }
 
     function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)

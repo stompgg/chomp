@@ -47,12 +47,21 @@ contract SleepStatus is StatusEffect {
         return engine.getMonStateForBattle(battleKey, targetIndex, sleeperMonIndex, MonStateIndexName.IsKnockedOut) != 0;
     }
 
-    function _applySleep(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256) internal {
-        // Get exiting move index (unpack from packedMoveIndex)
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+    function _applySleep(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 activesPacked
+    ) internal {
+        // Rewrite the sleeper's own slot; a benched sleeper (possible mid-pass in 2-slot
+        // battles) has no pending move to overwrite.
+        uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (slot == 4) return;
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex != SWITCH_MOVE_INDEX) {
-            engine.setMove(battleKey, targetIndex, NO_OP_MOVE_INDEX, 0, 0);
+            engine.setMoveForSlot(battleKey, targetIndex, slot & 1, NO_OP_MOVE_INDEX, 0);
         }
     }
 
@@ -64,12 +73,12 @@ contract SleepStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32, bool) {
         rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex)));
         bool wakeEarly = rng % 3 == 0;
         if (!wakeEarly) {
-            _applySleep(engine, battleKey, targetIndex, monIndex);
+            _applySleep(engine, battleKey, targetIndex, monIndex, activesPacked);
         }
         return (extraData, wakeEarly);
     }
@@ -92,7 +101,7 @@ contract SleepStatus is StatusEffect {
         // Check if opponent has yet to move and if so, also affect their move for this round
         uint256 priorityPlayerIndex = engine.computePriorityPlayerIndex(battleKey, rng);
         if (targetIndex != priorityPlayerIndex) {
-            _applySleep(engine, battleKey, targetIndex, monIndex);
+            _applySleep(engine, battleKey, targetIndex, monIndex, activesPacked);
         }
         return (bytes32(DURATION), false);
     }

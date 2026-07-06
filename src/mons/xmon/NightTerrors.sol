@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -102,11 +102,15 @@ contract NightTerrors is IMoveSet, BasicEffect {
         uint256 monIndex,
         uint256 activesPacked
     ) external override returns (bytes32, bool) {
-        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
-        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
-        // targetIndex/monIndex is the attacker (who has the effect)
-        // defenderPlayerIndex is stored in extraData (who should take damage)
-        (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
+        // targetIndex/monIndex is the attacker (who has the effect); each tick lands on the
+        // mirror of the attacker's slot (kit-audit ruling for untargeted opponent effects).
+        (, uint64 terrorCount) = _unpackExtraData(extraData);
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        uint256 defenderSlot = ownSlot == 4 ? 4 : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        if (defenderSlot == 4) {
+            return (extraData, false);
+        }
+        uint256 defenderPlayerIndex = defenderSlot >> 1;
 
         // Check current stamina of the attacker (who has the effect)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
@@ -120,8 +124,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // Pay stamina cost from the attacker
         engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -int32(uint32(terrorCount)));
 
-        // Get the defender's active mon index
-        uint256 defenderMonIndex = defenderPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, defenderSlot);
 
         // Check if opponent (defender) is asleep (targeted lookup, no full-array build)
         (bool isAsleep,,) =
@@ -138,7 +141,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
             engine,
             TYPE_CALCULATOR,
             battleKey,
-            targetIndex, TargetLib.impliedSinglesTargetBits(targetIndex), // attacker player index
+            targetIndex,
+            uint256(1) << defenderSlot, // attacker player index
             totalBasePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

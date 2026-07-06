@@ -11,6 +11,7 @@ import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Str
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract Tinderclaws is IAbility, BasicEffect {
     uint256 constant BURN_CHANCE = 3; // 1 in 3 chance
@@ -50,9 +51,13 @@ contract Tinderclaws is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (ownSlot == 4) {
+            return (updatedExtraData, removeAfterRun);
+        }
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
 

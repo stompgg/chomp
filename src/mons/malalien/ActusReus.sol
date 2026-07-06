@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
+import {EMPTY_ACTIVE_LANE} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
@@ -45,11 +46,20 @@ contract ActusReus is IAbility, BasicEffect {
         uint256,
         uint256 activesPacked
     ) external view override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
-        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
-        // Check if opposing mon is KOed
+        // Arm if EITHER opposing occupant fell after Malalien's move (kit-audit ruling: the
+        // singles check was "the opposing active"; with two opposing slots we arm on any).
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
+        uint256 oppSlot0 = otherPlayerIndex << 1;
+        uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot0);
+        uint256 oppPartnerMon = TargetLib.activeAt(activesPacked, oppSlot0 | 1);
+        if (oppPartnerMon != EMPTY_ACTIVE_LANE) {
+            bool partnerKOed = engine.getMonStateForBattle(
+                battleKey, otherPlayerIndex, oppPartnerMon, MonStateIndexName.IsKnockedOut
+            ) == 1;
+            if (partnerKOed) {
+                return (bytes32(uint256(1)), false);
+            }
+        }
         bool isOtherMonKOed = engine.getMonStateForBattle(
             battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
         ) == 1;
@@ -70,16 +80,18 @@ contract ActusReus is IAbility, BasicEffect {
         int32,
         uint256
     ) external override returns (bytes32, bool) {
-        uint256 p0ActiveMonIndex = TargetLib.sideActive(activesPacked, 0);
-        uint256 p1ActiveMonIndex = TargetLib.sideActive(activesPacked, 1);
+        // Mirror-slot ruling: the speed halving lands opposite Malalien's slot (its lane still
+        // holds it at the KO instant).
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        uint256 oppSlot = ownSlot == 4 ? 4 : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         // Check if we have an indictment
         if (uint256(extraData) == 1) {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed
             bool isKOed =
                 engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
-            if (isKOed) {
-                uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-                uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
+            if (isKOed && oppSlot != 4) {
+                uint256 otherPlayerIndex = oppSlot >> 1;
+                uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot);
                 StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
                 statBoosts[0] = StatBoostToApply({
                     stat: MonStateIndexName.Speed, boostPercent: SPEED_DEBUFF_PERCENT, boostType: StatBoostType.Divide
