@@ -12,6 +12,7 @@ cbor_metadata = false
 sparse_mode = false
 build_info = true
 via_ir = true
+ignored_error_codes = ["unused-param"]
 
 [lint]
 exclude_lints = ["unsafe-typecast", "unaliased-plain-import", "mixed-case-variable", "mixed-case-function", "asm-keccak256", "pascal-case-struct", "screaming-snake-case-immutable", "incorrect-shift", "named-struct-fields"]
