@@ -123,7 +123,8 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
                 matchmaker: signedMatchmaker,
                 engineHooks: hooks
             }),
-            pairHashNonce: nonce
+            pairHashNonce: nonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));

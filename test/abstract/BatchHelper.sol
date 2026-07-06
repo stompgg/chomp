@@ -31,12 +31,50 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint256 p1Pk
     ) internal view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
         return _buildTurnSubmissionImpl(
-            signedCommitManagerAddr, false, battleKey, turnId, p0MoveIndex, p0ExtraData, p0Salt, p1MoveIndex, p1ExtraData, p1Salt, p0Pk, p1Pk
+            signedCommitManagerAddr,
+            false,
+            battleKey,
+            turnId,
+            p0MoveIndex,
+            p0ExtraData,
+            p0Salt,
+            p1MoveIndex,
+            p1ExtraData,
+            p1Salt,
+            p0Pk,
+            p1Pk
         );
     }
 
     /// @notice Build a single-sig `TurnSubmission` whose revealer signature targets the Engine's
     ///         built-in dual-signed domain (for BUILTIN_DUAL_SIGNED_MANAGER battles).
+    /// @dev Picks committer/revealer from the side wire words by turnId parity and signs with
+    ///      the revealer's key.
+    function _buildSlotTurnSubmissionForEngine(
+        address engineAddr,
+        bytes32 battleKey,
+        uint64 turnId,
+        uint256 side0Word,
+        uint256 side1Word,
+        uint256 p0Pk,
+        uint256 p1Pk
+    ) internal view returns (uint256 committerPacked, uint256 revealerPacked, bytes32 r, bytes32 vs) {
+        uint256 rPk;
+        if (turnId % 2 == 0) {
+            committerPacked = side0Word;
+            revealerPacked = side1Word;
+            rPk = p1Pk;
+        } else {
+            committerPacked = side1Word;
+            revealerPacked = side0Word;
+            rPk = p0Pk;
+        }
+        bytes memory sig = _signDualSlotRevealForEngine(
+            engineAddr, rPk, battleKey, turnId, keccak256(abi.encodePacked(committerPacked)), revealerPacked
+        );
+        (r, vs) = _compactSig(sig);
+    }
+
     function _buildTurnSubmissionForEngine(
         address engineAddr,
         bytes32 battleKey,
@@ -51,7 +89,18 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint256 p1Pk
     ) internal view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
         return _buildTurnSubmissionImpl(
-            engineAddr, true, battleKey, turnId, p0MoveIndex, p0ExtraData, p0Salt, p1MoveIndex, p1ExtraData, p1Salt, p0Pk, p1Pk
+            engineAddr,
+            true,
+            battleKey,
+            turnId,
+            p0MoveIndex,
+            p0ExtraData,
+            p0Salt,
+            p1MoveIndex,
+            p1ExtraData,
+            p1Salt,
+            p0Pk,
+            p1Pk
         );
     }
 
@@ -69,14 +118,29 @@ abstract contract BatchHelper is SignedCommitHelper {
         uint256 p0Pk,
         uint256 p1Pk
     ) private view returns (uint256 packedMoves, bytes32 r, bytes32 vs) {
-        uint8 cM; uint16 cE; uint104 cS;
-        uint8 rM; uint16 rE; uint104 rS; uint256 rPk;
+        uint8 cM;
+        uint16 cE;
+        uint104 cS;
+        uint8 rM;
+        uint16 rE;
+        uint104 rS;
+        uint256 rPk;
         if (turnId % 2 == 0) {
-            cM = p0MoveIndex; cE = p0ExtraData; cS = p0Salt;
-            rM = p1MoveIndex; rE = p1ExtraData; rS = p1Salt; rPk = p1Pk;
+            cM = p0MoveIndex;
+            cE = p0ExtraData;
+            cS = p0Salt;
+            rM = p1MoveIndex;
+            rE = p1ExtraData;
+            rS = p1Salt;
+            rPk = p1Pk;
         } else {
-            cM = p1MoveIndex; cE = p1ExtraData; cS = p1Salt;
-            rM = p0MoveIndex; rE = p0ExtraData; rS = p0Salt; rPk = p0Pk;
+            cM = p1MoveIndex;
+            cE = p1ExtraData;
+            cS = p1Salt;
+            rM = p0MoveIndex;
+            rE = p0ExtraData;
+            rS = p0Salt;
+            rPk = p0Pk;
         }
         bytes32 committerMoveHash = keccak256(abi.encodePacked(cM, cS, cE));
         // turnId is signed (the revealer binds it) but NOT submitted — the Engine derives it.
@@ -84,8 +148,8 @@ abstract contract BatchHelper is SignedCommitHelper {
             ? _signDualRevealForEngine(verifyingContract, rPk, battleKey, turnId, committerMoveHash, rM, rS, rE)
             : _signDualReveal(verifyingContract, rPk, battleKey, turnId, committerMoveHash, rM, rS, rE);
         // Pack committer (low 128 bits) + revealer (high 128) into one word, matching the buffer layout.
-        packedMoves = uint256(cM) | (uint256(cE) << 8) | (uint256(cS) << 24)
-            | (uint256(rM) << 128) | (uint256(rE) << 136) | (uint256(rS) << 152);
+        packedMoves = uint256(cM) | (uint256(cE) << 8) | (uint256(cS) << 24) | (uint256(rM) << 128)
+            | (uint256(rE) << 136) | (uint256(rS) << 152);
         (r, vs) = _compactSig(sig);
     }
 

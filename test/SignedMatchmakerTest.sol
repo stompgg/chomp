@@ -77,7 +77,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 matchmaker: matchmaker,
                 engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: pairHashNonce
+            pairHashNonce: pairHashNonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
     }
 
@@ -98,7 +99,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 matchmaker: offer.battle.matchmaker,
                 engineHooks: offer.battle.engineHooks
             }),
-            pairHashNonce: offer.pairHashNonce
+            pairHashNonce: offer.pairHashNonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         bytes32 structHash = BattleOfferLib.hashBattleOffer(offerForSigning);
@@ -264,7 +266,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 matchmaker: matchmaker,
                 engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: 0
+            pairHashNonce: 0,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         // p0 signs the offer
@@ -293,7 +296,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 matchmaker: matchmaker,
                 engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: 0
+            pairHashNonce: 0,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         // p0 signs the offer
@@ -324,7 +328,8 @@ contract SignedMatchmakerTest is Test, BattleHelper {
                 matchmaker: matchmaker,
                 engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: 0
+            pairHashNonce: 0,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         // p0 signs the offer

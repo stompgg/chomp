@@ -3,13 +3,12 @@ pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
 import {BattleOffer} from "../Structs.sol";
-import {IMatchmaker} from "./IMatchmaker.sol";
-import {BattleOfferLib} from "./BattleOfferLib.sol";
-import {EIP712} from "../lib/EIP712.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
+import {EIP712} from "../lib/EIP712.sol";
+import {BattleOfferLib} from "./BattleOfferLib.sol";
+import {IMatchmaker} from "./IMatchmaker.sol";
 
 contract SignedMatchmaker is IMatchmaker, EIP712 {
-
     IEngine public immutable ENGINE;
     mapping(address => uint256) public openBattleOfferNonce;
 
@@ -66,11 +65,9 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
             }
             openBattleOfferNonce[offer.battle.p0] += 1;
             offer.battle.p1 = caller;
-        }
-        else if (offer.battle.p1 != caller) {
+        } else if (offer.battle.p1 != caller) {
             revert NotP1();
-        }
-        else {
+        } else {
             // Validate that the pair hash nonce is correct
             (, bytes32 pairHash) = ENGINE.computeBattleKey(offer.battle.p0, offer.battle.p1);
             if (ENGINE.pairHashNonces(pairHash) != offer.pairHashNonce) {
@@ -78,8 +75,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
             }
         }
 
-        // Start the battle via the engine
-        ENGINE.startBattle(offer.battle);
+        // Start the battle via the engine (mode 0 = singles; the mode is part of the signed offer)
+        ENGINE.startBattleWithMode(offer.battle, offer.battleMode);
     }
-
 }

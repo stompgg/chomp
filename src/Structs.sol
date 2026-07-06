@@ -47,6 +47,7 @@ struct CustomBattleProposal {
 struct BattleOffer {
     Battle battle;
     uint256 pairHashNonce;
+    uint8 battleMode; // BATTLE_MODE_* — part of the signed offer so both players agree on it
 }
 
 // Used by Engine to initialize a battle's parameters
@@ -87,6 +88,9 @@ struct BattleData {
     // buffer's pure staging tx (submitTurnMoves) skip its only battleConfig access — a cold
     // sentinel SLOAD (~2.2k per stage tx). Lives in slot 0's spare bits.
     bool usesBuiltinManager;
+    // Mirror of `BattleConfig.battleMode != 0`, set at startBattle. Lets the built-in buffer's
+    // staging txs route/gate v1-vs-v2 submissions off the BattleData slot they already read.
+    bool isTwoSlotMode;
     // Slot-1 active lanes for 2-slot modes: [side0 slot1: bits 0-7 | side1 slot1: bits 8-15],
     // EMPTY_ACTIVE_LANE = no mon. Singles battles init it to 0 and never touch it, keeping the
     // legacy activeMonIndex packing byte-identical; lives in slot 0's remaining spare bits.
@@ -331,34 +335,6 @@ struct MoveMeta {
     uint32 priority;
     uint32 stamina;
     uint32 basePower; // 0 for moves that don't deal damage
-}
-
-// Batch context for CPU move selection. The CPU is always p1 in this codebase,
-// so `cpuActiveMon*` fields mirror p1's active mon state. Assembled CPU-side by
-// CPUMoveManager._buildCPUContext from granular engine getters.
-//
-// MoveMeta is intentionally NOT included here — only BetterCPU needs decoded metadata, and
-// even BetterCPU doesn't need it on turn 0 / flag==0 paths. Putting it in the shared
-// context would impose a ~10k always-paid allocation cost on every CPU turn for data
-// that's only consumed on the flag==2 hot path. BetterCPU calls MoveSlotLib.decodeMeta
-// itself once per turn on the paths that actually need it.
-struct CPUContext {
-    bytes32 battleKey;
-    address p0;
-    address p1;
-    uint8 winnerIndex; // 2 = no winner
-    uint8 playerSwitchForTurnFlag;
-    uint64 turnId;
-    uint8 p0ActiveMonIndex;
-    uint8 p1ActiveMonIndex;
-    uint8 p0TeamSize;
-    uint8 p1TeamSize;
-    uint8 p0KOBitmap;
-    uint8 p1KOBitmap;
-    uint32 cpuActiveMonBaseStamina;
-    int32 cpuActiveMonStaminaDelta;
-    bool cpuActiveMonKnockedOut;
-    uint256[4] cpuActiveMonMoveSlots;
 }
 
 // Batched context for the registry's onBattleEnd hook — replaces the older split of

@@ -121,7 +121,8 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
                 matchmaker: signedMatchmaker,
                 engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: nonce
+            pairHashNonce: nonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
         bytes32 structHash = BattleOfferLib.hashBattleOffer(offer);

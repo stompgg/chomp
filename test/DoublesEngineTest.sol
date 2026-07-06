@@ -29,15 +29,19 @@ contract FastAllySpeedBoost is IMoveSet {
         return "Fast Ally Speed Boost";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint256, uint16 extraData, uint256)
-        external
-    {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256,
+        uint256,
+        uint16 extraData,
+        uint256
+    ) external {
         StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
-        boosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Speed,
-            boostPercent: 127,
-            boostType: StatBoostType.Multiply
-        });
+        boosts[0] =
+            StatBoostToApply({stat: MonStateIndexName.Speed, boostPercent: 127, boostType: StatBoostType.Multiply});
         engine.addStatBoost(attackerPlayerIndex, uint256(extraData) & 0x3, boosts, StatBoostFlag.Temp);
     }
 
@@ -103,20 +107,20 @@ contract DoublesEngineTest is Test {
         recorder = new OrderRecorderAbility();
         weakAttack = new CustomAttack(
             typeCalc,
-            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: DEFAULT_PRIORITY})
+            CustomAttack.Args({
+                TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: DEFAULT_PRIORITY
+            })
         );
         killAttack = new CustomAttack(
             typeCalc,
-            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: DEFAULT_PRIORITY})
+            CustomAttack.Args({
+                TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: DEFAULT_PRIORITY
+            })
         );
         fastAttack = new CustomAttack(
             typeCalc,
             CustomAttack.Args({
-                TYPE: Type.Fire,
-                BASE_POWER: 10,
-                ACCURACY: 100,
-                STAMINA_COST: 2,
-                PRIORITY: DEFAULT_PRIORITY + 2
+                TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: DEFAULT_PRIORITY + 2
             })
         );
         boostMove = new StatBoostsMove();
@@ -171,7 +175,7 @@ contract DoublesEngineTest is Test {
             engineHooks: new IEngineHook[](0)
         });
         (battleKey,) = engine.computeBattleKey(ALICE, BOB);
-        engine.startBattleV2(battle, BATTLE_MODE_DOUBLES);
+        engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
         // Game over in the same block as start reverts; every test may finish the battle.
         vm.warp(vm.getBlockTimestamp() + 1);
     }
@@ -184,7 +188,7 @@ contract DoublesEngineTest is Test {
 
     /// @dev extraData for a targeted attack: target nibble (bit per absolute slot) + payload.
     function _target(uint256 absSlot) internal pure returns (uint16) {
-        return uint16((uint16(1) << (TARGET_BITS_SHIFT + absSlot)));
+        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
     }
 
     function _turn0(uint16 a0Lead, uint16 a1Lead, uint16 b0Lead, uint16 b1Lead) internal {
@@ -270,9 +274,7 @@ contract DoublesEngineTest is Test {
         _startDoubles(aTeam, bTeam, address(0));
         // A submits attacks on turn 0 — engine coerces both lanes to legal send-ins.
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(B0), 0, _target(B0)),
-            _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1)
+            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1)
         );
         uint256[4] memory slots = engine.getActiveSlots(battleKey);
         assertTrue(slots[0] != EMPTY_ACTIVE_LANE && slots[1] != EMPTY_ACTIVE_LANE, "A lanes filled");
@@ -288,9 +290,7 @@ contract DoublesEngineTest is Test {
 
         // Everyone attacks A0/B0 weakly; B1 uses the priority attack -> acts first.
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(B0), 0, _target(B0)),
-            _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
         );
         uint256[2][] memory expected = new uint256[2][](4);
         expected[0] = _pair(1, 1); // B1 (priority)
@@ -316,9 +316,7 @@ contract DoublesEngineTest is Test {
         // re-evaluated order then puts A1 behind B0 (20) but ahead of B1 (10).
         // Locked-at-turn-start ordering would have run A1 last (D1).
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, uint16(1), 0, _target(B0)),
-            _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, uint16(1), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
         );
         uint256[2][] memory expected = new uint256[2][](4);
         expected[0] = _pair(0, 0); // A0 boosts A1 (priority)
@@ -341,9 +339,7 @@ contract DoublesEngineTest is Test {
         recorder.clear();
 
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(B0), 0, _target(B1)),
-            _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, _target(B0), 0, _target(B1)), _side(0, _target(A0), 0, _target(A0))
         );
 
         // A0 kills B0; A1 and B1 still act (D1/D7); B0's action is simply lost.
@@ -367,9 +363,7 @@ contract DoublesEngineTest is Test {
 
         // Both A slots target B0; A0 kills it, A1's attack fizzles (D2) but the stamina is spent.
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(B0), 0, _target(B0)),
-            _side(0, _target(A0), 0, _target(A0))
+            battleKey, _side(0, _target(B0), 0, _target(B0)), _side(0, _target(A0), 0, _target(A0))
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Stamina), -2, "A1 stamina spent");
         // B0 took exactly A0's 100 (the fizzled hit added nothing).
@@ -383,9 +377,7 @@ contract DoublesEngineTest is Test {
 
         // A0 punches its ally A1 (D4).
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(A1), NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(0, _target(A1), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -10, "ally took the hit");
     }
@@ -453,9 +445,7 @@ contract DoublesEngineTest is Test {
 
         // Next full turn: B0's lane carries NO_OP filler; only three actors run.
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, 0, _target(A0))
+            battleKey, _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, 0, _target(A0))
         );
         uint256 afterMoves;
         for (uint256 i; i < recorder.count(); ++i) {
@@ -487,9 +477,7 @@ contract DoublesEngineTest is Test {
         _turn0(0, 1, 0, 1);
 
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(SWITCH_MOVE_INDEX, 1, NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(SWITCH_MOVE_INDEX, 1, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
         _assertSlots(0, 1, 0, 1);
     }
@@ -561,10 +549,12 @@ contract DoublesEngineTest is Test {
             engineHooks: new IEngineHook[](0)
         });
         vm.expectRevert(Engine.InvalidBattleConfig.selector);
-        engine.startBattleV2(battle, 3); // unknown mode
+        engine.startBattleWithMode(battle, 3); // unknown mode
 
+        // The built-in dual-signed buffer supports doubles (slot submissions).
         battle.moveManager = BUILTIN_DUAL_SIGNED_MANAGER;
-        vm.expectRevert(Engine.InvalidBattleConfig.selector);
-        engine.startBattleV2(battle, BATTLE_MODE_DOUBLES); // builtin buffer flow is phase E
+        (bytes32 key,) = engine.computeBattleKey(ALICE, BOB);
+        engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
+        assertEq(uint256(engine.getActiveSlots(key)[1]), EMPTY_ACTIVE_LANE, "doubles lanes initialized");
     }
 }

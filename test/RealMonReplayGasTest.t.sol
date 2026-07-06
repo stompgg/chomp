@@ -179,7 +179,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
                 teamRegistry: registry,                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
                 moveManager: moveManager, matchmaker: maker, engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: nonce
+            pairHashNonce: nonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
         bytes32 digest = maker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);

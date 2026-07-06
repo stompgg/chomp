@@ -75,12 +75,17 @@ interface IEngine {
         external
         returns (address winner);
     // 2-slot battles (Doubles/Multi)
-    function startBattleV2(Battle memory battle, uint8 battleMode) external;
+    function startBattleWithMode(Battle memory battle, uint8 battleMode) external;
     function executeWithSlotMoves(bytes32 battleKey, uint256 side0Packed, uint256 side1Packed)
         external
         returns (address winner);
-    function setMoveForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex, uint8 moveIndex, uint16 extraData)
-        external;
+    function setMoveForSlot(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint8 moveIndex,
+        uint16 extraData
+    ) external;
     function getActiveSlots(bytes32 battleKey) external view returns (uint256[4] memory slots);
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
         external
@@ -96,6 +101,25 @@ interface IEngine {
         external
         view
         returns (uint64 numExecuted, uint256[] memory packedTurns);
+    // 2-slot variant: one wire word per side per turn (the executeWithSlotMoves layout)
+    function submitSlotTurnMoves(
+        bytes32 battleKey,
+        uint256 committerSidePacked,
+        uint256 revealerSidePacked,
+        bytes32 r,
+        bytes32 vs
+    ) external;
+    function submitSlotTurnMovesAndExecute(
+        bytes32 battleKey,
+        uint256 committerSidePacked,
+        uint256 revealerSidePacked,
+        bytes32 r,
+        bytes32 vs
+    ) external;
+    function getBufferedSlotTurns(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint256[] memory sideWords);
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
