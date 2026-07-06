@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {SignedCommitManagerTestBase} from "./SignedCommitManager.t.sol";
 import "../src/Constants.sol";
+import {SignedCommitManagerTestBase} from "./SignedCommitManager.t.sol";
 
 /// @title Gas Benchmark Tests for SignedCommitManager
 /// @notice Compares gas usage between normal flow (3 TXs) and dual-signed flow (1 TX)
 /// @dev Tests both cold (first access) and warm (subsequent access) storage patterns
 contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
-
     // Gas tracking - Normal flow (3 TXs)
     uint256 gasUsed_normalFlow_cold_commit;
     uint256 gasUsed_normalFlow_cold_reveal1;
@@ -46,8 +45,10 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         emit log_named_uint("Normal Flow (Cold) - Commit (Alice)", gasUsed_normalFlow_cold_commit);
         emit log_named_uint("Normal Flow (Cold) - Reveal (Bob)", gasUsed_normalFlow_cold_reveal1);
         emit log_named_uint("Normal Flow (Cold) - Reveal+Execute (Alice)", gasUsed_normalFlow_cold_reveal2);
-        emit log_named_uint("Normal Flow (Cold) - TOTAL",
-            gasUsed_normalFlow_cold_commit + gasUsed_normalFlow_cold_reveal1 + gasUsed_normalFlow_cold_reveal2);
+        emit log_named_uint(
+            "Normal Flow (Cold) - TOTAL",
+            gasUsed_normalFlow_cold_commit + gasUsed_normalFlow_cold_reveal1 + gasUsed_normalFlow_cold_reveal2
+        );
     }
 
     /// @notice Benchmark: Dual-signed flow - COLD storage access (Turn 0)
@@ -60,22 +61,15 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
         // Single-sig: committer (p0) is msg.sender; only the revealer signs.
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
+        bytes memory p1Signature = _signDualReveal(
+            address(signedCommitManager), P1_PK, battleKey, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
         );
 
         // p0 (committer) submits everything in 1 TX
         vm.startPrank(p0);
         uint256 gasBefore = gasleft();
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            SWITCH_MOVE_INDEX,
-            p0Salt,
-            0,
-            SWITCH_MOVE_INDEX,
-            p1Salt,
-            0,
-            p1Signature
+            battleKey, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, p1Salt, 0, p1Signature
         );
         gasUsed_dualSignedFlow_cold = gasBefore - gasleft();
 
@@ -110,8 +104,10 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         emit log_named_uint("Normal Flow (Warm) - Commit (Alice)", gasUsed_normalFlow_warm_commit);
         emit log_named_uint("Normal Flow (Warm) - Reveal (Bob)", gasUsed_normalFlow_warm_reveal1);
         emit log_named_uint("Normal Flow (Warm) - Reveal+Execute (Alice)", gasUsed_normalFlow_warm_reveal2);
-        emit log_named_uint("Normal Flow (Warm) - TOTAL",
-            gasUsed_normalFlow_warm_commit + gasUsed_normalFlow_warm_reveal1 + gasUsed_normalFlow_warm_reveal2);
+        emit log_named_uint(
+            "Normal Flow (Warm) - TOTAL",
+            gasUsed_normalFlow_warm_commit + gasUsed_normalFlow_warm_reveal1 + gasUsed_normalFlow_warm_reveal2
+        );
     }
 
     /// @notice Benchmark: Dual-signed flow - WARM storage access (Turn 2+)
@@ -126,21 +122,13 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
         uint104 p1Salt = uint104(101);
         bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
-        bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-            P1_PK, battleKey, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0
-        );
+        bytes memory p1Signature =
+            _signDualReveal(address(signedCommitManager), P1_PK, battleKey, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0);
 
         vm.startPrank(p0);
         uint256 gasBefore = gasleft();
         signedCommitManager.executeWithDualSignedMoves(
-            battleKey,
-            NO_OP_MOVE_INDEX,
-            p0Salt,
-            0,
-            NO_OP_MOVE_INDEX,
-            p1Salt,
-            0,
-            p1Signature
+            battleKey, NO_OP_MOVE_INDEX, p0Salt, 0, NO_OP_MOVE_INDEX, p1Salt, 0, p1Signature
         );
         gasUsed_dualSignedFlow_warm = gasBefore - gasleft();
 
@@ -182,21 +170,14 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             uint104 p1Salt = uint104(2);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, p0Salt, uint16(0)));
 
-            bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-                P1_PK, battleKey2, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
+            bytes memory p1Signature = _signDualReveal(
+                address(signedCommitManager), P1_PK, battleKey2, 0, p0MoveHash, SWITCH_MOVE_INDEX, p1Salt, 0
             );
 
             vm.startPrank(p0);
             uint256 gasBefore = gasleft();
             signedCommitManager.executeWithDualSignedMoves(
-                battleKey2,
-                SWITCH_MOVE_INDEX,
-                p0Salt,
-                0,
-                SWITCH_MOVE_INDEX,
-                p1Salt,
-                0,
-                p1Signature
+                battleKey2, SWITCH_MOVE_INDEX, p0Salt, 0, SWITCH_MOVE_INDEX, p1Salt, 0, p1Signature
             );
             gasUsed_dualSignedFlow_cold = gasBefore - gasleft();
         }
@@ -234,21 +215,14 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
             uint104 p1Salt = uint104(101);
             bytes32 p0MoveHash = keccak256(abi.encodePacked(NO_OP_MOVE_INDEX, p0Salt, uint16(0)));
 
-            bytes memory p1Signature = _signDualReveal(address(signedCommitManager),
-                P1_PK, battleKey2, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0
+            bytes memory p1Signature = _signDualReveal(
+                address(signedCommitManager), P1_PK, battleKey2, 2, p0MoveHash, NO_OP_MOVE_INDEX, p1Salt, 0
             );
 
             vm.startPrank(p0);
             uint256 gasBefore = gasleft();
             signedCommitManager.executeWithDualSignedMoves(
-                battleKey2,
-                NO_OP_MOVE_INDEX,
-                p0Salt,
-                0,
-                NO_OP_MOVE_INDEX,
-                p1Salt,
-                0,
-                p1Signature
+                battleKey2, NO_OP_MOVE_INDEX, p0Salt, 0, NO_OP_MOVE_INDEX, p1Salt, 0, p1Signature
             );
             gasUsed_dualSignedFlow_warm = gasBefore - gasleft();
         }
@@ -260,7 +234,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         emit log("");
         emit log("--- COLD STORAGE ACCESS (Turn 0) ---");
-        uint256 normalColdTotal = gasUsed_normalFlow_cold_commit + gasUsed_normalFlow_cold_reveal1 + gasUsed_normalFlow_cold_reveal2;
+        uint256 normalColdTotal =
+            gasUsed_normalFlow_cold_commit + gasUsed_normalFlow_cold_reveal1 + gasUsed_normalFlow_cold_reveal2;
 
         emit log_named_uint("Normal Flow - Commit (Alice)", gasUsed_normalFlow_cold_commit);
         emit log_named_uint("Normal Flow - Reveal (Bob)", gasUsed_normalFlow_cold_reveal1);
@@ -278,7 +253,8 @@ contract SignedCommitManagerGasBenchmarkTest is SignedCommitManagerTestBase {
 
         emit log("");
         emit log("--- WARM STORAGE ACCESS (Turn 2+) ---");
-        uint256 normalWarmTotal = gasUsed_normalFlow_warm_commit + gasUsed_normalFlow_warm_reveal1 + gasUsed_normalFlow_warm_reveal2;
+        uint256 normalWarmTotal =
+            gasUsed_normalFlow_warm_commit + gasUsed_normalFlow_warm_reveal1 + gasUsed_normalFlow_warm_reveal2;
 
         emit log_named_uint("Normal Flow - Commit (Alice)", gasUsed_normalFlow_warm_commit);
         emit log_named_uint("Normal Flow - Reveal (Bob)", gasUsed_normalFlow_warm_reveal1);

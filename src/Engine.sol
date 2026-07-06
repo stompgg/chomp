@@ -34,6 +34,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     mapping(address player => mapping(address maker => bool)) public isMatchmakerFor; // tracks approvals for matchmakers
 
     mapping(bytes32 => BattleData) private battleData; // These contain immutable data and battle state
+    mapping(bytes32 => MultiSeatData) private multiSeats; // Multi's second seats (p2/p3); written only for MULTI battles
     mapping(bytes32 => BattleConfig) private battleConfig; // These exist only throughout the lifecycle of a battle, we reuse these storage slots for subsequent battles
     mapping(bytes32 storageKey => mapping(uint64 => bytes32)) private globalKV; // Value layout: [64 bits timestamp | 192 bits value]
     // Packed key buffer: each slot holds four uint64 keys (lane 0 = bits [0..63], lane 1 = [64..127], etc.).
@@ -78,7 +79,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // Events
     event BattleStart(bytes32 indexed battleKey, address p0, address p1);
     // 2-slot battles announce their mode; singles keeps the legacy BattleStart shape.
-    event SlotBattleStart(bytes32 indexed battleKey, address p0, address p1, uint8 battleMode);
+    event SlotBattleStart(bytes32 indexed battleKey, address p0, address p1, uint8 battleMode, address p2, address p3);
     // packedMoves layout (per-lane sentinel: lane bytes all zero == player did not submit):
     //   bits   0-  7  p0 monIndex        (uint8)
     //   bits   8- 15  p0 packedMoveIndex (uint8, 0 = not submitted)
@@ -158,7 +159,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @notice Start a 2-slot battle (BATTLE_MODE_DOUBLES for now; Multi arrives with the
     ///         4-seat work).
     function startBattleWithMode(Battle memory battle, uint8 battleMode) external {
-        if (battleMode > BATTLE_MODE_DOUBLES) {
+        if (battleMode > BATTLE_MODE_MULTI) {
+            revert InvalidBattleConfig();
+        }
+        if (battleMode == BATTLE_MODE_MULTI) {
+            if (battle.p2 == address(0) || battle.p3 == address(0)) {
+                revert InvalidBattleConfig();
+            }
+        } else if (battle.p2 != address(0) || battle.p3 != address(0)) {
             revert InvalidBattleConfig();
         }
         _startBattle(battle, battleMode);
@@ -175,9 +183,23 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ) {
             revert MatchmakerNotAuthorized();
         }
+        if (battleMode == BATTLE_MODE_MULTI) {
+            if (
+                !isMatchmakerFor[battle.p2][address(battle.matchmaker)]
+                    || !isMatchmakerFor[battle.p3][address(battle.matchmaker)]
+            ) {
+                revert MatchmakerNotAuthorized();
+            }
+        }
 
-        // Compute battle key and update the nonce
-        (bytes32 battleKey, bytes32 pairHash) = computeBattleKey(battle.p0, battle.p1);
+        // Compute battle key and update the nonce (Multi keys off all four sorted seats — D33)
+        bytes32 battleKey;
+        bytes32 pairHash;
+        if (battleMode == BATTLE_MODE_MULTI) {
+            (battleKey, pairHash) = computePartyKey(battle.p0, battle.p1, battle.p2, battle.p3);
+        } else {
+            (battleKey, pairHash) = computeBattleKey(battle.p0, battle.p1);
+        }
         pairHashNonces[pairHash] += 1;
 
         // Get the storage key for the battle config (reusable)
@@ -244,6 +266,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             p1TeamIndex: uint16(battle.p1TeamIndex),
             usesBuiltinManager: battle.moveManager == BUILTIN_DUAL_SIGNED_MANAGER,
             isTwoSlotMode: battleMode != BATTLE_MODE_SINGLES,
+            isMultiMode: battleMode == BATTLE_MODE_MULTI,
             // Slot-1 lanes start EMPTY in 2-slot modes (turn-0 send-ins fill them); singles
             // writes 0 and never reads the field.
             activeMonExt: battleMode == BATTLE_MODE_SINGLES ? 0 : uint16(0xFFFF),
@@ -255,9 +278,41 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             numBuffered: 0 // Built-in dual-signed buffer starts empty (auto-resets each battle here)
         });
 
-        // Set the team for p0 and p1 in the reusable config storage
+        // Set the team for p0 and p1 in the reusable config storage. Multi concatenates each
+        // side's two seat teams into one roster with a FIXED stride-4 partition (seat 0 owns
+        // [0..3], seat 1 owns [4..7]) — launch shape requires exactly 4 mons per seat so the
+        // side KO mask stays contiguous.
         (Mon[] memory p0Team, Mon[] memory p1Team) =
             battle.teamRegistry.getTeams(battle.p0, battle.p0TeamIndex, battle.p1, battle.p1TeamIndex);
+        if (battleMode == BATTLE_MODE_MULTI) {
+            // CPU seats (registry whitelisted opponents) shape the committer/revealer rotation:
+            // the built-in dual-signed flow rotates over human seats only (D18/D19), so it needs
+            // a human on each side. CPU-inclusive parties without one ride a manager instead.
+            uint8 cpuSeatMask = (battle.teamRegistry.isWhitelistedOpponent(battle.p0) ? 1 : 0)
+                | (battle.teamRegistry.isWhitelistedOpponent(battle.p2) ? 2 : 0)
+                | (battle.teamRegistry.isWhitelistedOpponent(battle.p1) ? 4 : 0)
+                | (battle.teamRegistry.isWhitelistedOpponent(battle.p3) ? 8 : 0);
+            if (
+                battle.moveManager == BUILTIN_DUAL_SIGNED_MANAGER
+                    && ((cpuSeatMask & 0x3) == 0x3 || (cpuSeatMask & 0xC) == 0xC)
+            ) {
+                revert InvalidBattleConfig();
+            }
+            multiSeats[battleKey] = MultiSeatData({
+                p2: battle.p2,
+                p2TeamIndex: uint16(battle.p2TeamIndex),
+                cpuSeatMask: cpuSeatMask,
+                p3: battle.p3,
+                p3TeamIndex: uint16(battle.p3TeamIndex)
+            });
+            (Mon[] memory p2Team, Mon[] memory p3Team) =
+                battle.teamRegistry.getTeams(battle.p2, battle.p2TeamIndex, battle.p3, battle.p3TeamIndex);
+            if (p0Team.length != 4 || p1Team.length != 4 || p2Team.length != 4 || p3Team.length != 4) {
+                revert InvalidBattleConfig();
+            }
+            p0Team = _concatTeams(p0Team, p2Team);
+            p1Team = _concatTeams(p1Team, p3Team);
+        }
 
         // Team sizes (packed: lower 4 bits = p0, upper 4 bits = p1) — written with the
         // consolidated slot-2 block below.
@@ -385,7 +440,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (battleMode == BATTLE_MODE_SINGLES) {
             emit BattleStart(battleKey, battle.p0, battle.p1);
         } else {
-            emit SlotBattleStart(battleKey, battle.p0, battle.p1, battleMode);
+            emit SlotBattleStart(battleKey, battle.p0, battle.p1, battleMode, battle.p2, battle.p3);
         }
     }
 
@@ -855,10 +910,41 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         storageKey = _getStorageKey(battleKey);
 
-        // Same next-undrained-turn derivation and parity roles as v1; a stale or out-of-order
-        // submission fails signature recovery below.
+        // Same next-undrained-turn derivation as v1; a stale or out-of-order submission fails
+        // signature recovery below. Doubles alternates by parity; Multi rotates through the
+        // canonical seat order [p0, p2, p1, p3] with the mirror seat revealing (D18) — every
+        // player commits once and reveals once per four turns.
         turnId = data.turnId + data.numBuffered;
-        (address committer, address revealer) = turnId % 2 == 0 ? (data.p0, data.p1) : (data.p1, data.p0);
+        address committer;
+        address revealer;
+        bool committerIsSide0;
+        if (data.isMultiMode) {
+            // Rotation walks HUMAN seats only (D18/D19), side-major canonical order [p0, p2,
+            // p1, p3]: committer = humans[turnId % n], revealer = the opposing side's humans
+            // cycled by the same turnId. With no CPU seats this is exactly the mirror rule
+            // (t0 A0→B0, t1 A1→B1, t2 B0→A0, t3 B1→A1); with CPU seats their lanes are
+            // authored by their side's human (relay trust, D19). Battle start guarantees each
+            // side has a human when the built-in manager is used.
+            MultiSeatData storage ms = multiSeats[battleKey];
+            uint256 cpuSeatMask = ms.cpuSeatMask;
+            address[4] memory humans;
+            uint256 side0Humans;
+            uint256 numHumans;
+            for (uint256 i; i < 4; ++i) {
+                if (cpuSeatMask & (1 << i) != 0) continue;
+                humans[numHumans++] = _seatAt(data, ms, i);
+                if (i < 2) ++side0Humans;
+            }
+            uint256 committerCursor = turnId % numHumans;
+            committer = humans[committerCursor];
+            committerIsSide0 = committerCursor < side0Humans;
+            revealer = committerIsSide0
+                ? humans[side0Humans + (turnId % (numHumans - side0Humans))]
+                : humans[turnId % side0Humans];
+        } else {
+            (committer, revealer) = turnId % 2 == 0 ? (data.p0, data.p1) : (data.p1, data.p0);
+            committerIsSide0 = turnId % 2 == 0;
+        }
         if (msg.sender != committer) {
             revert NotCommitter();
         }
@@ -877,7 +963,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         (side0, side1) =
-            turnId % 2 == 0 ? (committerSidePacked, revealerSidePacked) : (revealerSidePacked, committerSidePacked);
+            committerIsSide0 ? (committerSidePacked, revealerSidePacked) : (revealerSidePacked, committerSidePacked);
+    }
+
+    /// @dev Canonical seat order [p0, p2, p1, p3] (side-major).
+    function _seatAt(BattleData storage data, MultiSeatData storage ms, uint256 canonicalIndex)
+        private
+        view
+        returns (address)
+    {
+        if (canonicalIndex == 0) return data.p0;
+        if (canonicalIndex == 1) return ms.p2;
+        if (canonicalIndex == 2) return data.p1;
+        return ms.p3;
     }
 
     /// @dev Both side words always land in the transients; a mask turn's non-acting lanes are
@@ -2495,8 +2593,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         uint256 absSlot = (playerIndex << 1) | (slotIndex & 1);
         uint256 currentActive = _slotActive(battle, absSlot);
-        uint256 teamSize = (playerIndex == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
-        if (monToSwitchIndex >= teamSize) return;
+        (uint256 rosterLo, uint256 rosterHi) = _slotRosterBounds(config, absSlot);
+        if (monToSwitchIndex < rosterLo || monToSwitchIndex >= rosterHi) return;
         if (_getMonState(config, playerIndex, monToSwitchIndex).isKnockedOut) return;
         if (monToSwitchIndex == _slotActive(battle, absSlot ^ 1)) return;
         if (battle.turnId != 0 && monToSwitchIndex == currentActive) return;
@@ -2602,6 +2700,54 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // because transient auto-clears between txs and execute() will mirror storage on entry.
             _setMoveInternal(config, playerIndex, moveIndex, salt, extraData);
         }
+    }
+
+    function _concatTeams(Mon[] memory a, Mon[] memory b) private pure returns (Mon[] memory out) {
+        out = new Mon[](a.length + b.length);
+        for (uint256 i; i < a.length; ++i) {
+            out[i] = a[i];
+        }
+        for (uint256 i; i < b.length; ++i) {
+            out[a.length + i] = b[i];
+        }
+    }
+
+    /// @notice Multi battle key: keccak over the four SORTED seats + the shared nonce mapping
+    ///         (a 4-address preimage cannot collide with computeBattleKey's 2-address one — D33).
+    ///         Reverts on duplicate seats (D21): sorting makes that an adjacent-equality check.
+    function computePartyKey(address p0, address p1, address p2, address p3)
+        public
+        view
+        returns (bytes32 battleKey, bytes32 partyHash)
+    {
+        address[4] memory seats = [p0, p1, p2, p3];
+        for (uint256 i = 1; i < 4; ++i) {
+            address key = seats[i];
+            uint256 j = i;
+            while (j > 0 && uint160(seats[j - 1]) > uint160(key)) {
+                seats[j] = seats[j - 1];
+                unchecked {
+                    --j;
+                }
+            }
+            seats[j] = key;
+        }
+        if (seats[0] == seats[1] || seats[1] == seats[2] || seats[2] == seats[3]) {
+            revert InvalidBattleConfig();
+        }
+        partyHash = keccak256(abi.encode(seats[0], seats[1], seats[2], seats[3]));
+        battleKey = keccak256(abi.encode(partyHash, pairHashNonces[partyHash]));
+    }
+
+    /// @notice Seats in canonical rotation order [p0, p2, p1, p3] (side-major; D18). p2/p3 are
+    ///         zero outside Multi.
+    function getSeats(bytes32 battleKey) external view returns (address[4] memory seats) {
+        BattleData storage data = battleData[battleKey];
+        MultiSeatData storage ms = multiSeats[battleKey];
+        seats[0] = data.p0;
+        seats[1] = ms.p2;
+        seats[2] = data.p1;
+        seats[3] = ms.p3;
     }
 
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {
@@ -3629,24 +3775,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (!isForcedSwitchTurn && currentMonState.isKnockedOut) return;
             if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
                 moveIndex = SWITCH_MOVE_INDEX;
-                move.extraData = uint16(_firstLegalSwitchTarget(config, battle, absSlot));
+                (uint256 coerced,) = _firstLegalSwitchTarget(config, battle, absSlot);
+                move.extraData = uint16(coerced);
             }
         }
 
         if (moveIndex == SWITCH_MOVE_INDEX) {
             uint256 monToSwitchIndex = uint256(move.extraData & EXTRA_DATA_PAYLOAD_MASK);
-            uint256 teamSize = (side == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+            (uint256 rosterLo, uint256 rosterHi) = _slotRosterBounds(config, absSlot);
             if (activeMon == EMPTY_ACTIVE_LANE) {
                 // Turn-0 send-ins must land: coerce an illegal pick (bounds/KO'd/ally collision)
                 // to the first legal one so no slot starts the battle vacant.
                 if (
-                    monToSwitchIndex >= teamSize || _getMonState(config, side, monToSwitchIndex).isKnockedOut
+                    monToSwitchIndex < rosterLo || monToSwitchIndex >= rosterHi
+                        || _getMonState(config, side, monToSwitchIndex).isKnockedOut
                         || monToSwitchIndex == _slotActive(battle, absSlot ^ 1)
                 ) {
-                    monToSwitchIndex = _firstLegalSwitchTarget(config, battle, absSlot);
+                    (monToSwitchIndex,) = _firstLegalSwitchTarget(config, battle, absSlot);
                 }
             }
-            if (monToSwitchIndex >= teamSize) return;
+            if (monToSwitchIndex < rosterLo || monToSwitchIndex >= rosterHi) return;
             if (_getMonState(config, side, monToSwitchIndex).isKnockedOut) return;
             if (monToSwitchIndex == _slotActive(battle, absSlot ^ 1)) return; // ally slot holds it
             if (battle.turnId != 0 && monToSwitchIndex == activeMon) return;
@@ -3718,26 +3866,40 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    /// @dev First legal switch target for a slot: lowest non-KO'd roster index not held by the
-    ///      ally slot. Returns teamSize when none exists (callers' bounds check then no-ops).
+    /// @dev The roster range a slot may switch within: Multi partitions each side's 8-mon
+    ///      roster by seat (slot i owns [4i, 4i+4)); other modes use the whole side roster.
+    function _slotRosterBounds(BattleConfig storage config, uint256 absSlot)
+        private
+        view
+        returns (uint256 lo, uint256 hi)
+    {
+        if (config.battleMode == BATTLE_MODE_MULTI) {
+            lo = (absSlot & 1) << 2;
+            return (lo, lo + 4);
+        }
+        uint256 side = absSlot >> 1;
+        return (0, (side == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4));
+    }
+
+    /// @dev First legal switch target within the slot's roster bounds: lowest non-KO'd index
+    ///      not held by the ally slot.
     function _firstLegalSwitchTarget(BattleConfig storage config, BattleData storage battle, uint256 absSlot)
         private
         view
-        returns (uint256)
+        returns (uint256 target, bool found)
     {
-        uint256 side = absSlot >> 1;
-        uint256 teamSize = (side == 0) ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+        (uint256 lo, uint256 hi) = _slotRosterBounds(config, absSlot);
         uint256 allyMon = _slotActive(battle, absSlot ^ 1);
-        uint256 koBitmap = _getKOBitmap(config, side);
-        for (uint256 i; i < teamSize;) {
+        uint256 koBitmap = _getKOBitmap(config, absSlot >> 1);
+        for (uint256 i = lo; i < hi;) {
             if ((koBitmap & (1 << i)) == 0 && i != allyMon) {
-                return i;
+                return (i, true);
             }
             unchecked {
                 ++i;
             }
         }
-        return teamSize;
+        return (0, false);
     }
 
     /// @dev Slot-addressed switch: out-effects for the leaving mon (skipped for KO'd/empty
@@ -3903,10 +4065,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         for (uint256 s; s < 4;) {
             uint256 mon = _slotActive(battle, s);
             if (mon != EMPTY_ACTIVE_LANE && _getMonState(config, s >> 1, mon).isKnockedOut) {
-                if (
-                    _firstLegalSwitchTarget(config, battle, s)
-                        != ((s >> 1) == 0 ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4))
-                ) {
+                (, bool found) = _firstLegalSwitchTarget(config, battle, s);
+                if (found) {
                     mask |= (1 << s);
                 }
             }
@@ -4783,5 +4943,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.p1ActiveMonIndex = uint8(_unpackActiveMonIndex(data.activeMonIndex, 1));
 
         ctx.turnId = data.turnId;
+
+        if (data.isMultiMode) {
+            ctx.isMultiMode = true;
+            MultiSeatData storage ms = multiSeats[battleKey];
+            ctx.p2 = ms.p2;
+            ctx.p3 = ms.p3;
+            ctx.p2TeamIndex = ms.p2TeamIndex;
+            ctx.p3TeamIndex = ms.p3TeamIndex;
+            ctx.p0ActiveMonExtIndex = uint8(_unpackActiveMonIndex(data.activeMonExt, 0));
+            ctx.p1ActiveMonExtIndex = uint8(_unpackActiveMonIndex(data.activeMonExt, 1));
+        }
     }
 }

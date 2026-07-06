@@ -7,12 +7,10 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-
-import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {SignedCommitHelper} from "./abstract/SignedCommitHelper.sol";
-
 
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
@@ -45,7 +43,6 @@ import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 ///      regression that adds a cold SLOAD is caught, unlike the old all-warm span. Setup spans stay
 ///      on vm.startSnapshotGas (one-time battle creation).
 contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMeasure {
-
     uint256 constant MONS_PER_TEAM = 4;
     uint256 constant MOVES_PER_MON = 4;
 
@@ -114,6 +111,10 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
                 p0TeamIndex: 0,
                 p1: p1,
                 p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: defaultRegistry,
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: ruleset,
@@ -125,13 +126,17 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
             battleMode: BATTLE_MODE_SINGLES
         });
 
-        bytes32 structHash = BattleOfferLib.hashBattleOffer(offer);
+        bytes32 structHash = BattleOfferLib.hashBattleOfferForSigning(offer, 0);
         bytes32 digest = signedMatchmaker.hashTypedData(structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.prank(p1);
-        signedMatchmaker.startGame(offer, signature);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            signedMatchmaker.startGame(offer, 0, seatSigs);
+        }
 
         return battleKey;
     }
@@ -139,13 +144,9 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
     /// @dev Executes a two-player turn in 1 TX via executeWithDualSignedMoves.
     ///      p0Move/p1Move semantics match _commitRevealExecuteForAliceAndBob so the
     ///      battle scripts can be transcribed directly from the non-optimized test.
-    function _fastTurn(
-        bytes32 battleKey,
-        uint8 p0MoveIndex,
-        uint8 p1MoveIndex,
-        uint16 p0ExtraData,
-        uint16 p1ExtraData
-    ) internal {
+    function _fastTurn(bytes32 battleKey, uint8 p0MoveIndex, uint8 p1MoveIndex, uint16 p0ExtraData, uint16 p1ExtraData)
+        internal
+    {
         uint64 turnId = uint64(engine.getTurnIdForBattleState(battleKey));
         uint104 committerSalt = uint104(uint256(keccak256(abi.encode("committer", battleKey, turnId))));
         uint104 revealerSalt = uint104(uint256(keccak256(abi.encode("revealer", battleKey, turnId))));
@@ -176,37 +177,51 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
             committer = p1;
         }
 
-        bytes32 committerMoveHash =
-            keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
+        bytes32 committerMoveHash = keccak256(abi.encodePacked(committerMoveIndex, committerSalt, committerExtraData));
         address mgr = address(signedCommitManager);
         committerPk; // single-sig: no committer signature; committer is msg.sender
         bytes memory revealerSig = _signDualReveal(
-            mgr, revealerPk, battleKey, turnId, committerMoveHash,
-            revealerMoveIndex, revealerSalt, revealerExtraData
+            mgr, revealerPk, battleKey, turnId, committerMoveHash, revealerMoveIndex, revealerSalt, revealerExtraData
         );
 
         // When measuring, treat this 1-tx turn as a fresh cold-start tx + tally its storage.
-        if (_measuring) { _coolEngMgr(); vm.startStateDiffRecording(); }
+        if (_measuring) {
+            _coolEngMgr();
+            vm.startStateDiffRecording();
+        }
         uint256 g0 = gasleft();
         vm.prank(committer);
         signedCommitManager.executeWithDualSignedMoves(
             battleKey,
-            committerMoveIndex, committerSalt, committerExtraData,
-            revealerMoveIndex, revealerSalt, revealerExtraData,
+            committerMoveIndex,
+            committerSalt,
+            committerExtraData,
+            revealerMoveIndex,
+            revealerSalt,
+            revealerExtraData,
             revealerSig
         );
-        if (_measuring) { _accGas += g0 - gasleft(); _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff())); }
+        if (_measuring) {
+            _accGas += g0 - gasleft();
+            _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff()));
+        }
         engine.resetCallContext();
     }
 
     /// @dev Single-player forced switch after a KO. This uses the optimized
     ///      SignedCommitManager path because there is no hidden opponent move to reveal.
     function _fastSwitchReveal(bytes32 battleKey, bool isP0, uint16 extraData) internal {
-        if (_measuring) { _coolEngMgr(); vm.startStateDiffRecording(); }
+        if (_measuring) {
+            _coolEngMgr();
+            vm.startStateDiffRecording();
+        }
         uint256 g0 = gasleft();
         vm.prank(isP0 ? p0 : p1);
         signedCommitManager.executeSinglePlayerMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), extraData);
-        if (_measuring) { _accGas += g0 - gasleft(); _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff())); }
+        if (_measuring) {
+            _accGas += g0 - gasleft();
+            _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff()));
+        }
         engine.resetCallContext();
     }
 
@@ -298,10 +313,15 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         mon.stats.specialAttack = 10;
 
         mon.moves = new uint256[](4);
-        IMoveSet burnMove = new EffectAttack(new BurnStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet frostbiteMove = new EffectAttack(new FrostbiteStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet burnMove =
+            new EffectAttack(new BurnStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet frostbiteMove =
+            new EffectAttack(new FrostbiteStatus(), EffectAttack.Args({TYPE: Type.Fire, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet statBoostMove = new StatBoostsMove();
-        IMoveSet damageMove = new CustomAttack(ITypeCalculator(address(typeCalc)), CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet damageMove = new CustomAttack(
+            ITypeCalculator(address(typeCalc)),
+            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+        );
         mon.moves[0] = uint256(uint160(address(burnMove)));
         mon.moves[1] = uint256(uint160(address(frostbiteMove)));
         mon.moves[2] = uint256(uint160(address(statBoostMove)));
@@ -328,7 +348,9 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         _beginMeasure();
         _fastTurn(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey, 0, 1, 0, 0);
-        _fastTurn(battleKey, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(
+            battleKey, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90))
+        );
         _fastTurn(battleKey, 2, 3, _packStatBoost(1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastSwitchReveal(battleKey, true, uint16(0));
         _fastTurn(battleKey, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90)), 0);
@@ -369,7 +391,13 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 3, 0, _packStatBoost(2, uint256(MonStateIndexName.Attack), int32(90)));
         _fastTurn(battleKey2, NO_OP_MOVE_INDEX, 0, 0, 0);
         _fastSwitchReveal(battleKey2, true, uint16(2));
-        _fastTurn(battleKey2, 3, 3, _packStatBoost(2, uint256(MonStateIndexName.Attack), int32(90)), _packStatBoost(2, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(
+            battleKey2,
+            3,
+            3,
+            _packStatBoost(2, uint256(MonStateIndexName.Attack), int32(90)),
+            _packStatBoost(2, uint256(MonStateIndexName.Attack), int32(90))
+        );
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
         _fastSwitchReveal(battleKey2, false, uint16(3));
         _fastTurn(battleKey2, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -393,7 +421,9 @@ contract FullyOptimizedInlineGasTest is BattleHelper, SignedCommitHelper, GasMea
         _beginMeasure();
         _fastTurn(battleKey3, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
         _fastTurn(battleKey3, 0, 1, 0, 0);
-        _fastTurn(battleKey3, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90)));
+        _fastTurn(
+            battleKey3, SWITCH_MOVE_INDEX, 2, uint16(1), _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90))
+        );
         _fastTurn(battleKey3, 2, 3, _packStatBoost(1, uint256(MonStateIndexName.Attack), int32(90)), 0);
         _fastSwitchReveal(battleKey3, true, uint16(0));
         _fastTurn(battleKey3, 2, NO_OP_MOVE_INDEX, _packStatBoost(0, uint256(MonStateIndexName.Attack), int32(90)), 0);

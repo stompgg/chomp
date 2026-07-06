@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {MoveClass, Type, TargetSpec} from "../../src/Enums.sol";
+import {MoveClass, TargetSpec, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {MoveMeta} from "../../src/Structs.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";

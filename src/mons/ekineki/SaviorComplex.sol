@@ -3,8 +3,8 @@
 pragma solidity ^0.8.0;
 
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
-import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
 contract SaviorComplex is IAbility {
@@ -47,9 +47,7 @@ contract SaviorComplex is IAbility {
         // Apply temporary sp atk boost (cleared on switch out)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialAttack,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.SpecialAttack, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
 

@@ -110,8 +110,10 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
             }
         }
         {
-            if (abilitiesToAdd.length > 1 || (abilitiesToAdd.length == 1 && abilitiesToRemove.length == 0 && monAbility[monId] != 0))
-            {
+            if (
+                abilitiesToAdd.length > 1
+                    || (abilitiesToAdd.length == 1 && abilitiesToRemove.length == 0 && monAbility[monId] != 0)
+            ) {
                 revert TooManyAbilities();
             }
             uint256 numAbilitiesToRemove = abilitiesToRemove.length;
@@ -171,7 +173,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
             if (!validateMon(mons[i], ids[i])) {
                 return false;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }
@@ -210,7 +214,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
             stats[i] = monStats[monId];
             moves[i] = _moveRowValues(monId);
             abilities[i] = _abilityValues(monId);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -281,7 +287,9 @@ abstract contract MonRegistry is ITeamRegistry, Ownable {
             stats[i] = monStats[monId];
             fullMoves[i] = _catalogMoveLanes(monId);
             abilities[i] = monAbility[monId];
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 

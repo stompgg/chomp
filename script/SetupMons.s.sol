@@ -2,10 +2,10 @@
 // Created by mon_stats_to_sol.py
 pragma solidity ^0.8.0;
 
-import {Script} from "forge-std/Script.sol";
-import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
-import {MonStats} from "../src/Structs.sol";
 import {Type} from "../src/Enums.sol";
+import {MonStats} from "../src/Structs.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
+import {Script} from "forge-std/Script.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
@@ -72,6 +72,7 @@ struct DeployData {
     string name;
     address contractAddress;
 }
+
 contract SetupMons is Script {
     function run() external returns (DeployData[] memory deployedContracts) {
         vm.startBroadcast();
@@ -130,7 +131,8 @@ contract SetupMons is Script {
             deployedContracts[0] = DeployData({name: "Eternal Grudge", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new InfernalFlame(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS"))));
+            addrs[1] =
+                address(new InfernalFlame(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS"))));
             deployedContracts[1] = DeployData({name: "Infernal Flame", contractAddress: addrs[1]});
         }
         {
@@ -273,8 +275,10 @@ contract SetupMons is Script {
         uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = 0x644c300000000000000000000000000000000000000000000000000000000000;
-        moves[2] = 0x504b30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
-        moves[3] = 0x5a4d30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
+        moves[2] = 0x504b30a000000000000000000000000000000000000000000000000000000000
+            | uint256(uint160(vm.envAddress("PANIC_STATUS")));
+        moves[3] = 0x5a4d30a000000000000000000000000000000000000000000000000000000000
+            | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
         moves[4] = uint256(uint160(addrs[1]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[2]));
@@ -451,7 +455,8 @@ contract SetupMons is Script {
             deployedContracts[0] = DeployData({name: "Deadlift", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new DeepFreeze(ITypeCalculator(typecalculator), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
+            addrs[1] =
+                address(new DeepFreeze(ITypeCalculator(typecalculator), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
             deployedContracts[1] = DeployData({name: "Deep Freeze", contractAddress: addrs[1]});
         }
         {
@@ -481,7 +486,8 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = 0x00c6064000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("FROSTBITE_STATUS")));
+        moves[0] = 0x00c6064000000000000000000000000000000000000000000000000000000000
+            | uint256(uint160(vm.envAddress("FROSTBITE_STATUS")));
         moves[1] = uint256(uint160(addrs[0]));
         moves[2] = uint256(uint160(addrs[1]));
         moves[3] = uint256(uint160(addrs[2]));
@@ -565,11 +571,19 @@ contract SetupMons is Script {
             deployedContracts[0] = DeployData({name: "Round Trip", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new MegaStarBlast(ITypeCalculator(typecalculator), IEffect(zapstatus), IEffect(vm.envAddress("OVERCLOCK"))));
+            addrs[1] = address(
+                new MegaStarBlast(
+                    ITypeCalculator(typecalculator), IEffect(zapstatus), IEffect(vm.envAddress("OVERCLOCK"))
+                )
+            );
             deployedContracts[1] = DeployData({name: "Mega Star Blast", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new DualShock(ITypeCalculator(typecalculator), IEffect(zapstatus), Overclock(vm.envAddress("OVERCLOCK"))));
+            addrs[2] = address(
+                new DualShock(
+                    ITypeCalculator(typecalculator), IEffect(zapstatus), Overclock(vm.envAddress("OVERCLOCK"))
+                )
+            );
             deployedContracts[2] = DeployData({name: "Dual Shock", contractAddress: addrs[2]});
         }
         {
@@ -595,7 +609,8 @@ contract SetupMons is Script {
             type2: Type.Cyber
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = 0x5a4820a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("ZAP_STATUS")));
+        moves[0] = 0x5a4820a000000000000000000000000000000000000000000000000000000000
+            | uint256(uint160(vm.envAddress("ZAP_STATUS")));
         moves[1] = uint256(uint160(addrs[0]));
         moves[2] = uint256(uint160(addrs[1]));
         moves[3] = uint256(uint160(addrs[2]));
@@ -615,7 +630,13 @@ contract SetupMons is Script {
         address[5] memory addrs;
 
         {
-            addrs[0] = address(new VolatilePunch(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
+            addrs[0] = address(
+                new VolatilePunch(
+                    ITypeCalculator(typecalculator),
+                    IEffect(vm.envAddress("BURN_STATUS")),
+                    IEffect(vm.envAddress("FROSTBITE_STATUS"))
+                )
+            );
             deployedContracts[0] = DeployData({name: "Volatile Punch", contractAddress: addrs[0]});
         }
         {
@@ -802,7 +823,13 @@ contract SetupMons is Script {
             deployedContracts[1] = DeployData({name: "Chronoffense", contractAddress: addrs[1]});
         }
         {
-            addrs[2] = address(new ModalBolt(IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS")), IEffect(vm.envAddress("ZAP_STATUS"))));
+            addrs[2] = address(
+                new ModalBolt(
+                    IEffect(vm.envAddress("BURN_STATUS")),
+                    IEffect(vm.envAddress("FROSTBITE_STATUS")),
+                    IEffect(vm.envAddress("ZAP_STATUS"))
+                )
+            );
             deployedContracts[2] = DeployData({name: "Modal Bolt", contractAddress: addrs[2]});
         }
         {
@@ -829,7 +856,8 @@ contract SetupMons is Script {
         });
         uint256[] memory moves = new uint256[](4);
         moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = 0x500b314000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
+        moves[1] = 0x500b314000000000000000000000000000000000000000000000000000000000
+            | uint256(uint160(vm.envAddress("PANIC_STATUS")));
         moves[2] = uint256(uint160(addrs[1]));
         moves[3] = uint256(uint160(addrs[2]));
         uint256[] memory abilities = new uint256[](1);
@@ -838,5 +866,4 @@ contract SetupMons is Script {
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(12, stats, moves, abilities, keys, values);
     }
-
 }

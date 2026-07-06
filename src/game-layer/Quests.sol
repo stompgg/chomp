@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {MAX_PREDICATES_PER_QUEST} from "../Constants.sol";
 import "../Structs.sol";
 import {Ownable} from "../lib/Ownable.sol";
-import {MAX_PREDICATES_PER_QUEST} from "../Constants.sol";
 
 abstract contract Quests is Ownable {
     error TooManyPredicates();
@@ -22,13 +22,20 @@ abstract contract Quests is Ownable {
         ACTIVE_SLOT_INDEX,
         MON_STATE,
         // Aggregates over the team — read existing storage, no new state required.
-        MIN_LEVEL,        // min level across all team slots
-        MAX_LEVEL,        // max level across all team slots
-        FACET_COUNT,      // count of slots with non-zero assignedFacetId
-        MIN_HP_DELTA,     // min hpDelta across team (sentinel normalized to 0)
-        MAX_HP_DELTA      // max hpDelta across team (sentinel normalized to 0)
+        MIN_LEVEL, // min level across all team slots
+        MAX_LEVEL, // max level across all team slots
+        FACET_COUNT, // count of slots with non-zero assignedFacetId
+        MIN_HP_DELTA, // min hpDelta across team (sentinel normalized to 0)
+        MAX_HP_DELTA // max hpDelta across team (sentinel normalized to 0)
     }
-    enum Cmp { EQ, NE, LT, LE, GT, GE }
+    enum Cmp {
+        EQ,
+        NE,
+        LT,
+        LE,
+        GT,
+        GE
+    }
 
     // Memory-only struct for ergonomic admin authoring. Compiles down to the packed encoding below.
     struct Predicate {
@@ -72,13 +79,12 @@ abstract contract Quests is Ownable {
         if (count > MAX_PREDICATES_PER_QUEST) revert TooManyPredicates();
         for (uint256 i; i < count;) {
             Predicate memory p = preds[i];
-            uint256 lane = uint256(uint8(p.op))
-                | (uint256(uint8(p.cmp)) << 5)
-                | (uint256(p.negate ? 1 : 0) << 8)
-                | (uint256(p.arg) << 9)
-                | (uint256(uint16(p.operand)) << 25);
+            uint256 lane = uint256(uint8(p.op)) | (uint256(uint8(p.cmp)) << 5) | (uint256(p.negate ? 1 : 0) << 8)
+                | (uint256(p.arg) << 9) | (uint256(uint16(p.operand)) << 25);
             packed |= (lane << (i * PRED_BITS));
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         packed |= (count << COUNT_SHIFT);
     }
@@ -149,11 +155,7 @@ abstract contract Quests is Ownable {
         return uint32(block.timestamp / 1 days) + _dayOffset;
     }
 
-    function getQuest(uint256 questId)
-        external
-        view
-        returns (uint256 packed, uint256 count)
-    {
+    function getQuest(uint256 questId) external view returns (uint256 packed, uint256 count) {
         if (questId >= _questPoolLength) revert InvalidQuestId();
         packed = questPool[questId].packed;
         count = (packed >> COUNT_SHIFT) & COUNT_MASK;
@@ -214,18 +216,18 @@ abstract contract Quests is Ownable {
             bool ok = _compare(extracted, cmp, int256(operand));
             if (negate) ok = !ok;
             if (!ok) return false;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }
 
     /// @dev Subclass implements opcode dispatch. Has access to registry storage (exp, facets,
     ///      monRegistryIndicesForTeamPacked) and can extcall ENGINE for MON_STATE.
-    function _extract(
-        uint8 op,
-        uint16 arg,
-        BattleEndContext memory ctx,
-        uint256 playerIndex,
-        bytes32 battleKey
-    ) internal view virtual returns (int256);
+    function _extract(uint8 op, uint16 arg, BattleEndContext memory ctx, uint256 playerIndex, bytes32 battleKey)
+        internal
+        view
+        virtual
+        returns (int256);
 }

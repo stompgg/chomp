@@ -74,6 +74,10 @@ contract DoublesKitTest is Test {
                 p0TeamIndex: 0,
                 p1: BOB,
                 p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: registry,
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: IRuleset(address(0)),
@@ -105,9 +109,7 @@ contract DoublesKitTest is Test {
 
     function _noOpTurn() internal {
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
     }
 
@@ -127,16 +129,12 @@ contract DoublesKitTest is Test {
 
         // A0 arms Q5 at absolute slot 3 (B slot 1, occupied by B mon 1).
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(0, _target(3), NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+            battleKey, _side(0, _target(3), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
         );
 
         // B1 pivots out: mon 2 takes the doomed slot.
         engine.executeWithSlotMoves(
-            battleKey,
-            _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0),
-            _side(NO_OP_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 2)
+            battleKey, _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 2)
         );
 
         // Remaining countdown round starts, then the blast.

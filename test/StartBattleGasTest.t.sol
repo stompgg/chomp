@@ -9,15 +9,15 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
+import {IRuleset} from "../src/IRuleset.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 
-import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
-import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 import {GasMeasure} from "./abstract/GasMeasure.sol";
+import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
+import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 
 /// @notice Step-0 measurement for the startBattle optimization (PLAN_STARTBATTLE.md).
 ///         Measures Engine.startBattle (via matchmaker confirmBattle) against the REAL
@@ -67,12 +67,20 @@ contract StartBattleGasTest is Test, GasMeasure {
         // what the production steady state actually pays — not the same-team no-op artifact.
         for (uint256 i; i < POOL; ++i) {
             MonStats memory s = MonStats({
-                hp: uint32(200 + i * 7), stamina: uint32(8 + i), speed: uint32(50 + i * 3),
-                attack: uint32(40 + i * 2), defense: uint32(40 + i), specialAttack: uint32(45 + i),
-                specialDefense: uint32(42 + i), type1: Type.Fire, type2: Type.None
+                hp: uint32(200 + i * 7),
+                stamina: uint32(8 + i),
+                speed: uint32(50 + i * 3),
+                attack: uint32(40 + i * 2),
+                defense: uint32(40 + i),
+                specialAttack: uint32(45 + i),
+                specialDefense: uint32(42 + i),
+                type1: Type.Fire,
+                type2: Type.None
             });
             uint256[] memory mvs = new uint256[](MOVES_PER_MON);
-            for (uint256 j; j < MOVES_PER_MON; ++j) mvs[j] = uint256(uint160(0x100000 + i * 16 + j));
+            for (uint256 j; j < MOVES_PER_MON; ++j) {
+                mvs[j] = uint256(uint160(0x100000 + i * 16 + j));
+            }
             uint256[] memory abl = new uint256[](1);
             abl[0] = uint256(uint160(0x200000 + i));
             registry.createMon(i, s, mvs, abl, noK, noV);
@@ -87,14 +95,20 @@ contract StartBattleGasTest is Test, GasMeasure {
         vm.prank(ALICE);
         registry.firstRoll(0);
         aliceTeam = new uint256[](MONS_PER_TEAM);
-        aliceTeam[0] = 0; aliceTeam[1] = 3; aliceTeam[2] = 4; aliceTeam[3] = 5;
+        aliceTeam[0] = 0;
+        aliceTeam[1] = 3;
+        aliceTeam[2] = 4;
+        aliceTeam[3] = 5;
         vm.prank(ALICE);
         registry.createTeam(aliceTeam);
 
         // Max exp on every ALICE mon -> unlocks all 12 facets -> assign facet 1 to each.
         uint256[] memory amounts = new uint256[](MONS_PER_TEAM);
         uint8[] memory facetOnes = new uint8[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; ++i) { amounts[i] = 65535; facetOnes[i] = 1; }
+        for (uint256 i; i < MONS_PER_TEAM; ++i) {
+            amounts[i] = 65535;
+            facetOnes[i] = 1;
+        }
         registry.assignExp(ALICE, aliceTeam, amounts);
         vm.prank(ALICE);
         registry.assignFacets(aliceTeam, facetOnes);
@@ -119,7 +133,10 @@ contract StartBattleGasTest is Test, GasMeasure {
         uint256[] memory cpuMons = new uint256[](MONS_PER_TEAM);
         uint8[] memory cpuFacets = new uint8[](MONS_PER_TEAM);
         uint8[] memory cpuMoves = new uint8[](MONS_PER_TEAM); // default loadout
-        for (uint256 i; i < MONS_PER_TEAM; ++i) { cpuMons[i] = mons[i]; cpuFacets[i] = 1; }
+        for (uint256 i; i < MONS_PER_TEAM; ++i) {
+            cpuMons[i] = mons[i];
+            cpuFacets[i] = 1;
+        }
         vm.prank(ALICE);
         registry.setOpponentTeam(CPU, cpuMons, cpuFacets, cpuMoves);
     }
@@ -130,10 +147,17 @@ contract StartBattleGasTest is Test, GasMeasure {
         uint256[] memory ids = registry.getMonRegistryIndicesForTeam(ALICE, ti);
         bytes32 teamHash = keccak256(abi.encodePacked(salt, ti, ids));
         ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE, p0TeamIndex: ti, p0TeamHash: teamHash,
-            p1: CPU, p1TeamIndex: cpuPhantomIndex,
-            teamRegistry: registry,            rngOracle: mockOracle, ruleset: IRuleset(address(0)),
-            moveManager: address(commitManager), matchmaker: matchmaker, engineHooks: new IEngineHook[](0)
+            p0: ALICE,
+            p0TeamIndex: ti,
+            p0TeamHash: teamHash,
+            p1: CPU,
+            p1TeamIndex: cpuPhantomIndex,
+            teamRegistry: registry,
+            rngOracle: mockOracle,
+            ruleset: IRuleset(address(0)),
+            moveManager: address(commitManager),
+            matchmaker: matchmaker,
+            engineHooks: new IEngineHook[](0)
         });
         vm.prank(ALICE);
         battleKey = matchmaker.proposeBattle(proposal);
@@ -150,7 +174,8 @@ contract StartBattleGasTest is Test, GasMeasure {
     }
 
     function _accountTally(Vm.AccountAccess[] memory acc, address who)
-        internal pure
+        internal
+        pure
         returns (uint256 sstores, uint256 zToNz, uint256 nzToNz, uint256 noop, uint256 sloads)
     {
         for (uint256 i; i < acc.length; i++) {
@@ -218,7 +243,12 @@ contract StartBattleGasTest is Test, GasMeasure {
         uint256 warmGas = g2 - gasleft();
         Vm.AccountAccess[] memory acc2 = vm.stopAndReturnStateDiff();
         require(engine.getStorageKey(k2) == sk1, "storageKey reuse (warm steady)");
-        _report("=== WARM STEADY (recycled key, CPU team differs -> CPU-side nz->nz) ===", "StartBattle_WarmSteady", acc2, warmGas);
+        _report(
+            "=== WARM STEADY (recycled key, CPU team differs -> CPU-side nz->nz) ===",
+            "StartBattle_WarmSteady",
+            acc2,
+            warmGas
+        );
 
         // ---- WARM SAME: recycle again, CPU team UNCHANGED (T2) -> team-store all no-op. Baseline so
         //      (WARM_DIFF - WARM_SAME) isolates the 28-slot CPU team-store nz->nz cost. ----
@@ -234,7 +264,12 @@ contract StartBattleGasTest is Test, GasMeasure {
         uint256 sameGas = g3 - gasleft();
         Vm.AccountAccess[] memory acc3 = vm.stopAndReturnStateDiff();
         require(engine.getStorageKey(k3) == sk1, "storageKey reuse (warm same)");
-        _report("=== WARM SAME (recycled key, CPU team unchanged -> team-store all no-op) ===", "StartBattle_WarmSame", acc3, sameGas);
+        _report(
+            "=== WARM SAME (recycled key, CPU team unchanged -> team-store all no-op) ===",
+            "StartBattle_WarmSame",
+            acc3,
+            sameGas
+        );
 
         console.log("");
         console.log("  28-slot CPU team-store nz->nz cost (WARM_DIFF - WARM_SAME) :", warmGas - sameGas);

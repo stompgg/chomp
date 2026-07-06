@@ -6,9 +6,9 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
@@ -26,8 +26,8 @@ import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {ActusReus} from "../../src/mons/malalien/ActusReus.sol";
 import {FoulLanguage} from "../../src/mons/malalien/FoulLanguage.sol";
-import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {TripleThink} from "../../src/mons/malalien/TripleThink.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract MalalienTest is Test, BattleHelper {
     Engine engine;
@@ -54,25 +54,60 @@ contract MalalienTest is Test, BattleHelper {
 
     // Foul Language deals damage and then deals half of that damage back to Malalien as recoil.
     function test_foulLanguageRecoil() public {
-
         uint256[] memory aliceMoves = new uint256[](1);
         aliceMoves[0] = uint256(uint160(address(foulLanguage)));
 
         uint256[] memory bobMoves = new uint256[](1);
-        bobMoves[0] = uint256(uint160(address(attackFactory.createAttack(ATTACK_PARAMS({
-            BASE_POWER: 1, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
-            MOVE_TYPE: Type.Liquid, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
-            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Filler", EFFECT: IEffect(address(0))
-        })))));
+        bobMoves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 1,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "Filler",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         // Big HP pools so neither mon is KO'd and the recoil is a clean fraction of the damage dealt.
         Mon memory aliceMon = Mon({
-            stats: MonStats({hp: 1000, stamina: 10, speed: 10, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Yang, type2: Type.None}),
+            stats: MonStats({
+                hp: 1000,
+                stamina: 10,
+                speed: 10,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Yang,
+                type2: Type.None
+            }),
             moves: aliceMoves,
             ability: 0
         });
         Mon memory bobMon = Mon({
-            stats: MonStats({hp: 1000, stamina: 10, speed: 5, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Liquid, type2: Type.None}),
+            stats: MonStats({
+                hp: 1000,
+                stamina: 10,
+                speed: 5,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Liquid,
+                type2: Type.None
+            }),
             moves: bobMoves,
             ability: 0
         });
@@ -100,7 +135,11 @@ contract MalalienTest is Test, BattleHelper {
 
         int32 bobDamage = -bobHp;
         assertGt(bobDamage, 0, "Foul Language should deal damage to Bob");
-        assertEq(aliceHp, -(bobDamage / int32(foulLanguage.RECOIL_DENOM())), "Malalien should take half the dealt damage as recoil");
+        assertEq(
+            aliceHp,
+            -(bobDamage / int32(foulLanguage.RECOIL_DENOM())),
+            "Malalien should take half the dealt damage as recoil"
+        );
     }
 
     function test_actusReusIndictment() public {
@@ -108,21 +147,27 @@ contract MalalienTest is Test, BattleHelper {
         uint256[] memory moves = new uint256[](1);
         uint256 hpScale = 100;
 
-        moves[0] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: uint32(hpScale),
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "KO Attack",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: uint32(hpScale),
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "KO Attack",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         // Create a mon with ActusReus ability
         Mon memory actusReusMon = Mon({
@@ -188,7 +233,7 @@ contract MalalienTest is Test, BattleHelper {
         assertEq(isKnockedOut, 1, "Bob's mon should be KO'd");
 
         // Verify that Alice's mon has an indictment charge
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         bool indictmentFound = false;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(actusReus) && uint256(effects[i].data) == 1) {
@@ -266,9 +311,7 @@ contract MalalienTest is Test, BattleHelper {
         assertEq(bobSpAtkBoost, int32(int8(tripleThink.SP_ATTACK_BUFF_PERCENT())), "Buff applied for Bob");
 
         // Alice uses it again, Bob swaps out
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint16(0), uint16(1)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint16(0), uint16(1));
 
         // Alice should be at 1.75 * 1.75 = 1.225 + 1.75 + 0.0875 = 2.0625, Bob should be at 0
         aliceSpAtkBoost = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);

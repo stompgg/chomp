@@ -7,8 +7,8 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
 import {IEngineHook} from "../../src/IEngineHook.sol";
@@ -35,10 +35,10 @@ import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
 // Import mocks for OnUpdateMonState test
-import {OnUpdateMonStateHealEffect} from "../mocks/OnUpdateMonStateHealEffect.sol";
-import {EffectAbility} from "../mocks/EffectAbility.sol";
-import {ReduceSpAtkMove} from "../mocks/ReduceSpAtkMove.sol";
 import {DirectStatWriteMove} from "../mocks/DirectStatWriteMove.sol";
+import {EffectAbility} from "../mocks/EffectAbility.sol";
+import {OnUpdateMonStateHealEffect} from "../mocks/OnUpdateMonStateHealEffect.sol";
+import {ReduceSpAtkMove} from "../mocks/ReduceSpAtkMove.sol";
 
 contract EffectTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -146,8 +146,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons have an effect length of 2 (including stat boost)
-        (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects0,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 2);
         assertEq(effects1.length, 2);
 
@@ -163,8 +163,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2 (including stat boost)
-        (effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (effects0,) = engine.getEffects(battleKey, 0, 0);
+        (effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 2);
         assertEq(effects1.length, 2);
 
@@ -286,7 +286,9 @@ contract EffectTest is Test, BattleHelper {
         */
 
         bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), -1);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), 0);
@@ -301,7 +303,9 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1);
         // Alice is asleep, Bob does nothing, Alice switches to mon index 1, should be successful
         mockOracle.setRNG(1);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+        );
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
     }
 
@@ -384,8 +388,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Both mons have inflicted panic
-        (EffectInstance[] memory panicEffects0, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory panicEffects1, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory panicEffects0,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory panicEffects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(panicEffects0.length, 1);
         assertEq(panicEffects1.length, 1);
 
@@ -409,7 +413,7 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // The panic effect should be over now
-        (EffectInstance[] memory panicEffectsAfter, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory panicEffectsAfter,) = engine.getEffects(battleKey, 1, 0);
         assertEq(panicEffectsAfter.length, 0);
     }
 
@@ -469,8 +473,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons have an effect length of 2 (including stat boost)
-        (EffectInstance[] memory burnEffects0, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory burnEffects1, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory burnEffects0,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory burnEffects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(burnEffects0.length, 2);
         assertEq(burnEffects1.length, 2);
 
@@ -486,8 +490,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2 (including stat boost)
-        (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects0,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 2);
         assertEq(effects1.length, 2);
 
@@ -500,8 +504,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2
-        (effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (effects0,) = engine.getEffects(battleKey, 0, 0);
+        (effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 2);
         assertEq(effects1.length, 2);
 
@@ -514,8 +518,8 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Check that both mons still have an effect length of 2
-        (effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (effects0,) = engine.getEffects(battleKey, 0, 0);
+        (effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 2);
         assertEq(effects1.length, 2);
 
@@ -634,25 +638,29 @@ contract EffectTest is Test, BattleHelper {
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
 
         // Bob's active mon should have the Zap effect
-        (EffectInstance[] memory zapEffects, ) = engine.getEffects(battleKey, 1, 1);
+        (EffectInstance[] memory zapEffects,) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffects.length, 1);
 
         // Alice does nothing, Bob attempts to switch to mon index 1, which should succeed because Zap allows switches
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(0));
-        
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(0)
+        );
+
         // Check that Bob's active mon index is now 0, and the effect is still there
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
-        (EffectInstance[] memory zapEffectsAfter, ) = engine.getEffects(battleKey, 1, 1);
+        (EffectInstance[] memory zapEffectsAfter,) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffectsAfter.length, 1);
 
         // Bob switches back to mon index 1, Alice does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
+        );
 
         // Bob tries to make a move, Alice does nothing, Zap should skip his turn
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Check that zap is now gone
-        (EffectInstance[] memory zapEffectsAfterRoundEnd, ) = engine.getEffects(battleKey, 1, 1);
+        (EffectInstance[] memory zapEffectsAfterRoundEnd,) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffectsAfterRoundEnd.length, 0);
     }
 
@@ -703,7 +711,8 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
+        bytes32 battleKey = _startBattle(
+            engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
         );
 
         // First move of the game has to be selecting their mons (both index 0)
@@ -787,7 +796,7 @@ contract EffectTest is Test, BattleHelper {
         );
 
         // Verify Bob's mon has the heal effect applied (from ability on switch in)
-        (EffectInstance[] memory bobEffects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(bobEffects.length, 1, "Bob should have 1 effect");
 
         // Get Bob's initial HP (should be 0 delta since no damage dealt yet)
@@ -839,8 +848,7 @@ contract EffectTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch both mons in (turnId 0 -> 1).
         _commitRevealExecuteForAliceAndBob(

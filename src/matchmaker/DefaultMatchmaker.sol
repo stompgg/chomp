@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
-import {ProposedBattle, Battle} from "../Structs.sol";
-import {IMatchmaker} from "./IMatchmaker.sol";
+import {Battle, ProposedBattle} from "../Structs.sol";
 import {MappingAllocator} from "../lib/MappingAllocator.sol";
+import {IMatchmaker} from "./IMatchmaker.sol";
 
 /// @notice DEPRECATED — production matchmaking runs through SignedMatchmaker; this contract is
 ///         kept for the test suite only.
@@ -28,14 +28,16 @@ import {MappingAllocator} from "../lib/MappingAllocator.sol";
 ///      the preP1FillBattleKey override and mark the row consumed BEFORE freeing the owning key
 ///      (with acceptBattle's fast path passing the post-fill key when one exists).
 contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
-
-    bytes32 constant public FAST_BATTLE_SENTINAL_HASH = 0x1000000000000000000000000000000000000000000000000000000000000000; // Used to skip the confirmBattle step
+    bytes32 public constant FAST_BATTLE_SENTINAL_HASH =
+        0x1000000000000000000000000000000000000000000000000000000000000000; // Used to skip the confirmBattle step
     uint96 constant UNSET_P0_TEAM_INDEX = type(uint96).max - 1; // Used to tell if a battle has been accepted by p1 or not
     uint96 constant UNSET_P1_TEAM_INDEX = type(uint96).max - 2; // Used to tell if a battle has been accepted by p1 or not
 
     IEngine public immutable ENGINE;
 
-    event BattleProposal(bytes32 indexed battleKey, address indexed p0, address indexed p1, bool isFastBattle, bytes32 p0TeamHash);
+    event BattleProposal(
+        bytes32 indexed battleKey, address indexed p0, address indexed p1, bool isFastBattle, bytes32 p0TeamHash
+    );
     event BattleAcceptance(bytes32 indexed battleKey, address indexed p1, bytes32 indexed updatedBattleKey);
 
     error P0P1Same();
@@ -67,7 +69,7 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
             )
         );
     }
-    
+
     /*
      P0 can bypass the final acceptBattle call by setting p0TeamIndex in the initial call and bytes32(0) for the p0TeamHash
      In this case, a different event is emitted, and calling acceptBattle will immediately start the battle
@@ -113,7 +115,9 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
             existingBattle.engineHooks = proposal.engineHooks;
         }
         proposals[storageKey].p1TeamIndex = UNSET_P1_TEAM_INDEX;
-        emit BattleProposal(battleKey, proposal.p0, proposal.p1, proposal.p0TeamHash == FAST_BATTLE_SENTINAL_HASH, proposal.p0TeamHash);
+        emit BattleProposal(
+            battleKey, proposal.p0, proposal.p1, proposal.p0TeamHash == FAST_BATTLE_SENTINAL_HASH, proposal.p0TeamHash
+        );
         return battleKey;
     }
 
@@ -146,6 +150,10 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                     p0TeamIndex: proposal.p0TeamIndex,
                     p1: proposal.p1,
                     p1TeamIndex: proposal.p1TeamIndex,
+                    p2: address(0),
+                    p2TeamIndex: 0,
+                    p3: address(0),
+                    p3TeamIndex: 0,
                     teamRegistry: proposal.teamRegistry,
                     rngOracle: proposal.rngOracle,
                     ruleset: proposal.ruleset,
@@ -182,6 +190,10 @@ contract DefaultMatchmaker is IMatchmaker, MappingAllocator {
                 p0TeamIndex: p0TeamIndex,
                 p1: proposal.p1,
                 p1TeamIndex: proposal.p1TeamIndex,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: proposal.teamRegistry,
                 rngOracle: proposal.rngOracle,
                 ruleset: proposal.ruleset,

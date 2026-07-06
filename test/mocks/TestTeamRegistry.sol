@@ -14,6 +14,12 @@ contract TestTeamRegistry is ITeamRegistry {
     mapping(address => mapping(uint256 => bool)) public hasIndexedTeam;
     uint256[] indices;
 
+    mapping(address => bool) public isWhitelistedOpponent;
+
+    function setWhitelistedOpponent(address addr, bool flag) public {
+        isWhitelistedOpponent[addr] = flag;
+    }
+
     function setTeam(address player, Mon[] memory team) public {
         teams[player] = team;
     }
@@ -69,11 +75,7 @@ contract TestTeamRegistry is ITeamRegistry {
         return new uint256[](0);
     }
 
-    function getPlayerTeams(address)
-        external
-        pure
-        returns (uint256[] memory slots, uint256[][] memory teamMonIds)
-    {
+    function getPlayerTeams(address) external pure returns (uint256[] memory slots, uint256[][] memory teamMonIds) {
         slots = new uint256[](0);
         teamMonIds = new uint256[][](0);
     }
@@ -87,12 +89,22 @@ contract TestTeamRegistry is ITeamRegistry {
         return true;
     }
 
-    function getMonData(uint256)
-        external
-        pure
-        returns (MonStats memory, uint256[] memory, uint256[] memory)
-    {
-        return (MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None}), new uint256[](0), new uint256[](0));
+    function getMonData(uint256) external pure returns (MonStats memory, uint256[] memory, uint256[] memory) {
+        return (
+            MonStats({
+                hp: 0,
+                stamina: 0,
+                speed: 0,
+                attack: 0,
+                defense: 0,
+                specialAttack: 0,
+                specialDefense: 0,
+                type1: Type.None,
+                type2: Type.None
+            }),
+            new uint256[](0),
+            new uint256[](0)
+        );
     }
 
     function getMonDataBatch(uint256[] calldata)
@@ -104,7 +116,17 @@ contract TestTeamRegistry is ITeamRegistry {
     }
 
     function getMonStats(uint256) external pure returns (MonStats memory) {
-        return MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None});
+        return MonStats({
+            hp: 0,
+            stamina: 0,
+            speed: 0,
+            attack: 0,
+            defense: 0,
+            specialAttack: 0,
+            specialDefense: 0,
+            type1: Type.None,
+            type2: Type.None
+        });
     }
 
     function getMonMetadata(uint256, bytes32) external pure returns (bytes32) {

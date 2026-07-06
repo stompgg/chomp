@@ -6,9 +6,9 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
@@ -86,9 +86,7 @@ contract EmbursaTest is Test, BattleHelper {
         );
 
         // Alice uses Q5, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Verify no damage occurred
         assertEq(
@@ -117,9 +115,7 @@ contract EmbursaTest is Test, BattleHelper {
         // Verify damage occurred
         // Real type chart (TypeCalcLib) resolves this matchup at 0.5x — custom attacks no longer
         // use the injected mock calculator (dispatchCustomAttack consolidation).
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -75, "Damage should have occurred"
-        );
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -75, "Damage should have occurred");
     }
 
     function test_heatBeacon() public {
@@ -213,13 +209,15 @@ contract EmbursaTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 1, "Bob's mon should have 1 effect (Dummy status)");
         assertEq(address(effects[0].effect), address(dummyStatus), "Bob's mon should have Dummy status");
         assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
         mockOracle.setRNG(2);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, 0, 0);
-        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared");
+        assertEq(
+            heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared"
+        );
         assertEq(
             engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
             1,
@@ -245,11 +243,11 @@ contract EmbursaTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
-        (effects, ) = engine.getEffects(battleKey, 1, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 0, "Bob's mon should have no effects");
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        (effects, ) = engine.getEffects(battleKey, 1, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 2, "Bob's mon should have 2x Dummy status");
 
         /* TODO later
@@ -346,8 +344,7 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         vm.warp(vm.getBlockTimestamp() + 1);
 
@@ -380,9 +377,7 @@ contract EmbursaTest is Test, BattleHelper {
 
         // Alice should have taken NO damage (Bob's attack should not have executed)
         assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
-            0,
-            "Alice should not have taken damage"
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0, "Alice should not have taken damage"
         );
 
         // Game is NOT over — Bob still has a second mon
@@ -444,8 +439,7 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         vm.warp(vm.getBlockTimestamp() + 1);
 
@@ -525,21 +519,27 @@ contract EmbursaTest is Test, BattleHelper {
         Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)));
 
         uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 10,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: DEFAULT_PRIORITY,
-                MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "TestAttack",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 10,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: DEFAULT_PRIORITY,
+                            MOVE_TYPE: Type.Fire,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "TestAttack",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
@@ -610,21 +610,27 @@ contract EmbursaTest is Test, BattleHelper {
         Tinderclaws tinderclaws = new Tinderclaws(IEffect(address(burnStatus)));
 
         uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 0,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: DEFAULT_PRIORITY,
-                MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 100,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "BurnAttack",
-                EFFECT: IEffect(address(burnStatus))
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 0,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: DEFAULT_PRIORITY,
+                            MOVE_TYPE: Type.Fire,
+                            EFFECT_ACCURACY: 100,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "BurnAttack",
+                            EFFECT: IEffect(address(burnStatus))
+                        })
+                    )
+                )
+            )
+        );
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;

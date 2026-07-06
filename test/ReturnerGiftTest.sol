@@ -9,8 +9,8 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
-import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 import {PlayerProfile} from "../src/game-layer/PlayerProfile.sol";
+import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 
@@ -58,7 +58,9 @@ contract ReturnerGiftTest is Test {
 
         // Alice gets a live team with mons [0,1,2,3] so tier 2..6 claims can resolve.
         uint256[] memory aliceTeam = new uint256[](MONS_PER_TEAM);
-        for (uint256 i; i < MONS_PER_TEAM; ++i) aliceTeam[i] = i;
+        for (uint256 i; i < MONS_PER_TEAM; ++i) {
+            aliceTeam[i] = i;
+        }
         registry.setTeamForUser(ALICE, 0, aliceTeam, new uint8[](MONS_PER_TEAM));
 
         gift = new ReturnerGift(address(registry));

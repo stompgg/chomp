@@ -50,18 +50,35 @@ struct BattleOffer {
     uint8 battleMode; // BATTLE_MODE_* — part of the signed offer so both players agree on it
 }
 
-// Used by Engine to initialize a battle's parameters
+// Used by Engine to initialize a battle's parameters. p2/p3 are Multi's second seats
+// (side 0 / side 1 respectively), zero in singles and doubles. Canonical seat order for
+// rotation and views is [p0, p2, p1, p3] (side-major) — NOT the struct field order.
 struct Battle {
     address p0;
     uint96 p0TeamIndex;
     address p1;
     uint96 p1TeamIndex;
+    address p2;
+    uint96 p2TeamIndex;
+    address p3;
+    uint96 p3TeamIndex;
     ITeamRegistry teamRegistry;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
     IMatchmaker matchmaker;
     IEngineHook[] engineHooks;
+}
+
+// Multi's second seats, stored per battle key (fresh every battle — no recycling hygiene
+// needed); written only when battleMode == MULTI so singles/doubles pay nothing.
+// Packs into 2 slots: (p2, p2TeamIndex, cpuSeatMask) and (p3, p3TeamIndex).
+struct MultiSeatData {
+    address p2;
+    uint16 p2TeamIndex;
+    uint8 cpuSeatMask; // canonical-order bits [p0, p2, p1, p3]; from the registry at battle start
+    address p3;
+    uint16 p3TeamIndex;
 }
 
 // Packed into 1 storage slot (8 + 16 = 24 bits)
@@ -88,9 +105,11 @@ struct BattleData {
     // buffer's pure staging tx (submitTurnMoves) skip its only battleConfig access — a cold
     // sentinel SLOAD (~2.2k per stage tx). Lives in slot 0's spare bits.
     bool usesBuiltinManager;
-    // Mirror of `BattleConfig.battleMode != 0`, set at startBattle. Lets the built-in buffer's
-    // staging txs route/gate v1-vs-v2 submissions off the BattleData slot they already read.
+    // Mirrors of BattleConfig.battleMode, set at startBattle. Let the built-in buffer's staging
+    // txs route v1-vs-slot submissions and pick the seat rotation off the BattleData slot they
+    // already read (isMultiMode additionally gates the multiSeats lookup).
     bool isTwoSlotMode;
+    bool isMultiMode;
     // Slot-1 active lanes for 2-slot modes: [side0 slot1: bits 0-7 | side1 slot1: bits 8-15],
     // EMPTY_ACTIVE_LANE = no mon. Singles battles init it to 0 and never touch it, keeping the
     // legacy activeMonIndex packing byte-identical; lives in slot 0's remaining spare bits.
@@ -341,12 +360,20 @@ struct MoveMeta {
 struct BattleEndContext {
     address p0;
     address p1;
-    address winner; // address(0) = draw
+    address winner; // address(0) = draw; in Multi this is the winning SIDE's lead (p0/p1)
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
-    uint8 p0KOBitmap;
+    uint8 p0KOBitmap; // full side bitmap (8 bits in Multi; seat quarters at [4q, 4q+4))
     uint8 p1KOBitmap;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
     uint64 turnId;
+    // Multi seats (zero outside MULTI battles)
+    bool isMultiMode;
+    address p2;
+    address p3;
+    uint16 p2TeamIndex;
+    uint16 p3TeamIndex;
+    uint8 p0ActiveMonExtIndex; // slot-1 lanes (the p2/p3 seats' active slots)
+    uint8 p1ActiveMonExtIndex;
 }

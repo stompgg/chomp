@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {Ownable} from "../lib/Ownable.sol";
 import {MerkleProofLib} from "../lib/MerkleProofLib.sol";
-import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
+import {Ownable} from "../lib/Ownable.sol";
 import {IExpAssigner} from "./IExpAssigner.sol";
+import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
 import {ITeamRegistry} from "./ITeamRegistry.sol";
 
 /// @notice Merkle-gated returner gift. The owner publishes a root whose leaves encode

@@ -96,6 +96,10 @@ contract DoublesFlowsTest is BatchHelper {
                 p0TeamIndex: 0,
                 p1: p1,
                 p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: registry,
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: IRuleset(address(0)),
@@ -112,11 +116,15 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_DOUBLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
+        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         (battleKey,) = engine.computeBattleKey(p0, p1);
         vm.prank(p1);
-        signedMatchmaker.startGame(offer, abi.encodePacked(r, s, v));
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            signedMatchmaker.startGame(offer, 0, seatSigs);
+        }
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
@@ -174,14 +182,18 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_DOUBLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
+        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         (bytes32 expectedKey,) = engine.computeBattleKey(p0, p1);
 
         vm.expectEmit(true, false, false, true);
-        emit Engine.SlotBattleStart(expectedKey, p0, p1, BATTLE_MODE_DOUBLES);
+        emit Engine.SlotBattleStart(expectedKey, p0, p1, BATTLE_MODE_DOUBLES, address(0), address(0));
         vm.prank(p1);
-        signedMatchmaker.startGame(offer, abi.encodePacked(r, s, v));
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            signedMatchmaker.startGame(offer, 0, seatSigs);
+        }
 
         battleKey = expectedKey;
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -199,12 +211,16 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p1, bTeam);
         // p0 signs a SINGLES offer; p1 tries to start it as Doubles.
         BattleOffer memory signedOffer = _offer(BATTLE_MODE_SINGLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(signedOffer));
+        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(signedOffer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         BattleOffer memory tampered = _offer(BATTLE_MODE_DOUBLES);
         vm.prank(p1);
         vm.expectRevert(SignedMatchmaker.InvalidSignature.selector);
-        signedMatchmaker.startGame(tampered, abi.encodePacked(r, s, v));
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            signedMatchmaker.startGame(tampered, 0, seatSigs);
+        }
     }
 
     function test_combinedSlotTurns_fullBattle() public {
@@ -290,11 +306,15 @@ contract DoublesFlowsTest is BatchHelper {
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         BattleOffer memory offer = _offer(BATTLE_MODE_SINGLES);
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
+        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         (battleKey,) = engine.computeBattleKey(p0, p1);
         vm.prank(p1);
-        signedMatchmaker.startGame(offer, abi.encodePacked(r, s, v));
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            signedMatchmaker.startGame(offer, 0, seatSigs);
+        }
 
         vm.prank(p0);
         vm.expectRevert(Engine.WrongBattleMode.selector);

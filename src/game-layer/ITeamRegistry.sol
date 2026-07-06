@@ -12,11 +12,20 @@ interface ITeamRegistry {
     function updateTeam(uint256 slot, uint256[] memory positions, uint256[] memory newMonIndices) external;
 
     function getTeam(address player, uint256 teamIndex) external returns (Mon[] memory);
-    function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external returns (Mon[] memory, Mon[] memory);
+    // CPU/whitelisted-opponent flag (PlayerProfile-backed); SignedMatchmaker skips per-seat
+    // consent for flagged seats (D19).
+    function isWhitelistedOpponent(address addr) external view returns (bool);
+
+    function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
+        external
+        returns (Mon[] memory, Mon[] memory);
     function getTeamCount(address player) external returns (uint256);
     function getMonRegistryIndicesForTeam(address player, uint256 teamIndex) external returns (uint256[] memory);
     function getOrderedLiveTeams(address player) external view returns (uint256[] memory slots);
-    function getPlayerTeams(address player) external view returns (uint256[] memory slots, uint256[][] memory teamMonIds);
+    function getPlayerTeams(address player)
+        external
+        view
+        returns (uint256[] memory slots, uint256[][] memory teamMonIds);
 
     function getMonData(uint256 monId)
         external
@@ -40,19 +49,31 @@ interface ITeamRegistry {
     function getLevel(address player, uint256 monId) external view returns (uint256);
     function levelForExp(uint256 exp) external pure returns (uint256);
     function getExpAndLevelsForMons(address player, uint256[] calldata monIds)
-        external view returns (uint256[] memory exp, uint256[] memory levels);
+        external
+        view
+        returns (uint256[] memory exp, uint256[] memory levels);
     function getExpAndLevelsForTeam(address player, uint256 teamIndex)
-        external view returns (uint256[] memory monIds, uint256[] memory exp, uint256[] memory levels);
+        external
+        view
+        returns (uint256[] memory monIds, uint256[] memory exp, uint256[] memory levels);
     function getExpAndLevelsForTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
-        external view returns (
-            uint256[] memory p0MonIds, uint256[] memory p0Exp, uint256[] memory p0Levels,
-            uint256[] memory p1MonIds, uint256[] memory p1Exp, uint256[] memory p1Levels
+        external
+        view
+        returns (
+            uint256[] memory p0MonIds,
+            uint256[] memory p0Exp,
+            uint256[] memory p0Levels,
+            uint256[] memory p1MonIds,
+            uint256[] memory p1Exp,
+            uint256[] memory p1Levels
         );
 
     // Facets — assignment (caller-driven). Delta application happens inside getTeams().
     function assignFacets(uint256[] calldata monIds, uint8[] calldata facetIds) external;
     function getFacetData(address player, uint256 monId)
-        external view returns (uint16 unlockedBitmap, uint8 assignedFacetId);
+        external
+        view
+        returns (uint16 unlockedBitmap, uint8 assignedFacetId);
     function getFacetDeltaForMon(address player, uint256 monId) external view returns (StatDelta memory);
 
     // Move loadout — per-(player, mon) selection of which unlocked catalog moves occupy the 4
@@ -60,6 +81,5 @@ interface ITeamRegistry {
     function assignMoves(uint256[] calldata monIds, uint8[] calldata selectionBitmaps) external;
     function getMoveSelection(address player, uint256 monId) external view returns (uint8 bitmap);
     function getUnlockedMoves(address player, uint256 monId) external view returns (uint8 bitmap);
-    function getMovePool(uint256 monId)
-        external view returns (uint256[] memory moves, uint8[] memory unlockLevels);
+    function getMovePool(uint256 monId) external view returns (uint256[] memory moves, uint8[] memory unlockLevels);
 }

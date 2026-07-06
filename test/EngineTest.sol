@@ -9,9 +9,9 @@ import "../src/Structs.sol";
 
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
@@ -28,8 +28,8 @@ import {ForceSwitchMove} from "./mocks/ForceSwitchMove.sol";
 import {GlobalEffectAttack} from "./mocks/GlobalEffectAttack.sol";
 import {InstantDeathEffect} from "./mocks/InstantDeathEffect.sol";
 import {InstantDeathOnSwitchInEffect} from "./mocks/InstantDeathOnSwitchInEffect.sol";
-import {SelfSwitchAndDamageMove} from "./mocks/SelfSwitchAndDamageMove.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {SelfSwitchAndDamageMove} from "./mocks/SelfSwitchAndDamageMove.sol";
 
 import {IEngineHook} from "../src/IEngineHook.sol";
 
@@ -41,9 +41,9 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
-import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
-import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
 import {DummyStatus} from "./mocks/DummyStatus.sol";
+import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
+import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 contract EngineTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -70,8 +70,7 @@ contract EngineTest is Test, BattleHelper {
         commitManager = new DefaultCommitManager(engine);
         typeCalc = new TestTypeCalculator();
         dummyAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 0, ACCURACY: 0, STAMINA_COST: 0, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 0, ACCURACY: 0, STAMINA_COST: 0, PRIORITY: 0})
         );
 
         uint256[] memory moves = new uint256[](1);
@@ -214,18 +213,30 @@ contract EngineTest is Test, BattleHelper {
         moves[0] = uint256(uint160(address(normalAttack)));
         Mon memory fastMon = Mon({
             stats: MonStats({
-                hp: 10, stamina: 1, speed: 2,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Liquid, type2: Type.None
+                hp: 10,
+                stamina: 1,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Liquid,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
         });
         Mon memory slowMon = Mon({
             stats: MonStats({
-                hp: 10, stamina: 1, speed: 1,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Liquid, type2: Type.None
+                hp: 10,
+                stamina: 1,
+                speed: 1,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Liquid,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
@@ -464,8 +475,7 @@ contract EngineTest is Test, BattleHelper {
 
     function test_nonKOSubsequentMoves() public {
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -520,8 +530,7 @@ contract EngineTest is Test, BattleHelper {
     function test_switchPriorityIsFasterThanMove() public {
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -570,8 +579,7 @@ contract EngineTest is Test, BattleHelper {
     function test_switchPriorityIsSlowerThanSuperfastMove() public {
         // Initialize mons and moves
         IMoveSet superFastAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(superFastAttack)));
@@ -670,8 +678,7 @@ contract EngineTest is Test, BattleHelper {
     function test_defaultStaminaRegenEffect() public {
         // Initialize mons and moves
         IMoveSet superFastAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(superFastAttack)));
@@ -705,7 +712,8 @@ contract EngineTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, teams[0]);
         defaultRegistry.setTeam(BOB, teams[1]);
 
-        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
+        bytes32 battleKey = _startBattle(
+            engine, defaultOracle, defaultRegistry, matchmaker, new IEngineHook[](0), rules, address(commitManager)
         );
 
         // First move of the game has to be selecting their mons (both index 0)
@@ -724,8 +732,7 @@ contract EngineTest is Test, BattleHelper {
     function test_staminaRegenWorksWithZeroRuleset() public {
         // Same setup as test_defaultStaminaRegenEffect but with ruleset = address(0)
         IMoveSet superFastAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(superFastAttack)));
@@ -754,7 +761,14 @@ contract EngineTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, teams[1]);
 
         // Start battle with inline stamina regen sentinel
-        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(INLINE_STAMINA_REGEN_RULESET), address(commitManager)
+        bytes32 battleKey = _startBattle(
+            engine,
+            defaultOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
+            address(commitManager)
         );
 
         // Select mons
@@ -776,12 +790,10 @@ contract EngineTest is Test, BattleHelper {
 
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         IMoveSet inaccurateAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 1, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 1, STAMINA_COST: 1, PRIORITY: 0})
         );
         uint256[] memory normalMoves = new uint256[](1);
         normalMoves[0] = uint256(uint160(address(normalAttack)));
@@ -872,8 +884,7 @@ contract EngineTest is Test, BattleHelper {
     function test_effectAppliedByAttackCanKOForGameEnd() public {
         // Initialize mons and moves
         IMoveSet normalStaminaAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalStaminaAttack)));
@@ -947,8 +958,7 @@ contract EngineTest is Test, BattleHelper {
     function test_effectAppliedByAttackCanKOAndForceSwitch() public {
         // Initialize mons and moves
         IMoveSet normalStaminaAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 7})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalStaminaAttack)));
@@ -1232,8 +1242,7 @@ contract EngineTest is Test, BattleHelper {
     function test_shouldSkipTurnFlagWorks() public {
         // Initialize mons and moves
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 6})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 6})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -1253,8 +1262,7 @@ contract EngineTest is Test, BattleHelper {
             ability: 0
         });
         // Skip Turn attack to skip move
-        IMoveSet skipAttack =
-            new SkipTurnMove(SkipTurnMove.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 7}));
+        IMoveSet skipAttack = new SkipTurnMove(SkipTurnMove.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 7}));
         uint256[] memory skipMoves = new uint256[](1);
         skipMoves[0] = uint256(uint160(address(skipAttack)));
         Mon memory skipMon = Mon({
@@ -1331,8 +1339,7 @@ contract EngineTest is Test, BattleHelper {
 
         Mon[] memory otherTeam = new Mon[](2);
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -1401,8 +1408,7 @@ contract EngineTest is Test, BattleHelper {
             ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -1476,8 +1482,7 @@ contract EngineTest is Test, BattleHelper {
             ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -1564,8 +1569,7 @@ contract EngineTest is Test, BattleHelper {
             ability: 0
         });
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -1947,8 +1951,7 @@ contract EngineTest is Test, BattleHelper {
 
         // A normal mon with a damaging move
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -2043,8 +2046,7 @@ contract EngineTest is Test, BattleHelper {
 
         // A normal mon with a damaging move
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 1})
         );
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(normalAttack)));
@@ -2146,8 +2148,8 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Assert that the effect was only applied once
-        (EffectInstance[] memory effects0, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory effects1, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects0,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects1,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects0.length, 1);
         assertEq(effects1.length, 1);
     }
@@ -2217,8 +2219,7 @@ contract EngineTest is Test, BattleHelper {
             new EffectAttack(reboundEffect, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
         moves[0] = uint256(uint160(address(reboundAttack)));
         IMoveSet normalAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 5, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 0})
         );
         moves[1] = uint256(uint160(address(normalAttack)));
 
@@ -2678,7 +2679,7 @@ contract EngineTest is Test, BattleHelper {
         // Pack extraData: bits 0..1 = targetIndex (1), bits 2..15 = effectIndex
         uint16 editExtraData = uint16(uint256(1) | (uint256(indices[0]) << 2));
         _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
-        (effects, ) = engine.getEffects(battleKey, 1, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));
     }
 

@@ -7,10 +7,10 @@ import {Test} from "forge-std/Test.sol";
 import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
@@ -107,8 +107,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -130,8 +129,7 @@ contract EkinekiTest is Test, BattleHelper {
         registry2.setTeam(ALICE, aliceTeam);
         registry2.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey2 =
-            _startBattle(engine2, mockOracle, registry2, matchmaker2, address(commitManager2));
+        bytes32 battleKey2 = _startBattle(engine2, mockOracle, registry2, matchmaker2, address(commitManager2));
         _commitRevealExecuteForAliceAndBob(
             engine2, commitManager2, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -170,8 +168,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -212,8 +209,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -231,9 +227,7 @@ contract EkinekiTest is Test, BattleHelper {
 
         int32 bobMon1DamageAfterSecond = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         assertEq(
-            bobMon1DamageAfterSecond,
-            bobMon1DamageAfterFirst,
-            "Second sneak attack should not deal additional damage"
+            bobMon1DamageAfterSecond, bobMon1DamageAfterFirst, "Second sneak attack should not deal additional damage"
         );
     }
 
@@ -259,8 +253,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -323,8 +316,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -345,7 +337,9 @@ contract EkinekiTest is Test, BattleHelper {
         uint64 nineKey = uint64(uint256(keccak256(abi.encode(uint256(0), "NINE_NINE_NINE"))));
         uint192 storedTurn = engine.getGlobalKV(battleKey, nineKey);
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
-        assertEq(uint256(storedTurn), currentTurn, "999 should be set for the current turn (which is now the 'next' turn)");
+        assertEq(
+            uint256(storedTurn), currentTurn, "999 should be set for the current turn (which is now the 'next' turn)"
+        );
     }
 
     function test_saviorComplexBoostsOnKO() public {
@@ -413,8 +407,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -507,8 +500,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both select mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -526,9 +518,7 @@ contract EkinekiTest is Test, BattleHelper {
         assertEq(spAtkDeltaFirstSwitch, 15, "Should get 15 sp atk boost from 1 KO");
 
         // Alice switches to mon 2, Bob KOs Alice's mon 2 in the same turn (Bob is faster but switch has higher priority)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint16(2), 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, 0, uint16(2), 0);
 
         // Verify Alice's mon 2 is KO'd
         assertEq(
@@ -611,8 +601,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice selects mon 0 (with savior complex) - no KO'd mons
         _commitRevealExecuteForAliceAndBob(
@@ -662,8 +651,7 @@ contract EkinekiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)

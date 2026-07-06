@@ -7,18 +7,17 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
+import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
-import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 contract MatchmakerTest is Test, BattleHelper {
-
     uint256 constant TIMEOUT = 10;
 
     DefaultCommitManager commitManager;
@@ -378,7 +377,9 @@ contract MatchmakerTest is Test, BattleHelper {
         assertEq(battleData.p1, BOB);
 
         // Check that Alice and Bob can commit/reveal/reveal to switch to mon index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
     }
 
     function test_fastBattleSucceedsAndNoSubsequentAccept() public {
@@ -449,7 +450,7 @@ contract MatchmakerTest is Test, BattleHelper {
         vm.startSnapshotGas("Accept2");
         matchmaker.proposeBattle(proposal);
         uint256 accept2Gas = vm.stopSnapshotGas("Accept2");
-        
+
         // Should be at least 50% cheaper
         assertLt(accept2Gas / 2, accept1Gas);
     }

@@ -2,11 +2,11 @@
 pragma solidity ^0.8.0;
 
 import "../Structs.sol";
+import "./Facets.sol";
 import "./IExpAssigner.sol";
 import "./IGachaPointsAssigner.sol";
 import "./IPhantomTeamRegistry.sol";
 import "./ITeamRegistry.sol";
-import "./Facets.sol";
 import "./MonExp.sol";
 import "./MonOwnership.sol";
 import "./MonRegistry.sol";
@@ -15,22 +15,22 @@ import "./PlayerProfile.sol";
 import "./Quests.sol";
 
 import {
-    GACHA_ROLL_COST,
-    GACHA_POINTS_PER_WIN,
-    GACHA_POINTS_PER_LOSS,
-    GACHA_FIRST_GAME_EVER_BONUS,
-    EXP_PER_SURVIVING_MON,
+    CLEARED_MON_STATE_SENTINEL,
     EXP_PER_KOD_MON,
+    EXP_PER_SURVIVING_MON,
+    GACHA_FIRST_GAME_EVER_BONUS,
+    GACHA_POINTS_PER_LOSS,
+    GACHA_POINTS_PER_WIN,
+    GACHA_ROLL_COST,
     GAME_EXP_MULT,
-    STREAK_FLAT_BONUS_MAX,
-    STREAK_GRACE_WINDOW,
     QUEST_REWARD_MULT,
-    CLEARED_MON_STATE_SENTINEL
+    STREAK_FLAT_BONUS_MAX,
+    STREAK_GRACE_WINDOW
 } from "../Constants.sol";
 import {EngineHookStep, MonStateIndexName} from "../Enums.sol";
-import {EnumerableSetLib} from "../lib/EnumerableSetLib.sol";
 import {IEngine} from "../IEngine.sol";
 import {IEngineHook} from "../IEngineHook.sol";
+import {EnumerableSetLib} from "../lib/EnumerableSetLib.sol";
 import {IGachaRNG} from "../rng/IGachaRNG.sol";
 
 contract GachaTeamRegistry is
@@ -43,6 +43,11 @@ contract GachaTeamRegistry is
     MonExp,
     Quests
 {
+    /// @dev Disambiguates the PlayerProfile implementation against the ITeamRegistry surface.
+    function isWhitelistedOpponent(address addr) public view override(PlayerProfile, ITeamRegistry) returns (bool) {
+        return PlayerProfile.isWhitelistedOpponent(addr);
+    }
+
     using EnumerableSetLib for *;
 
     // ----- Gacha constants -----
@@ -88,7 +93,7 @@ contract GachaTeamRegistry is
     uint256 internal constant BONUS_FIRST_ROLL = 1 << 0;
     uint256 internal constant BONUS_FIRST_GAME = 1 << 1;
     // bit 2 reserved (formerly BONUS_HARD_CPU)
-    uint256 internal constant BONUS_QUEST      = 1 << 3;
+    uint256 internal constant BONUS_QUEST = 1 << 3;
 
     // ----- Errors -----
     error NotWhitelistedOpponent();
@@ -102,6 +107,11 @@ contract GachaTeamRegistry is
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
     event GachaEvent(bytes32 indexed battleKey, uint256 p0Packed, uint256 p1Packed);
+    // Multi battles: one lane per seat in canonical order [p0, p2, p1, p3]; CPU lanes zero.
+    // Lane layout identical to GachaEvent (exp/facet lanes 0-3 used — seat teams are 4 mons).
+    event GachaMultiEvent(
+        bytes32 indexed battleKey, uint256 seat0Packed, uint256 seat1Packed, uint256 seat2Packed, uint256 seat3Packed
+    );
 
     // ----- Immutables -----
     IEngine public immutable ENGINE;
@@ -140,9 +150,7 @@ contract GachaTeamRegistry is
         IEngine _ENGINE,
         IGachaRNG _RNG,
         GachaTeamRegistry _PREVIOUS_REGISTRY
-    )
-        PackedTeamStore(_MONS_PER_TEAM, _MOVES_PER_MON)
-    {
+    ) PackedTeamStore(_MONS_PER_TEAM, _MOVES_PER_MON) {
         ENGINE = _ENGINE;
         RNG = address(_RNG) == address(0) ? IGachaRNG(address(this)) : _RNG;
         PREVIOUS_REGISTRY = _PREVIOUS_REGISTRY;
@@ -157,7 +165,8 @@ contract GachaTeamRegistry is
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
 
         // Flawless / Last Stand
-        preds[0] = Quests.Predicate({op: Quests.Op.ALIVE_COUNT, cmp: Quests.Cmp.GE, negate: false, arg: 0, operand: teamSize});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.ALIVE_COUNT, cmp: Quests.Cmp.GE, negate: false, arg: 0, operand: teamSize});
         _addQuest(preds);
         preds[0] = Quests.Predicate({op: Quests.Op.ALIVE_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
         _addQuest(preds);
@@ -175,7 +184,8 @@ contract GachaTeamRegistry is
         _addQuest(preds);
 
         // Fully Equipped / Veteran Squad / Star Student
-        preds[0] = Quests.Predicate({op: Quests.Op.FACET_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: teamSize});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.FACET_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: teamSize});
         _addQuest(preds);
         preds[0] = Quests.Predicate({op: Quests.Op.MIN_LEVEL, cmp: Quests.Cmp.GT, negate: false, arg: 0, operand: 3});
         _addQuest(preds);
@@ -202,12 +212,10 @@ contract GachaTeamRegistry is
     /// non-zero facet bit as unlocked, so the user's own `assignFacets` won't revert
     /// `FacetNotUnlocked` later. Does NOT add the mons to `monsOwned` — the user
     /// still can't swap mons they don't own via `updateTeam`.
-    function setTeamForUser(
-        address user,
-        uint256 slot,
-        uint256[] memory monIndices,
-        uint8[] memory facetIds
-    ) external onlyOwner {
+    function setTeamForUser(address user, uint256 slot, uint256[] memory monIndices, uint8[] memory facetIds)
+        external
+        onlyOwner
+    {
         if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
         if (facetIds.length != monIndices.length) revert FacetArgsLengthMismatch();
 
@@ -246,7 +254,9 @@ contract GachaTeamRegistry is
             }
             currentSlot = _writeFacetSlotForMon(currentSlot, lane, unlockedBitmap, facetId);
             dirty = true;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         if (lastBucket != type(uint256).max && dirty) {
             facetData[user][lastBucket] = currentSlot;
@@ -304,23 +314,23 @@ contract GachaTeamRegistry is
             if (facetId > TOTAL_FACETS) revert InvalidFacetId();
             packedFacets |= uint256(facetId) << (i * OPP_FACET_BITS_PER_SLOT);
             packedMoves |= uint256(moveSelections[i]) << (i * OPP_MOVE_BITS_PER_SLOT);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         opponentTeamFacetsPacked[opponent][phantomKey] = packedFacets;
         opponentTeamMovesPacked[opponent][phantomKey] = packedMoves;
     }
 
     /// @notice Unpack the caller's configured facets for a CPU opponent.
-    function getOpponentTeamFacets(address user, address opponent)
-        external
-        view
-        returns (uint8[] memory facetIds)
-    {
+    function getOpponentTeamFacets(address user, address opponent) external view returns (uint8[] memory facetIds) {
         uint256 packed = opponentTeamFacetsPacked[opponent][uint16(uint160(user))];
         facetIds = new uint8[](MONS_PER_TEAM);
         for (uint256 i; i < MONS_PER_TEAM;) {
             facetIds[i] = uint8((packed >> (i * OPP_FACET_BITS_PER_SLOT)) & OPP_FACET_SLOT_MASK);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -334,7 +344,9 @@ contract GachaTeamRegistry is
         moveSelections = new uint8[](MONS_PER_TEAM);
         for (uint256 i; i < MONS_PER_TEAM;) {
             moveSelections[i] = uint8((packed >> (i * OPP_MOVE_BITS_PER_SLOT)) & OPP_MOVE_SLOT_MASK);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -367,7 +379,9 @@ contract GachaTeamRegistry is
             levels[i] = _levelForExp(e);
             (facetUnlocked[i], facetEquipped[i]) = getFacetData(player, id);
             moveSelections[i] = _getMoveSelection(player, id);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -375,7 +389,11 @@ contract GachaTeamRegistry is
     // these directly at startBattle — no separate delta channel. Whitelisted (CPU) sides pull
     // facets from the per-(user, opponent) phantom slot the human caller configured via
     // setOpponentTeam; human sides use per-mon facetData.
-    function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex) external view returns (Mon[] memory, Mon[] memory) {
+    function getTeams(address p0, uint256 p0TeamIndex, address p1, uint256 p1TeamIndex)
+        external
+        view
+        returns (Mon[] memory, Mon[] memory)
+    {
         // Read each side's CPU flag ONCE (playerData SLOAD) and thread it into both the liveness
         // check and the facet-source selection below (was: two reads per side).
         bool p0IsCpu = isWhitelistedOpponent(p0);
@@ -401,8 +419,7 @@ contract GachaTeamRegistry is
 
         // Full lane-indexed (8-wide) catalog rows so the move resolver can map selection bit i to
         // catalog lane i; abilities is one word per mon (0 = none).
-        (MonStats[] memory stats, uint256[][] memory fullMoves, uint256[] memory abilities) =
-            _getTeamMonData(ids);
+        (MonStats[] memory stats, uint256[][] memory fullMoves, uint256[] memory abilities) = _getTeamMonData(ids);
 
         uint256 p0CpuFacets = p0IsCpu ? opponentTeamFacetsPacked[p0][p0TeamIndex] : 0;
         uint256 p1CpuFacets = p1IsCpu ? opponentTeamFacetsPacked[p1][p1TeamIndex] : 0;
@@ -440,11 +457,8 @@ contract GachaTeamRegistry is
                 ? uint8((p1CpuMoves >> (i * OPP_MOVE_BITS_PER_SLOT)) & OPP_MOVE_SLOT_MASK)
                 : _moveSelectionForMonCached(p1, ids[i + MONS_PER_TEAM], p1MoveBucket);
 
-            p0Team[i] = Mon({
-                stats: stats[i],
-                ability: abilities[i],
-                moves: _resolveBattleMoves(fullMoves[i], p0MoveSel)
-            });
+            p0Team[i] =
+                Mon({stats: stats[i], ability: abilities[i], moves: _resolveBattleMoves(fullMoves[i], p0MoveSel)});
             p1Team[i] = Mon({
                 stats: stats[i + MONS_PER_TEAM],
                 ability: abilities[i + MONS_PER_TEAM],
@@ -501,12 +515,12 @@ contract GachaTeamRegistry is
         if (facetId == 0) return;
         StatDelta memory d = _computeFacetDelta(stats, facetId);
         // Truncated ±5% can't underflow a uint32 stat for positive bases.
-        if (d.hp    != 0) stats.hp             = uint32(int32(stats.hp)             + int32(d.hp));
-        if (d.atk   != 0) stats.attack         = uint32(int32(stats.attack)         + int32(d.atk));
-        if (d.spAtk != 0) stats.specialAttack  = uint32(int32(stats.specialAttack)  + int32(d.spAtk));
-        if (d.def   != 0) stats.defense        = uint32(int32(stats.defense)        + int32(d.def));
+        if (d.hp != 0) stats.hp = uint32(int32(stats.hp) + int32(d.hp));
+        if (d.atk != 0) stats.attack = uint32(int32(stats.attack) + int32(d.atk));
+        if (d.spAtk != 0) stats.specialAttack = uint32(int32(stats.specialAttack) + int32(d.spAtk));
+        if (d.def != 0) stats.defense = uint32(int32(stats.defense) + int32(d.def));
         if (d.spDef != 0) stats.specialDefense = uint32(int32(stats.specialDefense) + int32(d.spDef));
-        if (d.speed != 0) stats.speed          = uint32(int32(stats.speed)          + int32(d.speed));
+        if (d.speed != 0) stats.speed = uint32(int32(stats.speed) + int32(d.speed));
     }
 
     // =====================================================================
@@ -591,7 +605,9 @@ contract GachaTeamRegistry is
         uint256[] memory owned = prev.getOwned(player);
         for (uint256 i; i < owned.length;) {
             monsOwned[player].add(owned[i]);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         // Exp, facets, and move selections share the same 16-mon bucketing, so one loop copies all
@@ -607,14 +623,18 @@ contract GachaTeamRegistry is
             try prev.selectedMoveBitmap(player, b) returns (uint256 bitmap) {
                 selectedMoveBitmap[player][b] = bitmap;
             } catch {}
-            unchecked { ++b; }
+            unchecked {
+                ++b;
+            }
         }
 
         // Teams — packed group words (4 teams × 64 bits each) plus the order/live-bitmap word.
         uint256 numGroups = (MAX_TEAMS_PER_PLAYER * BITS_PER_LANE + 255) / 256;
         for (uint256 g; g < numGroups;) {
             teamGroupsPacked[player][g] = prev.teamGroupsPacked(player, g);
-            unchecked { ++g; }
+            unchecked {
+                ++g;
+            }
         }
         teamOrderPacked[player] = prev.teamOrderPacked(player);
     }
@@ -646,112 +666,162 @@ contract GachaTeamRegistry is
 
         BattleEndContext memory ctx = ENGINE.getBattleEndContext(battleKey);
 
+        if (ctx.isMultiMode) {
+            _onMultiBattleEnd(battleKey, ctx);
+            return;
+        }
+
         // No rewards on timeout/forfeit: at least one side must have all mons KO'd.
         uint8 allKOd = uint8((1 << MONS_PER_TEAM) - 1);
         if (ctx.p0KOBitmap != allKOd && ctx.p1KOBitmap != allKOd) return;
 
-        uint32 currentTime = uint32(block.timestamp);
-        // Quest day + pool length load lazily (one packed slot) only when a human WINNER reaches
-        // the quest gate — losses to CPUs and draws never pay the read.
-        uint32 currentDay;
-        uint256 questLen;
-        bool questCfgLoaded;
-
         uint256 packed0 = playerData[ctx.p0];
         uint256 packed1 = playerData[ctx.p1];
-        bool isCpu0 = packed0 & IS_CPU_BIT != 0;
-        bool isCpu1 = packed1 & IS_CPU_BIT != 0;
 
+        QuestGate memory qg;
         uint256[2] memory packedEvents;
-
-        for (uint256 playerIndex; playerIndex < 2; ++playerIndex) {
-            bool isCPU = playerIndex == 0 ? isCpu0 : isCpu1;
-            if (isCPU) continue; // CPU side has no human-side state to update.
-
-            address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
-            uint256 teamIdx = playerIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
-            uint8 koBitmap = playerIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
-            uint256 basePts = ctx.winner == player ? POINTS_PER_WIN : POINTS_PER_LOSS;
-            uint256 packed = playerIndex == 0 ? packed0 : packed1;
-
-            uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT);
-            uint256 points = packed & POINTS_MASK_128;
-            uint32 lastFirstGameTs = uint32(packed >> LAST_FIRST_GAME_TS_SHIFT);
-            uint32 lastSeenTs = uint32(packed >> LAST_SEEN_TS_SHIFT);
-            uint256 streakDay = (packed >> STREAK_DAY_SHIFT) & STREAK_DAY_MASK;
-            uint32 lastQuestCompletedDay = uint32(packed >> LAST_QUEST_DAY_SHIFT);
-
-            uint256 bonusFlags;
-            uint256 streakFlat;
-            // Flat per-mon exp multiplier on every battle, game-type agnostic. Quest stacks on top.
-            uint256 expMult = GAME_EXP_MULT;
-            uint256 gachaMult = 1;
-
-            // The rolling 24h cooldown (measured from the last bonus-earning game) gates the
-            // streak bonus to once per day. The 36h grace decides ratchet-vs-reset, but is
-            // measured from the last battle of ANY kind (lastSeenTs) rather than the last
-            // bonus: a sub-24h "early" play still counts as activity, so it can't strand the
-            // anchor into a phantom multi-day gap that wrongly resets an active player's
-            // streak. Pure timestamp delta avoids a UTC-midnight cliff.
-            uint256 bonusGap = lastFirstGameTs == 0 ? type(uint256).max : currentTime - lastFirstGameTs;
-            if (bonusGap >= FIRST_GAME_OF_DAY_COOLDOWN) {
-                uint256 seenGap = lastSeenTs == 0 ? type(uint256).max : currentTime - lastSeenTs;
-                if (seenGap > STREAK_GRACE_WINDOW) {
-                    streakDay = 1;
-                } else if (streakDay < STREAK_FLAT_BONUS_MAX) {
-                    streakDay += 1;
-                }
-                streakFlat = streakDay;
-                lastFirstGameTs = currentTime;
-                bonusFlags |= BONUS_FIRST_GAME;
-            }
-            lastSeenTs = currentTime; // every counted battle marks activity for the grace window
-
-            if (ctx.winner == player) {
-                if (!questCfgLoaded) {
-                    (currentDay, questLen) = _questDayAndPoolLen();
-                    questCfgLoaded = true;
-                }
-                if (
-                    lastQuestCompletedDay != currentDay && questLen > 0
-                        && _evalActiveQuest(ctx, playerIndex, battleKey, currentDay, questLen)
-                ) {
-                    gachaMult *= QUEST_REWARD_MULT;
-                    expMult *= QUEST_REWARD_MULT;
-                    lastQuestCompletedDay = currentDay;
-                    bonusFlags |= BONUS_QUEST;
-                }
-            }
-
-            uint256 pointsThisBattle = (basePts + streakFlat) * gachaMult;
-            if (preservedFlags & BONUS_AWARDED_BIT == 0) {
-                pointsThisBattle += FIRST_GAME_EVER_BONUS;
-                preservedFlags |= BONUS_AWARDED_BIT;
-                bonusFlags |= BONUS_FIRST_ROLL;
-            }
-            points += pointsThisBattle;
-
-            // points is bounded by uint128 invariant on the prior balance + a per-battle delta
-            // that's far below 2^128, so no mask needed on writeback.
-            playerData[player] = preservedFlags
-                | (streakDay << STREAK_DAY_SHIFT)
-                | (uint256(lastQuestCompletedDay) << LAST_QUEST_DAY_SHIFT)
-                | (uint256(lastSeenTs) << LAST_SEEN_TS_SHIFT)
-                | (uint256(lastFirstGameTs) << LAST_FIRST_GAME_TS_SHIFT)
-                | points;
-
-            uint256 expFacetPacked = _applyExpAndFacetDraws(player, teamIdx, koBitmap, expMult, streakFlat);
-
-            uint256 outcome = ctx.winner == player ? 1 : (ctx.winner == address(0) ? 2 : 0);
-            packedEvents[playerIndex] = (pointsThisBattle & 0xFFFF)
-                | expFacetPacked
-                | (bonusFlags << GE_BONUS_SHIFT)
-                | ((expMult & 0xFF) << GE_MULT_SHIFT)
-                | (outcome << GE_OUTCOME_SHIFT)
-                | (streakDay << GE_STREAK_SHIFT);
+        if (packed0 & IS_CPU_BIT == 0) {
+            packedEvents[0] = _settleHumanSeat(battleKey, ctx, 0, packed0, qg);
+        }
+        if (packed1 & IS_CPU_BIT == 0) {
+            packedEvents[1] = _settleHumanSeat(battleKey, ctx, 1, packed1, qg);
         }
 
         emit GachaEvent(battleKey, packedEvents[0], packedEvents[1]);
+    }
+
+    /// @dev Multi settlement: same formulas per human seat, KO/exp over the seat's quarter of
+    ///      the 8-mon side roster (the engine fixes seat teams at 4). CPU seats emit a zero lane.
+    function _onMultiBattleEnd(bytes32 battleKey, BattleEndContext memory ctx) private {
+        // No rewards on timeout/forfeit: one side's full roster must be KO'd.
+        if (ctx.p0KOBitmap != 0xFF && ctx.p1KOBitmap != 0xFF) return;
+
+        QuestGate memory qg;
+        uint256[4] memory lanes;
+        for (uint256 seatIndex; seatIndex < 4; ++seatIndex) {
+            (address player,,,) = _seatSettleParams(ctx, seatIndex);
+            uint256 packed = playerData[player];
+            if (packed & IS_CPU_BIT != 0) continue;
+            lanes[seatIndex] = _settleHumanSeat(battleKey, ctx, seatIndex, packed, qg);
+        }
+        emit GachaMultiEvent(battleKey, lanes[0], lanes[1], lanes[2], lanes[3]);
+    }
+
+    // Lazily-shared quest config for the seat loop: the first human winner pays the one packed
+    // SLOAD; losses to CPUs and draws never load it.
+    struct QuestGate {
+        uint32 day;
+        uint256 poolLen;
+        bool loaded;
+    }
+
+    /// @dev Seat identity for settlement and quest opcodes. Non-Multi: seatIndex 0/1 = p0/p1.
+    ///      Multi: canonical order [p0, p2, p1, p3]; the KO bitmap is the seat's 4-bit quarter
+    ///      slice and winning is by side.
+    function _seatSettleParams(BattleEndContext memory ctx, uint256 seatIndex)
+        private
+        pure
+        returns (address player, uint256 teamIdx, uint8 koBitmap, bool won)
+    {
+        if (!ctx.isMultiMode) {
+            player = seatIndex == 0 ? ctx.p0 : ctx.p1;
+            teamIdx = seatIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
+            koBitmap = seatIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
+            won = ctx.winner == player;
+            return (player, teamIdx, koBitmap, won);
+        }
+        uint256 side = seatIndex >> 1;
+        if (seatIndex == 0) (player, teamIdx) = (ctx.p0, ctx.p0TeamIndex);
+        else if (seatIndex == 1) (player, teamIdx) = (ctx.p2, ctx.p2TeamIndex);
+        else if (seatIndex == 2) (player, teamIdx) = (ctx.p1, ctx.p1TeamIndex);
+        else (player, teamIdx) = (ctx.p3, ctx.p3TeamIndex);
+        uint8 sideKO = side == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
+        koBitmap = uint8((sideKO >> ((seatIndex & 1) * 4)) & 0x0F);
+        won = ctx.winner != address(0) && ctx.winner == (side == 0 ? ctx.p0 : ctx.p1);
+    }
+
+    /// @dev One human seat's end-of-battle rewards (streak / quest / points / exp) and its
+    ///      packed GachaEvent lane. `packed` is the seat's preloaded playerData word.
+    function _settleHumanSeat(
+        bytes32 battleKey,
+        BattleEndContext memory ctx,
+        uint256 seatIndex,
+        uint256 packed,
+        QuestGate memory qg
+    ) private returns (uint256 eventLane) {
+        (address player, uint256 teamIdx, uint8 koBitmap, bool won) = _seatSettleParams(ctx, seatIndex);
+        uint256 basePts = won ? POINTS_PER_WIN : POINTS_PER_LOSS;
+        uint32 currentTime = uint32(block.timestamp);
+
+        uint256 preservedFlags = packed & (BONUS_AWARDED_BIT | IS_CPU_BIT);
+        uint256 points = packed & POINTS_MASK_128;
+        uint32 lastFirstGameTs = uint32(packed >> LAST_FIRST_GAME_TS_SHIFT);
+        uint32 lastSeenTs = uint32(packed >> LAST_SEEN_TS_SHIFT);
+        uint256 streakDay = (packed >> STREAK_DAY_SHIFT) & STREAK_DAY_MASK;
+        uint32 lastQuestCompletedDay = uint32(packed >> LAST_QUEST_DAY_SHIFT);
+
+        uint256 bonusFlags;
+        uint256 streakFlat;
+        // Flat per-mon exp multiplier on every battle, game-type agnostic. Quest stacks on top.
+        uint256 expMult = GAME_EXP_MULT;
+        uint256 gachaMult = 1;
+
+        // The rolling 24h cooldown (measured from the last bonus-earning game) gates the
+        // streak bonus to once per day. The 36h grace decides ratchet-vs-reset, but is
+        // measured from the last battle of ANY kind (lastSeenTs) rather than the last
+        // bonus: a sub-24h "early" play still counts as activity, so it can't strand the
+        // anchor into a phantom multi-day gap that wrongly resets an active player's
+        // streak. Pure timestamp delta avoids a UTC-midnight cliff.
+        uint256 bonusGap = lastFirstGameTs == 0 ? type(uint256).max : currentTime - lastFirstGameTs;
+        if (bonusGap >= FIRST_GAME_OF_DAY_COOLDOWN) {
+            uint256 seenGap = lastSeenTs == 0 ? type(uint256).max : currentTime - lastSeenTs;
+            if (seenGap > STREAK_GRACE_WINDOW) {
+                streakDay = 1;
+            } else if (streakDay < STREAK_FLAT_BONUS_MAX) {
+                streakDay += 1;
+            }
+            streakFlat = streakDay;
+            lastFirstGameTs = currentTime;
+            bonusFlags |= BONUS_FIRST_GAME;
+        }
+        lastSeenTs = currentTime; // every counted battle marks activity for the grace window
+
+        if (won) {
+            if (!qg.loaded) {
+                (qg.day, qg.poolLen) = _questDayAndPoolLen();
+                qg.loaded = true;
+            }
+            if (
+                lastQuestCompletedDay != qg.day && qg.poolLen > 0
+                    && _evalActiveQuest(ctx, seatIndex, battleKey, qg.day, qg.poolLen)
+            ) {
+                gachaMult *= QUEST_REWARD_MULT;
+                expMult *= QUEST_REWARD_MULT;
+                lastQuestCompletedDay = qg.day;
+                bonusFlags |= BONUS_QUEST;
+            }
+        }
+
+        uint256 pointsThisBattle = (basePts + streakFlat) * gachaMult;
+        if (preservedFlags & BONUS_AWARDED_BIT == 0) {
+            pointsThisBattle += FIRST_GAME_EVER_BONUS;
+            preservedFlags |= BONUS_AWARDED_BIT;
+            bonusFlags |= BONUS_FIRST_ROLL;
+        }
+        points += pointsThisBattle;
+
+        // points is bounded by uint128 invariant on the prior balance + a per-battle delta
+        // that's far below 2^128, so no mask needed on writeback.
+        playerData[player] = preservedFlags | (streakDay << STREAK_DAY_SHIFT)
+            | (uint256(lastQuestCompletedDay) << LAST_QUEST_DAY_SHIFT) | (uint256(lastSeenTs) << LAST_SEEN_TS_SHIFT)
+            | (uint256(lastFirstGameTs) << LAST_FIRST_GAME_TS_SHIFT) | points;
+
+        // Lane prefix composed before the exp walk keeps its locals from living across the
+        // call (stack pressure — the walk inlines here).
+        uint256 outcome = won ? 1 : (ctx.winner == address(0) ? 2 : 0);
+        eventLane = (pointsThisBattle & 0xFFFF) | (bonusFlags << GE_BONUS_SHIFT) | ((expMult & 0xFF) << GE_MULT_SHIFT)
+            | (outcome << GE_OUTCOME_SHIFT) | (streakDay << GE_STREAK_SHIFT);
+        eventLane |= _applyExpAndFacetDraws(player, teamIdx, koBitmap, expMult, streakFlat);
     }
 
     /// @dev Walks the team in one pass, sharing lastBucket across exp + facet slot reads.
@@ -793,8 +863,8 @@ contract GachaTeamRegistry is
             uint256 gain = (baseExp + streakFlat) * expMult;
             uint256 newExp = oldExp + gain;
             if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
-            expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
-                | (newExp << (lane * EXP_BITS_PER_MON));
+            expSlot =
+                (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON))) | (newExp << (lane * EXP_BITS_PER_MON));
 
             // Track actual gain for the event (post-cap), saturating at lane width.
             uint256 actualGain = newExp - oldExp;
@@ -811,7 +881,9 @@ contract GachaTeamRegistry is
                 expFacetPacked |= drawnBitmap << (GE_FACETS_SHIFT + j * GE_FACETS_BITS_PER_MON);
             }
 
-            unchecked { ++j; }
+            unchecked {
+                ++j;
+            }
         }
 
         if (lastBucket != type(uint256).max) {
@@ -821,10 +893,8 @@ contract GachaTeamRegistry is
     }
 
     function _facetIdForMon(address player, uint256 monId) private view returns (uint8 facetId) {
-        (, facetId) = _readFacetSlotForMon(
-            facetData[player][monId / MONS_PER_FACET_BUCKET],
-            monId % MONS_PER_FACET_BUCKET
-        );
+        (, facetId) =
+            _readFacetSlotForMon(facetData[player][monId / MONS_PER_FACET_BUCKET], monId % MONS_PER_FACET_BUCKET);
     }
 
     // =====================================================================
@@ -869,18 +939,30 @@ contract GachaTeamRegistry is
     }
 
     /// @dev Quest opcode dispatch. Has direct access to registry storage and the engine.
-    function _extract(
-        uint8 op,
-        uint16 arg,
-        BattleEndContext memory ctx,
-        uint256 playerIndex,
-        bytes32 battleKey
-    ) internal view override returns (int256) {
+    ///      `playerIndex` is the seat index (Multi: canonical [p0, p2, p1, p3]). Team-shaped
+    ///      opcodes read the seat's own 4-mon team and quarter KO slice; engine reads use the
+    ///      seat's side with roster indices offset into its quarter.
+    function _extract(uint8 op, uint16 arg, BattleEndContext memory ctx, uint256 playerIndex, bytes32 battleKey)
+        internal
+        view
+        override
+        returns (int256)
+    {
         Op opcode = Op(op);
-        address player = playerIndex == 0 ? ctx.p0 : ctx.p1;
-        uint256 teamIdx = playerIndex == 0 ? ctx.p0TeamIndex : ctx.p1TeamIndex;
-        uint8 koBitmap = playerIndex == 0 ? ctx.p0KOBitmap : ctx.p1KOBitmap;
-        uint8 activeMon = playerIndex == 0 ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
+        (address player, uint256 teamIdx, uint8 koBitmap,) = _seatSettleParams(ctx, playerIndex);
+        uint256 sideIndex = playerIndex;
+        uint256 quarterShift;
+        int256 activeMon; // seat-relative team index of the seat's own slot; -1 = empty lane
+        if (ctx.isMultiMode) {
+            sideIndex = playerIndex >> 1;
+            quarterShift = (playerIndex & 1) * 4;
+            uint8 lane = (playerIndex & 1) == 0
+                ? (sideIndex == 0 ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex)
+                : (sideIndex == 0 ? ctx.p0ActiveMonExtIndex : ctx.p1ActiveMonExtIndex);
+            activeMon = lane == 0xFF ? int256(-1) : int256(uint256(lane) - quarterShift);
+        } else {
+            activeMon = int256(uint256(playerIndex == 0 ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex));
+        }
 
         if (opcode == Op.TURNS) {
             return int256(uint256(ctx.turnId));
@@ -911,12 +993,14 @@ contract GachaTeamRegistry is
             return (koBitmap & (1 << uint256(arg))) == 0 ? int256(1) : int256(0);
         }
         if (opcode == Op.ACTIVE_SLOT_INDEX) {
-            return int256(uint256(activeMon));
+            return activeMon;
         }
         if (opcode == Op.MON_STATE) {
             uint256 slot = (uint256(arg) >> MON_STATE_SLOT_SHIFT) & MON_STATE_FIELD_MASK;
             uint256 stateField = uint256(arg) & MON_STATE_FIELD_MASK;
-            return int256(ENGINE.getMonStateForBattle(battleKey, playerIndex, slot, MonStateIndexName(stateField)));
+            return int256(
+                ENGINE.getMonStateForBattle(battleKey, sideIndex, quarterShift + slot, MonStateIndexName(stateField))
+            );
         }
         if (opcode == Op.MIN_LEVEL || opcode == Op.MAX_LEVEL) {
             uint256 packedTeam = _readTeamLane(player, teamIdx);
@@ -926,7 +1010,9 @@ contract GachaTeamRegistry is
                 uint256 monId = (packedTeam >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
                 uint256 lvl = _levelForExp(_getExp(player, monId));
                 if (isMin ? lvl < acc : lvl > acc) acc = lvl;
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
             return int256(acc);
         }
@@ -939,18 +1025,23 @@ contract GachaTeamRegistry is
                 uint256 lane = monId % MONS_PER_FACET_BUCKET;
                 (, uint8 assignedFacet) = _readFacetSlotForMon(facetData[player][bucket], lane);
                 if (assignedFacet != 0) ++count;
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
             return int256(count);
         }
         if (opcode == Op.MIN_HP_DELTA || opcode == Op.MAX_HP_DELTA) {
-            MonState[] memory states = ENGINE.getMonStatesForSide(battleKey, playerIndex);
+            MonState[] memory states = ENGINE.getMonStatesForSide(battleKey, sideIndex);
             bool isMin = opcode == Op.MIN_HP_DELTA;
             int256 acc = isMin ? type(int256).max : type(int256).min;
-            for (uint256 i; i < states.length;) {
+            uint256 hi = ctx.isMultiMode ? quarterShift + 4 : states.length;
+            for (uint256 i = quarterShift; i < hi;) {
                 int256 d = states[i].hpDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(states[i].hpDelta);
                 if (isMin ? d < acc : d > acc) acc = d;
-                unchecked { ++i; }
+                unchecked {
+                    ++i;
+                }
             }
             return acc;
         }

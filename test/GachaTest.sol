@@ -12,8 +12,8 @@ import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
-import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
+import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 import "./mocks/TestTeamRegistry.sol";
@@ -83,10 +83,20 @@ contract GachaTest is Test, BattleHelper {
             gachaRegistry.createMon(
                 i,
                 MonStats({
-                    hp: 10, stamina: 2, speed: 2, attack: 1, defense: 1,
-                    specialAttack: 1, specialDefense: 1, type1: Type.Fire, type2: Type.None
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
                 }),
-                new uint256[](0), new uint256[](0), new bytes32[](0), new bytes32[](0)
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
             );
         }
 
@@ -104,10 +114,20 @@ contract GachaTest is Test, BattleHelper {
             gachaRegistry.createMon(
                 i,
                 MonStats({
-                    hp: 10, stamina: 2, speed: 2, attack: 1, defense: 1,
-                    specialAttack: 1, specialDefense: 1, type1: Type.Fire, type2: Type.None
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
                 }),
-                new uint256[](0), new uint256[](0), new bytes32[](0), new bytes32[](0)
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
             );
         }
 
@@ -177,7 +197,8 @@ contract GachaTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
         IEngineHook[] memory hooks = new IEngineHook[](1);
         hooks[0] = gachaRegistry;
-        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+        bytes32 battleKey =
+            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
 
         // Alice commits switching to mon index 0
         vm.startPrank(ALICE);
@@ -277,7 +298,6 @@ contract GachaTest is Test, BattleHelper {
         vm.stopPrank();
     }
 
-
     function test_firstGameBonusNotReawardedAfterRoll() public {
         // Repro: first battle → roll → second battle. The ROLL_COST first-game
         // bonus must only fire once, even though a roll happens in between.
@@ -338,8 +358,7 @@ contract GachaTest is Test, BattleHelper {
         // Alice: FIRST_GAME_EVER_BONUS + (POINTS_PER_WIN + streak day 1) * 1
         uint256 alicePointsAfterFirstBattle = gachaRegistry.pointsBalance(ALICE);
         assertEq(
-            alicePointsAfterFirstBattle,
-            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
+            alicePointsAfterFirstBattle, gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
         );
 
         // ---- Roll ----
@@ -351,8 +370,7 @@ contract GachaTest is Test, BattleHelper {
         assertEq(alicePointsAfterRoll, alicePointsAfterFirstBattle - gachaRegistry.ROLL_COST());
 
         // ---- Second battle ----
-        battleKey =
-            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+        battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
         vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         vm.startPrank(ALICE);
         commitManager.commitMove(battleKey, keccak256(abi.encodePacked(SWITCH_MOVE_INDEX, bytes32(""), uint16(0))));
@@ -362,12 +380,8 @@ contract GachaTest is Test, BattleHelper {
         assertEq(engine.getWinner(battleKey), ALICE);
 
         // Second battle awards POINTS_PER_WIN only — the first-game bonus must not fire again.
-        assertEq(
-            gachaRegistry.pointsBalance(ALICE),
-            alicePointsAfterRoll + gachaRegistry.POINTS_PER_WIN()
-        );
+        assertEq(gachaRegistry.pointsBalance(ALICE), alicePointsAfterRoll + gachaRegistry.POINTS_PER_WIN());
     }
-
 
     /// @dev D24: doubles battles pay the same default rewards through the same gacha hook —
     ///      driven to a real win so onBattleEnd reads doubles KO bitmaps, not a timeout.
@@ -375,8 +389,7 @@ contract GachaTest is Test, BattleHelper {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
         TestTypeCalculator typeCalc = new TestTypeCalculator();
         CustomAttack killAttack = new CustomAttack(
-            typeCalc,
-            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
         );
 
         uint256[] memory moves = new uint256[](1);
@@ -418,6 +431,10 @@ contract GachaTest is Test, BattleHelper {
                 p0TeamIndex: 0,
                 p1: BOB,
                 p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: defaultRegistry,
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: IRuleset(address(0)),
@@ -434,14 +451,16 @@ contract GachaTest is Test, BattleHelper {
         uint104 salt = uint104(0xD0B);
         engine.executeWithSlotMoves(
             battleKey,
-            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32) | (uint256(salt) << 48),
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32)
+                | (uint256(salt) << 48),
             uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32) | (uint256(salt) << 48)
         );
         uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
         uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
         address winner = engine.executeWithSlotMoves(
             battleKey,
-            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32) | (uint256(salt) << 48),
+            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
+                | (uint256(salt) << 48),
             uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
         );
         assertEq(winner, ALICE);
@@ -454,6 +473,317 @@ contract GachaTest is Test, BattleHelper {
         assertEq(
             gachaRegistry.pointsBalance(BOB),
             gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_LOSS() + 1
+        );
+    }
+
+    address constant CARL = address(0x3);
+    address constant DAVE = address(0x4);
+
+    /// @dev Multi battle setup shared by the rewards tests: ALICE+CARL (side 0, killers) vs
+    ///      BOB+DAVE (side 1). Returns the pre-start battle key.
+    function _startMultiWithGachaHook(GachaTeamRegistry gachaRegistry) internal returns (bytes32 battleKey) {
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+        CustomAttack weakAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        address[4] memory seats = [ALICE, BOB, CARL, DAVE];
+        for (uint256 i; i < 4; ++i) {
+            Mon[] memory team = new Mon[](4);
+            for (uint256 j; j < 4; ++j) {
+                uint256[] memory moves = new uint256[](1);
+                moves[0] = uint256(uint160(address(i % 2 == 0 ? killAttack : weakAttack)));
+                team[j] = Mon({
+                    stats: MonStats({
+                        hp: i % 2 == 0 ? 1000 : 100,
+                        stamina: 5,
+                        speed: i % 2 == 0 ? 10 : 2,
+                        attack: 10,
+                        defense: 10,
+                        specialAttack: 10,
+                        specialDefense: 10,
+                        type1: Type.Air,
+                        type2: Type.None
+                    }),
+                    moves: moves,
+                    ability: 0
+                });
+            }
+            defaultRegistry.setTeam(seats[i], team);
+            address[] memory toAdd = new address[](1);
+            toAdd[0] = address(this);
+            vm.prank(seats[i]);
+            engine.updateMatchmakers(toAdd, new address[](0));
+        }
+
+        IEngineHook[] memory hooks = new IEngineHook[](1);
+        hooks[0] = gachaRegistry;
+        (battleKey,) = engine.computePartyKey(ALICE, BOB, CARL, DAVE);
+        engine.startBattleWithMode(
+            Battle({
+                p0: ALICE,
+                p0TeamIndex: 0,
+                p1: BOB,
+                p1TeamIndex: 0,
+                p2: CARL,
+                p2TeamIndex: 0,
+                p3: DAVE,
+                p3TeamIndex: 0,
+                teamRegistry: defaultRegistry,
+                rngOracle: IRandomnessOracle(address(0)),
+                ruleset: IRuleset(address(0)),
+                moveManager: address(this),
+                matchmaker: IMatchmaker(address(this)),
+                engineHooks: hooks
+            }),
+            BATTLE_MODE_MULTI
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+        mockRNG.setRNG(1);
+    }
+
+    /// @dev Drives side 0 through a full side-1 wipe (4 kill rounds x 2 mons, forced switches
+    ///      stepping through each seat quarter).
+    function _runMultiSideWipe(bytes32 battleKey) internal {
+        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
+        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+        uint104 salt = uint104(0xD0B);
+        // Turn 0: all four slots send in their quarter leads (0 and 4).
+        engine.executeWithSlotMoves(
+            battleKey,
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32)
+                | (uint256(salt) << 48),
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32) | (uint256(salt) << 48)
+        );
+        for (uint256 round; round < 4; ++round) {
+            engine.executeWithSlotMoves(
+                battleKey,
+                uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
+                    | (uint256(salt) << 48),
+                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+            );
+            if (engine.getWinner(battleKey) != address(0)) break;
+            engine.executeWithSlotMoves(
+                battleKey,
+                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48),
+                uint256(SWITCH_MOVE_INDEX) | (uint256(round + 1) << 8) | (uint256(SWITCH_MOVE_INDEX) << 24)
+                    | (uint256(round + 5) << 32) | (uint256(salt) << 48)
+            );
+        }
+        assertEq(engine.getWinner(battleKey), ALICE);
+    }
+
+    /// @dev Finds the single GachaMultiEvent in the recorded logs and pins all four lanes.
+    function _assertGachaMultiEvent(
+        address emitter,
+        bytes32 battleKey,
+        uint256 lane0,
+        uint256 lane1,
+        uint256 lane2,
+        uint256 lane3
+    ) internal {
+        _assertGachaMultiEventMasked(emitter, battleKey, [lane0, lane1, lane2, lane3], type(uint256).max);
+    }
+
+    function _assertGachaMultiEventMasked(address emitter, bytes32 battleKey, uint256[4] memory lanes, uint256 mask)
+        internal
+    {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = keccak256("GachaMultiEvent(bytes32,uint256,uint256,uint256,uint256)");
+        uint256 found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != emitter || logs[i].topics[0] != topic) continue;
+            assertEq(logs[i].topics[1], battleKey);
+            (uint256 s0, uint256 s1, uint256 s2, uint256 s3) =
+                abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
+            assertEq(s0 & mask, lanes[0] & mask, "seat 0 lane");
+            assertEq(s1 & mask, lanes[1] & mask, "seat 1 lane");
+            assertEq(s2 & mask, lanes[2] & mask, "seat 2 lane");
+            assertEq(s3 & mask, lanes[3] & mask, "seat 3 lane");
+            ++found;
+        }
+        assertEq(found, 1, "exactly one GachaMultiEvent");
+    }
+
+    /// @dev D24: every human seat gets the singles formulas; KO/exp slices come from the
+    ///      seat's quarter. Exact GachaMultiEvent lanes pinned (exp lanes empty: 0-mon walk).
+    function test_multiBattlePaysPerSeatRewards() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        bytes32 battleKey = _startMultiWithGachaHook(gachaRegistry);
+
+        // Lane = points | bonus(FIRST_ROLL|FIRST_GAME = 3) << 176 | expMult(2) << 184
+        //        | outcome << 192 | streakDay(1) << 200.
+        uint256 winPts = gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1;
+        uint256 lossPts = gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_LOSS() + 1;
+        uint256 winLane = winPts | (uint256(3) << 176) | (uint256(2) << 184) | (uint256(1) << 192) | (uint256(1) << 200);
+        uint256 lossLane = lossPts | (uint256(3) << 176) | (uint256(2) << 184) | (uint256(1) << 200);
+
+        vm.recordLogs();
+        _runMultiSideWipe(battleKey);
+        _assertGachaMultiEvent(address(gachaRegistry), battleKey, winLane, winLane, lossLane, lossLane);
+
+        assertEq(gachaRegistry.pointsBalance(ALICE), winPts);
+        assertEq(gachaRegistry.pointsBalance(CARL), winPts);
+        assertEq(gachaRegistry.pointsBalance(BOB), lossPts);
+        assertEq(gachaRegistry.pointsBalance(DAVE), lossPts);
+    }
+
+    /// @dev CPU seats short-circuit: no playerData writes, zero event lane; human teammates
+    ///      and opponents settle normally.
+    function test_multiBattleCpuSeatGetsNothing() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        address[] memory cpus = new address[](1);
+        cpus[0] = DAVE;
+        gachaRegistry.setWhitelistedOpponents(cpus, new address[](0));
+
+        bytes32 battleKey = _startMultiWithGachaHook(gachaRegistry);
+
+        uint256 winPts = gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1;
+        uint256 lossPts = gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_LOSS() + 1;
+        uint256 winLane = winPts | (uint256(3) << 176) | (uint256(2) << 184) | (uint256(1) << 192) | (uint256(1) << 200);
+        uint256 lossLane = lossPts | (uint256(3) << 176) | (uint256(2) << 184) | (uint256(1) << 200);
+
+        vm.recordLogs();
+        _runMultiSideWipe(battleKey);
+        _assertGachaMultiEvent(address(gachaRegistry), battleKey, winLane, winLane, lossLane, 0);
+
+        assertEq(gachaRegistry.pointsBalance(DAVE), 0, "CPU seat earns nothing");
+        assertEq(gachaRegistry.pointsBalance(BOB), lossPts, "human teammate of a CPU still settles");
+    }
+
+    /// @dev Pins the per-seat KO quarter slice via the event exp lanes: BOB's fast lead KOs
+    ///      CARL's lead (side-0 roster 4) before dying, so the two winning seats report
+    ///      different exp — ALICE all-alive (6s), CARL one KO lane (4). A full wipe alone
+    ///      cannot catch a wrong slice (both loser quarters read 0xF either way). Facet-draw
+    ///      lane bits [80,176) are masked (exp on the shared unregistered mon crosses levels).
+    function test_multiBattleExpSlicesPerSeatQuarter() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(4, 4, engine, mockRNG, GachaTeamRegistry(address(0)));
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        address[4] memory seats = [ALICE, BOB, CARL, DAVE];
+        for (uint256 i; i < 4; ++i) {
+            Mon[] memory team = new Mon[](4);
+            for (uint256 j; j < 4; ++j) {
+                uint256[] memory moves = new uint256[](1);
+                moves[0] = uint256(uint160(address(killAttack)));
+                // ALICE: fast tanks. CARL: fragile teammates. BOB: fast-lead glass cannons
+                // (only mon 0 outspeeds side 0). DAVE: slow fodder.
+                uint32 speed = i == 1 && j == 0 ? 50 : (i == 0 || i == 2 ? 10 : 2);
+                team[j] = Mon({
+                    stats: MonStats({
+                        hp: i == 0 ? 1000 : 100,
+                        stamina: 5,
+                        speed: speed,
+                        attack: 10,
+                        defense: 10,
+                        specialAttack: 10,
+                        specialDefense: 10,
+                        type1: Type.Air,
+                        type2: Type.None
+                    }),
+                    moves: moves,
+                    ability: 0
+                });
+            }
+            defaultRegistry.setTeam(seats[i], team);
+            address[] memory toAdd = new address[](1);
+            toAdd[0] = address(this);
+            vm.prank(seats[i]);
+            engine.updateMatchmakers(toAdd, new address[](0));
+        }
+
+        IEngineHook[] memory hooks = new IEngineHook[](1);
+        hooks[0] = gachaRegistry;
+        (bytes32 battleKey,) = engine.computePartyKey(ALICE, BOB, CARL, DAVE);
+        engine.startBattleWithMode(
+            Battle({
+                p0: ALICE,
+                p0TeamIndex: 0,
+                p1: BOB,
+                p1TeamIndex: 0,
+                p2: CARL,
+                p2TeamIndex: 0,
+                p3: DAVE,
+                p3TeamIndex: 0,
+                teamRegistry: defaultRegistry,
+                rngOracle: IRandomnessOracle(address(0)),
+                ruleset: IRuleset(address(0)),
+                moveManager: address(this),
+                matchmaker: IMatchmaker(address(this)),
+                engineHooks: hooks
+            }),
+            BATTLE_MODE_MULTI
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+        mockRNG.setRNG(1);
+        vm.recordLogs();
+
+        uint104 salt = uint104(0xD0B);
+        uint16 targetA1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 1));
+        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
+        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+
+        // Turn 0: quarter leads (0 and 4) everywhere.
+        engine.executeWithSlotMoves(
+            battleKey,
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32)
+                | (uint256(salt) << 48),
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(4) << 32) | (uint256(salt) << 48)
+        );
+
+        // Round 1: BOB's speed-50 lead KOs CARL's lead first; side 0 then KOs it back. A1 is
+        // dead before acting so B1 survives the round.
+        engine.executeWithSlotMoves(
+            battleKey,
+            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
+                | (uint256(salt) << 48),
+            uint256(0) | (uint256(targetA1) << 8) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+        );
+        // Forced switches: A slot 1 refills from CARL's quarter (5), B slot 0 from BOB's (1).
+        engine.executeWithSlotMoves(
+            battleKey,
+            uint256(NO_OP_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(5) << 32) | (uint256(salt) << 48),
+            uint256(SWITCH_MOVE_INDEX) | (uint256(1) << 8) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+        );
+
+        // Side 1 remaining: 1,2,3 (BOB) + 4..7 (DAVE); actives (1, 4). Kill rounds (1,4)
+        // (2,5) (3,6) then 7; replacements are uniformly (round+2, round+5) — the final
+        // forced turn's slot-0 lane is ignored (BOB's quarter is spent, slot skipped).
+        for (uint256 round; round < 4; ++round) {
+            engine.executeWithSlotMoves(
+                battleKey,
+                uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32)
+                    | (uint256(salt) << 48),
+                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+            );
+            if (engine.getWinner(battleKey) != address(0)) break;
+            engine.executeWithSlotMoves(
+                battleKey,
+                uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48),
+                uint256(SWITCH_MOVE_INDEX) | (uint256(round + 2) << 8) | (uint256(SWITCH_MOVE_INDEX) << 24)
+                    | (uint256(round + 5) << 32) | (uint256(salt) << 48)
+            );
+        }
+        assertEq(engine.getWinner(battleKey), ALICE);
+
+        // Exp bytes (lanes at bit 16, 8b each): alive = (2 + streak 1) * 2 = 6, KO = (1+1)*2 = 4.
+        uint256 winPts = 16 + 2 + 1;
+        uint256 lossPts = 16 + 1 + 1;
+        uint256 aliceLane = winPts | (uint256(0x06060606) << 16) | (uint256(3) << 176) | (uint256(2) << 184)
+            | (uint256(1) << 192) | (uint256(1) << 200);
+        uint256 carlLane = winPts | (uint256(0x06060604) << 16) | (uint256(3) << 176) | (uint256(2) << 184)
+            | (uint256(1) << 192) | (uint256(1) << 200);
+        uint256 loserLane =
+            lossPts | (uint256(0x04040404) << 16) | (uint256(3) << 176) | (uint256(2) << 184) | (uint256(1) << 200);
+        uint256 facetLaneMask = ~(((uint256(1) << 96) - 1) << 80);
+        _assertGachaMultiEventMasked(
+            address(gachaRegistry), battleKey, [aliceLane, carlLane, loserLane, loserLane], facetLaneMask
         );
     }
 }

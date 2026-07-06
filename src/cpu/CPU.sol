@@ -23,6 +23,10 @@ contract CPU is CPUMoveManager, IMatchmaker {
                 p0TeamIndex: proposal.p0TeamIndex,
                 p1: proposal.p1,
                 p1TeamIndex: proposal.p1TeamIndex,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: proposal.teamRegistry,
                 rngOracle: proposal.rngOracle,
                 ruleset: proposal.ruleset,
@@ -38,9 +42,8 @@ contract CPU is CPUMoveManager, IMatchmaker {
     /// to other users' slots. The registry must implement IPhantomTeamRegistry; the relay gate
     /// enforces that only whitelisted CPUs (i.e. this contract once added) can land the write.
     function startCustomBattle(CustomBattleProposal calldata p) external returns (bytes32 battleKey) {
-        IPhantomTeamRegistry(address(p.teamRegistry)).setOpponentTeamFor(
-            p.p0, p.monIndices, p.facetIds, p.moveSelections
-        );
+        IPhantomTeamRegistry(address(p.teamRegistry))
+            .setOpponentTeamFor(p.p0, p.monIndices, p.facetIds, p.moveSelections);
 
         uint96 p1TeamIndex = uint96(uint16(uint160(p.p0)));
         (battleKey,) = ENGINE.computeBattleKey(p.p0, address(this));
@@ -50,6 +53,10 @@ contract CPU is CPUMoveManager, IMatchmaker {
                 p0TeamIndex: p.p0TeamIndex,
                 p1: address(this),
                 p1TeamIndex: p1TeamIndex,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: p.teamRegistry,
                 rngOracle: p.rngOracle,
                 ruleset: p.ruleset,

@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";

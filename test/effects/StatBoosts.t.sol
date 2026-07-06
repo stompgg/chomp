@@ -7,9 +7,9 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
@@ -20,9 +20,9 @@ import {StatBoostsMove} from "../mocks/StatBoostsMove.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
 
-import {SpAtkDebuffEffect} from "../mocks/SpAtkDebuffEffect.sol";
-import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
+import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
+import {SpAtkDebuffEffect} from "../mocks/SpAtkDebuffEffect.sol";
 
 contract StatBoostsTest is Test, BattleHelper {
     Engine engine;
@@ -139,7 +139,7 @@ contract StatBoostsTest is Test, BattleHelper {
         assertEq(boostedStat, initialStat + 10, "Stat should be boosted by 10%");
 
         // Verify the effect was added to Alice's mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         bool foundEffect = false;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
@@ -159,7 +159,8 @@ contract StatBoostsTest is Test, BattleHelper {
             battleKey,
             0, // Alice uses stat boost move
             NO_OP_MOVE_INDEX, // Bob does nothing
-            _packStatBoost(0, statIndex, int32(10)), 0 // Bob does nothing
+            _packStatBoost(0, statIndex, int32(10)),
+            0 // Bob does nothing
         );
 
         // Verify the stat was boosted further
@@ -167,7 +168,7 @@ contract StatBoostsTest is Test, BattleHelper {
         assertEq(furtherBoostedStat, initialStat + 21, "Stat should be boosted by 21% total");
 
         // Verify no duplicate effect was added
-        (effects, ) = engine.getEffects(battleKey, 0, 0);
+        (effects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(effects.length, effectCount, "No duplicate effect should be added");
 
         // Switch out the mon
@@ -184,7 +185,7 @@ contract StatBoostsTest is Test, BattleHelper {
         );
 
         // Verify the effect was removed
-        (effects, ) = engine.getEffects(battleKey, 0, 1);
+        (effects,) = engine.getEffects(battleKey, 0, 1);
         foundEffect = false;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
@@ -300,12 +301,10 @@ contract StatBoostsTest is Test, BattleHelper {
             assertEq(boostedStat, 2, "Stat should be boosted by +2");
 
             // Verify the effect was added
-            (EffectInstance[] memory statEffects, ) = engine.getEffects(battleKey, 0, 0);
+            (EffectInstance[] memory statEffects,) = engine.getEffects(battleKey, 0, 0);
             bool foundStatEffect = false;
             for (uint256 j = 0; j < statEffects.length; j++) {
-                if (
-                    address(statEffects[j].effect) == STAT_BOOST_ADDRESS
-                ) {
+                if (address(statEffects[j].effect) == STAT_BOOST_ADDRESS) {
                     foundStatEffect = true;
                     break;
                 }
@@ -325,7 +324,7 @@ contract StatBoostsTest is Test, BattleHelper {
         );
 
         // Verify all effects were removed
-        (EffectInstance[] memory effectsAfterSwitch, ) = engine.getEffects(battleKey, 0, 1);
+        (EffectInstance[] memory effectsAfterSwitch,) = engine.getEffects(battleKey, 0, 1);
         for (uint256 i = 0; i < effectsAfterSwitch.length; i++) {
             assertFalse(
                 address(effectsAfterSwitch[i].effect) == STAT_BOOST_ADDRESS,
@@ -333,7 +332,7 @@ contract StatBoostsTest is Test, BattleHelper {
             );
         }
     }
-    
+
     function test_permanentTempStatBoostInteraction() public {
         StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
         SpAtkDebuffEffect spAtkDebuff = new SpAtkDebuffEffect();
@@ -341,21 +340,27 @@ contract StatBoostsTest is Test, BattleHelper {
         // Create teams with two mons each
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(statBoostMove)));
-        moves[1] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 0,
-                STAMINA_COST: 0,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Ice,
-                EFFECT_ACCURACY: 100,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "SpAtkDebuffHit",
-                EFFECT: IEffect(address(spAtkDebuff))
-            })
-        ))));
+        moves[1] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 0,
+                            STAMINA_COST: 0,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Ice,
+                            EFFECT_ACCURACY: 100,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "SpAtkDebuffHit",
+                            EFFECT: IEffect(address(spAtkDebuff))
+                        })
+                    )
+                )
+            )
+        );
         uint32 maxSpAtk = 100;
         Mon memory mon = _createMon();
         mon.stats.specialAttack = maxSpAtk;
@@ -467,7 +472,9 @@ contract StatBoostsTest is Test, BattleHelper {
         int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
         int256 boosted = int256(spAtkDelta) + 100;
         // [1, MAX_BOOSTED_STAT] is the post-wrap invariant the apply-time clamp guarantees.
-        assertTrue(boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]");
+        assertTrue(
+            boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]"
+        );
     }
 
     /// @dev Push the per-instance count well past the 7-bit storage field (and past 256, where
@@ -492,7 +499,9 @@ contract StatBoostsTest is Test, BattleHelper {
 
         int32 spAtkDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.SpecialAttack);
         int256 boosted = int256(spAtkDelta) + 100;
-        assertTrue(boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]");
+        assertTrue(
+            boosted >= 1 && boosted <= int256(type(int32).max), "Boosted SpAtk should stay within [1, int32.max]"
+        );
     }
 
     /// @dev With the StatBoosts apply-time clamp + AttackCalculator's uint256 product, a heavily
@@ -500,21 +509,27 @@ contract StatBoostsTest is Test, BattleHelper {
     /// `scaledBasePower * attackStat * rngScaling` would overflow the uint32 multiplication.
     function test_dealDamageDoesNotRevertWithExtremelyBoostedAttack() public {
         StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
-        uint256 attackMoveAddr = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 100,
-                STAMINA_COST: 0,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Air,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "BoostedHit",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        uint256 attackMoveAddr = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 100,
+                            STAMINA_COST: 0,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Air,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "BoostedHit",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(statBoostMove)));
@@ -536,8 +551,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -562,9 +576,7 @@ contract StatBoostsTest is Test, BattleHelper {
 
         // Now attack. The damage formula must compute in uint256 and clamp to int32 — no revert.
         int32 defenderHpDeltaBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
         int32 defenderHpDeltaAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Damage was applied (hpDelta moved). Whether the defender survives or KOs depends on the
@@ -589,8 +601,7 @@ contract StatBoostsTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );

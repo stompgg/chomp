@@ -47,22 +47,30 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     function setAssigners(address[] memory toAdd, address[] memory toRemove) external onlyOwner {
         for (uint256 i; i < toAdd.length;) {
             isAssigner[toAdd[i]] = true;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         for (uint256 i; i < toRemove.length;) {
             isAssigner[toRemove[i]] = false;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
     function _flipPlayerDataBitBulk(address[] memory on, address[] memory off, uint256 bit) internal {
         for (uint256 i; i < on.length;) {
             playerData[on[i]] |= bit;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         for (uint256 i; i < off.length;) {
             playerData[off[i]] &= ~bit;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -72,7 +80,7 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
         return uint128(playerData[player]);
     }
 
-    function isWhitelistedOpponent(address addr) public view returns (bool) {
+    function isWhitelistedOpponent(address addr) public view virtual returns (bool) {
         return playerData[addr] & IS_CPU_BIT != 0;
     }
 

@@ -6,10 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
@@ -108,7 +108,7 @@ contract SofabbiTest is Test, BattleHelper {
         );
 
         // Verify that the CarrotHarvest effect was applied to Alice's mon
-        (EffectInstance[] memory carrotEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory carrotEffects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(carrotEffects.length, 1);
 
         // Now have Alice switch to her second mon
@@ -123,13 +123,12 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Verify that the CarrotHarvest effect is still only applied once
         // (should still have only one targeted effect)
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(effects.length, 1);
         assertEq(address(effects[0].effect), address(carrotHarvest));
     }
 
     function test_carrotHarvestTriggersAtEndOfRoundWhenRNGReturnsTrue() public {
-
         // Create move arrays
         uint256[] memory moves = new uint256[](0);
 
@@ -294,23 +293,17 @@ contract SofabbiTest is Test, BattleHelper {
         // Damage is returned in negative, so that's why there are some weird sign cancellations below
 
         // Alice uses Guest Feature targeting mon index 1, it should deal 2x damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), uint16(0));
         int32 bobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertApproxEqRel(-1 * bobDmg, int32(2 * gf.BASE_POWER()), 2e17);
 
         // Alice uses Guest Feature targeting mon index 2, it should deal 0 damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0));
         int32 newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertEq(newBobDmg, bobDmg, "No damage");
 
         // Alice uses Guest Feature targeting mon index 3, it should deal 1/2 damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(3), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(3), uint16(0));
         newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         bobDmg = bobDmg - newBobDmg;
         assertApproxEqRel(bobDmg, int32(gf.BASE_POWER() / 2), 2e17);

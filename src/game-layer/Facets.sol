@@ -9,27 +9,32 @@ abstract contract Facets {
     error FacetNotUnlocked();
     error FacetArgsLengthMismatch();
 
-    enum StatGroup { HP, Atk, Def, Speed }
+    enum StatGroup {
+        HP,
+        Atk,
+        Def,
+        Speed
+    }
 
     uint256 internal constant MONS_PER_FACET_BUCKET = 16;
     uint256 internal constant FACET_BITS_PER_MON = 16;
     uint256 internal constant FACET_PER_MON_MASK = (1 << FACET_BITS_PER_MON) - 1;
-    uint16  internal constant FACET_UNLOCKED_MASK = 0xFFF;
+    uint16 internal constant FACET_UNLOCKED_MASK = 0xFFF;
     uint256 internal constant FACET_ASSIGNED_SHIFT = 12;
     uint256 internal constant FACET_ASSIGNED_MASK = 0xF;
-    uint8   internal constant TOTAL_FACETS = 12;
+    uint8 internal constant TOTAL_FACETS = 12;
 
     // Facet magnitudes are boost-indexed: the boosted stat determines both the boost%
     // (gain on the boosted stat) and the cost% (loss on the nerfed stat). Speed boosts
     // carry a heavier cost so they can't cheaply break speed ties.
-    uint256 internal constant BOOST_PCT_HP    = 5;
-    uint256 internal constant COST_PCT_HP     = 5;
-    uint256 internal constant BOOST_PCT_ATK   = 5;
-    uint256 internal constant COST_PCT_ATK    = 5;
-    uint256 internal constant BOOST_PCT_DEF   = 5;
-    uint256 internal constant COST_PCT_DEF    = 5;
+    uint256 internal constant BOOST_PCT_HP = 5;
+    uint256 internal constant COST_PCT_HP = 5;
+    uint256 internal constant BOOST_PCT_ATK = 5;
+    uint256 internal constant COST_PCT_ATK = 5;
+    uint256 internal constant BOOST_PCT_DEF = 5;
+    uint256 internal constant COST_PCT_DEF = 5;
     uint256 internal constant BOOST_PCT_SPEED = 5;
-    uint256 internal constant COST_PCT_SPEED  = 10;
+    uint256 internal constant COST_PCT_SPEED = 10;
 
     // Per-mon (16 bits): bits 0-11 = unlockedBitmap, bits 12-15 = assignedFacetId (0 = none, 1-12).
     // 16 mons per uint256 slot, keyed by monId / MONS_PER_FACET_BUCKET.
@@ -62,12 +67,11 @@ abstract contract Facets {
         assignedFacetId = uint8((perMon >> FACET_ASSIGNED_SHIFT) & FACET_ASSIGNED_MASK);
     }
 
-    function _writeFacetSlotForMon(
-        uint256 facetSlot,
-        uint256 lane,
-        uint16 unlockedBitmap,
-        uint8 assignedFacetId
-    ) internal pure returns (uint256) {
+    function _writeFacetSlotForMon(uint256 facetSlot, uint256 lane, uint16 unlockedBitmap, uint8 assignedFacetId)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256 perMon = uint256(unlockedBitmap) | (uint256(assignedFacetId) << FACET_ASSIGNED_SHIFT);
         uint256 cleared = facetSlot & ~(FACET_PER_MON_MASK << (lane * FACET_BITS_PER_MON));
         return cleared | (perMon << (lane * FACET_BITS_PER_MON));
@@ -91,9 +95,13 @@ abstract contract Facets {
                 if (seenUnset == index) {
                     return (unlockedBitmap | uint16(1 << i), i + 1);
                 }
-                unchecked { ++seenUnset; }
+                unchecked {
+                    ++seenUnset;
+                }
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return (unlockedBitmap, 0); // unreachable
     }
@@ -108,11 +116,7 @@ abstract contract Facets {
 
     // ----- Stat delta computation (pure) -----
 
-    function _computeFacetDelta(MonStats memory base, uint8 facetId)
-        internal
-        pure
-        returns (StatDelta memory delta)
-    {
+    function _computeFacetDelta(MonStats memory base, uint8 facetId) internal pure returns (StatDelta memory delta) {
         if (facetId == 0) {
             return delta; // all zeros
         }
@@ -123,19 +127,16 @@ abstract contract Facets {
     }
 
     function _facetPctsForBoost(StatGroup boost) private pure returns (uint256 boostPct, uint256 costPct) {
-        if (boost == StatGroup.HP)  return (BOOST_PCT_HP,  COST_PCT_HP);
+        if (boost == StatGroup.HP) return (BOOST_PCT_HP, COST_PCT_HP);
         if (boost == StatGroup.Atk) return (BOOST_PCT_ATK, COST_PCT_ATK);
         if (boost == StatGroup.Def) return (BOOST_PCT_DEF, COST_PCT_DEF);
         return (BOOST_PCT_SPEED, COST_PCT_SPEED);
     }
 
-    function _applyGroupDelta(
-        StatDelta memory delta,
-        StatGroup group,
-        MonStats memory base,
-        bool isBoost,
-        uint256 pct
-    ) private pure {
+    function _applyGroupDelta(StatDelta memory delta, StatGroup group, MonStats memory base, bool isBoost, uint256 pct)
+        private
+        pure
+    {
         // pct% of base, integer-truncated.
         if (group == StatGroup.HP) {
             int16 d = int16(int256(uint256(base.hp) * pct / 100));
@@ -170,12 +171,7 @@ abstract contract Facets {
         return _readFacetSlotForMon(facetData[player][bucket], lane);
     }
 
-    function getFacetDeltaForMon(address player, uint256 monId)
-        public
-        view
-        virtual
-        returns (StatDelta memory)
-    {
+    function getFacetDeltaForMon(address player, uint256 monId) public view virtual returns (StatDelta memory) {
         uint256 bucket = monId / MONS_PER_FACET_BUCKET;
         uint256 lane = monId % MONS_PER_FACET_BUCKET;
         (, uint8 facetId) = _readFacetSlotForMon(facetData[player][bucket], lane);
@@ -210,7 +206,9 @@ abstract contract Facets {
             if (facetId != 0 && (unlockedBitmap & uint16(1 << (facetId - 1))) == 0) revert FacetNotUnlocked();
             currentSlot = _writeFacetSlotForMon(currentSlot, lane, unlockedBitmap, facetId);
             dirty = true;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         if (lastBucket != type(uint256).max && dirty) {
             facetData[msg.sender][lastBucket] = currentSlot;

@@ -11,11 +11,7 @@ library MerkleProofLib {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Returns whether `leaf` exists in the Merkle tree with `root`, given `proof`.
-    function verify(bytes32[] memory proof, bytes32 root, bytes32 leaf)
-        internal
-        pure
-        returns (bool isValid)
-    {
+    function verify(bytes32[] memory proof, bytes32 root, bytes32 leaf) internal pure returns (bool isValid) {
         assembly ("memory-safe") {
             if mload(proof) {
                 // Initialize `offset` to the offset of `proof` elements in memory.
@@ -42,11 +38,7 @@ library MerkleProofLib {
     }
 
     /// @dev Returns whether `leaf` exists in the Merkle tree with `root`, given `proof`.
-    function verifyCalldata(bytes32[] calldata proof, bytes32 root, bytes32 leaf)
-        internal
-        pure
-        returns (bool isValid)
-    {
+    function verifyCalldata(bytes32[] calldata proof, bytes32 root, bytes32 leaf) internal pure returns (bool isValid) {
         assembly ("memory-safe") {
             if proof.length {
                 // Left shift by 5 is equivalent to multiplying by 0x20.
@@ -82,12 +74,11 @@ library MerkleProofLib {
     /// - Any non-zero word in the `flags` array is treated as true.
     /// - The memory offset of `proof` must be non-zero
     ///   (i.e. `proof` is not pointing to the scratch space).
-    function verifyMultiProof(
-        bytes32[] memory proof,
-        bytes32 root,
-        bytes32[] memory leaves,
-        bool[] memory flags
-    ) internal pure returns (bool isValid) {
+    function verifyMultiProof(bytes32[] memory proof, bytes32 root, bytes32[] memory leaves, bool[] memory flags)
+        internal
+        pure
+        returns (bool isValid)
+    {
         // Rebuilds the root by consuming and producing values on a queue.
         // The queue starts with the `leaves` array, and goes into a `hashes` array.
         // After the process, the last element on the queue is verified

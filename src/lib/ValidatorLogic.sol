@@ -61,11 +61,11 @@ library ValidatorLogic {
     /// @notice Variant of validateSpecificMoveSelection that accepts a pre-decoded stamina cost,
     ///         avoiding the external `MoveSlotLib.stamina` call when metadata has already been
     ///         fetched (e.g. via `MoveSlotLib.decodeMeta`).
-    function validateSpecificMoveSelectionWithStamina(
-        uint32 moveStaminaCost,
-        uint32 baseStamina,
-        int32 staminaDelta
-    ) internal pure returns (bool valid) {
+    function validateSpecificMoveSelectionWithStamina(uint32 moveStaminaCost, uint32 baseStamina, int32 staminaDelta)
+        internal
+        pure
+        returns (bool valid)
+    {
         int256 effectiveDelta = staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
         uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
         return uint256(moveStaminaCost) <= currentStamina;
@@ -114,12 +114,7 @@ library ValidatorLogic {
     /// @return isSwitch Whether this is a switch move
     /// @return isRegularMove Whether this is a regular move (0-3)
     /// @return valid Whether basic validation passes (bounds check, forced switch check)
-    function validatePlayerMoveBasics(
-        uint256 moveIndex,
-        uint64 turnId,
-        bool isActiveMonKnockedOut,
-        uint256 movesPerMon
-    )
+    function validatePlayerMoveBasics(uint256 moveIndex, uint64 turnId, bool isActiveMonKnockedOut, uint256 movesPerMon)
         internal
         pure
         returns (bool requiresSwitch, bool isNoOp, bool isSwitch, bool isRegularMove, bool valid)
@@ -171,7 +166,9 @@ library ValidatorLogic {
                 }
                 // If player has not committed yet:
                 else {
-                    if (block.timestamp >= params.lastTurnTimestamp + params.prevTurnMultiplier * params.timeoutDuration) {
+                    if (
+                        block.timestamp >= params.lastTurnTimestamp + params.prevTurnMultiplier * params.timeoutDuration
+                    ) {
                         return true;
                     }
                 }

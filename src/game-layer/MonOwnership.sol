@@ -34,7 +34,9 @@ abstract contract MonOwnership {
             if (!owned.contains(ids[i])) {
                 return false;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }

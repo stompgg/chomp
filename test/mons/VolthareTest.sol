@@ -6,9 +6,9 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -19,9 +19,8 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-
-import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 import {Overclock} from "../../src/effects/battlefield/Overclock.sol";
+import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 
 import {DualShock} from "../../src/mons/volthare/DualShock.sol";
 import {MegaStarBlast} from "../../src/mons/volthare/MegaStarBlast.sol";
@@ -137,8 +136,7 @@ contract VolthareTest is Test, BattleHelper {
         DummyStatus zapStatus = new DummyStatus();
         MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
-            overclock,
-            GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
+            overclock, GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
 
         uint256[] memory moves = new uint256[](2);
@@ -246,8 +244,7 @@ contract VolthareTest is Test, BattleHelper {
         DummyStatus zapStatus = new DummyStatus();
         MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
-            overclock,
-            GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
+            overclock, GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
 
         uint256[] memory moves = new uint256[](2);
@@ -256,9 +253,15 @@ contract VolthareTest is Test, BattleHelper {
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
-                hp: 100, stamina: 10, speed: 100,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Lightning, type2: Type.None
+                hp: 100,
+                stamina: 10,
+                speed: 100,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Lightning,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
@@ -266,9 +269,15 @@ contract VolthareTest is Test, BattleHelper {
 
         Mon memory bobMon = Mon({
             stats: MonStats({
-                hp: 1000, stamina: 10, speed: 1,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Lightning, type2: Type.None
+                hp: 1000,
+                stamina: 10,
+                speed: 1,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Lightning,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
@@ -367,8 +376,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(

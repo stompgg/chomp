@@ -117,9 +117,7 @@ contract DefaultCommitManager is ICommitManager {
         emit MoveCommit(battleKey, caller);
     }
 
-    function revealMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData, bool autoExecute)
-        external
-    {
+    function revealMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData, bool autoExecute) external {
         // Get all battle context in one call
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
 
@@ -155,8 +153,7 @@ contract DefaultCommitManager is ICommitManager {
         bool playerSkipsPreimageCheck;
         if (playerSwitchForTurnFlag == 2) {
             playerSkipsPreimageCheck =
-                (((turnId % 2 == 1) && (currentPlayerIndex == 0))
-                    || ((turnId % 2 == 0) && (currentPlayerIndex == 1)));
+            (((turnId % 2 == 1) && (currentPlayerIndex == 0)) || ((turnId % 2 == 0) && (currentPlayerIndex == 1)));
         } else {
             playerSkipsPreimageCheck = (playerSwitchForTurnFlag == currentPlayerIndex);
 

@@ -97,7 +97,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine,
+        bytes32 battleKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -155,7 +156,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine,
+        bytes32 battleKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -220,7 +222,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine,
+        bytes32 battleKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -285,7 +288,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine,
+        bytes32 battleKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -354,7 +358,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(engine,
+        bytes32 battleKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -462,7 +467,9 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _forceP1Switch(testEngine, signedManager, battleKey);
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
-        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 0, "P0 should be forced to switch");
+        assertEq(
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 0, "P0 should be forced to switch"
+        );
 
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint16(1));
         assertEq(
@@ -491,7 +498,9 @@ contract EngineOptimizationTest is Test, BattleHelper {
             testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 1, "P1 should be forced to switch");
+        assertEq(
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 1, "P1 should be forced to switch"
+        );
     }
 
     function _executeSinglePlayerMoveAndReset(
@@ -619,7 +628,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         DefaultRuleset externalRuleset = new DefaultRuleset(engine, externalEffects);
 
         // Battle 1: warmup (cold storage hit absorbed here)
-        bytes32 warmupKey = _startBattle(engine,
+        bytes32 warmupKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -635,7 +645,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, warmupKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Battle 2: external StaminaRegen (warm storage)
-        bytes32 externalKey = _startBattle(engine,
+        bytes32 externalKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,
@@ -654,7 +665,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         uint256 externalGas = vm.stopSnapshotGas("ExternalStaminaRegen");
 
         // Battle 3: inline StaminaRegen (warm storage, same engine)
-        bytes32 inlineKey = _startBattle(engine,
+        bytes32 inlineKey = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,

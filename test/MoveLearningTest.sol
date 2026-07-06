@@ -57,8 +57,15 @@ contract MoveLearningTest is Test {
         }
 
         MonStats memory stats = MonStats({
-            hp: 100, stamina: 10, speed: 10, attack: 10, defense: 10,
-            specialAttack: 10, specialDefense: 10, type1: Type.Fire, type2: Type.None
+            hp: 100,
+            stamina: 10,
+            speed: 10,
+            attack: 10,
+            defense: 10,
+            specialAttack: 10,
+            specialDefense: 10,
+            type1: Type.Fire,
+            type2: Type.None
         });
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(address(0xABAB)));
@@ -140,7 +147,9 @@ contract MoveLearningTest is Test {
 
         // 8 moves is the new ceiling.
         uint256[] memory eight = new uint256[](8);
-        for (uint256 i; i < 8; ++i) eight[i] = _moveWord(98, i);
+        for (uint256 i; i < 8; ++i) {
+            eight[i] = _moveWord(98, i);
+        }
         uint256 id8 = registry.getMonCount();
         registry.createMon(id8, stats, eight, abilities, new bytes32[](0), new bytes32[](0));
         (uint256[] memory moves,) = registry.getMovePool(id8);
@@ -149,7 +158,9 @@ contract MoveLearningTest is Test {
         // 9 overflows the catalog width. (Read the id before arming expectRevert — it applies to
         // the next external call, which would otherwise be the getMonCount() staticcall.)
         uint256[] memory nine = new uint256[](9);
-        for (uint256 i; i < 9; ++i) nine[i] = _moveWord(99, i);
+        for (uint256 i; i < 9; ++i) {
+            nine[i] = _moveWord(99, i);
+        }
         uint256 id9 = registry.getMonCount();
         vm.expectRevert(MonRegistry.TooManyMoves.selector);
         registry.createMon(id9, stats, nine, abilities, new bytes32[](0), new bytes32[](0));

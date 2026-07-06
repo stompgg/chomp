@@ -6,9 +6,9 @@ import {Test} from "forge-std/Test.sol";
 import "../src/Constants.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 
 import {BattleHelper} from "./abstract/BattleHelper.sol";
@@ -136,7 +136,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         bytes32 battleKey = _initBattle();
 
         _aliceWrites(battleKey, KEY_A); // buffer: [A]
-        _bobWrites(battleKey, KEY_B);   // buffer: [A, B]
+        _bobWrites(battleKey, KEY_B); // buffer: [A, B]
         _aliceWrites(battleKey, KEY_A); // refresh, no push → still [A, B]
 
         (BattleConfigView memory view_,) = engine.getBattle(battleKey);
@@ -156,7 +156,8 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         (BattleConfigView memory view_,) = engine.getBattle(battleKey);
         assertEq(view_.globalKVEntries.length, 6, "six unique keys total");
 
-        uint64[6] memory expected = [uint64(KEY_A), uint64(KEY_B), uint64(KEY_C), uint64(KEY_D), uint64(KEY_E), uint64(KEY_F)];
+        uint64[6] memory expected =
+            [uint64(KEY_A), uint64(KEY_B), uint64(KEY_C), uint64(KEY_D), uint64(KEY_E), uint64(KEY_F)];
         uint64 expectedTs = uint64(view_.startTimestamp);
         for (uint256 i; i < 6; ++i) {
             assertEq(view_.globalKVEntries[i].key, expected[i], "insertion order mismatch");

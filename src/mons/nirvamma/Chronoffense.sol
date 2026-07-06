@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type, TargetSpec} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";

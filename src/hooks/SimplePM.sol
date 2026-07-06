@@ -2,8 +2,8 @@
 pragma solidity ^0.8.0;
 
 import {IEngine} from "../IEngine.sol";
-import {Ownable} from "../lib/Ownable.sol";
 import {BattleContext} from "../Structs.sol";
+import {Ownable} from "../lib/Ownable.sol";
 
 struct PMEntry {
     uint96 p0Shares;
@@ -17,7 +17,6 @@ struct PMBalance {
 }
 
 contract SimplePM is Ownable {
-
     error TooLate(uint256 turnId);
     error GameNotOver(bytes32 battleKey);
     error InvalidBattle(bytes32 battleKey);
@@ -38,7 +37,7 @@ contract SimplePM is Ownable {
         _initializeOwner(msg.sender);
     }
 
-    function buyShares(bytes32 battleKey, bool isP0) payable public {
+    function buyShares(bytes32 battleKey, bool isP0) public payable {
         // Existence guard + executed turn come from the context. Under deferred PvP the executed turnId
         // is 0 while moves buffer, so the live turn adds the buffered count (getBufferedTurns.length) —
         // read separately to keep this cost off every per-turn getBattleContext caller.
@@ -57,8 +56,7 @@ contract SimplePM is Ownable {
         if (isP0) {
             marketForBattle[battleKey].p0Shares += sharesToMint;
             sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance += sharesToMint;
-        }
-        else {
+        } else {
             marketForBattle[battleKey].p1Shares += sharesToMint;
             sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance += sharesToMint;
         }
@@ -75,7 +73,7 @@ contract SimplePM is Ownable {
         PMEntry storage marketDetails = marketForBattle[battleKey];
         uint256 sharesToRedeem = sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance;
         uint256 totalWinningShares = marketForBattle[battleKey].p0Shares;
-        if (! isP0Winner) {
+        if (!isP0Winner) {
             sharesToRedeem = sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance;
             totalWinningShares = marketForBattle[battleKey].p1Shares;
         }

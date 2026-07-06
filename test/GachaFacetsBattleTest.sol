@@ -8,16 +8,16 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {IRuleset} from "../src/IRuleset.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
+import {IRuleset} from "../src/IRuleset.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 
-import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 
-import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
+import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 
 /// @notice End-to-end check that GachaTeamRegistry.getTeams() folds facet ±5% deltas
@@ -158,9 +158,9 @@ contract GachaFacetsBattleTest is Test {
 
         // CPU slot 0 has facet 1 (+5% of 100 = +5). CPU slot 1 has no facet. Alice has no
         // facets unlocked. Verifying through the same path CPUs read from at runtime.
-        uint32 cpuMon0Hp   = engine.getMonValueForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        uint32 cpuMon0Atk  = engine.getMonValueForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
-        uint32 cpuMon1Hp   = engine.getMonValueForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
+        uint32 cpuMon0Hp = engine.getMonValueForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        uint32 cpuMon0Atk = engine.getMonValueForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
+        uint32 cpuMon1Hp = engine.getMonValueForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
         uint32 aliceMon0Hp = engine.getMonValueForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
 
         assertEq(cpuMon0Hp, 105, "CPU slot 0 HP boosted by facet 1");

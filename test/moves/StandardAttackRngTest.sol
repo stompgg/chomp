@@ -7,8 +7,8 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
@@ -83,8 +83,7 @@ contract StandardAttackRngTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mon 0 on both sides.
         _commitRevealExecuteForAliceAndBob(
@@ -102,9 +101,6 @@ contract StandardAttackRngTest is Test, BattleHelper {
 
         assertLt(aliceHpDelta, 0, "Alice should have taken damage");
         assertLt(bobHpDelta, 0, "Bob should have taken damage");
-        assertTrue(
-            aliceHpDelta != bobHpDelta,
-            "Mirror mons using the same move should not roll identical damage"
-        );
+        assertTrue(aliceHpDelta != bobHpDelta, "Mirror mons using the same move should not roll identical damage");
     }
 }

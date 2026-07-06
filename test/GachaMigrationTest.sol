@@ -3,8 +3,8 @@ pragma solidity ^0.8.0;
 
 import "../lib/forge-std/src/Test.sol";
 
-import "../src/Structs.sol";
 import "../src/Enums.sol";
+import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";

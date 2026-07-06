@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import "../../src/Constants.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MoveClass, Type} from "../../src/Enums.sol";
-import {IEffect} from "../../src/effects/IEffect.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {IEffect} from "../../src/effects/IEffect.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {TypeCalculator} from "../../src/types/TypeCalculator.sol";
 import {Test} from "forge-std/Test.sol";
-import "../../src/Constants.sol";
 
 contract StandardAttackFactoryTest is Test {
     StandardAttackFactory public factory;
@@ -183,7 +183,9 @@ contract StandardAttackFactoryTest is Test {
         attack.changeVar(5, 90); // Change effect accuracy
         assertEq(attack.effectAccuracy(TEST_BATTLE_KEY), 90, "Effect accuracy mismatch");
         attack.changeVar(6, uint256(MoveClass.Special)); // Change move class
-        assertEq(uint32(attack.moveClass(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(MoveClass.Special), "Move class mismatch");
+        assertEq(
+            uint32(attack.moveClass(DUMMY_ENGINE, TEST_BATTLE_KEY)), uint32(MoveClass.Special), "Move class mismatch"
+        );
         attack.changeVar(7, 15); // Change crit rate
         assertEq(attack.critRate(TEST_BATTLE_KEY), 15, "Crit rate mismatch");
         attack.changeVar(8, 3); // Change volatility

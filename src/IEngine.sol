@@ -129,6 +129,11 @@ interface IEngine {
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
+    function computePartyKey(address p0, address p1, address p2, address p3)
+        external
+        view
+        returns (bytes32 battleKey, bytes32 partyHash);
+    function getSeats(bytes32 battleKey) external view returns (address[4] memory seats);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);

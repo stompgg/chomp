@@ -7,8 +7,8 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
@@ -128,5 +128,4 @@ contract DefaultCommitManagerTest is Test, BattleHelper {
         vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
         commitManager.commitMove(battleKey, bytes32(0));
     }
-
 }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../../src/Constants.sol";
 import {Engine} from "../../src/Engine.sol";
-import { MoveClass, Type} from "../../src/Enums.sol";
+import {MoveClass, Type} from "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
@@ -165,18 +165,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
 
         // Precomputed seed: accuracy roll lands a hit
         (int32 damage1,) = AttackCalculator._calculateDamageView(
-            engine,
-            typeCalc,
-            battleKey,
-            0,
-            1,
-            basePower,
-            accuracy,
-            volatility,
-            attackType,
-            attackSupertype,
-            6,
-            critRate
+            engine, typeCalc, battleKey, 0, 1, basePower, accuracy, volatility, attackType, attackSupertype, 6, critRate
         );
 
         // Precomputed seed: accuracy roll lands a miss

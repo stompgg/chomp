@@ -4,12 +4,12 @@ pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngineHook} from "../../src/IEngineHook.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
+import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IRandomnessOracle} from "../../src/rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -89,7 +89,9 @@ abstract contract BattleHelper is Test {
         IEngineHook[] memory engineHooks,
         address moveManager
     ) internal returns (bytes32) {
-        return _startBattle(engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager);
+        return _startBattle(
+            engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager
+        );
     }
 
     function _startBattle(
@@ -171,11 +173,7 @@ abstract contract BattleHelper is Test {
     // Packs StatBoostsMove's payload into the 12-bit extraData budget:
     // [boostAmount:7 | statIndex:3 | monIndex:2]. The boost always targets the submitter's
     // own side (the mock reads the side from its attackerPlayerIndex param).
-    function _packStatBoost(uint256 monIndex, uint256 statIndex, int32 boostAmount)
-        internal
-        pure
-        returns (uint16)
-    {
+    function _packStatBoost(uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint16) {
         return uint16((monIndex & 0x3) | ((statIndex & 0x7) << 2) | ((uint256(uint32(boostAmount)) & 0x7F) << 5));
     }
 }

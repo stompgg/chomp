@@ -7,12 +7,12 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
 import {Engine} from "../src/Engine.sol";
+import {IEngineHook} from "../src/IEngineHook.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
 import {StaminaRegen} from "../src/effects/StaminaRegen.sol";
-import {IEngineHook} from "../src/IEngineHook.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
@@ -88,13 +88,8 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
     }
 
     function _startBattleWithRuleset(IRuleset ruleset) internal returns (bytes32) {
-        return _startBattle(engine,
-            mockOracle,
-            defaultRegistry,
-            matchmaker,
-            new IEngineHook[](0),
-            ruleset,
-            address(commitManager)
+        return _startBattle(
+            engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), ruleset, address(commitManager)
         );
     }
 
@@ -249,7 +244,8 @@ contract RecycledKeyHygieneTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        bytes32 battleKey2 = _startBattle(engine,
+        bytes32 battleKey2 = _startBattle(
+            engine,
             mockOracle,
             defaultRegistry,
             matchmaker,

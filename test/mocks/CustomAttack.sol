@@ -60,7 +60,9 @@ contract CustomAttack is IMoveSet {
         uint16 extraData,
         uint256 rng
     ) external {
-        _standardAttack.move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked, extraData, rng);
+        _standardAttack.move(
+            engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked, extraData, rng
+        );
     }
 
     function priority(IEngine engine, bytes32 battleKey, uint256 playerIndex) public view returns (uint32) {

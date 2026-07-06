@@ -29,12 +29,10 @@ library ECDSA {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev The order of the secp256k1 elliptic curve.
-    uint256 internal constant N =
-        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141;
+    uint256 internal constant N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141;
 
     /// @dev `N/2 + 1`. Used for checking the malleability of the signature.
-    uint256 private constant _HALF_N_PLUS_1 =
-        0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1;
+    uint256 private constant _HALF_N_PLUS_1 = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        CUSTOM ERRORS                       */
@@ -49,7 +47,7 @@ library ECDSA {
 
     /// @dev Recovers the signer's address from a message digest `hash`, and the `signature`.
     function recover(bytes32 hash, bytes memory signature) internal view returns (address result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             for { let m := mload(0x40) } 1 {
                 mstore(0x00, 0x8baa579f) // `InvalidSignature()`.
                 revert(0x1c, 0x04)
@@ -77,12 +75,8 @@ library ECDSA {
     }
 
     /// @dev Recovers the signer's address from a message digest `hash`, and the `signature`.
-    function recoverCalldata(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function recoverCalldata(bytes32 hash, bytes calldata signature) internal view returns (address result) {
+        assembly ("memory-safe") {
             for { let m := mload(0x40) } 1 {
                 mstore(0x00, 0x8baa579f) // `InvalidSignature()`.
                 revert(0x1c, 0x04)
@@ -112,7 +106,7 @@ library ECDSA {
     /// @dev Recovers the signer's address from a message digest `hash`,
     /// and the EIP-2098 short form signature defined by `r` and `vs`.
     function recover(bytes32 hash, bytes32 r, bytes32 vs) internal view returns (address result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(0x00, hash)
             mstore(0x20, add(shr(255, vs), 27)) // `v`.
@@ -131,12 +125,8 @@ library ECDSA {
 
     /// @dev Recovers the signer's address from a message digest `hash`,
     /// and the signature defined by `v`, `r`, `s`.
-    function recover(bytes32 hash, uint8 v, bytes32 r, bytes32 s)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function recover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) internal view returns (address result) {
+        assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(0x00, hash)
             mstore(0x20, and(v, 0xff))
@@ -164,12 +154,8 @@ library ECDSA {
     // a zero address (e.g. an uninitialized address variable).
 
     /// @dev Recovers the signer's address from a message digest `hash`, and the `signature`.
-    function tryRecover(bytes32 hash, bytes memory signature)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function tryRecover(bytes32 hash, bytes memory signature) internal view returns (address result) {
+        assembly ("memory-safe") {
             for { let m := mload(0x40) } 1 {} {
                 switch mload(signature)
                 case 64 {
@@ -195,12 +181,8 @@ library ECDSA {
     }
 
     /// @dev Recovers the signer's address from a message digest `hash`, and the `signature`.
-    function tryRecoverCalldata(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function tryRecoverCalldata(bytes32 hash, bytes calldata signature) internal view returns (address result) {
+        assembly ("memory-safe") {
             for { let m := mload(0x40) } 1 {} {
                 switch signature.length
                 case 64 {
@@ -227,12 +209,8 @@ library ECDSA {
 
     /// @dev Recovers the signer's address from a message digest `hash`,
     /// and the EIP-2098 short form signature defined by `r` and `vs`.
-    function tryRecover(bytes32 hash, bytes32 r, bytes32 vs)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function tryRecover(bytes32 hash, bytes32 r, bytes32 vs) internal view returns (address result) {
+        assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(0x00, hash)
             mstore(0x20, add(shr(255, vs), 27)) // `v`.
@@ -248,12 +226,8 @@ library ECDSA {
 
     /// @dev Recovers the signer's address from a message digest `hash`,
     /// and the signature defined by `v`, `r`, `s`.
-    function tryRecover(bytes32 hash, uint8 v, bytes32 r, bytes32 s)
-        internal
-        view
-        returns (address result)
-    {
-                assembly ("memory-safe") {
+    function tryRecover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) internal view returns (address result) {
+        assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(0x00, hash)
             mstore(0x20, and(v, 0xff))
@@ -276,7 +250,7 @@ library ECDSA {
     /// [`eth_sign`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_sign)
     /// JSON-RPC method as part of EIP-191.
     function toEthSignedMessageHash(bytes32 hash) internal pure returns (bytes32 result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             mstore(0x20, hash) // Store into scratch space for keccak256.
             mstore(0x00, "\x00\x00\x00\x00\x19Ethereum Signed Message:\n32") // 28 bytes.
             result := keccak256(0x04, 0x3c) // `32 * 2 - (32 - 28) = 60 = 0x3c`.
@@ -289,7 +263,7 @@ library ECDSA {
     /// JSON-RPC method as part of EIP-191.
     /// Note: Supports lengths of `s` up to 999999 bytes.
     function toEthSignedMessageHash(bytes memory s) internal pure returns (bytes32 result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             let sLength := mload(s)
             let o := 0x20
             mstore(o, "\x19Ethereum Signed Message:\n") // 26 bytes, zero-right-padded.
@@ -324,7 +298,7 @@ library ECDSA {
 
     /// @dev Returns the canonical hash of `signature`.
     function canonicalHash(bytes memory signature) internal pure returns (bytes32 result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             let l := mload(signature)
             for {} 1 {} {
                 mstore(0x00, mload(add(signature, 0x20))) // `r`.
@@ -354,12 +328,8 @@ library ECDSA {
     }
 
     /// @dev Returns the canonical hash of `signature`.
-    function canonicalHashCalldata(bytes calldata signature)
-        internal
-        pure
-        returns (bytes32 result)
-    {
-                assembly ("memory-safe") {
+    function canonicalHashCalldata(bytes calldata signature) internal pure returns (bytes32 result) {
+        assembly ("memory-safe") {
             for {} 1 {} {
                 mstore(0x00, calldataload(signature.offset)) // `r`.
                 let s := calldataload(add(signature.offset, 0x20))
@@ -389,7 +359,7 @@ library ECDSA {
 
     /// @dev Returns the canonical hash of `signature`.
     function canonicalHash(bytes32 r, bytes32 vs) internal pure returns (bytes32 result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             mstore(0x00, r) // `r`.
             let v := add(shr(255, vs), 27)
             let s := shr(1, shl(1, vs))
@@ -402,7 +372,7 @@ library ECDSA {
 
     /// @dev Returns the canonical hash of `signature`.
     function canonicalHash(uint8 v, bytes32 r, bytes32 s) internal pure returns (bytes32 result) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             mstore(0x00, r) // `r`.
             if iszero(lt(s, _HALF_N_PLUS_1)) {
                 v := xor(v, 7)
@@ -421,7 +391,7 @@ library ECDSA {
 
     /// @dev Returns an empty calldata bytes.
     function emptySignature() internal pure returns (bytes calldata signature) {
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             signature.length := 0
         }
     }
