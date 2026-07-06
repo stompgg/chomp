@@ -13,6 +13,8 @@ import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
+import {CustomAttack} from "./mocks/CustomAttack.sol";
+import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 import "./mocks/TestTeamRegistry.sol";
 import "src/Constants.sol";
@@ -366,4 +368,92 @@ contract GachaTest is Test, BattleHelper {
         );
     }
 
+
+    /// @dev D24: doubles battles pay the same default rewards through the same gacha hook —
+    ///      driven to a real win so onBattleEnd reads doubles KO bitmaps, not a timeout.
+    function test_doublesBattlePaysSameDefaultRewards() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc,
+            CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(killAttack)));
+        Mon memory mon = Mon({
+            stats: MonStats({
+                hp: 100,
+                stamina: 5,
+                speed: 2,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Air,
+                type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+
+        address[] memory toAdd = new address[](1);
+        toAdd[0] = address(this);
+        vm.prank(ALICE);
+        engine.updateMatchmakers(toAdd, new address[](0));
+        vm.prank(BOB);
+        engine.updateMatchmakers(toAdd, new address[](0));
+
+        IEngineHook[] memory hooks = new IEngineHook[](1);
+        hooks[0] = gachaRegistry;
+        (bytes32 battleKey,) = engine.computeBattleKey(ALICE, BOB);
+        engine.startBattleWithMode(
+            Battle({
+                p0: ALICE,
+                p0TeamIndex: 0,
+                p1: BOB,
+                p1TeamIndex: 0,
+                teamRegistry: defaultRegistry,
+                rngOracle: IRandomnessOracle(address(0)),
+                ruleset: IRuleset(address(0)),
+                moveManager: address(this),
+                matchmaker: IMatchmaker(address(this)),
+                engineHooks: hooks
+            }),
+            BATTLE_MODE_DOUBLES
+        );
+        vm.warp(vm.getBlockTimestamp() + 1);
+        mockRNG.setRNG(1);
+
+        // Turn 0: leads. Turn 1: Alice's two mons KO both of Bob's actives (side wipe).
+        uint104 salt = uint104(0xD0B);
+        engine.executeWithSlotMoves(
+            battleKey,
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32) | (uint256(salt) << 48),
+            uint256(SWITCH_MOVE_INDEX) | (uint256(SWITCH_MOVE_INDEX) << 24) | (uint256(1) << 32) | (uint256(salt) << 48)
+        );
+        uint16 targetB0 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 2));
+        uint16 targetB1 = uint16(uint256(1) << (TARGET_BITS_SHIFT + 3));
+        address winner = engine.executeWithSlotMoves(
+            battleKey,
+            uint256(0) | (uint256(targetB0) << 8) | (uint256(0) << 24) | (uint256(targetB1) << 32) | (uint256(salt) << 48),
+            uint256(NO_OP_MOVE_INDEX) | (uint256(NO_OP_MOVE_INDEX) << 24) | (uint256(salt) << 48)
+        );
+        assertEq(winner, ALICE);
+
+        // Same default formulas as singles: first-game bonus + (base + streak day 1) * 1.
+        assertEq(
+            gachaRegistry.pointsBalance(ALICE),
+            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
+        );
+        assertEq(
+            gachaRegistry.pointsBalance(BOB),
+            gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_LOSS() + 1
+        );
+    }
 }
