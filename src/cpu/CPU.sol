@@ -7,12 +7,20 @@ import {IPhantomTeamRegistry} from "../game-layer/IPhantomTeamRegistry.sol";
 import {IMatchmaker} from "../matchmaker/IMatchmaker.sol";
 import {CPUMoveManager} from "./CPUMoveManager.sol";
 
-import {Battle, CustomBattleProposal, ProposedBattle} from "../Structs.sol";
+import {BATTLE_MODE_MULTI} from "../Constants.sol";
+import {
+    Battle,
+    CustomBattleProposal,
+    CustomMultiBattleProposal,
+    ProposedBattle,
+    SeatPhantomConfig
+} from "../Structs.sol";
+import {ITeamRegistry} from "../game-layer/ITeamRegistry.sol";
 
 /// @notice On-chain CPU host: self-registers as an approved matchmaker, hosts PvE battles, and
 ///         relays client-computed CPU moves through the engine (see CPUMoveManager).
 contract CPU is CPUMoveManager, IMatchmaker {
-    constructor(IEngine engine) CPUMoveManager(engine) {}
+    constructor(IEngine engine, address[] memory matchmakers) CPUMoveManager(engine, matchmakers) {}
 
     /// @dev Singles-only by design: ProposedBattle is the legacy 2-seat shape with no mode
     ///      field. Doubles PvE goes through startCustomBattle (battleMode in the proposal).
@@ -67,5 +75,63 @@ contract CPU is CPUMoveManager, IMatchmaker {
             }),
             p.battleMode
         );
+    }
+
+    /// @notice 4-seat analog of startCustomBattle: writes each CPU seat's phantom config for
+    /// p0 (own seat via the relay entry, other whitelisted seats via the peer entry) and
+    /// starts the Multi battle, all in one tx.
+    function startCustomMultiBattle(CustomMultiBattleProposal calldata p) external returns (bytes32 battleKey) {
+        uint96 phantomKey = uint96(uint16(uint160(p.p0)));
+        uint96 p1TeamIndex = _configureSeat(p.teamRegistry, p.p0, p.p1, p.seatConfigs[0], p.p1TeamIndex, phantomKey);
+        uint96 p2TeamIndex = _configureSeat(p.teamRegistry, p.p0, p.p2, p.seatConfigs[1], p.p2TeamIndex, phantomKey);
+        uint96 p3TeamIndex = _configureSeat(p.teamRegistry, p.p0, p.p3, p.seatConfigs[2], p.p3TeamIndex, phantomKey);
+
+        (battleKey,) = ENGINE.computePartyKey(p.p0, p.p1, p.p2, p.p3);
+        ENGINE.startBattleWithMode(
+            Battle({
+                p0: p.p0,
+                p0TeamIndex: p.p0TeamIndex,
+                p1: p.p1,
+                p1TeamIndex: p1TeamIndex,
+                p2: p.p2,
+                p2TeamIndex: p2TeamIndex,
+                p3: p.p3,
+                p3TeamIndex: p3TeamIndex,
+                teamRegistry: p.teamRegistry,
+                rngOracle: p.rngOracle,
+                ruleset: p.ruleset,
+                engineHooks: p.engineHooks,
+                moveManager: p.moveManager,
+                matchmaker: p.matchmaker
+            }),
+            BATTLE_MODE_MULTI
+        );
+    }
+
+    /// @dev Human seats pass through untouched. CPU (whitelisted) seats get their phantom
+    ///      config written for `user` — skipped when monIndices is empty — and their team
+    ///      index forced to the user's phantom key (so callers can't point a CPU seat at
+    ///      another user's slot).
+    function _configureSeat(
+        ITeamRegistry registry,
+        address user,
+        address seat,
+        SeatPhantomConfig calldata cfg,
+        uint96 suppliedTeamIndex,
+        uint96 phantomKey
+    ) private returns (uint96) {
+        if (!registry.isWhitelistedOpponent(seat)) {
+            return suppliedTeamIndex;
+        }
+        if (cfg.monIndices.length != 0) {
+            if (seat == address(this)) {
+                IPhantomTeamRegistry(address(registry))
+                    .setOpponentTeamFor(user, cfg.monIndices, cfg.facetIds, cfg.moveSelections);
+            } else {
+                IPhantomTeamRegistry(address(registry))
+                    .setOpponentTeamForPeer(user, seat, cfg.monIndices, cfg.facetIds, cfg.moveSelections);
+            }
+        }
+        return phantomKey;
     }
 }

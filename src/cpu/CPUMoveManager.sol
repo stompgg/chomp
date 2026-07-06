@@ -11,14 +11,17 @@ abstract contract CPUMoveManager {
 
     error NotP0();
 
-    constructor(IEngine engine) {
+    /// @dev Approves itself plus the supplied matchmakers (D34) so its battles can also be
+    ///      started through external flows (e.g. the SignedMatchmaker's Multi offers).
+    constructor(IEngine engine, address[] memory matchmakers) {
         ENGINE = engine;
 
-        // Self-register as an approved matchmaker
-        address[] memory self = new address[](1);
-        self[0] = address(this);
-        address[] memory empty = new address[](0);
-        engine.updateMatchmakers(self, empty);
+        address[] memory toApprove = new address[](matchmakers.length + 1);
+        toApprove[0] = address(this);
+        for (uint256 i; i < matchmakers.length; ++i) {
+            toApprove[i + 1] = matchmakers[i];
+        }
+        engine.updateMatchmakers(toApprove, new address[](0));
     }
 
     /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move

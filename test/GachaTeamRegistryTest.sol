@@ -8,15 +8,15 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
+import {IEngine} from "../src/IEngine.sol";
 import {Facets} from "../src/game-layer/Facets.sol";
+import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {MonExp} from "../src/game-layer/MonExp.sol";
 import {MonOwnership} from "../src/game-layer/MonOwnership.sol";
 import {MonRegistry} from "../src/game-layer/MonRegistry.sol";
 import {PackedTeamStore} from "../src/game-layer/PackedTeamStore.sol";
 import {PlayerProfile} from "../src/game-layer/PlayerProfile.sol";
 import {Quests} from "../src/game-layer/Quests.sol";
-import {IEngine} from "../src/IEngine.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
 
@@ -59,7 +59,8 @@ contract GachaTeamRegistryTest is Test {
         engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         mockRNG = new MockGachaRNG();
 
-        gachaTeamRegistry = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
+        gachaTeamRegistry =
+            new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
 
         // Constructor seeds 12 production quests; wipe so each test starts with an empty
         // pool and gets length 1 (mod 1 == 0) the moment it adds its own quest. Keeps
@@ -213,7 +214,8 @@ contract GachaTeamRegistryTest is Test {
         monIndices[1] = 0;
         gachaTeamRegistry.setOpponentTeam(CPU, monIndices, _zeroFacets(), _zeroMoves());
 
-        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        uint256[] memory readIndices =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], unownedMonId);
         assertEq(readIndices[1], 0);
     }
@@ -233,7 +235,8 @@ contract GachaTeamRegistryTest is Test {
         secondIndices[1] = 3;
         gachaTeamRegistry.setOpponentTeam(CPU, secondIndices, _zeroFacets(), _zeroMoves());
 
-        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        uint256[] memory readIndices =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], 2);
         assertEq(readIndices[1], 3);
     }
@@ -248,7 +251,8 @@ contract GachaTeamRegistryTest is Test {
         monIndices[1] = 0; // duplicate
         gachaTeamRegistry.setOpponentTeam(CPU, monIndices, _zeroFacets(), _zeroMoves());
 
-        uint256[] memory readIndices = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        uint256[] memory readIndices =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         assertEq(readIndices[0], 0);
         assertEq(readIndices[1], 0);
     }
@@ -271,7 +275,8 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.setOpponentTeam(CPU, bobIndices, _zeroFacets(), _zeroMoves());
         vm.stopPrank();
 
-        uint256[] memory aliceTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
+        uint256[] memory aliceTeam =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
         uint256[] memory bobTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(BOB))));
         assertEq(aliceTeam[0], 0);
         assertEq(aliceTeam[1], 1);
@@ -303,12 +308,15 @@ contract GachaTeamRegistryTest is Test {
     function test_setOpponentTeam_perUserFacetsAreIsolated() public {
         _allowOnly(CPU);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        monIndices[0] = 0; monIndices[1] = 1;
+        monIndices[0] = 0;
+        monIndices[1] = 1;
 
         uint8[] memory aliceFacets = new uint8[](MONS_PER_TEAM);
-        aliceFacets[0] = 5; aliceFacets[1] = 0;
+        aliceFacets[0] = 5;
+        aliceFacets[1] = 0;
         uint8[] memory bobFacets = new uint8[](MONS_PER_TEAM);
-        bobFacets[0] = 0; bobFacets[1] = 12;
+        bobFacets[0] = 0;
+        bobFacets[1] = 12;
 
         vm.prank(ALICE);
         gachaTeamRegistry.setOpponentTeam(CPU, monIndices, aliceFacets, _zeroMoves());
@@ -317,14 +325,17 @@ contract GachaTeamRegistryTest is Test {
 
         uint8[] memory aliceRead = gachaTeamRegistry.getOpponentTeamFacets(ALICE, CPU);
         uint8[] memory bobRead = gachaTeamRegistry.getOpponentTeamFacets(BOB, CPU);
-        assertEq(aliceRead[0], 5); assertEq(aliceRead[1], 0);
-        assertEq(bobRead[0], 0);   assertEq(bobRead[1], 12);
+        assertEq(aliceRead[0], 5);
+        assertEq(aliceRead[1], 0);
+        assertEq(bobRead[0], 0);
+        assertEq(bobRead[1], 12);
     }
 
     function test_setOpponentTeam_facetsAppliedToCpuTeamStats() public {
         _allowOnly(CPU);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        monIndices[0] = 0; monIndices[1] = 1;
+        monIndices[0] = 0;
+        monIndices[1] = 1;
         uint8[] memory facets = new uint8[](MONS_PER_TEAM);
         // Facet 1: boost HP, nerf Atk. With test mon hp=100, the 5% boost is 5 (non-zero).
         // Other stats in setUp are 10, where 5% truncates to 0 — so we only assert HP here.
@@ -352,7 +363,8 @@ contract GachaTeamRegistryTest is Test {
     function test_setOpponentTeamFor_revertsIfCallerNotWhitelisted() public {
         // ALICE isn't whitelisted as a CPU — relay gate should reject.
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        monIndices[0] = 0; monIndices[1] = 1;
+        monIndices[0] = 0;
+        monIndices[1] = 1;
 
         vm.prank(ALICE);
         vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
@@ -375,14 +387,56 @@ contract GachaTeamRegistryTest is Test {
         assertEq(readIndices[1], 0);
     }
 
+    function test_setOpponentTeamForPeer_writesPeerSlotAtUserKey() public {
+        address peerCpu = address(0xCA);
+        address[] memory toAllow = new address[](2);
+        toAllow[0] = CPU;
+        toAllow[1] = peerCpu;
+        gachaTeamRegistry.setWhitelistedOpponents(toAllow, new address[](0));
+
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = unownedMonId;
+
+        vm.prank(CPU);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+
+        // The write lands in the PEER's phantom slot for ALICE, not the caller's.
+        uint256[] memory readIndices =
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(peerCpu, uint256(uint16(uint160(ALICE))));
+        assertEq(readIndices[0], unownedMonId);
+    }
+
+    function test_setOpponentTeamForPeer_bothEndsMustBeWhitelisted() public {
+        address peerCpu = address(0xCA);
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+
+        // Caller not whitelisted.
+        _allowOnly(peerCpu);
+        vm.prank(CPU);
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+
+        // Peer not whitelisted (explicitly de-listed; _allowOnly only adds).
+        address[] memory allowCpu = new address[](1);
+        allowCpu[0] = CPU;
+        address[] memory disallowPeer = new address[](1);
+        disallowPeer[0] = peerCpu;
+        gachaTeamRegistry.setWhitelistedOpponents(allowCpu, disallowPeer);
+        vm.prank(CPU);
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+    }
+
     function test_setOpponentTeamFor_perUserIsolation() public {
         // CPU writes for ALICE then BOB; the two phantom slots should stay independent.
         _allowOnly(CPU);
 
         uint256[] memory aliceIndices = new uint256[](MONS_PER_TEAM);
-        aliceIndices[0] = 0; aliceIndices[1] = 1;
+        aliceIndices[0] = 0;
+        aliceIndices[1] = 1;
         uint256[] memory bobIndices = new uint256[](MONS_PER_TEAM);
-        bobIndices[0] = 2; bobIndices[1] = 3;
+        bobIndices[0] = 2;
+        bobIndices[1] = 3;
 
         uint8[] memory aliceFacets = new uint8[](MONS_PER_TEAM);
         aliceFacets[0] = 5;
@@ -396,15 +450,18 @@ contract GachaTeamRegistryTest is Test {
 
         uint256[] memory aliceTeam =
             gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(ALICE))));
-        uint256[] memory bobTeam =
-            gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(BOB))));
-        assertEq(aliceTeam[0], 0); assertEq(aliceTeam[1], 1);
-        assertEq(bobTeam[0], 2);   assertEq(bobTeam[1], 3);
+        uint256[] memory bobTeam = gachaTeamRegistry.getMonRegistryIndicesForTeam(CPU, uint256(uint16(uint160(BOB))));
+        assertEq(aliceTeam[0], 0);
+        assertEq(aliceTeam[1], 1);
+        assertEq(bobTeam[0], 2);
+        assertEq(bobTeam[1], 3);
 
         uint8[] memory aliceFacetsRead = gachaTeamRegistry.getOpponentTeamFacets(ALICE, CPU);
         uint8[] memory bobFacetsRead = gachaTeamRegistry.getOpponentTeamFacets(BOB, CPU);
-        assertEq(aliceFacetsRead[0], 5); assertEq(aliceFacetsRead[1], 0);
-        assertEq(bobFacetsRead[0], 0);   assertEq(bobFacetsRead[1], 12);
+        assertEq(aliceFacetsRead[0], 5);
+        assertEq(aliceFacetsRead[1], 0);
+        assertEq(bobFacetsRead[0], 0);
+        assertEq(bobFacetsRead[1], 12);
     }
 
     function test_setOpponentTeamFor_revertsOnFacetLengthMismatch() public {
@@ -436,8 +493,7 @@ contract GachaTeamRegistryTest is Test {
 
         // Even if some adversarial caller wrote opponentTeamFacets[BOB][...] (we can't, since
         // BOB isn't whitelisted; setOpponentTeam reverts), the path wouldn't be taken anyway.
-        (Mon[] memory aliceMons, Mon[] memory bobMons) =
-            gachaTeamRegistry.getTeams(ALICE, aliceTeam, BOB, 0);
+        (Mon[] memory aliceMons, Mon[] memory bobMons) = gachaTeamRegistry.getTeams(ALICE, aliceTeam, BOB, 0);
         assertEq(aliceMons[0].stats.hp, 100);
         assertEq(bobMons[0].stats.hp, 100);
     }
@@ -449,9 +505,10 @@ contract GachaTeamRegistryTest is Test {
         // truncates at the setUp's base speed, so we measure the asymmetry via the HP cost.
         _allowOnly(CPU);
         uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
-        monIndices[0] = 0; monIndices[1] = 1;
+        monIndices[0] = 0;
+        monIndices[1] = 1;
         uint8[] memory facets = new uint8[](MONS_PER_TEAM);
-        facets[0] = 4;  // +Atk / -HP at the default 5% cost.
+        facets[0] = 4; // +Atk / -HP at the default 5% cost.
         facets[1] = 10; // +Speed / -HP at the 10% speed cost.
 
         vm.prank(ALICE);
@@ -485,8 +542,7 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.assignFacets(ids, facetIds);
 
         _bobOwnsTeam();
-        (Mon[] memory aliceTeam, Mon[] memory bobTeam) =
-            gachaTeamRegistry.getTeams(ALICE, teamIdx, BOB, 0);
+        (Mon[] memory aliceTeam, Mon[] memory bobTeam) = gachaTeamRegistry.getTeams(ALICE, teamIdx, BOB, 0);
         assertEq(aliceTeam[0].stats.hp, 105, "Alice mon 0 HP boosted by facet 1");
         assertEq(aliceTeam[1].stats.hp, 100, "Alice mon 1 unaffected (no facet)");
         assertEq(bobTeam[0].stats.hp, 100, "Bob unaffected (human, no unlocked facets)");
@@ -766,8 +822,15 @@ contract GachaTeamRegistryTest is Test {
     function test_createMon_revertsOnNonSequentialMonId() public {
         // setUp creates NUM_STARTERS + INITIAL_ROLLS - 1 = 6 mons (ids 0..5). Next sequential is 6.
         MonStats memory stats = MonStats({
-            hp: 1, stamina: 1, speed: 1, attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-            type1: Type.None, type2: Type.None
+            hp: 1,
+            stamina: 1,
+            speed: 1,
+            attack: 1,
+            defense: 1,
+            specialAttack: 1,
+            specialDefense: 1,
+            type1: Type.None,
+            type2: Type.None
         });
         uint256[] memory empty = new uint256[](0);
         bytes32[] memory keys = new bytes32[](0);
@@ -833,15 +896,20 @@ contract GachaTeamRegistryTest is Test {
         // Pick the first unlocked facet (lowest set bit + 1).
         uint8 unlockedFacetId;
         for (uint8 i; i < 12; i++) {
-            if (bitmap & (1 << i) != 0) { unlockedFacetId = i + 1; break; }
+            if (bitmap & (1 << i) != 0) {
+                unlockedFacetId = i + 1;
+                break;
+            }
         }
         assertGt(unlockedFacetId, 0, "found unlocked facet");
 
         // Assign in bulk: slot 0 → unlocked facet, slot 1 → 0 (null).
         uint256[] memory ids = new uint256[](2);
-        ids[0] = ALICE_TEAM_MON_0; ids[1] = ALICE_TEAM_MON_1;
+        ids[0] = ALICE_TEAM_MON_0;
+        ids[1] = ALICE_TEAM_MON_1;
         uint8[] memory facetIds = new uint8[](2);
-        facetIds[0] = unlockedFacetId; facetIds[1] = 0;
+        facetIds[0] = unlockedFacetId;
+        facetIds[1] = 0;
 
         vm.prank(ALICE);
         gachaTeamRegistry.assignFacets(ids, facetIds);
@@ -931,13 +999,8 @@ contract GachaTeamRegistryTest is Test {
 
     function _simpleTurnsQuest(int16 lessThanOrEq) internal pure returns (Quests.Predicate[] memory preds) {
         preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({
-            op: Quests.Op.TURNS,
-            cmp: Quests.Cmp.LE,
-            negate: false,
-            arg: 0,
-            operand: lessThanOrEq
-        });
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.TURNS, cmp: Quests.Cmp.LE, negate: false, arg: 0, operand: lessThanOrEq});
     }
 
     function test_quests_addEditRemove() public {
@@ -987,7 +1050,8 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_constructorSeedsPool() public {
         // Fresh registry — constructor must seed the production quest pool.
-        GachaTeamRegistry fresh = new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
+        GachaTeamRegistry fresh =
+            new GachaTeamRegistry(MONS_PER_TEAM, MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
         assertEq(fresh.getQuestPoolLength(), 12, "constructor seeds 12 quests");
     }
 
@@ -1099,8 +1163,7 @@ contract GachaTeamRegistryTest is Test {
     function test_quests_op_HAS_MON_ID() public {
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
         preds[0] = Quests.Predicate({
-            op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false,
-            arg: uint16(ALICE_TEAM_MON_1), operand: 1
+            op: Quests.Op.HAS_MON_ID, cmp: Quests.Cmp.EQ, negate: false, arg: uint16(ALICE_TEAM_MON_1), operand: 1
         });
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
@@ -1121,7 +1184,8 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_op_MON_KO_AT_SLOT() public {
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: Quests.Op.MON_KO_AT_SLOT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.MON_KO_AT_SLOT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
@@ -1138,7 +1202,8 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_op_ALIVE_AT_SLOT() public {
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: Quests.Op.MON_ALIVE_AT_SLOT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.MON_ALIVE_AT_SLOT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
@@ -1149,7 +1214,8 @@ contract GachaTeamRegistryTest is Test {
 
     function test_quests_op_ACTIVE_SLOT_INDEX() public {
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: Quests.Op.ACTIVE_SLOT_INDEX, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.ACTIVE_SLOT_INDEX, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: 1});
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
@@ -1241,14 +1307,26 @@ contract GachaTeamRegistryTest is Test {
     function _mockHpDeltas(int32 d0, int32 d1) internal {
         MonState[] memory states = new MonState[](2);
         states[0] = MonState({
-            hpDelta: d0, staminaDelta: 0, speedDelta: 0, attackDelta: 0, defenceDelta: 0,
-            specialAttackDelta: 0, specialDefenceDelta: 0,
-            isKnockedOut: false, shouldSkipTurn: false
+            hpDelta: d0,
+            staminaDelta: 0,
+            speedDelta: 0,
+            attackDelta: 0,
+            defenceDelta: 0,
+            specialAttackDelta: 0,
+            specialDefenceDelta: 0,
+            isKnockedOut: false,
+            shouldSkipTurn: false
         });
         states[1] = MonState({
-            hpDelta: d1, staminaDelta: 0, speedDelta: 0, attackDelta: 0, defenceDelta: 0,
-            specialAttackDelta: 0, specialDefenceDelta: 0,
-            isKnockedOut: false, shouldSkipTurn: false
+            hpDelta: d1,
+            staminaDelta: 0,
+            speedDelta: 0,
+            attackDelta: 0,
+            defenceDelta: 0,
+            specialAttackDelta: 0,
+            specialDefenceDelta: 0,
+            isKnockedOut: false,
+            shouldSkipTurn: false
         });
         vm.mockCall(
             address(engine),
@@ -1277,11 +1355,7 @@ contract GachaTeamRegistryTest is Test {
         vm.warp(vm.getBlockTimestamp() + 1 days);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(
-            gachaTeamRegistry.pointsBalance(ALICE),
-            before + _winPts(1, true, false),
-            "post-level: quest passes"
-        );
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + _winPts(1, true, false), "post-level: quest passes");
     }
 
     function test_quests_op_MAX_LEVEL() public {
@@ -1300,19 +1374,14 @@ contract GachaTeamRegistryTest is Test {
         vm.warp(vm.getBlockTimestamp() + 1 days);
         uint256 before = gachaTeamRegistry.pointsBalance(ALICE);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
-        assertEq(
-            gachaTeamRegistry.pointsBalance(ALICE),
-            before + _winPts(1, true, false),
-            "MAX_LEVEL > 6 passes"
-        );
+        assertEq(gachaTeamRegistry.pointsBalance(ALICE), before + _winPts(1, true, false), "MAX_LEVEL > 6 passes");
     }
 
     function test_quests_op_FACET_COUNT() public {
         // FACET_COUNT EQ MONS_PER_TEAM (2 in this test) → all mons must have non-zero assignedFacetId.
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
         preds[0] = Quests.Predicate({
-            op: Quests.Op.FACET_COUNT, cmp: Quests.Cmp.EQ, negate: false,
-            arg: 0, operand: int16(int256(MONS_PER_TEAM))
+            op: Quests.Op.FACET_COUNT, cmp: Quests.Cmp.EQ, negate: false, arg: 0, operand: int16(int256(MONS_PER_TEAM))
         });
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
@@ -1326,8 +1395,18 @@ contract GachaTeamRegistryTest is Test {
         (uint16 bm1,) = gachaTeamRegistry.getFacetData(ALICE, ALICE_TEAM_MON_1);
         uint8 f0;
         uint8 f1;
-        for (uint8 i; i < 12; i++) { if (bm0 & uint16(1 << i) != 0) { f0 = i + 1; break; } }
-        for (uint8 i; i < 12; i++) { if (bm1 & uint16(1 << i) != 0) { f1 = i + 1; break; } }
+        for (uint8 i; i < 12; i++) {
+            if (bm0 & uint16(1 << i) != 0) {
+                f0 = i + 1;
+                break;
+            }
+        }
+        for (uint8 i; i < 12; i++) {
+            if (bm1 & uint16(1 << i) != 0) {
+                f1 = i + 1;
+                break;
+            }
+        }
 
         // Run a battle with NO facets assigned → quest fails.
         vm.warp(vm.getBlockTimestamp() + 1 days);
@@ -1336,9 +1415,11 @@ contract GachaTeamRegistryTest is Test {
 
         // Assign facets to both mons.
         uint256[] memory ids = new uint256[](2);
-        ids[0] = ALICE_TEAM_MON_0; ids[1] = ALICE_TEAM_MON_1;
+        ids[0] = ALICE_TEAM_MON_0;
+        ids[1] = ALICE_TEAM_MON_1;
         uint8[] memory facetIds = new uint8[](2);
-        facetIds[0] = f0; facetIds[1] = f1;
+        facetIds[0] = f0;
+        facetIds[1] = f1;
         vm.prank(ALICE);
         gachaTeamRegistry.assignFacets(ids, facetIds);
 
@@ -1346,17 +1427,14 @@ contract GachaTeamRegistryTest is Test {
         vm.warp(vm.getBlockTimestamp() + 1 days);
         _runBattleEnd(_ctxAliceVsCpu(ALICE, 0x0, 0x3, uint16(teamIdx)));
         uint256 afterPass = gachaTeamRegistry.pointsBalance(ALICE);
-        assertEq(
-            afterPass - afterFail,
-            _winPts(2, true, false),
-            "facet-count quest fires only once both assigned"
-        );
+        assertEq(afterPass - afterFail, _winPts(2, true, false), "facet-count quest fires only once both assigned");
     }
 
     function test_quests_op_MIN_HP_DELTA() public {
         // MIN_HP_DELTA GE -10 → no mon took more than 10 damage.
         Quests.Predicate[] memory preds = new Quests.Predicate[](1);
-        preds[0] = Quests.Predicate({op: Quests.Op.MIN_HP_DELTA, cmp: Quests.Cmp.GE, negate: false, arg: 0, operand: -10});
+        preds[0] =
+            Quests.Predicate({op: Quests.Op.MIN_HP_DELTA, cmp: Quests.Cmp.GE, negate: false, arg: 0, operand: -10});
         gachaTeamRegistry.addQuest(preds);
         _whitelist(CPU);
         uint256 teamIdx = _aliceTeamIndex();
@@ -1415,7 +1493,7 @@ contract GachaTeamRegistryTest is Test {
     struct DecodedGachaEvent {
         uint256 points;
         uint256[8] perMonExp;
-        uint256[8] perMonFacets;     // 12-bit bitmap per slot (bit i set = facet id (i+1) drawn this battle)
+        uint256[8] perMonFacets; // 12-bit bitmap per slot (bit i set = facet id (i+1) drawn this battle)
         uint256 bonusFlags;
         uint256 multiplier;
         uint256 outcome;
@@ -1544,10 +1622,10 @@ contract GachaTeamRegistryTest is Test {
 
     function test_packedStorage_lanesAreIsolated() public {
         vm.startPrank(ALICE);
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0, lane 0
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1, lane 1
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2, lane 2
-        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3, lane 3 (same group)
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3)); // slot 0, lane 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4)); // slot 1, lane 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5)); // slot 2, lane 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4)); // slot 3, lane 3 (same group)
 
         // Update slot 0 — should not affect slots 1/2/3 (same group, different lanes).
         uint256[] memory positions = new uint256[](2);
@@ -1557,15 +1635,19 @@ contract GachaTeamRegistryTest is Test {
 
         // Slot 0 has the new mons.
         uint256[] memory t0 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
-        assertEq(t0[0], 4); assertEq(t0[1], 5);
+        assertEq(t0[0], 4);
+        assertEq(t0[1], 5);
 
         // Slots 1/2/3 unchanged.
         uint256[] memory t1 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 1);
-        assertEq(t1[0], 0); assertEq(t1[1], 4);
+        assertEq(t1[0], 0);
+        assertEq(t1[1], 4);
         uint256[] memory t2 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 2);
-        assertEq(t2[0], 0); assertEq(t2[1], 5);
+        assertEq(t2[0], 0);
+        assertEq(t2[1], 5);
         uint256[] memory t3 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 3);
-        assertEq(t3[0], 3); assertEq(t3[1], 4);
+        assertEq(t3[0], 3);
+        assertEq(t3[1], 4);
     }
 
     function test_packedStorage_crossesGroupBoundary() public {
@@ -1576,14 +1658,17 @@ contract GachaTeamRegistryTest is Test {
         }
         // Touch slot 3 (group 0, lane 3) and slot 4 (group 1, lane 0) independently.
         uint256[] memory positions = new uint256[](2);
-        positions[0] = 0; positions[1] = 1;
+        positions[0] = 0;
+        positions[1] = 1;
         gachaTeamRegistry.updateTeam(3, positions, _aliceTeam(4, 5));
         gachaTeamRegistry.updateTeam(4, positions, _aliceTeam(3, 5));
 
         uint256[] memory t3 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 3);
         uint256[] memory t4 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 4);
-        assertEq(t3[0], 4); assertEq(t3[1], 5);
-        assertEq(t4[0], 3); assertEq(t4[1], 5);
+        assertEq(t3[0], 4);
+        assertEq(t3[1], 5);
+        assertEq(t4[0], 3);
+        assertEq(t4[1], 5);
     }
 
     function test_deleteTeam_clearsLiveBit() public {
@@ -1598,7 +1683,7 @@ contract GachaTeamRegistryTest is Test {
         vm.startPrank(ALICE);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
         vm.expectRevert(PackedTeamStore.TeamNotLive.selector);
-        gachaTeamRegistry.deleteTeam(1);  // slot 1 was never created
+        gachaTeamRegistry.deleteTeam(1); // slot 1 was never created
     }
 
     function test_deleteTeam_revertsOnOutOfRange() public {
@@ -1626,11 +1711,11 @@ contract GachaTeamRegistryTest is Test {
 
     function test_createTeam_reusesLowestFreeSlot() public {
         vm.startPrank(ALICE);
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2
-        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3
-        gachaTeamRegistry.createTeam(_aliceTeam(3, 5));  // slot 4
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3)); // slot 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4)); // slot 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5)); // slot 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4)); // slot 3
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 5)); // slot 4
 
         gachaTeamRegistry.deleteTeam(2);
         uint256 reused = gachaTeamRegistry.createTeam(_aliceTeam(4, 5));
@@ -1638,16 +1723,17 @@ contract GachaTeamRegistryTest is Test {
 
         // New team's mons live at the reused slot.
         uint256[] memory mons = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 2);
-        assertEq(mons[0], 4); assertEq(mons[1], 5);
+        assertEq(mons[0], 4);
+        assertEq(mons[1], 5);
     }
 
     function test_getOrderedLiveTeams_reflectsCreationOrderWithReuse() public {
         vm.startPrank(ALICE);
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));  // slot 0
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 4));  // slot 1
-        gachaTeamRegistry.createTeam(_aliceTeam(0, 5));  // slot 2
-        gachaTeamRegistry.createTeam(_aliceTeam(3, 4));  // slot 3
-        gachaTeamRegistry.createTeam(_aliceTeam(3, 5));  // slot 4
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3)); // slot 0
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 4)); // slot 1
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 5)); // slot 2
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 4)); // slot 3
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 5)); // slot 4
 
         gachaTeamRegistry.deleteTeam(2);
 
@@ -1681,8 +1767,10 @@ contract GachaTeamRegistryTest is Test {
         assertEq(slots.length, 2);
         assertEq(slots[0], 0);
         assertEq(slots[1], 2);
-        assertEq(teamMonIds[0][0], 0); assertEq(teamMonIds[0][1], 3);
-        assertEq(teamMonIds[1][0], 0); assertEq(teamMonIds[1][1], 5);
+        assertEq(teamMonIds[0][0], 0);
+        assertEq(teamMonIds[0][1], 3);
+        assertEq(teamMonIds[1][0], 0);
+        assertEq(teamMonIds[1][1], 5);
     }
 
     function test_createTeam_revertsOnCapReached() public {
@@ -1865,7 +1953,9 @@ contract GachaTeamRegistryTest is Test {
         (uint16 unlocked,) = gachaTeamRegistry.getFacetData(ALICE, 0);
         // Exactly one facet bit should be unlocked.
         uint256 count;
-        for (uint256 i; i < 12; ++i) if (unlocked & (1 << i) != 0) count++;
+        for (uint256 i; i < 12; ++i) {
+            if (unlocked & (1 << i) != 0) count++;
+        }
         assertEq(count, 1, "one facet drawn");
     }
 
@@ -1911,7 +2001,7 @@ contract GachaTeamRegistryTest is Test {
         uint256[] memory amounts = new uint256[](3);
         monIdsArr[0] = 0;
         monIdsArr[1] = 16; // bucket change
-        monIdsArr[2] = 1;  // bucket revisit
+        monIdsArr[2] = 1; // bucket revisit
         amounts[0] = 2;
         amounts[1] = 3;
         amounts[2] = 1;

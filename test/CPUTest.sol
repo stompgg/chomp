@@ -72,7 +72,7 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
 
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         teamRegistry.setTeam(address(cpu), team);
         teamRegistry.setTeam(ALICE, team);
         ProposedBattle memory proposal = ProposedBattle({
@@ -187,7 +187,7 @@ contract CPUTest is Test {
         Mon[] memory aliceTeam = new Mon[](1);
         aliceTeam[0] = aliceMon;
 
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         teamRegistry.setTeam(address(cpu), cpuTeam);
         teamRegistry.setTeam(ALICE, aliceTeam);
         ProposedBattle memory proposal = ProposedBattle({
@@ -334,7 +334,7 @@ contract CPUTest is Test {
     }
 
     function test_startCustomBattle_routesBattleMode() public {
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         bytes32 battleKey = _startDoublesVsCpu(cpu);
         (, BattleData memory data) = engine.getBattle(battleKey);
         assertTrue(data.isTwoSlotMode, "proposal battleMode reached the engine");
@@ -344,7 +344,7 @@ contract CPUTest is Test {
     ///      a single BattleCompleteWithBatchSlotTurns log whose payload is byte-identical to
     ///      winner ++ stream.
     function test_executeSlotGame_fullDoublesGameOneTx() public {
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         bytes32 battleKey = _startDoublesVsCpu(cpu);
 
         uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
@@ -380,7 +380,7 @@ contract CPUTest is Test {
 
     /// @dev Turns past the winning one are not executed and not replayed.
     function test_executeSlotGame_stopsAtWinner() public {
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         bytes32 battleKey = _startDoublesVsCpu(cpu);
 
         uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
@@ -411,7 +411,7 @@ contract CPUTest is Test {
     /// @dev Per-turn Doubles PvE: the player authors their side word + the CPU's lanes; no
     ///      forced-switch flag dispatch (mask turns ignore non-acting lanes by design).
     function test_selectSlotMovesWithCpuMoves_perTurnFlow() public {
-        CPU cpu = new CPU(engine);
+        CPU cpu = new CPU(engine, new address[](0));
         bytes32 battleKey = _startDoublesVsCpu(cpu);
 
         vm.prank(address(0xBEEF));
@@ -437,5 +437,138 @@ contract CPUTest is Test {
             0
         );
         assertEq(engine.getWinner(battleKey), ALICE);
+    }
+
+    // ---------------------------------------------------------------------
+    // Multi PvE (2 humans vs 2 CPUs): bundled config + start, one-tx settle
+    // ---------------------------------------------------------------------
+
+    address constant CARL = address(2);
+
+    function test_constructorApprovesSuppliedMatchmakers() public {
+        address externalMatchmaker = address(0x5155);
+        address[] memory matchmakers = new address[](1);
+        matchmakers[0] = externalMatchmaker;
+        CPU cpu = new CPU(engine, matchmakers);
+        assertTrue(engine.isMatchmakerFor(address(cpu), address(cpu)), "self-approval kept");
+        assertTrue(engine.isMatchmakerFor(address(cpu), externalMatchmaker), "supplied matchmaker approved (D34)");
+    }
+
+    /// @dev Format (a): ALICE + CARL vs two CPU hosts. One tx configures both CPU seats'
+    ///      phantom slots for ALICE and starts the MULTI battle; a second tx (executeSlotGame)
+    ///      settles the whole game. cpu2 approves cpu1 as matchmaker at construction (D34).
+    function test_startCustomMultiBattle_bundledConfigStartAndOneTxSettle() public {
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+        CustomAttack weakAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        CPU cpu1 = new CPU(engine, new address[](0));
+        address[] memory cpu1AsMatchmaker = new address[](1);
+        cpu1AsMatchmaker[0] = address(cpu1);
+        CPU cpu2 = new CPU(engine, cpu1AsMatchmaker);
+        teamRegistry.setWhitelistedOpponent(address(cpu1), true);
+        teamRegistry.setWhitelistedOpponent(address(cpu2), true);
+
+        // 4-mon seat teams: humans kill in one hit, CPUs chip.
+        address[4] memory seats = [ALICE, CARL, address(cpu1), address(cpu2)];
+        for (uint256 i; i < 4; ++i) {
+            Mon[] memory team = new Mon[](4);
+            for (uint256 j; j < 4; ++j) {
+                Mon memory mon = _createMon(Type.Air);
+                mon.stats.hp = i < 2 ? 1000 : 100;
+                mon.stats.stamina = 8;
+                mon.stats.speed = i < 2 ? 10 : 2;
+                mon.stats.attack = 10;
+                mon.stats.defense = 10;
+                mon.moves = new uint256[](1);
+                mon.moves[0] = uint256(uint160(address(i < 2 ? killAttack : weakAttack)));
+                team[j] = mon;
+            }
+            teamRegistry.setTeam(seats[i], team);
+        }
+        for (uint256 i; i < 2; ++i) {
+            vm.prank(seats[i]);
+            engine.updateMatchmakers(cpu1AsMatchmaker, new address[](0));
+        }
+
+        // Bundle: p1 = cpu1 (own-seat relay write), p2 = CARL (human, untouched), p3 = cpu2
+        // (peer write). CARL's supplied team index must survive; CPU indices get forced.
+        CustomMultiBattleProposal memory p;
+        p.p0 = ALICE;
+        p.p0TeamIndex = 0;
+        p.p1 = address(cpu1);
+        p.p1TeamIndex = 999; // must be overridden with ALICE's phantom key
+        p.p2 = CARL;
+        p.p2TeamIndex = 0;
+        p.p3 = address(cpu2);
+        p.p3TeamIndex = 999;
+        p.seatConfigs[0].monIndices = new uint256[](1);
+        p.seatConfigs[0].monIndices[0] = 7;
+        p.seatConfigs[0].facetIds = new uint8[](1);
+        p.seatConfigs[0].moveSelections = new uint8[](1);
+        p.seatConfigs[2].monIndices = new uint256[](1);
+        p.seatConfigs[2].monIndices[0] = 9;
+        p.seatConfigs[2].facetIds = new uint8[](1);
+        p.seatConfigs[2].moveSelections = new uint8[](1);
+        p.teamRegistry = teamRegistry;
+        p.rngOracle = defaultOracle;
+        p.ruleset = IRuleset(address(0));
+        p.moveManager = address(cpu1);
+        p.matchmaker = cpu1;
+        p.engineHooks = new IEngineHook[](0);
+
+        bytes32 battleKey = cpu1.startCustomMultiBattle(p);
+
+        // Both CPU seats' phantom configs were written for ALICE in the same tx.
+        assertEq(teamRegistry.phantomWriteCount(), 2);
+        (address user0, address opp0, uint256[] memory mons0) = teamRegistry.phantomWriteAt(0);
+        (address user1, address opp1, uint256[] memory mons1) = teamRegistry.phantomWriteAt(1);
+        assertEq(user0, ALICE);
+        assertEq(opp0, address(cpu1));
+        assertEq(mons0[0], 7);
+        assertEq(user1, ALICE);
+        assertEq(opp1, address(cpu2));
+        assertEq(mons1[0], 9);
+
+        // CPU team indices forced to ALICE's phantom key; the human teammate's passed through.
+        BattleEndContext memory ctx = engine.getBattleEndContext(battleKey);
+        assertEq(ctx.p1TeamIndex, uint16(uint160(ALICE)));
+        assertEq(ctx.p3TeamIndex, uint16(uint160(ALICE)));
+        assertEq(ctx.p2TeamIndex, 0);
+        address[4] memory canonical = engine.getSeats(battleKey);
+        assertEq(canonical[1], CARL, "canonical order [p0, p2, p1, p3]");
+
+        // One-tx settle by p0: send-ins, then 4 kill rounds with forced switches between.
+        vm.warp(vm.getBlockTimestamp() + 1);
+        bytes memory stream = _streamTurn(
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAAA1)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, 0)
+        );
+        for (uint256 round; round < 4; ++round) {
+            stream = abi.encodePacked(
+                stream,
+                _streamTurn(
+                    sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBB0 + uint16(round))),
+                    sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
+                )
+            );
+            if (round < 3) {
+                stream = abi.encodePacked(
+                    stream,
+                    _streamTurn(
+                        sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCC0 + uint16(round))),
+                        sideWord(SWITCH_MOVE_INDEX, uint16(round + 1), SWITCH_MOVE_INDEX, uint16(round + 5), 0)
+                    )
+                );
+            }
+        }
+
+        vm.prank(ALICE);
+        address winner = cpu1.executeSlotGame(battleKey, stream);
+        assertEq(winner, ALICE, "side wipe settles the whole Multi game in one tx");
     }
 }

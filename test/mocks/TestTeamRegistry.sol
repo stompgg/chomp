@@ -20,8 +20,42 @@ contract TestTeamRegistry is ITeamRegistry {
         isWhitelistedOpponent[addr] = flag;
     }
 
-    // IPhantomTeamRegistry stub so CPU.startCustomBattle's bundled config write lands here.
-    function setOpponentTeamFor(address, uint256[] memory, uint8[] memory, uint8[] memory) external {}
+    // IPhantomTeamRegistry stubs recording (user, opponent) so bundled-start tests can assert
+    // which phantom slots the CPU host wrote.
+    struct PhantomWrite {
+        address user;
+        address opponent;
+        uint256[] monIndices;
+    }
+
+    PhantomWrite[] public phantomWrites;
+
+    function phantomWriteCount() external view returns (uint256) {
+        return phantomWrites.length;
+    }
+
+    function phantomWriteAt(uint256 i)
+        external
+        view
+        returns (address user, address opponent, uint256[] memory monIndices)
+    {
+        PhantomWrite storage w = phantomWrites[i];
+        return (w.user, w.opponent, w.monIndices);
+    }
+
+    function setOpponentTeamFor(address user, uint256[] memory monIndices, uint8[] memory, uint8[] memory) external {
+        phantomWrites.push(PhantomWrite({user: user, opponent: msg.sender, monIndices: monIndices}));
+    }
+
+    function setOpponentTeamForPeer(
+        address user,
+        address opponent,
+        uint256[] memory monIndices,
+        uint8[] memory,
+        uint8[] memory
+    ) external {
+        phantomWrites.push(PhantomWrite({user: user, opponent: opponent, monIndices: monIndices}));
+    }
 
     function setTeam(address player, Mon[] memory team) public {
         teams[player] = team;

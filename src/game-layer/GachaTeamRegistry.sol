@@ -294,6 +294,22 @@ contract GachaTeamRegistry is
         _setOpponentTeam(msg.sender, user, monIndices, facetIds, moveSelections);
     }
 
+    /// @notice Peer-relay variant: a whitelisted CPU writes a user's phantom config for
+    /// ANOTHER whitelisted opponent, so one host can bundle a Multi battle's whole CPU
+    /// seating (config + start) in one tx. Both ends must be owner-whitelisted.
+    function setOpponentTeamForPeer(
+        address user,
+        address opponent,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
+    ) external override {
+        if (!isWhitelistedOpponent(msg.sender) || !isWhitelistedOpponent(opponent)) {
+            revert NotWhitelistedOpponent();
+        }
+        _setOpponentTeam(opponent, user, monIndices, facetIds, moveSelections);
+    }
+
     function _setOpponentTeam(
         address opponent,
         address user,

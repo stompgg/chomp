@@ -44,6 +44,35 @@ struct CustomBattleProposal {
     uint8 battleMode; // BATTLE_MODE_* (SINGLES or DOUBLES; Multi seats don't fit this shape)
 }
 
+// Used by CPU.startCustomMultiBattle: the 4-seat (Multi) analog of CustomBattleProposal —
+// bundles the phantom-config writes for every CPU seat with the battle start. seatConfigs
+// aligns with (p1, p2, p3); a config is applied only when the registry whitelists that seat
+// (its team index is then forced to p0's phantom key), and an empty monIndices skips the
+// write (seat already configured). Human seats use their supplied team index.
+struct SeatPhantomConfig {
+    uint256[] monIndices;
+    uint8[] facetIds;
+    uint8[] moveSelections;
+}
+
+struct CustomMultiBattleProposal {
+    address p0;
+    uint96 p0TeamIndex;
+    address p1;
+    uint96 p1TeamIndex;
+    address p2;
+    uint96 p2TeamIndex;
+    address p3;
+    uint96 p3TeamIndex;
+    SeatPhantomConfig[3] seatConfigs;
+    ITeamRegistry teamRegistry;
+    IRandomnessOracle rngOracle;
+    IRuleset ruleset;
+    address moveManager;
+    IMatchmaker matchmaker;
+    IEngineHook[] engineHooks;
+}
+
 // Used by SignedMatchmaker
 struct BattleOffer {
     Battle battle;

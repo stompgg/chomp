@@ -57,7 +57,14 @@ contract EngineAndPeriphery is Script {
         );
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
 
-        CPU cpu = new CPU(engine);
+        SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
+        deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
+
+        // The CPU approves the SignedMatchmaker at construction (D34) so signed Multi offers
+        // seating it pass the engine's per-seat matchmaker gate.
+        address[] memory cpuMatchmakers = new address[](1);
+        cpuMatchmakers[0] = address(signedMatchmaker);
+        CPU cpu = new CPU(engine, cpuMatchmakers);
         deployedContracts.push(DeployData({name: "CPU", contractAddress: address(cpu)}));
 
         // Whitelist the single CPU so users can setOpponentTeam / startCustomBattle against it.
@@ -67,9 +74,6 @@ contract EngineAndPeriphery is Script {
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }
-
-        SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
-        deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
         SimplePM simplePM = new SimplePM(engine);
         deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
