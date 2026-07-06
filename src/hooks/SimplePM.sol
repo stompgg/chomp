@@ -20,7 +20,13 @@ contract SimplePM {
     error GameNotOver(bytes32 battleKey);
     error InvalidBattle(bytes32 battleKey);
 
-    event sharesBought(bytes32 indexed battleKey, uint256 amount, bool isP0);
+    // Carries buyer + post-trade totals so consumers (belch/munch) never need a follow-up read.
+    // Non-indexed args are hand-packed into two words (ABI encoding would pad every field to 32 bytes):
+    //   word0: bits [0..95] sharesMinted | bits [96..191] p0Shares | bit 192 isP0
+    //   word1: bits [0..95] p1Shares    | bits [96..191] totalDeposits
+    // The deposit amount is omitted deliberately — it is recoverable as the delta of totalDeposits.
+    event sharesBought(bytes32 indexed battleKey, address indexed buyer, uint256 word0, uint256 word1);
+    event sharesClaimed(bytes32 indexed battleKey, address indexed claimant, uint256 amount);
 
     uint256 public constant DENOM = 100;
     uint256 public constant LAST_TURN_TO_JOIN = 15;
@@ -50,15 +56,21 @@ contract SimplePM {
         }
         uint96 depositValue = uint96(msg.value);
         uint96 sharesToMint = uint96(depositValue * (DENOM - (turnId * FEE_MULTIPLIER_PERCENT_PER_TURN)) / DENOM);
-        marketForBattle[battleKey].totalDeposits += depositValue;
+        PMEntry storage market = marketForBattle[battleKey];
+        market.totalDeposits += depositValue;
         if (isP0) {
-            marketForBattle[battleKey].p0Shares += sharesToMint;
+            market.p0Shares += sharesToMint;
             sharesPerUserForBattle[battleKey][msg.sender].p0SharesBalance += sharesToMint;
         } else {
-            marketForBattle[battleKey].p1Shares += sharesToMint;
+            market.p1Shares += sharesToMint;
             sharesPerUserForBattle[battleKey][msg.sender].p1SharesBalance += sharesToMint;
         }
-        emit sharesBought(battleKey, depositValue, isP0);
+        emit sharesBought(
+            battleKey,
+            msg.sender,
+            uint256(sharesToMint) | (uint256(market.p0Shares) << 96) | (isP0 ? uint256(1) << 192 : 0),
+            uint256(market.p1Shares) | (uint256(market.totalDeposits) << 96)
+        );
     }
 
     // Relayable bulk redemption to each holder; per-battle terms hoisted out of the loop.
@@ -98,6 +110,8 @@ contract SimplePM {
                     } else {
                         balance.p1SharesBalance = uint128(sharesToRedeem);
                     }
+                } else {
+                    emit sharesClaimed(battleKey, claimant, redemptionAmount);
                 }
             }
         }

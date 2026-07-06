@@ -21,7 +21,6 @@ import {AttackCalculator} from "./moves/AttackCalculator.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
 contract Engine is IEngine, MappingAllocator, EIP712 {
-    // Default validator config (immutable, for inline validation when validator is address(0))
     uint256 public immutable DEFAULT_MONS_PER_TEAM;
     uint256 public immutable DEFAULT_MOVES_PER_MON;
 

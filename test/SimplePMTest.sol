@@ -98,6 +98,21 @@ contract SimplePMTest is Test {
     SimplePM public pm;
     MockSimplePMEngine public mockEngine;
 
+    // Mirrors of the contract's events for vm.expectEmit.
+    event sharesBought(bytes32 indexed battleKey, address indexed buyer, uint256 word0, uint256 word1);
+    event sharesClaimed(bytes32 indexed battleKey, address indexed claimant, uint256 amount);
+
+    // Independent re-implementation of the event's packing layout, so expectEmit cross-checks
+    // the contract's bit math rather than reusing it.
+    function _packWords(bool isP0, uint96 sharesMinted, uint96 p0Shares, uint96 p1Shares, uint96 totalDeposits)
+        internal
+        pure
+        returns (uint256 word0, uint256 word1)
+    {
+        word0 = uint256(sharesMinted) | (uint256(p0Shares) << 96) | (isP0 ? uint256(1) << 192 : 0);
+        word1 = uint256(p1Shares) | (uint256(totalDeposits) << 96);
+    }
+
     bytes32 constant BATTLE_KEY = bytes32(uint256(1));
 
     address constant ALICE = address(0x1);
@@ -747,5 +762,51 @@ contract SimplePMTest is Test {
         // Second occurrence sees a zeroed balance and pays nothing.
         assertEq(ALICE.balance - aliceBefore, 1 ether);
         assertEq(address(pm).balance, 0);
+    }
+
+    // =========================================================================
+    // Group 8: Events
+    // =========================================================================
+
+    function test_T8_1_BuySharesEmitsBuyerAndPostTradeTotals() public {
+        // Turn 0 buy: full mint. isP0=true, minted 1e18, totals p0=1e18 / p1=0 / deposits=1e18.
+        (uint256 w0, uint256 w1) = _packWords(true, 1 ether, 1 ether, 0, 1 ether);
+        vm.expectEmit(true, true, false, true);
+        emit sharesBought(BATTLE_KEY, ALICE, w0, w1);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        // Second buy on the other side at turn 10: discounted mint, accumulated post-trade totals.
+        mockEngine.setTurnId(BATTLE_KEY, 10);
+        (w0, w1) = _packWords(false, 0.8 ether, 1 ether, 0.8 ether, 2 ether);
+        vm.expectEmit(true, true, false, true);
+        emit sharesBought(BATTLE_KEY, BOB, w0, w1);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+    }
+
+    function test_T8_2_ClaimEmitsSharesClaimed() public {
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        vm.expectEmit(true, true, false, true);
+        emit sharesClaimed(BATTLE_KEY, ALICE, 2 ether);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
+    }
+
+    function test_T8_3_FailedTransferEmitsNoClaimEvent() public {
+        ToggleReceiver rejecter = new ToggleReceiver(pm);
+        vm.deal(address(rejecter), 100 ether);
+        rejecter.buy{value: 1 ether}(BATTLE_KEY, true);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        vm.recordLogs();
+        pm.claimShares(BATTLE_KEY, _one(address(rejecter)));
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 }
