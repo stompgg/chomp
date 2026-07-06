@@ -41,6 +41,7 @@ struct CustomBattleProposal {
     address moveManager;
     IMatchmaker matchmaker;
     IEngineHook[] engineHooks;
+    uint8 battleMode; // BATTLE_MODE_* (SINGLES or DOUBLES; Multi seats don't fit this shape)
 }
 
 // Used by SignedMatchmaker

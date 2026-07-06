@@ -15,6 +15,8 @@ import {Battle, CustomBattleProposal, ProposedBattle} from "../Structs.sol";
 contract CPU is CPUMoveManager, IMatchmaker {
     constructor(IEngine engine) CPUMoveManager(engine) {}
 
+    /// @dev Singles-only by design: ProposedBattle is the legacy 2-seat shape with no mode
+    ///      field. Doubles PvE goes through startCustomBattle (battleMode in the proposal).
     function startBattle(ProposedBattle memory proposal) external returns (bytes32 battleKey) {
         (battleKey,) = ENGINE.computeBattleKey(proposal.p0, proposal.p1);
         ENGINE.startBattle(
@@ -47,7 +49,7 @@ contract CPU is CPUMoveManager, IMatchmaker {
 
         uint96 p1TeamIndex = uint96(uint16(uint160(p.p0)));
         (battleKey,) = ENGINE.computeBattleKey(p.p0, address(this));
-        ENGINE.startBattle(
+        ENGINE.startBattleWithMode(
             Battle({
                 p0: p.p0,
                 p0TeamIndex: p.p0TeamIndex,
@@ -63,7 +65,8 @@ contract CPU is CPUMoveManager, IMatchmaker {
                 engineHooks: p.engineHooks,
                 moveManager: p.moveManager,
                 matchmaker: p.matchmaker
-            })
+            }),
+            p.battleMode
         );
     }
 }

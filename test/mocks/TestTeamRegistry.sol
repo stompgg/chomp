@@ -20,6 +20,9 @@ contract TestTeamRegistry is ITeamRegistry {
         isWhitelistedOpponent[addr] = flag;
     }
 
+    // IPhantomTeamRegistry stub so CPU.startCustomBattle's bundled config write lands here.
+    function setOpponentTeamFor(address, uint256[] memory, uint8[] memory, uint8[] memory) external {}
+
     function setTeam(address player, Mon[] memory team) public {
         teams[player] = team;
     }

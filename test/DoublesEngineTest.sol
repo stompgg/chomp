@@ -560,4 +560,95 @@ contract DoublesEngineTest is Test {
         engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
         assertEq(uint256(engine.getActiveSlots(key)[1]), EMPTY_ACTIVE_LANE, "doubles lanes initialized");
     }
+
+    // ---------------------------------------------------------------------
+    // Entrypoint packing/mode guards
+    // ---------------------------------------------------------------------
+
+    /// @dev The singles-shaped manager entrypoints pack one move per side; on a 2-slot battle
+    ///      that word would silently half-execute (slot-1 lanes decode as unpopulated), so the
+    ///      engine rejects the packing/mode mismatch instead.
+    function test_singlesEntrypointsRejectTwoSlotBattles() public {
+        Mon[] memory aTeam = new Mon[](2);
+        aTeam[0] = _mkMon(1000, 20, killAttack);
+        aTeam[1] = _mkMon(1000, 10, killAttack);
+        Mon[] memory bTeam = new Mon[](2);
+        bTeam[0] = _mkMon(1000, 2, weakAttack);
+        bTeam[1] = _mkMon(1000, 1, weakAttack);
+        _startDoubles(aTeam, bTeam, address(0));
+
+        vm.expectRevert(Engine.WrongBattleMode.selector);
+        engine.executeWithMoves(battleKey, SWITCH_MOVE_INDEX, uint104(1), 0, SWITCH_MOVE_INDEX, uint104(2), 0);
+
+        // executeWithSingleMove rejects at its own flag check: 2-slot flags are 2 or
+        // 0x80|mask, never the 0/1 a single-player singles turn requires.
+        vm.expectRevert(Engine.NotSinglePlayerTurn.selector);
+        engine.executeWithSingleMove(battleKey, SWITCH_MOVE_INDEX, uint104(1), 0);
+
+        uint256[] memory entries = new uint256[](1);
+        vm.expectRevert(Engine.WrongBattleMode.selector);
+        engine.executeBatchedTurns(battleKey, entries);
+    }
+
+    /// @dev ...and the slot-shaped entrypoints reject singles battles (the reverse mismatch).
+    function test_slotEntrypointsRejectSinglesBattles() public {
+        Mon[] memory team = new Mon[](2);
+        team[0] = _mkMon(1000, 20, killAttack);
+        team[1] = _mkMon(1000, 10, killAttack);
+        registry.setTeam(ALICE, team);
+        registry.setTeam(BOB, team);
+        Battle memory battle = Battle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p1: BOB,
+            p1TeamIndex: 0,
+            p2: address(0),
+            p2TeamIndex: 0,
+            p3: address(0),
+            p3TeamIndex: 0,
+            teamRegistry: registry,
+            rngOracle: IRandomnessOracle(address(0)),
+            ruleset: IRuleset(address(0)),
+            moveManager: address(this),
+            matchmaker: IMatchmaker(address(this)),
+            engineHooks: new IEngineHook[](0)
+        });
+        (battleKey,) = engine.computeBattleKey(ALICE, BOB);
+        engine.startBattleWithMode(battle, BATTLE_MODE_SINGLES);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.expectRevert(Engine.WrongBattleMode.selector);
+        engine.executeWithSlotMoves(
+            battleKey,
+            _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1),
+            _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1)
+        );
+
+        uint256[] memory entries = new uint256[](2);
+        entries[0] = _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1);
+        entries[1] = _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1);
+        vm.expectRevert(Engine.WrongBattleMode.selector);
+        engine.executeBatchedSlotTurns(battleKey, entries);
+    }
+
+    function test_executeBatchedSlotTurns_callerAndShapeGuards() public {
+        Mon[] memory aTeam = new Mon[](2);
+        aTeam[0] = _mkMon(1000, 20, killAttack);
+        aTeam[1] = _mkMon(1000, 10, killAttack);
+        Mon[] memory bTeam = new Mon[](2);
+        bTeam[0] = _mkMon(1000, 2, weakAttack);
+        bTeam[1] = _mkMon(1000, 1, weakAttack);
+        _startDoubles(aTeam, bTeam, address(0));
+
+        uint256[] memory entries = new uint256[](2);
+        entries[0] = _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1);
+        entries[1] = _side(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1);
+        vm.prank(ALICE); // not the move manager
+        vm.expectRevert(Engine.WrongCaller.selector);
+        engine.executeBatchedSlotTurns(battleKey, entries);
+
+        uint256[] memory odd = new uint256[](3);
+        vm.expectRevert(Engine.InvalidBattleConfig.selector);
+        engine.executeBatchedSlotTurns(battleKey, odd);
+    }
 }

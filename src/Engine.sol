@@ -104,6 +104,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // The p1 (CPU) salt is dropped — always 0 on the batched (CPU) path. Moves are RAW indices
     // (consumer applies MOVE_INDEX_OFFSET, matching the MonMoves convention).
     event BattleCompleteWithBatchTurns(bytes32 indexed battleKey, bytes payload);
+    // Slot-mode analog (executeBatchedSlotTurns): [winner 20B | 25B/turn], each turn =
+    // side-0 wire word low 152 bits (19B) + side-1 word low 48 bits (6B; the CPU-side salt is
+    // always 0 on the batched path, so it is dropped).
+    event BattleCompleteWithBatchSlotTurns(bytes32 indexed battleKey, bytes payload);
     // Emitted by the built-in dual-signed buffer flow when a turn is staged (submitTurnMoves) or
     // submitted-and-executed (submitTurnMovesAndExecute). Both players' moves are known at submit, so
     // the full per-turn move data is published here in real time and the drain emits NO per-turn events.
@@ -463,7 +467,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // EngineExecute is a per-tx "a turn executed" ping (legacy = one turn per tx). The batched
         // drain runs many turns in one tx, so it emits MonMoves per turn but not this — hence it lives
         // here at the entrypoint, not inside the per-turn _executeInternal body.
-        winner = _executeInternal(battleKey, storageKey, true, true);
+        winner = _executeInternal(battleKey, storageKey, true, true, false);
         emit EngineExecute(battleKey);
     }
 
@@ -499,7 +503,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _turnP1Packed =
             _packTurn((uint256(p1StoredMoveIndex) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1ExtraData) << 8), p1Salt);
 
-        winner = _executeInternal(battleKey, storageKey, true, true);
+        winner = _executeInternal(battleKey, storageKey, true, true, false);
         emit EngineExecute(battleKey);
     }
 
@@ -532,7 +536,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn(encoded, salt);
         }
 
-        winner = _executeInternal(battleKey, storageKey, true, true);
+        winner = _executeInternal(battleKey, storageKey, true, true, false);
         emit EngineExecute(battleKey);
     }
 
@@ -575,7 +579,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
             }
 
-            winner = _executeInternal(battleKey, storageKey, false, false);
+            winner = _executeInternal(battleKey, storageKey, false, false, false);
             executed++;
             if (winner != address(0)) {
                 break;
@@ -665,7 +669,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
         }
 
-        return _executeInternal(battleKey, storageKey, false, true);
+        return _executeInternal(battleKey, storageKey, false, true, false);
     }
 
     /// @dev Reset per-turn transients between batched sub-turns so the next starts like a fresh tx.
@@ -986,7 +990,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         _turnP0Packed = _packSideTurn(side0);
         _turnP1Packed = _packSideTurn(side1);
-        return _executeInternal(battleKey, storageKey, false, true);
+        return _executeInternal(battleKey, storageKey, false, true, true);
     }
 
     function _drainSlotBuffer(bytes32 battleKey, bytes32 storageKey) internal {
@@ -1105,10 +1109,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      passes false and emits BattleCompleteWithBatchTurns instead). Combinations in use:
     ///      legacy (true,true), CPU one-tx (false,false), PvP drain (false,true).
     /// @return winner address(0) if the battle is still in progress, otherwise the winning player's address.
-    function _executeInternal(bytes32 battleKey, bytes32 storageKey, bool emitMonMoves, bool emitBattleComplete)
-        internal
-        returns (address winner)
-    {
+    function _executeInternal(
+        bytes32 battleKey,
+        bytes32 storageKey,
+        bool emitMonMoves,
+        bool emitBattleComplete,
+        bool slotPacked
+    ) internal returns (address winner) {
         // Load storage vars
         BattleData storage battle = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
@@ -1149,7 +1156,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // 2-slot battles (Doubles/Multi) take their own turn body from here; the shell above
         // (winner check, round-start hooks) is shared and the tail is duplicated inside.
-        if (battleMode != BATTLE_MODE_SINGLES) {
+        // The caller's transient packing must match the mode — a singles-shaped entrypoint on a
+        // 2-slot battle (or vice versa) would silently half-execute, so it reverts instead.
+        if ((battleMode != BATTLE_MODE_SINGLES) != slotPacked) {
+            revert WrongBattleMode();
+        }
+        if (slotPacked) {
             return _finishSlotTurn(battleKey, config, battle, numHooks, hookStepsUnion, emitBattleComplete);
         }
 
@@ -3392,7 +3404,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         _turnP0Packed = _packSideTurn(side0Packed);
         _turnP1Packed = _packSideTurn(side1Packed);
-        winner = _executeInternal(battleKey, storageKey, false, true);
+        winner = _executeInternal(battleKey, storageKey, false, true, true);
         emit EngineExecute(battleKey);
     }
 
@@ -3408,6 +3420,72 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 enc1 = ((m1 < SWITCH_MOVE_INDEX ? m1 + MOVE_INDEX_OFFSET : m1) | IS_REAL_TURN_BIT)
             | (((sidePacked >> 32) & 0xFFFF) << 8);
         return ((sidePacked >> 48) & ((uint256(1) << 104) - 1)) | (enc0 << 104) | (enc1 << 128);
+    }
+
+    /// @notice One-tx PvE settlement for 2-slot battles: `entries` holds one (side0, side1)
+    ///         wire-word pair per turn, executed in order until game over. Slot analog of
+    ///         executeBatchedTurns — same manager gate and client-authored-CPU trust model. No
+    ///         per-turn events; when the game concludes, the full replay ships in one
+    ///         BattleCompleteWithBatchSlotTurns log.
+    function executeBatchedSlotTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner)
+    {
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        BattleConfig storage config = battleConfig[storageKey];
+        if (msg.sender != config.moveManager) {
+            revert WrongCaller();
+        }
+        if (entries.length & 1 != 0) {
+            revert InvalidBattleConfig();
+        }
+        for (uint256 i = 0; i < entries.length; i += 2) {
+            _turnP0Packed = _packSideTurn(entries[i]);
+            _turnP1Packed = _packSideTurn(entries[i + 1]);
+            winner = _executeInternal(battleKey, storageKey, false, false, true);
+            executed++;
+            if (winner != address(0)) {
+                break;
+            }
+            // Reset per-turn transients so the next sub-turn starts like a fresh tx. Inlined
+            // copy for the same inliner reason as executeBatchedTurns (see _executeBatchedEntry).
+            _turnP0Packed = 0;
+            _turnP1Packed = 0;
+            tempRNG = 0;
+            koOccurredFlag = 0;
+            tempPreDamage = 0;
+            effectsDirtyBitmap = 0;
+        }
+        if (winner != address(0)) {
+            emit BattleCompleteWithBatchSlotTurns(battleKey, _packBatchSlotPayload(entries, executed, winner));
+        }
+    }
+
+    /// @dev Packs the BattleCompleteWithBatchSlotTurns payload: [winner 20B | 25B/turn], each
+    ///      turn = side-0 word low 152 bits + side-1 word low 48 bits (salt dropped — always 0
+    ///      on the batched path). Same pre-sized single-buffer scheme as _packBatchPayload; the
+    ///      final 6-byte-advance mstore writes 26 bytes past the end, hence the +26 slack.
+    function _packBatchSlotPayload(uint256[] calldata entries, uint256 numTurns, address winner)
+        private
+        pure
+        returns (bytes memory payload)
+    {
+        uint256 len = 20 + numTurns * 25;
+        payload = new bytes(len + 26);
+        assembly ("memory-safe") {
+            let ptr := add(payload, 32)
+            mstore(ptr, shl(96, winner)) // winner address in the leading 20 bytes
+            ptr := add(ptr, 20)
+            let src := entries.offset
+            for { let i := 0 } lt(i, numTurns) { i := add(i, 1) } {
+                mstore(ptr, shl(104, calldataload(add(src, mul(shl(1, i), 0x20)))))
+                ptr := add(ptr, 19)
+                mstore(ptr, shl(208, calldataload(add(src, add(mul(shl(1, i), 0x20), 0x20)))))
+                ptr := add(ptr, 6)
+            }
+            mstore(payload, len) // drop the slack bytes from the visible length
+        }
     }
 
     /// @notice Mid-execute per-slot move rewrite for 2-slot battles (the slot-aware analog of

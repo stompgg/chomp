@@ -95,6 +95,10 @@ interface IEngine {
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
         external
         returns (uint64 executed, address winner);
+    // 2-slot variant: entries are (side0, side1) wire-word pairs per turn.
+    function executeBatchedSlotTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner);
     function resetCallContext() external;
 
     // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles). Flat args: a single packed

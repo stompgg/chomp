@@ -107,6 +107,63 @@ abstract contract CPUMoveManager {
         _afterTurn(battleKey, rctx.p0, winner);
     }
 
+    /// @notice 2-slot (Doubles) analog of selectMoveWithCpuMove: p0 submits their full side
+    ///         word plus the CPU side's two client-computed lanes in one tx. No forced-switch
+    ///         flag dispatch is needed — both side words always land in the engine and a mask
+    ///         turn ignores the non-acting lanes (clients pass NO_OP filler there).
+    /// @param playerSidePacked p0's wire side word: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
+    function selectSlotMovesWithCpuMoves(
+        bytes32 battleKey,
+        uint256 playerSidePacked,
+        uint8 cpuMove0,
+        uint16 cpuExtra0,
+        uint8 cpuMove1,
+        uint16 cpuExtra1
+    ) external {
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        if (msg.sender != rctx.p0) {
+            revert NotP0();
+        }
+        if (rctx.winnerIndex != 2) {
+            return;
+        }
+
+        // Same deterministic CPU-side salt as the singles flow.
+        uint104 cpuSalt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
+        uint256 cpuSidePacked = uint256(cpuMove0) | (uint256(cpuExtra0) << 8) | (uint256(cpuMove1) << 24)
+            | (uint256(cpuExtra1) << 32) | (uint256(cpuSalt) << 48);
+        address winner = ENGINE.executeWithSlotMoves(battleKey, playerSidePacked, cpuSidePacked);
+
+        _afterTurn(battleKey, rctx.p0, winner);
+    }
+
+    /// @notice One-tx 2-slot PvE flow: p0 submits the whole game's turns and the engine settles
+    ///         them in one tx (executeBatchedSlotTurns). The CPU side's salt is always 0, as on
+    ///         the singles batched path.
+    /// @dev `moves` packs 25 bytes per turn: [side0 19B = m0 1 | e0 2 | m1 1 | e1 2 | salt 13
+    ///      | side1 6B = m0 1 | e0 2 | m1 1 | e1 2] — each slice is the big-endian tail of the
+    ///      wire side word, so the stream bytes match the BattleCompleteWithBatchSlotTurns
+    ///      replay payload byte-for-byte (minus the winner prefix).
+    function executeSlotGame(bytes32 battleKey, bytes calldata moves) external returns (address winner) {
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        if (msg.sender != rctx.p0) {
+            revert NotP0();
+        }
+        if (rctx.winnerIndex != 2) {
+            return address(0);
+        }
+
+        uint256 numTurns = moves.length / 25;
+        uint256[] memory entries = new uint256[](numTurns * 2);
+        for (uint256 i; i < numTurns; ++i) {
+            uint256 off = i * 25;
+            entries[i * 2] = uint256(uint152(bytes19(moves[off:off + 19])));
+            entries[i * 2 + 1] = uint256(uint48(bytes6(moves[off + 19:off + 25])));
+        }
+        (, winner) = ENGINE.executeBatchedSlotTurns(battleKey, entries);
+        _afterTurn(battleKey, rctx.p0, winner);
+    }
+
     /// @notice Post-execute hook. `winner == address(0)` means the battle is still ongoing;
     ///         otherwise it's the winning player's address. Subclasses override to react.
     function _afterTurn(bytes32 battleKey, address p0, address winner) internal virtual {}

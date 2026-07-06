@@ -11,8 +11,11 @@ import {Engine} from "../src/Engine.sol";
 import {CPU} from "../src/cpu/CPU.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
+import {CPUMoveManager} from "../src/cpu/CPUMoveManager.sol";
+import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
+import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 /// @notice Exercises the off-chain-decision batched-execution path (CPUMoveManager.executeGame): the
 ///         19-byte/turn stream decode, MonMoves-event suppression, and the BattleCompleteWithBatchTurns
@@ -258,5 +261,188 @@ contract CPUTest is Test {
         assertEq(vv & 0xFF, 1, "turn1 p0 raw move == attack(1)");
         assertEq((vv >> 24) & ((uint256(1) << 104) - 1), uint256(0xBEEF2), "turn1 p0 salt round-trips");
         assertEq((vv >> 128) & 0xFF, 1, "turn1 p1 raw move == attack(1)");
+    }
+
+    // ---------------------------------------------------------------------
+    // Doubles PvE (2-slot) flows
+    // ---------------------------------------------------------------------
+
+    /// @dev Doubles PvE fixture: ALICE (side 0) two one-shot killers vs the CPU's two victims.
+    ///      Started through startCustomBattle so the proposal's battleMode routing is covered.
+    function _startDoublesVsCpu(CPU cpu) internal returns (bytes32 battleKey) {
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+        CustomAttack weakAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        Mon memory playerMon = _createMon(Type.Air);
+        playerMon.stats.hp = 1000;
+        playerMon.stats.stamina = 5;
+        playerMon.stats.speed = 10;
+        playerMon.stats.attack = 10;
+        playerMon.stats.defense = 10;
+        playerMon.moves = new uint256[](1);
+        playerMon.moves[0] = uint256(uint160(address(killAttack)));
+        Mon memory cpuMon = _createMon(Type.Air);
+        cpuMon.stats.hp = 100;
+        cpuMon.stats.stamina = 5;
+        cpuMon.stats.speed = 2;
+        cpuMon.stats.attack = 10;
+        cpuMon.stats.defense = 10;
+        cpuMon.moves = new uint256[](1);
+        cpuMon.moves[0] = uint256(uint160(address(weakAttack)));
+
+        Mon[] memory playerTeam = new Mon[](2);
+        playerTeam[0] = playerMon;
+        playerTeam[1] = playerMon;
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = cpuMon;
+        cpuTeam[1] = cpuMon;
+        teamRegistry.setTeam(ALICE, playerTeam);
+        teamRegistry.setTeam(address(cpu), cpuTeam);
+
+        CustomBattleProposal memory p = CustomBattleProposal({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            monIndices: new uint256[](0),
+            facetIds: new uint8[](0),
+            moveSelections: new uint8[](0),
+            teamRegistry: teamRegistry,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            moveManager: address(cpu),
+            matchmaker: cpu,
+            engineHooks: new IEngineHook[](0),
+            battleMode: BATTLE_MODE_DOUBLES
+        });
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(cpu);
+        engine.updateMatchmakers(makersToAdd, new address[](0));
+        battleKey = cpu.startCustomBattle(p);
+        vm.stopPrank();
+        vm.warp(vm.getBlockTimestamp() + 1);
+    }
+
+    function _sideWord(uint8 m0, uint16 e0, uint8 m1, uint16 e1, uint104 salt) internal pure returns (uint256) {
+        return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32) | (uint256(salt) << 48);
+    }
+
+    function _targetBits(uint256 absSlot) internal pure returns (uint16) {
+        return uint16(uint256(1) << (TARGET_BITS_SHIFT + absSlot));
+    }
+
+    /// @dev Stream slices: big-endian tails of the wire side words (side 1's salt is dropped).
+    function _streamTurn(uint256 side0Word, uint256 side1Word) internal pure returns (bytes memory) {
+        return abi.encodePacked(bytes19(bytes32(side0Word << 104)), bytes6(bytes32(side1Word << 208)));
+    }
+
+    function test_startCustomBattle_routesBattleMode() public {
+        CPU cpu = new CPU(engine);
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+        (, BattleData memory data) = engine.getBattle(battleKey);
+        assertTrue(data.isTwoSlotMode, "proposal battleMode reached the engine");
+    }
+
+    /// @dev One-tx Doubles PvE: 25-byte/turn stream in, no per-turn events out, full replay in
+    ///      a single BattleCompleteWithBatchSlotTurns log whose payload is byte-identical to
+    ///      winner ++ stream.
+    function test_executeSlotGame_fullDoublesGameOneTx() public {
+        CPU cpu = new CPU(engine);
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        uint256 t0s0 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        bytes memory stream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
+        assertEq(stream.length, 2 * 25, "25 bytes per turn");
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        address winner = cpu.executeSlotGame(battleKey, stream);
+        assertEq(winner, ALICE);
+        assertEq(engine.getWinner(battleKey), ALICE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BattleCompleteWithBatchSlotTurns(bytes32,bytes)");
+        bytes32 monMovesSig = keccak256("MonMoves(bytes32,uint256,uint256)");
+        bytes32 engineExecuteSig = keccak256("EngineExecute(bytes32)");
+        uint256 batchLogs;
+        for (uint256 i; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != monMovesSig, "no per-turn MonMoves on the batched path");
+            assertTrue(logs[i].topics[0] != engineExecuteSig, "no per-turn EngineExecute on the batched path");
+            if (logs[i].topics[0] == batchSig) {
+                assertEq(logs[i].topics[1], battleKey);
+                bytes memory payload = abi.decode(logs[i].data, (bytes));
+                assertEq(payload, abi.encodePacked(winner, stream), "payload = winner ++ submitted stream");
+                batchLogs++;
+            }
+        }
+        assertEq(batchLogs, 1, "exactly one batch-completion log");
+    }
+
+    /// @dev Turns past the winning one are not executed and not replayed.
+    function test_executeSlotGame_stopsAtWinner() public {
+        CPU cpu = new CPU(engine);
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        uint256 t0s0 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        bytes memory winningStream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
+        bytes memory garbageTail = _streamTurn(
+            _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCCC3)),
+            _sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
+        );
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        address winner = cpu.executeSlotGame(battleKey, abi.encodePacked(winningStream, garbageTail));
+        assertEq(winner, ALICE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BattleCompleteWithBatchSlotTurns(bytes32,bytes)");
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] != batchSig) continue;
+            bytes memory payload = abi.decode(logs[i].data, (bytes));
+            assertEq(payload.length, 20 + 2 * 25, "only the executed turns are replayed");
+            assertEq(payload, abi.encodePacked(winner, winningStream));
+        }
+    }
+
+    /// @dev Per-turn Doubles PvE: the player authors their side word + the CPU's lanes; no
+    ///      forced-switch flag dispatch (mask turns ignore non-acting lanes by design).
+    function test_selectSlotMovesWithCpuMoves_perTurnFlow() public {
+        CPU cpu = new CPU(engine);
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(CPUMoveManager.NotP0.selector);
+        cpu.selectSlotMovesWithCpuMoves(battleKey, 0, 0, 0, 0, 0);
+
+        vm.prank(ALICE);
+        cpu.selectSlotMovesWithCpuMoves(
+            battleKey,
+            _sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1)),
+            SWITCH_MOVE_INDEX,
+            0,
+            SWITCH_MOVE_INDEX,
+            1
+        );
+        vm.prank(ALICE);
+        cpu.selectSlotMovesWithCpuMoves(
+            battleKey,
+            _sideWord(0, _targetBits(2), 0, _targetBits(3), uint104(0xBBBB2)),
+            NO_OP_MOVE_INDEX,
+            0,
+            NO_OP_MOVE_INDEX,
+            0
+        );
+        assertEq(engine.getWinner(battleKey), ALICE);
     }
 }
