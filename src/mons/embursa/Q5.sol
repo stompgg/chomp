@@ -59,7 +59,7 @@ contract Q5 is IMoveSet, BasicEffect {
         // Arm against the slot this cast aimed at (slot-bound, D3: a later switch redirects
         // the blast onto the occupant, never onto a different slot).
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == 4) return;
+        if (targetSlot == NO_SLOT) return;
         engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex, targetSlot));
 
         // Clear the priority boost

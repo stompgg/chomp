@@ -52,7 +52,7 @@ contract VolatilePunch is StandardAttack {
         uint256 rng
     ) public override {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        if (targetSlot == NO_SLOT) return; // no chosen target (defensive; the engine fizzles first)
         uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         (int32 damage,) = engine.dispatchStandardAttack(
@@ -71,7 +71,6 @@ contract VolatilePunch is StandardAttack {
 
         // Apply status effects if damage was dealt
         if (damage > 0) {
-
             // Use a different part of the RNG for status application. Mix in attacker player index
             // to break symmetry on mirror matchups.
             uint256 statusRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STATUS_EFFECT")));

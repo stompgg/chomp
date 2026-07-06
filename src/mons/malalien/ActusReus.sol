@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {EMPTY_ACTIVE_LANE} from "../../Constants.sol";
+import {EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
@@ -83,13 +83,13 @@ contract ActusReus is IAbility, BasicEffect {
         // Mirror-slot ruling: the speed halving lands opposite Malalien's slot (its lane still
         // holds it at the KO instant).
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 oppSlot = ownSlot == 4 ? 4 : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        uint256 oppSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         // Check if we have an indictment
         if (uint256(extraData) == 1) {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed
             bool isKOed =
                 engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
-            if (isKOed && oppSlot != 4) {
+            if (isKOed && oppSlot != NO_SLOT) {
                 uint256 otherPlayerIndex = oppSlot >> 1;
                 uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot);
                 StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);

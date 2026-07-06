@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, Type, TargetSpec} from "../../Enums.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, NO_SLOT} from "../../Constants.sol";
+import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -34,7 +34,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         uint256
     ) external {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        if (targetSlot == NO_SLOT) return; // no chosen target (defensive; the engine fizzles first)
         uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 

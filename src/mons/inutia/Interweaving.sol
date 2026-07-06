@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {EMPTY_ACTIVE_LANE} from "../../Constants.sol";
+import {EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
@@ -63,8 +63,8 @@ contract Interweaving is IAbility, BasicEffect {
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Mirror-slot ruling: the debuff lands opposite Inutia's own slot.
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 oppSlot = ownSlot == 4 ? 4 : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
-        if (oppSlot == 4) {
+        uint256 oppSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        if (oppSlot == NO_SLOT) {
             return (extraData, false);
         }
         uint256 otherPlayerIndex = oppSlot >> 1;

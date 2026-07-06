@@ -46,7 +46,7 @@ contract PistolSquat is StandardAttack {
         uint256 rng
     ) public override {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        if (targetSlot == NO_SLOT) return; // no chosen target (defensive; the engine fizzles first)
         uint256 otherPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Deal the damage

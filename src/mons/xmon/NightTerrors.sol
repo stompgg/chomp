@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
+import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
@@ -106,8 +106,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // mirror of the attacker's slot (kit-audit ruling for untargeted opponent effects).
         (, uint64 terrorCount) = _unpackExtraData(extraData);
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        uint256 defenderSlot = ownSlot == 4 ? 4 : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
-        if (defenderSlot == 4) {
+        uint256 defenderSlot = ownSlot == NO_SLOT ? NO_SLOT : TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        if (defenderSlot == NO_SLOT) {
             return (extraData, false);
         }
         uint256 defenderPlayerIndex = defenderSlot >> 1;

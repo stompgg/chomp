@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MOVE_INDEX_MASK, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
@@ -60,7 +60,7 @@ contract ZapStatus is StatusEffect {
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // If we're at RoundStart and effect is still present, always set skip flag and mark as skipped, unless the selected move is a switch move
         uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (slot == 4) {
+        if (slot == NO_SLOT) {
             return (bytes32(uint256(0)), false); // benched: nothing to skip this round
         }
         MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);

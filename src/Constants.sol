@@ -123,6 +123,10 @@ uint256 constant TARGET_BITS_SHIFT = 12;
 
 // activesPacked: one 8-bit lane per absolute slot carrying that slot's active roster index.
 uint256 constant EMPTY_ACTIVE_LANE = 0xFF;
+// TargetLib's "no such slot" answer: empty targetBits, a benched mon, or a vacant opposing
+// side. Consumers treat it as fizzle/skip — resolving it as a slot would alias side 2 (the
+// global-effect targetIndex).
+uint256 constant NO_SLOT = 4;
 // Singles actives word: lanes 1 and 3 (each side's slot-1) are always empty.
 uint256 constant SINGLES_EMPTY_LANES = 0xFF00FF00;
 

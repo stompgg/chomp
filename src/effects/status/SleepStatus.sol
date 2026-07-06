@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
@@ -57,7 +57,7 @@ contract SleepStatus is StatusEffect {
         // Rewrite the sleeper's own slot; a benched sleeper (possible mid-pass in 2-slot
         // battles) has no pending move to overwrite.
         uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (slot == 4) return;
+        if (slot == NO_SLOT) return;
         MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex != SWITCH_MOVE_INDEX) {

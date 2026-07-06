@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX} from "../../Constants.sol";
+import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {EffectInstance, MoveDecision, MoveMeta} from "../../Structs.sol";
 
@@ -98,7 +98,7 @@ contract HardReset is IMoveSet, BasicEffect {
         uint256 activesPacked
     ) external override returns (bytes32, bool) {
         uint256 restSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (restSlot == 4) {
+        if (restSlot == NO_SLOT) {
             return (extraData, false);
         }
         MoveDecision memory dec = engine.getMoveDecisionForSlot(battleKey, targetIndex, restSlot & 1);

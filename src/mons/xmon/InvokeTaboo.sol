@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
@@ -34,7 +34,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         uint256
     ) external {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == 4) return; // no chosen target (defensive; the engine fizzles first)
+        if (targetSlot == NO_SLOT) return; // no chosen target (defensive; the engine fizzles first)
         uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
@@ -87,7 +87,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         uint256 activesPacked
     ) external override returns (bytes32, bool) {
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (ownSlot == 4) {
+        if (ownSlot == NO_SLOT) {
             return (extraData, false);
         }
         MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);

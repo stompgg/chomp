@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
@@ -54,7 +54,7 @@ contract Tinderclaws is IAbility, BasicEffect {
         uint256 activesPacked
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
-        if (ownSlot == 4) {
+        if (ownSlot == NO_SLOT) {
             return (updatedExtraData, removeAfterRun);
         }
         MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);

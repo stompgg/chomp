@@ -2389,7 +2389,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // opposing slot-0 bit, so the odd-lane branch never runs and both mon reads share the
         // ONE activeMonIndex SLOAD (cached local — keeps the pre-2v2 load count exactly).
         uint256 defSlot = TargetLib.lowestSlot(targetBits);
-        if (defSlot == 4) {
+        if (defSlot == NO_SLOT) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
         uint256 defenderPlayerIndex = TargetLib.sideOf(defSlot);
@@ -2446,7 +2446,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Same slot resolution + empty-target miss guard as dispatchStandardAttack (shared
         // activeMonIndex SLOAD via the cached local).
         uint256 defSlot = TargetLib.lowestSlot(targetBits);
-        if (defSlot == 4) {
+        if (defSlot == NO_SLOT) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
         uint256 defenderPlayerIndex = TargetLib.sideOf(defSlot);
@@ -3434,7 +3434,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 numActed;
         for (uint256 pick; pick < 4;) {
             uint256 slot = _pickNextSlot(config, battle, lockedPriorities, actedMask, rng, pick, turnZero);
-            if (slot == 4) break;
+            if (slot == NO_SLOT) break;
             actedMask |= (1 << slot);
             actionOrder |= slot << (numActed << 3);
             unchecked {
@@ -3802,7 +3802,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 doneMask;
         for (uint256 pick; pick < 4;) {
             uint256 slot = _pickNextSlot(config, battle, 0, doneMask, rng, 16 + pick, false);
-            if (slot == 4) break;
+            if (slot == NO_SLOT) break;
             doneMask |= (1 << slot);
             if (battle.winnerIndex != 2) return;
             uint256 side = slot >> 1;

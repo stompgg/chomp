@@ -8,6 +8,7 @@ import {
     DEFAULT_PRIORITY,
     DEFAULT_VOL,
     MOVE_INDEX_MASK,
+    NO_SLOT,
     SWITCH_MOVE_INDEX,
     SWITCH_PRIORITY
 } from "../../Constants.sol";
@@ -55,7 +56,7 @@ contract RockPull is IMoveSet {
         uint256 rng
     ) external {
         uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot != 4 && _didTargetChooseSwitch(engine, battleKey, targetSlot)) {
+        if (targetSlot != NO_SLOT && _didTargetChooseSwitch(engine, battleKey, targetSlot)) {
             // Deal damage to the opposing mon
             AttackCalculator._calculateDamage(
                 engine,
