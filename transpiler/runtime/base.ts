@@ -526,6 +526,10 @@ export abstract class Contract {
    *  errors at call sites. */
   static readonly __argNames: Readonly<Record<string, readonly string[]>> = {};
 
+  /** Contract class name — overridden per contract by the transpiler (used for
+   *  address→class resolution). Declared here so the per-contract `override` is valid. */
+  static readonly __className: string = '';
+
   // =========================================================================
   // ADDRESS RESOLUTION
   // =========================================================================

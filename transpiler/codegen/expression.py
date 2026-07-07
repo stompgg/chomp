@@ -800,6 +800,20 @@ class ExpressionGenerator(BaseGenerator):
                                           'uint8', 'uint16', 'uint24', 'uint32', 'uint40', 'uint48'):
                         return f'Number({expr})'
 
+        # Array/mapping element access (e.g. seats[i] on address[4]): cast the element by its
+        # resolved type, mirroring the identifier case, so address/bytes values are `0x${string}`.
+        if isinstance(arg, IndexAccess):
+            elem = self._type_converter.resolve_access_type(arg)
+            if elem and elem.name and not elem.is_array:
+                t = elem.name
+                if t in self._ctx.known_enums:
+                    return f'Number({expr})'
+                if t in ('address', 'bytes32'):
+                    return f'{expr} as `0x${{string}}`'
+                if t in ('int8', 'int16', 'int24', 'int32', 'int40', 'int48',
+                         'uint8', 'uint16', 'uint24', 'uint32', 'uint40', 'uint48'):
+                    return f'Number({expr})'
+
         if isinstance(arg, MemberAccess):
             if arg.member in ('sender', 'origin', '_contractAddress'):
                 return f'{expr} as `0x${{string}}`'

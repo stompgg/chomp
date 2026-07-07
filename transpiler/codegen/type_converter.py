@@ -725,6 +725,10 @@ class TypeConverter(BaseGenerator):
 
         should_wrap = (
             (needs_conversion and isinstance(access.index, self._WRAPPABLE_INDEX))
+            # A numeric type-cast key, e.g. moveBuffer[key][uint64(turnId << 1)], generates a
+            # masked-bigint index whose outer AST node is the cast (not a BinaryOperation), so it
+            # would otherwise miss the wrap and leave a bigint object key (TS2538).
+            or (needs_conversion and self._is_numeric_type_cast(access.index))
             or (isinstance(access.index, Identifier) and self.is_bigint_typed_identifier(access.index))
         )
         if should_wrap and not index.startswith(f'{wrap}('):

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 from ..parser.ast_nodes import (
     Expression,
     Identifier,
+    IndexAccess,
     Literal,
     MemberAccess,
     FunctionCall,
@@ -126,6 +127,17 @@ class AbiTypeInferer:
             return self._infer_function_call_type(arg)
         if isinstance(arg, TypeCast):
             return self._infer_type_cast_type(arg)
+        if isinstance(arg, IndexAccess):
+            return self._infer_index_access_type(arg)
+        return "{type: 'uint256'}"
+
+    def _infer_index_access_type(self, arg: IndexAccess) -> str:
+        """Infer ABI type from an array/mapping element access (e.g. seats[i] on
+        address[4] → address). Falls back to uint256 when the element type can't be resolved."""
+        if self.type_converter:
+            elem = self.type_converter.resolve_access_type(arg)
+            if elem and elem.name:
+                return self._solidity_type_to_abi(elem.name, elem.is_array)
         return "{type: 'uint256'}"
 
     def _infer_identifier_type(self, arg: Identifier) -> str:

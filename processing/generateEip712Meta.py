@@ -15,6 +15,14 @@ from pathlib import Path
 
 # Files to scan for `keccak256("StructName(...)")` typehash string literals.
 TYPEHASH_SOURCES = ["src/commit-manager/SignedCommitLib.sol"]
+# Typehashes whose canonical EIP-712 string lives in a comment because the constant itself is a
+# precomputed hex value (the keccak256("...") regex can't reach it). Struct name → source file.
+# Battle / BattleOffer are intentionally NOT here — clients derive those from the SignedMatchmaker
+# ABI (see the module docstring).
+COMMENT_TYPEHASHES = {
+    "DualSignedSlotReveal": "src/commit-manager/SignedCommitLib.sol",
+    "SeatFill": "src/matchmaker/BattleOfferLib.sol",
+}
 # Files to scan for an EIP-712 domain (adjacent `name = "..."; version = "...";`).
 DOMAIN_SOURCES = [
     "src/Engine.sol",
@@ -39,6 +47,20 @@ def collect_typehashes(chomp_dir: Path) -> list[tuple[str, str]]:
             struct_name = s.split("(", 1)[0]
             seen.setdefault(struct_name, s)
     return [(screaming_snake(n), s) for n, s in seen.items()]
+
+
+def collect_comment_typehashes(chomp_dir: Path) -> list[tuple[str, str]]:
+    """[(STRUCT_NAME_SCREAMING, typehash_string)] for hex-constant typehashes whose canonical
+    string is documented in a comment. Matched as `StructName(...)`, which only appears in the
+    doc comment (function decls read `hashStructName(` — no word boundary before the struct)."""
+    out: list[tuple[str, str]] = []
+    for struct_name, rel in COMMENT_TYPEHASHES.items():
+        text = (chomp_dir / rel).read_text()
+        m = re.search(rf"\b{re.escape(struct_name)}\([^)]*\)", text)
+        if not m:
+            raise ValueError(f"typehash string for {struct_name} not found in {rel}")
+        out.append((screaming_snake(struct_name), m.group(0)))
+    return out
 
 
 def collect_domains(chomp_dir: Path) -> list[tuple[str, str, str]]:
@@ -74,7 +96,7 @@ def render_ts(typehashes: list[tuple[str, str]], domains: list[tuple[str, str, s
 def main() -> bool:
     chomp_dir = Path(__file__).parent.parent
     game_dir = chomp_dir.parent
-    typehashes = collect_typehashes(chomp_dir)
+    typehashes = collect_typehashes(chomp_dir) + collect_comment_typehashes(chomp_dir)
     domains = collect_domains(chomp_dir)
     if not typehashes or not domains:
         print(f"Error: extracted {len(typehashes)} typehashes, {len(domains)} domains")
