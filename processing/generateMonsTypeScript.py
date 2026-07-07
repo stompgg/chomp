@@ -24,6 +24,45 @@ def to_spritesheet_key(name: str) -> str:
     return re.sub(r"_+", "_", re.sub(r"[^a-zA-Z0-9]", "_", name)).strip("_").lower()
 
 
+def parse_constants(raw: str) -> Dict[str, int]:
+    """Parse the Constants column ('NAME=VAL;NAME=VAL') into a {NAME: int} dict."""
+    consts: Dict[str, int] = {}
+    for part in (raw or "").split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, val = part.partition("=")
+        consts[name.strip()] = int(val.strip())
+    return consts
+
+
+def _format_percent(value: float) -> str:
+    """Render a percentage with at most 1 decimal place (trailing .0 dropped)."""
+    rounded = round(value, 1)
+    if rounded == int(rounded):
+        return f"{int(rounded)}%"
+    return f"{rounded:.1f}%"
+
+
+def substitute_description(description: str, constants: Dict[str, int]) -> str:
+    """Replace {NAME} / {NAME:frac} tokens with percentage strings.
+
+    A token is a fraction (converted 100/value) when it carries the :frac modifier or its
+    name ends in _DENOM; otherwise the constant is treated as an already-percent value.
+    """
+
+    def repl(m: re.Match) -> str:
+        name, modifier = m.group(1), m.group(2)
+        if name not in constants:
+            print(f"⚠ description token {{{name}}} has no matching Constants entry — left raw")
+            return m.group(0)
+        value = constants[name]
+        is_frac = modifier == "frac" or name.endswith("_DENOM")
+        return _format_percent(100.0 / value if is_frac else float(value))
+
+    return re.sub(r"\{(\w+)(?::(\w+))?\}", repl, description or "")
+
+
 def read_csv(file_path: str) -> List[Dict[str, str]]:
     """Read a CSV file and return list of row dicts."""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -287,7 +326,9 @@ def read_moves_data(
             "priority": parse_int_or_unknown(row["Priority"]),
             "type": row["Type"],
             "class": row["Class"],
-            "description": row["DevDescription"],
+            "description": substitute_description(
+                row["DevDescription"], parse_constants(row.get("Constants", ""))
+            ),
             "inputType": row.get("InputType", "none").strip() or "none",
             "targetSpec": (row.get("TargetSpec") or "").strip() or "any-other-slot",
             "unlockLevel": int((row.get("UnlockLevel") or "0").strip() or "0"),

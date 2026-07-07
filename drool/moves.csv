@@ -44,7 +44,7 @@ Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate {HEAL
 Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals {SELF_DAMAGE_PERCENT} of max HP to self.,,none,0,SELF_DAMAGE_PERCENT=20,
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,Inflicts Sleep on self and opponent.,,none,0,,
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, {STAMINA_STEAL_PERCENT} chance to steal 1 stamina from opponent.",,none,0,STAMINA_STEAL_PERCENT=50,
-Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any mon that gains stamina — the +1 regen included — takes {DAMAGE_DENOM:frac} of its max HP per stack as damage, on both sides. A mon at full stamina gains nothing and is not taxed. Casting again adds a stack without resetting the countdown.",,none,0,DAMAGE_DENOM=8,
+Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any mon that gains stamina takes {DAMAGE_DENOM:frac} of its max HP per stack as damage. Repeated casts while active increase the damage but do not reset the cooldown.",,none,0,DAMAGE_DENOM=8,
 Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,none,0,,
 Invoke Taboo,Xmon,0,1,100,-1,Cosmic,Other,"Taboos the opponent's last used move. Until they switch out, if they use that move again they fall asleep.",,none,6,,
 Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,none,0,,
