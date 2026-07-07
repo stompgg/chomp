@@ -1,0 +1,11 @@
+# chomp-rt: hand-written runtime for the sol2rs-generated engine crate.
+# Source of truth lives at transpiler/runtime-rs/ (git-tracked); the copy in
+# transpiler/rs-output/runtime is a synced mirror, exactly like ts-output/runtime.
+[package]
+name = "chomp-rt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-primitives = { version = "0.8", default-features = false, features = ["std"] }
+sha2 = "0.10"

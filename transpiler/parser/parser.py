@@ -735,9 +735,12 @@ class Parser:
             self.expect(TokenType.SEMICOLON)
             return ContinueStatement()
         elif self.match(TokenType.UNCHECKED):
-            # unchecked { ... } - parse as a regular block
+            # unchecked { ... } - parse as a block tagged is_unchecked so the
+            # Rust backend can emit wrapping arithmetic (TS backend ignores it)
             self.advance()  # skip 'unchecked'
-            return self.parse_block()
+            block = self.parse_block()
+            block.is_unchecked = True
+            return block
         elif self.match(TokenType.TRY):
             return self.parse_try_statement()
         elif self.match(TokenType.ASSEMBLY):
@@ -851,26 +854,26 @@ class Parser:
         self.expect(TokenType.LPAREN)
         declarations = []
 
-        while not self.match(TokenType.RPAREN, TokenType.EOF):
-            if self.match(TokenType.COMMA):
-                declarations.append(None)
-                self.advance()
-                continue
-
-            type_name = self.parse_type_name()
-            storage_location = self.parse_storage_location()
-            name = self.expect(TokenType.IDENTIFIER).value
-
-            declarations.append(VariableDeclaration(
-                name=name,
-                type_name=type_name,
-                storage_location=storage_location,
-            ))
-
-            if self.match(TokenType.COMMA):
-                self.advance()
-                if self.match(TokenType.RPAREN):
+        # Slot-by-slot: components = separators + 1. `(bool a,,)` is THREE
+        # slots (a, empty, empty) — an empty slot is any comma/rparen sitting
+        # where a declaration would start.
+        if not self.match(TokenType.RPAREN):
+            while not self.match(TokenType.EOF):
+                if self.match(TokenType.COMMA, TokenType.RPAREN):
                     declarations.append(None)
+                else:
+                    type_name = self.parse_type_name()
+                    storage_location = self.parse_storage_location()
+                    name = self.expect(TokenType.IDENTIFIER).value
+                    declarations.append(VariableDeclaration(
+                        name=name,
+                        type_name=type_name,
+                        storage_location=storage_location,
+                    ))
+                if self.match(TokenType.COMMA):
+                    self.advance()
+                    continue
+                break
 
         self.expect(TokenType.RPAREN)
         self.expect(TokenType.EQ)

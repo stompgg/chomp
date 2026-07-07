@@ -1,0 +1,74 @@
+{
+  "$comment": "Rust-backend config (see codegen_rs/README.md). includeFiles: emission allowlist (discovery always parses all of src/). statefulContracts get a <Name>State in the generated World; flatten merges base contracts into the child's module/state. interfaceAliases route interface-value calls to the single transpiled impl; externalInterfaces route to world.ext (harness mocks); dispatchInterfaces route by ContractId; anything unrouted stubs loudly at the call site. stubCalls are bare names from non-transpiled bases (EIP712 dual-signed flow \u2014 on-chain-only).",
+  "includeFiles": [
+    "Enums.sol",
+    "Constants.sol",
+    "Structs.sol",
+    "IEngine.sol",
+    "Engine.sol",
+    "types/ITypeCalculator.sol",
+    "types/TypeCalcLib.sol",
+    "types/TypeCalculator.sol",
+    "rng/DefaultRandomnessOracle.sol",
+    "lib/RNGLib.sol",
+    "lib/StatBoostLib.sol",
+    "lib/StaminaRegenLogic.sol",
+    "lib/SwitchTargetLib.sol",
+    "lib/ValidatorLogic.sol",
+    "moves/IMoveSet.sol",
+    "moves/MoveSlotLib.sol",
+    "moves/AttackCalculator.sol",
+    "moves/StandardAttack.sol",
+    "moves/StandardAttackStructs.sol",
+    "effects/**/*.sol",
+    "mons/**/*.sol"
+  ],
+  "statefulContracts": [
+    "Engine"
+  ],
+  "flatten": {
+    "Engine": [
+      "MappingAllocator"
+    ]
+  },
+  "interfaceAliases": {
+    "ITypeCalculator": "TypeCalculator",
+    "IRandomnessOracle": "DefaultRandomnessOracle",
+    "IEngine": "Engine"
+  },
+  "externalInterfaces": [
+    "ITeamRegistry",
+    "IMatchmaker"
+  ],
+  "stubCalls": [
+    "_hashTypedData",
+    "_domainNameAndVersionMayChange"
+  ],
+  "stubFunctions": [
+    "submitTurnMoves",
+    "submitTurnMovesAndExecute",
+    "executeBuffered",
+    "getBufferedTurns",
+    "_validateAndPackTurn",
+    "_drainBuffer",
+    "_executeBatchedEntry",
+    "executeBatchedTurns",
+    "_packBatchPayload"
+  ],
+  "noopCalls": [
+    "_initializeOwner",
+    "_guardInitializeOwner"
+  ],
+  "skipBases": [
+    "Ownable"
+  ],
+  "dispatchInterfaces": [
+    "IMoveSet",
+    "IEffect",
+    "IAbility"
+  ],
+  "duckDispatchMethods": [
+    "basePower",
+    "accuracy"
+  ]
+}

@@ -299,6 +299,10 @@ class Statement(ASTNode):
 class Block(Statement):
     """Represents a block of statements enclosed in braces."""
     statements: List[Statement] = field(default_factory=list)
+    # True for Solidity `unchecked { ... }` blocks. The TypeScript backend ignores
+    # this (bigint arithmetic never traps, matching unchecked semantics), but the
+    # Rust backend must switch to wrapping arithmetic inside these blocks.
+    is_unchecked: bool = False
 
 
 @dataclass

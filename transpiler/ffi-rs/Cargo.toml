@@ -1,0 +1,18 @@
+# chomp-ffi: cdylib boundary for bun:ffi consumers — batch mode only.
+# chomp_run_games plays whole games natively (one crossing per batch).
+# Harness semantics live in chomp-strategies::sim; this crate is parsing
+# + JSON only.
+[package]
+name = "chomp-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chomp-engine = { path = "../engine" }
+chomp-rt = { path = "../runtime" }
+chomp-strategies = { path = "../strategies" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

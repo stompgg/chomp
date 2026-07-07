@@ -1,6 +1,7 @@
 /**
- * Single CPU-vs-CPU game driver for the balance arena, BRIDGED onto chomp's scripted harness
- * (`sims/src/harness.ts`) over `transpiler/ts-output`.
+ * Single CPU-vs-CPU game driver for the balance arena on the TS engine
+ * (`sims/src/harness.ts` over `transpiler/ts-output`). Bulk simulation
+ * lives on the native Rust stack (`chomp_run_games` via rust-ffi.ts).
  *
  * Seating (from munch): every strategy assumes it is p1, so the p0 seat reads through `transposeEngine`;
  * the p1 seat gets the true reveal of p0's move (production peek), the p0 seat only the opponent's
@@ -65,9 +66,18 @@ export function playGame(
   onBeforeExecute?: TurnHook,
 ): GameOutcome {
   const rng = makeRng(seed);
-
   const ctx = makeSimContext({ monsPerTeam: BigInt(TEAM_SIZE) });
   const battleKey = startArenaBattle(ctx, teams);
+  return runGameLoop(ctx, battleKey, stratP1, stratP0, rng, maxTurns, onBeforeExecute);
+}
+
+function runGameLoop(
+  ctx: SimContext,
+  battleKey: `0x${string}`,
+  stratP1: CpuStrategy, stratP0: CpuStrategy,
+  rng: () => number, maxTurns: number,
+  onBeforeExecute?: TurnHook,
+): GameOutcome {
   const engine = ctx.engine as any;
 
   const winnerNow = () => Number(engine.battleData[battleKey].winnerIndex);
