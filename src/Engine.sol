@@ -65,6 +65,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     error InvalidBattleConfig();
     error GameAlreadyOver();
     error GameStartsAndEndsSameBlock();
+    error NotPlayerInBattle();
     error BattleNotStarted();
     error NotTwoPlayerTurn();
     error NotSinglePlayerTurn();
@@ -1572,6 +1573,36 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             config.p1Move.packedMoveIndex = 0;
             _handleGameOver(battleKey, data.p0, true);
         }
+    }
+
+    /// @notice Concede: the caller's side loses and the opposing side is awarded the win.
+    /// @dev In Multi, either seat on a side forfeits for the whole side. Grants no gacha
+    ///      rewards (the OnBattleEnd reward gate requires a fully KO'd side), like end().
+    function forfeit(bytes32 battleKey) external {
+        BattleData storage data = battleData[battleKey];
+        if (data.winnerIndex != 2) {
+            revert GameAlreadyOver();
+        }
+        uint256 forfeiterSide;
+        if (msg.sender == data.p0) {
+            forfeiterSide = 0;
+        } else if (msg.sender == data.p1) {
+            forfeiterSide = 1;
+        } else if (data.isMultiMode && msg.sender == multiSeats[battleKey].p2) {
+            forfeiterSide = 0;
+        } else if (data.isMultiMode && msg.sender == multiSeats[battleKey].p3) {
+            forfeiterSide = 1;
+        } else {
+            revert NotPlayerInBattle();
+        }
+        bytes32 storageKey = _getStorageKey(battleKey);
+        storageKeyForWrite = storageKey;
+        BattleConfig storage config = battleConfig[storageKey];
+        data.winnerIndex = uint8((forfeiterSide + 1) % 2);
+        // Same freed-key hygiene as end(): no live IS_REAL_TURN_BIT on a recycled config.
+        config.p0Move.packedMoveIndex = 0;
+        config.p1Move.packedMoveIndex = 0;
+        _handleGameOver(battleKey, (forfeiterSide == 0) ? data.p1 : data.p0, true);
     }
 
     /// @param emitBattleComplete When false (batched path), the plain BattleComplete emit is

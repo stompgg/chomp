@@ -211,6 +211,16 @@ contract DoublesFlowsTest is BatchHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut), 1);
     }
 
+    function test_forfeit_doublesP1ForfeitAwardsP0() public {
+        (Mon[] memory aTeam, Mon[] memory bTeam) = _standardTeams();
+        _startDoublesViaOffer(aTeam, bTeam);
+        _sendInLeads(0);
+
+        vm.prank(p1);
+        engine.forfeit(battleKey);
+        assertEq(engine.getWinner(battleKey), p0);
+    }
+
     function test_reverts_modeAndRoleGuards() public {
         (Mon[] memory aTeam, Mon[] memory bTeam) = _standardTeams();
         _startDoublesViaOffer(aTeam, bTeam);

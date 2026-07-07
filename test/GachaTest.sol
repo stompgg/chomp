@@ -224,6 +224,50 @@ contract GachaTest is Test, BattleHelper {
         );
     }
 
+    // Forfeit ends the battle with neither side fully KO'd, so the reward gate pays nothing.
+    // (MONS_PER_TEAM = 1 here so the full-KO gate is real, unlike the 0-mon registries above.)
+    function test_noRewardsOnForfeit() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(1, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+
+        Mon[] memory team = new Mon[](1);
+        team[0] = Mon({
+            stats: MonStats({
+                hp: 10,
+                stamina: 2,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            moves: new uint256[](0),
+            ability: 0
+        });
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+        IEngineHook[] memory hooks = new IEngineHook[](1);
+        hooks[0] = gachaRegistry;
+        bytes32 battleKey =
+            _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, hooks, address(commitManager));
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        vm.recordLogs();
+        vm.startPrank(ALICE);
+        engine.forfeit(battleKey);
+
+        assertEq(engine.getWinner(battleKey), BOB);
+        assertEq(gachaRegistry.pointsBalance(ALICE), 0, "no points for forfeiter");
+        assertEq(gachaRegistry.pointsBalance(BOB), 0, "no points for winner");
+
+        bytes32 gachaEventSig = keccak256("GachaEvent(bytes32,uint256,uint256)");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; i++) {
+            require(logs[i].topics[0] != gachaEventSig, "no GachaEvent emitted");
+        }
+    }
+
     function test_spendPoints() public {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 

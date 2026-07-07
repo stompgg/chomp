@@ -2369,6 +2369,56 @@ contract EngineTest is Test, BattleHelper {
         commitManager.commitMove(battleKey, bytes32(0));
     }
 
+    function test_forfeitAwardsOtherPlayer() public {
+        bytes32 battleKey = _startDummyBattleWithTwoMons();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startPrank(ALICE);
+        engine.forfeit(battleKey);
+        assertEq(engine.getWinner(battleKey), BOB);
+
+        // The ended battle rejects further play
+        vm.startPrank(BOB);
+        vm.expectRevert(DefaultCommitManager.BattleAlreadyComplete.selector);
+        commitManager.commitMove(battleKey, bytes32(0));
+    }
+
+    function test_forfeitByP1AwardsP0() public {
+        bytes32 battleKey = _startDummyBattleWithTwoMons();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startPrank(BOB);
+        engine.forfeit(battleKey);
+        assertEq(engine.getWinner(battleKey), ALICE);
+    }
+
+    function test_forfeitRevertsForNonPlayer() public {
+        bytes32 battleKey = _startDummyBattleWithTwoMons();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startPrank(CARL);
+        vm.expectRevert(Engine.NotPlayerInBattle.selector);
+        engine.forfeit(battleKey);
+    }
+
+    function test_forfeitRevertsWhenGameAlreadyOver() public {
+        bytes32 battleKey = _startDummyBattleWithTwoMons();
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        vm.startPrank(ALICE);
+        engine.forfeit(battleKey);
+        vm.expectRevert(Engine.GameAlreadyOver.selector);
+        engine.forfeit(battleKey);
+    }
+
+    function test_forfeitRevertsSameBlockAsStart() public {
+        bytes32 battleKey = _startDummyBattleWithTwoMons();
+
+        vm.startPrank(ALICE);
+        vm.expectRevert(Engine.GameStartsAndEndsSameBlock.selector);
+        engine.forfeit(battleKey);
+    }
+
     // Helper function, creates a battle with two mons each for Alice and Bob
     function _startDummyBattleWithTwoMons() internal returns (bytes32) {
         uint256[] memory moves = new uint256[](1);

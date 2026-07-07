@@ -170,6 +170,31 @@ contract MultiFlowsTest is BatchHelper {
     }
 
     // ---------------------------------------------------------------------
+    // Forfeit: either seat concedes for its whole side
+    // ---------------------------------------------------------------------
+
+    function test_forfeit_secondSeatForfeitsWholeSide() public {
+        _startDirect();
+        vm.prank(p2); // side 0's second seat
+        engine.forfeit(battleKey);
+        assertEq(engine.getWinner(battleKey), p1, "side 1's lead is the winner address");
+    }
+
+    function test_forfeit_p3ForfeitAwardsSide0() public {
+        _startDirect();
+        vm.prank(p3); // side 1's second seat
+        engine.forfeit(battleKey);
+        assertEq(engine.getWinner(battleKey), p0);
+    }
+
+    function test_forfeit_nonSeatReverts() public {
+        _startDirect();
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(Engine.NotPlayerInBattle.selector);
+        engine.forfeit(battleKey);
+    }
+
+    // ---------------------------------------------------------------------
     // Battle-start shape validation
     // ---------------------------------------------------------------------
 
