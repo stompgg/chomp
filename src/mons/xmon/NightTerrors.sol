@@ -2,19 +2,19 @@
 
 pragma solidity ^0.8.0;
 
-import {DEFAULT_PRIORITY, DEFAULT_ACCURACY, DEFAULT_VOL, DEFAULT_CRIT_RATE} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
-import { MoveMeta } from "../../Structs.sol";
+import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL, NO_SLOT} from "../../Constants.sol";
+import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
-import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
+import {AttackCalculator} from "../../moves/AttackCalculator.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract NightTerrors is IMoveSet, BasicEffect {
-
     uint32 public constant BASE_DAMAGE_PER_STACK = 20;
     uint32 public constant ASLEEP_DAMAGE_PER_STACK = 30;
 
@@ -35,7 +35,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -87,23 +88,29 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     // Steps: RoundEnd, OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x8024;
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
-        external
-        override
-        returns (bytes32, bool)
-    {
-        // targetIndex/monIndex is the attacker (who has the effect)
-        // defenderPlayerIndex is stored in extraData (who should take damage)
-        (uint64 defenderPlayerIndex, uint64 terrorCount) = _unpackExtraData(extraData);
+    function onRoundEnd(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 activesPacked
+    ) external override returns (bytes32, bool) {
+        // targetIndex/monIndex is the attacker (who has the effect); each tick lands on the
+        // mirror of the attacker's slot (kit-audit ruling for untargeted opponent effects).
+        (, uint64 terrorCount) = _unpackExtraData(extraData);
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        uint256 defenderSlot = TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
+        if (defenderSlot == NO_SLOT) {
+            return (extraData, false);
+        }
+        uint256 defenderPlayerIndex = defenderSlot >> 1;
 
         // Check current stamina of the attacker (who has the effect)
         int32 staminaDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
@@ -117,11 +124,11 @@ contract NightTerrors is IMoveSet, BasicEffect {
         // Pay stamina cost from the attacker
         engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -int32(uint32(terrorCount)));
 
-        // Get the defender's active mon index
-        uint256 defenderMonIndex = defenderPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, defenderSlot);
 
         // Check if opponent (defender) is asleep (targeted lookup, no full-array build)
-        (bool isAsleep,,) = engine.getEffectData(battleKey, defenderPlayerIndex, defenderMonIndex, address(SLEEP_STATUS));
+        (bool isAsleep,,) =
+            engine.getEffectData(battleKey, defenderPlayerIndex, defenderMonIndex, address(SLEEP_STATUS));
 
         // Determine damage per stack based on sleep status
         uint32 damagePerStack = isAsleep ? ASLEEP_DAMAGE_PER_STACK : BASE_DAMAGE_PER_STACK;
@@ -134,7 +141,8 @@ contract NightTerrors is IMoveSet, BasicEffect {
             engine,
             TYPE_CALCULATOR,
             battleKey,
-            targetIndex, // attacker player index
+            targetIndex,
+            uint256(1) << defenderSlot, // attacker player index
             totalBasePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -150,7 +158,7 @@ contract NightTerrors is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override
@@ -166,13 +174,12 @@ contract NightTerrors is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

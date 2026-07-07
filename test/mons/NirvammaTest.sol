@@ -7,11 +7,10 @@ import {Test} from "forge-std/Test.sol";
 import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
@@ -44,7 +43,7 @@ contract NirvammaTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -75,7 +74,9 @@ contract NirvammaTest is Test, BattleHelper {
     {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, targetIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == eff) return true;
+            if (address(effects[i].effect) == eff) {
+                return true;
+            }
         }
         return false;
     }
@@ -83,7 +84,9 @@ contract NirvammaTest is Test, BattleHelper {
     function _countGlobalsOf(bytes32 battleKey, address eff) internal view returns (uint256 n) {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == eff) n++;
+            if (address(effects[i].effect) == eff) {
+                n++;
+            }
         }
     }
 
@@ -122,17 +125,9 @@ contract NirvammaTest is Test, BattleHelper {
 
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // both players send in mon 0
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
     }
 
     // Each case drives Nirvamma to a chosen stamina deficit before it rests, then pins the exact
@@ -232,9 +227,7 @@ contract NirvammaTest is Test, BattleHelper {
         assertEq(_countGlobalsOf(battleKey, address(hardReset)), 1, "HardReset present after cast");
 
         // Turn 2: Both rest. Both triggers fire in the same turn → effect self-removes.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(
             _countGlobalsOf(battleKey, address(hardReset)),
             0,
@@ -263,16 +256,8 @@ contract NirvammaTest is Test, BattleHelper {
         team[1] = caster;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
-        );
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
 
         // Turn 1: both cast HardReset. Two distinct caster slots → 2 globals.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
@@ -283,9 +268,7 @@ contract NirvammaTest is Test, BattleHelper {
         int32 aliceStamBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
         assertEq(
-            _countGlobalsOf(battleKey, address(hardReset)),
-            2,
-            "Re-cast by same caster does not add another global"
+            _countGlobalsOf(battleKey, address(hardReset)), 2, "Re-cast by same caster does not add another global"
         );
         // Stamina was still consumed.
         assertEq(
@@ -327,16 +310,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[1] = filler;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
-        );
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
     }
 
     function test_chronoffense_anchorThenDamageThenRearm() public {
@@ -352,9 +327,7 @@ contract NirvammaTest is Test, BattleHelper {
         );
 
         // Turn 2: Alice NO_OPs, Bob NO_OPs. Just to advance turns.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Turn 3: Alice fires Chronoffense again. elapsed = 2 → bp = 2*2*20 = 80.
         int32 bobHpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -399,13 +372,9 @@ contract NirvammaTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Alice swaps out Nirvamma → filler. Bob NO_OPs.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 1, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 1, 0);
         // Bob NO_OPs again, Alice swaps back to Nirvamma.
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
         // Fire. Anchor was set on turn 1 (turnId 1), now turnId = 4. elapsed = 3 → bp = 3*3*20 = 180.
         int32 bobHpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -448,16 +417,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[0] = bob;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-        battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
-        );
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
     }
 
     function test_modalBolt_perModeDispatchAndTracking() public {
@@ -469,19 +430,27 @@ contract NirvammaTest is Test, BattleHelper {
         // Pick Fire (mode 0).
         int32 hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        assertLt(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), hpBefore, "Fire dispatch deals damage");
+        assertLt(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), hpBefore, "Fire dispatch deals damage"
+        );
         assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x1, "Fire bit set");
 
         // Pick Ice (mode 1).
         hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 1, 0);
-        assertLt(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), hpBefore, "Ice dispatch deals damage");
+        assertLt(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), hpBefore, "Ice dispatch deals damage"
+        );
         assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x3, "Fire+Ice bits set");
 
         // Pick Lightning (mode 2).
         hpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 2, 0);
-        assertLt(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), hpBefore, "Lightning dispatch deals damage");
+        assertLt(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
+            hpBefore,
+            "Lightning dispatch deals damage"
+        );
         assertEq(modalBolt.getUsedModes(engine, battleKey, 0, 0), 0x7, "All three bits set");
     }
 
@@ -533,7 +502,10 @@ contract NirvammaTest is Test, BattleHelper {
 
     // ===== Adaptor =====
 
-    function _setupAdaptor() internal returns (bytes32 battleKey, Adaptor adaptor, StandardAttack atkA, StandardAttack atkB) {
+    function _setupAdaptor()
+        internal
+        returns (bytes32 battleKey, Adaptor adaptor, StandardAttack atkA, StandardAttack atkB)
+    {
         adaptor = new Adaptor();
         atkA = _ping(50);
         atkB = _ping(50);
@@ -575,16 +547,8 @@ contract NirvammaTest is Test, BattleHelper {
         bobTeam[1] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0
-        );
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
     }
 
     function test_adaptor_sameSourceHalving() public {

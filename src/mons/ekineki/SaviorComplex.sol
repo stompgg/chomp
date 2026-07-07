@@ -3,8 +3,8 @@
 pragma solidity ^0.8.0;
 
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
-import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 
 contract SaviorComplex is IAbility {
@@ -28,7 +28,9 @@ contract SaviorComplex is IAbility {
 
         // Count KO'd mons via bitmap popcount
         uint256 koBitmap = engine.getKOBitmap(battleKey, playerIndex);
-        if (koBitmap == 0) return;
+        if (koBitmap == 0) {
+            return;
+        }
         uint256 koCount = 0;
         for (uint256 bits = koBitmap; bits != 0; bits >>= 1) {
             koCount += bits & 1;
@@ -47,9 +49,7 @@ contract SaviorComplex is IAbility {
         // Apply temporary sp atk boost (cleared on switch out)
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialAttack,
-            boostPercent: boostPercent,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.SpecialAttack, boostPercent: boostPercent, boostType: StatBoostType.Multiply
         });
         engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
 

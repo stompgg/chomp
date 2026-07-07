@@ -19,8 +19,10 @@ interface IEffect {
         external
         returns (bool);
 
-    // Lifecycle hooks during normal battle flow
-    // p0ActiveMonIndex and p1ActiveMonIndex are passed to avoid external calls back to Engine
+    // Lifecycle hooks during normal battle flow.
+    // `activesPacked` carries every slot's active roster index (one 8-bit lane per absolute
+    // slot, EMPTY_ACTIVE_LANE = no mon there) — passed to avoid external calls back to Engine.
+    // Decode via TargetLib (sideActive / activeAt).
     function onRoundStart(
         IEngine engine,
         bytes32 battleKey,
@@ -28,8 +30,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onRoundEnd(
@@ -39,8 +40,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onMonSwitchIn(
@@ -50,8 +50,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onMonSwitchOut(
@@ -61,8 +60,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
@@ -76,8 +74,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex,
+        uint256 activesPacked,
         int32 damage,
         uint256 source
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
@@ -94,8 +91,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex,
+        uint256 activesPacked,
         uint256 source
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
@@ -106,8 +102,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
@@ -120,8 +115,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex,
+        uint256 activesPacked,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
@@ -134,8 +128,7 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external returns (bytes32 updatedExtraData, bool removeAfterRun);
 
     function onRemove(
@@ -144,7 +137,6 @@ interface IEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) external;
 }

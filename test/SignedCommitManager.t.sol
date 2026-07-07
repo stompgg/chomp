@@ -7,7 +7,6 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
@@ -25,7 +24,6 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
     SignedCommitManager signedCommitManager;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     DefaultMatchmaker matchmaker;
     TestMoveFactory moveFactory;
 
@@ -41,10 +39,7 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
 
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         signedCommitManager = new SignedCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         moveFactory = new TestMoveFactory();
@@ -102,7 +97,6 @@ abstract contract SignedCommitManagerTestBase is BattleHelper, SignedCommitHelpe
             p1: p1,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: mockOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -272,25 +266,6 @@ contract SignedCommitManagerTest is SignedCommitManagerTestBase {
 
         _completeTurnNormal(battleKey, 1);
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "Should be turn 2");
-    }
-
-    // =========================================================================
-    // Timeout Compatibility Tests
-    // =========================================================================
-
-    function test_timeout_worksNormally() public {
-        bytes32 battleKey = _startBattleWith(address(signedCommitManager));
-
-        // At the start, no one has timed out
-        address loser = validator.validateTimeout(battleKey, 0);
-        assertEq(loser, address(0), "No one should timeout yet");
-
-        // Fast forward past the commit timeout (2x timeout duration from battle start)
-        vm.warp(block.timestamp + 201);
-
-        // p0 (committer) should timeout for not committing
-        loser = validator.validateTimeout(battleKey, 0);
-        assertEq(loser, p0, "p0 should timeout for not committing");
     }
 
     // =========================================================================

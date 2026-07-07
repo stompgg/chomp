@@ -6,11 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
@@ -39,7 +38,6 @@ contract GhouliathTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     RiseFromTheGrave riseFromTheGrave;
     IMoveSet osteoporosis;
     WitherAway witherAway;
@@ -54,22 +52,27 @@ contract GhouliathTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         standardAttackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         riseFromTheGrave = new RiseFromTheGrave();
-        osteoporosis = standardAttackFactory.createAttack(ATTACK_PARAMS({
-            BASE_POWER: 90, STAMINA_COST: 2, ACCURACY: 100,
-            PRIORITY: 3, MOVE_TYPE: Type.Yin, EFFECT_ACCURACY: 100,
-            MOVE_CLASS: MoveClass.Physical, CRIT_RATE: 5, VOLATILITY: 10,
-            NAME: "Osteoporosis", EFFECT: IEffect(address(0))
-        }));
+        osteoporosis = standardAttackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 90,
+                STAMINA_COST: 2,
+                ACCURACY: 100,
+                PRIORITY: 3,
+                MOVE_TYPE: Type.Yin,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Physical,
+                CRIT_RATE: 5,
+                VOLATILITY: 10,
+                NAME: "Osteoporosis",
+                EFFECT: IEffect(address(0))
+            })
+        );
         panicStatus = new PanicStatus();
-        witherAway =
-            new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
+        witherAway = new WitherAway(ITypeCalculator(address(typeCalc)), IEffect(address(panicStatus)));
         eternalGrudge = new EternalGrudge();
         graveAffliction = new GraveAffliction();
         burnStatus = new BurnStatus();
@@ -87,21 +90,27 @@ contract GhouliathTest is Test, BattleHelper {
     function testRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
         uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(standardAttackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 100,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                MOVE_CLASS: MoveClass.Physical,
-                NAME: "Attack",
-                EFFECT: IEffect(address(0)),
-                EFFECT_ACCURACY: 0,
-                CRIT_RATE: 0,
-                VOLATILITY: 0
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    standardAttackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 100,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            MOVE_CLASS: MoveClass.Physical,
+                            NAME: "Attack",
+                            EFFECT: IEffect(address(0)),
+                            EFFECT_ACCURACY: 0,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0
+                        })
+                    )
+                )
+            )
+        );
         Mon memory ghouliathMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -149,7 +158,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -164,7 +173,7 @@ contract GhouliathTest is Test, BattleHelper {
         assertEq(isKnockedOut, 1);
 
         // Verify the effect is added to the global effects list
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         assertEq(
             address(effects[0].effect),
             address(riseFromTheGrave),
@@ -212,21 +221,27 @@ contract GhouliathTest is Test, BattleHelper {
     function testDoubleRiseFromTheGrave() public {
         // Create a team with a mon that has RiseFromTheGrave ability
         uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(standardAttackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 100,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                MOVE_CLASS: MoveClass.Physical,
-                NAME: "Attack",
-                EFFECT: IEffect(address(0)),
-                EFFECT_ACCURACY: 0,
-                CRIT_RATE: 0,
-                VOLATILITY: 0
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    standardAttackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 100,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            MOVE_CLASS: MoveClass.Physical,
+                            NAME: "Attack",
+                            EFFECT: IEffect(address(0)),
+                            EFFECT_ACCURACY: 0,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0
+                        })
+                    )
+                )
+            )
+        );
         Mon memory ghouliathMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -255,7 +270,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -345,7 +360,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -356,8 +371,8 @@ contract GhouliathTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that both mons have the PanicStatus effect applied
-        (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory bobEffects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
 
         // Check that both mons have at least one effect
         assertGt(aliceEffects.length, 0, "Alice's mon should have at least one effect");
@@ -447,7 +462,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -499,7 +514,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -533,11 +548,6 @@ contract GhouliathTest is Test, BattleHelper {
         internal
         returns (bytes32 battleKey)
     {
-        DefaultValidator validator2 = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         uint256[] memory aliceMoves = new uint256[](2);
         aliceMoves[0] = uint256(uint160(address(aliceMove0)));
         aliceMoves[1] = uint256(uint160(address(aliceMove1)));
@@ -547,12 +557,32 @@ contract GhouliathTest is Test, BattleHelper {
         bobMoves[1] = uint256(uint160(address(osteoporosis)));
 
         Mon memory aliceMon = Mon({
-            stats: MonStats({hp: 100, stamina: 10, speed: 10, attack: 5, defense: 5, specialAttack: 5, specialDefense: 5, type1: Type.Yang, type2: Type.None}),
+            stats: MonStats({
+                hp: 100,
+                stamina: 10,
+                speed: 10,
+                attack: 5,
+                defense: 5,
+                specialAttack: 5,
+                specialDefense: 5,
+                type1: Type.Yang,
+                type2: Type.None
+            }),
             moves: aliceMoves,
             ability: 0
         });
         Mon memory bobMon = Mon({
-            stats: MonStats({hp: 100, stamina: 10, speed: 5, attack: 5, defense: 5, specialAttack: 5, specialDefense: 5, type1: Type.Liquid, type2: Type.None}),
+            stats: MonStats({
+                hp: 100,
+                stamina: 10,
+                speed: 5,
+                attack: 5,
+                defense: 5,
+                specialAttack: 5,
+                specialDefense: 5,
+                type1: Type.Liquid,
+                type2: Type.None
+            }),
             moves: bobMoves,
             ability: 0
         });
@@ -567,7 +597,7 @@ contract GhouliathTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        battleKey = _startBattle(validator2, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -577,11 +607,21 @@ contract GhouliathTest is Test, BattleHelper {
     // status condition.
     function testGraveAffliction_firesWhenOpponentHasStatus() public {
         // A minimal attack that inflicts Burn on its target (used to give Bob a status condition).
-        IMoveSet burnApplier = standardAttackFactory.createAttack(ATTACK_PARAMS({
-            BASE_POWER: 10, STAMINA_COST: 2, ACCURACY: 100, PRIORITY: 3,
-            MOVE_TYPE: Type.Yang, EFFECT_ACCURACY: 100, MOVE_CLASS: MoveClass.Special,
-            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Burnify", EFFECT: IEffect(address(burnStatus))
-        }));
+        IMoveSet burnApplier = standardAttackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 10,
+                STAMINA_COST: 2,
+                ACCURACY: 100,
+                PRIORITY: 3,
+                MOVE_TYPE: Type.Yang,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Special,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Burnify",
+                EFFECT: IEffect(address(burnStatus))
+            })
+        );
 
         bytes32 battleKey = _startGraveAfflictionBattle(burnApplier, IMoveSet(address(graveAffliction)));
 

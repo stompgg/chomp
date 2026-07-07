@@ -7,17 +7,16 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {IEffect} from "../src/effects/IEffect.sol";  // Used by EffectAbility
-import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
-import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
+import {IEffect} from "../src/effects/IEffect.sol"; // Used by EffectAbility
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
-import {MockSingletonAbility} from "./mocks/MockSingletonAbility.sol";
-import {EffectAbility} from "./mocks/EffectAbility.sol";
 import {DummyStatus} from "./mocks/DummyStatus.sol";
+import {EffectAbility} from "./mocks/EffectAbility.sol";
+import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {MockSingletonAbility} from "./mocks/MockSingletonAbility.sol";
+import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @title Inline Ability Parity Tests
 /// @notice Verifies that inline packed abilities produce identical results to external dispatch
@@ -59,18 +58,11 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         return (basePower << 248) | (moveClass << 246) | (0 << 244) | (moveType << 240) | (stamina << 236);
     }
 
-    function _setupBattle(Mon[] memory aliceTeam, Mon[] memory bobTeam)
-        internal
-        returns (bytes32 battleKey)
-    {
+    function _setupBattle(Mon[] memory aliceTeam, Mon[] memory bobTeam) internal returns (bytes32 battleKey) {
         uint256 teamSize = aliceTeam.length > bobTeam.length ? aliceTeam.length : bobTeam.length;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-        DefaultValidator validator = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: teamSize, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
-        );
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
     }
 
     function _monWithAbility(uint256 ability) internal pure returns (Mon memory mon) {
@@ -88,18 +80,30 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         mon.stats.defense = 10;
     }
 
-    function _hasEffect(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, address effectAddr) internal view returns (bool) {
+    function _hasEffect(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, address effectAddr)
+        internal
+        view
+        returns (bool)
+    {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
-            if (address(effects[i].effect) == effectAddr) return true;
+            if (address(effects[i].effect) == effectAddr) {
+                return true;
+            }
         }
         return false;
     }
 
-    function _countEffect(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, address effectAddr) internal view returns (uint256 count) {
+    function _countEffect(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, address effectAddr)
+        internal
+        view
+        returns (uint256 count)
+    {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
-            if (address(effects[i].effect) == effectAddr) count++;
+            if (address(effects[i].effect) == effectAddr) {
+                count++;
+            }
         }
     }
 
@@ -116,8 +120,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         // Turn 0: both switch in
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "p0 should have effect");
@@ -138,19 +141,16 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         // Turn 0: switch in mon 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         assertEq(_countEffect(battleKey, 0, 0, address(singletonAbility)), 1, "should have 1 effect");
 
         // Switch to mon 1 then back to mon 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
         );
 
         assertEq(_countEffect(battleKey, 0, 0, address(singletonAbility)), 1, "should still have exactly 1 effect");
@@ -169,8 +169,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         // Turn 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Execute 2 attack turns — AfterDamage should increment counter each time
@@ -204,8 +203,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         // Turn 0
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // EffectAbility adds dummyEffect — verify it's registered
@@ -232,15 +230,13 @@ contract InlineAbilityParityTest is Test, BattleHelper {
 
         // Turn 0: switch in mon 0 (inline)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "alice mon 0 should have inline effect");
 
         // Alice switches to mon 1 (external)
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
         assertTrue(_hasEffect(battleKey, 0, 1, address(dummyEffect)), "alice mon 1 should have external effect");
     }
@@ -259,8 +255,7 @@ contract InlineAbilityParityTest is Test, BattleHelper {
         bytes32 battleKey = _setupBattle(aliceTeam, bobTeam);
 
         _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey,
-            SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         assertTrue(_hasEffect(battleKey, 0, 0, address(singletonAbility)), "p0 should have inline effect");

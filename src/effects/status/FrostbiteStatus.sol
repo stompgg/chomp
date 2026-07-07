@@ -2,13 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {StatBoostToApply} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract FrostbiteStatus is StatusEffect {
-
     int32 constant DAMAGE_DENOM = 16;
     uint8 constant SP_ATTACK_PERCENT = 50;
 
@@ -28,22 +27,14 @@ contract FrostbiteStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    )
-        public
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-
-        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        uint256 activesPacked
+    ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
 
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.SpecialAttack,
-            boostPercent: SP_ATTACK_PERCENT,
-            boostType: StatBoostType.Divide
+            stat: MonStateIndexName.SpecialAttack, boostPercent: SP_ATTACK_PERCENT, boostType: StatBoostType.Divide
         });
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
@@ -57,10 +48,9 @@ contract FrostbiteStatus is StatusEffect {
         bytes32 data,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override {
-        super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, data, targetIndex, monIndex, activesPacked);
 
         // Reset the special attack reduction
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
@@ -73,16 +63,10 @@ contract FrostbiteStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
-    )
-        public
-        override
-        returns (bytes32, bool)
-    {
+    ) public override returns (bytes32, bool) {
         // Calculate damage to deal
-        uint32 maxHealth =
-            engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+        uint32 maxHealth = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
         int32 damage = int32(maxHealth) / DAMAGE_DENOM;
         engine.dealDamage(targetIndex, monIndex, damage);
 

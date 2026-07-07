@@ -6,11 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -18,15 +17,15 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
+import {MoveClass} from "../../src/Enums.sol";
+import {IEffect} from "../../src/effects/IEffect.sol";
+import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {Baselight} from "../../src/mons/iblivion/Baselight.sol";
 import {Brightback} from "../../src/mons/iblivion/Brightback.sol";
-import {UnboundedStrike} from "../../src/mons/iblivion/UnboundedStrike.sol";
 import {Loop} from "../../src/mons/iblivion/Loop.sol";
 import {Renormalize} from "../../src/mons/iblivion/Renormalize.sol";
-import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
-import {IEffect} from "../../src/effects/IEffect.sol";
-import {MoveClass} from "../../src/Enums.sol";
+import {UnboundedStrike} from "../../src/mons/iblivion/UnboundedStrike.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {MockEffectRemover} from "../mocks/MockEffectRemover.sol";
@@ -37,7 +36,6 @@ contract IblivionTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
 
@@ -52,10 +50,7 @@ contract IblivionTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 4, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
@@ -105,7 +100,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
@@ -147,7 +142,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -157,15 +152,11 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start at 2 after switch-in round");
 
         // After one more round, should be 3 (max)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after one more round");
 
         // After another round, should still be 3 (capped at max)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should stay at 3 (max)");
     }
 
@@ -221,7 +212,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -231,9 +222,7 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start with 2 stacks");
 
         // Bob damages Alice first
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Get Alice's HP before Brightback
         int32 aliceHpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -243,9 +232,7 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after round");
 
         // Alice uses Brightback - should consume 1 stack and heal
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check Baselight decreased by 1 (3 - 1 = 2, then +1 at round end = 3 max)
         uint256 afterBrightback = baselight.getBaselightLevel(engine, battleKey, 0, 0);
@@ -286,7 +273,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -296,17 +283,13 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 0, "Should have 0 stacks without ability");
 
         // Bob damages Alice
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         int32 aliceHpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertTrue(aliceHpBefore < 0, "Alice should have taken damage");
 
         // Alice uses Brightback - should NOT heal (no stacks)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 aliceHpAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertEq(aliceHpAfter, aliceHpBefore, "Alice should not have healed without stacks");
@@ -364,7 +347,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -374,15 +357,17 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
 
         // Alice uses Unbounded Strike
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertTrue(bobHpDelta < 0, "Bob should have taken damage");
 
         // Stacks should NOT be consumed (still 2, but round end adds 1 = 3 max)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Stacks should not be consumed at < 3, capped at 3 after round end");
+        assertEq(
+            baselight.getBaselightLevel(engine, battleKey, 0, 0),
+            3,
+            "Stacks should not be consumed at < 3, capped at 3 after round end"
+        );
     }
 
     function test_unboundedStrikeEmpoweredPower() public {
@@ -435,7 +420,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -450,16 +435,18 @@ contract IblivionTest is Test, BattleHelper {
         int32 bobHpBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Alice uses Unbounded Strike at 3 stacks - empowered (130 power)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 bobHpAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         int32 damageDealt = bobHpBefore - bobHpAfter;
         assertTrue(damageDealt > 0, "Bob should have taken damage");
 
         // All stacks consumed (but round end adds 1, so should be 1)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Stacks should be consumed to 0 then gain 1 at round end");
+        assertEq(
+            baselight.getBaselightLevel(engine, battleKey, 0, 0),
+            1,
+            "Stacks should be consumed to 0 then gain 1 at round end"
+        );
     }
 
     // ============ Loop Tests ============
@@ -494,7 +481,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -507,9 +494,7 @@ contract IblivionTest is Test, BattleHelper {
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
 
         // Alice uses Loop
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         // Check stats are boosted (30% of 100 = 30)
         int32 attackAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
@@ -549,24 +534,20 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop first time
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackAfterFirst = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
 
         // Alice uses Loop second time - should fail
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackAfterSecond = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertEq(attackAfterSecond, attackAfterFirst, "Attack should not change when Loop fails");
@@ -602,7 +583,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both switch in mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -674,7 +655,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -689,9 +670,7 @@ contract IblivionTest is Test, BattleHelper {
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
 
         // Alice uses Loop at level 3 - should get 40% boost
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertEq(attackAfter - attackBefore, 40, "Attack should be boosted by 40% at level 3");
@@ -729,7 +708,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -739,9 +718,7 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
 
         // Alice uses Renormalize
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
 
         // Should be at 3 stacks (set to 3, then capped at max even with round end)
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Baselight should be set to 3");
@@ -777,24 +754,20 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop to get stat boosts
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackBoosted = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertTrue(attackBoosted > 0, "Attack should be boosted");
 
         // Alice uses Renormalize - should clear stat boosts
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackAfterRenormalize = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertEq(attackAfterRenormalize, 0, "Attack boost should be cleared");
@@ -830,30 +803,24 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
         // Alice uses Loop
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
 
         // Alice uses Renormalize
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
 
         assertFalse(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should no longer be active");
 
         // Alice can use Loop again
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackBoosted = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
         assertTrue(attackBoosted > 0, "Attack should be boosted again after Renormalize");
@@ -910,7 +877,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -1007,7 +974,7 @@ contract IblivionTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mons
         _commitRevealExecuteForAliceAndBob(
@@ -1019,9 +986,7 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(aliceAttackBefore, 0, "Alice's attack delta should start at 0");
 
         // Bob inflicts burn on Alice (move index 0), Alice does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify Alice has burn effect and attack debuff applied
         (EffectInstance[] memory effectsAfterBurn,) = engine.getEffects(battleKey, 0, 0);
@@ -1041,9 +1006,7 @@ contract IblivionTest is Test, BattleHelper {
         assertEq(aliceAttackAfterBurn, -1 * int32(baseAttack) / 2, "Attack debuff should be -50%");
 
         // Alice uses Renormalize (move index 3), Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice's attack is reset to base (0 delta) after Renormalize
         int32 aliceAttackAfterRenormalize = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
@@ -1072,9 +1035,7 @@ contract IblivionTest is Test, BattleHelper {
                 }
             }
         }
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, burnSlot
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, burnSlot);
 
         // Verify burn effect is removed
         (EffectInstance[] memory effectsAfterRemove,) = engine.getEffects(battleKey, 0, 0);
@@ -1089,6 +1050,8 @@ contract IblivionTest is Test, BattleHelper {
 
         // Verify stats remain at base (removeStatBoosts silently failed, no revert, no stat change)
         int32 aliceAttackFinal = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
-        assertEq(aliceAttackFinal, 0, "Alice's attack should remain at base after burn removal (no double-removal issue)");
+        assertEq(
+            aliceAttackFinal, 0, "Alice's attack should remain at base after burn removal (no double-removal issue)"
+        );
     }
 }

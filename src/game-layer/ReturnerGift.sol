@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {Ownable} from "../lib/Ownable.sol";
 import {MerkleProofLib} from "../lib/MerkleProofLib.sol";
-import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
+import {Ownable} from "../lib/Ownable.sol";
 import {IExpAssigner} from "./IExpAssigner.sol";
+import {IGachaPointsAssigner} from "./IGachaPointsAssigner.sol";
 import {ITeamRegistry} from "./ITeamRegistry.sol";
 
 /// @notice Merkle-gated returner gift. The owner publishes a root whose leaves encode
@@ -39,9 +39,13 @@ contract ReturnerGift is Ownable {
 
     function claim(bytes32[] calldata proof, uint256 tier) external {
         bytes32 root = merkleRoot;
-        if (claimed[root][msg.sender]) revert AlreadyClaimed();
+        if (claimed[root][msg.sender]) {
+            revert AlreadyClaimed();
+        }
         bytes32 leaf = keccak256(abi.encodePacked(msg.sender, tier));
-        if (!MerkleProofLib.verifyCalldata(proof, root, leaf)) revert InvalidProof();
+        if (!MerkleProofLib.verifyCalldata(proof, root, leaf)) {
+            revert InvalidProof();
+        }
 
         claimed[root][msg.sender] = true;
 
@@ -51,7 +55,9 @@ contract ReturnerGift is Ownable {
 
         if (monCount > 0) {
             uint256[] memory liveSlots = TEAM_REGISTRY.getOrderedLiveTeams(msg.sender);
-            if (liveSlots.length == 0) revert NoLiveTeam();
+            if (liveSlots.length == 0) {
+                revert NoLiveTeam();
+            }
             uint256[] memory teamMons = TEAM_REGISTRY.getMonRegistryIndicesForTeam(msg.sender, liveSlots[0]);
             uint256[] memory monIds = new uint256[](monCount);
             uint256[] memory expAmounts = new uint256[](monCount);
@@ -68,12 +74,24 @@ contract ReturnerGift is Ownable {
         pure
         returns (uint256 pointsAmount, uint256 monCount, uint256 expPerMon)
     {
-        if (tier == 1) return (16, 0, 0);
-        if (tier == 2) return (16, 1, 4);
-        if (tier == 3) return (16, 2, 4);
-        if (tier == 4) return (20, 3, 8);
-        if (tier == 5) return (24, 4, 8);
-        if (tier == 6) return (31, 4, 8);
+        if (tier == 1) {
+            return (16, 0, 0);
+        }
+        if (tier == 2) {
+            return (16, 1, 4);
+        }
+        if (tier == 3) {
+            return (16, 2, 4);
+        }
+        if (tier == 4) {
+            return (20, 3, 8);
+        }
+        if (tier == 5) {
+            return (24, 4, 8);
+        }
+        if (tier == 6) {
+            return (31, 4, 8);
+        }
         revert InvalidTier();
     }
 }

@@ -6,11 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
@@ -38,16 +37,13 @@ contract GorillaxTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         matchmaker = new DefaultMatchmaker(engine);
     }
 
     function test_angery() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
         Angery angery = new Angery();
 
         // Create a team with a mon that has Angery ability
@@ -55,21 +51,27 @@ contract GorillaxTest is Test, BattleHelper {
         uint256 hpScale = 100;
 
         // Strong attack is exactly max hp / threshold
-        moves[0] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: uint32(hpScale),
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "Strong",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        moves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: uint32(hpScale),
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "Strong",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
         Mon memory angeryMon = Mon({
             stats: MonStats({
                 hp: uint32(int32(angery.MAX_HP_DENOM()) * int32(uint32(hpScale))),
@@ -93,7 +95,7 @@ contract GorillaxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -113,9 +115,6 @@ contract GorillaxTest is Test, BattleHelper {
     }
 
     function test_rockPull() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
         RockPull rockPull = new RockPull(typeCalc);
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(rockPull)));
@@ -164,7 +163,7 @@ contract GorillaxTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -172,9 +171,7 @@ contract GorillaxTest is Test, BattleHelper {
         );
 
         // Alice uses Rock Pull, Bob switches to mon index 1
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint16(0), uint16(1)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, SWITCH_MOVE_INDEX, uint16(0), uint16(1));
 
         // Assert that Bob's mon index 0 took damage
         int32 bobMonHPDelta = -1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
@@ -186,9 +183,7 @@ contract GorillaxTest is Test, BattleHelper {
         );
 
         // Alice uses Rock Pull, Bob does not switch
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Assert that Alice's mon index 0 took damage
         int32 aliceMonHPDelta = -1 * engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);

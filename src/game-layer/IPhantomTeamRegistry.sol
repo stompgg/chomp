@@ -11,4 +11,12 @@ interface IPhantomTeamRegistry {
         uint8[] memory facetIds,
         uint8[] memory moveSelections
     ) external;
+
+    function setOpponentTeamForPeer(
+        address user,
+        address opponent,
+        uint256[] memory monIndices,
+        uint8[] memory facetIds,
+        uint8[] memory moveSelections
+    ) external;
 }

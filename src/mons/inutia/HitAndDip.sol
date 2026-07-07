@@ -8,6 +8,7 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -37,29 +38,35 @@ contract HitAndDip is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
-        uint256 defenderMonIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) public override {
         // Deal the damage
         (int32 damage,) = engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
 
         if (damage > 0) {
             // extraData contains the swap index as raw uint16
             uint256 swapIndex = uint256(extraData);
-            engine.switchActiveMon(attackerPlayerIndex, swapIndex);
+            engine.switchActiveMonForSlot(
+                attackerPlayerIndex,
+                TargetLib.slotOfMon(activesPacked, attackerPlayerIndex, attackerMonIndex) & 1,
+                swapIndex
+            );
         }
     }
-
-    function extraDataType() public pure override returns (ExtraDataType) {
-        return ExtraDataType.SelfTeamIndex;
-    }
-    // Inherits StandardAttack.getMeta, which calls extraDataType() internally and resolves
-    // to this override.
 }

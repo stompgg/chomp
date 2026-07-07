@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MoveDecision} from "../../Structs.sol";
-import {SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
+import {MoveDecision} from "../../Structs.sol";
 
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract ZapStatus is StatusEffect {
@@ -27,10 +28,9 @@ contract ZapStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
 
         // Compute priority player index
         uint256 priorityPlayerIndex = engine.computePriorityPlayerIndex(battleKey, rng);
@@ -56,11 +56,14 @@ contract ZapStatus is StatusEffect {
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // If we're at RoundStart and effect is still present, always set skip flag and mark as skipped, unless the selected move is a switch move
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (slot == NO_SLOT) {
+            return (bytes32(uint256(0)), false); // benched: nothing to skip this round
+        }
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, slot & 1);
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
         if (moveIndex == SWITCH_MOVE_INDEX) {
             return (bytes32(uint256(0)), false);
@@ -75,13 +78,12 @@ contract ZapStatus is StatusEffect {
         bytes32 data,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override {
-        super.onRemove(engine, battleKey, data, targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, data, targetIndex, monIndex, activesPacked);
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         public
         pure
         override

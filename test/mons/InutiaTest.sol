@@ -5,12 +5,11 @@ pragma solidity ^0.8.0;
 import "../../lib/forge-std/src/Test.sol";
 
 import "../../src/Constants.sol";
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import "../../src/Structs.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
@@ -21,8 +20,8 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {BlessedStatus} from "../../src/effects/status/BlessedStatus.sol";
+import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {ChainExpansion} from "../../src/mons/inutia/ChainExpansion.sol";
 import {Initialize} from "../../src/mons/inutia/Initialize.sol";
 import {Interweaving} from "../../src/mons/inutia/Interweaving.sol";
@@ -44,7 +43,7 @@ contract InutiaTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         interweaving = new Interweaving();
         blessedStatus = new BlessedStatus();
@@ -55,31 +54,62 @@ contract InutiaTest is Test, BattleHelper {
 
     // Sanctify gives Inutia the Blessed status, which heals maxHp/16 at the end of each turn.
     function test_sanctifyBlessedHeals() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
         uint256[] memory aliceMoves = new uint256[](1);
         aliceMoves[0] = uint256(uint160(address(sanctify)));
 
         // Bob carries a chip-damage move (no volatility/crit) to deterministically wound Alice first,
         // so the (overheal-capped) Blessed heal is observable.
         uint256[] memory bobMoves = new uint256[](1);
-        bobMoves[0] = uint256(uint160(address(attackFactory.createAttack(ATTACK_PARAMS({
-            BASE_POWER: 50, STAMINA_COST: 1, ACCURACY: 100, PRIORITY: 1,
-            MOVE_TYPE: Type.Liquid, EFFECT_ACCURACY: 0, MOVE_CLASS: MoveClass.Physical,
-            CRIT_RATE: 0, VOLATILITY: 0, NAME: "Chip", EFFECT: IEffect(address(0))
-        })))));
+        bobMoves[0] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 50,
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            MOVE_TYPE: Type.Liquid,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "Chip",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         // hp 160 ⇒ Blessed heals 160/16 = 10 per tick.
         Mon memory aliceMon = Mon({
-            stats: MonStats({hp: 160, stamina: 10, speed: 5, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Faith, type2: Type.None}),
+            stats: MonStats({
+                hp: 160,
+                stamina: 10,
+                speed: 5,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Faith,
+                type2: Type.None
+            }),
             moves: aliceMoves,
             ability: 0
         });
         Mon memory bobMon = Mon({
-            stats: MonStats({hp: 160, stamina: 10, speed: 10, attack: 10, defense: 10, specialAttack: 10, specialDefense: 10, type1: Type.Liquid, type2: Type.None}),
+            stats: MonStats({
+                hp: 160,
+                stamina: 10,
+                speed: 10,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Liquid,
+                type2: Type.None
+            }),
             moves: bobMoves,
             ability: 0
         });
@@ -94,7 +124,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -104,7 +134,9 @@ contract InutiaTest is Test, BattleHelper {
         int32 aliceAfterDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         int32 damageTaken = -aliceAfterDamage;
         // Damage must exceed one heal tick so the heal isn't clamped by the overheal guard.
-        assertGt(damageTaken, int32(160) / blessedStatus.HEAL_DENOM(), "Alice should be wounded by more than one heal tick");
+        assertGt(
+            damageTaken, int32(160) / blessedStatus.HEAL_DENOM(), "Alice should be wounded by more than one heal tick"
+        );
 
         // Turn 3: Alice uses Sanctify; Bob no-ops. Blessed is applied and ticks once at this round's end.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -175,12 +207,8 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
-
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Store Bob's mon initial Attack stat
         int32 bobInitialAttack = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
@@ -195,9 +223,7 @@ contract InutiaTest is Test, BattleHelper {
         // post-boost stat is 100 * (100 - P) / 100 = 100 - P, so the delta equals -P exactly.
         int32 expectedDecrease = -int32(uint32(interweaving.DECREASE_PERCENTAGE()));
         int32 bobAttackAfterSwapIn = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
-        assertEq(
-            bobAttackAfterSwapIn, bobInitialAttack + expectedDecrease, "Attack should be decreased after swap in"
-        );
+        assertEq(bobAttackAfterSwapIn, bobInitialAttack + expectedDecrease, "Attack should be decreased after swap in");
 
         // Alice switches back to the regular mon, Bob does a No-Op
         _commitRevealExecuteForAliceAndBob(
@@ -216,11 +242,6 @@ contract InutiaTest is Test, BattleHelper {
 
     function test_initialize() public {
         Initialize initialize = new Initialize();
-
-        // Create a validator with 2 mons and 1 move per mon
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
 
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(initialize)));
@@ -249,7 +270,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Send in mons
         _commitRevealExecuteForAliceAndBob(
@@ -316,29 +337,32 @@ contract InutiaTest is Test, BattleHelper {
     function test_chainExpansion() public {
         TypeCalculator tc = new TypeCalculator();
         ChainExpansion ce = new ChainExpansion(tc);
-        DefaultValidator v = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 3, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
 
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(ce)));
-        moves[1] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 64,
-                STAMINA_COST: 0,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                // Use Type.Yang so Yang->Metal = 1x in TypeCalcLib
-                // (Liquid->Metal would be 0.5x, halving Bob's damage to Alice's m1).
-                MOVE_TYPE: Type.Yang,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "Damage Attack",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        moves[1] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 64,
+                            STAMINA_COST: 0,
+                            ACCURACY: 100,
+                            PRIORITY: 1,
+                            // Use Type.Yang so Yang->Metal = 1x in TypeCalcLib
+                            // (Liquid->Metal would be 0.5x, halving Bob's damage to Alice's m1).
+                            MOVE_TYPE: Type.Yang,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "Damage Attack",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
 
         // 1/8 damage
         Mon memory m1 = Mon({
@@ -399,7 +423,7 @@ contract InutiaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(v, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -410,7 +434,7 @@ contract InutiaTest is Test, BattleHelper {
 
         // Using Chain Expansion twice will not lead to two global effects (turn 2)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 2, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         assertEq(effects.length, 1, "Chain Expansion should only be applied once");
 
         // Bob swaps to mon index 1 (turn 3)
@@ -447,10 +471,12 @@ contract InutiaTest is Test, BattleHelper {
 
         // Verify damage dealt to Bob's mon index 1 is 1/16 of max HP (charge 4)
         damageToBobMon1 = engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp);
-        assertEq(damageToBobMon1, -128, "Damage dealt to Bob's mon index 1 should be 1/16 of max HP (now applied twice)");
+        assertEq(
+            damageToBobMon1, -128, "Damage dealt to Bob's mon index 1 should be 1/16 of max HP (now applied twice)"
+        );
 
         // Verify the global effects are now empty (CE is finished)
-        (effects, ) = engine.getEffects(battleKey, 2, 0);
+        (effects,) = engine.getEffects(battleKey, 2, 0);
         assertEq(effects.length, 0, "Chain Expansion should be removed from global effects");
 
         // Test the heal
@@ -458,7 +484,7 @@ contract InutiaTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
 
         // Verify that CE is back in global effects
-        (effects, ) = engine.getEffects(battleKey, 2, 0);
+        (effects,) = engine.getEffects(battleKey, 2, 0);
         assertEq(effects.length, 1, "Chain Expansion should be added back to global effects");
 
         // Verify Alice's mon index 0 took damage

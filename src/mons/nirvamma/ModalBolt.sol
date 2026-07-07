@@ -3,15 +3,14 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type} from "../../Enums.sol";
+import {MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
-import {IMoveSetWithRange} from "../../moves/IMoveSetWithRange.sol";
 
-contract ModalBolt is IMoveSet, IMoveSetWithRange {
+contract ModalBolt is IMoveSet {
     uint32 public constant BASE_POWER = 90;
     uint8 public constant EFFECT_ACCURACY = 33;
 
@@ -50,7 +49,8 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external {
@@ -69,7 +69,9 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
                     break;
                 }
             }
-            if (!found) return;
+            if (!found) {
+                return;
+            }
         }
         uint256 mask = uint256(1) << mode;
 
@@ -88,7 +90,7 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
-            defenderMonIndex,
+            targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -120,23 +122,15 @@ contract ModalBolt is IMoveSet, IMoveSetWithRange {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.InclusiveRange;
-    }
-
-    function extraDataRange() public pure returns (uint16, uint16) {
-        return (MODE_FIRE, MODE_LIGHTNING);
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: BASE_POWER

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
-import {SimplePM} from "../src/hooks/SimplePM.sol";
 import {IEngine} from "../src/IEngine.sol";
+import {SimplePM} from "../src/hooks/SimplePM.sol";
 import {MockSimplePMEngine} from "./mocks/MockSimplePMEngine.sol";
+import "forge-std/Test.sol";
 
 contract ReentrantClaimer {
     SimplePM public pm;
@@ -21,7 +21,9 @@ contract ReentrantClaimer {
     }
 
     function claim() external {
-        pm.claimShares(battleKey);
+        address[] memory claimants = new address[](1);
+        claimants[0] = address(this);
+        pm.claimShares(battleKey, claimants);
     }
 
     function buySharesOnBehalf(bytes32 _battleKey, bool isP0) external payable {
@@ -31,7 +33,9 @@ contract ReentrantClaimer {
     receive() external payable {
         if (shouldReenter) {
             shouldReenter = false;
-            pm.claimShares(battleKey);
+            address[] memory claimants = new address[](1);
+            claimants[0] = address(this);
+            pm.claimShares(battleKey, claimants);
         }
     }
 }
@@ -55,7 +59,9 @@ contract ReentrantBuyer {
     }
 
     function claim() external {
-        pm.claimShares(battleKey);
+        address[] memory claimants = new address[](1);
+        claimants[0] = address(this);
+        pm.claimShares(battleKey, claimants);
     }
 
     receive() external payable {
@@ -66,9 +72,46 @@ contract ReentrantBuyer {
     }
 }
 
+// Accepts ETH only when toggled on, so a bulk claim can exercise the failed-transfer path.
+contract ToggleReceiver {
+    SimplePM public pm;
+    bool public accept;
+
+    constructor(SimplePM _pm) {
+        pm = _pm;
+    }
+
+    function setAccept(bool _accept) external {
+        accept = _accept;
+    }
+
+    function buy(bytes32 battleKey, bool isP0) external payable {
+        pm.buyShares{value: msg.value}(battleKey, isP0);
+    }
+
+    receive() external payable {
+        require(accept, "reject");
+    }
+}
+
 contract SimplePMTest is Test {
     SimplePM public pm;
     MockSimplePMEngine public mockEngine;
+
+    // Mirrors of the contract's events for vm.expectEmit.
+    event sharesBought(bytes32 indexed battleKey, address indexed buyer, uint256 word0, uint256 word1);
+    event sharesClaimed(bytes32 indexed battleKey, address indexed claimant, uint256 amount);
+
+    // Independent re-implementation of the event's packing layout, so expectEmit cross-checks
+    // the contract's bit math rather than reusing it.
+    function _packWords(bool isP0, uint96 sharesMinted, uint96 p0Shares, uint96 p1Shares, uint96 totalDeposits)
+        internal
+        pure
+        returns (uint256 word0, uint256 word1)
+    {
+        word0 = uint256(sharesMinted) | (uint256(p0Shares) << 96) | (isP0 ? uint256(1) << 192 : 0);
+        word1 = uint256(p1Shares) | (uint256(totalDeposits) << 96);
+    }
 
     bytes32 constant BATTLE_KEY = bytes32(uint256(1));
 
@@ -90,6 +133,11 @@ contract SimplePMTest is Test {
         vm.deal(ALICE, 100 ether);
         vm.deal(BOB, 100 ether);
         vm.deal(CHARLIE, 100 ether);
+    }
+
+    function _one(address who) internal pure returns (address[] memory claimants) {
+        claimants = new address[](1);
+        claimants[0] = who;
     }
 
     // =========================================================================
@@ -280,7 +328,7 @@ contract SimplePMTest is Test {
 
         uint256 balanceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
 
         assertEq(ALICE.balance - balanceBefore, 1 ether);
         assertEq(address(pm).balance, 0);
@@ -297,12 +345,12 @@ contract SimplePMTest is Test {
 
         uint256 aliceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance - aliceBefore, 2 ether);
 
         uint256 bobBefore = BOB.balance;
         vm.prank(BOB);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(BOB));
         assertEq(BOB.balance - bobBefore, 0);
 
         assertEq(address(pm).balance, 0);
@@ -319,12 +367,12 @@ contract SimplePMTest is Test {
 
         uint256 aliceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance - aliceBefore, 2 ether);
 
         uint256 bobBefore = BOB.balance;
         vm.prank(BOB);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(BOB));
         assertEq(BOB.balance - bobBefore, 1 ether);
     }
 
@@ -344,12 +392,12 @@ contract SimplePMTest is Test {
 
         uint256 aliceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         uint256 alicePayout = ALICE.balance - aliceBefore;
 
         uint256 bobBefore = BOB.balance;
         vm.prank(BOB);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(BOB));
         uint256 bobPayout = BOB.balance - bobBefore;
 
         // Total p0 shares = 1e18 + 0.8e18 = 1.8e18
@@ -371,7 +419,7 @@ contract SimplePMTest is Test {
 
         uint256 balanceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance - balanceBefore, 1 ether);
     }
 
@@ -383,7 +431,7 @@ contract SimplePMTest is Test {
         // Winner defaults to address(0)
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(SimplePM.GameNotOver.selector, BATTLE_KEY));
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
     }
 
     function test_T4_2_DoubleClaimReturnsNothing() public {
@@ -393,10 +441,10 @@ contract SimplePMTest is Test {
         mockEngine.setWinner(BATTLE_KEY, P0);
 
         vm.startPrank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         uint256 balanceAfterFirst = ALICE.balance;
 
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance, balanceAfterFirst);
         vm.stopPrank();
     }
@@ -414,7 +462,7 @@ contract SimplePMTest is Test {
 
         uint256 balanceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance - balanceBefore, 0);
 
         // Shares are zeroed
@@ -434,7 +482,7 @@ contract SimplePMTest is Test {
 
         uint256 balanceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         // Payout = 2e18 * 1e18 / 1e18 = 2 ETH (all deposits, since Alice is the only p0 bettor)
         assertEq(ALICE.balance - balanceBefore, 2 ether);
 
@@ -444,18 +492,40 @@ contract SimplePMTest is Test {
         assertEq(p1Balance, 0);
     }
 
-    function test_T4_5_NobodyBetOnWinningSideDivByZero() public {
+    function test_T4_5_NobodyBetOnWinningSideRefundsBettors() public {
         // Only bet on P1
         vm.prank(ALICE);
         pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
 
-        // P0 wins, but nobody bet on P0 → totalWinningShares = 0
+        // P0 wins, but nobody bet on P0 → refund the P1 bettors pro-rata instead of stranding.
         mockEngine.setWinner(BATTLE_KEY, P0);
 
-        // Division by zero reverts
+        uint256 balanceBefore = ALICE.balance;
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
+        // Sole bettor reclaims the whole pool.
+        assertEq(ALICE.balance - balanceBefore, 1 ether);
+        assertEq(address(pm).balance, 0);
+    }
+
+    function test_T4_9_NobodyBetWinnerRefundsProRata() public {
+        // Two bettors on P1 (2:1 stake), nobody on P0.
         vm.prank(ALICE);
-        vm.expectRevert();
-        pm.claimShares(BATTLE_KEY);
+        pm.buyShares{value: 2 ether}(BATTLE_KEY, false);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+
+        // P0 wins with no P0 backers → the P1 pool is refunded pro-rata.
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        uint256 aliceBefore = ALICE.balance;
+        uint256 bobBefore = BOB.balance;
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
+        pm.claimShares(BATTLE_KEY, _one(BOB));
+
+        // Pool 3 ETH over 3 ETH of P1 shares (turn 0): Alice 2/3, Bob 1/3.
+        assertEq(ALICE.balance - aliceBefore, 2 ether);
+        assertEq(BOB.balance - bobBefore, 1 ether);
+        assertEq(address(pm).balance, 0);
     }
 
     function test_T4_6_RevertIfBattleNotStarted() public {
@@ -463,7 +533,7 @@ contract SimplePMTest is Test {
         // startTimestamp is 0 by default → getWinner returns address(0)
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(SimplePM.GameNotOver.selector, fakeBattle));
-        pm.claimShares(fakeBattle);
+        pm.claimShares(fakeBattle, _one(ALICE));
     }
 
     function test_T4_7_RoundingDust() public {
@@ -487,17 +557,17 @@ contract SimplePMTest is Test {
 
         uint256 aliceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         uint256 alicePayout = ALICE.balance - aliceBefore;
 
         uint256 bobBefore = BOB.balance;
         vm.prank(BOB);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(BOB));
         uint256 bobPayout = BOB.balance - bobBefore;
 
         uint256 charlieBefore = CHARLIE.balance;
         vm.prank(CHARLIE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(CHARLIE));
         uint256 charliePayout = CHARLIE.balance - charlieBefore;
 
         // Alice: 7e18 * 1e18 / 6e18 = 1.166...e18
@@ -518,7 +588,7 @@ contract SimplePMTest is Test {
         // Alice never bought shares
         uint256 balanceBefore = ALICE.balance;
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         assertEq(ALICE.balance - balanceBefore, 0);
     }
 
@@ -540,9 +610,9 @@ contract SimplePMTest is Test {
         assertEq(contractBalanceBefore, 10 ether);
 
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
         vm.prank(BOB);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(BOB));
 
         // Contract balance should never go negative (i.e., ≥ 0)
         assertGe(address(pm).balance, 0);
@@ -558,7 +628,7 @@ contract SimplePMTest is Test {
         mockEngine.setWinner(BATTLE_KEY, P0);
 
         vm.prank(ALICE);
-        pm.claimShares(BATTLE_KEY);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
 
         // Alice gets all 5 ETH (sole winner with all p0 shares)
         // 5e18 * 1e18 / 1e18 = 5 ETH
@@ -611,37 +681,132 @@ contract SimplePMTest is Test {
     }
 
     // =========================================================================
-    // Group 7: Owner Rescue
+    // Group 7: Bulk / relayed claims
     // =========================================================================
 
-    function test_T7_1_OwnerRescuesWhenNobodyBetOnWinningSide() public {
-        // Only bet on P1
+    function test_T7_1_BulkClaimPaysEachClaimantNotRelayer() public {
         vm.prank(ALICE);
-        pm.buyShares{value: 5 ether}(BATTLE_KEY, false);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+        vm.prank(CHARLIE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
 
-        // P0 wins — nobody bet on P0, so funds are stuck
         mockEngine.setWinner(BATTLE_KEY, P0);
 
-        // Owner (this test contract, the deployer) rescues
-        uint256 ownerBefore = address(this).balance;
-        pm.rescue(BATTLE_KEY);
-        assertEq(address(this).balance - ownerBefore, 5 ether);
+        address[] memory claimants = new address[](2);
+        claimants[0] = ALICE;
+        claimants[1] = BOB;
+
+        uint256 aliceBefore = ALICE.balance;
+        uint256 bobBefore = BOB.balance;
+
+        // A third-party relayer with no stake triggers the claim; payouts route to the holders.
+        address relayer = address(0x99);
+        vm.prank(relayer);
+        pm.claimShares(BATTLE_KEY, claimants);
+
+        // Total pool 3 ETH over 2 ETH of winning shares → 1.5 ETH each.
+        assertEq(ALICE.balance - aliceBefore, 1.5 ether);
+        assertEq(BOB.balance - bobBefore, 1.5 ether);
+        assertEq(relayer.balance, 0);
         assertEq(address(pm).balance, 0);
     }
 
-    function test_T7_2_RescueRevertsIfGameNotOver() public {
-        vm.expectRevert(abi.encodeWithSelector(SimplePM.GameNotOver.selector, BATTLE_KEY));
-        pm.rescue(BATTLE_KEY);
-    }
-
-    function test_T7_3_NonOwnerCannotRescue() public {
-        mockEngine.setWinner(BATTLE_KEY, P0);
+    function test_T7_2_FailedTransferPreservesBalanceAndContinues() public {
+        // A recipient that rejects ETH sits ahead of a normal claimant in the batch.
+        ToggleReceiver rejecter = new ToggleReceiver(pm);
+        vm.deal(address(rejecter), 100 ether);
+        rejecter.buy{value: 1 ether}(BATTLE_KEY, true);
 
         vm.prank(ALICE);
-        vm.expectRevert();
-        pm.rescue(BATTLE_KEY);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        address[] memory claimants = new address[](2);
+        claimants[0] = address(rejecter);
+        claimants[1] = ALICE;
+
+        uint256 aliceBefore = ALICE.balance;
+        pm.claimShares(BATTLE_KEY, claimants);
+
+        // Alice is still paid despite the rejecter failing before her; total pool 2 ETH / 2 shares.
+        assertEq(ALICE.balance - aliceBefore, 1 ether);
+        // Rejecter's winning balance is preserved, its deposit still held for a retry.
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, address(rejecter));
+        assertEq(p0Balance, 1 ether);
+        assertEq(address(pm).balance, 1 ether);
+
+        // Once it accepts ETH, a retry pays out and clears the balance.
+        rejecter.setAccept(true);
+        pm.claimShares(BATTLE_KEY, _one(address(rejecter)));
+        (uint128 p0BalanceAfter,) = pm.sharesPerUserForBattle(BATTLE_KEY, address(rejecter));
+        assertEq(p0BalanceAfter, 0);
+        assertEq(address(pm).balance, 0);
     }
 
-    // Allow this contract to receive ETH (for rescue)
-    receive() external payable {}
+    function test_T7_3_DuplicateClaimantPaidOnce() public {
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        address[] memory claimants = new address[](2);
+        claimants[0] = ALICE;
+        claimants[1] = ALICE;
+
+        uint256 aliceBefore = ALICE.balance;
+        pm.claimShares(BATTLE_KEY, claimants);
+
+        // Second occurrence sees a zeroed balance and pays nothing.
+        assertEq(ALICE.balance - aliceBefore, 1 ether);
+        assertEq(address(pm).balance, 0);
+    }
+
+    // =========================================================================
+    // Group 8: Events
+    // =========================================================================
+
+    function test_T8_1_BuySharesEmitsBuyerAndPostTradeTotals() public {
+        // Turn 0 buy: full mint. isP0=true, minted 1e18, totals p0=1e18 / p1=0 / deposits=1e18.
+        (uint256 w0, uint256 w1) = _packWords(true, 1 ether, 1 ether, 0, 1 ether);
+        vm.expectEmit(true, true, false, true);
+        emit sharesBought(BATTLE_KEY, ALICE, w0, w1);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        // Second buy on the other side at turn 10: discounted mint, accumulated post-trade totals.
+        mockEngine.setTurnId(BATTLE_KEY, 10);
+        (w0, w1) = _packWords(false, 0.8 ether, 1 ether, 0.8 ether, 2 ether);
+        vm.expectEmit(true, true, false, true);
+        emit sharesBought(BATTLE_KEY, BOB, w0, w1);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+    }
+
+    function test_T8_2_ClaimEmitsSharesClaimed() public {
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+        vm.prank(BOB);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        vm.expectEmit(true, true, false, true);
+        emit sharesClaimed(BATTLE_KEY, ALICE, 2 ether);
+        pm.claimShares(BATTLE_KEY, _one(ALICE));
+    }
+
+    function test_T8_3_FailedTransferEmitsNoClaimEvent() public {
+        ToggleReceiver rejecter = new ToggleReceiver(pm);
+        vm.deal(address(rejecter), 100 ether);
+        rejecter.buy{value: 1 ether}(BATTLE_KEY, true);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        vm.recordLogs();
+        pm.claimShares(BATTLE_KEY, _one(address(rejecter)));
+        assertEq(vm.getRecordedLogs().length, 0);
+    }
 }

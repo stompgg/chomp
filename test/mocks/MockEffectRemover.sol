@@ -6,6 +6,7 @@ import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 /**
@@ -13,7 +14,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  * The effect's slot index is passed as extraData. Targets the opponent's active mon.
  */
 contract MockEffectRemover is IMoveSet {
-
     function name() public pure override returns (string memory) {
         return "Mock Effect Remover";
     }
@@ -23,10 +23,12 @@ contract MockEffectRemover is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256
     ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         // extraData is the slot index of the effect to remove (from getEffects).
         uint256 slotIndex = uint256(extraData);
 
@@ -62,23 +64,18 @@ contract MockEffectRemover is IMoveSet {
         return MoveClass.Other;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

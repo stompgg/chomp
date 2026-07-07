@@ -7,8 +7,8 @@ import "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract GildedRecovery is IMoveSet {
     int32 public constant HEAL_PERCENT = 50;
@@ -23,7 +23,8 @@ contract GildedRecovery is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256
     ) external {
@@ -48,8 +49,9 @@ contract GildedRecovery is IMoveSet {
             engine.updateMonState(attackerPlayerIndex, targetMonIndex, MonStateIndexName.Stamina, STAMINA_BONUS);
 
             // Heal 50% of max HP for self
-            int32 maxHp =
-                int32(engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp));
+            int32 maxHp = int32(
+                engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
+            );
             int32 healAmount = (maxHp * HEAL_PERCENT) / 100;
 
             // Don't overheal
@@ -82,19 +84,15 @@ contract GildedRecovery is IMoveSet {
         return MoveClass.Self;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.SelfTeamIndex;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0

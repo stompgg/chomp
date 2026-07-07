@@ -8,160 +8,33 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
-import {OkayCPU} from "../src/cpu/OkayCPU.sol";
-
-import {StandardAttackFactory} from "../src/moves/StandardAttackFactory.sol";
+import {CPU} from "../src/cpu/CPU.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 
-import {MockCPURNG} from "./mocks/MockCPURNG.sol";
+import {CPUMoveManager} from "../src/cpu/CPUMoveManager.sol";
+import {sideWord, targetBits} from "./abstract/SlotWire.sol";
+import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {TestMoveFactory} from "./mocks/TestMoveFactory.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
-import {IEffect} from "../src/effects/IEffect.sol";
-
-import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
-import {GuestFeature} from "../src/mons/sofabbi/GuestFeature.sol";
-import {RoundTrip} from "../src/mons/volthare/RoundTrip.sol";
-import {IMoveSet} from "../src/moves/IMoveSet.sol";
-import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
-
+/// @notice Exercises the off-chain-decision batched-execution path (CPUMoveManager.executeGame): the
+///         19-byte/turn stream decode, MonMoves-event suppression, and the BattleCompleteWithBatchTurns
+///         event. CPU move DECISIONS are computed client-side and are not tested on-chain.
 contract CPUTest is Test {
     Engine engine;
-    DefaultCommitManager commitManager;
-    DefaultValidator validator;
     DefaultRandomnessOracle defaultOracle;
-    TestTypeCalculator typeCalc;
     TestTeamRegistry teamRegistry;
-    MockCPURNG mockCPURNG;
-    DefaultMatchmaker matchmaker;
 
     address constant ALICE = address(1);
-    address constant BOB = address(2);
+
+    // Probe event for the batched-event gas measurement.
+    event _BatchEvProbe(bytes32 indexed battleKey, bytes payload);
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
-        commitManager = new DefaultCommitManager(engine);
-        mockCPURNG = new MockCPURNG();
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        typeCalc = new TestTypeCalculator();
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         teamRegistry = new TestTeamRegistry();
-        matchmaker = new DefaultMatchmaker(engine);
-        StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
-
-        IMoveSet move1 = attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 1,
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "m1",
-                EFFECT: IEffect(address(0))
-            })
-        );
-        IMoveSet move2 = attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 0,
-                STAMINA_COST: 2,
-                ACCURACY: 100,
-                PRIORITY: 1,
-                MOVE_TYPE: Type.Liquid,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "m2",
-                EFFECT: IEffect(address(0))
-            })
-        );
-        IMoveSet roundTrip = new RoundTrip(typeCalc);
-        IMoveSet guestFeature = new GuestFeature(typeCalc);
-
-        uint256[] memory boringMoves = new uint256[](2);
-        boringMoves[0] = uint256(uint160(address(move1)));
-        boringMoves[1] = uint256(uint160(address(move2)));
-        Mon memory mon1 = Mon({
-            stats: MonStats({
-                hp: 1,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: boringMoves,
-            ability: 0
-        });
-        Mon memory mon2 = Mon({
-            stats: MonStats({
-                hp: 1,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: boringMoves,
-            ability: 0
-        });
-        Mon memory mon3 = Mon({
-            stats: MonStats({
-                hp: 1,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: boringMoves,
-            ability: 0
-        });
-        uint256[] memory movesWithEffects = new uint256[](2);
-        movesWithEffects[0] = uint256(uint160(address(roundTrip)));
-        movesWithEffects[1] = uint256(uint160(address(guestFeature)));
-        Mon memory mon4 = Mon({
-            stats: MonStats({
-                hp: 1,
-                stamina: 3, // Because Guest Feature costs 3
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Liquid,
-                type2: Type.None
-            }),
-            moves: movesWithEffects,
-            ability: 0
-        });
-
-        Mon[] memory team = new Mon[](4);
-        team[0] = mon1;
-        team[1] = mon2;
-        team[2] = mon3;
-        team[3] = mon4;
-
-        teamRegistry.setTeam(ALICE, team);
     }
 
     function _createMon(Type t) internal pure returns (Mon memory) {
@@ -183,366 +56,6 @@ contract CPUTest is Test {
         return mon;
     }
 
-    function test_okayCPUSelectsTypeResist() public {
-        OkayCPU okayCPU = new OkayCPU(4, engine, mockCPURNG, typeCalc);
-
-        // Both teams have Liquid, Nature, Fire, Air
-        Mon[] memory team = new Mon[](4);
-        team[0] = _createMon(Type.Liquid);
-        team[1] = _createMon(Type.Liquid);
-        team[2] = _createMon(Type.Nature);
-        team[3] = _createMon(Type.Air);
-
-        // Set 0.5 effectiveness if Fire hits Air
-        typeCalc.setTypeEffectiveness(Type.Liquid, Type.Air, 5);
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Player switches in mon index 0 (Fire type)
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Get active index for battle, it should be the resisted mon
-        uint256[] memory activeIndex = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(activeIndex[1], 3);
-    }
-
-    function test_okayCPUWithZeroMoves() public {
-        OkayCPU okayCPU = new OkayCPU(1, engine, mockCPURNG, typeCalc);
-
-        // Both teams have just one mon with a TestMove that costs 3 stamina
-        Mon[] memory team = new Mon[](1);
-        uint256[] memory moves = new uint256[](1);
-        TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 3, 0))));
-        Mon memory mon = _createMon(Type.Liquid);
-        mon.moves = moves;
-        team[0] = mon;
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Turn 0, both player send in mon index 0
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Turn 1, player rests, CPU should select no op because the move costs too much stamina
-        mockCPURNG.setRNG(1);
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-    }
-
-    function test_okayCPURests() public {
-        OkayCPU okayCPU = new OkayCPU(1, engine, mockCPURNG, typeCalc);
-
-        // Both teams have just one mon with a TestMove that costs 3 stamina
-        Mon[] memory team = new Mon[](1);
-        uint256[] memory moves = new uint256[](1);
-        TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 3, 0))));
-        Mon memory mon = _createMon(Type.Liquid);
-        mon.stats.stamina = 5;
-        mon.moves = moves;
-        team[0] = mon;
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Turn 0, both player send in mon index 0
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Turn 1, player rests, CPU should select move index 0
-        mockCPURNG.setRNG(1); // This triggers the OkayCPU to select a move, which should set its stamina delta to be -3
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert the stamina delta for P1's active mon is -3
-        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
-
-        // Turn 2, player rests, CPU should rest as well
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert the stamina delta for P1's active mon is still -3 (it didn't go down more)
-        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -3);
-    }
-
-    function test_okayCPUSelectsSelfMoveAtFullHealth() public {
-        // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
-        Mon[] memory team = new Mon[](1);
-        uint256[] memory moves = new uint256[](2);
-        TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 0))));
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 1, 0))));
-        Mon memory mon = _createMon(Type.Liquid);
-        mon.moves = moves;
-        team[0] = mon;
-
-        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Turn 0, both player send in mon index 0
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Turn 1, p0 rests, CPU should select move index 1 (self move)
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that the stamina delta is -1 for p1's active mon
-        int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
-        assertEq(staminaDelta, -1);
-    }
-
-    function test_okayCPUSelectsOtherMoveAtFullHealth() public {
-        // Both teams have 3 moves, one Attack that costs 0 stamina, one Self that costs 1 stamina, and one Other that costs 1 stamina
-        Mon[] memory team = new Mon[](1);
-        uint256[] memory moves = new uint256[](3);
-        TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 0))));
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Special, Type.Liquid, 0, 0))));
-        moves[2] = uint256(uint160(address(moveFactory.createMove(MoveClass.Other, Type.Liquid, 1, 0))));
-        Mon memory mon = _createMon(Type.Liquid);
-        mon.moves = moves;
-        team[0] = mon;
-
-        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Turn 0, both player send in mon index 0
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Turn 1, p0 rests, CPU should select move index 1 (self move)
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that the stamina delta is -1 for p1's active mon
-        int32 staminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
-        assertEq(staminaDelta, -1);
-    }
-
-    function test_okayCPUSelectsAttackMoveAtNonFullHealth() public {
-        // Both teams have 2 moves, one Attack that costs 0 stamina, and one Self that costs 1 stamina
-        Mon[] memory team = new Mon[](1);
-        uint256[] memory moves = new uint256[](2);
-        TestMoveFactory moveFactory = new TestMoveFactory();
-        moves[0] = uint256(uint160(address(moveFactory.createMove(MoveClass.Self, Type.Liquid, 0, 0)))); 
-        moves[1] = uint256(uint160(address(moveFactory.createMove(MoveClass.Physical, Type.Liquid, 0, 1))));
-        Mon memory mon = _createMon(Type.Liquid);
-        mon.stats.hp = 10;
-        mon.moves = moves;
-        team[0] = mon;
-
-        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
-
-        teamRegistry.setTeam(address(okayCPU), team);
-        teamRegistry.setTeam(ALICE, team);
-
-        DefaultValidator validatorToUse = new DefaultValidator(
-            engine,
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        ProposedBattle memory proposal = ProposedBattle({
-            p0: ALICE,
-            p0TeamIndex: 0,
-            p0TeamHash: keccak256(
-                abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
-            ),
-            p1: address(okayCPU),
-            p1TeamIndex: 0,
-            validator: validatorToUse,
-            rngOracle: defaultOracle,
-            ruleset: IRuleset(address(0)),
-            teamRegistry: teamRegistry,
-            engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
-        });
-
-        vm.startPrank(ALICE);
-        address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
-        address[] memory makersToRemove = new address[](0);
-        engine.updateMatchmakers(makersToAdd, makersToRemove);
-        bytes32 battleKey = okayCPU.startBattle(proposal);
-
-        // Turn 0, both player send in mon index 0
-        okayCPU.selectMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(0));
-        engine.resetCallContext();
-        // Turn 1, set RNG to trigger smart random select and pick move index 1
-        // RNG needs: (RNG % 6 == 5) to trigger smart random, (RNG % 3 != 0) to not switch, ((RNG >> 8) % 2 == 1) to pick move 1
-        // 257 satisfies all: 257 % 6 = 5, 257 % 3 = 2, (257 >> 8) = 1
-        // So both mons should take 1 damage, as p0 also selects the damage move
-        mockCPURNG.setRNG(257);
-        okayCPU.selectMove(battleKey, 1, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that the hp delta is -1 for p0's active mon and p1's active mon
-        int32 hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertEq(hpDelta, -1);
-        hpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        assertEq(hpDelta, -1);
-
-        // Turn 2, set RNG to be 0 (do not trigger short circuit)
-        // CPU should select no-op because no type advantage is currently set
-        mockCPURNG.setRNG(0);
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that the hp delta is still -1 for p0's active mon
-        hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertEq(hpDelta, -1);
-
-        // Turn 3, set the type advantage to 2 (Fire > Fire)
-        typeCalc.setTypeEffectiveness(Type.Liquid, Type.Liquid, 2);
-
-        // Now the CPU should select the damage move (move index 1) because it has a type advantage
-        okayCPU.selectMove(battleKey, NO_OP_MOVE_INDEX, uint104(0), 0);
-        engine.resetCallContext();
-        // Assert that the hp delta is -2 for p0's active mon
-        hpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertEq(hpDelta, -2);
-    }
-
     // One-tx PvE: p0 submits the whole game (their moves + CPU's moves) + a per-turn player salt in one
     // call; CPU salt is always 0. Batched execution skips the per-turn MonMoves event (the submitter
     // already holds every move + salt from the executeGame calldata), so we verify the 19-byte/turn
@@ -559,33 +72,29 @@ contract CPUTest is Test {
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
 
-        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
-        teamRegistry.setTeam(address(okayCPU), team);
+        CPU cpu = new CPU(engine, new address[](0));
+        teamRegistry.setTeam(address(cpu), team);
         teamRegistry.setTeam(ALICE, team);
-        DefaultValidator v = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
             p0TeamHash: keccak256(
                 abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
             ),
-            p1: address(okayCPU),
+            p1: address(cpu),
             p1TeamIndex: 0,
-            validator: v,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            moveManager: address(cpu),
+            matchmaker: cpu
         });
         vm.startPrank(ALICE);
         address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
+        makersToAdd[0] = address(cpu);
         engine.updateMatchmakers(makersToAdd, new address[](0));
-        bytes32 battleKey = okayCPU.startBattle(proposal);
+        bytes32 battleKey = cpu.startBattle(proposal);
         vm.stopPrank();
 
         // Turn plan: [switch-to-0, attack, attack] with distinct player salts; CPU salt always 0.
@@ -601,7 +110,7 @@ contract CPUTest is Test {
 
         vm.recordLogs();
         vm.prank(ALICE);
-        okayCPU.executeGame(battleKey, stream);
+        cpu.executeGame(battleKey, stream);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         // Batched execution must NOT emit per-turn MonMoves events (the submitter already holds every
@@ -624,8 +133,6 @@ contract CPUTest is Test {
     // Measures the marginal gas the BattleCompleteWithBatchTurns event adds over a no-event batched
     // tx: exactly the build (abi.encodePacked of winner + 19B/turn) + the LOG2 emit, at realistic
     // turn counts. This is the whole delta — executeBatchedTurns does nothing else new.
-    event _BatchEvProbe(bytes32 indexed battleKey, bytes payload);
-
     function test_gas_batchEventOverhead() public {
         uint256[3] memory counts = [uint256(11), 26, 40];
         for (uint256 c; c < 3; c++) {
@@ -680,33 +187,29 @@ contract CPUTest is Test {
         Mon[] memory aliceTeam = new Mon[](1);
         aliceTeam[0] = aliceMon;
 
-        OkayCPU okayCPU = new OkayCPU(moves.length, engine, mockCPURNG, typeCalc);
-        teamRegistry.setTeam(address(okayCPU), cpuTeam);
+        CPU cpu = new CPU(engine, new address[](0));
+        teamRegistry.setTeam(address(cpu), cpuTeam);
         teamRegistry.setTeam(ALICE, aliceTeam);
-        DefaultValidator v = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         ProposedBattle memory proposal = ProposedBattle({
             p0: ALICE,
             p0TeamIndex: 0,
             p0TeamHash: keccak256(
                 abi.encodePacked(bytes32(""), uint256(0), teamRegistry.getMonRegistryIndicesForTeam(ALICE, 0))
             ),
-            p1: address(okayCPU),
+            p1: address(cpu),
             p1TeamIndex: 0,
-            validator: v,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             teamRegistry: teamRegistry,
             engineHooks: new IEngineHook[](0),
-            moveManager: address(okayCPU),
-            matchmaker: okayCPU
+            moveManager: address(cpu),
+            matchmaker: cpu
         });
         vm.startPrank(ALICE);
         address[] memory makersToAdd = new address[](1);
-        makersToAdd[0] = address(okayCPU);
+        makersToAdd[0] = address(cpu);
         engine.updateMatchmakers(makersToAdd, new address[](0));
-        bytes32 battleKey = okayCPU.startBattle(proposal);
+        bytes32 battleKey = cpu.startBattle(proposal);
         vm.stopPrank();
 
         // Game must not start and end in the same block (Engine guards against it).
@@ -724,7 +227,7 @@ contract CPUTest is Test {
 
         vm.recordLogs();
         vm.prank(ALICE);
-        okayCPU.executeGame(battleKey, stream);
+        cpu.executeGame(battleKey, stream);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bytes32 plainSig = keccak256("BattleComplete(bytes32,address)");
@@ -732,7 +235,9 @@ contract CPUTest is Test {
         bytes memory payload;
         uint256 batchCount;
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter != address(engine)) continue;
+            if (logs[i].emitter != address(engine)) {
+                continue;
+            }
             assertTrue(logs[i].topics[0] != plainSig, "batched path must NOT emit plain BattleComplete");
             if (logs[i].topics[0] == batchSig) {
                 batchCount++;
@@ -759,5 +264,315 @@ contract CPUTest is Test {
         assertEq(vv & 0xFF, 1, "turn1 p0 raw move == attack(1)");
         assertEq((vv >> 24) & ((uint256(1) << 104) - 1), uint256(0xBEEF2), "turn1 p0 salt round-trips");
         assertEq((vv >> 128) & 0xFF, 1, "turn1 p1 raw move == attack(1)");
+    }
+
+    // ---------------------------------------------------------------------
+    // Doubles PvE (2-slot) flows
+    // ---------------------------------------------------------------------
+
+    /// @dev Doubles PvE fixture: ALICE (side 0) two one-shot killers vs the CPU's two victims.
+    ///      Started through startCustomBattle so the proposal's battleMode routing is covered.
+    function _startDoublesVsCpu(CPU cpu) internal returns (bytes32 battleKey) {
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+        CustomAttack weakAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        Mon memory playerMon = _createMon(Type.Air);
+        playerMon.stats.hp = 1000;
+        playerMon.stats.stamina = 5;
+        playerMon.stats.speed = 10;
+        playerMon.stats.attack = 10;
+        playerMon.stats.defense = 10;
+        playerMon.moves = new uint256[](1);
+        playerMon.moves[0] = uint256(uint160(address(killAttack)));
+        Mon memory cpuMon = _createMon(Type.Air);
+        cpuMon.stats.hp = 100;
+        cpuMon.stats.stamina = 5;
+        cpuMon.stats.speed = 2;
+        cpuMon.stats.attack = 10;
+        cpuMon.stats.defense = 10;
+        cpuMon.moves = new uint256[](1);
+        cpuMon.moves[0] = uint256(uint160(address(weakAttack)));
+
+        Mon[] memory playerTeam = new Mon[](2);
+        playerTeam[0] = playerMon;
+        playerTeam[1] = playerMon;
+        Mon[] memory cpuTeam = new Mon[](2);
+        cpuTeam[0] = cpuMon;
+        cpuTeam[1] = cpuMon;
+        teamRegistry.setTeam(ALICE, playerTeam);
+        teamRegistry.setTeam(address(cpu), cpuTeam);
+
+        CustomBattleProposal memory p = CustomBattleProposal({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            monIndices: new uint256[](0),
+            facetIds: new uint8[](0),
+            moveSelections: new uint8[](0),
+            teamRegistry: teamRegistry,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            moveManager: address(cpu),
+            matchmaker: cpu,
+            engineHooks: new IEngineHook[](0),
+            battleMode: BATTLE_MODE_DOUBLES
+        });
+        vm.startPrank(ALICE);
+        address[] memory makersToAdd = new address[](1);
+        makersToAdd[0] = address(cpu);
+        engine.updateMatchmakers(makersToAdd, new address[](0));
+        battleKey = cpu.startCustomBattle(p);
+        vm.stopPrank();
+        vm.warp(vm.getBlockTimestamp() + 1);
+    }
+
+    /// @dev Stream slices: big-endian tails of the wire side words (side 1's salt is dropped).
+    function _streamTurn(uint256 side0Word, uint256 side1Word) internal pure returns (bytes memory) {
+        return abi.encodePacked(bytes19(bytes32(side0Word << 104)), bytes6(bytes32(side1Word << 208)));
+    }
+
+    function test_startCustomBattle_routesBattleMode() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+        (, BattleData memory data) = engine.getBattle(battleKey);
+        assertTrue(data.isTwoSlotMode, "proposal battleMode reached the engine");
+    }
+
+    /// @dev One-tx Doubles PvE: 25-byte/turn stream in, no per-turn events out, full replay in
+    ///      a single BattleCompleteWithBatchSlotTurns log whose payload is byte-identical to
+    ///      winner ++ stream.
+    function test_executeSlotGame_fullDoublesGameOneTx() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        bytes memory stream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
+        assertEq(stream.length, 2 * 25, "25 bytes per turn");
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        address winner = cpu.executeSlotGame(battleKey, stream);
+        assertEq(winner, ALICE);
+        assertEq(engine.getWinner(battleKey), ALICE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BattleCompleteWithBatchSlotTurns(bytes32,bytes)");
+        bytes32 monMovesSig = keccak256("MonMoves(bytes32,uint256,uint256)");
+        bytes32 engineExecuteSig = keccak256("EngineExecute(bytes32)");
+        uint256 batchLogs;
+        for (uint256 i; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != monMovesSig, "no per-turn MonMoves on the batched path");
+            assertTrue(logs[i].topics[0] != engineExecuteSig, "no per-turn EngineExecute on the batched path");
+            if (logs[i].topics[0] == batchSig) {
+                assertEq(logs[i].topics[1], battleKey);
+                bytes memory payload = abi.decode(logs[i].data, (bytes));
+                assertEq(payload, abi.encodePacked(winner, stream), "payload = winner ++ submitted stream");
+                batchLogs++;
+            }
+        }
+        assertEq(batchLogs, 1, "exactly one batch-completion log");
+    }
+
+    /// @dev Turns past the winning one are not executed and not replayed.
+    function test_executeSlotGame_stopsAtWinner() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        uint256 t0s0 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1));
+        uint256 t0s1 = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, 0);
+        uint256 t1s0 = sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2));
+        uint256 t1s1 = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0);
+        bytes memory winningStream = abi.encodePacked(_streamTurn(t0s0, t0s1), _streamTurn(t1s0, t1s1));
+        bytes memory garbageTail = _streamTurn(
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCCC3)),
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
+        );
+
+        vm.recordLogs();
+        vm.prank(ALICE);
+        address winner = cpu.executeSlotGame(battleKey, abi.encodePacked(winningStream, garbageTail));
+        assertEq(winner, ALICE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BattleCompleteWithBatchSlotTurns(bytes32,bytes)");
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] != batchSig) {
+                continue;
+            }
+            bytes memory payload = abi.decode(logs[i].data, (bytes));
+            assertEq(payload.length, 20 + 2 * 25, "only the executed turns are replayed");
+            assertEq(payload, abi.encodePacked(winner, winningStream));
+        }
+    }
+
+    /// @dev Per-turn Doubles PvE: the player authors their side word + the CPU's lanes; no
+    ///      forced-switch flag dispatch (mask turns ignore non-acting lanes by design).
+    function test_selectSlotMovesWithCpuMoves_perTurnFlow() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        bytes32 battleKey = _startDoublesVsCpu(cpu);
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(CPUMoveManager.NotP0.selector);
+        cpu.selectSlotMovesWithCpuMoves(battleKey, 0, 0, 0, 0, 0);
+
+        vm.prank(ALICE);
+        cpu.selectSlotMovesWithCpuMoves(
+            battleKey,
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, uint104(0xAAAA1)),
+            SWITCH_MOVE_INDEX,
+            0,
+            SWITCH_MOVE_INDEX,
+            1
+        );
+        vm.prank(ALICE);
+        cpu.selectSlotMovesWithCpuMoves(
+            battleKey,
+            sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBBB2)),
+            NO_OP_MOVE_INDEX,
+            0,
+            NO_OP_MOVE_INDEX,
+            0
+        );
+        assertEq(engine.getWinner(battleKey), ALICE);
+    }
+
+    // ---------------------------------------------------------------------
+    // Multi PvE (2 humans vs 2 CPUs): bundled config + start, one-tx settle
+    // ---------------------------------------------------------------------
+
+    address constant CARL = address(2);
+
+    function test_constructorApprovesSuppliedMatchmakers() public {
+        address externalMatchmaker = address(0x5155);
+        address[] memory matchmakers = new address[](1);
+        matchmakers[0] = externalMatchmaker;
+        CPU cpu = new CPU(engine, matchmakers);
+        assertTrue(engine.isMatchmakerFor(address(cpu), address(cpu)), "self-approval kept");
+        assertTrue(engine.isMatchmakerFor(address(cpu), externalMatchmaker), "supplied matchmaker approved (D34)");
+    }
+
+    /// @dev Format (a): ALICE + CARL vs two CPU hosts. One tx configures both CPU seats'
+    ///      phantom slots for ALICE and starts the MULTI battle; a second tx (executeSlotGame)
+    ///      settles the whole game. cpu2 approves cpu1 as matchmaker at construction (D34).
+    function test_startCustomMultiBattle_bundledConfigStartAndOneTxSettle() public {
+        TestTypeCalculator typeCalc = new TestTypeCalculator();
+        CustomAttack killAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 100, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+        CustomAttack weakAttack = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Fire, BASE_POWER: 10, ACCURACY: 100, STAMINA_COST: 1, PRIORITY: 3})
+        );
+
+        CPU cpu1 = new CPU(engine, new address[](0));
+        address[] memory cpu1AsMatchmaker = new address[](1);
+        cpu1AsMatchmaker[0] = address(cpu1);
+        CPU cpu2 = new CPU(engine, cpu1AsMatchmaker);
+        teamRegistry.setWhitelistedOpponent(address(cpu1), true);
+        teamRegistry.setWhitelistedOpponent(address(cpu2), true);
+
+        // 4-mon seat teams: humans kill in one hit, CPUs chip.
+        address[4] memory seats = [ALICE, CARL, address(cpu1), address(cpu2)];
+        for (uint256 i; i < 4; ++i) {
+            Mon[] memory team = new Mon[](4);
+            for (uint256 j; j < 4; ++j) {
+                Mon memory mon = _createMon(Type.Air);
+                mon.stats.hp = i < 2 ? 1000 : 100;
+                mon.stats.stamina = 8;
+                mon.stats.speed = i < 2 ? 10 : 2;
+                mon.stats.attack = 10;
+                mon.stats.defense = 10;
+                mon.moves = new uint256[](1);
+                mon.moves[0] = uint256(uint160(address(i < 2 ? killAttack : weakAttack)));
+                team[j] = mon;
+            }
+            teamRegistry.setTeam(seats[i], team);
+        }
+        for (uint256 i; i < 2; ++i) {
+            vm.prank(seats[i]);
+            engine.updateMatchmakers(cpu1AsMatchmaker, new address[](0));
+        }
+
+        // Bundle: p1 = cpu1 (own-seat relay write), p2 = CARL (human, untouched), p3 = cpu2
+        // (peer write). CARL's supplied team index must survive; CPU indices get forced.
+        CustomMultiBattleProposal memory p;
+        p.p0 = ALICE;
+        p.p0TeamIndex = 0;
+        p.p1 = address(cpu1);
+        p.p1TeamIndex = 999; // must be overridden with ALICE's phantom key
+        p.p2 = CARL;
+        p.p2TeamIndex = 0;
+        p.p3 = address(cpu2);
+        p.p3TeamIndex = 999;
+        p.seatConfigs[0].monIndices = new uint256[](1);
+        p.seatConfigs[0].monIndices[0] = 7;
+        p.seatConfigs[0].facetIds = new uint8[](1);
+        p.seatConfigs[0].moveSelections = new uint8[](1);
+        p.seatConfigs[2].monIndices = new uint256[](1);
+        p.seatConfigs[2].monIndices[0] = 9;
+        p.seatConfigs[2].facetIds = new uint8[](1);
+        p.seatConfigs[2].moveSelections = new uint8[](1);
+        p.teamRegistry = teamRegistry;
+        p.rngOracle = defaultOracle;
+        p.ruleset = IRuleset(address(0));
+        p.moveManager = address(cpu1);
+        p.matchmaker = cpu1;
+        p.engineHooks = new IEngineHook[](0);
+
+        bytes32 battleKey = cpu1.startCustomMultiBattle(p);
+
+        // Both CPU seats' phantom configs were written for ALICE in the same tx.
+        assertEq(teamRegistry.phantomWriteCount(), 2);
+        (address user0, address opp0, uint256[] memory mons0) = teamRegistry.phantomWriteAt(0);
+        (address user1, address opp1, uint256[] memory mons1) = teamRegistry.phantomWriteAt(1);
+        assertEq(user0, ALICE);
+        assertEq(opp0, address(cpu1));
+        assertEq(mons0[0], 7);
+        assertEq(user1, ALICE);
+        assertEq(opp1, address(cpu2));
+        assertEq(mons1[0], 9);
+
+        // CPU team indices forced to ALICE's phantom key; the human teammate's passed through.
+        BattleEndContext memory ctx = engine.getBattleEndContext(battleKey);
+        assertEq(ctx.p1TeamIndex, uint16(uint160(ALICE)));
+        assertEq(ctx.p3TeamIndex, uint16(uint160(ALICE)));
+        assertEq(ctx.p2TeamIndex, 0);
+        address[4] memory canonical = engine.getSeats(battleKey);
+        assertEq(canonical[1], CARL, "canonical order [p0, p2, p1, p3]");
+
+        // One-tx settle by p0: send-ins, then 4 kill rounds with forced switches between.
+        vm.warp(vm.getBlockTimestamp() + 1);
+        bytes memory stream = _streamTurn(
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAAA1)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, 0)
+        );
+        for (uint256 round; round < 4; ++round) {
+            stream = abi.encodePacked(
+                stream,
+                _streamTurn(
+                    sideWord(0, targetBits(2), 0, targetBits(3), uint104(0xBBB0 + uint16(round))),
+                    sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, 0)
+                )
+            );
+            if (round < 3) {
+                stream = abi.encodePacked(
+                    stream,
+                    _streamTurn(
+                        sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0xCCC0 + uint16(round))),
+                        sideWord(SWITCH_MOVE_INDEX, uint16(round + 1), SWITCH_MOVE_INDEX, uint16(round + 5), 0)
+                    )
+                );
+            }
+        }
+
+        vm.prank(ALICE);
+        address winner = cpu1.executeSlotGame(battleKey, stream);
+        assertEq(winner, ALICE, "side wipe settles the whole Multi game in one tx");
     }
 }

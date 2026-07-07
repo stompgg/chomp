@@ -6,11 +6,12 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {RNGLib} from "../../lib/RNGLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract Gachachacha is IMoveSet {
     uint256 public constant MIN_BASE_POWER = 1;
@@ -41,32 +42,37 @@ contract Gachachacha is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Mix in attacker player index to break symmetry on mirror matchups
         uint256 chance = RNGLib.mixForAttacker(rng, attackerPlayerIndex) % OPP_KO_THRESHOLD_R;
         uint32 basePower;
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
         uint256 playerForCalculator = attackerPlayerIndex;
         if (chance <= SELF_KO_THRESHOLD_L) {
             basePower = uint32(chance);
         } else if (chance > SELF_KO_THRESHOLD_L && chance <= SELF_KO_THRESHOLD_R) {
-            basePower = engine.getMonValueForBattle(
-                battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp
-            );
+            basePower =
+                engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
             playerForCalculator = defenderPlayerIndex;
         } else {
-            basePower = engine.getMonValueForBattle(
-                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp
-            );
+            basePower =
+                engine.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
         }
         AttackCalculator._calculateDamage(
             engine,
             TYPE_CALCULATOR,
             battleKey,
             playerForCalculator,
+            TargetLib.impliedSinglesTargetBits(playerForCalculator),
             basePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -93,23 +99,18 @@ contract Gachachacha is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

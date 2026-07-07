@@ -18,8 +18,7 @@ abstract contract EIP712 {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev `keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")`.
-    bytes32 internal constant _DOMAIN_TYPEHASH =
-        0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
+    bytes32 internal constant _DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
 
     uint256 private immutable _cachedThis;
     uint256 private immutable _cachedChainId;
@@ -41,16 +40,17 @@ abstract contract EIP712 {
 
         string memory name;
         string memory version;
-        if (!_domainNameAndVersionMayChange()) (name, version) = _domainNameAndVersion();
+        if (!_domainNameAndVersionMayChange()) {
+            (name, version) = _domainNameAndVersion();
+        }
         bytes32 nameHash = _domainNameAndVersionMayChange() ? bytes32(0) : keccak256(bytes(name));
-        bytes32 versionHash =
-            _domainNameAndVersionMayChange() ? bytes32(0) : keccak256(bytes(version));
+        bytes32 versionHash = _domainNameAndVersionMayChange() ? bytes32(0) : keccak256(bytes(version));
         _cachedNameHash = nameHash;
         _cachedVersionHash = versionHash;
 
         bytes32 separator;
         if (!_domainNameAndVersionMayChange()) {
-                        assembly ("memory-safe") {
+            assembly ("memory-safe") {
                 let m := mload(0x40) // Load the free memory pointer.
                 mstore(m, _DOMAIN_TYPEHASH)
                 mstore(add(m, 0x20), nameHash)
@@ -81,11 +81,7 @@ abstract contract EIP712 {
     /// ```
     /// Note: If the returned result may change after the contract has been deployed,
     /// you must override `_domainNameAndVersionMayChange()` to return true.
-    function _domainNameAndVersion()
-        internal
-        view
-        virtual
-        returns (string memory name, string memory version);
+    function _domainNameAndVersion() internal view virtual returns (string memory name, string memory version);
 
     /// @dev Returns if `_domainNameAndVersion()` may change
     /// after the contract has been deployed (i.e. after the constructor).
@@ -102,7 +98,9 @@ abstract contract EIP712 {
             separator = _buildDomainSeparator();
         } else {
             separator = _cachedDomainSeparator;
-            if (_cachedDomainSeparatorInvalidated()) separator = _buildDomainSeparator();
+            if (_cachedDomainSeparatorInvalidated()) {
+                separator = _buildDomainSeparator();
+            }
         }
     }
 
@@ -125,9 +123,11 @@ abstract contract EIP712 {
             digest = _buildDomainSeparator();
         } else {
             digest = _cachedDomainSeparator;
-            if (_cachedDomainSeparatorInvalidated()) digest = _buildDomainSeparator();
+            if (_cachedDomainSeparatorInvalidated()) {
+                digest = _buildDomainSeparator();
+            }
         }
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             // Compute the digest.
             mstore(0x00, 0x1901000000000000) // Store "\x19\x01".
             mstore(0x1a, digest) // Store the domain separator.
@@ -181,7 +181,7 @@ abstract contract EIP712 {
             separator = _cachedNameHash;
             versionHash = _cachedVersionHash;
         }
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer.
             mstore(m, _DOMAIN_TYPEHASH)
             mstore(add(m, 0x20), separator) // Name hash.
@@ -196,7 +196,7 @@ abstract contract EIP712 {
     function _cachedDomainSeparatorInvalidated() private view returns (bool result) {
         uint256 cachedChainId = _cachedChainId;
         uint256 cachedThis = _cachedThis;
-                assembly ("memory-safe") {
+        assembly ("memory-safe") {
             result := iszero(and(eq(chainid(), cachedChainId), eq(address(), cachedThis)))
         }
     }

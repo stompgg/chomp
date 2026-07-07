@@ -6,11 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 
@@ -40,7 +39,6 @@ contract PengymTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     StandardAttackFactory attackFactory;
     PostWorkout postWorkout;
     PanicStatus panicStatus;
@@ -51,10 +49,7 @@ contract PengymTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
         postWorkout = new PostWorkout();
@@ -173,7 +168,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -181,7 +176,7 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Check that Alice's mon has the PostWorkout effect
-        (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasPostWorkoutEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(postWorkout)) {
@@ -198,7 +193,7 @@ contract PengymTest is Test, BattleHelper {
         mockOracle.setRNG(1);
 
         // Check that Alice's mon has the PanicStatus effect
-        (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasPanicEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(panicStatus)) {
@@ -222,7 +217,7 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Check that Alice's mon no longer has the PanicStatus effect
-        (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         hasPanicEffect = false;
 
         for (uint256 i = 0; i < aliceEffects.length; i++) {
@@ -348,7 +343,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -356,7 +351,7 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Check that Alice's mon has the PostWorkout effect
-        (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasPostWorkoutEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(postWorkout)) {
@@ -373,7 +368,7 @@ contract PengymTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Check that Alice's mon has the FrostbiteStatus effect
-        (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasFrostbiteEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(frostbiteStatus)) {
@@ -402,7 +397,7 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Check that Alice's mon no longer has the FrostbiteStatus effect
-        (aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         hasFrostbiteEffect = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(frostbiteStatus)) {
@@ -425,17 +420,21 @@ contract PengymTest is Test, BattleHelper {
     }
 
     function test_chillOutAndDeepFreeze() public {
-        // Create a new validator with 2 moves per mon
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
+        StandardAttack chillOut = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 0,
+                STAMINA_COST: 0,
+                ACCURACY: 100,
+                PRIORITY: 3,
+                MOVE_TYPE: Type.Ice,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Other,
+                CRIT_RATE: 5,
+                VOLATILITY: 10,
+                NAME: "Chill Out",
+                EFFECT: IEffect(address(frostbiteStatus))
+            })
         );
-
-        StandardAttack chillOut = attackFactory.createAttack(ATTACK_PARAMS({
-            BASE_POWER: 0, STAMINA_COST: 0, ACCURACY: 100,
-            PRIORITY: 3, MOVE_TYPE: Type.Ice, EFFECT_ACCURACY: 100,
-            MOVE_CLASS: MoveClass.Other, CRIT_RATE: 5, VOLATILITY: 10,
-            NAME: "Chill Out", EFFECT: IEffect(address(frostbiteStatus))
-        }));
         DeepFreeze deepFreeze = new DeepFreeze(typeCalc, frostbiteStatus);
 
         uint256[] memory moves = new uint256[](2);
@@ -465,7 +464,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -473,22 +472,16 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Alice deals damage to Bob, record the damage dealt
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         int32 deepFreezeDamage = -1 * engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Alice inflicts frostbite on Bob, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         int32 bobDamageBefore = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
 
         // Alice uses deep freeze, record the damage dealt
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         int32 bobDamageAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         int32 deepFreezeDoubleDamage = (-1 * bobDamageAfter) + bobDamageBefore;
@@ -497,32 +490,35 @@ contract PengymTest is Test, BattleHelper {
         assertGt(deepFreezeDoubleDamage, deepFreezeDamage, "Should have dealt more");
 
         // Frostbite should be cleared, and its associated StatBoost should also be removed
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects.length, 0, "Frostbite and its StatBoost should be cleared");
     }
 
     function test_pistolSquat() public {
-        DefaultValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         PistolSquat ps = new PistolSquat(typeCalc);
         uint256[] memory moves = new uint256[](2);
         moves[0] = uint256(uint160(address(ps)));
-        moves[1] = uint256(uint160(address(attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 100, // designed to auto KO
-                STAMINA_COST: 1,
-                ACCURACY: 100,
-                PRIORITY: DEFAULT_PRIORITY,
-                MOVE_TYPE: Type.Liquid,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "test",
-                EFFECT: IEffect(address(0))
-            })
-        ))));
+        moves[1] = uint256(
+            uint160(
+                address(
+                    attackFactory.createAttack(
+                        ATTACK_PARAMS({
+                            BASE_POWER: 100, // designed to auto KO
+                            STAMINA_COST: 1,
+                            ACCURACY: 100,
+                            PRIORITY: DEFAULT_PRIORITY,
+                            MOVE_TYPE: Type.Liquid,
+                            EFFECT_ACCURACY: 0,
+                            MOVE_CLASS: MoveClass.Physical,
+                            CRIT_RATE: 0,
+                            VOLATILITY: 0,
+                            NAME: "test",
+                            EFFECT: IEffect(address(0))
+                        })
+                    )
+                )
+            )
+        );
         Mon memory slowMon = Mon({
             stats: MonStats({
                 hp: 100,
@@ -569,7 +565,7 @@ contract PengymTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Precomputed seed: forced-switch target walks the team in order and PistolSquat doesn't crit
         mockOracle.setRNG(5);
@@ -591,27 +587,21 @@ contract PengymTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(1), true);
         engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Active mon for Bob should be 1
         uint256 bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(bobActiveMonIndex, 1, "Swap succeeded (0 -> 1)");
 
         // Alice selects pistol squat, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Active mon for Bob should be 0
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(bobActiveMonIndex, 0, "Swap succeeded (1 -> 0)");
 
         // Alice selects pistol squat, Bob does nothing (and dies)
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(bobActiveMonIndex, 0, "No swap because KO");
@@ -621,9 +611,7 @@ contract PengymTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(1), true);
         engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Now Bob's mon index 1 is KOed
         // Bob sends in mon index 2
@@ -631,9 +619,7 @@ contract PengymTest is Test, BattleHelper {
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, 0, uint16(2), true);
         engine.resetCallContext();
         // Alice selects pistol squat, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Now Bob has mon index 2 (already took damage) and mon index 3
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
@@ -645,18 +631,14 @@ contract PengymTest is Test, BattleHelper {
         );
 
         // Alice KOs Bob's mon index 2
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Bob sends in mon index 3
         vm.startPrank(BOB);
         commitManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(3), true);
         engine.resetCallContext();
         // Alice tries to force a switch, but active mon should not change
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
         bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
         assertEq(bobActiveMonIndex, 3, "No mons left");
     }

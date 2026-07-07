@@ -36,9 +36,8 @@ abstract contract SignedCommitHelper is Test {
         bytes32 structHash = SignedCommitLib.hashSignedCommit(
             SignedCommitLib.SignedCommit({moveHash: moveHash, battleKey: battleKey, turnId: turnId})
         );
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", _signedCommitDomainSeparator(signedCommitManagerAddr), structHash)
-        );
+        bytes32 digest =
+            keccak256(abi.encodePacked("\x19\x01", _signedCommitDomainSeparator(signedCommitManagerAddr), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -70,11 +69,34 @@ abstract contract SignedCommitHelper is Test {
     ///      BUILTIN_DUAL_SIGNED_MANAGER sentinel, so the revealer signature must target the Engine.
     function _engineDomainSeparator(address engineAddr) internal view returns (bytes32) {
         return keccak256(
-            abi.encode(_SIGNED_COMMIT_DOMAIN_TYPEHASH, keccak256("ChompEngine"), keccak256("1"), block.chainid, engineAddr)
+            abi.encode(
+                _SIGNED_COMMIT_DOMAIN_TYPEHASH, keccak256("ChompEngine"), keccak256("1"), block.chainid, engineAddr
+            )
         );
     }
 
-    /// @notice Sign a DualSignedReveal against the Engine's built-in-flow domain.
+    /// @notice Sign a DualSignedSlotReveal against the Engine's built-in-flow domain.
+    function _signDualSlotRevealForEngine(
+        address engineAddr,
+        uint256 privateKey,
+        bytes32 battleKey,
+        uint64 turnId,
+        bytes32 committerMovesHash,
+        uint256 revealerSidePacked
+    ) internal view returns (bytes memory) {
+        bytes32 structHash = SignedCommitLib.hashDualSignedSlotReveal(
+            SignedCommitLib.DualSignedSlotReveal({
+                battleKey: battleKey,
+                turnId: turnId,
+                committerMovesHash: committerMovesHash,
+                revealerSidePacked: revealerSidePacked
+            })
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _engineDomainSeparator(engineAddr), structHash));
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s_, v);
+    }
+
     function _signDualRevealForEngine(
         address engineAddr,
         uint256 privateKey,

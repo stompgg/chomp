@@ -7,11 +7,10 @@ import {Test} from "forge-std/Test.sol";
 import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../../src/effects/status/FrostbiteStatus.sol";
@@ -32,18 +31,18 @@ import {IronWall} from "../../src/mons/aurox/IronWall.sol";
 import {UpOnly} from "../../src/mons/aurox/UpOnly.sol";
 import {VolatilePunch} from "../../src/mons/aurox/VolatilePunch.sol";
 
- /**
-        - Bull Rush correctly deals SELF_DAMAGE_PERCENT of max hp to self [x]
-        - Gilded Recovery heals for HEAL_PERCENT of max hp if there is a status effect [x]
-        - Gilded Recovery gives +1 stamina if there is a status effect [x]
-        - Iron Wall correctly heals damage dealt until mon switches out [x]
-        - Iron Wall provides initial heal when first used [x]
-        - Iron Wall does nothing if used again when already active [x]
-        - Up Only correctly boosts on damage, and it stays on switch in/out [x]
-        - Volatile Punch correctly deals damage and can trigger status effects
-            - rng of 2 should trigger frostbite
-            - rng of 10 should trigger burn
-     */
+/**
+ *        - Bull Rush correctly deals SELF_DAMAGE_PERCENT of max hp to self [x]
+ *        - Gilded Recovery heals for HEAL_PERCENT of max hp if there is a status effect [x]
+ *        - Gilded Recovery gives +1 stamina if there is a status effect [x]
+ *        - Iron Wall correctly heals damage dealt until mon switches out [x]
+ *        - Iron Wall provides initial heal when first used [x]
+ *        - Iron Wall does nothing if used again when already active [x]
+ *        - Up Only correctly boosts on damage, and it stays on switch in/out [x]
+ *        - Volatile Punch correctly deals damage and can trigger status effects
+ *            - rng of 2 should trigger frostbite
+ *            - rng of 10 should trigger burn
+ */
 
 contract AuroxTest is Test, BattleHelper {
     Engine engine;
@@ -58,16 +57,13 @@ contract AuroxTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
     }
 
     function testBullRush() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
         BullRush bullRush = new BullRush(ITypeCalculator(address(typeCalc)));
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(bullRush)));
@@ -81,7 +77,7 @@ contract AuroxTest is Test, BattleHelper {
 
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -165,12 +161,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -232,9 +223,11 @@ contract AuroxTest is Test, BattleHelper {
             0,
             "Alice's mon should have 0 staminaDelta"
         );
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            assertNotEq(address(effects[i].effect), address(frostbiteStatus), "Alice's mon should no longer have frostbite");
+            assertNotEq(
+                address(effects[i].effect), address(frostbiteStatus), "Alice's mon should no longer have frostbite"
+            );
         }
     }
 
@@ -282,11 +275,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, fastTeam);
         defaultRegistry.setTeam(BOB, slowTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: fastTeam.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -301,11 +290,12 @@ contract AuroxTest is Test, BattleHelper {
 
         // Verify that Alice's mon index 0 has taken reduced damage (basePower * (100 - heal percent) / 100)
         int32 aliceDamage = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        int32 expectedDamagePerHit = -1 * int32(attack.basePower(battleKey)) * int32(100 - ironWall.HEAL_PERCENT()) / 100;
+        int32 expectedDamagePerHit =
+            -1 * int32(attack.basePower(battleKey)) * int32(100 - ironWall.HEAL_PERCENT()) / 100;
         assertEq(aliceDamage, expectedDamagePerHit, "Alice's mon should take reduced damage");
 
         // Verify that the effect is still active (clears on switch out, not after activation)
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         bool hasIronWall = false;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(ironWall)) {
@@ -323,12 +313,18 @@ contract AuroxTest is Test, BattleHelper {
         assertEq(aliceDamage, expectedDamagePerHit * 2, "Alice's mon should take reduced damage on second hit");
 
         // Alice switches to mon index 1, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+        );
 
         // Verify that the Iron Wall effect is now gone after switch out
-        (effects, ) = engine.getEffects(battleKey, 0, 0);
+        (effects,) = engine.getEffects(battleKey, 0, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            assertNotEq(address(effects[i].effect), address(ironWall), "Alice's mon should no longer have Iron Wall after switch out");
+            assertNotEq(
+                address(effects[i].effect),
+                address(ironWall),
+                "Alice's mon should no longer have Iron Wall after switch out"
+            );
         }
     }
 
@@ -369,11 +365,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -432,11 +424,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -459,7 +447,7 @@ contract AuroxTest is Test, BattleHelper {
         assertEq(aliceDamage, -50 + expectedHeal, "Alice's mon should be healed by initial heal amount");
 
         // Verify that the Iron Wall effect is active
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         bool hasIronWall = false;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(ironWall)) {
@@ -507,11 +495,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -534,7 +518,7 @@ contract AuroxTest is Test, BattleHelper {
         assertEq(aliceDamage, -50 + expectedHeal, "Alice's mon should be healed by initial heal amount");
 
         // Count the number of Iron Wall effects
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         uint256 ironWallCount = 0;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(ironWall)) {
@@ -548,10 +532,12 @@ contract AuroxTest is Test, BattleHelper {
 
         // Verify that Alice's mon HP hasn't changed (no additional heal)
         int32 aliceDamageAfterSecondIronWall = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        assertEq(aliceDamageAfterSecondIronWall, aliceDamage, "Alice's mon HP should not change when using Iron Wall again");
+        assertEq(
+            aliceDamageAfterSecondIronWall, aliceDamage, "Alice's mon HP should not change when using Iron Wall again"
+        );
 
         // Verify that there is still only 1 Iron Wall effect
-        (effects, ) = engine.getEffects(battleKey, 0, 0);
+        (effects,) = engine.getEffects(battleKey, 0, 0);
         ironWallCount = 0;
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(ironWall)) {
@@ -602,11 +588,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -618,14 +600,24 @@ contract AuroxTest is Test, BattleHelper {
 
         // Verify that Bob's mon index 0 has a positive attack delta of upOnly.ATTACK_BOOST_PERCENT()
         int32 bobAttackDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
-        assertEq(bobAttackDelta, int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100, "Bob's mon should be boosted");
+        assertEq(
+            bobAttackDelta,
+            int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100,
+            "Bob's mon should be boosted"
+        );
 
         // Alice does nothing, Bob switches to mon index 1
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
+        );
 
         // Verify that Bob's mon index 0 has a positive attack delta of upOnly.ATTACK_BOOST_PERCENT()
         bobAttackDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Attack);
-        assertEq(bobAttackDelta, int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100, "Bob's mon should be boosted");
+        assertEq(
+            bobAttackDelta,
+            int32(int8(upOnly.ATTACK_BOOST_PERCENT())) * int32(maxHp) / 100,
+            "Bob's mon should be boosted"
+        );
     }
 
     /**
@@ -686,13 +678,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Turn 0: Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -734,9 +720,7 @@ contract AuroxTest is Test, BattleHelper {
 
         BurnStatus burnStatus = new BurnStatus();
         FrostbiteStatus frostbiteStatus = new FrostbiteStatus();
-        VolatilePunch volatilePunch = new VolatilePunch(
-            typeCalc, burnStatus, frostbiteStatus
-        );
+        VolatilePunch volatilePunch = new VolatilePunch(typeCalc, burnStatus, frostbiteStatus);
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(volatilePunch)));
 
@@ -749,11 +733,7 @@ contract AuroxTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -767,7 +747,7 @@ contract AuroxTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that Bob's mon index 0 has frostbite (first effect is stat boost)
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
 
         assertEq(address(effects[1].effect), address(frostbiteStatus), "Bob's mon should have frostbite");
 
@@ -778,7 +758,7 @@ contract AuroxTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Verify that Alice's mon index 0 has burn (first effect is stat boost)
-        (effects, ) = engine.getEffects(battleKey, 0, 0);
+        (effects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(address(effects[1].effect), address(burnStatus), "Alice's mon should have burn");
     }
 }

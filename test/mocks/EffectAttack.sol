@@ -8,6 +8,7 @@ import "../../src/Structs.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract EffectAttack is IMoveSet {
@@ -33,7 +34,17 @@ contract EffectAttack is IMoveSet {
         return "Effect Attack";
     }
 
-    function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 defenderMonIndex, uint16, uint256) external {
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, TargetLib.lowestSlot(targetBits));
         uint256 targetIndex = (attackerPlayerIndex + 1) % 2;
         engine.addEffect(targetIndex, defenderMonIndex, EFFECT, bytes32(0));
     }
@@ -58,23 +69,18 @@ contract EffectAttack is IMoveSet {
         return 0;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         view
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

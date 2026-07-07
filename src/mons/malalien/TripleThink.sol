@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
+import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
@@ -21,7 +21,8 @@ contract TripleThink is IMoveSet {
         bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -51,23 +52,18 @@ contract TripleThink is IMoveSet {
         return MoveClass.Self;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

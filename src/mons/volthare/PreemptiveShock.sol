@@ -2,14 +2,14 @@
 
 pragma solidity ^0.8.0;
 
-import {Type, MoveClass} from "../../Enums.sol";
-import {IAbility} from "../../abilities/IAbility.sol";
-import {AttackCalculator} from "../../moves/AttackCalculator.sol";
+import {MoveClass, Type} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
+import {IAbility} from "../../abilities/IAbility.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
+import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract PreemptiveShock is IAbility {
-
     ITypeCalculator immutable TYPE_CALCULATOR;
 
     uint32 public constant BASE_POWER = 15;
@@ -29,6 +29,7 @@ contract PreemptiveShock is IAbility {
             TYPE_CALCULATOR,
             battleKey,
             playerIndex,
+            TargetLib.impliedSinglesTargetBits(playerIndex),
             BASE_POWER,
             100,
             DEFAULT_VOL,

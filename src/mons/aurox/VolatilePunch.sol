@@ -7,9 +7,10 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract VolatilePunch is StandardAttack {
     uint32 public constant STATUS_EFFECT_CHANCE = 50;
@@ -45,21 +46,33 @@ contract VolatilePunch is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         (int32 damage,) = engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
 
         // Apply status effects if damage was dealt
         if (damage > 0) {
-            uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-
             // Use a different part of the RNG for status application. Mix in attacker player index
             // to break symmetry on mirror matchups.
             uint256 statusRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STATUS_EFFECT")));

@@ -40,21 +40,23 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         return 0x8044;
     }
 
-    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onAfterDamage(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        int32,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         /*
         On damage, if the mon is KO'd, add this effect to the global effects list (so we can hook into onRoundEnd)
         and remove this effect (so we stop hooking into it on future applications)
         */
         // If the mon is KO'd, add this effect to the global effects list and remove the mon effect
-        if (
-            engine.getMonStateForBattle(
-                    battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
-                ) == 1
-        ) {
+        if (engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1) {
             uint64 v1 = REVIVAL_DELAY;
             uint64 v2 = uint64(targetIndex) & 0x3F; // player index (masked to 6 bits)
             uint64 v3 = uint64(monIndex) & 0x3F; // mon index (masked to 6 bits)
@@ -66,7 +68,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)

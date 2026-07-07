@@ -4,19 +4,21 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, MOVE_INDEX_MASK} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract Tinderclaws is IAbility, BasicEffect {
     uint256 constant BURN_CHANCE = 3; // 1 in 3 chance
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
     IEffect immutable BURN_STATUS;
+
     constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
     }
@@ -49,10 +51,13 @@ contract Tinderclaws is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (ownSlot == NO_SLOT) {
+            return (updatedExtraData, removeAfterRun);
+        }
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);
         // Unpack the move index from packedMoveIndex
         uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
 
@@ -82,7 +87,6 @@ contract Tinderclaws is IAbility, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         bool isBurned = _isBurned(engine, battleKey, targetIndex, monIndex);

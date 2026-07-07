@@ -25,7 +25,7 @@ contract AlwaysRejectsEffect is BasicEffect {
         return false;
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override

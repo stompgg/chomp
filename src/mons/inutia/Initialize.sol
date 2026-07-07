@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../Constants.sol";
 import "../../Enums.sol";
-import { StatBoostToApply, MoveMeta } from "../../Structs.sol";
+import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -27,7 +27,8 @@ contract Initialize is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -53,9 +54,7 @@ contract Initialize is IMoveSet, BasicEffect {
             boostType: StatBoostType.Multiply
         });
         statBoosts[1] = StatBoostToApply({
-            stat: MonStateIndexName.Attack,
-            boostPercent: ATTACK_BUFF_PERCENT,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Attack, boostPercent: ATTACK_BUFF_PERCENT, boostType: StatBoostType.Multiply
         });
         engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
@@ -93,11 +92,15 @@ contract Initialize is IMoveSet, BasicEffect {
         monIndex = uint256(data) & type(uint128).max;
     }
 
-    function onMonSwitchOut(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onMonSwitchOut(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Clear the initialize lock, but do not remove effect
         (uint256 attackerPlayerIndex, uint256 attackingMonIndex) = _decodeState(extraData);
         if ((attackerPlayerIndex == targetIndex) && (attackingMonIndex == monIndex)) {
@@ -106,11 +109,15 @@ contract Initialize is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchIn(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onMonSwitchIn(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         (uint256 attackerPlayerIndex,) = _decodeState(extraData);
         if (attackerPlayerIndex == targetIndex) {
             // Give the buff to the next mon
@@ -122,23 +129,18 @@ contract Initialize is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

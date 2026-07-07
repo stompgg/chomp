@@ -61,10 +61,14 @@ abstract contract PackedTeamStore is ITeamRegistry {
     }
 
     function deleteTeam(uint256 slot) external virtual override {
-        if (slot >= MAX_TEAMS_PER_PLAYER) revert InvalidTeamIndex();
+        if (slot >= MAX_TEAMS_PER_PLAYER) {
+            revert InvalidTeamIndex();
+        }
         uint256 packed = teamOrderPacked[msg.sender];
         uint256 liveBit = uint256(1) << (LIVE_BITMAP_SHIFT + slot);
-        if (packed & liveBit == 0) revert TeamNotLive();
+        if (packed & liveBit == 0) {
+            revert TeamNotLive();
+        }
 
         // Operate on the order region in isolation so the splice can't pull liveBitmap bits
         // into positions ≥ count. The invariant "positions ≥ live count == 0" lets createTeam
@@ -77,7 +81,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
                 position = i;
                 break;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         uint256 below = order & ((uint256(1) << (position * ORDER_ENTRY_BITS)) - 1);
@@ -91,7 +97,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         override
     {
         _packedTeamValidateOwnership(newMonIndices);
-        if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) revert TeamNotLive();
+        if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) {
+            revert TeamNotLive();
+        }
         _checkForDuplicates(newMonIndices);
 
         uint256 groupKey = teamIndex >> 2;
@@ -100,10 +108,14 @@ abstract contract PackedTeamStore is ITeamRegistry {
         uint256 n = teamMonIndicesToOverride.length;
         for (uint256 i; i < n;) {
             uint256 monId = newMonIndices[i];
-            if (monId > ONES_MASK) revert MonIdTooLarge();
+            if (monId > ONES_MASK) {
+                revert MonIdTooLarge();
+            }
             uint256 monShift = laneShift + teamMonIndicesToOverride[i] * BITS_PER_MON_INDEX;
             group = (group & ~(ONES_MASK << monShift)) | (monId << monShift);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         teamGroupsPacked[msg.sender][groupKey] = group;
     }
@@ -112,14 +124,15 @@ abstract contract PackedTeamStore is ITeamRegistry {
         uint256 packed = teamOrderPacked[user];
         uint256 liveBitmap = (packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK;
         uint256 free = (~liveBitmap) & LIVE_BITMAP_MASK;
-        if (free == 0) revert TeamCapReached();
+        if (free == 0) {
+            revert TeamCapReached();
+        }
         slot = _ctz(free);
 
         _writeTeamLane(user, slot, _packTeam(monIndices));
 
         // Position == popcount(liveBitmap); positions ≥ count are 0 by deleteTeam's splice invariant.
-        packed |= (slot << (_popcount(liveBitmap) * ORDER_ENTRY_BITS))
-                | (uint256(1) << (LIVE_BITMAP_SHIFT + slot));
+        packed |= (slot << (_popcount(liveBitmap) * ORDER_ENTRY_BITS)) | (uint256(1) << (LIVE_BITMAP_SHIFT + slot));
         teamOrderPacked[user] = packed;
     }
 
@@ -144,7 +157,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     }
 
     function _assertTeamLive(address player, uint256 teamIndex) internal view {
-        if (_packedTeamIsCpuOpponent(player)) return;
+        if (_packedTeamIsCpuOpponent(player)) {
+            return;
+        }
         if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
             revert InvalidTeamIndex();
         }
@@ -153,7 +168,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     /// @dev Variant for callers that already resolved the CPU-opponent flag (saves the
     ///      _packedTeamIsCpuOpponent playerData re-read when checking both sides in one call).
     function _assertTeamLive(address player, uint256 teamIndex, bool isCpuOpponent) internal view {
-        if (isCpuOpponent) return;
+        if (isCpuOpponent) {
+            return;
+        }
         if (teamIndex >= MAX_TEAMS_PER_PLAYER || (_liveBitmap(player) & (uint256(1) << teamIndex)) == 0) {
             revert InvalidTeamIndex();
         }
@@ -172,7 +189,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
     function _popcount(uint256 x) internal pure virtual returns (uint8 count) {
         unchecked {
             for (uint256 v = x; v != 0; v >>= 1) {
-                if (v & 1 == 1) ++count;
+                if (v & 1 == 1) {
+                    ++count;
+                }
             }
         }
     }
@@ -192,9 +211,13 @@ abstract contract PackedTeamStore is ITeamRegistry {
         }
         for (uint256 i; i < MONS_PER_TEAM;) {
             uint256 id = monIndices[i];
-            if (id > ONES_MASK) revert MonIdTooLarge();
+            if (id > ONES_MASK) {
+                revert MonIdTooLarge();
+            }
             packed |= id << (i * BITS_PER_MON_INDEX);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -202,7 +225,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
         ids = new uint256[](MONS_PER_TEAM);
         for (uint256 i; i < MONS_PER_TEAM;) {
             ids[i] = (packed >> (i * BITS_PER_MON_INDEX)) & ONES_MASK;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -240,17 +265,20 @@ abstract contract PackedTeamStore is ITeamRegistry {
         Mon[] memory team = new Mon[](MONS_PER_TEAM);
         uint256[] memory ids = _unpackTeam(_readTeamLane(player, teamIndex));
 
-        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) =
-            _packedTeamGetMonData(ids);
+        (MonStats[] memory stats, uint256[][] memory moves, uint256[][] memory abilities) = _packedTeamGetMonData(ids);
 
         for (uint256 i; i < MONS_PER_TEAM;) {
             uint256[] memory movesToUse = new uint256[](MOVES_PER_MON);
             for (uint256 j; j < MOVES_PER_MON;) {
                 movesToUse[j] = moves[i][j];
-                unchecked { ++j; }
+                unchecked {
+                    ++j;
+                }
             }
             team[i] = Mon({stats: stats[i], ability: abilities[i][0], moves: movesToUse});
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return team;
     }
@@ -260,19 +288,15 @@ abstract contract PackedTeamStore is ITeamRegistry {
     }
 
     /// @dev Returns the player's live slot ids in display order.
-    function getOrderedLiveTeams(address player)
-        external
-        view
-        virtual
-        override
-        returns (uint256[] memory slots)
-    {
+    function getOrderedLiveTeams(address player) external view virtual override returns (uint256[] memory slots) {
         uint256 packed = teamOrderPacked[player];
         uint256 count = _popcount((packed >> LIVE_BITMAP_SHIFT) & LIVE_BITMAP_MASK);
         slots = new uint256[](count);
         for (uint256 i; i < count;) {
             slots[i] = (packed >> (i * ORDER_ENTRY_BITS)) & ORDER_ENTRY_MASK;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -292,7 +316,9 @@ abstract contract PackedTeamStore is ITeamRegistry {
             uint256 slot = (packed >> (i * ORDER_ENTRY_BITS)) & ORDER_ENTRY_MASK;
             slots[i] = slot;
             teamMonIds[i] = _unpackTeam(_readTeamLane(player, slot));
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 

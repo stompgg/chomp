@@ -34,12 +34,16 @@ abstract contract MonOwnership {
             if (!owned.contains(ids[i])) {
                 return false;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }
 
     function _validateOwnership(uint256[] memory monIndices) internal view {
-        if (!_isOwnerBatch(msg.sender, monIndices)) revert NotOwner();
+        if (!_isOwnerBatch(msg.sender, monIndices)) {
+            revert NotOwner();
+        }
     }
 }

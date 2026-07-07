@@ -7,17 +7,16 @@ import {Test} from "forge-std/Test.sol";
 import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
+import {DefaultRuleset} from "../../src/DefaultRuleset.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {IEngineHook} from "../../src/IEngineHook.sol";
-import {IEffect} from "../../src/effects/IEffect.sol";
 import {IRuleset} from "../../src/IRuleset.sol";
-import {DefaultRuleset} from "../../src/DefaultRuleset.sol";
-import {SleepStatus} from "../../src/effects/status/SleepStatus.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
+import {IEffect} from "../../src/effects/IEffect.sol";
 import {StaminaRegen} from "../../src/effects/StaminaRegen.sol";
+import {SleepStatus} from "../../src/effects/status/SleepStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
@@ -30,24 +29,24 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // Xmon moves and abilities
 import {ContagiousSlumber} from "../../src/mons/xmon/ContagiousSlumber.sol";
-import {VitalSiphon} from "../../src/mons/xmon/VitalSiphon.sol";
-import {Somniphobia} from "../../src/mons/xmon/Somniphobia.sol";
-import {InvokeTaboo} from "../../src/mons/xmon/InvokeTaboo.sol";
 import {Dreamcatcher} from "../../src/mons/xmon/Dreamcatcher.sol";
+import {InvokeTaboo} from "../../src/mons/xmon/InvokeTaboo.sol";
 import {NightTerrors} from "../../src/mons/xmon/NightTerrors.sol";
+import {Somniphobia} from "../../src/mons/xmon/Somniphobia.sol";
+import {VitalSiphon} from "../../src/mons/xmon/VitalSiphon.sol";
 
 /**
-    - Contagious Slumber adds Sleep effect to both mons [x]
-    - Vital Siphon drains stamina only when opponent has at least 1 stamina [x]
-    - Somniphobia damages a mon on any stamina gain (round-end regen + resting) [x]
-    - Somniphobia does NOT damage a resting mon that gains no stamina (already full) [x]
-    - Dreamcatcher heals on stamina gain (external StaminaRegen path) [x]
-    - Dreamcatcher heals on inline stamina regen (INLINE_STAMINA_REGEN_RULESET) [x]
-    - Invoke Taboo brands the opponent's move; repeating it puts them to sleep [x]
-    - Invoke Taboo brand clears when the opponent switches out [x]
-    - Night Terrors doesn't trigger when terror stacks > available stamina [ ]
-    - Night Terrors effect clears on swap [ ]
-    - Night Terrors damage differs when opponent is asleep vs awake [ ]
+ *     - Contagious Slumber adds Sleep effect to both mons [x]
+ *     - Vital Siphon drains stamina only when opponent has at least 1 stamina [x]
+ *     - Somniphobia damages a mon on any stamina gain (round-end regen + resting) [x]
+ *     - Somniphobia does NOT damage a resting mon that gains no stamina (already full) [x]
+ *     - Dreamcatcher heals on stamina gain (external StaminaRegen path) [x]
+ *     - Dreamcatcher heals on inline stamina regen (INLINE_STAMINA_REGEN_RULESET) [x]
+ *     - Invoke Taboo brands the opponent's move; repeating it puts them to sleep [x]
+ *     - Invoke Taboo brand clears when the opponent switches out [x]
+ *     - Night Terrors doesn't trigger when terror stacks > available stamina [ ]
+ *     - Night Terrors effect clears on swap [ ]
+ *     - Night Terrors damage differs when opponent is asleep vs awake [ ]
  */
 
 contract XmonTest is Test, BattleHelper {
@@ -63,7 +62,7 @@ contract XmonTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         attackFactory = new StandardAttackFactory(ITypeCalculator(address(typeCalc)));
@@ -84,11 +83,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -99,8 +94,8 @@ contract XmonTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify that both Alice and Bob have Sleep status
-        (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
-        (EffectInstance[] memory bobEffects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
 
         bool aliceHasSleep = false;
         bool bobHasSleep = false;
@@ -157,11 +152,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -180,7 +171,11 @@ contract XmonTest is Test, BattleHelper {
 
         // Alice spent 2 stamina for the move, gained 1 back = -1
         // Bob gained 1 from rest, lost 1 from drain = 0
-        assertEq(aliceStaminaDelta, 1 - int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)), "Alice should have -1 stamina delta (spent 2, gained 1)");
+        assertEq(
+            aliceStaminaDelta,
+            1 - int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)),
+            "Alice should have -1 stamina delta (spent 2, gained 1)"
+        );
         assertEq(bobStaminaDelta, -1, "Bob should have -1 stamina delta from the drain");
 
         // Alice does nothing, Bob uses null move, no more stamina
@@ -197,7 +192,11 @@ contract XmonTest is Test, BattleHelper {
         bobStaminaDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina);
         aliceStaminaDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
         assertEq(bobStaminaDelta, -5, "Bob should still have -5 stamina delta");
-        assertEq(aliceStaminaDelta, 1 - 2 * int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)), "Alice should have -3 stamina delta (after using the move)");
+        assertEq(
+            aliceStaminaDelta,
+            1 - 2 * int32(vitalSiphon.stamina(IEngine(address(0)), 0, 0, 0)),
+            "Alice should have -3 stamina delta (after using the move)"
+        );
     }
 
     // Stamina-burn filler: costs stamina, deals no damage, so a mon can drop below full and regen.
@@ -255,17 +254,19 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         // Battle with the StaminaRegen global effect so resting / round-end actually regen stamina.
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
 
         bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         // Both players select their first mon
@@ -286,10 +287,16 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(bobHas, "Bob should have Somniphobia effect");
 
         // Round-end regen (a non-rest stamina gain) dealt one tick to each.
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick, "Alice tick from round-end regen");
-        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick, "Bob tick from round-end regen");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick, "Alice tick from round-end regen"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick, "Bob tick from round-end regen"
+        );
         // Alice regen'd from -1 -> 0; Bob from -2 -> -1.
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0, "Alice stamina back to full");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina), 0, "Alice stamina back to full"
+        );
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1, "Bob stamina still -1");
 
         // Turn 2: both rest. Alice is already at full stamina -> no gain -> NO damage.
@@ -339,15 +346,17 @@ contract XmonTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
         bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -364,8 +373,12 @@ contract XmonTest is Test, BattleHelper {
 
         (,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
         assertEq((uint256(data) >> 8) & 0xFF, 2, "Coordinator should be at stack 2");
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1 * 3, "Alice: 1 stack + 2 stacks");
-        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1 * 3, "Bob: 1 stack + 2 stacks");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1 * 3, "Alice: 1 stack + 2 stacks"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1 * 3, "Bob: 1 stack + 2 stacks"
+        );
     }
 
     // Both players casting in the same battle share one global instance; the stack just accumulates.
@@ -394,11 +407,7 @@ contract XmonTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -434,15 +443,17 @@ contract XmonTest is Test, BattleHelper {
         team[1] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
         bytes32 battleKey = _startBattle(
-            validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager)
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
         );
 
         _commitRevealExecuteForAliceAndBob(
@@ -455,7 +466,9 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(bob0Has, "Bob mon 0 should have the effect");
 
         // Turn 2: Bob switches to mon 1. Mon 0 loses the effect; mon 1 gains it on switch-in.
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
+        );
         (bool bob0Still,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
         (bool bob1Has,,) = engine.getEffectData(battleKey, 1, 1, address(somniphobia));
         (bool coordinatorAlive,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
@@ -465,7 +478,9 @@ contract XmonTest is Test, BattleHelper {
 
         // Turn 3: Bob's mon 1 burns stamina; the round-end regen gain damages it, proving coverage.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
-        assertEq(engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp), stack1, "Switched-in mon takes a tick");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 1, MonStateIndexName.Hp), stack1, "Switched-in mon takes a tick"
+        );
     }
 
     // The effect (coordinator + per-mon copies) is gone after DURATION turns.
@@ -484,11 +499,7 @@ contract XmonTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -527,11 +538,7 @@ contract XmonTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -593,11 +600,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -661,12 +664,9 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        // One validator governs both sides; size it for the larger (2-mon) team.
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
+        // One validator governs both sides;
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Alice sends mon 0, Bob sends mon 0
         _commitRevealExecuteForAliceAndBob(
@@ -680,7 +680,9 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(branded, "Bob mon 0 should be branded before switching out");
 
         // Turn 2: Bob switches to mon 1, clearing the brand on mon 0. Alice rests.
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
+        );
 
         (bool stillBranded,,) = engine.getEffectData(battleKey, 1, 0, address(invokeTaboo));
         assertFalse(stillBranded, "Brand should be cleared after the branded mon switches out");
@@ -752,16 +754,20 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         // Create ruleset with StaminaRegen
         IEffect[] memory effects = new IEffect[](1);
         effects[0] = staminaRegen;
         DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, new IEngineHook[](0), IRuleset(address(ruleset)), address(commitManager));
+        bytes32 battleKey = _startBattle(
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
+        );
 
         // Alice sends in fast mon, Bob sends in slow mon
         _commitRevealExecuteForAliceAndBob(
@@ -769,7 +775,7 @@ contract XmonTest is Test, BattleHelper {
         );
 
         // Verify that Alice has the Dreamcatcher effect
-        (EffectInstance[] memory aliceEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasDreamcatcher = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
             if (address(aliceEffects[i].effect) == address(dreamcatcher)) {
@@ -864,14 +870,8 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
         // Use the sentinel address that flips Engine into `hasInlineStaminaRegen` mode.
         bytes32 battleKey = _startBattle(
-            validator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -942,11 +942,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -1009,11 +1005,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -1024,7 +1016,7 @@ contract XmonTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Alice's mon 0 has Night Terrors effect
-        (EffectInstance[] memory aliceEffectsBeforeSwap, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory aliceEffectsBeforeSwap,) = engine.getEffects(battleKey, 0, 0);
         bool hasNightTerrorsBeforeSwap = false;
         for (uint256 i = 0; i < aliceEffectsBeforeSwap.length; i++) {
             if (address(aliceEffectsBeforeSwap[i].effect) == address(nightTerrors)) {
@@ -1035,10 +1027,12 @@ contract XmonTest is Test, BattleHelper {
         assertTrue(hasNightTerrorsBeforeSwap, "Alice's mon 0 should have Night Terrors effect before swap");
 
         // Turn 2: Alice swaps to mon 1, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+        );
 
         // Verify Alice's mon 0 no longer has Night Terrors effect
-        (EffectInstance[] memory aliceEffectsAfterSwap, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory aliceEffectsAfterSwap,) = engine.getEffects(battleKey, 0, 0);
         bool hasNightTerrorsAfterSwap = false;
         for (uint256 i = 0; i < aliceEffectsAfterSwap.length; i++) {
             if (address(aliceEffectsAfterSwap[i].effect) == address(nightTerrors)) {
@@ -1097,11 +1091,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: team.length, MOVES_PER_MON: moves.length, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
@@ -1120,16 +1110,20 @@ contract XmonTest is Test, BattleHelper {
         int32 awakeDamage = -bobHpAfterAwakeDamage;
 
         // Turn 2: Alice swaps out to mon 1 to clear Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
+        );
 
         // Turn 3: Alice swaps back to mon 0, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0);
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
+        );
 
         // Turn 4: Alice uses Sleep move on Bob, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify Bob is asleep
-        (EffectInstance[] memory bobEffects, ) = engine.getEffects(battleKey, 1, 0);
+        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
         bool bobIsAsleep = false;
         for (uint256 i = 0; i < bobEffects.length; i++) {
             if (address(bobEffects[i].effect) == address(sleepStatus)) {
@@ -1150,6 +1144,8 @@ contract XmonTest is Test, BattleHelper {
         int32 asleepDamage = bobHpBeforeAsleepDamage - bobHpAfterAsleepDamage;
 
         // Verify asleep damage is at least 50% more than awake damage (30/20 = 1.5)
-        assertTrue(asleepDamage * 100 >= awakeDamage * 150, "Asleep damage should be at least 50% more than awake damage");
+        assertTrue(
+            asleepDamage * 100 >= awakeDamage * 150, "Asleep damage should be at least 50% more than awake damage"
+        );
     }
 }

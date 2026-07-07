@@ -2,14 +2,15 @@
 
 pragma solidity ^0.8.0;
 
-import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX} from "../../Constants.sol";
-import {ExtraDataType, MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
+import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT} from "../../Constants.sol";
+import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {EffectInstance, MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 import {SwitchTargetLib} from "../../lib/SwitchTargetLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract HardReset is IMoveSet, BasicEffect {
@@ -32,7 +33,8 @@ contract HardReset is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256
     ) external {
@@ -40,8 +42,10 @@ contract HardReset is IMoveSet, BasicEffect {
         // its filter, so caster identity must be carried in extraData and decoded here.
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 0);
         for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)
-                && (uint256(effects[i].data) & CASTER_INDEX_BIT) == attackerPlayerIndex) {
+            if (
+                address(effects[i].effect) == address(this)
+                    && (uint256(effects[i].data) & CASTER_INDEX_BIT) == attackerPlayerIndex
+            ) {
                 return;
             }
         }
@@ -64,19 +68,15 @@ contract HardReset is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
@@ -95,10 +95,13 @@ contract HardReset is IMoveSet, BasicEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
-        uint256
+        uint256 activesPacked
     ) external override returns (bytes32, bool) {
-        MoveDecision memory dec = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        uint256 restSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (restSlot == NO_SLOT) {
+            return (extraData, false);
+        }
+        MoveDecision memory dec = engine.getMoveDecisionForSlot(battleKey, targetIndex, restSlot & 1);
         if ((dec.packedMoveIndex & MOVE_INDEX_MASK) != NO_OP_MOVE_INDEX) {
             return (extraData, false);
         }
@@ -112,8 +115,7 @@ contract HardReset is IMoveSet, BasicEffect {
             int32 cur = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
             if (cur < -1) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 2);
-            }
-            else if (cur < 0) {
+            } else if (cur < 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
             }
             int32 maxHp = int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
@@ -125,7 +127,7 @@ contract HardReset is IMoveSet, BasicEffect {
             if (healAmt > 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmt);
             }
-            _forceSwap(engine, battleKey, targetIndex, monIndex, rng);
+            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, rng);
             ed |= OWN_FIRED_BIT;
             ownFired = true;
         } else if (!isOwnTeam && !oppFired) {
@@ -143,7 +145,7 @@ contract HardReset is IMoveSet, BasicEffect {
             // _forceSwap's per-candidate KO check + the (candidate != currentMonIndex) guard mean a
             // post-dealDamage KO read here would be pure overhead — the helper just no-ops if the
             // damaged mon is the only live one.
-            _forceSwap(engine, battleKey, targetIndex, monIndex, rng);
+            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, rng);
             ed |= OPP_FIRED_BIT;
             oppFired = true;
         } else {
@@ -158,11 +160,14 @@ contract HardReset is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 playerIndex,
         uint256 currentMonIndex,
+        uint256 slot,
         uint256 rng
     ) internal {
+        // The random pick can collide with the ally slot's occupant in doubles; the engine's
+        // ally-collision gate then no-ops the swap (accepted: the trigger fizzles).
         int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, playerIndex, currentMonIndex, rng);
         if (target != -1) {
-            engine.switchActiveMon(playerIndex, uint256(uint32(target)));
+            engine.switchActiveMonForSlot(playerIndex, slot & 1, uint256(uint32(target)));
         }
     }
 }

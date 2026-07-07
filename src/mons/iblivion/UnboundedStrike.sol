@@ -11,8 +11,8 @@ import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
-import {Baselight} from "./Baselight.sol";
 import {MoveMeta} from "../../Structs.sol";
+import {Baselight} from "./Baselight.sol";
 
 /**
  * Unbounded Strike Move for Iblivion
@@ -44,7 +44,8 @@ contract UnboundedStrike is IMoveSet {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) external {
@@ -65,6 +66,7 @@ contract UnboundedStrike is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            targetBits,
             power,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
@@ -75,7 +77,11 @@ contract UnboundedStrike is IMoveSet {
         );
     }
 
-    function stamina(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex) public view returns (uint32) {
+    function stamina(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 monIndex)
+        public
+        view
+        returns (uint32)
+    {
         uint256 baselightLevel = BASELIGHT.getBaselightLevel(engine, battleKey, attackerPlayerIndex, monIndex);
         if (baselightLevel >= REQUIRED_STACKS) {
             return EMPOWERED_STAMINA;
@@ -95,23 +101,18 @@ contract UnboundedStrike is IMoveSet {
         return MoveClass.Physical;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         view
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

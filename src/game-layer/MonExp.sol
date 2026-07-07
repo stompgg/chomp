@@ -73,7 +73,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             uint256 e = _getExp(player, ids[i]);
             exp[i] = e;
             levels[i] = _levelForExp(e);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -91,7 +93,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             uint256 e = _getExp(player, ids[i]);
             exp[i] = e;
             levels[i] = _levelForExp(e);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -123,7 +127,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             p1Exp[i] = e1;
             p0Levels[i] = _levelForExp(e0);
             p1Levels[i] = _levelForExp(e1);
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -132,13 +138,11 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     // =====================================================================
 
     /// @dev Unsorted monIds work but pay extra SLOAD/SSTORE per bucket revisit.
-    function assignExp(
-        address player,
-        uint256[] calldata monIds_,
-        uint256[] calldata amounts
-    ) external override {
+    function assignExp(address player, uint256[] calldata monIds_, uint256[] calldata amounts) external override {
         _assertExpAssigner();
-        if (monIds_.length != amounts.length) revert LengthMismatch();
+        if (monIds_.length != amounts.length) {
+            revert LengthMismatch();
+        }
 
         uint256 monRegistrySize = _monRegistrySize();
         uint256 lastBucket = type(uint256).max;
@@ -149,14 +153,18 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
 
         for (uint256 i; i < monIds_.length;) {
             uint256 monId = monIds_[i];
-            if (monId >= monRegistrySize) revert InvalidMonId();
+            if (monId >= monRegistrySize) {
+                revert InvalidMonId();
+            }
             uint256 bucket = monId / MONS_PER_EXP_BUCKET;
             uint256 lane = monId % MONS_PER_EXP_BUCKET;
 
             if (bucket != lastBucket) {
                 if (lastBucket != type(uint256).max) {
                     packedExpForMon[player][lastBucket] = expSlot;
-                    if (facetDirty) facetData[player][lastBucket] = facetSlot;
+                    if (facetDirty) {
+                        facetData[player][lastBucket] = facetSlot;
+                    }
                 }
                 expSlot = packedExpForMon[player][bucket];
                 facetLoaded = false;
@@ -166,9 +174,11 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
 
             uint256 oldExp = (expSlot >> (lane * EXP_BITS_PER_MON)) & EXP_PER_MON_MASK;
             uint256 newExp = oldExp + amounts[i];
-            if (newExp > EXP_PER_MON_CAP) newExp = EXP_PER_MON_CAP;
-            expSlot = (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON)))
-                | (newExp << (lane * EXP_BITS_PER_MON));
+            if (newExp > EXP_PER_MON_CAP) {
+                newExp = EXP_PER_MON_CAP;
+            }
+            expSlot =
+                (expSlot & ~(EXP_PER_MON_MASK << (lane * EXP_BITS_PER_MON))) | (newExp << (lane * EXP_BITS_PER_MON));
 
             (uint256 newFacetSlot,, bool drew) =
                 _processLevelUps(player, monId, bucket, lane, oldExp, newExp, facetSlot, facetLoaded);
@@ -178,12 +188,16 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
                 facetDirty = true;
             }
 
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (lastBucket != type(uint256).max) {
             packedExpForMon[player][lastBucket] = expSlot;
-            if (facetDirty) facetData[player][lastBucket] = facetSlot;
+            if (facetDirty) {
+                facetData[player][lastBucket] = facetSlot;
+            }
         }
     }
 
@@ -194,7 +208,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     /// @notice Uniform-across-mons unlock curve. Lane order = learnset order: lanes
     /// [0, MOVES_PER_MON) are the default moves (level 0); higher lanes unlock at FIRST_UNLOCK_LEVEL.
     function _unlockLevelForLane(uint256 lane) internal view returns (uint256) {
-        if (lane < MOVES_PER_MON) return 0;
+        if (lane < MOVES_PER_MON) {
+            return 0;
+        }
         return FIRST_UNLOCK_LEVEL;
     }
 
@@ -207,7 +223,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             if (fullRow[lane] != 0 && _unlockLevelForLane(lane) <= level) {
                 mask |= uint8(1 << lane);
             }
-            unchecked { ++lane; }
+            unchecked {
+                ++lane;
+            }
         }
     }
 
@@ -227,7 +245,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
         uint256 bucket = monId / MONS_PER_EXP_BUCKET;
         uint256 lane = monId % MONS_PER_EXP_BUCKET;
         uint8 stored = uint8((selectedMoveBitmap[player][bucket] >> (lane * MOVE_SEL_BITS_PER_MON)) & MOVE_SEL_MASK);
-        if (stored == 0) return uint8((uint256(1) << MOVES_PER_MON) - 1);
+        if (stored == 0) {
+            return uint8((uint256(1) << MOVES_PER_MON) - 1);
+        }
         return stored;
     }
 
@@ -242,7 +262,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
         uint256[] memory fullRow = _fullMoveRow(monId);
         uint256 n;
         for (uint256 i; i < fullRow.length; ++i) {
-            if (fullRow[i] != 0) ++n;
+            if (fullRow[i] != 0) {
+                ++n;
+            }
         }
         moves = new uint256[](n);
         unlockLevels = new uint8[](n);
@@ -251,9 +273,13 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             if (fullRow[lane] != 0) {
                 moves[w] = fullRow[lane];
                 unlockLevels[w] = uint8(_unlockLevelForLane(lane));
-                unchecked { ++w; }
+                unchecked {
+                    ++w;
+                }
             }
-            unchecked { ++lane; }
+            unchecked {
+                ++lane;
+            }
         }
     }
 
@@ -262,16 +288,24 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     /// mirroring assignFacets. Unlock is monotonic (level only rises), so a stored selection can
     /// never later become un-unlocked — no read-time re-validation needed.
     function assignMoves(uint256[] calldata monIds_, uint8[] calldata selectionBitmaps) external override {
-        if (monIds_.length != selectionBitmaps.length) revert LengthMismatch();
+        if (monIds_.length != selectionBitmaps.length) {
+            revert LengthMismatch();
+        }
         uint256 lastBucket = type(uint256).max;
         uint256 currentSlot;
         bool dirty;
         for (uint256 i; i < monIds_.length;) {
             uint256 monId = monIds_[i];
             uint8 bitmap = selectionBitmaps[i];
-            if (!_isFacetMonOwned(msg.sender, monId)) revert NotMoveOwner();
-            if (bitmap == 0) revert EmptyMoveSelection();
-            if (_popcount(bitmap) > MOVES_PER_MON) revert TooManyMovesSelected();
+            if (!_isFacetMonOwned(msg.sender, monId)) {
+                revert NotMoveOwner();
+            }
+            if (bitmap == 0) {
+                revert EmptyMoveSelection();
+            }
+            if (_popcount(bitmap) > MOVES_PER_MON) {
+                revert TooManyMovesSelected();
+            }
 
             // Every set bit must point at a non-empty, unlocked catalog lane. Split the two
             // failure modes for precise errors (empty lane vs out-leveled lane).
@@ -280,10 +314,16 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
                 uint256 level = _levelForExp(_getExp(msg.sender, monId));
                 for (uint256 b; b < fullRow.length;) {
                     if ((bitmap & uint8(1 << b)) != 0) {
-                        if (fullRow[b] == 0) revert InvalidMoveLane();
-                        if (_unlockLevelForLane(b) > level) revert MoveNotUnlocked();
+                        if (fullRow[b] == 0) {
+                            revert InvalidMoveLane();
+                        }
+                        if (_unlockLevelForLane(b) > level) {
+                            revert MoveNotUnlocked();
+                        }
                     }
-                    unchecked { ++b; }
+                    unchecked {
+                        ++b;
+                    }
                 }
             }
 
@@ -300,7 +340,9 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             uint256 shift = lane * MOVE_SEL_BITS_PER_MON;
             currentSlot = (currentSlot & ~(MOVE_SEL_MASK << shift)) | (uint256(bitmap) << shift);
             dirty = true;
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         if (lastBucket != type(uint256).max && dirty) {
             selectedMoveBitmap[msg.sender][lastBucket] = currentSlot;
@@ -311,11 +353,7 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     /// @dev Resolve a mon's MOVES_PER_MON battle slots from its full lane-indexed catalog row and
     /// an 8-bit selection bitmap. bitmap == 0 → default (first MOVES_PER_MON non-zero lanes); else
     /// the set non-zero lanes in ascending order. Trailing slots stay 0 (Engine: "no move").
-    function _resolveBattleMoves(uint256[] memory fullRow, uint8 bitmap)
-        internal
-        view
-        returns (uint256[] memory out)
-    {
+    function _resolveBattleMoves(uint256[] memory fullRow, uint8 bitmap) internal view returns (uint256[] memory out) {
         out = new uint256[](MOVES_PER_MON);
         uint256 w;
         for (uint256 lane; lane < fullRow.length && w < MOVES_PER_MON;) {
@@ -323,9 +361,13 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
             bool take = bitmap == 0 ? true : (bitmap & uint8(1 << lane)) != 0;
             if (take && word != 0) {
                 out[w] = word;
-                unchecked { ++w; }
+                unchecked {
+                    ++w;
+                }
             }
-            unchecked { ++lane; }
+            unchecked {
+                ++lane;
+            }
         }
     }
 
@@ -344,18 +386,42 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     /// Cumulative thresholds: lv1=4, lv2=10, lv3=18, lv4=28, lv5=40, lv6=54, lv7=70,
     /// lv8=88, lv9=108, lv10=130, lv11=154, lv12=180.
     function _levelForExp(uint256 exp) internal pure returns (uint256) {
-        if (exp < 4)   return 0;
-        if (exp < 10)  return 1;
-        if (exp < 18)  return 2;
-        if (exp < 28)  return 3;
-        if (exp < 40)  return 4;
-        if (exp < 54)  return 5;
-        if (exp < 70)  return 6;
-        if (exp < 88)  return 7;
-        if (exp < 108) return 8;
-        if (exp < 130) return 9;
-        if (exp < 154) return 10;
-        if (exp < 180) return 11;
+        if (exp < 4) {
+            return 0;
+        }
+        if (exp < 10) {
+            return 1;
+        }
+        if (exp < 18) {
+            return 2;
+        }
+        if (exp < 28) {
+            return 3;
+        }
+        if (exp < 40) {
+            return 4;
+        }
+        if (exp < 54) {
+            return 5;
+        }
+        if (exp < 70) {
+            return 6;
+        }
+        if (exp < 88) {
+            return 7;
+        }
+        if (exp < 108) {
+            return 8;
+        }
+        if (exp < 130) {
+            return 9;
+        }
+        if (exp < 154) {
+            return 10;
+        }
+        if (exp < 180) {
+            return 11;
+        }
         return 12;
     }
 
@@ -382,10 +448,14 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
         (uint16 unlockedBitmap, uint8 assignedFacet) = _readFacetSlotForMon(facetSlot, lane);
         uint16 priorBitmap = unlockedBitmap;
         for (uint256 levelNum = oldLevel + 1; levelNum <= newLevel;) {
-            if (_popcount(unlockedBitmap) == TOTAL_FACETS) break;
+            if (_popcount(unlockedBitmap) == TOTAL_FACETS) {
+                break;
+            }
             uint256 entropy = uint256(keccak256(abi.encode(monId, blockhash(block.number - 1), player, levelNum)));
             (unlockedBitmap,) = _drawNextFacet(unlockedBitmap, entropy);
-            unchecked { ++levelNum; }
+            unchecked {
+                ++levelNum;
+            }
         }
         drawnBitmap = uint256(unlockedBitmap & ~priorBitmap) & ((uint256(1) << TOTAL_FACETS) - 1);
         newFacetSlot = _writeFacetSlotForMon(facetSlot, lane, unlockedBitmap, assignedFacet);
@@ -425,7 +495,6 @@ abstract contract MonExp is IExpAssigner, Facets, PackedTeamStore {
     {
         return super.getFacetDeltaForMon(player, monId);
     }
-
 
     // ----- Subclass hooks -----
 

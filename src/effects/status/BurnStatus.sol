@@ -2,14 +2,13 @@
 pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
-import {StatBoostToApply, EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
+import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
 
 contract BurnStatus is StatusEffect {
-
     uint256 public constant MAX_BURN_DEGREE = 3;
 
     uint8 public constant ATTACK_PERCENT = 50;
@@ -27,7 +26,12 @@ contract BurnStatus is StatusEffect {
         return 0x0F;
     }
 
-    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) public view override returns (bool) {
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
+        public
+        view
+        override
+        returns (bool)
+    {
         uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
 
         // Get value from engine KV
@@ -46,13 +50,8 @@ contract BurnStatus is StatusEffect {
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
-        uint256 
-    )
-        public
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+        uint256
+    ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         bool hasBurnAlready;
         {
             uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
@@ -70,13 +69,12 @@ contract BurnStatus is StatusEffect {
             // Reduce attack by 1/ATTACK_DENOM of base attack stat
             StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
             statBoosts[0] = StatBoostToApply({
-                stat: MonStateIndexName.Attack,
-                boostPercent: ATTACK_PERCENT,
-                boostType: StatBoostType.Divide
+                stat: MonStateIndexName.Attack, boostPercent: ATTACK_PERCENT, boostType: StatBoostType.Divide
             });
             engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
         } else {
-            (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, targetIndex, monIndex);
+            (EffectInstance[] memory effects, uint256[] memory indices) =
+                engine.getEffects(battleKey, targetIndex, monIndex);
             uint256 indexOfBurnEffect;
             uint256 burnDegree;
             bytes32 newExtraData;
@@ -102,11 +100,10 @@ contract BurnStatus is StatusEffect {
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
+        uint256 activesPacked
     ) public override {
         // Remove the base status flag
-        super.onRemove(engine, battleKey, bytes32(0), targetIndex, monIndex, p0ActiveMonIndex, p1ActiveMonIndex);
+        super.onRemove(engine, battleKey, bytes32(0), targetIndex, monIndex, activesPacked);
 
         // Reset the attack reduction
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
@@ -122,13 +119,8 @@ contract BurnStatus is StatusEffect {
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
         uint256
-    )
-        external
-        override
-        returns (bytes32, bool)
-    {
+    ) external override returns (bytes32, bool) {
         uint256 burnDegree = uint256(extraData);
         int32 damageDenom = DEG1_DAMAGE_DENOM;
         if (burnDegree == 2) {
@@ -138,8 +130,7 @@ contract BurnStatus is StatusEffect {
             damageDenom = DEG3_DAMAGE_DENOM;
         }
         int32 damage =
-            int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp))
-            / damageDenom;
+            int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / damageDenom;
         engine.dealDamage(targetIndex, monIndex, damage);
         return (extraData, false);
     }

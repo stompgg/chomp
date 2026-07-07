@@ -6,10 +6,9 @@ import {Test} from "forge-std/Test.sol";
 import "../src/Constants.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 
 import {BattleHelper} from "./abstract/BattleHelper.sol";
@@ -26,27 +25,22 @@ contract EngineGlobalKVTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     DefaultMatchmaker matchmaker;
     MockKVWriterMove kvMove;
-    DefaultValidator validator;
 
     // Arbitrary keys used throughout the tests.
-    uint16 constant KEY_A = 1001;
-    uint16 constant KEY_B = 1002;
-    uint16 constant KEY_C = 1003;
-    uint16 constant KEY_D = 1004;
-    uint16 constant KEY_E = 1005;
-    uint16 constant KEY_F = 1006;
+    uint16 constant KEY_A = 33;
+    uint16 constant KEY_B = 34;
+    uint16 constant KEY_C = 35;
+    uint16 constant KEY_D = 36;
+    uint16 constant KEY_E = 37;
+    uint16 constant KEY_F = 38;
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         matchmaker = new DefaultMatchmaker(engine);
         kvMove = new MockKVWriterMove();
-        validator = new DefaultValidator(
-            IEngine(address(engine)),
-            DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
     }
 
     /// @dev Team with one mon that knows only the mock KV-writer move.
@@ -68,7 +62,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         Mon[] memory team = _buildTeam();
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -79,7 +73,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         Mon[] memory team = _buildTeam();
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        battleKey2 = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey2 = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey2, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -126,8 +120,8 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         bytes32 firstPacked = view1.globalKVEntries[0].value;
 
         // Second call re-writes via encoded value bump so we can confirm it changed.
-        // Layout: bits 0..9 = key, bits 10..15 = value.
-        uint16 extraData = KEY_A | (uint16(42) << 10);
+        // Layout: bits 0..5 = key, bits 6..11 = value (12-bit payload).
+        uint16 extraData = KEY_A | (uint16(42) << 6);
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, extraData, 0);
 
         (BattleConfigView memory view2,) = engine.getBattle(battleKey);
@@ -142,7 +136,7 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         bytes32 battleKey = _initBattle();
 
         _aliceWrites(battleKey, KEY_A); // buffer: [A]
-        _bobWrites(battleKey, KEY_B);   // buffer: [A, B]
+        _bobWrites(battleKey, KEY_B); // buffer: [A, B]
         _aliceWrites(battleKey, KEY_A); // refresh, no push → still [A, B]
 
         (BattleConfigView memory view_,) = engine.getBattle(battleKey);
@@ -162,7 +156,8 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         (BattleConfigView memory view_,) = engine.getBattle(battleKey);
         assertEq(view_.globalKVEntries.length, 6, "six unique keys total");
 
-        uint64[6] memory expected = [uint64(KEY_A), uint64(KEY_B), uint64(KEY_C), uint64(KEY_D), uint64(KEY_E), uint64(KEY_F)];
+        uint64[6] memory expected =
+            [uint64(KEY_A), uint64(KEY_B), uint64(KEY_C), uint64(KEY_D), uint64(KEY_E), uint64(KEY_F)];
         uint64 expectedTs = uint64(view_.startTimestamp);
         for (uint256 i; i < 6; ++i) {
             assertEq(view_.globalKVEntries[i].key, expected[i], "insertion order mismatch");

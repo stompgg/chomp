@@ -7,13 +7,13 @@ import "../../Enums.sol";
 import "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {AttackCalculator} from "../../moves/AttackCalculator.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {AttackCalculator} from "../../moves/AttackCalculator.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 60;
@@ -34,7 +34,8 @@ contract SneakAttack is IMoveSet, BasicEffect {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external {
@@ -80,7 +81,15 @@ contract SneakAttack is IMoveSet, BasicEffect {
         });
 
         (int32 damage,) = AttackCalculator._calculateDamageFromContext(
-            TYPE_CALCULATOR, ctx, BASE_POWER, DEFAULT_ACCURACY, DEFAULT_VOL, Type.Liquid, MoveClass.Special, rng, effectiveCritRate
+            TYPE_CALCULATOR,
+            ctx,
+            BASE_POWER,
+            DEFAULT_ACCURACY,
+            DEFAULT_VOL,
+            Type.Liquid,
+            MoveClass.Special,
+            rng,
+            effectiveCritRate
         );
 
         if (damage != 0) {
@@ -107,17 +116,13 @@ contract SneakAttack is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.OpponentNonKOTeamIndex;
-    }
-
     // IEffect implementation — local effect that cleans up on switch-out
     // Steps: OnMonSwitchOut
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x8020;
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
         pure
         override
@@ -132,13 +137,12 @@ contract SneakAttack is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

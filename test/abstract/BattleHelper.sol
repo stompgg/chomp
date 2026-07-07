@@ -4,13 +4,12 @@ pragma solidity ^0.8.0;
 
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngineHook} from "../../src/IEngineHook.sol";
-import {IValidator} from "../../src/IValidator.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
+import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IRandomnessOracle} from "../../src/rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "../../src/game-layer/ITeamRegistry.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -73,18 +72,16 @@ abstract contract BattleHelper is Test {
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
         DefaultMatchmaker matchmaker,
         address moveManager
     ) internal returns (bytes32) {
-        return _startBattle(validator, engine, rngOracle, defaultRegistry, matchmaker, new IEngineHook[](0), moveManager);
+        return _startBattle(engine, rngOracle, defaultRegistry, matchmaker, new IEngineHook[](0), moveManager);
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
@@ -92,11 +89,12 @@ abstract contract BattleHelper is Test {
         IEngineHook[] memory engineHooks,
         address moveManager
     ) internal returns (bytes32) {
-        return _startBattle(validator, engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager);
+        return _startBattle(
+            engine, rngOracle, defaultRegistry, matchmaker, engineHooks, IRuleset(address(0)), moveManager
+        );
     }
 
     function _startBattle(
-        IValidator validator,
         Engine engine,
         IRandomnessOracle rngOracle,
         ITeamRegistry defaultRegistry,
@@ -129,7 +127,6 @@ abstract contract BattleHelper is Test {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: rngOracle,
             ruleset: ruleset,
             engineHooks: engineHooks,
@@ -173,16 +170,10 @@ abstract contract BattleHelper is Test {
 
     /// @dev Layout used by `test/mocks/StatBoostsMove.sol`:
     /// `[boostAmount:8 (signed) | statIndex:4 | monIndex:3 | playerIndex:1]`
-    function _packStatBoost(uint256 playerIndex, uint256 monIndex, uint256 statIndex, int32 boostAmount)
-        internal
-        pure
-        returns (uint16)
-    {
-        return uint16(
-            (playerIndex & 0x1)
-            | ((monIndex & 0x7) << 1)
-            | ((statIndex & 0xF) << 4)
-            | ((uint256(uint8(int8(boostAmount))) & 0xFF) << 8)
-        );
+    // Packs StatBoostsMove's payload into the 12-bit extraData budget:
+    // [boostAmount:7 | statIndex:3 | monIndex:2]. The boost always targets the submitter's
+    // own side (the mock reads the side from its attackerPlayerIndex param).
+    function _packStatBoost(uint256 monIndex, uint256 statIndex, int32 boostAmount) internal pure returns (uint16) {
+        return uint16((monIndex & 0x3) | ((statIndex & 0x7) << 2) | ((uint256(uint32(boostAmount)) & 0x7F) << 5));
     }
 }

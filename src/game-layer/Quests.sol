@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {MAX_PREDICATES_PER_QUEST} from "../Constants.sol";
 import "../Structs.sol";
 import {Ownable} from "../lib/Ownable.sol";
-import {MAX_PREDICATES_PER_QUEST} from "../Constants.sol";
 
 abstract contract Quests is Ownable {
     error TooManyPredicates();
@@ -22,13 +22,20 @@ abstract contract Quests is Ownable {
         ACTIVE_SLOT_INDEX,
         MON_STATE,
         // Aggregates over the team — read existing storage, no new state required.
-        MIN_LEVEL,        // min level across all team slots
-        MAX_LEVEL,        // max level across all team slots
-        FACET_COUNT,      // count of slots with non-zero assignedFacetId
-        MIN_HP_DELTA,     // min hpDelta across team (sentinel normalized to 0)
-        MAX_HP_DELTA      // max hpDelta across team (sentinel normalized to 0)
+        MIN_LEVEL, // min level across all team slots
+        MAX_LEVEL, // max level across all team slots
+        FACET_COUNT, // count of slots with non-zero assignedFacetId
+        MIN_HP_DELTA, // min hpDelta across team (sentinel normalized to 0)
+        MAX_HP_DELTA // max hpDelta across team (sentinel normalized to 0)
     }
-    enum Cmp { EQ, NE, LT, LE, GT, GE }
+    enum Cmp {
+        EQ,
+        NE,
+        LT,
+        LE,
+        GT,
+        GE
+    }
 
     // Memory-only struct for ergonomic admin authoring. Compiles down to the packed encoding below.
     struct Predicate {
@@ -69,16 +76,17 @@ abstract contract Quests is Ownable {
 
     function _encodeQuest(Predicate[] memory preds) internal pure returns (uint256 packed) {
         uint256 count = preds.length;
-        if (count > MAX_PREDICATES_PER_QUEST) revert TooManyPredicates();
+        if (count > MAX_PREDICATES_PER_QUEST) {
+            revert TooManyPredicates();
+        }
         for (uint256 i; i < count;) {
             Predicate memory p = preds[i];
-            uint256 lane = uint256(uint8(p.op))
-                | (uint256(uint8(p.cmp)) << 5)
-                | (uint256(p.negate ? 1 : 0) << 8)
-                | (uint256(p.arg) << 9)
-                | (uint256(uint16(p.operand)) << 25);
+            uint256 lane = uint256(uint8(p.op)) | (uint256(uint8(p.cmp)) << 5) | (uint256(p.negate ? 1 : 0) << 8)
+                | (uint256(p.arg) << 9) | (uint256(uint16(p.operand)) << 25);
             packed |= (lane << (i * PRED_BITS));
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         packed |= (count << COUNT_SHIFT);
     }
@@ -111,13 +119,17 @@ abstract contract Quests is Ownable {
     }
 
     function editQuest(uint256 questId, Predicate[] memory preds) external onlyOwner {
-        if (questId >= _questPoolLength) revert InvalidQuestId();
+        if (questId >= _questPoolLength) {
+            revert InvalidQuestId();
+        }
         questPool[questId].packed = _encodeQuest(preds);
     }
 
     function removeQuest(uint256 questId) external onlyOwner {
         uint256 last = _questPoolLength;
-        if (questId >= last) revert InvalidQuestId();
+        if (questId >= last) {
+            revert InvalidQuestId();
+        }
         last -= 1;
         if (questId != last) {
             questPool[questId] = questPool[last];
@@ -149,12 +161,10 @@ abstract contract Quests is Ownable {
         return uint32(block.timestamp / 1 days) + _dayOffset;
     }
 
-    function getQuest(uint256 questId)
-        external
-        view
-        returns (uint256 packed, uint256 count)
-    {
-        if (questId >= _questPoolLength) revert InvalidQuestId();
+    function getQuest(uint256 questId) external view returns (uint256 packed, uint256 count) {
+        if (questId >= _questPoolLength) {
+            revert InvalidQuestId();
+        }
         packed = questPool[questId].packed;
         count = (packed >> COUNT_SHIFT) & COUNT_MASK;
     }
@@ -166,7 +176,9 @@ abstract contract Quests is Ownable {
     function getActiveQuest() external view returns (uint32 activeDay, uint32 activeQuestId) {
         activeDay = _currentDay();
         uint256 len = _questPoolLength;
-        if (len == 0) return (activeDay, 0);
+        if (len == 0) {
+            return (activeDay, 0);
+        }
         activeQuestId = uint32(uint256(keccak256(abi.encode(activeDay))) % len);
     }
 
@@ -186,12 +198,24 @@ abstract contract Quests is Ownable {
     // ----- Eval -----
 
     function _compare(int256 extracted, uint8 cmp, int256 operand) internal pure returns (bool) {
-        if (cmp == uint8(Cmp.EQ)) return extracted == operand;
-        if (cmp == uint8(Cmp.NE)) return extracted != operand;
-        if (cmp == uint8(Cmp.LT)) return extracted < operand;
-        if (cmp == uint8(Cmp.LE)) return extracted <= operand;
-        if (cmp == uint8(Cmp.GT)) return extracted > operand;
-        if (cmp == uint8(Cmp.GE)) return extracted >= operand;
+        if (cmp == uint8(Cmp.EQ)) {
+            return extracted == operand;
+        }
+        if (cmp == uint8(Cmp.NE)) {
+            return extracted != operand;
+        }
+        if (cmp == uint8(Cmp.LT)) {
+            return extracted < operand;
+        }
+        if (cmp == uint8(Cmp.LE)) {
+            return extracted <= operand;
+        }
+        if (cmp == uint8(Cmp.GT)) {
+            return extracted > operand;
+        }
+        if (cmp == uint8(Cmp.GE)) {
+            return extracted >= operand;
+        }
         revert InvalidOpcode();
     }
 
@@ -212,20 +236,24 @@ abstract contract Quests is Ownable {
             (uint8 op, uint8 cmp, bool negate, uint16 arg, int16 operand) = _decodePredicate(lane);
             int256 extracted = _extract(op, arg, ctx, playerIndex, battleKey);
             bool ok = _compare(extracted, cmp, int256(operand));
-            if (negate) ok = !ok;
-            if (!ok) return false;
-            unchecked { ++i; }
+            if (negate) {
+                ok = !ok;
+            }
+            if (!ok) {
+                return false;
+            }
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }
 
     /// @dev Subclass implements opcode dispatch. Has access to registry storage (exp, facets,
     ///      monRegistryIndicesForTeamPacked) and can extcall ENGINE for MON_STATE.
-    function _extract(
-        uint8 op,
-        uint16 arg,
-        BattleEndContext memory ctx,
-        uint256 playerIndex,
-        bytes32 battleKey
-    ) internal view virtual returns (int256);
+    function _extract(uint8 op, uint16 arg, BattleEndContext memory ctx, uint256 playerIndex, bytes32 battleKey)
+        internal
+        view
+        virtual
+        returns (int256);
 }

@@ -14,27 +14,28 @@ contract StatBoostsMove is IMoveSet {
         return "";
     }
 
-    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint16 extraData, uint256) external {
-        // Unpack extraData: [boostAmount:8 | statIndex:4 | monIndex:3 | playerIndex:1]
-        uint256 playerIndex = uint256(extraData) & 0x1;
-        uint256 monIndex = (uint256(extraData) >> 1) & 0x7;
-        uint256 statIndex = (uint256(extraData) >> 4) & 0xF;
-        int32 boostAmount = int32(int8(uint8(uint256(extraData) >> 8)));
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external {
+        // Unpack the 12-bit payload: [boostAmount:7 | statIndex:3 | monIndex:2]; the boost
+        // targets the submitter's own side.
+        uint256 playerIndex = attackerPlayerIndex;
+        uint256 monIndex = uint256(extraData) & 0x3;
+        uint256 statIndex = (uint256(extraData) >> 2) & 0x7;
+        int32 boostAmount = int32(uint32((uint256(extraData) >> 5) & 0x7F));
 
-        // For all tests, we'll use Temp stat boosts with Multiply type for positive boosts
-        // and Divide type for negative boosts
-        StatBoostType boostType = boostAmount > 0 ? StatBoostType.Multiply : StatBoostType.Divide;
-
-        // Convert negative boosts to positive for the divide operation
-        if (boostAmount < 0) {
-            boostAmount = -boostAmount;
-        }
+        StatBoostType boostType = StatBoostType.Multiply;
 
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName(statIndex),
-            boostPercent: uint8(uint32(boostAmount)),
-            boostType: boostType
+            stat: MonStateIndexName(statIndex), boostPercent: uint8(uint32(boostAmount)), boostType: boostType
         });
         engine.addStatBoost(playerIndex, monIndex, statBoosts, StatBoostFlag.Temp);
     }
@@ -59,23 +60,18 @@ contract StatBoostsMove is IMoveSet {
         return 0;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         pure
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

@@ -6,11 +6,10 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
@@ -41,7 +40,7 @@ contract SofabbiTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
 
         // Initialize the CarrotHarvest ability
@@ -50,9 +49,6 @@ contract SofabbiTest is Test, BattleHelper {
     }
 
     function test_carrotHarvestAppliesOnSwitchIn() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
         // Create move arrays
         uint256[] memory moves = new uint256[](0);
 
@@ -104,7 +100,7 @@ contract SofabbiTest is Test, BattleHelper {
         defaultRegistry.setTeam(BattleHelper.BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -112,7 +108,7 @@ contract SofabbiTest is Test, BattleHelper {
         );
 
         // Verify that the CarrotHarvest effect was applied to Alice's mon
-        (EffectInstance[] memory carrotEffects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory carrotEffects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(carrotEffects.length, 1);
 
         // Now have Alice switch to her second mon
@@ -127,16 +123,12 @@ contract SofabbiTest is Test, BattleHelper {
 
         // Verify that the CarrotHarvest effect is still only applied once
         // (should still have only one targeted effect)
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, 0, 0);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
         assertEq(effects.length, 1);
         assertEq(address(effects[0].effect), address(carrotHarvest));
     }
 
     function test_carrotHarvestTriggersAtEndOfRoundWhenRNGReturnsTrue() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
-
         // Create move arrays
         uint256[] memory moves = new uint256[](0);
 
@@ -181,7 +173,7 @@ contract SofabbiTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         // Start battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // CarrotHarvest folds the owner player index into the regen roll, so seeds are precomputed
         // for the per-player outcome: 1 = both mons regen, 5 = neither regens.
@@ -209,9 +201,6 @@ contract SofabbiTest is Test, BattleHelper {
 
     function test_guestFeature() public {
         TypeCalculator calc = new TypeCalculator();
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 4, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
 
         GuestFeature gf = new GuestFeature(calc);
         uint256[] memory moves = new uint256[](1);
@@ -294,7 +283,7 @@ contract SofabbiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0, the Air mon)
         _commitRevealExecuteForAliceAndBob(
@@ -304,32 +293,23 @@ contract SofabbiTest is Test, BattleHelper {
         // Damage is returned in negative, so that's why there are some weird sign cancellations below
 
         // Alice uses Guest Feature targeting mon index 1, it should deal 2x damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(1), uint16(0));
         int32 bobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertApproxEqRel(-1 * bobDmg, int32(2 * gf.BASE_POWER()), 2e17);
 
         // Alice uses Guest Feature targeting mon index 2, it should deal 0 damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(2), uint16(0));
         int32 newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertEq(newBobDmg, bobDmg, "No damage");
 
         // Alice uses Guest Feature targeting mon index 3, it should deal 1/2 damage
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(3), uint16(0)
-        );
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(3), uint16(0));
         newBobDmg = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         bobDmg = bobDmg - newBobDmg;
         assertApproxEqRel(bobDmg, int32(gf.BASE_POWER() / 2), 2e17);
     }
 
     function test_snackBreak() public {
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
         StandardAttackFactory attackFactory = new StandardAttackFactory(typeCalc);
         SnackBreak sb = new SnackBreak();
         StandardAttack bigAttack = attackFactory.createAttack(
@@ -374,7 +354,7 @@ contract SofabbiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(
@@ -441,9 +421,6 @@ contract SofabbiTest is Test, BattleHelper {
             moves: moves,
             ability: 0
         });
-        DefaultValidator validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-        );
         Mon[] memory team = new Mon[](2);
         team[0] = mon;
         team[1] = mon;
@@ -451,7 +428,7 @@ contract SofabbiTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players send in mon index 0
         _commitRevealExecuteForAliceAndBob(

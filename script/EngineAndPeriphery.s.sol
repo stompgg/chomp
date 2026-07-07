@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "forge-std/Script.sol";
 import "../src/Constants.sol";
+import "forge-std/Script.sol";
 
 // Fundamental entities
-import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {BetterCPU} from "../src/cpu/BetterCPU.sol";
-import {ICPURNG} from "../src/rng/ICPURNG.sol";
-import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
+import {CPU} from "../src/cpu/CPU.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
-import {TypeCalculator} from "../src/types/TypeCalculator.sol";
-import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {SimplePM} from "../src/hooks/SimplePM.sol";
+import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
+import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
+import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 
 // Shared effects
+import {Overclock} from "../src/effects/battlefield/Overclock.sol";
 import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
 import {SleepStatus} from "../src/effects/status/SleepStatus.sol";
 import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
-import {Overclock} from "../src/effects/battlefield/Overclock.sol";
 
 struct DeployData {
     string name;
@@ -30,8 +29,6 @@ struct DeployData {
 }
 
 contract EngineAndPeriphery is Script {
-
-    
     DeployData[] deployedContracts;
 
     function run() external returns (DeployData[] memory) {
@@ -51,35 +48,43 @@ contract EngineAndPeriphery is Script {
         // address.ts for the target network). Defaults to address(0) (migration disabled) for
         // ad-hoc forge runs rather than baking in a stale, network-wrong literal.
         address previousGachaRegistry = vm.envOr("PREV_GACHA_TEAM_REGISTRY", address(0));
-        GachaTeamRegistry gachaTeamRegistry =
-            new GachaTeamRegistry(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, IGachaRNG(address(0)), GachaTeamRegistry(previousGachaRegistry));
+        GachaTeamRegistry gachaTeamRegistry = new GachaTeamRegistry(
+            GAME_MONS_PER_TEAM,
+            GAME_MOVES_PER_MON,
+            engine,
+            IGachaRNG(address(0)),
+            GachaTeamRegistry(previousGachaRegistry)
+        );
         deployedContracts.push(DeployData({name: "GACHA TEAM REGISTRY", contractAddress: address(gachaTeamRegistry)}));
-        
-        BetterCPU betterCPU = new BetterCPU(GAME_MOVES_PER_MON, engine, ICPURNG(address(0)), typeCalc);
-        deployedContracts.push(DeployData({name: "BETTER CPU", contractAddress: address(betterCPU)}));
+
+        SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
+        deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
+
+        // The CPU approves the SignedMatchmaker at construction (D34) so signed Multi offers
+        // seating it pass the engine's per-seat matchmaker gate.
+        address[] memory cpuMatchmakers = new address[](1);
+        cpuMatchmakers[0] = address(signedMatchmaker);
+        CPU cpu = new CPU(engine, cpuMatchmakers);
+        deployedContracts.push(DeployData({name: "CPU", contractAddress: address(cpu)}));
 
         // Whitelist the single CPU so users can setOpponentTeam / startCustomBattle against it.
         {
             address[] memory toAllow = new address[](1);
-            toAllow[0] = address(betterCPU);
+            toAllow[0] = address(cpu);
             address[] memory toDisallow = new address[](0);
             gachaTeamRegistry.setWhitelistedOpponents(toAllow, toDisallow);
         }
-
-        SignedMatchmaker signedMatchmaker = new SignedMatchmaker(engine);
-        deployedContracts.push(DeployData({name: "SIGNED MATCHMAKER", contractAddress: address(signedMatchmaker)}));
 
         SimplePM simplePM = new SimplePM(engine);
         deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
         deployGameFundamentals();
-        
+
         vm.stopBroadcast();
         return deployedContracts;
     }
 
     function deployGameFundamentals() public {
-
         Overclock overclock = new Overclock();
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
 

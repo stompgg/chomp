@@ -6,10 +6,11 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
-import {IEffect} from "../../effects/IEffect.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract VitalSiphon is StandardAttack {
     uint32 public constant STAMINA_STEAL_PERCENT = 50;
@@ -39,29 +40,43 @@ contract VitalSiphon is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Deal the damage
-        (int32 damage, ) = engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+        (int32 damage,) = engine.dispatchStandardAttack(
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
 
         // 50% chance to steal stamina (assuming move dealt damage). Mix in attacker player index to
         // break symmetry on mirror matchups.
         uint256 stealRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STAMINA_STEAL")));
         if (damage > 0 && stealRng % 100 >= STAMINA_STEAL_PERCENT) {
-            uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
-
             // Check if opponent has at least 1 stamina
-            int32 defenderStamina =
-                engine.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
-            uint32 defenderBaseStamina =
-                engine.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
+            int32 defenderStamina = engine.getMonStateForBattle(
+                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina
+            );
+            uint32 defenderBaseStamina = engine.getMonValueForBattle(
+                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina
+            );
             int32 totalDefenderStamina = int32(defenderBaseStamina) + defenderStamina;
 
             if (totalDefenderStamina >= 1) {

@@ -9,26 +9,25 @@ import {console} from "forge-std/console.sol";
 
 import {SetupMons} from "../script/SetupMons.s.sol";
 import {Engine} from "../src/Engine.sol";
+import {IEngine} from "../src/IEngine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
-import {IEngine} from "../src/IEngine.sol";
 
-import {TypeCalculator} from "../src/types/TypeCalculator.sol";
+import {Overclock} from "../src/effects/battlefield/Overclock.sol";
 import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
 import {PanicStatus} from "../src/effects/status/PanicStatus.sol";
 import {SleepStatus} from "../src/effects/status/SleepStatus.sol";
 import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
-import {Overclock} from "../src/effects/battlefield/Overclock.sol";
+import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 
-import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
-import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
-import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {IRuleset} from "../src/IRuleset.sol";
-import {IValidator} from "../src/IValidator.sol";
+import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
+import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
+import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
+import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 
 import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
@@ -59,8 +58,14 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     uint256[4] P1_IDS = [uint256(0), 3, 10, 5];
 
     struct Turn {
-        uint8 p0Move; uint16 p0Extra; uint104 p0Salt; bool p0Present;
-        uint8 p1Move; uint16 p1Extra; uint104 p1Salt; bool p1Present;
+        uint8 p0Move;
+        uint16 p0Extra;
+        uint104 p0Salt;
+        bool p0Present;
+        uint8 p1Move;
+        uint16 p1Extra;
+        uint104 p1Salt;
+        bool p1Present;
     }
 
     function setUp() public {
@@ -81,7 +86,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         BurnStatus burn = new BurnStatus();
         ZapStatus zap = new ZapStatus();
         BlessedStatus blessed = new BlessedStatus();
-        gachaReg = new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)), GachaTeamRegistry(address(0)));
+        gachaReg =
+            new GachaTeamRegistry(4, 4, IEngine(address(engine)), IGachaRNG(address(0)), GachaTeamRegistry(address(0)));
         vm.setEnv("TYPE_CALCULATOR", vm.toString(address(tc)));
         vm.setEnv("OVERCLOCK", vm.toString(address(oc)));
         vm.setEnv("SLEEP_STATUS", vm.toString(address(sleepStatus)));
@@ -91,9 +97,17 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         vm.setEnv("ZAP_STATUS", vm.toString(address(zap)));
         vm.setEnv("BLESSED_STATUS", vm.toString(address(blessed)));
         vm.setEnv("GACHA_TEAM_REGISTRY", vm.toString(address(gachaReg)));
-        deployGhouliath(gachaReg); deployInutia(gachaReg); deployMalalien(gachaReg); deployIblivion(gachaReg);
-        deployGorillax(gachaReg); deploySofabbi(gachaReg); deployPengym(gachaReg); deployEmbursa(gachaReg);
-        deployVolthare(gachaReg); deployAurox(gachaReg); deployXmon(gachaReg);
+        deployGhouliath(gachaReg);
+        deployInutia(gachaReg);
+        deployMalalien(gachaReg);
+        deployIblivion(gachaReg);
+        deployGorillax(gachaReg);
+        deploySofabbi(gachaReg);
+        deployPengym(gachaReg);
+        deployEmbursa(gachaReg);
+        deployVolthare(gachaReg);
+        deployAurox(gachaReg);
+        deployXmon(gachaReg);
         mgr = new SignedCommitManager(IEngine(address(engine)));
         maker = new SignedMatchmaker(engine);
         registry = new TestTeamRegistry();
@@ -110,8 +124,22 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     function _mk(uint32 hp, uint32 stam, uint32 spe, uint32 atk, uint32 def, uint32 spa, uint32 spd, Type t1, Type t2)
-        internal pure returns (MonStats memory)
-    { return MonStats({hp: hp, stamina: stam, speed: spe, attack: atk, defense: def, specialAttack: spa, specialDefense: spd, type1: t1, type2: t2}); }
+        internal
+        pure
+        returns (MonStats memory)
+    {
+        return MonStats({
+            hp: hp,
+            stamina: stam,
+            speed: spe,
+            attack: atk,
+            defense: def,
+            specialAttack: spa,
+            specialDefense: spd,
+            type1: t1,
+            type2: t2
+        });
+    }
 
     function _p0Stats() internal pure returns (MonStats[4] memory s) {
         s[0] = _mk(371, 5, 149, 202, 200, 222, 180, Type.Ice, Type.None);
@@ -119,6 +147,7 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         s[2] = _mk(420, 5, 100, 143, 230, 95, 220, Type.Metal, Type.None);
         s[3] = _mk(295, 5, 311, 120, 193, 255, 184, Type.Lightning, Type.Cyber);
     }
+
     function _p1Stats() internal pure returns (MonStats[4] memory s) {
         s[0] = _mk(303, 5, 181, 157, 202, 151, 202, Type.Yin, Type.Fire);
         s[1] = _mk(277, 5, 256, 188, 164, 240, 168, Type.Yang, Type.Air);
@@ -128,32 +157,32 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
 
     function _plan() internal pure returns (Turn[] memory t) {
         t = new Turn[](26);
-        t[0]  = Turn(125,1,15450001689812990757318517192966,true, 125,0,18252122845989030006812243139474,true);
-        t[1]  = Turn(2,0,4834210944993112651816909106126,true,   3,0,15255474349613996056713761071686,true);
-        t[2]  = Turn(2,0,6583714706138183953804767275678,true,   1,0,15461637266987935369279566108124,true);
-        t[3]  = Turn(2,0,7210161534971784956923416751886,true,   1,0,15016064050662495416725412652563,true);
-        t[4]  = Turn(126,0,0,false,                               125,1,19240011345095274681466263674330,true);
-        t[5]  = Turn(126,0,3284692555853178397455092928083,true,  126,0,7835549805310255467442088074506,true);
-        t[6]  = Turn(125,3,12334118906782137414472592949424,true, 126,0,19374785281272442474766137271163,true);
-        t[7]  = Turn(2,0,15077791565903026790875989318528,true,   125,0,11421095052443333388573678495326,true);
-        t[8]  = Turn(126,0,0,false,                               125,1,6291473213391741470941218170218,true);
-        t[9]  = Turn(0,0,7022931971424196742811121512061,true,    125,3,15438085774022369100235175410030,true);
-        t[10] = Turn(1,2,4420670065419414850590787481288,true,    2,0,1960761762236369089740333992246,true);
-        t[11] = Turn(3,0,19801295147355512497167142159749,true,   2,0,6166359188124075649524594725791,true);
-        t[12] = Turn(3,0,17171843021366040478135578264996,true,   2,0,5383564461617129507072037502214,true);
-        t[13] = Turn(125,3,1986471879882982807378747309426,true,  126,0,14414938581786935425390960964000,true);
-        t[14] = Turn(1,2,3458675293930857335960176057085,true,    2,0,7749328072402731440980579744946,true);
-        t[15] = Turn(125,3,17293194887286872287278788602290,true, 126,0,4383111541380336465729024026150,true);
-        t[16] = Turn(1,2,10450409746379039708229821790015,true,   125,2,8716693538680640339539097046509,true);
-        t[17] = Turn(3,0,15015474814001600635537093680446,true,   1,0,2288645315003210275352244731355,true);
-        t[18] = Turn(125,3,11920649514225307809051229177287,true, 1,0,11401157979167469193859133635460,true);
-        t[19] = Turn(126,0,17457123310241581297033221314838,true, 1,0,10631747601138287248935576077466,true);
-        t[20] = Turn(0,0,6835862067306040477454545192907,true,    1,0,9322809856242922630776583049082,true);
-        t[21] = Turn(0,0,4954019214144165935310368793018,true,    1,0,134338259296852826632816183133,true);
-        t[22] = Turn(126,0,0,false,                               125,1,16613587181676977476579639480048,true);
-        t[23] = Turn(1,0,17804535964781524133768449087333,true,   125,3,18580496538728489255944038457804,true);
-        t[24] = Turn(126,0,0,false,                               125,1,7470981269216264771411536686385,true);
-        t[25] = Turn(2,0,12785556958579953943913050575887,true,   126,0,17130052050856558701654168347952,true);
+        t[0] = Turn(125, 1, 15450001689812990757318517192966, true, 125, 0, 18252122845989030006812243139474, true);
+        t[1] = Turn(2, 0, 4834210944993112651816909106126, true, 3, 0, 15255474349613996056713761071686, true);
+        t[2] = Turn(2, 0, 6583714706138183953804767275678, true, 1, 0, 15461637266987935369279566108124, true);
+        t[3] = Turn(2, 0, 7210161534971784956923416751886, true, 1, 0, 15016064050662495416725412652563, true);
+        t[4] = Turn(126, 0, 0, false, 125, 1, 19240011345095274681466263674330, true);
+        t[5] = Turn(126, 0, 3284692555853178397455092928083, true, 126, 0, 7835549805310255467442088074506, true);
+        t[6] = Turn(125, 3, 12334118906782137414472592949424, true, 126, 0, 19374785281272442474766137271163, true);
+        t[7] = Turn(2, 0, 15077791565903026790875989318528, true, 125, 0, 11421095052443333388573678495326, true);
+        t[8] = Turn(126, 0, 0, false, 125, 1, 6291473213391741470941218170218, true);
+        t[9] = Turn(0, 0, 7022931971424196742811121512061, true, 125, 3, 15438085774022369100235175410030, true);
+        t[10] = Turn(1, 2, 4420670065419414850590787481288, true, 2, 0, 1960761762236369089740333992246, true);
+        t[11] = Turn(3, 0, 19801295147355512497167142159749, true, 2, 0, 6166359188124075649524594725791, true);
+        t[12] = Turn(3, 0, 17171843021366040478135578264996, true, 2, 0, 5383564461617129507072037502214, true);
+        t[13] = Turn(125, 3, 1986471879882982807378747309426, true, 126, 0, 14414938581786935425390960964000, true);
+        t[14] = Turn(1, 2, 3458675293930857335960176057085, true, 2, 0, 7749328072402731440980579744946, true);
+        t[15] = Turn(125, 3, 17293194887286872287278788602290, true, 126, 0, 4383111541380336465729024026150, true);
+        t[16] = Turn(1, 2, 10450409746379039708229821790015, true, 125, 2, 8716693538680640339539097046509, true);
+        t[17] = Turn(3, 0, 15015474814001600635537093680446, true, 1, 0, 2288645315003210275352244731355, true);
+        t[18] = Turn(125, 3, 11920649514225307809051229177287, true, 1, 0, 11401157979167469193859133635460, true);
+        t[19] = Turn(126, 0, 17457123310241581297033221314838, true, 1, 0, 10631747601138287248935576077466, true);
+        t[20] = Turn(0, 0, 6835862067306040477454545192907, true, 1, 0, 9322809856242922630776583049082, true);
+        t[21] = Turn(0, 0, 4954019214144165935310368793018, true, 1, 0, 134338259296852826632816183133, true);
+        t[22] = Turn(126, 0, 0, false, 125, 1, 16613587181676977476579639480048, true);
+        t[23] = Turn(1, 0, 17804535964781524133768449087333, true, 125, 3, 18580496538728489255944038457804, true);
+        t[24] = Turn(126, 0, 0, false, 125, 1, 7470981269216264771411536686385, true);
+        t[25] = Turn(2, 0, 12785556958579953943913050575887, true, 126, 0, 17130052050856558701654168347952, true);
     }
 
     function _startBattle() internal returns (bytes32) {
@@ -170,22 +199,40 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         address[] memory makersToAdd = new address[](1);
         makersToAdd[0] = address(maker);
         address[] memory makersToRemove = new address[](0);
-        vm.prank(p0); engine.updateMatchmakers(makersToAdd, makersToRemove);
-        vm.prank(p1); engine.updateMatchmakers(makersToAdd, makersToRemove);
+        vm.prank(p0);
+        engine.updateMatchmakers(makersToAdd, makersToRemove);
+        vm.prank(p1);
+        engine.updateMatchmakers(makersToAdd, makersToRemove);
         (bytes32 key, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
         uint256 nonce = engine.pairHashNonces(pairHash);
         BattleOffer memory offer = BattleOffer({
             battle: Battle({
-                p0: p0, p0TeamIndex: 0, p1: p1, p1TeamIndex: 0,
-                teamRegistry: registry, validator: IValidator(address(0)),
-                rngOracle: IRandomnessOracle(address(0)), ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
-                moveManager: moveManager, matchmaker: maker, engineHooks: new IEngineHook[](0)
+                p0: p0,
+                p0TeamIndex: 0,
+                p1: p1,
+                p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
+                teamRegistry: registry,
+                rngOracle: IRandomnessOracle(address(0)),
+                ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
+                moveManager: moveManager,
+                matchmaker: maker,
+                engineHooks: new IEngineHook[](0)
             }),
-            pairHashNonce: nonce
+            pairHashNonce: nonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
-        bytes32 digest = maker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
+        bytes32 digest = maker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
-        vm.prank(p1); maker.startGame(offer, abi.encodePacked(r, s, v));
+        vm.prank(p1);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            maker.startGame(offer, 0, seatSigs);
+        }
         return key;
     }
 
@@ -216,13 +263,18 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         console.log("saved over a 26-submit game                  :", (costOld - costNew) * 26);
     }
 
-    function _coolEngineAndMgr() internal { vm.cool(address(engine)); vm.cool(address(mgr)); }
+    function _coolEngineAndMgr() internal {
+        vm.cool(address(engine));
+        vm.cool(address(mgr));
+    }
 
     /// @dev EIP-2028 calldata cost: 16 gas per non-zero byte, 4 per zero byte. This is the real
     ///      top-level-tx cost the flat TX_BASE (21000 intrinsic) omits. Execution here far exceeds the
     ///      EIP-7623 floor, so the standard token cost applies.
     function _calldataCost(bytes memory cd) internal pure returns (uint256 cost) {
-        for (uint256 i; i < cd.length; i++) cost += cd[i] == bytes1(0) ? 4 : 16;
+        for (uint256 i; i < cd.length; i++) {
+            cost += cd[i] == bytes1(0) ? 4 : 16;
+        }
     }
 
     /// @dev Prod-faithful per-tx gas = on-chain execution + calldata bytes. The ABI encode is done by
@@ -233,13 +285,17 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         internal
         returns (uint256 gasUsed)
     {
-        if (measure) _coolEngineAndMgr();
+        if (measure) {
+            _coolEngineAndMgr();
+        }
         vm.prank(sender);
         uint256 g0 = gasleft();
         (bool ok,) = target.call(cd);
         uint256 raw = g0 - gasleft();
         require(ok, "measured call reverted");
-        if (measure) gasUsed = raw + _calldataCost(cd);
+        if (measure) {
+            gasUsed = raw + _calldataCost(cd);
+        }
     }
 
     // ---- LEGACY (per-turn, 2-sig executeWithDualSignedMoves as on main) ----
@@ -249,10 +305,9 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         bytes memory cd;
         address actor;
         if (twoPlayer) {
-            (uint8 cM, uint16 cE, uint104 cS, uint8 rM, uint16 rE, uint104 rS, uint256 rPk) =
-                turnId % 2 == 0
-                    ? (tn.p0Move, tn.p0Extra, tn.p0Salt, tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK)
-                    : (tn.p1Move, tn.p1Extra, tn.p1Salt, tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK);
+            (uint8 cM, uint16 cE, uint104 cS, uint8 rM, uint16 rE, uint104 rS, uint256 rPk) = turnId % 2 == 0
+                ? (tn.p0Move, tn.p0Extra, tn.p0Salt, tn.p1Move, tn.p1Extra, tn.p1Salt, P1_PK)
+                : (tn.p1Move, tn.p1Extra, tn.p1Salt, tn.p0Move, tn.p0Extra, tn.p0Salt, P0_PK);
             // Single-sig: committer (msg.sender, by parity) submits; only the revealer signs.
             actor = turnId % 2 == 0 ? p0 : p1;
             bytes32 cHash = keccak256(abi.encodePacked(cM, cS, cE));
@@ -262,8 +317,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
             uint8 m;
             uint16 e;
             uint104 s;
-            (m, e, s, actor) = tn.p0Present
-                ? (tn.p0Move, tn.p0Extra, tn.p0Salt, p0) : (tn.p1Move, tn.p1Extra, tn.p1Salt, p1);
+            (m, e, s, actor) =
+                tn.p0Present ? (tn.p0Move, tn.p0Extra, tn.p0Salt, p0) : (tn.p1Move, tn.p1Extra, tn.p1Salt, p1);
             cd = abi.encodeCall(mgr.executeSinglePlayerMove, (battleKey, m, s, e));
         }
         gasUsed = _measuredCall(address(mgr), actor, cd, measure);
@@ -271,7 +326,9 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     }
 
     function _runLegacy(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 totalExec) {
-        for (uint256 i; i < plan.length; i++) totalExec += _legacyTurn(battleKey, plan[i], measure);
+        for (uint256 i; i < plan.length; i++) {
+            totalExec += _legacyTurn(battleKey, plan[i], measure);
+        }
     }
 
     // ---- BUILT-IN BATCHED (in-Engine buffer: submit/drain via the Engine directly). Single-sig
@@ -280,7 +337,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
     //      emits NO per-turn events, only a BattleComplete at game over. The production "delayed execution
     //      with turn-by-turn submits" path and a fair apples-to-apples metric vs LEGACY. ----
     function _submitTurnBuiltIn(bytes32 battleKey, uint64 turnId, Turn memory tn, bool combined, bool measure)
-        internal returns (uint256 gasUsed)
+        internal
+        returns (uint256 gasUsed)
     {
         uint8 p0m = tn.p0Present ? tn.p0Move : NO_OP_MOVE_INDEX;
         uint8 p1m = tn.p1Present ? tn.p1Move : NO_OP_MOVE_INDEX;
@@ -295,9 +353,14 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         gasUsed = _measuredCall(address(engine), _committerFor(turnId, p0, p1), cd, measure);
     }
 
-    function _runBuiltIn(bytes32 battleKey, Turn[] memory plan, bool measure) internal returns (uint256 submitExec, uint256 execExec) {
+    function _runBuiltIn(bytes32 battleKey, Turn[] memory plan, bool measure)
+        internal
+        returns (uint256 submitExec, uint256 execExec)
+    {
         uint64 lastIdx = uint64(plan.length - 1);
-        for (uint64 i; i < lastIdx; i++) submitExec += _submitTurnBuiltIn(battleKey, i, plan[i], false, measure);
+        for (uint64 i; i < lastIdx; i++) {
+            submitExec += _submitTurnBuiltIn(battleKey, i, plan[i], false, measure);
+        }
         execExec = _submitTurnBuiltIn(battleKey, lastIdx, plan[lastIdx], true, measure);
         engine.resetCallContext();
     }
@@ -315,8 +378,8 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
             uint104 p0s = tn.p0Present ? tn.p0Salt : uint104(uint256(keccak256(abi.encode("noop0", battleKey, i))));
             uint104 p1s = tn.p1Present ? tn.p1Salt : uint104(uint256(keccak256(abi.encode("noop1", battleKey, i))));
             // executeBatchedTurns entry layout: p0Move 8 | p0Extra 16 | p0Salt 104 | p1Move 8 | p1Extra 16 | p1Salt 104
-            entries[i] = uint256(p0m) | (uint256(tn.p0Extra) << 8) | (uint256(p0s) << 24)
-                | (uint256(p1m) << 128) | (uint256(tn.p1Extra) << 136) | (uint256(p1s) << 152);
+            entries[i] = uint256(p0m) | (uint256(tn.p0Extra) << 8) | (uint256(p0s) << 24) | (uint256(p1m) << 128)
+                | (uint256(tn.p1Extra) << 136) | (uint256(p1s) << 152);
         }
     }
 
@@ -405,15 +468,23 @@ contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
         console.log("--- COLD SLOTS (fresh storageKey, first battle on the stack) ---");
         console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyCold);
         console.log("  BUILT-IN (PvP turn-by-turn submits, events)    :", builtInCold);
-        if (builtInCold < legacyCold) console.log("    built-in saves vs legacy                     :", legacyCold - builtInCold);
+        if (builtInCold < legacyCold) {
+            console.log("    built-in saves vs legacy                     :", legacyCold - builtInCold);
+        }
         console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxCold);
-        if (oneTxCold < legacyCold) console.log("    one-tx saves vs legacy                       :", legacyCold - oneTxCold);
+        if (oneTxCold < legacyCold) {
+            console.log("    one-tx saves vs legacy                       :", legacyCold - oneTxCold);
+        }
         console.log("--- REUSED SLOTS (storageKey reused from a prior battle) ---");
         console.log("  LEGACY   (PvP per-turn execute, events)        :", legacyReused);
         console.log("  BUILT-IN (PvP turn-by-turn submits, events)    :", builtInReused);
-        if (builtInReused < legacyReused) console.log("    built-in saves vs legacy                     :", legacyReused - builtInReused);
+        if (builtInReused < legacyReused) {
+            console.log("    built-in saves vs legacy                     :", legacyReused - builtInReused);
+        }
         console.log("  ONE-TX   (CPU: all moves + execute, 1 tx)      :", oneTxReused);
-        if (oneTxReused < legacyReused) console.log("    one-tx saves vs legacy                       :", legacyReused - oneTxReused);
+        if (oneTxReused < legacyReused) {
+            console.log("    one-tx saves vs legacy                       :", legacyReused - oneTxReused);
+        }
         // NOTE: the old external-StaminaRegen main baseline (5,277,953) is NOT comparable — it
         // measured the slow ruleset. A fair main comparison needs main itself re-measured under inline.
     }

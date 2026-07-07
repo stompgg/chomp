@@ -9,7 +9,6 @@ import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
@@ -117,21 +116,29 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
                 p0TeamIndex: 0,
                 p1: p1,
                 p1TeamIndex: 0,
+                p2: address(0),
+                p2TeamIndex: 0,
+                p3: address(0),
+                p3TeamIndex: 0,
                 teamRegistry: defaultRegistry,
-                validator: IValidator(address(0)),
                 rngOracle: IRandomnessOracle(address(0)),
                 ruleset: IRuleset(INLINE_STAMINA_REGEN_RULESET),
                 moveManager: BUILTIN_DUAL_SIGNED_MANAGER,
                 matchmaker: signedMatchmaker,
                 engineHooks: hooks
             }),
-            pairHashNonce: nonce
+            pairHashNonce: nonce,
+            battleMode: BATTLE_MODE_SINGLES
         });
 
-        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOffer(offer));
+        bytes32 digest = signedMatchmaker.hashTypedData(BattleOfferLib.hashBattleOfferForSigning(offer, 0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(P0_PK, digest);
         vm.prank(p1);
-        signedMatchmaker.startGame(offer, abi.encodePacked(r, s, v));
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = abi.encodePacked(r, s, v);
+            signedMatchmaker.startGame(offer, 0, seatSigs);
+        }
     }
 
     function _turnSalts(bytes32 battleKey, uint64 turnId) internal pure returns (uint104 p0s, uint104 p1s) {
@@ -142,8 +149,9 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
     /// @dev Real-time prod path: one combined submit-and-execute tx per turn.
     function _combinedTurn(bytes32 battleKey, uint64 turnId, uint8 p0m, uint16 p0e, uint8 p1m, uint16 p1e) internal {
         (uint104 p0s, uint104 p1s) = _turnSalts(battleKey, turnId);
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK
+        );
         if (_measuring) {
             vm.cool(address(engine));
             vm.startStateDiffRecording();
@@ -161,8 +169,9 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
     /// @dev Async prod path: stage one turn into the buffer without executing.
     function _stageTurn(bytes32 battleKey, uint64 turnId, uint8 p0m, uint16 p0e, uint8 p1m, uint16 p1e) internal {
         (uint104 p0s, uint104 p1s) = _turnSalts(battleKey, turnId);
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK
+        );
         if (_measuring) {
             vm.cool(address(engine));
             vm.startStateDiffRecording();

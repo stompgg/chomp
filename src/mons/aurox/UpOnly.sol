@@ -4,15 +4,14 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
+import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 
 contract UpOnly is IAbility, BasicEffect {
-
     uint8 public constant ATTACK_BOOST_PERCENT = 10; // 10% attack boost per hit
 
     // IAbility implementation
@@ -22,7 +21,7 @@ contract UpOnly is IAbility, BasicEffect {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -37,17 +36,21 @@ contract UpOnly is IAbility, BasicEffect {
         return 0x8040;
     }
 
-    function onAfterDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256, int32, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onAfterDamage(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        int32,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Add 5% attack boost every time damage is taken
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
-            stat: MonStateIndexName.Attack,
-            boostPercent: ATTACK_BOOST_PERCENT,
-            boostType: StatBoostType.Multiply
+            stat: MonStateIndexName.Attack, boostPercent: ATTACK_BOOST_PERCENT, boostType: StatBoostType.Multiply
         });
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 

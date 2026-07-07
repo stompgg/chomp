@@ -6,13 +6,11 @@ import "../../src/Constants.sol";
 import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../../src/Engine.sol";
 import {MonStateIndexName, Type} from "../../src/Enums.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IValidator} from "../../src/IValidator.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -21,9 +19,8 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
-
-import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 import {Overclock} from "../../src/effects/battlefield/Overclock.sol";
+import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 
 import {DualShock} from "../../src/mons/volthare/DualShock.sol";
 import {MegaStarBlast} from "../../src/mons/volthare/MegaStarBlast.sol";
@@ -41,7 +38,6 @@ contract VolthareTest is Test, BattleHelper {
     TestTypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
-    DefaultValidator validator;
     PreemptiveShock preemptiveShock;
     Overclock overclock;
     StandardAttackFactory attackFactory;
@@ -51,10 +47,7 @@ contract VolthareTest is Test, BattleHelper {
         typeCalc = new TestTypeCalculator();
         mockOracle = new MockRandomnessOracle();
         defaultRegistry = new TestTeamRegistry();
-        engine = new Engine(0, 0);
-        validator = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 2, MOVES_PER_MON: 0, TIMEOUT_DURATION: 10})
-        );
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(IEngine(address(engine)));
         overclock = new Overclock();
         preemptiveShock = new PreemptiveShock(ITypeCalculator(address(typeCalc)));
@@ -117,7 +110,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start a battle
-        bytes32 battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -143,8 +136,7 @@ contract VolthareTest is Test, BattleHelper {
         DummyStatus zapStatus = new DummyStatus();
         MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
-            overclock,
-            GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
+            overclock, GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
 
         uint256[] memory moves = new uint256[](2);
@@ -195,12 +187,8 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
         // Start a battle
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -256,8 +244,7 @@ contract VolthareTest is Test, BattleHelper {
         DummyStatus zapStatus = new DummyStatus();
         MegaStarBlast msb = new MegaStarBlast(typeCalc, zapStatus, overclock);
         GlobalEffectAttack overclockMove = new GlobalEffectAttack(
-            overclock,
-            GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
+            overclock, GlobalEffectAttack.Args({TYPE: Type.Lightning, STAMINA_COST: 0, PRIORITY: 0})
         );
 
         uint256[] memory moves = new uint256[](2);
@@ -266,9 +253,15 @@ contract VolthareTest is Test, BattleHelper {
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
-                hp: 100, stamina: 10, speed: 100,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Lightning, type2: Type.None
+                hp: 100,
+                stamina: 10,
+                speed: 100,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Lightning,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
@@ -276,9 +269,15 @@ contract VolthareTest is Test, BattleHelper {
 
         Mon memory bobMon = Mon({
             stats: MonStats({
-                hp: 1000, stamina: 10, speed: 1,
-                attack: 1, defense: 1, specialAttack: 1, specialDefense: 1,
-                type1: Type.Lightning, type2: Type.None
+                hp: 1000,
+                stamina: 10,
+                speed: 1,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Lightning,
+                type2: Type.None
             }),
             moves: moves,
             ability: 0
@@ -292,11 +291,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        IValidator validatorToUse = new DefaultValidator(
-            IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: 10})
-        );
-
-        bytes32 battleKey = _startBattle(validatorToUse, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Both players send in their mons
         _commitRevealExecuteForAliceAndBob(
@@ -381,17 +376,7 @@ contract VolthareTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        // Start a battle
-        bytes32 battleKey = _startBattle(
-            new DefaultValidator(
-                IEngine(address(engine)), DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10})
-            ),
-            engine,
-            mockOracle,
-            defaultRegistry,
-            matchmaker,
-            address(commitManager)
-        );
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(

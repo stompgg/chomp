@@ -23,7 +23,7 @@ abstract contract BasicEffect is IEffect {
 
     // Lifecycle hooks during normal battle flow
     // p0ActiveMonIndex and p1ActiveMonIndex are passed to avoid external calls back to Engine
-    function onRoundStart(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundStart(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -31,7 +31,7 @@ abstract contract BasicEffect is IEffect {
         return (extraData, false);
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -40,7 +40,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: ONLY RUN ON GLOBAL EFFECTS (mons have their Ability as their own hook to apply an effect on switch in)
-    function onMonSwitchIn(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchIn(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -49,7 +49,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -58,7 +58,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32, uint256)
+    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, int32, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -67,7 +67,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
-    function onPreDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256)
+    function onPreDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -75,7 +75,7 @@ abstract contract BasicEffect is IEffect {
         return (extraData, false);
     }
 
-    function onAfterMove(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onAfterMove(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -93,7 +93,6 @@ abstract contract BasicEffect is IEffect {
         uint256,
         uint256,
         uint256,
-        uint256,
         MonStateIndexName,
         int32
     ) external virtual returns (bytes32 updatedExtraData, bool removeAfterRun) {
@@ -101,7 +100,7 @@ abstract contract BasicEffect is IEffect {
     }
 
     // Lifecycle hooks when being applied or removed
-    function onApply(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256, uint256)
+    function onApply(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
         virtual
         returns (bytes32 updatedExtraData, bool removeAfterRun)
@@ -109,5 +108,5 @@ abstract contract BasicEffect is IEffect {
         return (updatedExtraData, removeAfterRun);
     }
 
-    function onRemove(IEngine, bytes32, bytes32, uint256, uint256, uint256, uint256) external virtual {}
+    function onRemove(IEngine, bytes32, bytes32, uint256, uint256, uint256) external virtual {}
 }

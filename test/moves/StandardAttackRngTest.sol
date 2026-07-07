@@ -7,9 +7,8 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
@@ -25,7 +24,6 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 contract StandardAttackRngTest is Test, BattleHelper {
     Engine engine;
     DefaultCommitManager commitManager;
-    DefaultValidator validator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -34,11 +32,8 @@ contract StandardAttackRngTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         factory = new StandardAttackFactory(typeCalc);
@@ -88,8 +83,7 @@ contract StandardAttackRngTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        bytes32 battleKey =
-            _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
         // Switch in mon 0 on both sides.
         _commitRevealExecuteForAliceAndBob(
@@ -107,9 +101,6 @@ contract StandardAttackRngTest is Test, BattleHelper {
 
         assertLt(aliceHpDelta, 0, "Alice should have taken damage");
         assertLt(bobHpDelta, 0, "Bob should have taken damage");
-        assertTrue(
-            aliceHpDelta != bobHpDelta,
-            "Mirror mons using the same move should not roll identical damage"
-        );
+        assertTrue(aliceHpDelta != bobHpDelta, "Mirror mons using the same move should not roll identical damage");
     }
 }

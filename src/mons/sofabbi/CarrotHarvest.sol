@@ -5,10 +5,10 @@ pragma solidity ^0.8.0;
 // @inline-ability: singleton-local
 
 import {MonStateIndexName} from "../../Enums.sol";
-import {EffectInstance} from "../../Structs.sol";
 import {IEngine} from "../../IEngine.sol";
-import {RNGLib} from "../../lib/RNGLib.sol";
+import {EffectInstance} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
+import {RNGLib} from "../../lib/RNGLib.sol";
 
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -26,7 +26,7 @@ contract CarrotHarvest is IAbility, BasicEffect {
         override
     {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -41,11 +41,15 @@ contract CarrotHarvest is IAbility, BasicEffect {
     }
 
     // Regain stamina on round end, this can overheal stamina
-    function onRoundEnd(IEngine engine, bytes32, uint256 rng, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    function onRoundEnd(
+        IEngine engine,
+        bytes32,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Mix in target player index to break symmetry on mirror matchups
         if (RNGLib.mixForAttacker(rng, targetIndex) % CHANCE == 1) {
             // Update the stamina of the mon

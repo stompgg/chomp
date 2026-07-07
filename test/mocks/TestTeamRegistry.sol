@@ -14,6 +14,49 @@ contract TestTeamRegistry is ITeamRegistry {
     mapping(address => mapping(uint256 => bool)) public hasIndexedTeam;
     uint256[] indices;
 
+    mapping(address => bool) public isWhitelistedOpponent;
+
+    function setWhitelistedOpponent(address addr, bool flag) public {
+        isWhitelistedOpponent[addr] = flag;
+    }
+
+    // IPhantomTeamRegistry stubs recording (user, opponent) so bundled-start tests can assert
+    // which phantom slots the CPU host wrote.
+    struct PhantomWrite {
+        address user;
+        address opponent;
+        uint256[] monIndices;
+    }
+
+    PhantomWrite[] public phantomWrites;
+
+    function phantomWriteCount() external view returns (uint256) {
+        return phantomWrites.length;
+    }
+
+    function phantomWriteAt(uint256 i)
+        external
+        view
+        returns (address user, address opponent, uint256[] memory monIndices)
+    {
+        PhantomWrite storage w = phantomWrites[i];
+        return (w.user, w.opponent, w.monIndices);
+    }
+
+    function setOpponentTeamFor(address user, uint256[] memory monIndices, uint8[] memory, uint8[] memory) external {
+        phantomWrites.push(PhantomWrite({user: user, opponent: msg.sender, monIndices: monIndices}));
+    }
+
+    function setOpponentTeamForPeer(
+        address user,
+        address opponent,
+        uint256[] memory monIndices,
+        uint8[] memory,
+        uint8[] memory
+    ) external {
+        phantomWrites.push(PhantomWrite({user: user, opponent: opponent, monIndices: monIndices}));
+    }
+
     function setTeam(address player, Mon[] memory team) public {
         teams[player] = team;
     }
@@ -69,11 +112,7 @@ contract TestTeamRegistry is ITeamRegistry {
         return new uint256[](0);
     }
 
-    function getPlayerTeams(address)
-        external
-        pure
-        returns (uint256[] memory slots, uint256[][] memory teamMonIds)
-    {
+    function getPlayerTeams(address) external pure returns (uint256[] memory slots, uint256[][] memory teamMonIds) {
         slots = new uint256[](0);
         teamMonIds = new uint256[][](0);
     }
@@ -87,12 +126,22 @@ contract TestTeamRegistry is ITeamRegistry {
         return true;
     }
 
-    function getMonData(uint256)
-        external
-        pure
-        returns (MonStats memory, uint256[] memory, uint256[] memory)
-    {
-        return (MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None}), new uint256[](0), new uint256[](0));
+    function getMonData(uint256) external pure returns (MonStats memory, uint256[] memory, uint256[] memory) {
+        return (
+            MonStats({
+                hp: 0,
+                stamina: 0,
+                speed: 0,
+                attack: 0,
+                defense: 0,
+                specialAttack: 0,
+                specialDefense: 0,
+                type1: Type.None,
+                type2: Type.None
+            }),
+            new uint256[](0),
+            new uint256[](0)
+        );
     }
 
     function getMonDataBatch(uint256[] calldata)
@@ -104,7 +153,17 @@ contract TestTeamRegistry is ITeamRegistry {
     }
 
     function getMonStats(uint256) external pure returns (MonStats memory) {
-        return MonStats({hp: 0, stamina: 0, speed: 0, attack: 0, defense: 0, specialAttack: 0, specialDefense: 0, type1: Type.None, type2: Type.None});
+        return MonStats({
+            hp: 0,
+            stamina: 0,
+            speed: 0,
+            attack: 0,
+            defense: 0,
+            specialAttack: 0,
+            specialDefense: 0,
+            type1: Type.None,
+            type2: Type.None
+        });
     }
 
     function getMonMetadata(uint256, bytes32) external pure returns (bytes32) {

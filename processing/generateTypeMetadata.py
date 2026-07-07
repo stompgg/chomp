@@ -2,7 +2,7 @@
 """Generate munch's type display metadata (`typeData`) from drool/type-metadata.csv.
 
 drool/type-metadata.csv is the single source of truth for per-type display fields
-(name, kanji, colors, emoji, abbreviation). Emits a generated TypeScript module keyed
+(name, kanji, colors, abbreviation). Emits a generated TypeScript module keyed
 by the `Type` enum; munch's data/types.ts re-exports it. Falls back to writing into
 drool/ when munch isn't checked out.
 """
@@ -27,7 +27,6 @@ def generate_ts(rows: list[dict]) -> str:
             f"bgColor: '{_esc(r['BgColor'])}', "
             f"textColor: '{_esc(r['TextColor'])}', "
             f"abbreviation: '{_esc(r['Abbreviation'])}', "
-            f"emoji: '{_esc(r['Emoji'])}', "
             f"name: '{_esc(r['Name'])}', "
             f"character: '{_esc(r['Character'])}' }},"
         )
@@ -39,7 +38,6 @@ export interface TypeInfo {{
   bgColor: string;
   textColor: string;
   abbreviation: string;
-  emoji: string;
   name: string;
   character: string;
 }}

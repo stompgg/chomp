@@ -7,10 +7,10 @@ import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {Overclock} from "../../effects/battlefield/Overclock.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
-import {Overclock} from "../../effects/battlefield/Overclock.sol";
 
 contract DualShock is StandardAttack {
     IEffect immutable ZAP_STATUS;
@@ -44,16 +44,24 @@ contract DualShock is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
         // Deal the damage
         engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
 
         // Apply Zap to self

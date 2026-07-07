@@ -9,6 +9,7 @@ import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
 import {SwitchTargetLib} from "../../lib/SwitchTargetLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
@@ -39,27 +40,40 @@ contract PistolSquat is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
+        uint256 otherPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Deal the damage
         engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
 
         // Deal damage and then force a switch if the opposing mon is not KO'ed
-        uint256 otherPlayerIndex = (attackerPlayerIndex + 1) % 2;
-        bool isKOed =
-            engine.getMonStateForBattle(battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut)
-                == 1;
+        bool isKOed = engine.getMonStateForBattle(
+            battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
+        ) == 1;
         if (!isKOed) {
             int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, otherPlayerIndex, defenderMonIndex, rng);
             if (target != -1) {
-                engine.switchActiveMon(otherPlayerIndex, uint256(uint32(target)));
+                engine.switchActiveMonForSlot(otherPlayerIndex, targetSlot & 1, uint256(uint32(target)));
             }
         }
     }

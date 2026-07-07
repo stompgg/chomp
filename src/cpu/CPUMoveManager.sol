@@ -5,71 +5,31 @@ import "../Constants.sol";
 import "../Structs.sol";
 
 import {IEngine} from "../IEngine.sol";
-import {ICPU} from "./ICPU.sol";
 
 abstract contract CPUMoveManager {
     IEngine internal immutable ENGINE;
 
     error NotP0();
 
-    constructor(IEngine engine) {
+    /// @dev Approves itself plus the supplied matchmakers (D34) so its battles can also be
+    ///      started through external flows (e.g. the SignedMatchmaker's Multi offers).
+    constructor(IEngine engine, address[] memory matchmakers) {
         ENGINE = engine;
 
-        // Self-register as an approved matchmaker
-        address[] memory self = new address[](1);
-        self[0] = address(this);
-        address[] memory empty = new address[](0);
-        engine.updateMatchmakers(self, empty);
+        address[] memory toApprove = new address[](matchmakers.length + 1);
+        toApprove[0] = address(this);
+        for (uint256 i; i < matchmakers.length; ++i) {
+            toApprove[i + 1] = matchmakers[i];
+        }
+        engine.updateMatchmakers(toApprove, new address[](0));
     }
 
-    function selectMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData) external {
-        // Routing read: p0 / winnerIndex / playerSwitchForTurnFlag off the BattleContext (the dedicated
-        // getCPURouteContext getter was removed to shrink the engine surface). When the turn is "p0
-        // forced switch" (flag == 0) or the game is already over we return without building the full CPUContext.
-        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
-        (address p0, uint8 winnerIndex, uint8 playerSwitchForTurnFlag) =
-            (rctx.p0, rctx.winnerIndex, rctx.playerSwitchForTurnFlag);
-
-        if (msg.sender != p0) {
-            revert NotP0();
-        }
-
-        if (winnerIndex != 2) {
-            return;
-        }
-
-        address winner;
-        if (playerSwitchForTurnFlag == 0) {
-            winner = ENGINE.executeWithSingleMove(battleKey, moveIndex, salt, extraData);
-        } else {
-            // P1's turn or both players move: CPU calculates its move. Fetch the full context now.
-            CPUContext memory ctx = _buildCPUContext(battleKey);
-            (uint128 cpuMoveIndex, uint16 cpuExtraData) =
-                ICPU(address(this)).calculateMove(ctx, moveIndex, extraData);
-            // Salt narrows to 104 bits to match the engine's storage; ample for an unpredictable
-            // RNG source within the seconds-to-minutes commit-reveal window.
-            uint104 p1Salt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
-
-            if (playerSwitchForTurnFlag == 1) {
-                winner = ENGINE.executeWithSingleMove(battleKey, uint8(cpuMoveIndex), p1Salt, cpuExtraData);
-            } else {
-                winner = ENGINE.executeWithMoves(
-                    battleKey, moveIndex, salt, extraData, uint8(cpuMoveIndex), p1Salt, cpuExtraData
-                );
-            }
-        }
-
-        _afterTurn(battleKey, p0, winner);
-    }
-
-    /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move (computed
-    ///         client-side) in one tx, and the engine executes them directly — NO on-chain
-    ///         `getCPUContext` load and NO `calculateMove`. This removes the dozen-plus cold SLOADs
-    ///         + the heuristic compute the engine would otherwise pay every CPU turn.
+    /// @notice Off-chain-decision CPU flow: p0 submits BOTH their move and the CPU's move
+    ///         (computed client-side) in one tx, and the engine executes them directly.
     /// @dev Trust model: the CPU move is not verified. Lying only makes the CPU play worse against
     ///      p0 (a self-inflicted handicap), so there's no on-chain incentive to cheat in PvE; an
-    ///      off-chain server/replay can still validate the CPU move if rewards depend on it. The
-    ///      committer binding is the same as `selectMove`: `msg.sender == p0`.
+    ///      off-chain server/replay can still validate the CPU move if rewards depend on it. Committer
+    ///      binding: `msg.sender == p0`.
     function selectMoveWithCpuMove(
         bytes32 battleKey,
         uint8 playerMoveIndex,
@@ -149,39 +109,61 @@ abstract contract CPUMoveManager {
         _afterTurn(battleKey, rctx.p0, winner);
     }
 
-    /// @notice Assemble the CPU decision context from granular engine reads. The old wide
-    ///         `Engine.getBattle` hydration materialized both full teams, all effects, and the
-    ///         globalKV buffer (~130k+ per on-chain CPU turn) to extract ~12 scalars — and its
-    ///         tuple decode overflowed via-IR's stack allocator once BattleData grew. Granular
-    ///         getters read exactly what the CPU consumes. Assumes the CPU is p1. Zero move
-    ///         slots mean "no move here" (fixed-lane team storage returns 0 for empty lanes).
-    function _buildCPUContext(bytes32 battleKey) internal view returns (CPUContext memory ctx) {
-        BattleContext memory bctx = ENGINE.getBattleContext(battleKey);
-        ctx.battleKey = battleKey;
-        ctx.p0 = bctx.p0;
-        ctx.p1 = bctx.p1;
-        ctx.validator = bctx.validator;
-        ctx.winnerIndex = bctx.winnerIndex;
-        ctx.playerSwitchForTurnFlag = bctx.playerSwitchForTurnFlag;
-        ctx.turnId = bctx.turnId;
-        ctx.p0ActiveMonIndex = bctx.p0ActiveMonIndex;
-        ctx.p1ActiveMonIndex = bctx.p1ActiveMonIndex;
-        ctx.p0TeamSize = uint8(ENGINE.getTeamSize(battleKey, 0));
-        ctx.p1TeamSize = uint8(ENGINE.getTeamSize(battleKey, 1));
-        ctx.p0KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 0));
-        ctx.p1KOBitmap = uint8(ENGINE.getKOBitmap(battleKey, 1));
-
-        uint256 p1MonIndex = bctx.p1ActiveMonIndex;
-        ctx.cpuActiveMonBaseStamina =
-            ENGINE.getMonValueForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.Stamina);
-        // getMonStateForBattle normalizes the cleared sentinel to 0, matching the old hydration.
-        ctx.cpuActiveMonStaminaDelta =
-            ENGINE.getMonStateForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.Stamina);
-        ctx.cpuActiveMonKnockedOut =
-            ENGINE.getMonStateForBattle(battleKey, 1, p1MonIndex, MonStateIndexName.IsKnockedOut) != 0;
-        for (uint256 i; i < 4; ++i) {
-            ctx.cpuActiveMonMoveSlots[i] = ENGINE.getMoveForMonForBattle(battleKey, 1, p1MonIndex, i);
+    /// @notice 2-slot (Doubles) analog of selectMoveWithCpuMove: p0 submits their full side
+    ///         word plus the CPU side's two client-computed lanes in one tx. No forced-switch
+    ///         flag dispatch is needed — both side words always land in the engine and a mask
+    ///         turn ignores the non-acting lanes (clients pass NO_OP filler there).
+    /// @param playerSidePacked p0's wire side word: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
+    function selectSlotMovesWithCpuMoves(
+        bytes32 battleKey,
+        uint256 playerSidePacked,
+        uint8 cpuMove0,
+        uint16 cpuExtra0,
+        uint8 cpuMove1,
+        uint16 cpuExtra1
+    ) external {
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        if (msg.sender != rctx.p0) {
+            revert NotP0();
         }
+        if (rctx.winnerIndex != 2) {
+            return;
+        }
+
+        // Same deterministic CPU-side salt as the singles flow.
+        uint104 cpuSalt = uint104(uint256(keccak256(abi.encode(battleKey, msg.sender, block.timestamp))));
+        uint256 cpuSidePacked = uint256(cpuMove0) | (uint256(cpuExtra0) << 8) | (uint256(cpuMove1) << 24)
+            | (uint256(cpuExtra1) << 32) | (uint256(cpuSalt) << 48);
+        address winner = ENGINE.executeWithSlotMoves(battleKey, playerSidePacked, cpuSidePacked);
+
+        _afterTurn(battleKey, rctx.p0, winner);
+    }
+
+    /// @notice One-tx 2-slot PvE flow: p0 submits the whole game's turns and the engine settles
+    ///         them in one tx (executeBatchedSlotTurns). The CPU side's salt is always 0, as on
+    ///         the singles batched path.
+    /// @dev `moves` packs 25 bytes per turn: [side0 19B = m0 1 | e0 2 | m1 1 | e1 2 | salt 13
+    ///      | side1 6B = m0 1 | e0 2 | m1 1 | e1 2] — each slice is the big-endian tail of the
+    ///      wire side word, so the stream bytes match the BattleCompleteWithBatchSlotTurns
+    ///      replay payload byte-for-byte (minus the winner prefix).
+    function executeSlotGame(bytes32 battleKey, bytes calldata moves) external returns (address winner) {
+        BattleContext memory rctx = ENGINE.getBattleContext(battleKey);
+        if (msg.sender != rctx.p0) {
+            revert NotP0();
+        }
+        if (rctx.winnerIndex != 2) {
+            return address(0);
+        }
+
+        uint256 numTurns = moves.length / 25;
+        uint256[] memory entries = new uint256[](numTurns * 2);
+        for (uint256 i; i < numTurns; ++i) {
+            uint256 off = i * 25;
+            entries[i * 2] = uint256(uint152(bytes19(moves[off:off + 19])));
+            entries[i * 2 + 1] = uint256(uint48(bytes6(moves[off + 19:off + 25])));
+        }
+        (, winner) = ENGINE.executeBatchedSlotTurns(battleKey, entries);
+        _afterTurn(battleKey, rctx.p0, winner);
     }
 
     /// @notice Post-execute hook. `winner == address(0)` means the battle is still ongoing;

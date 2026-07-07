@@ -715,8 +715,6 @@ contract SetupMons is Script {
             type1: Type.Cosmic,
             type2: Type.None
         });
-        // Lanes 0-3 are the level-0 battle moves; lane 4 (Invoke Taboo) is a higher-pool move that
-        // unlocks at level 6 (see moves.csv UnlockLevel and the MonExp by-lane gating).
         uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));

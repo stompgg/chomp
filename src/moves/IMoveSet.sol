@@ -7,12 +7,18 @@ import "../Structs.sol";
 
 interface IMoveSet {
     function name() external view returns (string memory);
+    /// @param targetBits Absolute-slot bitmask chosen by the player (top nibble of the wire
+    ///        extraData). In singles the engine passes the implied target (the opposing slot).
+    /// @param activesPacked Every slot's active roster index (one 8-bit lane per absolute slot,
+    ///        EMPTY_ACTIVE_LANE = none) — resolve targets via TargetLib without engine calls.
+    /// @param extraData The move's 12-bit payload (engine pre-masks the target nibble off).
     function move(
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16 extraData,
         uint256 rng
     ) external;
@@ -23,10 +29,9 @@ interface IMoveSet {
         returns (uint32);
     function moveType(IEngine engine, bytes32 battleKey) external view returns (Type);
     function moveClass(IEngine engine, bytes32 battleKey) external view returns (MoveClass);
-    function extraDataType() external view returns (ExtraDataType);
 
     /// @notice Bundled metadata read. Returns moveType / moveClass / priority / stamina /
-    ///         basePower / extraDataType in a single staticcall so callers that need several
+    ///         basePower / targetSpec in a single staticcall so callers that need several
     ///         metadata fields per decision avoid N separate external calls.
     /// @dev For moves that don't deal damage, return `basePower == 0`. Implementations that
     ///      don't read engine/battleKey/playerIndex/monIndex may ignore those parameters; they

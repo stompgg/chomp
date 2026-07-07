@@ -3,11 +3,10 @@ pragma solidity ^0.8.0;
 
 import "../../src/Constants.sol";
 import {Engine} from "../../src/Engine.sol";
-import { MoveClass, Type} from "../../src/Enums.sol";
+import {MoveClass, Type} from "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {AttackCalculator} from "../../src/moves/AttackCalculator.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
@@ -24,19 +23,16 @@ contract AttackCalculatorTest is Test, BattleHelper {
     TestTeamRegistry defaultRegistry;
     MockRandomnessOracle mockOracle;
     DefaultCommitManager commitManager;
-    DefaultValidator validator;
     DefaultMatchmaker matchmaker;
 
     bytes32 battleKey;
 
     function setUp() public {
         // Set up the core components
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         typeCalc = new TypeCalculator();
         mockOracle = new MockRandomnessOracle();
         commitManager = new DefaultCommitManager(engine);
-        validator =
-            new DefaultValidator(engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 10}));
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
 
@@ -88,7 +84,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, bobTeam);
 
         // Start battle
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         return battleKey;
     }
 
@@ -169,18 +165,7 @@ contract AttackCalculatorTest is Test, BattleHelper {
 
         // Precomputed seed: accuracy roll lands a hit
         (int32 damage1,) = AttackCalculator._calculateDamageView(
-            engine,
-            typeCalc,
-            battleKey,
-            0,
-            1,
-            basePower,
-            accuracy,
-            volatility,
-            attackType,
-            attackSupertype,
-            6,
-            critRate
+            engine, typeCalc, battleKey, 0, 1, basePower, accuracy, volatility, attackType, attackSupertype, 6, critRate
         );
 
         // Precomputed seed: accuracy roll lands a miss

@@ -6,10 +6,10 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {IEffect} from "../../effects/IEffect.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
-import {IEffect} from "../../effects/IEffect.sol";
+import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract BullRush is StandardAttack {
     int32 public constant SELF_DAMAGE_PERCENT = 20;
@@ -39,18 +39,26 @@ contract BullRush is StandardAttack {
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
         uint16,
         uint256 rng
     ) public override {
         // Deal the damage to opponent
         (int32 damage,) = engine.dispatchStandardAttack(
-            attackerPlayerIndex, defenderMonIndex,
-            basePower(battleKey), accuracy(battleKey), volatility(battleKey),
-            moveType(engine, battleKey), moveClass(engine, battleKey),
-            critRate(battleKey), uint8(effectAccuracy(battleKey)), effect(battleKey), rng
+            attackerPlayerIndex,
+            targetBits,
+            basePower(battleKey),
+            accuracy(battleKey),
+            volatility(battleKey),
+            moveType(engine, battleKey),
+            moveClass(engine, battleKey),
+            critRate(battleKey),
+            uint8(effectAccuracy(battleKey)),
+            effect(battleKey),
+            rng
         );
-        
+
         if (damage > 0) {
             int32 maxHp = int32(
                 engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)

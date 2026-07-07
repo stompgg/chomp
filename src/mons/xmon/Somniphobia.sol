@@ -2,13 +2,14 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY} from "../../Constants.sol";
-import {ExtraDataType, MoveClass, Type, MonStateIndexName} from "../../Enums.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, NO_SLOT} from "../../Constants.sol";
+import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
+import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract Somniphobia is IMoveSet, BasicEffect {
     uint256 public constant DURATION = 4;
@@ -22,8 +23,22 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return "Somniphobia";
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 defenderMonIndex, uint16, uint256) external {
-        uint256 defenderPlayerIndex = (attackerPlayerIndex + 1) % 2;
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return; // no chosen target (defensive; the engine fizzles first)
+        }
+        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
         if (exists) {
@@ -61,10 +76,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint16) {
         return ALWAYS_APPLIES_BIT | 0x0134;
@@ -77,7 +88,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
-        uint256,
         uint256,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
@@ -96,11 +106,15 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchIn(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onMonSwitchIn(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256
+    ) external override returns (bytes32, bool) {
         // Global coordinator only: apply the punisher to the mon that just switched in.
         if (uint256(extraData) & PUNISHER_MARKER == 0) {
             _applyPunisher(engine, battleKey, targetIndex, monIndex);
@@ -108,7 +122,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, false);
     }
 
-    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         pure
         override
@@ -118,7 +132,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, uint256(extraData) & PUNISHER_MARKER != 0);
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
+    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256)
         external
         view
         override
@@ -143,13 +157,12 @@ contract Somniphobia is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

@@ -242,7 +242,7 @@ def process_abis(out_dir: Path, game_dir: Path) -> List[Tuple[str, str]]:
         ("SignedMatchmaker", "signed-matchmaker.ts", "SignedMatchmakerABI"),
         ("SimplePM", "simple-pm.ts", "SimplePMABI"),
         ("GachaTeamRegistry", "gachaTeamRegistry.ts", "GachaTeamRegistryABI"),
-        ("OkayCPU", "okay-cpu.ts", "OkayCPUABI")
+        ("CPU", "cpu.ts", "CPUABI")
     ]
 
     # Output paths. Generated artifacts are quarantined under each consumer's generated/ dir.

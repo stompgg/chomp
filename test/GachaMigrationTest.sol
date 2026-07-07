@@ -3,13 +3,14 @@ pragma solidity ^0.8.0;
 
 import "../lib/forge-std/src/Test.sol";
 
-import "../src/Structs.sol";
 import "../src/Enums.sol";
+import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 
 import {MockGachaRNG} from "./mocks/MockGachaRNG.sol";
+import "src/Constants.sol";
 
 /// @notice Covers GachaTeamRegistry.migrate(): the self-service, one-shot import of a
 /// player's full progression state (ownership, profile slot, exp, facets, teams) from an
@@ -32,7 +33,7 @@ contract GachaMigrationTest is Test {
         // currentDay > 0 so daily-gated branches behave; mirrors GachaTeamRegistryTest.
         vm.warp(2 days);
 
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         mockRNG = new MockGachaRNG();
 
         // ----- Old (source) registry: no predecessor. -----
@@ -218,7 +219,9 @@ contract GachaMigrationTest is Test {
 
     function _lowestUnlocked(uint16 unlocked) internal pure returns (uint8) {
         for (uint8 i; i < 12; i++) {
-            if (unlocked & uint16(1 << i) != 0) return i + 1; // facetId is 1-indexed
+            if (unlocked & uint16(1 << i) != 0) {
+                return i + 1; // facetId is 1-indexed
+            }
         }
         return 0;
     }

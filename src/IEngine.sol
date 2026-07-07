@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import "./Enums.sol";
 
-import "./IValidator.sol";
 import "./Structs.sol";
 import "./effects/IEffect.sol";
 import "./moves/IMoveSet.sol";
@@ -38,7 +37,7 @@ interface IEngine {
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
-        uint256 defenderMonIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint32 volatility,
@@ -51,6 +50,7 @@ interface IEngine {
     ) external returns (int32 damage, bytes32 eventType);
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
+        uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
         uint256 volatility,
@@ -74,7 +74,29 @@ interface IEngine {
     function executeWithSingleMove(bytes32 battleKey, uint8 moveIndex, uint104 salt, uint16 extraData)
         external
         returns (address winner);
+    // 2-slot battles (Doubles/Multi)
+    function startBattleWithMode(Battle memory battle, uint8 battleMode) external;
+    function executeWithSlotMoves(bytes32 battleKey, uint256 side0Packed, uint256 side1Packed)
+        external
+        returns (address winner);
+    function setMoveForSlot(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint8 moveIndex,
+        uint16 extraData
+    ) external;
+    function switchActiveMonForSlot(uint256 playerIndex, uint256 slotIndex, uint256 monToSwitchIndex) external;
+    function getMoveDecisionForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (MoveDecision memory);
+    function getActiveSlots(bytes32 battleKey) external view returns (uint256[4] memory slots);
     function executeBatchedTurns(bytes32 battleKey, uint256[] calldata entries)
+        external
+        returns (uint64 executed, address winner);
+    // 2-slot variant: entries are (side0, side1) wire-word pairs per turn.
+    function executeBatchedSlotTurns(bytes32 battleKey, uint256[] calldata entries)
         external
         returns (uint64 executed, address winner);
     function resetCallContext() external;
@@ -88,10 +110,34 @@ interface IEngine {
         external
         view
         returns (uint64 numExecuted, uint256[] memory packedTurns);
+    // 2-slot variant: one wire word per side per turn (the executeWithSlotMoves layout)
+    function submitSlotTurnMoves(
+        bytes32 battleKey,
+        uint256 committerSidePacked,
+        uint256 revealerSidePacked,
+        bytes32 r,
+        bytes32 vs
+    ) external;
+    function submitSlotTurnMovesAndExecute(
+        bytes32 battleKey,
+        uint256 committerSidePacked,
+        uint256 revealerSidePacked,
+        bytes32 r,
+        bytes32 vs
+    ) external;
+    function getBufferedSlotTurns(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint256[] memory sideWords);
 
     // Getters
     function pairHashNonces(bytes32 pairHash) external view returns (uint256);
     function computeBattleKey(address p0, address p1) external view returns (bytes32 battleKey, bytes32 pairHash);
+    function computePartyKey(address p0, address p1, address p2, address p3)
+        external
+        view
+        returns (bytes32 battleKey, bytes32 partyHash);
+    function getSeats(bytes32 battleKey) external view returns (address[4] memory seats);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
@@ -142,8 +188,5 @@ interface IEngine {
         view
         returns (DamageCalcContext memory);
     function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
-    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MonState[] memory);
+    function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex) external view returns (MonState[] memory);
 }

@@ -6,12 +6,13 @@ import "../../Constants.sol";
 import "../../Enums.sol";
 
 import {IEngine} from "../../IEngine.sol";
+import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
-import {MoveMeta} from "../../Structs.sol";
 
 contract Q5 is IMoveSet, BasicEffect {
     uint256 public constant DELAY = 5;
@@ -27,18 +28,41 @@ contract Q5 is IMoveSet, BasicEffect {
         return "Q5";
     }
 
-    function _packExtraData(uint256 turnCount, uint256 attackerPlayerIndex) internal pure returns (bytes32) {
-        return bytes32((turnCount << 128) | attackerPlayerIndex);
+    function _packExtraData(uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return bytes32((turnCount << 128) | (targetSlot << 64) | attackerPlayerIndex);
     }
 
-    function _unpackExtraData(bytes32 data) internal pure returns (uint256 turnCount, uint256 attackerPlayerIndex) {
+    function _unpackExtraData(bytes32 data)
+        internal
+        pure
+        returns (uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot)
+    {
         turnCount = uint256(data) >> 128;
-        attackerPlayerIndex = uint256(data) & type(uint128).max;
+        targetSlot = (uint256(data) >> 64) & 0xFF;
+        attackerPlayerIndex = uint256(data) & type(uint64).max;
     }
 
-    function move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256, uint256, uint16, uint256) external {
-        // Add effect to global effects
-        engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex));
+    function move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16,
+        uint256
+    ) external {
+        // Arm against the slot this cast aimed at (slot-bound, D3: a later switch redirects
+        // the blast onto the occupant, never onto a different slot).
+        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+        if (targetSlot == NO_SLOT) {
+            return;
+        }
+        engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex, targetSlot));
 
         // Clear the priority boost
         if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
@@ -62,27 +86,18 @@ contract Q5 is IMoveSet, BasicEffect {
         return MoveClass.Special;
     }
 
-    function extraDataType() public pure returns (ExtraDataType) {
-        return ExtraDataType.None;
-    }
-
     // Effect implementation
     // Steps: RoundStart
     function getStepsBitmap() external pure override returns (uint16) {
         return 0x8002;
     }
 
-    function onRoundStart(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256 rng,
-        bytes32 extraData,
-        uint256,
-        uint256,
-        uint256,
-        uint256
-    ) external override returns (bytes32, bool) {
-        (uint256 turnCount, uint256 attackerPlayerIndex) = _unpackExtraData(extraData);
+    function onRoundStart(IEngine engine, bytes32 battleKey, uint256 rng, bytes32 extraData, uint256, uint256, uint256)
+        external
+        override
+        returns (bytes32, bool)
+    {
+        (uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot) = _unpackExtraData(extraData);
         if (turnCount == DELAY) {
             // Deal damage
             AttackCalculator._calculateDamage(
@@ -90,6 +105,7 @@ contract Q5 is IMoveSet, BasicEffect {
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
+                uint256(1) << targetSlot,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
@@ -100,7 +116,7 @@ contract Q5 is IMoveSet, BasicEffect {
             );
             return (extraData, true);
         } else {
-            return (_packExtraData(turnCount + 1, attackerPlayerIndex), false);
+            return (_packExtraData(turnCount + 1, attackerPlayerIndex, targetSlot), false);
         }
     }
 
@@ -110,13 +126,12 @@ contract Q5 is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
+            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            extraDataType: extraDataType(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
     }
-
 }

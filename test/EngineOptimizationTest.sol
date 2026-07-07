@@ -8,11 +8,9 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {DefaultRuleset} from "../src/DefaultRuleset.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
-import {IValidator} from "../src/IValidator.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";
 import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol";
@@ -48,7 +46,6 @@ contract KOOpponentOnSwitchAbility is IAbility {
 contract EngineOptimizationTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator oneMonValidator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -57,11 +54,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        oneMonValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 1, TIMEOUT_DURATION: 100})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         standardAttackFactory = new StandardAttackFactory(typeCalc);
@@ -104,7 +98,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -164,7 +157,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -231,7 +223,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -298,7 +289,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -369,7 +359,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -478,7 +467,9 @@ contract EngineOptimizationTest is Test, BattleHelper {
         _forceP1Switch(testEngine, signedManager, battleKey);
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
-        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 0, "P0 should be forced to switch");
+        assertEq(
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 0, "P0 should be forced to switch"
+        );
 
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, ALICE, uint16(1));
         assertEq(
@@ -507,7 +498,9 @@ contract EngineOptimizationTest is Test, BattleHelper {
             testEngine, signedManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        assertEq(uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 1, "P1 should be forced to switch");
+        assertEq(
+            uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag), 1, "P1 should be forced to switch"
+        );
     }
 
     function _executeSinglePlayerMoveAndReset(
@@ -552,7 +545,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
         registry.setTeam(BOB, bobTeam);
 
         battleKey = _startBattle(
-            IValidator(address(0)),
             testEngine,
             IRandomnessOracle(address(0)),
             registry,
@@ -637,7 +629,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Battle 1: warmup (cold storage hit absorbed here)
         bytes32 warmupKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -655,7 +646,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Battle 2: external StaminaRegen (warm storage)
         bytes32 externalKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,
@@ -676,7 +666,6 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         // Battle 3: inline StaminaRegen (warm storage, same engine)
         bytes32 inlineKey = _startBattle(
-            oneMonValidator,
             engine,
             mockOracle,
             defaultRegistry,

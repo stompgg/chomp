@@ -9,7 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract SingleInstanceEffect is BasicEffect {
-
     function name() external pure override returns (string memory) {
         return "Instant Death";
     }
@@ -19,7 +18,7 @@ contract SingleInstanceEffect is BasicEffect {
         return 0x01;
     }
 
-    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256, uint256)
+    function onApply(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
         external
         override
         returns (bytes32, bool removeAfterRun)
@@ -29,7 +28,12 @@ contract SingleInstanceEffect is BasicEffect {
         return (bytes32(0), false);
     }
 
-    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex) external view override returns (bool) {
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
+        external
+        view
+        override
+        returns (bool)
+    {
         uint64 indexHash = uint64(uint256(keccak256(abi.encode(targetIndex, monIndex))));
         uint192 value = engine.getGlobalKV(battleKey, indexHash);
         return value == 0;

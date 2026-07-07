@@ -46,8 +46,7 @@ library StatBoostLib {
             uint256 statIndex = monStateIndexToStatBoostIndex(statBoostsToApply[i].stat);
             uint256 offset = statIndex * 16;
             bool isMul = statBoostsToApply[i].boostType == StatBoostType.Multiply;
-            uint256 boostInstance =
-                (uint256(statBoostsToApply[i].boostPercent) << 8) | (1 << 1) | (isMul ? 1 : 0);
+            uint256 boostInstance = (uint256(statBoostsToApply[i].boostPercent) << 8) | (1 << 1) | (isMul ? 1 : 0);
             packed |= boostInstance << offset;
         }
         return bytes32(packed);
@@ -62,7 +61,13 @@ library StatBoostLib {
     function unpackBoostData(bytes32 data)
         internal
         pure
-        returns (bool perm, uint168 key, uint8[5] memory boostPercents, uint8[5] memory boostCounts, bool[5] memory isMul)
+        returns (
+            bool perm,
+            uint168 key,
+            uint8[5] memory boostPercents,
+            uint8[5] memory boostCounts,
+            bool[5] memory isMul
+        )
     {
         uint256 packed = uint256(data);
         perm = uint8(packed >> PERM_FLAG_OFFSET) != 0;
@@ -94,11 +99,7 @@ library StatBoostLib {
         return bytes32(packed);
     }
 
-    function generateKeyNoSalt(uint256 targetIndex, uint256 monIndex, address caller)
-        internal
-        pure
-        returns (uint168)
-    {
+    function generateKeyNoSalt(uint256 targetIndex, uint256 monIndex, address caller) internal pure returns (uint168) {
         // Layout: [160 bits address | 7 bits monIndex | 1 bit targetIndex]
         return uint168((uint256(uint160(caller)) << 8) | (monIndex << 1) | targetIndex);
     }
@@ -115,7 +116,9 @@ library StatBoostLib {
         uint256[5] memory accumulatedNumeratorPerStat
     ) internal pure {
         for (uint256 k = 0; k < 5; k++) {
-            if (boostCounts[k] == 0) continue;
+            if (boostCounts[k] == 0) {
+                continue;
+            }
             _accumulateOne(
                 k, boostPercents[k], boostCounts[k], isMul[k], baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
             );
@@ -155,8 +158,9 @@ library StatBoostLib {
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) private pure {
-        uint256 existingStatValue =
-            (accumulatedNumeratorPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
+        uint256 existingStatValue = (accumulatedNumeratorPerStat[k] == 0)
+            ? baseStats[k]
+            : accumulatedNumeratorPerStat[k];
         uint256 scalingFactor = isMul ? DENOM + boostPercent : DENOM - boostPercent;
         unchecked {
             accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCount);
@@ -165,14 +169,30 @@ library StatBoostLib {
     }
 
     function denomPower(uint256 exp) internal pure returns (uint256) {
-        if (exp == 0) return 1;
-        if (exp == 1) return 100;
-        if (exp == 2) return 10000;
-        if (exp == 3) return 1000000;
-        if (exp == 4) return 100000000;
-        if (exp == 5) return 10000000000;
-        if (exp == 6) return 1000000000000;
-        if (exp == 7) return 100000000000000;
+        if (exp == 0) {
+            return 1;
+        }
+        if (exp == 1) {
+            return 100;
+        }
+        if (exp == 2) {
+            return 10000;
+        }
+        if (exp == 3) {
+            return 1000000;
+        }
+        if (exp == 4) {
+            return 100000000;
+        }
+        if (exp == 5) {
+            return 10000000000;
+        }
+        if (exp == 6) {
+            return 1000000000000;
+        }
+        if (exp == 7) {
+            return 100000000000000;
+        }
         // Fallback for larger exponents — unchecked so high total stack counts don't revert. 100 =
         // 2^2 * 25, so 100^exp wraps to 0 mod 2^256 once exp >= 128; substitute 1 so the apply-time
         // division can't divide by zero — the resulting raw value is garbage but the clamp contains it.
@@ -237,12 +257,16 @@ library StatBoostLib {
     // WARNING: assumes MonStateIndexName ordering Hp(0), Stamina(1), Speed(2), Attack(3)...
     function monStateIndexToStatBoostIndex(MonStateIndexName statIndex) internal pure returns (uint256) {
         uint256 idx = uint256(statIndex);
-        if (idx == 2) return 4; // Speed
+        if (idx == 2) {
+            return 4; // Speed
+        }
         return idx - 3;
     }
 
     function statBoostIndexToMonStateIndex(uint256 statBoostIndex) internal pure returns (MonStateIndexName) {
-        if (statBoostIndex == 4) return MonStateIndexName.Speed;
+        if (statBoostIndex == 4) {
+            return MonStateIndexName.Speed;
+        }
         return MonStateIndexName(statBoostIndex + 3);
     }
 }

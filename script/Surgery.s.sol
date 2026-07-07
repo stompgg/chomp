@@ -3,7 +3,8 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 
-import {ReturnerGift} from "../src/game-layer/ReturnerGift.sol";
+import {SimplePM} from "../src/hooks/SimplePM.sol";
+import {IEngine} from "../src/IEngine.sol";
 
 struct DeployData {
     string name;
@@ -15,9 +16,11 @@ contract Surgery is Script {
 
     function run() external returns (DeployData[] memory) {
         vm.startBroadcast();
-
-        ReturnerGift(0xb948153978F1f95c3481B189cb4656bDf756A247).setMerkleRoot(0x676c3dcca078e2a46cb67865fe30a3e807e4240312cbb923466334406b6e519d);
-
+        SimplePM spm = new SimplePM(IEngine(0x16650f8c5e8F0C488e8773f765f2946F08cF8b69));
+        deployedContracts.push(DeployData({
+            name: "SPM",
+            contractAddress: address(spm)
+        }));
         return deployedContracts;
     }
 }

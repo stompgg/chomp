@@ -7,15 +7,14 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {IValidator} from "../src/IValidator.sol";
-import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
-import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
-import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
-import {BattleHelper} from "./abstract/BattleHelper.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
+import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
+import {BattleHelper} from "./abstract/BattleHelper.sol";
+import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @title Inline Move Parity Tests
 /// @notice Verifies that inline packed moves work correctly in the Engine
@@ -88,7 +87,6 @@ contract InlineMoveParityTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: IValidator(address(0)),
             rngOracle: mockOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -435,8 +433,7 @@ contract InlineMoveParityTest is Test, BattleHelper {
         assertLt(aliceHpDelta, 0, "Alice should have taken damage");
         assertLt(bobHpDelta, 0, "Bob should have taken damage");
         assertTrue(
-            aliceHpDelta != bobHpDelta,
-            "Inline-path mirror mons using the same move should not roll identical damage"
+            aliceHpDelta != bobHpDelta, "Inline-path mirror mons using the same move should not roll identical damage"
         );
     }
 }

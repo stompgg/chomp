@@ -7,12 +7,11 @@ import "../../src/Constants.sol";
 import "../../src/Enums.sol";
 import "../../src/Structs.sol";
 
-import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
-import {DefaultValidator} from "../../src/DefaultValidator.sol";
 import {Engine} from "../../src/Engine.sol";
 import {IEngine} from "../../src/IEngine.sol";
-import {IEffect} from "../../src/effects/IEffect.sol";
+import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
+import {IEffect} from "../../src/effects/IEffect.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -30,7 +29,7 @@ contract PreDamageHalveEffect is BasicEffect {
         return 0x200; // PreDamage
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256)
+    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -46,7 +45,7 @@ contract PreDamageAbsorbEffect is BasicEffect {
         return 0x200;
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256)
+    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -62,7 +61,7 @@ contract PreDamageDoubleEffect is BasicEffect {
         return 0x200;
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256)
+    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
         external
         override
         returns (bytes32, bool)
@@ -85,7 +84,7 @@ contract SourceCaptureEffect is BasicEffect {
         return 0x240; // PreDamage | AfterDamage
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, uint256 source)
+    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256 source)
         external
         override
         returns (bytes32, bool)
@@ -96,11 +95,17 @@ contract SourceCaptureEffect is BasicEffect {
         return (extraData, false);
     }
 
-    function onAfterDamage(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256, int32 damage, uint256 source)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onAfterDamage(
+        IEngine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256,
+        int32 damage,
+        uint256 source
+    ) external override returns (bytes32, bool) {
         afterDamageCallCount += 1;
         lastAfterDamageSource = source;
         lastAfterDamageSeenDamage = damage;
@@ -111,7 +116,6 @@ contract SourceCaptureEffect is BasicEffect {
 contract PreDamageHookTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator validator;
     ITypeCalculator typeCalc;
     MockRandomnessOracle mockOracle;
     TestTeamRegistry defaultRegistry;
@@ -122,11 +126,8 @@ contract PreDamageHookTest is Test, BattleHelper {
 
     function setUp() public {
         mockOracle = new MockRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 2, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -136,10 +137,7 @@ contract PreDamageHookTest is Test, BattleHelper {
     /// Deploys a 1-mon team where move[0] applies `effect` to the opponent and move[1]
     /// is a flat 10-damage attack via TestMove (calls engine.dealDamage). Both players
     /// share the same team layout. Returns the battleKey and the damaging-move address.
-    function _setupBattleWithEffect(IEffect effect)
-        internal
-        returns (bytes32 battleKey, address damagingMoveAddr)
-    {
+    function _setupBattleWithEffect(IEffect effect) internal returns (bytes32 battleKey, address damagingMoveAddr) {
         IMoveSet effectApplier =
             new EffectAttack(effect, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet damagingMove = moveFactory.createMove(MoveClass.Physical, Type.Liquid, 1, 10);
@@ -168,7 +166,7 @@ contract PreDamageHookTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        battleKey = _startBattle(validator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         // Both players switch to mon index 0 (turn 0 setup).
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
@@ -218,8 +216,10 @@ contract PreDamageHookTest is Test, BattleHelper {
         SourceCaptureEffect capture = new SourceCaptureEffect();
         PreDamageAbsorbEffect absorb = new PreDamageAbsorbEffect();
 
-        IMoveSet applyCapture = new EffectAttack(capture, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet applyAbsorb = new EffectAttack(absorb, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet applyCapture =
+            new EffectAttack(capture, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet applyAbsorb =
+            new EffectAttack(absorb, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet damagingMove = moveFactory.createMove(MoveClass.Physical, Type.Liquid, 1, 10);
 
         uint256[] memory moves = new uint256[](3);
@@ -229,20 +229,24 @@ contract PreDamageHookTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 100, stamina: 10, speed: 2, attack: 1, defense: 1,
-                specialAttack: 1, specialDefense: 1, type1: Type.Liquid, type2: Type.None
+                hp: 100,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Liquid,
+                type2: Type.None
             }),
-            moves: moves, ability: 0
+            moves: moves,
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator threeMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 3, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-        bytes32 battleKey = _startBattle(threeMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -282,8 +286,10 @@ contract PreDamageHookTest is Test, BattleHelper {
         PreDamageHalveEffect halve1 = new PreDamageHalveEffect();
         PreDamageHalveEffect halve2 = new PreDamageHalveEffect();
 
-        IMoveSet applyHalve1 = new EffectAttack(halve1, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
-        IMoveSet applyHalve2 = new EffectAttack(halve2, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet applyHalve1 =
+            new EffectAttack(halve1, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
+        IMoveSet applyHalve2 =
+            new EffectAttack(halve2, EffectAttack.Args({TYPE: Type.Liquid, STAMINA_COST: 1, PRIORITY: 1}));
         IMoveSet damagingMove = moveFactory.createMove(MoveClass.Physical, Type.Liquid, 1, 100);
 
         uint256[] memory moves = new uint256[](3);
@@ -293,20 +299,24 @@ contract PreDamageHookTest is Test, BattleHelper {
 
         Mon memory mon = Mon({
             stats: MonStats({
-                hp: 200, stamina: 10, speed: 2, attack: 1, defense: 1,
-                specialAttack: 1, specialDefense: 1, type1: Type.Liquid, type2: Type.None
+                hp: 200,
+                stamina: 10,
+                speed: 2,
+                attack: 1,
+                defense: 1,
+                specialAttack: 1,
+                specialDefense: 1,
+                type1: Type.Liquid,
+                type2: Type.None
             }),
-            moves: moves, ability: 0
+            moves: moves,
+            ability: 0
         });
         Mon[] memory team = new Mon[](1);
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-
-        DefaultValidator threeMoveValidator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 3, TIMEOUT_DURATION: TIMEOUT_DURATION})
-        );
-        bytes32 battleKey = _startBattle(threeMoveValidator, engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
@@ -337,5 +347,4 @@ contract PreDamageHookTest is Test, BattleHelper {
         // No high bits set → external (address-form) source.
         assertEq(capture.lastPreDamageSource() >> 160, 0);
     }
-
 }

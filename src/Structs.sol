@@ -2,14 +2,13 @@
 pragma solidity ^0.8.0;
 
 import {MOVE_LANES_PER_MON} from "./Constants.sol";
-import {Type, MonStateIndexName, StatBoostType, MoveClass, ExtraDataType} from "./Enums.sol";
+import {MonStateIndexName, MoveClass, StatBoostType, TargetSpec, Type} from "./Enums.sol";
 import {IEngineHook} from "./IEngineHook.sol";
 import {IRuleset} from "./IRuleset.sol";
-import {IValidator} from "./IValidator.sol";
 import {IEffect} from "./effects/IEffect.sol";
+import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 import {IMatchmaker} from "./matchmaker/IMatchmaker.sol";
 import {IRandomnessOracle} from "./rng/IRandomnessOracle.sol";
-import {ITeamRegistry} from "./game-layer/ITeamRegistry.sol";
 
 // Used by DefaultMatchmaker
 struct ProposedBattle {
@@ -19,7 +18,6 @@ struct ProposedBattle {
     address p1;
     uint96 p1TeamIndex;
     ITeamRegistry teamRegistry;
-    IValidator validator;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
@@ -38,7 +36,36 @@ struct CustomBattleProposal {
     uint8[] facetIds;
     uint8[] moveSelections;
     ITeamRegistry teamRegistry;
-    IValidator validator;
+    IRandomnessOracle rngOracle;
+    IRuleset ruleset;
+    address moveManager;
+    IMatchmaker matchmaker;
+    IEngineHook[] engineHooks;
+    uint8 battleMode; // BATTLE_MODE_* (SINGLES or DOUBLES; Multi seats don't fit this shape)
+}
+
+// Used by CPU.startCustomMultiBattle: the 4-seat (Multi) analog of CustomBattleProposal —
+// bundles the phantom-config writes for every CPU seat with the battle start. seatConfigs
+// aligns with (p1, p2, p3); a config is applied only when the registry whitelists that seat
+// (its team index is then forced to p0's phantom key), and an empty monIndices skips the
+// write (seat already configured). Human seats use their supplied team index.
+struct SeatPhantomConfig {
+    uint256[] monIndices;
+    uint8[] facetIds;
+    uint8[] moveSelections;
+}
+
+struct CustomMultiBattleProposal {
+    address p0;
+    uint96 p0TeamIndex;
+    address p1;
+    uint96 p1TeamIndex;
+    address p2;
+    uint96 p2TeamIndex;
+    address p3;
+    uint96 p3TeamIndex;
+    SeatPhantomConfig[3] seatConfigs;
+    ITeamRegistry teamRegistry;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
@@ -50,21 +77,38 @@ struct CustomBattleProposal {
 struct BattleOffer {
     Battle battle;
     uint256 pairHashNonce;
+    uint8 battleMode; // BATTLE_MODE_* — part of the signed offer so both players agree on it
 }
 
-// Used by Engine to initialize a battle's parameters
+// Used by Engine to initialize a battle's parameters. p2/p3 are Multi's second seats
+// (side 0 / side 1 respectively), zero in singles and doubles. Canonical seat order for
+// rotation and views is [p0, p2, p1, p3] (side-major) — NOT the struct field order.
 struct Battle {
     address p0;
     uint96 p0TeamIndex;
     address p1;
     uint96 p1TeamIndex;
+    address p2;
+    uint96 p2TeamIndex;
+    address p3;
+    uint96 p3TeamIndex;
     ITeamRegistry teamRegistry;
-    IValidator validator;
     IRandomnessOracle rngOracle;
     IRuleset ruleset;
     address moveManager;
     IMatchmaker matchmaker;
     IEngineHook[] engineHooks;
+}
+
+// Multi's second seats, stored per battle key (fresh every battle — no recycling hygiene
+// needed); written only when battleMode == MULTI so singles/doubles pay nothing.
+// Packs into 2 slots: (p2, p2TeamIndex, cpuSeatMask) and (p3, p3TeamIndex).
+struct MultiSeatData {
+    address p2;
+    uint16 p2TeamIndex;
+    uint8 cpuSeatMask; // canonical-order bits [p0, p2, p1, p3]; from the registry at battle start
+    address p3;
+    uint16 p3TeamIndex;
 }
 
 // Packed into 1 storage slot (8 + 16 = 24 bits)
@@ -91,10 +135,21 @@ struct BattleData {
     // buffer's pure staging tx (submitTurnMoves) skip its only battleConfig access — a cold
     // sentinel SLOAD (~2.2k per stage tx). Lives in slot 0's spare bits.
     bool usesBuiltinManager;
+    // Mirrors of BattleConfig.battleMode, set at startBattle. Let the built-in buffer's staging
+    // txs route v1-vs-slot submissions and pick the seat rotation off the BattleData slot they
+    // already read (isMultiMode additionally gates the multiSeats lookup).
+    bool isTwoSlotMode;
+    bool isMultiMode;
+    // Slot-1 active lanes for 2-slot modes: [side0 slot1: bits 0-7 | side1 slot1: bits 8-15],
+    // EMPTY_ACTIVE_LANE = no mon. Singles battles init it to 0 and never touch it, keeping the
+    // legacy activeMonIndex packing byte-identical; lives in slot 0's remaining spare bits.
+    uint16 activeMonExt;
     address p0;
     uint8 winnerIndex; // 2 = uninitialized (no winner), 0 = p0 winner, 1 = p1 winner
+    // Singles: 0/1 = that side switches, 2 = both act. 2-slot modes: 2 = full turn, else
+    // 0x80 | (4-bit absolute-slot mask) = only masked slots act (forced switches).
     uint8 playerSwitchForTurnFlag;
-    uint16 activeMonIndex; // Packed: lower 8 bits = player0, upper 8 bits = player1
+    uint16 activeMonIndex; // Packed: lower 8 bits = side0 slot0, upper 8 bits = side1 slot0
     uint40 lastExecuteTimestamp; // Written at end of every execute() — packed in slot 1 with turnId
     uint16 turnId;
     // Built-in dual-signed buffer (BUILTIN_DUAL_SIGNED_MANAGER battles): per-turn entries staged via
@@ -106,7 +161,6 @@ struct BattleData {
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
 struct BattleConfig {
-    IValidator validator;
     uint96 packedP0EffectsCount; // 6 (PLAYER_EFFECT_BITS) bits for up to 16 mons for p0
     IRandomnessOracle rngOracle;
     uint96 packedP1EffectsCount;
@@ -134,6 +188,10 @@ struct BattleConfig {
     // Packs into slot 3 with the salts + player union; p0Move/p1Move shift to the next slot
     // (which also makes the game-over move-slot clear a single-slot write).
     uint16 engineHookStepsUnion; //  16
+    // BATTLE_MODE_* (0 = singles). Rides slot 3's spare bits so the per-turn mode gate
+    // piggybacks on the engineHookStepsUnion SLOAD; rewritten every startBattle (recycled
+    // storage must never leak a previous battle's mode).
+    uint8 battleMode; //   8
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
@@ -149,21 +207,20 @@ struct BattleConfig {
 }
 
 struct EffectInstance {
-    IEffect effect;       // 160 bits
-    uint16 stepsBitmap;   // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
+    IEffect effect; // 160 bits
+    uint16 stepsBitmap; // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
     // 80 bits unused in slot 0
-    bytes32 data;         // 256 bits in slot 1
+    bytes32 data; // 256 bits in slot 1
 }
 
 struct EngineHookInstance {
-    IEngineHook hook;     // 160 bits (packed with stepsBitmap in slot 0)
-    uint16 stepsBitmap;   // 16 bits - packs with hook in slot 0 (bit i = runs at EngineHookStep(i))
+    IEngineHook hook; // 160 bits (packed with stepsBitmap in slot 0)
+    uint16 stepsBitmap; // 16 bits - packs with hook in slot 0 (bit i = runs at EngineHookStep(i))
     // 80 bits unused in slot 0
 }
 
 // View struct for getBattle - contains array instead of mapping for memory return
 struct BattleConfigView {
-    IValidator validator;
     IRandomnessOracle rngOracle;
     address moveManager;
     uint24 globalEffectsLength;
@@ -293,7 +350,6 @@ struct BattleContext {
     uint8 playerSwitchForTurnFlag;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
-    address validator;
     address moveManager;
 }
 
@@ -316,46 +372,17 @@ struct DamageCalcContext {
     Type defenderType2;
 }
 
-// Bundled move metadata returned by IMoveSet.getMeta. Batches the five separate
-// getters (moveType / moveClass / priority / stamina / basePower) + extraDataType into
+// Bundled move metadata returned by IMoveSet.getMeta. Batches the separate
+// getters (moveType / moveClass / priority / stamina / basePower / targetSpec) into
 // one staticcall. MoveSlotLib.decodeMeta handles both inline moves (pure bit ops) and
 // external moves (one getMeta call) uniformly.
 struct MoveMeta {
     Type moveType;
     MoveClass moveClass;
-    ExtraDataType extraDataType;
+    TargetSpec targetSpec; // legal domain for the targetBits nibble (ignored in singles)
     uint32 priority;
     uint32 stamina;
     uint32 basePower; // 0 for moves that don't deal damage
-}
-
-// Batch context for CPU move selection. The CPU is always p1 in this codebase,
-// so `cpuActiveMon*` fields mirror p1's active mon state. Assembled CPU-side by
-// CPUMoveManager._buildCPUContext from granular engine getters.
-//
-// MoveMeta is intentionally NOT included here — only BetterCPU needs decoded metadata, and
-// even BetterCPU doesn't need it on turn 0 / flag==0 paths. Putting it in the shared
-// context would impose a ~10k always-paid allocation cost on every CPU turn for data
-// that's only consumed on the flag==2 hot path. BetterCPU calls MoveSlotLib.decodeMeta
-// itself once per turn on the paths that actually need it.
-struct CPUContext {
-    bytes32 battleKey;
-    address p0;
-    address p1;
-    address validator;
-    uint8 winnerIndex; // 2 = no winner
-    uint8 playerSwitchForTurnFlag;
-    uint64 turnId;
-    uint8 p0ActiveMonIndex;
-    uint8 p1ActiveMonIndex;
-    uint8 p0TeamSize;
-    uint8 p1TeamSize;
-    uint8 p0KOBitmap;
-    uint8 p1KOBitmap;
-    uint32 cpuActiveMonBaseStamina;
-    int32 cpuActiveMonStaminaDelta;
-    bool cpuActiveMonKnockedOut;
-    uint256[4] cpuActiveMonMoveSlots;
 }
 
 // Batched context for the registry's onBattleEnd hook — replaces the older split of
@@ -363,12 +390,20 @@ struct CPUContext {
 struct BattleEndContext {
     address p0;
     address p1;
-    address winner;          // address(0) = draw
+    address winner; // address(0) = draw; in Multi this is the winning SIDE's lead (p0/p1)
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
-    uint8 p0KOBitmap;
+    uint8 p0KOBitmap; // full side bitmap (8 bits in Multi; seat quarters at [4q, 4q+4))
     uint8 p1KOBitmap;
     uint8 p0ActiveMonIndex;
     uint8 p1ActiveMonIndex;
     uint64 turnId;
+    // Multi seats (zero outside MULTI battles)
+    bool isMultiMode;
+    address p2;
+    address p3;
+    uint16 p2TeamIndex;
+    uint16 p3TeamIndex;
+    uint8 p0ActiveMonExtIndex; // slot-1 lanes (the p2/p3 seats' active slots)
+    uint8 p1ActiveMonExtIndex;
 }

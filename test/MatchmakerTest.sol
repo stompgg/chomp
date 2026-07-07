@@ -7,24 +7,21 @@ import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
-import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {Engine} from "../src/Engine.sol";
-import {DefaultValidator} from "../src/DefaultValidator.sol";
 import {IEngineHook} from "../src/IEngineHook.sol";
+import {DefaultCommitManager} from "../src/commit-manager/DefaultCommitManager.sol";
 import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {DefaultRandomnessOracle} from "../src/rng/DefaultRandomnessOracle.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
+import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
-import {BattleHelper} from "./abstract/BattleHelper.sol";
 
 contract MatchmakerTest is Test, BattleHelper {
-
     uint256 constant TIMEOUT = 10;
 
     DefaultCommitManager commitManager;
     Engine engine;
-    DefaultValidator validator;
     ITypeCalculator typeCalc;
     DefaultRandomnessOracle defaultOracle;
     TestTeamRegistry defaultRegistry;
@@ -32,11 +29,8 @@ contract MatchmakerTest is Test, BattleHelper {
 
     function setUp() public {
         defaultOracle = new DefaultRandomnessOracle();
-        engine = new Engine(0, 0);
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         commitManager = new DefaultCommitManager(engine);
-        validator = new DefaultValidator(
-            engine, DefaultValidator.Args({MONS_PER_TEAM: 1, MOVES_PER_MON: 0, TIMEOUT_DURATION: TIMEOUT})
-        );
         typeCalc = new TestTypeCalculator();
         defaultRegistry = new TestTeamRegistry();
         matchmaker = new DefaultMatchmaker(engine);
@@ -87,7 +81,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: ALICE,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -115,7 +108,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: ALICE,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -143,7 +135,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -174,7 +165,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -209,7 +199,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -242,7 +231,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -278,7 +266,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -308,7 +295,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -342,7 +328,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -370,7 +355,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -393,7 +377,9 @@ contract MatchmakerTest is Test, BattleHelper {
         assertEq(battleData.p1, BOB);
 
         // Check that Alice and Bob can commit/reveal/reveal to switch to mon index 0
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
     }
 
     function test_fastBattleSucceedsAndNoSubsequentAccept() public {
@@ -407,7 +393,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: address(0),
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -440,7 +425,6 @@ contract MatchmakerTest is Test, BattleHelper {
             p1: BOB,
             p1TeamIndex: 0,
             teamRegistry: defaultRegistry,
-            validator: validator,
             rngOracle: defaultOracle,
             ruleset: IRuleset(address(0)),
             engineHooks: new IEngineHook[](0),
@@ -466,7 +450,7 @@ contract MatchmakerTest is Test, BattleHelper {
         vm.startSnapshotGas("Accept2");
         matchmaker.proposeBattle(proposal);
         uint256 accept2Gas = vm.stopSnapshotGas("Accept2");
-        
+
         // Should be at least 50% cheaper
         assertLt(accept2Gas / 2, accept1Gas);
     }

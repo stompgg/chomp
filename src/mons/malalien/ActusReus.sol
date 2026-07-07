@@ -4,15 +4,16 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {MonStateIndexName, StatBoostType, StatBoostFlag} from "../../Enums.sol";
+import {EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
+import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract ActusReus is IAbility, BasicEffect {
-
     uint8 public constant SPEED_DEBUFF_PERCENT = 50;
     bytes32 public constant INDICTMENT = bytes32("INDICTMENT");
 
@@ -22,7 +23,7 @@ contract ActusReus is IAbility, BasicEffect {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects, ) = engine.getEffects(battleKey, playerIndex, monIndex);
+        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {
             if (address(effects[i].effect) == address(this)) {
                 return;
@@ -36,45 +37,63 @@ contract ActusReus is IAbility, BasicEffect {
         return 0x80C0;
     }
 
-    function onAfterMove(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex)
-        external
-        override
-        view
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-        // Check if opposing mon is KOed
+    function onAfterMove(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256,
+        uint256 activesPacked
+    ) external view override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        // Arm if EITHER opposing occupant fell after Malalien's move (kit ruling).
         uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-        uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
-        bool isOtherMonKOed =
-            engine.getMonStateForBattle(
-                battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
+        uint256 oppSlot0 = otherPlayerIndex << 1;
+        uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot0);
+        uint256 oppPartnerMon = TargetLib.activeAt(activesPacked, oppSlot0 | 1);
+        if (oppPartnerMon != EMPTY_ACTIVE_LANE) {
+            bool partnerKOed = engine.getMonStateForBattle(
+                battleKey, otherPlayerIndex, oppPartnerMon, MonStateIndexName.IsKnockedOut
             ) == 1;
+            if (partnerKOed) {
+                return (bytes32(uint256(1)), false);
+            }
+        }
+        bool isOtherMonKOed = engine.getMonStateForBattle(
+            battleKey, otherPlayerIndex, otherPlayerActiveMonIndex, MonStateIndexName.IsKnockedOut
+        ) == 1;
         if (isOtherMonKOed) {
             return (bytes32(uint256(1)), false);
         }
         return (extraData, false);
     }
 
-    function onAfterDamage(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256 targetIndex, uint256 monIndex, uint256 p0ActiveMonIndex, uint256 p1ActiveMonIndex, int32, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onAfterDamage(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 activesPacked,
+        int32,
+        uint256
+    ) external override returns (bytes32, bool) {
+        // Mirror-slot ruling: the speed halving lands opposite Malalien's slot (its lane still
+        // holds it at the KO instant).
+        uint256 ownSlot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        uint256 oppSlot = TargetLib.mirrorOpposingSlot(activesPacked, ownSlot);
         // Check if we have an indictment
         if (uint256(extraData) == 1) {
             // If we are KO'ed, set a speed delta of half of the opposing mon's base speed
             bool isKOed =
-                engine.getMonStateForBattle(
-                    battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut
-                ) == 1;
-            if (isKOed) {
-                uint256 otherPlayerIndex = (targetIndex + 1) % 2;
-                uint256 otherPlayerActiveMonIndex = otherPlayerIndex == 0 ? p0ActiveMonIndex : p1ActiveMonIndex;
+                engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1;
+            if (isKOed && oppSlot != NO_SLOT) {
+                uint256 otherPlayerIndex = oppSlot >> 1;
+                uint256 otherPlayerActiveMonIndex = TargetLib.activeAt(activesPacked, oppSlot);
                 StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
                 statBoosts[0] = StatBoostToApply({
-                    stat: MonStateIndexName.Speed,
-                    boostPercent: SPEED_DEBUFF_PERCENT,
-                    boostType: StatBoostType.Divide
+                    stat: MonStateIndexName.Speed, boostPercent: SPEED_DEBUFF_PERCENT, boostType: StatBoostType.Divide
                 });
                 engine.addStatBoost(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
                 return (bytes32(0), false);

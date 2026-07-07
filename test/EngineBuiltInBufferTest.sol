@@ -6,8 +6,8 @@ import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
-import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {SignedCommitManagerTestBase} from "./SignedCommitManager.t.sol";
+import {BatchHelper} from "./abstract/BatchHelper.sol";
 
 /// @notice Adversarial + functional tests for the Engine's BUILT-IN dual-signed buffer flow
 ///         (BUILTIN_DUAL_SIGNED_MANAGER battles): submitTurnMoves / executeBuffered live in the
@@ -24,15 +24,23 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
     function _submit(
         bytes32 battleKey,
         uint64 turnId,
-        uint8 p0m, uint16 p0e, uint104 p0s,
-        uint8 p1m, uint16 p1e, uint104 p1s,
+        uint8 p0m,
+        uint16 p0e,
+        uint104 p0s,
+        uint8 p1m,
+        uint16 p1e,
+        uint104 p1s,
         bool combined
     ) internal {
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, turnId, p0m, p0e, p0s, p1m, p1e, p1s, P0_PK, P1_PK
+        );
         vm.prank(turnId % 2 == 0 ? p0 : p1);
-        if (combined) engine.submitTurnMovesAndExecute(battleKey, packedMoves, r, vs);
-        else engine.submitTurnMoves(battleKey, packedMoves, r, vs);
+        if (combined) {
+            engine.submitTurnMovesAndExecute(battleKey, packedMoves, r, vs);
+        } else {
+            engine.submitTurnMoves(battleKey, packedMoves, r, vs);
+        }
         engine.resetCallContext();
     }
 
@@ -77,8 +85,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
         // Battle wired to the real external manager, NOT the sentinel.
         bytes32 battleKey = _startBattleWith(address(signedCommitManager));
         vm.stopPrank();
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK
+        );
         vm.prank(p0);
         vm.expectRevert(Engine.NotBuiltInManager.selector);
         engine.submitTurnMoves(battleKey, packedMoves, r, vs);
@@ -101,8 +110,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
         _submit(battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, false);
         // Turn 0 is buffered, so the derived next id is now 1 (committer p1). The turn-0 committer p0
         // can't re-address/overwrite turn 0 (turnId is derived, not caller-chosen) → NotCommitter.
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 9, SWITCH_MOVE_INDEX, 0, 9, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 9, SWITCH_MOVE_INDEX, 0, 9, P0_PK, P1_PK
+        );
         vm.prank(p0);
         vm.expectRevert(Engine.NotCommitter.selector);
         engine.submitTurnMoves(battleKey, packedMoves, r, vs);
@@ -111,8 +121,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
     function test_builtIn_revert_notCommitter() public {
         bytes32 battleKey = _startBuiltIn();
         // Turn 0 committer is p0; p1 (the revealer) cannot submit.
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK
+        );
         vm.prank(p1);
         vm.expectRevert(Engine.NotCommitter.selector);
         engine.submitTurnMoves(battleKey, packedMoves, r, vs);
@@ -121,8 +132,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
     function test_builtIn_revert_forgedRevealerSignature() public {
         bytes32 battleKey = _startBuiltIn();
         // Committer p0 builds a valid entry, then we corrupt the revealer signature.
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK
+        );
         vs ^= bytes32(uint256(1) << 8); // corrupt the compact signature
         vm.prank(p0);
         vm.expectRevert();
@@ -132,8 +144,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
     function test_builtIn_revert_managerDomainSignatureRejected() public {
         bytes32 battleKey = _startBuiltIn();
         // A revealer signature for the EXTERNAL manager domain must NOT validate against the Engine.
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmission(address(signedCommitManager), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmission(
+            address(signedCommitManager), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK
+        );
         vm.prank(p0);
         vm.expectRevert(Engine.InvalidSignature.selector);
         engine.submitTurnMoves(battleKey, packedMoves, r, vs);
@@ -142,8 +155,9 @@ contract EngineBuiltInBufferTest is SignedCommitManagerTestBase, BatchHelper {
     function test_builtIn_revert_submitAfterComplete() public {
         bytes32 battleKey = _startBuiltIn();
         _endBattle(battleKey); // force-end after MAX_BATTLE_DURATION
-        (uint256 packedMoves, bytes32 r, bytes32 vs) =
-            _buildTurnSubmissionForEngine(address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK);
+        (uint256 packedMoves, bytes32 r, bytes32 vs) = _buildTurnSubmissionForEngine(
+            address(engine), battleKey, 0, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 2, P0_PK, P1_PK
+        );
         vm.prank(p0);
         vm.expectRevert(Engine.GameAlreadyOver.selector);
         engine.submitTurnMoves(battleKey, packedMoves, r, vs);

@@ -69,4 +69,29 @@ library SignedCommitLib {
             )
         );
     }
+
+    /// @notice 2-slot variant of DualSignedReveal: each side's whole turn is one packed word
+    ///         ([slot0 move 8 | slot0 extra 16 | slot1 move 8 | slot1 extra 16 | salt 104]).
+    struct DualSignedSlotReveal {
+        bytes32 battleKey;
+        uint64 turnId;
+        bytes32 committerMovesHash;
+        uint256 revealerSidePacked;
+    }
+
+    bytes32 internal constant DUAL_SIGNED_SLOT_REVEAL_TYPEHASH =
+        0xe4967167cd99f2b483c72c1fe6037d2653962173ef5ea9cb44d0f1a30d295b7a;
+
+    /// @dev Typehash string: DualSignedSlotReveal(bytes32 battleKey,uint64 turnId,bytes32 committerMovesHash,uint256 revealerSidePacked)
+    function hashDualSignedSlotReveal(DualSignedSlotReveal memory reveal) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                DUAL_SIGNED_SLOT_REVEAL_TYPEHASH,
+                reveal.battleKey,
+                reveal.turnId,
+                reveal.committerMovesHash,
+                reveal.revealerSidePacked
+            )
+        );
+    }
 }
