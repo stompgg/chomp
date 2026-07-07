@@ -289,6 +289,7 @@ def read_moves_data(
             "class": row["Class"],
             "description": row["DevDescription"],
             "inputType": row.get("InputType", "none").strip() or "none",
+            "targetSpec": (row.get("TargetSpec") or "").strip() or "any-other-slot",
             "unlockLevel": int((row.get("UnlockLevel") or "0").strip() or "0"),
         }
         # Inline (JSON) moves carry an effect-address-independent identity (the upper 96 bits of the
@@ -436,6 +437,9 @@ export enum MoveClass {{
 
 export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon' | 'mode-select';
 
+// Legal slot-target domain for the doubles target step (mirrors Enums.sol TargetSpec).
+export type MoveTargetSpec = 'any-other-slot' | 'none' | 'self-only' | 'opponent-slot' | 'ally-slot' | 'any-subset';
+
 export const MonMetadata = {json_str} as const;
 
 // Moves with runtime-branching outcomes (currently just Gachachacha) emit
@@ -463,6 +467,7 @@ export type Move = {{
   readonly class: MoveClass;
   readonly description: string;
   readonly inputType: MoveInputType;
+  readonly targetSpec: MoveTargetSpec;
   // Level a player's mon must reach before this move can be brought into battle. 0 = always
   // available (battle lanes 0..3); higher-lane moves unlock at 6 (see MonExp._unlockLevelForLane).
   readonly unlockLevel: number;

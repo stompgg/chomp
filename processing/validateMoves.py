@@ -25,6 +25,8 @@ class MoveData:
     move_class: str
     description: str
     unlock_level: int = 0
+    # Solidity TargetSpec enum member (CSV kebab value mapped at load; blank = AnyOtherSlot)
+    target_spec: str = 'AnyOtherSlot'
     # Named %/denominator constants the move's .sol must match: [(NAME, VALUE), ...]
     constants: List[Tuple[str, int]] = field(default_factory=list)
 
@@ -40,6 +42,7 @@ class ContractData:
     move_class: Optional[str] = None
     is_standard_attack: bool = False
     is_custom_implementation: bool = False
+    target_spec: Optional[str] = None
     # All plain-integer `constant NAME = <int>;` declarations found in the file
     constants: Dict[str, int] = field(default_factory=dict)
 
@@ -60,6 +63,16 @@ class MoveValidator:
         'Special': 'MoveClass.Special',
         'Self': 'MoveClass.Self',
         'Other': 'MoveClass.Other'
+    }
+
+    # TargetSpec CSV values (kebab-case, like InputType) -> Solidity enum members
+    TARGET_SPEC_MAPPING = {
+        'any-other-slot': 'AnyOtherSlot',
+        'none': 'None',
+        'self-only': 'SelfOnly',
+        'opponent-slot': 'OpponentSlot',
+        'ally-slot': 'AllySlot',
+        'any-subset': 'AnySubset',
     }
 
     def __init__(self, csv_path: str, src_path: str):
@@ -127,6 +140,9 @@ class MoveValidator:
         with open(self.csv_path, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
+                raw_target = (row.get('TargetSpec') or '').strip() or 'any-other-slot'
+                if raw_target not in self.TARGET_SPEC_MAPPING:
+                    raise ValueError(f"Unknown TargetSpec '{raw_target}' for move {row['Name']}")
                 move_data = MoveData(
                     name=row['Name'],
                     mon=row['Mon'],
@@ -138,6 +154,7 @@ class MoveValidator:
                     move_class=row['Class'],
                     description=row['DevDescription'], # Change to UserDescription later
                     unlock_level=int((row.get('UnlockLevel') or '0').strip() or '0'),
+                    target_spec=self.TARGET_SPEC_MAPPING[raw_target],
                     constants=self._parse_constants(row.get('Constants', '')),
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
@@ -171,6 +188,7 @@ class MoveValidator:
         contract_data.accuracy = 100  # JSON moves always use DEFAULT_ACCURACY
         contract_data.move_type = data.get('moveType')
         contract_data.move_class = data.get('moveClass')
+        contract_data.target_spec = 'AnyOtherSlot'  # inline moves can't override the base getter
 
         # Priority: JSON stores offset from DEFAULT_PRIORITY, convert to absolute
         # (JSON has no priority field = offset 0 = DEFAULT_PRIORITY)
@@ -209,6 +227,11 @@ class MoveValidator:
 
     def _parse_standard_attack(self, content: str, contract_data: ContractData) -> ContractData:
         """Parse StandardAttack constructor parameters"""
+        # targetSpec is a virtual getter, not an ATTACK_PARAMS field; no override = base default
+        contract_data.target_spec = (
+            self._extract_function_enum_return(content, 'targetSpec', 'TargetSpec') or 'AnyOtherSlot'
+        )
+
         # Find ATTACK_PARAMS block
         attack_params_match = re.search(r'ATTACK_PARAMS\s*\(\s*\{([^}]+)\}\s*\)', content, re.DOTALL)
         if not attack_params_match:
@@ -247,6 +270,13 @@ class MoveValidator:
         contract_data.priority = self._extract_function_return_value(content, 'priority')
         contract_data.move_type = self._extract_function_enum_return(content, 'moveType', 'Type')
         contract_data.move_class = self._extract_function_enum_return(content, 'moveClass', 'MoveClass')
+
+        # Custom moves declare targetSpec in their getMeta struct literal (or, rarely, a getter)
+        struct_match = re.search(r'targetSpec:\s*TargetSpec\.(\w+)', content)
+        contract_data.target_spec = (
+            struct_match.group(1) if struct_match
+            else self._extract_function_enum_return(content, 'targetSpec', 'TargetSpec')
+        )
 
         return contract_data
 
@@ -412,6 +442,13 @@ class MoveValidator:
             result['errors'].append(f"Move class not found in contract (expected: {move_data.move_class})")
         elif contract_data.move_class != move_data.move_class:
             result['errors'].append(f"Move class mismatch: contract={contract_data.move_class}, csv={move_data.move_class}")
+
+        # Validate target spec
+        if contract_data.target_spec is None:
+            result['errors'].append(f"TargetSpec not found in contract (expected: {move_data.target_spec})")
+        elif contract_data.target_spec != move_data.target_spec:
+            result['errors'].append(
+                f"TargetSpec mismatch: contract={contract_data.target_spec}, csv={move_data.target_spec}")
 
         # Validate declared %/denominator constants against the contract source
         for cname, cval in move_data.constants:

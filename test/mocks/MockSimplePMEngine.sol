@@ -4,11 +4,18 @@ pragma solidity ^0.8.0;
 import {BattleContext} from "../../src/Structs.sol";
 
 contract MockSimplePMEngine {
+    error WrongBattleMode();
+
     mapping(bytes32 => uint256) public turnIds;
     mapping(bytes32 => uint256) public numBuffereds;
     mapping(bytes32 => address) public winners;
     mapping(bytes32 => address[]) public playersList;
     mapping(bytes32 => uint256) public startTimestamps;
+    mapping(bytes32 => bool) public twoSlotModes;
+
+    function setTwoSlotMode(bytes32 battleKey, bool isTwoSlot) external {
+        twoSlotModes[battleKey] = isTwoSlot;
+    }
 
     function setTurnId(bytes32 battleKey, uint256 turnId) external {
         turnIds[battleKey] = turnId;
@@ -56,12 +63,29 @@ contract MockSimplePMEngine {
     }
 
     /// @notice SimplePM reads the buffered-turn count as `packedTurns.length`; entries are unused here.
+    ///         Mirrors Engine: the singles read reverts on 2-slot battles.
     function getBufferedTurns(bytes32 battleKey)
         external
         view
         returns (uint64 numExecuted, uint256[] memory packedTurns)
     {
+        if (twoSlotModes[battleKey]) {
+            revert WrongBattleMode();
+        }
         numExecuted = uint64(turnIds[battleKey]);
         packedTurns = new uint256[](numBuffereds[battleKey]);
+    }
+
+    /// @notice Mirrors Engine: two side words per staged turn; the 2-slot read reverts on singles.
+    function getBufferedSlotTurns(bytes32 battleKey)
+        external
+        view
+        returns (uint64 numExecuted, uint256[] memory sideWords)
+    {
+        if (!twoSlotModes[battleKey]) {
+            revert WrongBattleMode();
+        }
+        numExecuted = uint64(turnIds[battleKey]);
+        sideWords = new uint256[](numBuffereds[battleKey] * 2);
     }
 }

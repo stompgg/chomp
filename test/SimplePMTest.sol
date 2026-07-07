@@ -809,4 +809,59 @@ contract SimplePMTest is Test {
         pm.claimShares(BATTLE_KEY, _one(address(rejecter)));
         assertEq(vm.getRecordedLogs().length, 0);
     }
+
+    // =========================================================================
+    // Group 9: buyShares — 2-slot battles (doubles/multi slot buffer)
+    // =========================================================================
+
+    function test_T9_1_TwoSlotBuyAtTurn0MintsFullShares() public {
+        mockEngine.setTwoSlotMode(BATTLE_KEY, true);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, ALICE);
+        assertEq(p0Balance, 1 ether);
+    }
+
+    function test_T9_2_TwoSlotFeeUsesBufferedSlotTurns() public {
+        // 10 staged turns = 20 side words → effective turn 10 → 20% fee.
+        mockEngine.setTwoSlotMode(BATTLE_KEY, true);
+        mockEngine.setNumBuffered(BATTLE_KEY, 10);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, ALICE);
+        assertEq(p0Balance, 0.8 ether);
+    }
+
+    function test_T9_3_TwoSlotEffectiveTurnIsExecutedPlusBuffered() public {
+        // 5 executed + 5 staged = effective turn 10 → 20% fee.
+        mockEngine.setTwoSlotMode(BATTLE_KEY, true);
+        mockEngine.setTurnId(BATTLE_KEY, 5);
+        mockEngine.setNumBuffered(BATTLE_KEY, 5);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, ALICE);
+        assertEq(p0Balance, 0.8 ether);
+    }
+
+    function test_T9_4_TwoSlotRevertWhenBufferedTurnsPushPastCutoff() public {
+        mockEngine.setTwoSlotMode(BATTLE_KEY, true);
+        mockEngine.setNumBuffered(BATTLE_KEY, 16);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(SimplePM.TooLate.selector, 16));
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+    }
+
+    function test_T9_5_TwoSlotDoesNotRevertAtEffectiveTurn15() public {
+        mockEngine.setTwoSlotMode(BATTLE_KEY, true);
+        mockEngine.setTurnId(BATTLE_KEY, 10);
+        mockEngine.setNumBuffered(BATTLE_KEY, 5);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+
+        (uint96 p0Shares,,) = pm.marketForBattle(BATTLE_KEY);
+        assertEq(p0Shares, 0.7 ether);
+    }
 }

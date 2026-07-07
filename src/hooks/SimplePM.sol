@@ -43,14 +43,13 @@ contract SimplePM {
 
     function buyShares(bytes32 battleKey, bool isP0) public payable {
         // Existence guard + executed turn come from the context. Under deferred PvP the executed turnId
-        // is 0 while moves buffer, so the live turn adds the buffered count (getBufferedTurns.length) —
-        // read separately to keep this cost off every per-turn getBattleContext caller.
+        // is 0 while moves buffer, so the live turn adds the buffered count — read separately to keep
+        // this cost off every per-turn getBattleContext caller.
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         if (ctx.startTimestamp == 0) {
             revert InvalidBattle(battleKey);
         }
-        (, uint256[] memory bufferedTurns) = ENGINE.getBufferedTurns(battleKey);
-        uint256 turnId = uint256(ctx.turnId) + bufferedTurns.length;
+        uint256 turnId = uint256(ctx.turnId) + _bufferedTurnCount(battleKey);
         if (turnId > LAST_TURN_TO_JOIN) {
             revert TooLate(turnId);
         }
@@ -71,6 +70,18 @@ contract SimplePM {
             uint256(sharesToMint) | (uint256(market.p0Shares) << 96) | (isP0 ? uint256(1) << 192 : 0),
             uint256(market.p1Shares) | (uint256(market.totalDeposits) << 96)
         );
+    }
+
+    // The Engine exposes no lightweight mode getter (BattleContext is hot-path and stays lean), so
+    // probe the singles buffer — it reverts WrongBattleMode on 2-slot battles, whose buffer holds
+    // two side words per staged turn.
+    function _bufferedTurnCount(bytes32 battleKey) internal view returns (uint256) {
+        try ENGINE.getBufferedTurns(battleKey) returns (uint64, uint256[] memory packedTurns) {
+            return packedTurns.length;
+        } catch {
+            (, uint256[] memory sideWords) = ENGINE.getBufferedSlotTurns(battleKey);
+            return sideWords.length / 2;
+        }
     }
 
     // Relayable bulk redemption to each holder; per-battle terms hoisted out of the loop.
