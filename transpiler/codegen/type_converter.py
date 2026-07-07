@@ -397,31 +397,17 @@ class TypeConverter(BaseGenerator):
         return f'BigInt({expr})'
 
     def _is_already_address_type(self, expr: Expression) -> bool:
-        """Check if expression is already an address type."""
-        if isinstance(expr, MemberAccess):
-            if isinstance(expr.expression, Identifier):
-                base_name = expr.expression.name
-                member = expr.member
-                if base_name == 'msg' and member == 'sender':
-                    return True
-                if base_name == 'tx' and member == 'origin':
-                    return True
-                if base_name in self._ctx.var_types:
-                    type_info = self._ctx.var_types[base_name]
-                    if type_info.name and type_info.name in self._ctx.known_struct_fields:
-                        struct_fields = self._ctx.known_struct_fields[type_info.name]
-                        if member in struct_fields:
-                            field_info = struct_fields[member]
-                            field_type = field_info[0] if isinstance(field_info, tuple) else field_info
-                            if field_type == 'address':
-                                return True
-
-        if isinstance(expr, Identifier):
-            if expr.name in self._ctx.var_types:
-                type_info = self._ctx.var_types[expr.name]
-                if type_info.name == 'address':
-                    return True
-        return False
+        """Whether ``address(expr)`` is an identity cast (expr already an address), so no
+        contract->address `._contractAddress` unwrap is emitted."""
+        # Globals the type resolver doesn't model as vars.
+        if isinstance(expr, MemberAccess) and isinstance(expr.expression, Identifier):
+            base_name, member = expr.expression.name, expr.member
+            if (base_name, member) in (('msg', 'sender'), ('tx', 'origin')):
+                return True
+        # General resolver: descends through locals, struct fields, mapping/array indexing,
+        # so `battleConfig[key].moveManager` (address field) resolves as address.
+        resolved = self.resolve_access_type(expr)
+        return bool(resolved and resolved.name == 'address' and not resolved.is_array)
 
     @staticmethod
     def _is_numeric_type_cast(expr: Expression) -> bool:

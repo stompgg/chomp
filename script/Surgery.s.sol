@@ -16,7 +16,7 @@ contract Surgery is Script {
 
     function run() external returns (DeployData[] memory) {
         vm.startBroadcast();
-        SimplePM spm = new SimplePM(IEngine(0x16650f8c5e8F0C488e8773f765f2946F08cF8b69));
+        SimplePM spm = new SimplePM(IEngine(0xcd424268aCF5547bE7799b92480C40C180a22799));
         deployedContracts.push(DeployData({
             name: "SPM",
             contractAddress: address(spm)

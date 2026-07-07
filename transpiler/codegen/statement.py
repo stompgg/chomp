@@ -247,12 +247,14 @@ class StatementGenerator(BaseGenerator):
                         temp_names.append(d.name if d else '')
                 temp_names_str = ', '.join(temp_names)
 
-                lines = [f'{self.indent()}const [{temp_names_str}] = {init};']
+                lines = [f'{self.indent()}let [{temp_names_str}] = {init};']
                 for var_name in small_int_conversions:
-                    lines.append(f'{self.indent()}const {var_name} = BigInt(_{var_name});')
+                    lines.append(f'{self.indent()}let {var_name} = BigInt(_{var_name});')
                 return '\n'.join(lines)
 
-            return f'{self.indent()}const [{names}] = {init};'
+            # `let`, not `const` — Solidity permits reassigning tuple-destructured locals
+            # (e.g. Engine._concatTeams onto getTeams results), matching the single-decl policy.
+            return f'{self.indent()}let [{names}] = {init};'
 
     def _get_storage_init_statement(
         self,
