@@ -147,10 +147,6 @@ contract StandardAttack is IMoveSet, Ownable {
         }
     }
 
-    function targetSpec() public pure virtual returns (TargetSpec) {
-        return TargetSpec.AnyOtherSlot;
-    }
-
     function name() external view virtual returns (string memory) {
         return _name;
     }
@@ -168,7 +164,6 @@ contract StandardAttack is IMoveSet, Ownable {
         return MoveMeta({
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
-            targetSpec: targetSpec(),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: basePower(battleKey)

@@ -100,7 +100,6 @@ contract DeepFreeze is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

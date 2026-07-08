@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, TargetSpec, Type} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, StatBoostFlag, StatBoostType, Type} from "../../Enums.sol";
 import {MoveMeta, StatBoostToApply} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -99,7 +99,6 @@ contract Chronoffense is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

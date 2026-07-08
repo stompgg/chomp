@@ -129,7 +129,3 @@ uint256 constant EMPTY_ACTIVE_LANE = 0xFF;
 uint256 constant NO_SLOT = 4;
 // Singles actives word: lanes 1 and 3 (each side's slot-1) are always empty.
 uint256 constant SINGLES_EMPTY_LANES = 0xFF00FF00;
-
-// Inline move word: TargetSpec lives in 4 of the spare bits (160-227); 0 = AnyOtherSlot,
-// so every already-generated inline attack word decodes to the D28 default.
-uint256 constant INLINE_TARGET_SPEC_SHIFT = 224;

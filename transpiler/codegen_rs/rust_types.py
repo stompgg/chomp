@@ -295,7 +295,7 @@ class RustTypeConverter:
             # from_u8 range-checks against the variant count.
             from .definition import enum_from_u8_fn
             # Record the enum use so its `use crate::Enums::X` import is emitted — a cast may be the
-            # only reference to an enum (e.g. TargetSpec via decodeMeta), reached by no return/default.
+            # only reference to an enum (e.g. MoveClass via decodeMeta), reached by no return/default.
             self._record_use(to.name)
             if frm.mapped_bits == 256:
                 src = f'({code_p}.into_raw())' if frm.kind == 'int' else code_p

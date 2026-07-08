@@ -66,7 +66,6 @@ contract FastAllySpeedBoost is IMoveSet {
         return MoveMeta({
             moveType: Type.Air,
             moveClass: MoveClass.Self,
-            targetSpec: TargetSpec.None,
             priority: DEFAULT_PRIORITY + 2,
             stamina: 0,
             basePower: 0

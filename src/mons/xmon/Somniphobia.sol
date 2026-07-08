@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, NO_SLOT} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -157,7 +157,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

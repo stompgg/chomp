@@ -478,7 +478,9 @@ export enum MoveClass {{
 
 export type MoveInputType = 'none' | 'self-mon' | 'opponent-mon' | 'mode-select';
 
-// Legal slot-target domain for the doubles target step (mirrors Enums.sol TargetSpec).
+// Legal slot-target domain for the doubles target step. Authored in moves.csv (the authoritative
+// targeting source — there is no Solidity enum); validateMoves.py checks each move's targetBits
+// behavior against it.
 export type MoveTargetSpec = 'any-other-slot' | 'none' | 'self-only' | 'opponent-slot' | 'ally-slot' | 'any-subset';
 
 export const MonMetadata = {json_str} as const;

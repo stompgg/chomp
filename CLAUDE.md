@@ -32,7 +32,7 @@ chomp/
 │   ├── Engine.sol          # Core battle engine (main entry point)
 │   ├── IEngine.sol         # Engine interface
 │   ├── Structs.sol         # All shared data structures
-│   ├── Enums.sol           # All shared enums (Type, MoveClass, EffectStep, TargetSpec, etc.)
+│   ├── Enums.sol           # All shared enums (Type, MoveClass, EffectStep, etc.)
 │   ├── Constants.sol       # Global constants (move indices, battle modes, slots/targeting, sentinels)
 │   ├── DefaultRuleset.sol  # Configures initial global effects for battles
 │   ├── IRuleset.sol        # Ruleset interface
@@ -90,7 +90,7 @@ chomp/
 │   │   ├── StandardAttackFactory.sol
 │   │   ├── StandardAttackStructs.sol  # ATTACK_PARAMS struct
 │   │   ├── AttackCalculator.sol       # Damage calc (delegates to Engine dispatch)
-│   │   └── MoveSlotLib.sol            # Inline move-word packing (incl. TargetSpec nibble)
+│   │   └── MoveSlotLib.sol            # Inline move-word packing (moveType/class/priority/stamina/basePower)
 │   ├── rng/                # Randomness oracle interfaces + DefaultRandomnessOracle
 │   │                       # (IRandomnessOracle for battles, IGachaRNG for the gacha)
 │   └── types/              # Type effectiveness calculator (TypeCalculator + TypeCalcLib)
@@ -180,9 +180,11 @@ Every battle runs in one of three modes (a `uint8` in `BattleConfig.battleMode`,
 - A move's 16-bit wire `extraData` splits `[targetBits 4 | payload 12]`: the top nibble is a bitmask
   over absolute slots (the chosen target), the low 12 bits are the move's own payload (team indices,
   ModalBolt modes, …). The Engine strips the nibble before invoking the move.
-- Each move declares a legal target domain via `TargetSpec`
-  (`AnyOtherSlot`/`None`/`SelfOnly`/`OpponentSlot`/`AllySlot`/`AnySubset`), surfaced through
-  `MoveMeta.targetSpec`. **Singles ignores the nibble** — targeting is implied (the opposing active).
+- A move's target domain is **not** declared in Solidity: its `move()` either resolves a defender
+  from `targetBits` (slot-targeting) or ignores it (self-buffs, global setups, or payload-targeted
+  moves like Sneak Attack). `drool/moves.csv`'s `TargetSpec` column is the authoritative client-facing
+  metadata (→ TS `Move.targetSpec`), and `validateMoves.py` checks each move's `targetBits` behavior
+  against it. **Singles ignores the nibble** — targeting is implied (the opposing active).
 
 ### Core Battle Flow
 
@@ -259,13 +261,14 @@ ATTACK_PARAMS({
 ```
 
 These are packed into inline move words (see `MoveSlotLib`) rather than deployed as separate
-contracts, and mirrored to JSON for the client. `StandardAttack` exposes its legal target domain via
-a `targetSpec()` override (default `AnyOtherSlot`), surfaced through the bundled `getMeta()`.
+contracts, and mirrored to JSON for the client. `StandardAttack`'s base `move()` resolves the defender
+from `targetBits`; a move's client-facing target domain lives in `moves.csv`'s `TargetSpec` column,
+not in Solidity.
 
 Custom moves implement `IMoveSet` directly for complex behavior. The current interface is
 `move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked,
 extraData, rng)` plus the metadata getters (`priority`/`stamina`/`moveType`/`moveClass`) and the
-bundled `getMeta()`→`MoveMeta` (`{moveType, moveClass, targetSpec, priority, stamina, basePower}`).
+bundled `getMeta()`→`MoveMeta` (`{moveType, moveClass, priority, stamina, basePower}`).
 Moves resolve targets from `targetBits` + `activesPacked` via `TargetLib` (they no longer receive a
 defender index), and deal damage through `engine.dispatchStandardAttack` / `dispatchCustomAttack`
 (both take `targetBits`).
@@ -486,7 +489,7 @@ function move(
 }
 ```
 
-A move declares its legal target domain via `TargetSpec` — `StandardAttack` subclasses override the `targetSpec()` method (default `AnyOtherSlot`); custom / hybrid moves return it from `getMeta()`. The player's chosen target arrives as `targetBits` (resolved against `activesPacked` via `TargetLib`); the old `extraDataType()` / `ExtraDataType` selector layer has been removed.
+A move's target domain is client-facing metadata in `moves.csv`'s `TargetSpec` column (→ TS `Move.targetSpec`), not a Solidity declaration; `validateMoves.py` checks each move's `targetBits` behavior against it. The player's chosen target arrives as `targetBits` (resolved against `activesPacked` via `TargetLib`); the old `targetSpec()` / `extraDataType()` / `ExtraDataType` selector layers have been removed.
 
 **3. Custom `IMoveSet`** — for complex conditional moves (variable power, healing, stat manipulation, reading opponent state). Implement the `IMoveSet` functions directly (`move` + metadata getters + `getMeta`). Deal damage via `engine.dispatchStandardAttack` / `dispatchCustomAttack` (passing `targetBits`); `AttackCalculator._calculateDamage()` now just delegates to `dispatchCustomAttack`. Store dependencies as `immutable`.
 
@@ -612,7 +615,7 @@ CSV-to-code mapping notes:
 - **Priority** in `moves.csv` is a signed offset from `DEFAULT_PRIORITY` (3). So `0` = default, `1` = faster, `-1` = slower.
 - **Power** can be `?` for variable-power custom moves (Tier 3/4 implementations)
 - **InputType** (`none` / `self-mon` / `opponent-mon` / `mode-select`) is client-facing metadata for the move-input UI (generated into the TS `MoveInputType`); it no longer maps to any Solidity enum
-- **TargetSpec** (kebab-case; blank = `any-other-slot`) maps to the Solidity `TargetSpec` enum member and is validated against each move's `targetSpec()` / `getMeta` by `validateMoves.py`
+- **TargetSpec** (kebab-case: `opponent-slot` / `self-only` / `none` / `any-other-slot` / `ally-slot` / `any-subset`; blank = `any-other-slot`) is the authoritative client-facing target domain (generated into the TS `MoveTargetSpec`) — there is no Solidity enum. `validateMoves.py` validates it behaviorally: a slot-targeting spec must consume the `targetBits` nibble in `move()`, self-only/none must ignore it
 - **Type2** is `"NA"` for single-type mons
 
 ## Known Issues / Gotchas

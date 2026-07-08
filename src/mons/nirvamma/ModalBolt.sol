@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_ACCURACY, DEFAULT_CRIT_RATE, DEFAULT_PRIORITY, DEFAULT_VOL} from "../../Constants.sol";
-import {MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -128,7 +128,6 @@ contract ModalBolt is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

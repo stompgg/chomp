@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -72,7 +72,6 @@ contract IronWall is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

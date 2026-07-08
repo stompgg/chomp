@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT} from "../../Constants.sol";
-import {MonStateIndexName, MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {EffectInstance, MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -74,7 +74,6 @@ contract HardReset is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

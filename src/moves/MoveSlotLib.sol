@@ -74,7 +74,7 @@ library MoveSlotLib {
     /// @notice Bundled metadata read for a move slot. For inline slots, all five fields
     ///         come from bit-unpacking the slot itself — pure memory ops. For external slots,
     ///         it's a single IMoveSet.getMeta staticcall instead of the 5-call fan-out
-    ///         (moveType / moveClass / priority / stamina + targetSpec).
+    ///         (moveType / moveClass / priority / stamina).
     /// @dev `basePower` is 0 for non-attack slots — callers that care should still try the
     ///      IAttackMove(addr).basePower(battleKey) shim for legacy custom attacks that haven't
     ///      adopted MoveMeta. For inline slots and StandardAttack-based moves, basePower is
@@ -92,8 +92,6 @@ library MoveSlotLib {
             meta.priority = uint32(DEFAULT_PRIORITY + ((raw >> 244) & 0x3));
             meta.moveType = Type(uint8((raw >> 240) & 0xF));
             meta.stamina = uint32((raw >> 236) & 0xF);
-            // 0 in the spare bits = AnyOtherSlot, so pre-2v2 generated words decode to the default
-            meta.targetSpec = TargetSpec(uint8((raw >> INLINE_TARGET_SPEC_SHIFT) & 0xF));
             return meta;
         }
         meta = IMoveSet(address(uint160(raw))).getMeta(engine, battleKey, playerIndex, monIndex);

@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {MoveClass, TargetSpec, Type} from "../../src/Enums.sol";
+import {MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {MoveMeta} from "../../src/Structs.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
@@ -55,7 +55,6 @@ contract EditEffectAttack is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

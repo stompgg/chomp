@@ -4018,7 +4018,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Engine-level fizzle (D2/D28): stamina is committed; a chosen target slot that is
             // dead/empty skips the move. Inline attacks always require a chosen target in
-            // 2-slot modes; nibble-less custom moves (TargetSpec.None kits) pass through with
+            // 2-slot modes; nibble-less custom moves (no slot target) pass through with
             // targetBits == 0.
             uint256 targetBits = (uint256(move.extraData) >> TARGET_BITS_SHIFT) & 0xF;
             uint256 tSlot;

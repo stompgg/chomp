@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MoveClass, TargetSpec, Type} from "../../src/Enums.sol";
+import {MoveClass, Type} from "../../src/Enums.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {MoveMeta} from "../../src/Structs.sol";
 import {TargetLib} from "../../src/lib/TargetLib.sol";
@@ -61,7 +61,6 @@ contract TestMove is IMoveSet {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),

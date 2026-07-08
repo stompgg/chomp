@@ -25,8 +25,9 @@ class MoveData:
     move_class: str
     description: str
     unlock_level: int = 0
-    # Solidity TargetSpec enum member (CSV kebab value mapped at load; blank = AnyOtherSlot)
-    target_spec: str = 'AnyOtherSlot'
+    # CSV TargetSpec (kebab-case): the move's slot-target domain, checked behaviorally against the
+    # .sol (does move() resolve a defender from targetBits?). Blank in CSV = any-other-slot.
+    target_spec: str = 'any-other-slot'
     # Named %/denominator constants the move's .sol must match: [(NAME, VALUE), ...]
     constants: List[Tuple[str, int]] = field(default_factory=list)
 
@@ -42,7 +43,8 @@ class ContractData:
     move_class: Optional[str] = None
     is_standard_attack: bool = False
     is_custom_implementation: bool = False
-    target_spec: Optional[str] = None
+    # Behavioral: does move() resolve a slot target from targetBits (True) or ignore it (False)?
+    consumes_target: Optional[bool] = None
     # All plain-integer `constant NAME = <int>;` declarations found in the file
     constants: Dict[str, int] = field(default_factory=dict)
 
@@ -65,15 +67,12 @@ class MoveValidator:
         'Other': 'MoveClass.Other'
     }
 
-    # TargetSpec CSV values (kebab-case, like InputType) -> Solidity enum members
-    TARGET_SPEC_MAPPING = {
-        'any-other-slot': 'AnyOtherSlot',
-        'none': 'None',
-        'self-only': 'SelfOnly',
-        'opponent-slot': 'OpponentSlot',
-        'ally-slot': 'AllySlot',
-        'any-subset': 'AnySubset',
-    }
+    # CSV TargetSpec kebab values. moves.csv is the authoritative targeting source (there is no
+    # Solidity TargetSpec enum). Slot-targeting specs require move() to consume the target nibble
+    # (resolve a defender from targetBits); the rest must ignore it (self-buffs, global setups, or
+    # payload-targeted moves like Sneak Attack that reach the opponent via extraData).
+    VALID_TARGET_SPECS = {'any-other-slot', 'none', 'self-only', 'opponent-slot', 'ally-slot', 'any-subset'}
+    SLOT_TARGETING_SPECS = {'any-other-slot', 'opponent-slot', 'ally-slot', 'any-subset'}
 
     def __init__(self, csv_path: str, src_path: str):
         self.csv_path = csv_path
@@ -141,7 +140,7 @@ class MoveValidator:
             reader = csv.DictReader(file)
             for row in reader:
                 raw_target = (row.get('TargetSpec') or '').strip() or 'any-other-slot'
-                if raw_target not in self.TARGET_SPEC_MAPPING:
+                if raw_target not in self.VALID_TARGET_SPECS:
                     raise ValueError(f"Unknown TargetSpec '{raw_target}' for move {row['Name']}")
                 move_data = MoveData(
                     name=row['Name'],
@@ -154,7 +153,7 @@ class MoveValidator:
                     move_class=row['Class'],
                     description=row['DevDescription'], # Change to UserDescription later
                     unlock_level=int((row.get('UnlockLevel') or '0').strip() or '0'),
-                    target_spec=self.TARGET_SPEC_MAPPING[raw_target],
+                    target_spec=raw_target,
                     constants=self._parse_constants(row.get('Constants', '')),
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
@@ -188,7 +187,7 @@ class MoveValidator:
         contract_data.accuracy = 100  # JSON moves always use DEFAULT_ACCURACY
         contract_data.move_type = data.get('moveType')
         contract_data.move_class = data.get('moveClass')
-        contract_data.target_spec = 'AnyOtherSlot'  # inline moves can't override the base getter
+        contract_data.consumes_target = True  # inline StandardAttacks dispatch damage to targetBits
 
         # Priority: JSON stores offset from DEFAULT_PRIORITY, convert to absolute
         # (JSON has no priority field = offset 0 = DEFAULT_PRIORITY)
@@ -218,6 +217,9 @@ class MoveValidator:
             contract_data.is_custom_implementation = True
             contract_data = self._parse_custom_implementation(content, contract_data)
 
+        # Behavioral targeting signal: does move() resolve a defender from the targetBits nibble?
+        contract_data.consumes_target = self._move_consumes_target(content, contract_data.is_standard_attack)
+
         # Apply mon-specific parsing rules after standard parsing (allows overrides)
         if mon_name and mon_name in self.mon_specific_rules:
             custom_parser = self.mon_specific_rules[mon_name]
@@ -225,13 +227,36 @@ class MoveValidator:
 
         return contract_data
 
+    def _extract_move_body(self, content: str) -> Optional[str]:
+        """Return the body of the move(...) function, or None if the contract doesn't define one
+        (pure StandardAttacks inherit the base move())."""
+        m = re.search(r'function\s+move\s*\(', content)
+        if not m:
+            return None
+        start = content.find('{', m.end())
+        if start == -1:
+            return None
+        depth = 0
+        for i in range(start, len(content)):
+            if content[i] == '{':
+                depth += 1
+            elif content[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    return content[start + 1:i]
+        return content[start + 1:]
+
+    def _move_consumes_target(self, content: str, is_standard_attack: bool) -> bool:
+        """Behavioral: does the move resolve a defender from the targetBits nibble? A pure
+        StandardAttack (no move() override) inherits the base target-consuming move(); an override
+        or custom IMoveSet consumes iff its body references `targetBits`."""
+        body = self._extract_move_body(content)
+        if body is None:
+            return is_standard_attack
+        return bool(re.search(r'\btargetBits\b', body))
+
     def _parse_standard_attack(self, content: str, contract_data: ContractData) -> ContractData:
         """Parse StandardAttack constructor parameters"""
-        # targetSpec is a virtual getter, not an ATTACK_PARAMS field; no override = base default
-        contract_data.target_spec = (
-            self._extract_function_enum_return(content, 'targetSpec', 'TargetSpec') or 'AnyOtherSlot'
-        )
-
         # Find ATTACK_PARAMS block
         attack_params_match = re.search(r'ATTACK_PARAMS\s*\(\s*\{([^}]+)\}\s*\)', content, re.DOTALL)
         if not attack_params_match:
@@ -270,13 +295,6 @@ class MoveValidator:
         contract_data.priority = self._extract_function_return_value(content, 'priority')
         contract_data.move_type = self._extract_function_enum_return(content, 'moveType', 'Type')
         contract_data.move_class = self._extract_function_enum_return(content, 'moveClass', 'MoveClass')
-
-        # Custom moves declare targetSpec in their getMeta struct literal (or, rarely, a getter)
-        struct_match = re.search(r'targetSpec:\s*TargetSpec\.(\w+)', content)
-        contract_data.target_spec = (
-            struct_match.group(1) if struct_match
-            else self._extract_function_enum_return(content, 'targetSpec', 'TargetSpec')
-        )
 
         return contract_data
 
@@ -443,12 +461,21 @@ class MoveValidator:
         elif contract_data.move_class != move_data.move_class:
             result['errors'].append(f"Move class mismatch: contract={contract_data.move_class}, csv={move_data.move_class}")
 
-        # Validate target spec
-        if contract_data.target_spec is None:
-            result['errors'].append(f"TargetSpec not found in contract (expected: {move_data.target_spec})")
-        elif contract_data.target_spec != move_data.target_spec:
+        # Behavioral target-consumption check: move() must resolve a defender from targetBits iff
+        # the CSV TargetSpec names an active slot. self-only / none moves must ignore the nibble
+        # (self-buffs, global setups, or payload-targeted moves like Sneak Attack).
+        # TODO: also validate extraData/InputType consumption (self-mon / opponent-mon / mode-select)
+        #       against the move body — harder (multiple payload shapes), tracked separately.
+        expected_consume = move_data.target_spec in self.SLOT_TARGETING_SPECS
+        if contract_data.consumes_target is None:
             result['errors'].append(
-                f"TargetSpec mismatch: contract={contract_data.target_spec}, csv={move_data.target_spec}")
+                f"Could not determine target consumption (expected TargetSpec={move_data.target_spec})")
+        elif contract_data.consumes_target != expected_consume:
+            did = 'resolves a targetBits slot' if contract_data.consumes_target else 'ignores targetBits'
+            want = 'consume' if expected_consume else 'ignore'
+            result['errors'].append(
+                f"TargetSpec behavior mismatch: contract {did} but csv TargetSpec="
+                f"{move_data.target_spec} expects it to {want} the target nibble")
 
         # Validate declared %/denominator constants against the contract source
         for cname, cval in move_data.constants:

@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
-import {MoveClass, TargetSpec, Type} from "../../Enums.sol";
+import {MoveClass, Type} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
@@ -117,7 +117,6 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         returns (MoveMeta memory)
     {
         return MoveMeta({
-            targetSpec: TargetSpec.AnyOtherSlot,
             moveType: moveType(engine, battleKey),
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),
