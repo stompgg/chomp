@@ -131,6 +131,16 @@ class RustTypeConverter:
     # Defaults (Solidity zero-initialization)
     # ------------------------------------------------------------------
 
+    # Whether a SolType maps to a Copy Rust type. Primitives / enums / addresses / fixed-byte arrays
+    # are Copy; generated structs (Clone only), String, Vec, mappings, and tuples are not.
+    def _is_copy(self, t: SolType) -> bool:
+        if t.kind in ('uint', 'int', 'intlit', 'bool', 'address', 'enum', 'bytes_fixed',
+                      'interface', 'contract', 'library'):
+            return True
+        if t.kind == 'array':
+            return t.size is not None and self._is_copy(t.elem or UNKNOWN)
+        return False
+
     def default_value(self, t: SolType) -> str:
         if t.kind == 'uint':
             return 'U256::ZERO' if t.mapped_bits == 256 else f'0{_NATIVE[t.mapped_bits][0]}'
@@ -161,8 +171,13 @@ class RustTypeConverter:
             return 'Address::ZERO'
         if t.kind == 'array':
             if t.size is not None:
-                elem_default = self.default_value(t.elem or UNKNOWN)
-                return f'[{elem_default}; {t.size}]'
+                elem = t.elem or UNKNOWN
+                elem_default = self.default_value(elem)
+                # `[x; N]` array-repeat requires the element to be Copy; generated structs derive
+                # only Clone. from_fn calls the initializer N times, so it works for either.
+                if self._is_copy(elem):
+                    return f'[{elem_default}; {t.size}]'
+                return f'core::array::from_fn(|_| {elem_default})'
             return 'Vec::new()'
         if t.kind == 'mapping':
             return 'rt::Mapping::new()'
@@ -279,6 +294,9 @@ class RustTypeConverter:
             # variant 0. `to::<u8>()` / try_from panic on overflow, then
             # from_u8 range-checks against the variant count.
             from .definition import enum_from_u8_fn
+            # Record the enum use so its `use crate::Enums::X` import is emitted — a cast may be the
+            # only reference to an enum (e.g. TargetSpec via decodeMeta), reached by no return/default.
+            self._record_use(to.name)
             if frm.mapped_bits == 256:
                 src = f'({code_p}.into_raw())' if frm.kind == 'int' else code_p
                 narrowed = f'{src}.to::<u8>()'

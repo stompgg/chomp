@@ -15,7 +15,7 @@
 use chomp_engine::moves::MoveSlotLib;
 use chomp_engine::types::TypeCalcLib;
 use chomp_engine::{Constants, Engine};
-use chomp_engine::Enums::{ExtraDataType, MonStateIndexName, MoveClass, Type};
+use chomp_engine::Enums::{MonStateIndexName, MoveClass, Type};
 use chomp_engine::Structs::{DamageCalcContext, MonStats, MoveMeta};
 use chomp_rt::{B256, U256};
 
@@ -316,9 +316,9 @@ fn validate(sim: &mut Sim, seat: Seat, bk: B256, move_index: u8, extra_data: u16
     sim.validate_move(bk, seat.phys(VCPU), move_index, extra_data)
 }
 
-/// The three candidate buckets. `rng` draws extraData targets for
-/// Self/Opponent-index moves in the exact TS order (stream parity).
-pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, rng: &mut JsRng) -> ValidMoves {
+/// The three candidate buckets. `_rng` is retained for signature parity — it drew ExtraDataType
+/// payload targets before that getter was dropped (extraData is now an opaque, stamina-only payload).
+pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, _rng: &mut JsRng) -> ValidMoves {
     let t_id = turn_id(sim, bk);
     let p1_team_size = team_size(sim, seat, VCPU);
 
@@ -352,34 +352,16 @@ pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, rng: &mut JsRn
     // Enumerate valid moves; pick extraData targets like _calculateValidMoves.
     let mut moves: Vec<Mv> = Vec::new();
     for i in 0..4usize {
-        let Some(slot) = move_slot(sim, seat, bk, VCPU, active_mon_index, i) else {
+        let Some(_slot) = move_slot(sim, seat, bk, VCPU, active_mon_index, i) else {
             break; // <4-move mon: stop at the real move count
         };
 
-        let mut extra_data_to_use: u16 = 0;
-
-        if !MoveSlotLib::isInline(slot) {
-            let edt = decode_meta(sim, bk, VCPU, active_mon_index, slot).extraDataType;
-
-            if edt == ExtraDataType::SelfTeamIndex {
-                if valid_switch_indices.is_empty() {
-                    continue;
-                }
-                let r = pick_uniform(valid_switch_indices.len(), rng).unwrap();
-                extra_data_to_use = valid_switch_indices[r] as u16;
-            } else if edt == ExtraDataType::OpponentNonKOTeamIndex {
-                let opponent_team_size = team_size(sim, seat, VOPP);
-                let opp_ko = ko_bitmap(sim, seat, bk, VOPP);
-                let valid_targets: Vec<usize> =
-                    (0..opponent_team_size).filter(|j| (opp_ko & (1 << j)) == 0).collect();
-                if valid_targets.is_empty() {
-                    continue;
-                }
-                let r = pick_uniform(valid_targets.len(), rng).unwrap();
-                extra_data_to_use = valid_targets[r] as u16;
-            }
-            // None / InclusiveRange fall through with extraData 0.
-        }
+        // extraData target-picking used to be ExtraDataType-driven (self / opponent team-index);
+        // the engine dropped that getter — extraData is now an opaque, stamina-validated payload.
+        // The Rust substrate leaves it 0, so a few self/opponent-target moves lose their precise
+        // pick. Acceptable divergence per the decoupling stance; port the off-chain inputType map
+        // here if the singles arena ever needs that fidelity back.
+        let extra_data_to_use: u16 = 0;
 
         if validate(sim, seat, bk, i as u8, extra_data_to_use) {
             moves.push(Mv { move_index: i as u8, extra_data: extra_data_to_use });

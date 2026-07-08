@@ -50,6 +50,10 @@ impl ExternalCalls for HarnessExt {
         (self.p0_team.clone(), self.p1_team.clone())
     }
 
+    fn ITeamRegistry_isWhitelistedOpponent(&mut self, _t: Address, _addr: Address) -> bool {
+        false // the arena pits two real teams — no phantom/CPU whitelist path
+    }
+
     fn ITeamRegistry_getExpAndLevelsForTeams(
         &mut self,
         _t: Address,
@@ -138,8 +142,12 @@ impl Sim {
             p0TeamIndex: 0,
             p1: P1,
             p1TeamIndex: 0,
+            // Multi seats: unused in the singles arena (startBattle keeps singles mode when p2==p3==0).
+            p2: Address::ZERO,
+            p2TeamIndex: 0,
+            p3: Address::ZERO,
+            p3TeamIndex: 0,
             teamRegistry: TEAM_REGISTRY,
-            validator: Address::ZERO,
             rngOracle: Address::ZERO,
             ruleset: Constants::INLINE_STAMINA_REGEN_RULESET,
             moveManager: MOVE_MANAGER,
@@ -267,7 +275,7 @@ impl Sim {
             world.Engine._turnP1Packed = pack_turn(m.move_index, m.salt, m.extra_data);
         }
         world.Engine.storageKeyForWrite = fork;
-        Engine::_executeInternal(world, fork, fork, false, false);
+        Engine::_executeInternal(world, fork, fork, false, false, false); // slotPacked=false (singles)
         world.reset_transient(); // fork tx over; capture reads boundary-clean
         fork
     }

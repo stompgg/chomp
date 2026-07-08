@@ -14,6 +14,7 @@
     "lib/StatBoostLib.sol",
     "lib/StaminaRegenLogic.sol",
     "lib/SwitchTargetLib.sol",
+    "lib/TargetLib.sol",
     "lib/ValidatorLogic.sol",
     "moves/IMoveSet.sol",
     "moves/MoveSlotLib.sol",
@@ -53,7 +54,15 @@
     "_drainBuffer",
     "_executeBatchedEntry",
     "executeBatchedTurns",
-    "_packBatchPayload"
+    "_packBatchPayload",
+    "submitSlotTurnMoves",
+    "submitSlotTurnMovesAndExecute",
+    "_validateAndPackSlotTurn",
+    "_seatAt",
+    "_executeBufferedSlotEntry",
+    "_drainSlotBuffer",
+    "_drainSlotBufferThenExecute",
+    "getBufferedSlotTurns"
   ],
   "noopCalls": [
     "_initializeOwner",
