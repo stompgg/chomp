@@ -20,6 +20,8 @@
 #![allow(non_snake_case)] // engine call sites keep Solidity spelling
 
 pub mod roster;
+pub mod arena;
+pub mod doubles;
 pub mod evaluator;
 pub mod game;
 pub mod greedy;

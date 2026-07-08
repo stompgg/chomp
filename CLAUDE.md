@@ -32,32 +32,27 @@ chomp/
 │   ├── Engine.sol          # Core battle engine (main entry point)
 │   ├── IEngine.sol         # Engine interface
 │   ├── Structs.sol         # All shared data structures
-│   ├── Enums.sol           # All shared enums (Type, MoveClass, EffectStep, etc.)
-│   ├── Constants.sol       # Global constants (move indices, defaults, sentinel values)
-│   ├── DefaultValidator.sol # Validates game rules (team sizes, move legality, timeouts)
+│   ├── Enums.sol           # All shared enums (Type, MoveClass, EffectStep, TargetSpec, etc.)
+│   ├── Constants.sol       # Global constants (move indices, battle modes, slots/targeting, sentinels)
 │   ├── DefaultRuleset.sol  # Configures initial global effects for battles
-│   ├── IValidator.sol      # Validator interface
 │   ├── IRuleset.sol        # Ruleset interface
 │   ├── IEngineHook.sol     # Hook interface for battle lifecycle events
 │   ├── abilities/          # Ability interface (IAbility.sol)
-│   ├── commit-manager/     # Commit-reveal scheme for simultaneous moves
-│   │   ├── DefaultCommitManager.sol
-│   │   ├── SignedCommitManager.sol   # EIP-712 signed commits
+│   ├── commit-manager/     # External commit-reveal move managers (singles only; the dual-signed
+│   │                       #   per-turn buffer and all 2-slot flows now live in the Engine)
+│   │   ├── DefaultCommitManager.sol  # Classic 2-player commit/reveal (base class)
+│   │   ├── SignedCommitManager.sol   # EIP-712 single-tx dual-signed moves (deployed manager)
 │   │   ├── SignedCommitLib.sol       # Shared signed-commit helpers
 │   │   └── ICommitManager.sol
-│   ├── cpu/                # AI opponents (CPU players)
-│   │   ├── CPU.sol                # Base CPU
-│   │   ├── HeuristicCPUBase.sol   # Shared heuristic scaffolding for BetterCPU / FairCPU
-│   │   ├── BetterCPU.sol          # Smarter AI
-│   │   ├── FairCPU.sol            # Balanced opponent
-│   │   ├── OkayCPU.sol            # Mid-tier opponent
-│   │   ├── CPUMoveManager.sol     # Wraps Engine.execute for CPU-driven battles
-│   │   └── ICPU.sol
+│   ├── cpu/                # PvE host (on-chain CPU decision-making removed; moves come from the client)
+│   │   ├── CPU.sol                # Self-registering matchmaker + one-tx config-and-start bundles
+│   │   │                          #   (startCustomBattle / startCustomMultiBattle)
+│   │   └── CPUMoveManager.sol     # Relays client-computed CPU moves through the Engine
 │   ├── effects/            # Effect system (status effects, battlefield)
 │   │   ├── IEffect.sol     # Effect interface with lifecycle hooks
 │   │   ├── BasicEffect.sol
 │   │   ├── StaminaRegen.sol
-│   │   ├── status/         # Status effects (Burn, Frostbite, Panic, Sleep, Zap) + StatusEffectLib
+│   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect(Lib)
 │   │   ├── battlefield/    # Battlefield effects (Overclock)
 │   │   # NOTE: stat boosts are inlined into the Engine (see "Stat Boosts" below); the math
 │   │   #       helpers live in src/lib/StatBoostLib.sol, there is no StatBoosts effect contract.
@@ -76,28 +71,28 @@ chomp/
 │   │   └── IPhantomTeamRegistry.sol  # CPU-relayer entry for writing user phantom team configs
 │   ├── hooks/              # Engine hooks (e.g. SimplePM)
 │   ├── lib/                # Utility libraries: ECDSA, EIP712, Ownable, EnumerableSetLib,
-│   │                       # MappingAllocator, MerkleProofLib, Multicall3, StaminaRegenLogic,
-│   │                       # SwitchTargetLib, ValidatorLogic
+│   │                       # MappingAllocator, MerkleProofLib, Multicall3, RNGLib, StaminaRegenLogic,
+│   │                       # StatBoostLib, SwitchTargetLib, TargetLib (slot/target helpers),
+│   │                       # ValidatorLogic (pure validation helpers; the external IValidator is gone)
 │   ├── matchmaker/         # Battle matchmaking
-│   │   ├── DefaultMatchmaker.sol     # Propose/accept/confirm flow
-│   │   ├── SignedMatchmaker.sol      # EIP-712 signed matchmaking
-│   │   ├── BattleOfferLib.sol        # Shared offer-hash + validation helpers
-│   │   └── IMatchmaker.sol
+│   │   ├── DefaultMatchmaker.sol     # Propose/accept/confirm (DEPRECATED, singles, test-only)
+│   │   ├── SignedMatchmaker.sol      # EIP-712 startGame — production; all modes, party/open seats
+│   │   ├── BattleOfferLib.sol        # Shared offer-hash + seat helpers (battleMode is signed)
+│   │   └── IMatchmaker.sol           # Bare marker interface (auth gate; validateMatch removed)
 │   ├── mons/               # Individual mon implementations (one dir per mon)
 │   │   ├── <monname>/      # Lowercase dir: 4 move .sol files + 1 ability .sol (+ optional libs)
 │   │   ├── aurox/          # e.g. BullRush.sol, GildedRecovery.sol, IronWall.sol, UpOnly.sol, ...
 │   │   ├── embursa/        # e.g. HeatBeacon.sol, SetAblaze.sol, Tinderclaws.sol, ...
 │   │   └── ...             # ~13 mons total; see drool/mons.csv for the full roster
 │   ├── moves/              # Move system
-│   │   ├── IMoveSet.sol               # Move interface
-│   │   ├── IMoveSetWithRange.sol      # Optional extension for variable-power / multi-hit moves
+│   │   ├── IMoveSet.sol               # Move interface (move() + bundled getMeta()→MoveMeta)
 │   │   ├── StandardAttack.sol         # Base attack implementation
 │   │   ├── StandardAttackFactory.sol
 │   │   ├── StandardAttackStructs.sol  # ATTACK_PARAMS struct
-│   │   ├── AttackCalculator.sol       # Damage calculation
-│   │   └── MoveSlotLib.sol            # Move-index packing helpers
+│   │   ├── AttackCalculator.sol       # Damage calc (delegates to Engine dispatch)
+│   │   └── MoveSlotLib.sol            # Inline move-word packing (incl. TargetSpec nibble)
 │   ├── rng/                # Randomness oracle interfaces + DefaultRandomnessOracle
-│   │                       # (IRandomnessOracle for battles, ICPURNG, IGachaRNG)
+│   │                       # (IRandomnessOracle for battles, IGachaRNG for the gacha)
 │   └── types/              # Type effectiveness calculator (TypeCalculator + TypeCalcLib)
 ├── test/                   # Foundry test suite
 │   ├── abstract/BattleHelper.sol  # Shared test helper (battle setup, commit-reveal)
@@ -154,40 +149,94 @@ chomp/
 
 ## Architecture
 
+### Battle Modes
+
+Every battle runs in one of three modes (a `uint8` in `BattleConfig.battleMode`, mirrored onto
+`BattleData` as `isTwoSlotMode`/`isMultiMode` at start):
+
+| Mode | Const | Actives / side | Controllers |
+|------|-------|----------------|-------------|
+| Singles | `BATTLE_MODE_SINGLES` (0) | 1 | p0 vs p1 |
+| Doubles | `BATTLE_MODE_DOUBLES` (1) | 2 (slots 0 & 1) | one controller per side (p0 drives both of side 0's slots) |
+| Multi | `BATTLE_MODE_MULTI` (2) | 2 | 4 seats, one per slot (p0, p1, p2, p3) |
+
+- **Singles** keeps the legacy storage layout byte-identical (slot-1 lanes are never touched).
+- **Doubles / Multi** are the "2-slot" family. In **Multi**, each side's 8-mon roster is the
+  concatenation of its two seats' 4-mon teams at a fixed stride-4 partition (seat 0 → roster
+  `[0..3]`, seat 1 → `[4..7]`); the extra seats live in `multiSeats[battleKey]` (`MultiSeatData`).
+- **Canonical seat order is `[p0, p2, p1, p3]`** (side-major) — used by `getSeats`, seat rotation,
+  and the `cpuSeatMask`. This is NOT the `Battle` struct field order.
+- `startBattle()` starts a singles battle; `startBattleWithMode(battle, mode)` validates the mode
+  byte and the p2/p3 invariant (Multi requires both non-zero; Singles/Doubles forbid them). Battle
+  keys derive from `computeBattleKey(p0, p1)` (Singles/Doubles) or `computePartyKey(p0, p1, p2, p3)`
+  (Multi).
+
+### Slots & Targeting
+
+- **Absolute slot** = `side*2 + slotIndex` (0,1 = side 0; 2,3 = side 1). `activesPacked` carries one
+  8-bit lane per absolute slot holding that slot's active roster index (`EMPTY_ACTIVE_LANE = 0xFF`).
+  Slot-0 lanes live in `BattleData.activeMonIndex`, slot-1 lanes in `activeMonExt`. Moves and
+  effects resolve targets from `activesPacked` via `TargetLib` — no calls back into the Engine.
+- A move's 16-bit wire `extraData` splits `[targetBits 4 | payload 12]`: the top nibble is a bitmask
+  over absolute slots (the chosen target), the low 12 bits are the move's own payload (team indices,
+  ModalBolt modes, …). The Engine strips the nibble before invoking the move.
+- Each move declares a legal target domain via `TargetSpec`
+  (`AnyOtherSlot`/`None`/`SelfOnly`/`OpponentSlot`/`AllySlot`/`AnySubset`), surfaced through
+  `MoveMeta.targetSpec`. **Singles ignores the nibble** — targeting is implied (the opposing active).
+
 ### Core Battle Flow
 
-1. **Matchmaking**: Players propose and accept battles via `DefaultMatchmaker` or `SignedMatchmaker`
-2. **Battle Start**: `Engine.startBattle()` initializes battle state, validates teams via `IValidator`
-3. **Turn Loop** (commit-reveal):
-   - Player 0 commits a hash of their move
-   - Player 1 reveals their move
-   - Player 0 reveals their preimage
-   - `Engine.execute()` resolves the turn
+1. **Matchmaking**: production battles use `SignedMatchmaker.startGame(offer, openSeatsMask,
+   seatSigs)` — one EIP-712 `BattleOffer` whose `battleMode` is part of the signed struct, with
+   open-seat / SeatFill support for party (Multi) games. (`DefaultMatchmaker` is deprecated,
+   singles-only, test-suite-only.) PvE battles are opened by the player calling
+   `CPU.startCustomBattle` / `startCustomMultiBattle` — one tx that writes the phantom opponent team
+   config and starts the battle.
+2. **Battle Start**: `Engine.startBattle(WithMode)` snapshots teams (validated against the
+   `ITeamRegistry` snapshot + a per-seat 4-mon length check), gates every seat through matchmaker
+   authorization, and stores mode / seat data. Validation is fully inline — there is no external
+   `IValidator`.
+3. **Move submission** (one path per battle, chosen by `moveManager`):
+   - **Built-in dual-signed buffer** (default PvP): `moveManager == BUILTIN_DUAL_SIGNED_MANAGER`
+     (`0x5165`) routes through the Engine's own buffer — `submitTurnMoves` / `submitSlotTurnMoves`
+     stage a signature-checked turn; `executeBuffered` drains it.
+   - **External commit manager** (`SignedCommitManager`): singles single-tx `executeWithDualSignedMoves`.
+   - **2-slot turns**: `executeWithSlotMoves(key, side0Packed, side1Packed)` (one packed word per
+     side); whole-game replays via `executeBatchedTurns` / `executeBatchedSlotTurns`.
 4. **Turn Resolution**:
-   - Priority determines move order (higher priority goes first; speed breaks ties)
-   - Each player's move is executed (damage, effects, switches)
-   - Effects run at their lifecycle hooks (RoundStart, AfterDamage, RoundEnd, etc.)
-   - KO checks and forced switches
-5. **Battle End**: When all mons on one side are KO'd
+   - **Singles**: RNG from both salts → priority player (higher move priority; effective speed
+     tie-break; `rng % 2` on a full tie) → RoundStart effects → priority move → AfterMove / stamina
+     → other move → (turn 0: switch-in abilities) → RoundEnd effects. A KO locks the winner
+     immediately at the KO site.
+   - **2-slot (Doubles / Multi)**: a greedy dynamic scheduler makes up to 4 picks, each choosing the
+     un-acted live slot with the highest (locked priority, live speed, fresh jitter). KO'd actives
+     don't act, and KOs never cancel remaining actions — only game-over returns early. Empty lanes
+     act only on turn 0 (send-ins).
+   - **Effects** run at their lifecycle hooks (RoundStart, PreDamage, AfterDamage, AfterMove,
+     RoundEnd, …); `PreDamage` lets mon-local effects mutate the in-flight damage via
+     `getPreDamage` / `setPreDamage`.
+   - **Forced switches** are encoded in `playerSwitchForTurnFlag`: singles uses `0`/`1` (that side
+     switches) vs `2` (both act); 2-slot uses `0x80 | slotMask` (only the masked KO'd slots switch)
+     vs `2` (full turn).
+5. **Battle End**: when a full side is KO'd, on timeout (`end()` after `MAX_BATTLE_DURATION`), or via
+   `forfeit(battleKey)` (concede — the opposing side's lead is credited; grants no gacha rewards).
 
 ### Key Interfaces
 
 | Interface | Purpose |
 |-----------|---------|
 | `IEngine` | Core battle engine - state mutation, battle management |
-| `IMoveSet` | Move contract - `move()`, `priority()`, `stamina()`, `moveType()`, `moveClass()` |
-| `IEffect` | Effect lifecycle - `onRoundStart()`, `onAfterDamage()`, `onRemove()`, etc. |
+| `IMoveSet` | Move contract - `move()` (slot-targeted), `getMeta()`→`MoveMeta`, `priority()`, `stamina()`, `moveType()`, `moveClass()` |
+| `IEffect` | Effect lifecycle - `onRoundStart()`, `onPreDamage()`, `onAfterDamage()`, `onRemove()`, etc. (all take `activesPacked`) |
 | `IAbility` | Mon ability - `activateOnSwitch()` |
-| `IValidator` | Game rule validation - teams, moves, timeouts |
 | `IRuleset` | Initial battle configuration (global effects) |
-| `ICommitManager` | Commit-reveal move management |
-| `IMatchmaker` | Battle matchmaking validation |
+| `ICommitManager` | External commit-reveal move management (singles only) |
+| `IMatchmaker` | Bare marker interface — the Engine's matchmaker authorization gate |
 | `ITeamRegistry` | Combined team CRUD + mon catalog + exp/level + facet getters (implemented by `GachaTeamRegistry` via its abstract bases) |
 | `IGachaPointsAssigner` / `IExpAssigner` | Owner-allowlisted off-band grants of points / exp (e.g. `ReturnerGift`) |
 | `IPhantomTeamRegistry` | CPU-relayer entry for writing a user's phantom team config from a whitelisted CPU |
-| `IEngineHook` | Battle lifecycle hooks (OnBattleStart, OnRoundEnd, OnBattleEnd, ...) |
-| `ICPU` | AI opponent interface |
-| `IRandomnessOracle` / `ICPURNG` / `IGachaRNG` | RNG sources, scoped by consumer |
+| `IEngineHook` | Battle lifecycle hooks (OnBattleStart, OnRoundStart, OnRoundEnd, OnBattleEnd) |
+| `IRandomnessOracle` / `IGachaRNG` | RNG sources, scoped by consumer |
 
 ### Move System
 
@@ -209,18 +258,35 @@ ATTACK_PARAMS({
 })
 ```
 
-These are then inlined into the Engine and stored only as JSON.
+These are packed into inline move words (see `MoveSlotLib`) rather than deployed as separate
+contracts, and mirrored to JSON for the client. `StandardAttack` exposes its legal target domain via
+a `targetSpec()` override (default `AnyOtherSlot`), surfaced through the bundled `getMeta()`.
 
-Custom moves implement `IMoveSet` directly for complex behavior.
+Custom moves implement `IMoveSet` directly for complex behavior. The current interface is
+`move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked,
+extraData, rng)` plus the metadata getters (`priority`/`stamina`/`moveType`/`moveClass`) and the
+bundled `getMeta()`→`MoveMeta` (`{moveType, moveClass, targetSpec, priority, stamina, basePower}`).
+Moves resolve targets from `targetBits` + `activesPacked` via `TargetLib` (they no longer receive a
+defender index), and deal damage through `engine.dispatchStandardAttack` / `dispatchCustomAttack`
+(both take `targetBits`).
 
 ### Effect System
 
-Effects implement `IEffect` with a bitmap indicating which lifecycle steps they run at:
-- `OnApply`, `RoundStart`, `RoundEnd`, `OnRemove`
-- `OnMonSwitchIn`, `OnMonSwitchOut`
-- `AfterDamage`, `AfterMove`, `OnUpdateMonState`
+Effects implement `IEffect` with a bitmap (`getStepsBitmap()`) indicating which lifecycle steps they
+run at:
+- `OnApply` (0x01), `RoundStart` (0x02), `RoundEnd` (0x04), `OnRemove` (0x08)
+- `OnMonSwitchIn` (0x10), `OnMonSwitchOut` (0x20)
+- `AfterDamage` (0x40), `AfterMove` (0x80), `OnUpdateMonState` (0x100), `PreDamage` (0x200)
 
-Effects can be per-mon (local) or global (battlefield-wide). The `StaminaRegen` effect is a global default that regenerates 1 stamina per turn.
+`PreDamage` runs before damage is applied — subscribed effects read the in-flight value via
+`engine.getPreDamage()` and mutate it via `engine.setPreDamage(int32)`, composing in effect-array
+order (e.g. `Adaptor` halves matching damage). `AfterDamage`, `AfterMove`, `OnUpdateMonState`, and
+`PreDamage` currently run **only on mon-local effects** (global effects skip them). Every lifecycle
+hook now receives `activesPacked` so effects can resolve slots via `TargetLib` without calling back
+into the Engine.
+
+Effects can be per-mon (local; `targetIndex` = the owning player index) or global (battlefield-wide;
+side index `2`). The `StaminaRegen` effect is a global default that regenerates 1 stamina per turn.
 
 ### Stat Boosts (inlined into the Engine)
 
@@ -248,7 +314,7 @@ How it works:
 
 ### Type System
 
-16 types: Yin, Yang, Earth, Liquid, Fire, Metal, Ice, Nature, Lightning, Mythic, Air, Math, Cyber, Wild, Cosmic, None. Type effectiveness is calculated by `ITypeCalculator`.
+15 types: Yin, Yang, Earth, Liquid, Fire, Metal, Ice, Nature, Lightning, Faith, Air, Math, Cyber, Cosmic, None. Type effectiveness is calculated by `ITypeCalculator`.
 
 ### Gacha & Progression System
 
@@ -329,7 +395,8 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 - `MonState` tracks deltas from base stats (hpDelta, staminaDelta, etc.). The 5 stat deltas are written only by the inlined stat-boost path (see "Stat Boosts"); other deltas via `updateMonState`.
 - Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources reuse these same mappings under the `STAT_BOOST_ADDRESS` sentinel.
 - Heavy use of bit packing for gas efficiency (KO bitmaps, effect counts, active mon indices)
-- Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`)
+- Battle mode is a `uint8` in `BattleConfig.battleMode` (mirrored to `BattleData.isTwoSlotMode`/`isMultiMode`). Slot-0 active lanes pack into `BattleData.activeMonIndex` (side 0 = low byte, side 1 = high byte); 2-slot modes add slot-1 lanes in `activeMonExt`. Multi's extra seats (p2/p3) live in `multiSeats[battleKey]` (`MultiSeatData`), written only when `battleMode == MULTI`.
+- Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`, in-flight `PreDamage`)
 - `GachaTeamRegistry`'s storage is the union of its abstract bases; each base owns its own mappings/constants so the leaf is integration-only. Reordering the inheritance list would shift slot layout — keep the order in `GachaTeamRegistry.sol` stable across deploys.
 
 ## Development Conventions
@@ -405,20 +472,23 @@ contract Blow is StandardAttack {
 }
 ```
 
-**2. `StandardAttack` + `move()` override** — for moves with side effects after damage (recoil, self-switch, self-status, multi-hit). Call `_move()` which returns `(int32 damage, bool crit)`, then add custom logic:
+**2. `StandardAttack` + `move()` override** — for moves with side effects after damage (recoil, self-switch, self-status, multi-hit). Override the full `move(...)` signature and call `_move()`, which returns `(int32 damage, bytes32 eventType)`, then add custom logic:
 
 ```solidity
-function move(...) public override {
-    (int32 damage,) = _move(battleKey, attackerPlayerIndex, attackerMonIndex, defenderMonIndex, rng);
+function move(
+    IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex,
+    uint256 targetBits, uint256 activesPacked, uint16 extraData, uint256 rng
+) public override {
+    (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, targetBits, rng);
     if (damage > 0) {
-        ENGINE.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage); // recoil
+        engine.dealDamage(attackerPlayerIndex, attackerMonIndex, selfDamage); // recoil
     }
 }
 ```
 
-Moves that require the player to select a target mon override `extraDataType()` to return `ExtraDataType.SelfTeamIndex` or `ExtraDataType.OpponentNonKOTeamIndex`.
+A move declares its legal target domain via `TargetSpec` — `StandardAttack` subclasses override the `targetSpec()` method (default `AnyOtherSlot`); custom / hybrid moves return it from `getMeta()`. The player's chosen target arrives as `targetBits` (resolved against `activesPacked` via `TargetLib`); the old `extraDataType()` / `ExtraDataType` selector layer has been removed.
 
-**3. Custom `IMoveSet`** — for complex conditional moves (variable power, healing, stat manipulation, reading opponent state). Implement all 7 `IMoveSet` functions directly. Use `AttackCalculator._calculateDamage()` for damage. Store dependencies as `immutable`.
+**3. Custom `IMoveSet`** — for complex conditional moves (variable power, healing, stat manipulation, reading opponent state). Implement the `IMoveSet` functions directly (`move` + metadata getters + `getMeta`). Deal damage via `engine.dispatchStandardAttack` / `dispatchCustomAttack` (passing `targetBits`); `AttackCalculator._calculateDamage()` now just delegates to `dispatchCustomAttack`. Store dependencies as `immutable`.
 
 **4. `IMoveSet` + `BasicEffect` hybrid** — for moves that persist as effects across turns (traps, delayed damage, per-turn modifiers). Implement both interfaces in one contract. The `move()` function calls `ENGINE.addEffect(playerIndex, monIndex, IEffect(address(this)), ...)`.
 
@@ -455,7 +525,7 @@ Effects fall into several categories depending on scope:
 
 To implement a new effect:
 1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
-2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, etc.)
+2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, `onPreDamage`, …) — each receives `activesPacked` for local slot resolution via `TargetLib`
 3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call
 4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
 5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
@@ -491,32 +561,35 @@ backend (`codegen_rs/`, native ints instead of bigint — see
 `transpiler/codegen_rs/README.md`):
 
 ```bash
-python3 -m transpiler src/ --target rust     # emit transpiler/rs-output (cargo workspace)
-cd transpiler/rs-output && cargo build --release   # engine + chomp_ffi cdylib + strategies
-bun transpiler/scripts/batch_benchmark.ts          # whole-game batches, games/s
+python3 -m transpiler src/ --target rust                 # emit transpiler/rs-output (cargo workspace)
+cd transpiler/rs-output && cargo build --release          # engine + runtime + strategies (+ its bins)
+CHOMP_ROOT=$(pwd)/../.. ./target/release/arena --games 6000        # whole-game batches, win-rate table
+CHOMP_ROOT=$(pwd)/../.. ./target/release/trace --games 6000 --narrate 0   # trace analysis + greedy counterfactual
 ```
 
 The full engine, all mons/effects, and the three CPU strategies (hard,
-greedy, override) are transpiled/ported; batch mode runs whole games
-natively (~230–330 games/s single-thread, ~880–1,270 at 4 threads on a
-4-core box whose throughput varies run-to-run) behind ONE seam: bun
-serializes teams + the address book into
-`chomp_run_games`. The stacks are DECOUPLED — the Rust side was ported
-move-for-move against TS and then cut loose; it may diverge freely as
-the prototyping substrate, and port-backs to the TS game carry no
-bit-identicality requirement. Emission is allowlisted in
+greedy, override) are transpiled/ported. The arena is now a **standalone,
+pure-Rust binary** (`chomp-strategies`' `arena`/`trace` bins): it loads the
+roster from `drool/*.csv` + `src/mons/*.json` at runtime and runs whole games
+natively (~2,000 games/s at 8 threads, deterministic across thread counts).
+The stacks are DECOUPLED — the Rust side was ported move-for-move against TS
+and then cut loose; it may diverge freely (including its rng stream and CPU
+decisions) as the prototyping substrate, and port-backs to the TS game carry
+no bit-identicality requirement. Emission is allowlisted in
 `transpiler-config-rust.json`. `rs-output/` is regenerated (gitignored);
-hand-written crates live in `transpiler/{runtime-rs,ffi-rs,strategies-rs}`.
-The verification-era machinery (golden-vector suites, battle-replay
-fixtures, the drive-mode adapter that let TS strategies play on the Rust
-engine, and the lockstep gates) lives in git history if parity ever
-needs re-proving.
+hand-written crates live in `transpiler/{runtime-rs,strategies-rs}`. The
+former bun↔Rust FFI seam (`chomp_run_games`, the `ffi` crate, and
+`scripts/batch_benchmark.ts`) was removed once the pure-Rust arena replaced
+it; the verification-era machinery (golden-vector suites, replay fixtures,
+the drive-mode adapter, lockstep gates) lives in git history if parity ever
+needs re-proving. The TS arena driver (`sims/src/arena/game.ts`) remains as
+the port-back reference.
 
 **Known limitation — TODO when a second codebase needs it.** The transpiler hardcodes three TS namespace names (`Enums`, `Structs`, `Constants`) for type-only Solidity files. File-type detection is content-based (a file with only enums maps to the `Enums` namespace regardless of filename), but the *namespace name itself* is fixed, and only structs are tracked per source path. A codebase that splits types across multiple files (e.g. `PoolStructs.sol` + `OrderStructs.sol`, or `Errors.sol`) would produce colliding imports. To generalize: add `enum_paths` / `constant_paths` to `transpiler/type_system/registry.py` mirroring `struct_paths`, derive the namespace name from each source file's basename, and have `imports.py:_generate_module_imports` emit one `import * as <Basename>` per actually-referenced source module instead of three blanket imports.
 
 ### Deployment Order
 
-1. `EngineAndPeriphery.s.sol` - Engine, validators, commit managers, matchmakers, registries
+1. `EngineAndPeriphery.s.sol` - Engine, type calculator, `SignedCommitManager`, `GachaTeamRegistry`, `SignedMatchmaker`, CPU host, `SimplePM`, shared effects
 2. `SetupMons.s.sol` - All mon contracts (moves, abilities)
 3. `SetupCPU.s.sol` - CPU players
 
@@ -531,14 +604,15 @@ GitHub Actions runs on pull requests (`.github/workflows/main.yml`):
 | File | Purpose |
 |------|---------|
 | `drool/mons.csv` | Mon stats: Id, Name, HP, Attack, Defense, SpAtk, SpDef, Speed, Type1, Type2, Flavor |
-| `drool/moves.csv` | Move data: Name, Mon, Power, Stamina, Accuracy, Priority, Type, Class, DevDescription, UserDescription, InputType |
+| `drool/moves.csv` | Move data: Name, Mon, Power, Stamina, Accuracy, Priority, Type, Class, DevDescription, UserDescription, InputType, UnlockLevel, Constants, TargetSpec |
 | `drool/abilities.csv` | Ability assignments: Name, Mon, Effect |
 | `drool/types.csv` | Type effectiveness chart |
 
 CSV-to-code mapping notes:
 - **Priority** in `moves.csv` is a signed offset from `DEFAULT_PRIORITY` (3). So `0` = default, `1` = faster, `-1` = slower.
 - **Power** can be `?` for variable-power custom moves (Tier 3/4 implementations)
-- **InputType** maps to `ExtraDataType` enum: `none` → `None`, `self-mon` → `SelfTeamIndex`, `opponent-mon` → `OpponentNonKOTeamIndex`
+- **InputType** (`none` / `self-mon` / `opponent-mon` / `mode-select`) is client-facing metadata for the move-input UI (generated into the TS `MoveInputType`); it no longer maps to any Solidity enum
+- **TargetSpec** (kebab-case; blank = `any-other-slot`) maps to the Solidity `TargetSpec` enum member and is validated against each move's `targetSpec()` / `getMeta` by `validateMoves.py`
 - **Type2** is `"NA"` for single-type mons
 
 ## Known Issues / Gotchas
@@ -547,13 +621,13 @@ CSV-to-code mapping notes:
 - If an effect calls `dealDamage()` and triggers `AfterDamage`, it can cause infinite loops - avoid dealing damage in `onAfterDamage` hooks
 - RNG reuse: `StandardAttack` uses the same RNG for both accuracy and effect chance, making them correlated rather than independent
 - Malicious p0 can modify mon moves between commit and battle start - mitigate via team registry or adding move indices to integrity hash
-- `MAX_BATTLE_DURATION` is 1 hour; `TIMEOUT_DURATION` is configurable per validator
+- `MAX_BATTLE_DURATION` is 1 hour, enforced in `Engine.end()` (once elapsed, anyone can end a stale battle, awarding p0). There is no external validator anymore and no per-turn timeout currently wired in — `ValidatorLogic.validateTimeoutLogic` exists but is dormant
 - DefaultMatchmaker (deprecated, test-suite-only) leaks/strands MappingAllocator pool keys on re-proposals and open-proposal cycles — documented won't-fix in its contract header; do not promote it back to production without fixing
 
 ## Gas Optimization Notes
 
 - Storage bit-packing throughout (BattleData, BattleConfig, KO bitmaps, effect counts)
-- Batch context structs (`BattleContext`, `DamageCalcContext`, `ValidationContext`) to reduce external calls / SLOADs
+- Batch context structs (`BattleContext`, `DamageCalcContext`, `BattleEndContext`, `MoveMeta`) to reduce external calls / SLOADs
 - Effect step bitmaps avoid calling effects at steps they don't use
 - `MappingAllocator` for efficient storage slot management
 - Transient storage for per-call state to avoid unnecessary SLOADs/SSTOREs

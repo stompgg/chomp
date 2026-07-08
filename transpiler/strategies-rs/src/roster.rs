@@ -6,28 +6,26 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 use chomp_rt::{Address, U256};
 use chomp_engine::Structs::MonStats;
 use chomp_engine::Enums::Type;
 use serde::Deserialize;
 
-// The transpiled/deployed contracts (the ContractId set). A move whose contract name is in here
-// resolves to its address; otherwise it falls to an inline JSON. Keep in sync with world.rs's enum.
-const DEPLOYED: &[&str] = &[
-    "ActusReus", "Adaptor", "Angery", "Baselight", "BlessedStatus", "Brightback", "BubbleBop",
-    "BullRush", "BurnStatus", "CarrotHarvest", "ChainExpansion", "Chronoffense", "ContagiousSlumber",
-    "Deadlift", "DeepFreeze", "Dreamcatcher", "DualShock", "EternalGrudge", "FoulLanguage",
-    "FrostbiteStatus", "Gachachacha", "GildedRecovery", "GraveAffliction", "GuestFeature", "HardReset",
-    "HeatBeacon", "HitAndDip", "HoneyBribe", "InfernalFlame", "Interweaving", "InvokeTaboo", "IronWall",
-    "Loop", "MegaStarBlast", "ModalBolt", "NightTerrors", "NineNineNine", "Overclock", "Overflow",
-    "PanicStatus", "PistolSquat", "PostWorkout", "PreemptiveShock", "Q5", "Renormalize",
-    "RiseFromTheGrave", "RockPull", "RoundTrip", "Sanctify", "SaviorComplex", "SetAblaze", "SleepStatus",
-    "SnackBreak", "SneakAttack", "Somniphobia", "StaminaRegen", "Tinderclaws", "TripleThink",
-    "UnboundedStrike", "UpOnly", "VitalSiphon", "VolatilePunch", "WitherAway",
-];
+// The deployed-contract universe (the ContractId set deploy_all registers) is emitted by the
+// transpiler as `world::CONTRACT_NAMES` from the same `dispatchable_contracts()` list, so it can't
+// drift from the Solidity — adding/removing a mon/move/effect updates it on the next `--target rust`.
+use chomp_engine::world::CONTRACT_NAMES;
 
+// A move whose contract name is a transpiled contract resolves to its address; otherwise it falls to
+// an inline JSON. Matches the TS `isImplemented` check against CONTRACT_REGISTRY.
 fn is_deployed(contract: &str) -> bool {
-    DEPLOYED.contains(&contract)
+    CONTRACT_NAMES.contains(&contract)
+}
+
+/// The address book run_games / Sim::new consume: every deploy_all name → its deterministic address.
+pub fn address_book() -> std::collections::HashMap<String, Address> {
+    CONTRACT_NAMES.iter().map(|&n| (n.to_string(), addr_of(n))).collect()
 }
 
 /// "Bull Rush" / "Hit-And-Dip" → "BullRush" / "HitAndDip": split on space/hyphen, capitalize each
@@ -126,13 +124,81 @@ pub struct Roster {
     pub mons: Vec<RosterMon>,
 }
 
-// Minimal CSV: split on commas, no quoted-field handling (the drool CSVs have none in the columns we
-// read). Returns header + rows as field vecs.
+impl Roster {
+    pub fn mon_by_id(&self, id: u32) -> Option<&RosterMon> {
+        self.mons.iter().find(|m| m.id == id)
+    }
+
+    pub fn mon_name(&self, id: u32) -> String {
+        self.mon_by_id(id).map(|m| m.name.clone()).unwrap_or_else(|| format!("#{id}"))
+    }
+
+    /// Move name for a default-loadout lane (first-≤4 catalog, padded to the last like build_team_mon).
+    pub fn move_name(&self, id: u32, lane: u8) -> String {
+        self.mon_by_id(id)
+            .and_then(|m| {
+                let cap = m.catalog.len().min(4);
+                if cap == 0 { None } else { m.catalog.get((lane as usize).min(cap - 1)) }
+            })
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| format!("move{lane}"))
+    }
+}
+
+/// A move's target-input kind, from moves.csv's InputType column — the off-chain replacement for the
+/// dropped on-chain ExtraDataType (none → None, self-mon → SelfMon, opponent-mon → OpponentMon). The
+/// CPU consults this to pick a self-switch / opponent-mon target for a move's extraData.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InputType {
+    None,
+    SelfMon,
+    OpponentMon,
+}
+
+fn parse_input_type(s: &str) -> InputType {
+    match s.trim() {
+        "self-mon" => InputType::SelfMon,
+        "opponent-mon" => InputType::OpponentMon,
+        _ => InputType::None,
+    }
+}
+
+// Deployed-move address → its InputType, filled once by load_roster (before any game runs, so the
+// arena threads only ever read it). Only the ~3 targeted moves are non-None; everything else defaults.
+static INPUT_TYPE_BY_ADDR: OnceLock<std::collections::HashMap<Address, InputType>> = OnceLock::new();
+
+/// The target-input kind for a deployed move's address (defaults to None for inline / unknown moves).
+pub fn input_type_of(addr: Address) -> InputType {
+    INPUT_TYPE_BY_ADDR
+        .get()
+        .and_then(|m| m.get(&addr).copied())
+        .unwrap_or(InputType::None)
+}
+
+// CSV field split with quoted-field support ("a, b" is one field, "" is an escaped quote) — moves.csv
+// has commas inside quoted description columns, so a naive split misaligns later columns.
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if in_quotes && chars.peek() == Some(&'"') => { cur.push('"'); chars.next(); }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => { fields.push(cur.trim().to_string()); cur.clear(); }
+            _ => cur.push(c),
+        }
+    }
+    fields.push(cur.trim().to_string());
+    fields
+}
+
 fn read_csv(path: &Path) -> (Vec<String>, Vec<Vec<String>>) {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    let header: Vec<String> = lines.next().unwrap().split(',').map(|s| s.trim().to_string()).collect();
-    let rows = lines.map(|l| l.split(',').map(|s| s.trim().to_string()).collect()).collect();
+    let header = parse_csv_line(lines.next().unwrap());
+    let rows = lines.map(parse_csv_line).collect();
     (header, rows)
 }
 
@@ -145,10 +211,12 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
     let drool = chomp_root.join("drool");
     let src_mons = chomp_root.join("src").join("mons");
 
-    // moves.csv → per-mon ordered (name, unlock) list.
+    // moves.csv → per-mon ordered (name, unlock) list, plus the deployed-move → InputType map.
     let (mh, mrows) = read_csv(&drool.join("moves.csv"));
     let (m_name, m_mon, m_unlock) = (col(&mh, "Name"), col(&mh, "Mon"), col(&mh, "UnlockLevel"));
+    let m_input = col(&mh, "InputType");
     let mut moves_by_mon: Vec<(String, Vec<(String, u8)>)> = Vec::new();
+    let mut input_by_addr: std::collections::HashMap<Address, InputType> = std::collections::HashMap::new();
     for r in &mrows {
         let mon = &r[m_mon];
         let entry = match moves_by_mon.iter_mut().find(|(m, _)| m == mon) {
@@ -156,7 +224,13 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
             None => { moves_by_mon.push((mon.clone(), Vec::new())); moves_by_mon.last_mut().unwrap() }
         };
         entry.1.push((r[m_name].clone(), r[m_unlock].parse().unwrap_or(0)));
+
+        let contract = move_name_to_contract(&r[m_name]);
+        if is_deployed(&contract) {
+            input_by_addr.insert(addr_of(&contract), parse_input_type(&r[m_input]));
+        }
     }
+    let _ = INPUT_TYPE_BY_ADDR.set(input_by_addr); // first load wins; deterministic, so re-loads are no-ops
     let moves_for = |mon: &str| moves_by_mon.iter().find(|(m, _)| m == mon).map(|(_, v)| v.clone()).unwrap_or_default();
 
     // abilities.csv → per-mon ability name.

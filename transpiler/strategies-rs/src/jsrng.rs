@@ -5,6 +5,7 @@
 /// mulberry32. Mirrors the JS coercions exactly: all state math is u32
 /// wrapping (JS `>>> 0` / `Math.imul`), the output is `u32 / 2^32` — both
 /// steps exact in f64.
+#[derive(Clone, Copy)]
 pub struct JsRng {
     a: u32,
 }

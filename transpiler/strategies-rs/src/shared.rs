@@ -349,12 +349,15 @@ pub type MonConfig = fn(mon_index: usize, config_key: usize) -> u16;
 pub fn try_configured_move(
     config: MonConfig,
     used_bitmap: u32,
+    config_mon_id: usize,
     active_mon_index: usize,
     moves: &[Mv],
     config_key: usize,
     lane_bit_offset: usize,
 ) -> (isize, u32) {
-    let config_value = config(active_mon_index, config_key);
+    // Config is keyed by the mon's identity; the used-bitmap dedup is keyed by the
+    // team slot (cleared on switch-in), so the two indices are intentionally distinct.
+    let config_value = config(config_mon_id, config_key);
     if config_value == 0 {
         return (-1, used_bitmap);
     }
@@ -399,12 +402,12 @@ pub fn clear_move_used_bits_on_switch_in(
 /// kept for structural parity with the TS decision tree.
 pub fn try_preferred_move(
     config: MonConfig,
-    active_mon_index: usize,
+    config_mon_id: usize,
     ctx: &mut DamageCalcContext,
     metas: &[MoveMeta],
     moves: &[Mv],
 ) -> isize {
-    let config_value = config(active_mon_index, CONFIG_PREFERRED_MOVE);
+    let config_value = config(config_mon_id, CONFIG_PREFERRED_MOVE);
     if config_value == 0 {
         return -1;
     }

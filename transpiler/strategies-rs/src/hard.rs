@@ -298,8 +298,10 @@ fn free_turn_pick(
     let opponent_mon_index = view.opp_active;
 
     // Configured switch-in move on this safe turn.
-    let (idx, bm) =
-        try_configured_move(better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0);
+    let (idx, bm) = try_configured_move(
+        better_cpu_config, move_used_bitmap, view.cpu_active_id as usize, active_mon_index, moves,
+        CONFIG_SWITCH_IN_MOVE, 0,
+    );
     move_used_bitmap = bm;
     if idx >= 0 {
         return (Some(moves[idx as usize]), move_used_bitmap);
@@ -322,8 +324,10 @@ fn free_turn_pick(
             view.p1.len(), view.cpu_ko, view.p0.len(), view.opp_ko,
             view.opp_active, cpu_stamina,
         ) {
-            let (idx, bm) =
-                try_configured_move(better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SETUP_MOVE, 8);
+            let (idx, bm) = try_configured_move(
+                better_cpu_config, move_used_bitmap, view.cpu_active_id as usize, active_mon_index, moves,
+                CONFIG_SETUP_MOVE, 8,
+            );
             move_used_bitmap = bm;
             if idx >= 0 {
                 return (Some(moves[idx as usize]), move_used_bitmap);
@@ -604,7 +608,8 @@ fn decide_inner(
     // ── P6: Default — Best Damaging Move (sampled from the 85% band) ──
     if !moves.is_empty() {
         let (idx, bm) = try_configured_move(
-            better_cpu_config, move_used_bitmap, active_mon_index, moves, CONFIG_SWITCH_IN_MOVE, 0,
+            better_cpu_config, move_used_bitmap, view.cpu_active_id as usize, active_mon_index, moves,
+            CONFIG_SWITCH_IN_MOVE, 0,
         );
         move_used_bitmap = bm;
         if idx >= 0 {
@@ -612,7 +617,7 @@ fn decide_inner(
         }
 
         let preferred_move =
-            try_preferred_move(better_cpu_config, active_mon_index, &mut attack_ctx, &metas, moves);
+            try_preferred_move(better_cpu_config, view.cpu_active_id as usize, &mut attack_ctx, &metas, moves);
         if preferred_move >= 0 {
             arb_ret!(moves[preferred_move as usize]);
         }

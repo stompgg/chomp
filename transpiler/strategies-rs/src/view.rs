@@ -20,6 +20,7 @@ use chomp_engine::Structs::{DamageCalcContext, MonStats, MoveMeta};
 use chomp_rt::{B256, U256};
 
 use crate::jsrng::JsRng;
+use crate::roster::{input_type_of, InputType};
 use crate::sim::{HypoMove, Sim};
 
 pub use chomp_engine::Constants::SWITCH_MOVE_INDEX;
@@ -246,6 +247,9 @@ pub struct BattleView {
     pub switch_flag: u8,
     pub cpu_active: usize,
     pub opp_active: usize,
+    /// Global mon-id of the CPU's active mon (for per-mon config lookup, which
+    /// keys by identity — distinct from `cpu_active`, the team slot). 0 = unknown.
+    pub cpu_active_id: u32,
     pub cpu_ko: u32,
     pub opp_ko: u32,
     /// Virtual p0 (opponent) side, one entry per team slot.
@@ -270,11 +274,13 @@ pub fn capture_view(sim: &mut Sim, seat: Seat, bk: B256) -> BattleView {
     let (opp_active, cpu_active) = active_mon_indices(sim, seat, bk);
     let cpu_ko = ko_bitmap(sim, seat, bk, VCPU);
     let opp_ko = ko_bitmap(sim, seat, bk, VOPP);
+    let cpu_active_id = sim.mon_id_phys(seat.phys(VCPU), cpu_active);
     BattleView {
         bk,
         switch_flag: switch_flag(sim, seat, bk),
         cpu_active,
         opp_active,
+        cpu_active_id,
         cpu_ko,
         opp_ko,
         p0: read_side(sim, seat, bk, VOPP, opp_ko),
@@ -318,7 +324,7 @@ fn validate(sim: &mut Sim, seat: Seat, bk: B256, move_index: u8, extra_data: u16
 
 /// The three candidate buckets. `_rng` is retained for signature parity — it drew ExtraDataType
 /// payload targets before that getter was dropped (extraData is now an opaque, stamina-only payload).
-pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, _rng: &mut JsRng) -> ValidMoves {
+pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, rng: &mut JsRng) -> ValidMoves {
     let t_id = turn_id(sim, bk);
     let p1_team_size = team_size(sim, seat, VCPU);
 
@@ -352,16 +358,33 @@ pub fn calculate_valid_moves(sim: &mut Sim, seat: Seat, bk: B256, _rng: &mut JsR
     // Enumerate valid moves; pick extraData targets like _calculateValidMoves.
     let mut moves: Vec<Mv> = Vec::new();
     for i in 0..4usize {
-        let Some(_slot) = move_slot(sim, seat, bk, VCPU, active_mon_index, i) else {
+        let Some(slot) = move_slot(sim, seat, bk, VCPU, active_mon_index, i) else {
             break; // <4-move mon: stop at the real move count
         };
 
-        // extraData target-picking used to be ExtraDataType-driven (self / opponent team-index);
-        // the engine dropped that getter — extraData is now an opaque, stamina-validated payload.
-        // The Rust substrate leaves it 0, so a few self/opponent-target moves lose their precise
-        // pick. Acceptable divergence per the decoupling stance; port the off-chain inputType map
-        // here if the singles arena ever needs that fidelity back.
-        let extra_data_to_use: u16 = 0;
+        // extraData target: the engine dropped the on-chain ExtraDataType getter, so consult the
+        // off-chain InputType (self-mon → a valid self switch target, opponent-mon → a non-KO
+        // opponent), a uniform pick like CPU._calculateValidMoves. Inline moves carry no address and
+        // stay 0; a move with no valid target is skipped, matching the Solidity.
+        let mut extra_data_to_use: u16 = 0;
+        if !MoveSlotLib::isInline(slot) {
+            match input_type_of(MoveSlotLib::toIMoveSet(slot)) {
+                InputType::SelfMon => {
+                    if valid_switch_indices.is_empty() { continue; }
+                    let r = (rng.next() * valid_switch_indices.len() as f64) as usize;
+                    extra_data_to_use = valid_switch_indices[r] as u16;
+                }
+                InputType::OpponentMon => {
+                    let opp_size = team_size(sim, seat, VOPP);
+                    let opp_ko = ko_bitmap(sim, seat, bk, VOPP);
+                    let targets: Vec<usize> = (0..opp_size).filter(|&j| (opp_ko & (1u32 << j)) == 0).collect();
+                    if targets.is_empty() { continue; }
+                    let r = (rng.next() * targets.len() as f64) as usize;
+                    extra_data_to_use = targets[r] as u16;
+                }
+                InputType::None => {}
+            }
+        }
 
         if validate(sim, seat, bk, i as u8, extra_data_to_use) {
             moves.push(Mv { move_index: i as u8, extra_data: extra_data_to_use });

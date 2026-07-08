@@ -85,6 +85,12 @@ pub struct Sim {
     /// the transpiled `getTeamSize` getter deep-clones the whole
     /// BattleConfig per call, and view captures read sizes per fork.
     team_sizes: (usize, usize),
+    /// (p0, p1) global mon-ids per team slot — carried from the drafted teams
+    /// so the CPU can look up per-mon config by identity (the engine only
+    /// tracks slots). Empty when the caller doesn't supply ids (config is inert).
+    team_ids: (Vec<u32>, Vec<u32>),
+    /// BATTLE_MODE_SINGLES/DOUBLES/MULTI — drives execute_turn vs execute_slot_turn.
+    pub battle_mode: u8,
     /// Per-battle fork counter (keys are map identities scoped to THIS
     /// world, so no cross-Sim coordination is needed).
     fork_counter: u64,
@@ -100,8 +106,20 @@ pub fn pack_turn(mi: u8, salt: u128, extra: u16) -> U256 {
     Engine::_packTurn(encoded, salt)
 }
 
+/// Build a side's raw slot-turn word for `executeWithSlotMoves`: slot-0 = (move `m0`, extraData `e0`)
+/// in bits 0-23, slot-1 = (`m1`, `e1`) in bits 24-47, `salt` in bits 48-151. extraData carries the
+/// target in bits 12-15 (`TARGET_BITS_SHIFT`). The engine's `_packSideTurn` re-encodes this raw form
+/// into its internal `_turnP*Packed` layout (adding the move-index offset + real-turn bit).
+pub fn pack_side(m0: u8, e0: u16, m1: u8, e1: u16, salt: u128) -> U256 {
+    U256::from(m0)
+        | (U256::from(e0) << 8)
+        | (U256::from(m1) << 24)
+        | (U256::from(e1) << 32)
+        | (U256::from(salt) << 48)
+}
+
 impl Sim {
-    /// Stand up a battle world. `book` maps contract names to addresses
+    /// Stand up a SINGLES battle world. `book` maps contract names to addresses
     /// (the arena's exported address book); when empty, no contracts are
     /// deployed (inline-only battles). The rng oracle is always zero —
     /// the engine's inline keccak(p0Salt, p1Salt) path.
@@ -109,7 +127,34 @@ impl Sim {
         mons_per_team: u64,
         p0_team: Vec<Mon>,
         p1_team: Vec<Mon>,
+        p0_ids: Vec<u32>,
+        p1_ids: Vec<u32>,
         book: &HashMap<String, Address>,
+    ) -> Sim {
+        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_SINGLES)
+    }
+
+    /// Stand up a DOUBLES battle world — two active mons per side (absolute slots 0-3), executed via
+    /// packed slot moves (`execute_slot_turn`) instead of `execute_turn`.
+    pub fn new_doubles(
+        mons_per_team: u64,
+        p0_team: Vec<Mon>,
+        p1_team: Vec<Mon>,
+        p0_ids: Vec<u32>,
+        p1_ids: Vec<u32>,
+        book: &HashMap<String, Address>,
+    ) -> Sim {
+        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_DOUBLES)
+    }
+
+    fn new_with_mode(
+        mons_per_team: u64,
+        p0_team: Vec<Mon>,
+        p1_team: Vec<Mon>,
+        p0_ids: Vec<u32>,
+        p1_ids: Vec<u32>,
+        book: &HashMap<String, Address>,
+        battle_mode: u8,
     ) -> Sim {
         let mut world = World::new(Box::new(HarnessExt {
             p0_team,
@@ -155,12 +200,12 @@ impl Sim {
             engineHooks: Vec::new(),
         };
         world.env.msg_sender = MATCHMAKER;
-        Engine::startBattle(&mut world, &mut battle);
+        Engine::startBattleWithMode(&mut world, &mut battle, battle_mode);
         world.reset_transient(); // startBattle's tx is over; reads start boundary-clean
         let sk = Engine::_getStorageKey(&mut world, battle_key);
         let ts = world.Engine.battleConfig.get_mut(&sk).teamSizes;
         let team_sizes = ((ts & 0x0f) as usize, (ts >> 4) as usize);
-        Sim { world, battle_key, engine_addr, team_sizes, fork_counter: 0 }
+        Sim { world, battle_key, engine_addr, team_sizes, team_ids: (p0_ids, p1_ids), battle_mode, fork_counter: 0 }
     }
 
     /// winnerIndex off the live battle data (2 = battle still running).
@@ -176,6 +221,23 @@ impl Sim {
         } else {
             self.team_sizes.1
         }
+    }
+
+    /// Global mon-id at `slot` for a PHYSICAL player index (0 when no ids were
+    /// supplied — config lookups then fall through to unset, i.e. no per-mon move).
+    pub fn mon_id_phys(&self, phys: U256, slot: usize) -> u32 {
+        let ids = if phys == U256::ZERO { &self.team_ids.0 } else { &self.team_ids.1 };
+        ids.get(slot).copied().unwrap_or(0)
+    }
+
+    /// Fork counter snapshot/restore — lets a throwaway counterfactual decision (which forks then
+    /// disposes) leave the counter exactly where the live decision expects it. Keys are unique by
+    /// construction, so this is belt-and-suspenders; it keeps a narrated game bit-identical.
+    pub fn fork_counter(&self) -> u64 {
+        self.fork_counter
+    }
+    pub fn set_fork_counter(&mut self, v: u64) {
+        self.fork_counter = v;
     }
 
     /// Engine-side legality check at a fresh-tx boundary. Every TS
@@ -212,6 +274,18 @@ impl Sim {
         world.env.msg_sender = MOVE_MANAGER;
         Engine::executeWithMoves(world, key, p0_mi, p0_salt, p0_extra, p1_mi, p1_salt, p1_extra);
         world.reset_transient(); // tx over; subsequent reads are boundary-clean
+    }
+
+    /// Execute one DOUBLES turn from each side's packed slot word (see [`pack_side`]) — the doubles
+    /// analogue of `execute_turn`, driving `executeWithSlotMoves`.
+    pub fn execute_slot_turn(&mut self, side0_packed: U256, side1_packed: U256) {
+        let key = self.battle_key;
+        let world = &mut self.world;
+        world.reset_transient();
+        world.env.block_timestamp = world.env.block_timestamp + U256::from(1u64);
+        world.env.msg_sender = MOVE_MANAGER;
+        Engine::executeWithSlotMoves(world, key, side0_packed, side1_packed);
+        world.reset_transient();
     }
 
     /// Fork key: tag nibbles + counter — can never collide with a real
@@ -286,5 +360,46 @@ impl Sim {
         self.world.Engine.battleConfig.remove(&fork);
         self.world.Engine.globalKV.remove(&fork);
         self.world.Engine.globalKVKeySlots.remove(&fork);
+    }
+}
+
+#[cfg(test)]
+mod doubles_seam_tests {
+    use super::*;
+    use crate::arena::build_team_mon;
+    use crate::roster::load_roster;
+
+    const SWITCH: u8 = 125;
+
+    /// A doubles battle stands up and executes packed slot turns without panicking, and the engine
+    /// stays in a valid state (winner_index ∈ {0,1,2}). Validates new_doubles + execute_slot_turn +
+    /// pack_side against the transpiled `executeWithSlotMoves` path.
+    #[test]
+    fn doubles_battle_starts_and_runs_slot_turns() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..");
+        let roster = load_roster(&root);
+        let book = crate::roster::address_book();
+        let team = |ids: &[u32]| ids.iter().map(|&id| build_team_mon(roster.mon_by_id(id).unwrap())).collect::<Vec<_>>();
+        let p0_ids: Vec<u32> = roster.mons.iter().take(4).map(|m| m.id).collect();
+        let p1_ids: Vec<u32> = roster.mons.iter().skip(4).take(4).map(|m| m.id).collect();
+
+        let mut sim = Sim::new_doubles(4, team(&p0_ids), team(&p1_ids), p0_ids.clone(), p1_ids.clone(), &book);
+        assert_eq!(sim.battle_mode, Constants::BATTLE_MODE_DOUBLES);
+        assert_eq!(sim.winner_index(), 2, "battle ongoing at start");
+
+        // Turn 0: each side places two leads — slot 0 → team member 0, slot 1 → team member 1.
+        let lead = pack_side(SWITCH, 0, SWITCH, 1, 111);
+        sim.execute_slot_turn(lead, lead);
+        assert!(sim.winner_index() <= 2);
+
+        // A few attack turns: both active slots use move 0 (target nibble 0 = first enemy slot).
+        for t in 0..8u128 {
+            if sim.winner_index() != 2 {
+                break;
+            }
+            let atk = pack_side(0, 0, 0, 0, t + 1);
+            sim.execute_slot_turn(atk, atk);
+        }
+        assert!(sim.winner_index() <= 2, "engine stayed in a valid state");
     }
 }

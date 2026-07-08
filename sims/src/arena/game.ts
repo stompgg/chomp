@@ -1,7 +1,9 @@
 /**
  * Single CPU-vs-CPU game driver for the balance arena on the TS engine
- * (`sims/src/harness.ts` over `transpiler/ts-output`). Bulk simulation
- * lives on the native Rust stack (`chomp_run_games` via rust-ffi.ts).
+ * (`sims/src/harness.ts` over `transpiler/ts-output`). Bulk simulation now
+ * lives entirely on the native Rust stack (`transpiler/strategies-rs`, the
+ * `arena`/`trace` bins); this TS driver is the port-back reference — the two
+ * stacks are decoupled and need not make identical decisions.
  *
  * Seating (from munch): every strategy assumes it is p1, so the p0 seat reads through `transposeEngine`;
  * the p1 seat gets the true reveal of p0's move (production peek), the p0 seat only the opponent's

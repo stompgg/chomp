@@ -6,7 +6,7 @@ discovery); emits a cargo workspace instead of a TS module tree.
 
 ```bash
 python3 -m transpiler src/ --target rust        # emit transpiler/rs-output
-cd transpiler/rs-output && cargo build --release   # engine + cdylib + strategies
+cd transpiler/rs-output && cargo build --release   # engine + runtime + strategies (+ arena/trace bins)
 cd transpiler/rs-output && cargo test           # chomp-rt + strategies unit tests
 ```
 
@@ -27,10 +27,8 @@ transpiler/
   sol2rs.py              driver: parse-all discovery, allowlisted emission, workspace scaffold
   transpiler-config-rust.json   includeFiles allowlist + world/dispatch config
   runtime-rs/            hand-written chomp-rt crate (source of truth; synced to rs-output/runtime)
-  ffi-rs/                bun:ffi cdylib (handle battle API + chomp_run_games batch runner)
-  strategies-rs/         native CPU strategies + game loop (hard, greedy, override)
-  scripts/batch_benchmark.ts         whole-game batches on the native stack, games/s
-  scripts/workload.ts                shared deterministic workload generation
+  strategies-rs/         native CPU strategies + game loop + the standalone arena
+                         (bins: `arena` win-rate table, `trace` behavioural analysis + counterfactual)
   rs-output/             GENERATED cargo workspace (gitignored, like ts-output)
 ```
 
@@ -61,8 +59,8 @@ DECOUPLED once trusted: all of that machinery is retired (git history
 has it), and the Rust side may now diverge freely as the prototyping
 substrate. What still runs:
 
-- `bun transpiler/scripts/batch_benchmark.ts` — whole-game batches on
-  the native stack, games/s + turns/s.
+- `cargo run --release -p chomp-strategies --bin arena -- --games 6000`
+  — whole-game batches on the native stack, win-rate table + games/s.
 - `chomp-rt` / `chomp-strategies` unit tests pin ABI/keccak/shift/pow
   and the mulberry32 golden stream standalone (`cargo test`).
 - `python3 -m unittest transpiler.test_transpiler` — TS target unaffected.
@@ -102,8 +100,7 @@ substrate. What still runs:
   `transpiler/strategies-rs` (crate `chomp-strategies`): hard, greedy
   and override CPUs, engine-view/battle-view readers, evaluator,
   forward-model probes, the game loop with `Seat` transposition, and a
-  threaded `run_games` batch runner exposed as `chomp_run_games` — one
-  FFI crossing per BATCH. Duck-typed `basePower`/`accuracy` probes ride
+  threaded `run_games` batch runner. Duck-typed `basePower`/`accuracy` probes ride
   the generated `try_*` dispatchers (`duckDispatchMethods` in
   `transpiler-config-rust.json`). Verified before decoupling: every
   turn's submissions identical to the TS strategies across hundreds of
@@ -115,8 +112,12 @@ substrate. What still runs:
   session only (per-decision fork memo + FxHash storage maps kept;
   fat LTO tested neutral and -C target-cpu=native tested ~25% slower
   on the virtualized box — both deliberately not used).
-- **Decoupling (current state):** the stacks are separate. bun feeds
-  `chomp_run_games` a batch config (teams from the CSVs + the TS
-  container's address book) — that is the only remaining seam. The Rust
-  side may diverge from TS freely; port-backs to the game's CPU mode
-  carry no bit-identicality requirement.
+- **Decoupling (current state):** the stacks are fully separate — the
+  bun↔Rust FFI seam (`chomp_run_games`, the `ffi` crate,
+  `scripts/batch_benchmark.ts`/`workload.ts`) has been REMOVED. The arena
+  is now a standalone Rust binary (`chomp-strategies`' `arena`/`trace`
+  bins) that loads the roster from `drool/*.csv` + `src/mons/*.json` at
+  runtime. The Rust side may diverge from TS freely (rng stream and CPU
+  decisions included); port-backs to the game's CPU mode carry no
+  bit-identicality requirement. The TS arena driver
+  (`sims/src/arena/game.ts`) remains as the port-back reference.
