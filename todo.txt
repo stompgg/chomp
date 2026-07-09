@@ -15,12 +15,13 @@ Aurox:
 Sofabbi
 - Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
 
----------------------------------------------------------------------------------------------
-LATER
-
-- consider int16 and uint16 values to pack things even more tightly for stats
-- consider reworking the team index into an array of mon indices to reduce certain runtime exploits
-- Split Facets.sol into FacetsMath.sol (pure: StatGroup, _facetDef, BOOST_PCT_*/COST_PCT_*, delta math) + Facets.sol (storage, assignFacets, _drawNextFacet, packed bit ops). Remove FacetsMath from transpiler-config.json skipFiles so munch imports from transpiler/ts-output/game-layer/FacetsMath.ts instead of hand-maintaining munch/src/app/data/facets.ts. Eliminates the .sol/.ts drift risk on every Facet rule change.
+Embursa
+- Q5 can only be active once per side (unique across mons)
+    - Which effects should be global, which should be stackable across mons?
+- Heat Beacon rework:
+    +1 to next turn's move
+    if Embursa is Burned, apply Burn on opponent
+    0 stamina
 
 ---------------------------------------------------------------------------------------------
 

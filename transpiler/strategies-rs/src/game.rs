@@ -19,7 +19,7 @@ use crate::jsrng::{random_salt, JsRng};
 use crate::override_cpu::{self, OverrideState};
 use crate::sim::Sim;
 use crate::view::{
-    active_mon_indices, capture_view, mon_current_hp, mon_max_hp, Mv, Seat, NO_OP_INDEX,
+    active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_max_hp, Mv, Seat, NO_OP_INDEX,
     SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
@@ -346,6 +346,188 @@ pub fn run_games(
                     break;
                 }
                 let r = run_one(&specs[idx], book, trace);
+                slots.lock().unwrap()[idx] = Some(r);
+            });
+        }
+    });
+
+    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+}
+
+// ── Instrumented runner: per-mon KO attribution + active-turns (measure.md) ──
+//
+// Rides the exact seat/peek/salt RNG discipline of `play_game` so an instrumented
+// batch draws the same games as the plain arena. Each turn we credit the fighters
+// (active-turn count) and diff the ko-bitmap across `execute_turn`, attributing
+// every fresh KO to the opponent's active mon that turn — the "which mon held the
+// opposing active slot at the moment of KO" proxy [ruled 2026-07-08].
+
+/// One attributed knockout.
+#[derive(Clone, Copy, Debug)]
+pub struct KoEvent {
+    pub turn: u32,
+    pub killer_seat: u8, // physical seat of the KOing mon (0 or 1)
+    pub killer_id: u32,  // global mon-id that landed the KO (opponent-active proxy)
+    pub victim_id: u32,  // global mon-id that was KOed
+}
+
+/// Per-game per-mon attribution, folded by `analysis`.
+pub struct InstrRecord {
+    pub winner_seat: Option<u8>, // 0 / 1, None = turn-cap draw
+    pub turns: u32,
+    pub p0_ids: Vec<u32>,
+    pub p1_ids: Vec<u32>,
+    /// Active-turn count per team slot (parallel to p0_ids / p1_ids).
+    pub active_turns_p0: Vec<u32>,
+    pub active_turns_p1: Vec<u32>,
+    pub kos: Vec<KoEvent>,
+}
+
+pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) -> InstrRecord {
+    let mut rng = JsRng::new(spec.seed);
+    let mut sim = Sim::new(
+        spec.mons_per_team,
+        spec.p0_team.clone(),
+        spec.p1_team.clone(),
+        spec.p0_ids.clone(),
+        spec.p1_ids.clone(),
+        book,
+    );
+
+    let mut seats = [
+        SeatState {
+            seat: Seat { cpu: 0 },
+            state: StratState::new(spec.p0_strategy),
+            last_own_move: Mv { move_index: 0, extra_data: 0 },
+        },
+        SeatState {
+            seat: Seat { cpu: 1 },
+            state: StratState::new(spec.p1_strategy),
+            last_own_move: Mv { move_index: 0, extra_data: 0 },
+        },
+    ];
+
+    // Non-flipped observer: active_mon_indices → (p0_active, p1_active);
+    // ko_bitmap(VOPP) = physical p0, ko_bitmap(VCPU) = physical p1.
+    let obs = Seat { cpu: 1 };
+    let mut active_turns_p0 = vec![0u32; spec.p0_ids.len()];
+    let mut active_turns_p1 = vec![0u32; spec.p1_ids.len()];
+    let mut kos: Vec<KoEvent> = Vec::new();
+
+    for t in 0..spec.max_turns {
+        let winner = sim.winner_index();
+        if winner != 2 {
+            return InstrRecord {
+                winner_seat: Some(winner), turns: t,
+                p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
+                active_turns_p0, active_turns_p1, kos,
+            };
+        }
+
+        let bk: B256 = sim.battle_key;
+        let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag;
+        let p0_acts = flag != 1;
+        let p1_acts = flag != 0;
+
+        let mut p0_move: Option<Mv> = None;
+        if p0_acts {
+            let peek = seats[1].last_own_move;
+            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            seats[0].last_own_move = mv;
+            p0_move = Some(mv);
+        }
+        let mut p1_move: Option<Mv> = None;
+        if p1_acts {
+            let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
+            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            seats[1].last_own_move = mv;
+            p1_move = Some(mv);
+        }
+
+        // Fighters this turn (active-turn credit) + KO bitmap before execute.
+        let (p0a, p1a) = active_mon_indices(&mut sim, obs, bk);
+        if let Some(c) = active_turns_p0.get_mut(p0a) { *c += 1; }
+        if let Some(c) = active_turns_p1.get_mut(p1a) { *c += 1; }
+        let ko_before_p0 = ko_bitmap(&mut sim, obs, bk, VOPP);
+        let ko_before_p1 = ko_bitmap(&mut sim, obs, bk, VCPU);
+
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        sim.execute_turn(
+            p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX),
+            p0_salt,
+            p0_move.map(|m| m.extra_data).unwrap_or(0),
+            p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX),
+            p1_salt,
+            p1_move.map(|m| m.extra_data).unwrap_or(0),
+        );
+
+        // Fresh KOs this turn → attribute to the opposing active mon.
+        let bk2: B256 = sim.battle_key;
+        let new_p0 = ko_bitmap(&mut sim, obs, bk2, VOPP) & !ko_before_p0;
+        let new_p1 = ko_bitmap(&mut sim, obs, bk2, VCPU) & !ko_before_p1;
+        if new_p0 != 0 {
+            if let Some(&killer_id) = spec.p1_ids.get(p1a) {
+                for slot in 0..spec.p0_ids.len() {
+                    if new_p0 & (1u32 << slot) != 0 {
+                        kos.push(KoEvent { turn: t, killer_seat: 1, killer_id, victim_id: spec.p0_ids[slot] });
+                    }
+                }
+            }
+        }
+        if new_p1 != 0 {
+            if let Some(&killer_id) = spec.p0_ids.get(p0a) {
+                for slot in 0..spec.p1_ids.len() {
+                    if new_p1 & (1u32 << slot) != 0 {
+                        kos.push(KoEvent { turn: t, killer_seat: 0, killer_id, victim_id: spec.p1_ids[slot] });
+                    }
+                }
+            }
+        }
+    }
+
+    let fw = sim.winner_index();
+    InstrRecord {
+        winner_seat: if fw != 2 { Some(fw) } else { None },
+        turns: spec.max_turns,
+        p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
+        active_turns_p0, active_turns_p1, kos,
+    }
+}
+
+fn run_one_instr(spec: &GameSpec, book: &HashMap<String, Address>) -> Result<InstrRecord, String> {
+    catch_unwind(AssertUnwindSafe(|| play_game_instrumented(spec, book))).map_err(|e| {
+        e.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_else(|| "panic".to_string())
+    })
+}
+
+/// Threaded instrumented batch — same scheduling as `run_games`.
+pub fn run_games_instrumented(
+    specs: &[GameSpec],
+    book: &HashMap<String, Address>,
+    threads: usize,
+) -> Vec<Result<InstrRecord, String>> {
+    if threads <= 1 || specs.len() <= 1 {
+        return specs.iter().map(|spec| run_one_instr(spec, book)).collect();
+    }
+
+    let n = threads.min(specs.len());
+    let mut slots: Vec<Option<Result<InstrRecord, String>>> = Vec::with_capacity(specs.len());
+    slots.resize_with(specs.len(), || None);
+    let slots = std::sync::Mutex::new(slots);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+
+    std::thread::scope(|scope| {
+        for _ in 0..n {
+            scope.spawn(|| loop {
+                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if idx >= specs.len() {
+                    break;
+                }
+                let r = run_one_instr(&specs[idx], book);
                 slots.lock().unwrap()[idx] = Some(r);
             });
         }

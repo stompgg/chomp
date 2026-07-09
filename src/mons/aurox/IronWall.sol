@@ -97,8 +97,11 @@ contract IronWall is IMoveSet, BasicEffect {
         int32 damageDealt,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        // Calculate 50% of the damage taken
-        int32 healAmount = (damageDealt * HEAL_PERCENT) / 100;
+        // Calculate 50% of the damage taken. Widen the multiply: damageDealt is clamped to
+        // int32.max by the damage calc, so `damageDealt * HEAL_PERCENT` overflows int32 (reverting)
+        // on heavily-boosted hits — e.g. an UpOnly-stacked Aurox mirror. The /100 result is always
+        // <= damageDealt/2 <= int32.max, so the cast back is safe.
+        int32 healAmount = int32((int256(damageDealt) * HEAL_PERCENT) / 100);
         // Heal only if not KO'ed
         if (
             healAmount > 0
