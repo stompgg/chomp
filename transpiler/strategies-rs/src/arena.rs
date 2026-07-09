@@ -89,7 +89,9 @@ pub fn build_specs_with(
     seed_base: u32,
     pairs: &[(StrategyKind, StrategyKind)],
 ) -> (Vec<GameSpec>, Vec<usize>) {
-    let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
+    // Build each mon's default loadout once (13 mons), then clone per draft — avoids an O(n) find
+    // and a fresh build_team_mon on every drafted slot across tens of thousands of games.
+    let built: std::collections::HashMap<u32, Mon> = roster.mons.iter().map(|m| (m.id, build_team_mon(m))).collect();
     let mut rng = Wrand::new(wseed);
     let mut specs = Vec::with_capacity(games);
     let mut pair_of = Vec::with_capacity(games);
@@ -103,8 +105,8 @@ pub fn build_specs_with(
             seed: seed_base.wrapping_add(i as u32),
             max_turns: MAX_TURNS,
             mons_per_team: TEAM_SIZE as u64,
-            p0_team: p0_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
-            p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
+            p0_team: p0_ids.iter().map(|&id| built[&id].clone()).collect(),
+            p1_team: p1_ids.iter().map(|&id| built[&id].clone()).collect(),
             p0_ids,
             p1_ids,
             p0_strategy: p0s,

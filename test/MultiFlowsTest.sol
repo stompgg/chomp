@@ -344,6 +344,97 @@ contract MultiFlowsTest is BatchHelper {
     }
 
     // ---------------------------------------------------------------------
+    // Matchmaker: startGameWithSeatConfigs (bundled CPU-ally phantom writes)
+    // ---------------------------------------------------------------------
+
+    /// @dev 4-mon phantom config (Multi launch shape) for a CPU ally seat.
+    function _phantomConfig() internal pure returns (SeatPhantomConfig memory cfg) {
+        uint256[] memory monIndices = new uint256[](4);
+        for (uint256 i; i < 4; ++i) {
+            monIndices[i] = i;
+        }
+        cfg = SeatPhantomConfig({monIndices: monIndices, facetIds: new uint8[](4), moveSelections: new uint8[](4)});
+    }
+
+    function test_startGameWithSeatConfigs_mixedCpuAllyStartAndTurn() public {
+        _setDefaultTeams();
+        // Side 0 = {p0 host, p2 CPU ally}; side 1 = {p1, p3} humans. The ally rides the rotation.
+        registry.setWhitelistedOpponent(p2, true);
+
+        BattleOffer memory offer = _offer();
+        bytes[4] memory seatSigs;
+        // Canonical [p0, p2, p1, p3]: p0 submits, p2 is CPU (no sig), p1 & p3 sign.
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
+        seatSigs[3] = signOffer(signedMatchmaker, P3_PK, offer, 0);
+
+        SeatPhantomConfig[3] memory seatConfigs; // struct order (p1, p2, p3)
+        seatConfigs[1] = _phantomConfig(); // p2 CPU ally
+
+        (bytes32 key,) = engine.computePartyKey(p0, p1, p2, p3);
+        vm.prank(p0);
+        signedMatchmaker.startGameWithSeatConfigs(offer, 0, seatSigs, seatConfigs);
+
+        // Exactly one phantom write, for the CPU ally seat, keyed to the host.
+        assertEq(registry.phantomWriteCount(), 1, "one phantom write");
+        (address user, address opponent,) = registry.phantomWriteAt(0);
+        assertEq(user, p0, "phantom keyed to host");
+        assertEq(opponent, p2, "phantom written for the CPU ally seat");
+        assertEq(engine.getSeats(key)[1], p2, "p2 seated");
+
+        // A rotation turn executes with the CPU seat (canonical bit 1) skipped.
+        battleKey = key;
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _submitRotatingTurn(
+            0,
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xAAA)),
+            sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 4, uint104(0xBBB)),
+            2
+        );
+        assertEq(engine.getTurnIdForBattleState(battleKey), 1, "rotation turn executed");
+    }
+
+    function test_startGameWithSeatConfigs_humanSeatConfigIgnored() public {
+        _setDefaultTeams();
+        registry.setWhitelistedOpponent(p2, true); // only p2 is CPU
+
+        BattleOffer memory offer = _offer();
+        bytes[4] memory seatSigs;
+        seatSigs[2] = signOffer(signedMatchmaker, P1_PK, offer, 0);
+        seatSigs[3] = signOffer(signedMatchmaker, P3_PK, offer, 0);
+
+        SeatPhantomConfig[3] memory seatConfigs;
+        seatConfigs[0] = _phantomConfig(); // p1 human — must be ignored
+        seatConfigs[1] = _phantomConfig(); // p2 CPU — applied
+
+        vm.prank(p0);
+        signedMatchmaker.startGameWithSeatConfigs(offer, 0, seatSigs, seatConfigs);
+
+        // Only the CPU seat's config was written; the human seat's was skipped.
+        assertEq(registry.phantomWriteCount(), 1, "human seat config ignored");
+        (, address opponent,) = registry.phantomWriteAt(0);
+        assertEq(opponent, p2);
+    }
+
+    function test_startGameWithSeatConfigs_fullyCpuSideStillReverts() public {
+        _setDefaultTeams();
+        // Side 1 (p1 + p3) fully CPU on the built-in rotation → engine rejects (no revealer).
+        registry.setWhitelistedOpponent(p1, true);
+        registry.setWhitelistedOpponent(p3, true);
+
+        BattleOffer memory offer = _offer();
+        bytes[4] memory seatSigs;
+        seatSigs[1] = signOffer(signedMatchmaker, P2_PK, offer, 0); // p2 human (canonical idx 1)
+
+        SeatPhantomConfig[3] memory seatConfigs;
+        seatConfigs[0] = _phantomConfig(); // p1 CPU
+        seatConfigs[2] = _phantomConfig(); // p3 CPU
+
+        vm.prank(p0);
+        vm.expectRevert(Engine.InvalidBattleConfig.selector);
+        signedMatchmaker.startGameWithSeatConfigs(offer, 0, seatSigs, seatConfigs);
+    }
+
+    // ---------------------------------------------------------------------
     // Roster partition (fixed stride 4)
     // ---------------------------------------------------------------------
 

@@ -38,6 +38,10 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
     /// @notice One bool grants both IGachaPointsAssigner and IExpAssigner authority.
     mapping(address => bool) public isAssigner;
 
+    /// @notice Non-CPU relayers (e.g. the signed matchmaker) allowed to write a host's phantom
+    /// CPU-seat team config via setOpponentTeamForPeer, so a start entrypoint can bundle it.
+    mapping(address => bool) public isPhantomRelayer;
+
     // ----- Owner-managed flags / allowlist -----
 
     function setWhitelistedOpponents(address[] memory toAllow, address[] memory toDisallow) external onlyOwner {
@@ -53,6 +57,15 @@ abstract contract PlayerProfile is IGachaPointsAssigner, Ownable {
         }
         for (uint256 i; i < toRemove.length;) {
             isAssigner[toRemove[i]] = false;
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function setPhantomRelayers(address[] memory relayers, bool flag) external onlyOwner {
+        for (uint256 i; i < relayers.length;) {
+            isPhantomRelayer[relayers[i]] = flag;
             unchecked {
                 ++i;
             }

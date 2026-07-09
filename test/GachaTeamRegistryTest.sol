@@ -427,6 +427,52 @@ contract GachaTeamRegistryTest is Test {
         gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
     }
 
+    function test_setPhantomRelayers_onlyOwner_reverts() public {
+        address[] memory relayers = new address[](1);
+        relayers[0] = address(0xBEEF);
+        vm.prank(ALICE);
+        vm.expectRevert();
+        gachaTeamRegistry.setPhantomRelayers(relayers, true);
+    }
+
+    function test_setOpponentTeamForPeer_phantomRelayerAllowedAndRevocable() public {
+        address relayer = address(0xBEEF); // an approved relayer, NOT a whitelisted CPU
+        address peerCpu = address(0xCA);
+        _allowOnly(peerCpu);
+        address[] memory relayers = new address[](1);
+        relayers[0] = relayer;
+        gachaTeamRegistry.setPhantomRelayers(relayers, true);
+
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        monIndices[0] = unownedMonId;
+
+        // Relayer may write the peer's phantom slot even though it isn't itself whitelisted.
+        vm.prank(relayer);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+        assertEq(
+            gachaTeamRegistry.getMonRegistryIndicesForTeam(peerCpu, uint256(uint16(uint160(ALICE))))[0], unownedMonId
+        );
+
+        // Revoking the flag closes the entry again.
+        gachaTeamRegistry.setPhantomRelayers(relayers, false);
+        vm.prank(relayer);
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+    }
+
+    function test_setOpponentTeamForPeer_relayerStillRequiresWhitelistedOpponent() public {
+        address relayer = address(0xBEEF);
+        address peerCpu = address(0xCA); // deliberately NOT whitelisted
+        address[] memory relayers = new address[](1);
+        relayers[0] = relayer;
+        gachaTeamRegistry.setPhantomRelayers(relayers, true);
+
+        uint256[] memory monIndices = new uint256[](MONS_PER_TEAM);
+        vm.prank(relayer);
+        vm.expectRevert(GachaTeamRegistry.NotWhitelistedOpponent.selector);
+        gachaTeamRegistry.setOpponentTeamForPeer(ALICE, peerCpu, monIndices, _zeroFacets(), _zeroMoves());
+    }
+
     function test_setOpponentTeamFor_perUserIsolation() public {
         // CPU writes for ALICE then BOB; the two phantom slots should stay independent.
         _allowOnly(CPU);

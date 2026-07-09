@@ -1,7 +1,8 @@
 //! T2 mock-move A/B — loop-driven mock moves (conditional power from live state), no engine edits.
 //!   cargo run --release -p chomp-strategies --bin mock2 -- --games 10000
 
-use chomp_strategies::mock2::{batch1, run_mock_ab};
+use chomp_strategies::game::StrategyKind;
+use chomp_strategies::mock2::{batch1, run_mock_ab, run_mock_ab_with};
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
@@ -31,7 +32,10 @@ fn main() {
 
     let mocks: Vec<_> = batch1();
     let only = arg(&args, "--only");
-    eprintln!("mock2: {} moves · {} games/side · greedy floor", mocks.len(), games);
+    // --ceiling runs the A/B under the no-peek pilots (which play the reads/setups the greedy basket
+    // ignores), surfacing a conditional/yomi move's upside rather than just its floor.
+    let ceiling = args.iter().any(|a| a == "--ceiling");
+    eprintln!("mock2: {} moves · {} games/side · {}", mocks.len(), games, if ceiling { "no-peek ceiling" } else { "greedy-basket floor" });
     println!("\n{:<16} {:<10} {:>7} {:>8} {:>8} | {:>8} {:>8}", "move", "mon", "lane", "win%", "Δ win", "KOd/g", "ΔKOd/g");
 
     let started = std::time::Instant::now();
@@ -42,7 +46,11 @@ fn main() {
             }
         }
         let replaced = roster.move_name(roster.mons.iter().find(|x| x.name == m.mon).unwrap().id, m.lane as u8);
-        let (base, mocked) = run_mock_ab(&roster, m, games, seed, seed_base, threads);
+        let (base, mocked) = if ceiling {
+            run_mock_ab_with(&roster, m, games, seed, seed_base, threads, &[(StrategyKind::NoPeekExpect, StrategyKind::NoPeekExpect)])
+        } else {
+            run_mock_ab(&roster, m, games, seed, seed_base, threads)
+        };
         let bg = base.games().max(1) as f64;
         let mg = mocked.games().max(1) as f64;
         let bkod = base.kos_dealt() as f64 / bg;

@@ -99,7 +99,7 @@ fn pack_inline_move(m: &InlineMoveJson) -> U256 {
         | effect_addr
 }
 
-fn addr_to_word(a: Address) -> U256 {
+pub fn addr_to_word(a: Address) -> U256 {
     let mut b = [0u8; 32];
     b[12..].copy_from_slice(a.as_slice());
     U256::from_be_bytes::<32>(b)

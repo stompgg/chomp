@@ -3,21 +3,15 @@ pragma solidity ^0.8.0;
 
 import {BATTLE_MODE_MULTI} from "../Constants.sol";
 import {IEngine} from "../IEngine.sol";
-import {BattleOffer} from "../Structs.sol";
+import {BattleOffer, SeatPhantomConfig} from "../Structs.sol";
+import {IPhantomTeamRegistry} from "../game-layer/IPhantomTeamRegistry.sol";
+import {ITeamRegistry} from "../game-layer/ITeamRegistry.sol";
 import {ECDSA} from "../lib/ECDSA.sol";
 import {EIP712} from "../lib/EIP712.sol";
 import {BattleOfferLib} from "./BattleOfferLib.sol";
 import {IMatchmaker} from "./IMatchmaker.sol";
 
 /// @notice Signed matchmaking for singles, doubles, and multi.
-///
-/// Consent (D32): each occupied seat must either sign or be msg.sender; CPU seats (the
-/// registry's whitelisted-opponent flag, D19) are exempt — every human signature covers the
-/// full seating including them. Team indices are never signed (D31): the submitter supplies
-/// all of them. Open seats (D20): the creator signs with those seats as address(0); a joiner
-/// either calls startGame themselves or signs a SeatFill over the open digest. Nonces: open
-/// offers consume the creator's sequential openBattleOfferNonce (one live open offer per
-/// creator, D35); fully-named offers pin the engine's pair/party nonce.
 contract SignedMatchmaker is IMatchmaker, EIP712 {
     IEngine public immutable ENGINE;
     mapping(address => uint256) public openBattleOfferNonce;
@@ -48,6 +42,34 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     ///        seats. Open-marked seats sign a SeatFill over the open digest; named seats sign
     ///        the open digest itself.
     function startGame(BattleOffer memory offer, uint8 openSeatsMask, bytes[4] calldata seatSigs) external {
+        _verifyOfferAndNonce(offer, openSeatsMask, seatSigs);
+        ENGINE.startBattleWithMode(offer.battle, offer.battleMode);
+    }
+
+    /// @notice startGame variant that bundles CPU-seat phantom team-config writes with the start,
+    /// so a mixed CPU-ally party (a CPU on a side that still has a human) can run on the built-in
+    /// dual-signed rotation.
+    function startGameWithSeatConfigs(
+        BattleOffer memory offer,
+        uint8 openSeatsMask,
+        bytes[4] calldata seatSigs,
+        SeatPhantomConfig[3] calldata seatConfigs
+    ) external {
+        _verifyOfferAndNonce(offer, openSeatsMask, seatSigs);
+        // Safe to mutate team indices post-verify: the offer hash blinds every index to 0 (D31),
+        // so no seat signature depends on them.
+        ITeamRegistry registry = offer.battle.teamRegistry;
+        address host = offer.battle.p0;
+        offer.battle.p1TeamIndex = _configureSeat(registry, host, offer.battle.p1, seatConfigs[0], offer.battle.p1TeamIndex);
+        offer.battle.p2TeamIndex = _configureSeat(registry, host, offer.battle.p2, seatConfigs[1], offer.battle.p2TeamIndex);
+        offer.battle.p3TeamIndex = _configureSeat(registry, host, offer.battle.p3, seatConfigs[2], offer.battle.p3TeamIndex);
+        ENGINE.startBattleWithMode(offer.battle, offer.battleMode);
+    }
+
+    /// @dev Verify seat consent (each occupied non-CPU seat signs or is msg.sender) and pin the
+    ///      nonce (open-offer sequential nonce, else the engine's pair/party nonce). Mutates only
+    ///      the creator's open-offer nonce; the caller performs the engine start.
+    function _verifyOfferAndNonce(BattleOffer memory offer, uint8 openSeatsMask, bytes[4] calldata seatSigs) internal {
         if (openSeatsMask & 1 != 0) {
             revert CreatorSeatCannotBeOpen();
         }
@@ -62,7 +84,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
                 continue;
             }
             if (offer.battle.teamRegistry.isWhitelistedOpponent(seat)) {
-                continue; // CPU seat: consent embedded in every human signature (D19)
+                continue; // CPU seat: consent embedded in every human signature
             }
             bytes calldata sig = seatSigs[i];
             if (sig.length == 0) {
@@ -93,7 +115,28 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
                 revert InvalidNonce();
             }
         }
+    }
 
-        ENGINE.startBattleWithMode(offer.battle, offer.battleMode);
+    /// @dev Human seats pass through untouched. A whitelisted (CPU) seat gets its phantom config
+    ///      written for `user` via the peer relay entry (skipped when monIndices is empty) and its
+    ///      team index forced to `user`'s phantom key. Mirrors CPU._configureSeat, but the
+    ///      matchmaker only ever writes peer seats (it is never the opponent itself).
+    function _configureSeat(
+        ITeamRegistry registry,
+        address user,
+        address seat,
+        SeatPhantomConfig calldata cfg,
+        uint96 suppliedTeamIndex
+    ) private returns (uint96) {
+        if (!registry.isWhitelistedOpponent(seat)) {
+            return suppliedTeamIndex;
+        }
+        if (cfg.monIndices.length != 0) {
+            IPhantomTeamRegistry(address(registry)).setOpponentTeamForPeer(
+                user, seat, cfg.monIndices, cfg.facetIds, cfg.moveSelections
+            );
+        }
+        // The seat's phantom team is stored under (seat, uint16(user)); force its index to match.
+        return uint96(uint16(uint160(user)));
     }
 }

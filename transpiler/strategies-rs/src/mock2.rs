@@ -11,14 +11,18 @@
 
 use chomp_engine::Enums::{MonStateIndexName, MoveClass, Type};
 use chomp_engine::Structs::Mon;
-use chomp_rt::{Address, B256, U256};
+use chomp_rt::{B256, U256};
 
 use crate::analysis::{fold, MonStat};
-use crate::arena::build_specs;
-use crate::game::{run_games_instrumented, GameSpec};
+use crate::arena::{build_specs, build_specs_with};
+use crate::game::{run_games_instrumented, run_games_mock, GameSpec, StrategyKind};
 use crate::roster::{self, Roster};
 use crate::sim::Sim;
-use crate::view::{active_mon_indices, ko_bitmap, mon_skip_turn, mon_state, mon_value, Seat, VCPU, VOPP};
+use crate::shared::{build_damage_calc_context, estimate_damage};
+use crate::view::{
+    active_mon_indices, ko_bitmap, mon_skip_turn, mon_state, mon_value, move_slot, slot_move_class,
+    slot_move_type, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+};
 
 /// Pack an inline move word from its fields.
 pub fn pack_word(power: u32, class: u32, priority: u32, mtype: u32, stamina: u32, eff_acc: u32, effect: U256) -> U256 {
@@ -43,6 +47,53 @@ pub enum PowerRule {
     SelfStamina { base: u32, per: u32, cap: u32 },
     /// Lucid Nightmare: base, ×1.5 if the target is asleep (skips its turn).
     X15IfTargetAsleep { base: u32 },
+    /// Counterweight: num/den × the damage the mock mon took last turn, capped (loop-tracked).
+    CounterDamageTaken { num: u32, den: u32, cap: u32 },
+    /// Tremor Sense: base, ×1.5 if the opponent switches or rests this turn (set post-decide).
+    X15IfOppPassive { base: u32 },
+    /// Counter-Proof: base, ×2 if the target's move this turn matches the mock mon's Adapted type
+    /// (set post-decide; the adapted type is loop-tracked from the first hit the mock mon takes).
+    X2IfOppTypeMatchesAdapted { base: u32 },
+    /// Immolate: base, ×1.5 while the mock mon is itself Burned (Tinderclaws supplies the burn).
+    X15IfSelfBurned { base: u32 },
+    /// Counterweight: max(floor, num/den × the estimated damage the opponent's chosen move deals the
+    /// mock mon this turn) — a reliable `floor`-power attack that becomes a strong counter when the
+    /// opponent attacks (set post-decide, since Aurox moves last). Capped.
+    CounterEstimatedIncoming { num: u32, den: u32, cap: u32, floor: u32 },
+}
+
+impl PowerRule {
+    /// The unconditional base power — the pilot's decision-time estimate (turn 1, before any state).
+    pub fn base(&self) -> u32 {
+        match *self {
+            PowerRule::Fixed(p) => p,
+            PowerRule::OppMissingStamina { base, .. } => base,
+            PowerRule::OppKOs { base, .. } => base,
+            PowerRule::SelfStamina { base, .. } => base,
+            PowerRule::X15IfTargetAsleep { base } => base,
+            PowerRule::CounterDamageTaken { .. } => 0,
+            PowerRule::X15IfOppPassive { base } => base,
+            PowerRule::X2IfOppTypeMatchesAdapted { base } => base,
+            PowerRule::X15IfSelfBurned { base } => base,
+            PowerRule::CounterEstimatedIncoming { floor, .. } => floor,
+        }
+    }
+    /// Rules whose power depends on the opponent's chosen move — repacked after both decide.
+    pub fn is_opp_action(&self) -> bool {
+        matches!(
+            self,
+            PowerRule::X15IfOppPassive { .. } | PowerRule::X2IfOppTypeMatchesAdapted { .. } | PowerRule::CounterEstimatedIncoming { .. }
+        )
+    }
+}
+
+/// A post-execute rider applied via direct storage writes (survives re-transpile) when the mock mon
+/// uses the mock move. Heals only — a heal raises HP, so no KO / forced-switch inconsistency.
+#[derive(Clone, Copy, Debug)]
+pub enum MockPost {
+    None,
+    /// Heal the mock mon by pct% of its max HP (e.g. Golden Hour's lifesteal-as-sustain).
+    HealPctMaxHp(u32),
 }
 
 #[derive(Clone)]
@@ -59,25 +110,19 @@ pub struct MockMove {
     /// An existing effect contract to attach on hit (e.g. FrostbiteStatus), or None.
     pub effect: Option<&'static str>,
     pub power: PowerRule,
+    pub post: MockPost,
 }
 
 impl MockMove {
     fn effect_word(&self) -> U256 {
         match self.effect {
-            Some(name) => addr_to_word(roster::addr_of(name)),
+            Some(name) => roster::addr_to_word(roster::addr_of(name)),
             None => U256::ZERO,
         }
     }
     /// A nominal word (used at draft time and as the pilot's decision-time estimate).
     fn nominal_word(&self) -> U256 {
-        let base = match self.power {
-            PowerRule::Fixed(p) => p,
-            PowerRule::OppMissingStamina { base, .. } => base,
-            PowerRule::OppKOs { base, .. } => base,
-            PowerRule::SelfStamina { base, .. } => base,
-            PowerRule::X15IfTargetAsleep { base } => base,
-        };
-        self.word_for(base)
+        self.word_for(self.power.base())
     }
     fn word_for(&self, power: u32) -> U256 {
         pack_word(
@@ -92,15 +137,13 @@ impl MockMove {
     }
 }
 
-fn addr_to_word(a: Address) -> U256 {
-    let mut b = [0u8; 32];
-    b[12..].copy_from_slice(a.as_slice());
-    U256::from_be_bytes::<32>(b)
-}
-
-/// Compute the mock's base power from the acting seat's live state.
-fn compute_power(sim: &mut Sim, seat: Seat, bk: B256, opp_active: usize, self_active: usize, rule: PowerRule) -> u32 {
+/// Compute the mock's base power from the acting seat's live state (`last_dmg` = the damage the mock
+/// mon took last turn, for the counter rule).
+fn compute_power(sim: &mut Sim, seat: Seat, bk: B256, opp_active: usize, self_active: usize, rule: PowerRule, last_dmg: i32) -> u32 {
     match rule {
+        PowerRule::CounterDamageTaken { num, den, cap } => {
+            ((last_dmg.max(0) as i64 * num as i64 / den.max(1) as i64).min(cap as i64)) as u32
+        }
         PowerRule::Fixed(p) => p,
         PowerRule::OppMissingStamina { base, per, cap } => {
             let max = mon_value(sim, seat, bk, VOPP, opp_active, MonStateIndexName::Stamina);
@@ -121,6 +164,61 @@ fn compute_power(sim: &mut Sim, seat: Seat, bk: B256, opp_active: usize, self_ac
         PowerRule::X15IfTargetAsleep { base } => {
             if mon_skip_turn(sim, seat, bk, VOPP, opp_active) { base * 3 / 2 } else { base }
         }
+        PowerRule::X15IfSelfBurned { base } => {
+            let (burned, _, _) =
+                chomp_engine::Engine::getEffectData(&mut sim.world, bk, seat.phys(VCPU), U256::from(self_active as u64), roster::addr_of("BurnStatus"));
+            if burned { base * 3 / 2 } else { base }
+        }
+        // Opp-action rules: base pre-decide, overridden by repack_postdecide once the opponent commits.
+        PowerRule::X15IfOppPassive { base } | PowerRule::X2IfOppTypeMatchesAdapted { base } => base,
+        PowerRule::CounterEstimatedIncoming { floor, .. } => floor,
+    }
+}
+
+/// The move type of a mon's chosen lane, or None for a switch/rest/empty lane.
+pub fn move_type_of(sim: &mut Sim, bk: B256, obs: Seat, vp: u8, active: usize, move_index: u8) -> Option<Type> {
+    if move_index >= 4 {
+        return None;
+    }
+    let slot = move_slot(sim, obs, bk, vp, active, move_index as usize)?;
+    Some(slot_move_type(sim, bk, slot))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn opp_action_power(sim: &mut Sim, bk: B256, obs: Seat, rule: PowerRule, opp_move: Option<Mv>, opp_vp: u8, opp_active: usize, self_vp: u8, self_active: usize, adapted: Option<Type>) -> u32 {
+    match rule {
+        PowerRule::X15IfOppPassive { base } => {
+            let passive = match opp_move {
+                Some(m) => m.move_index == SWITCH_MOVE_INDEX || m.move_index == NO_OP_INDEX,
+                None => true, // opponent didn't act this turn — treat as passive
+            };
+            if passive { base * 3 / 2 } else { base }
+        }
+        PowerRule::X2IfOppTypeMatchesAdapted { base } => {
+            let ty = opp_move.and_then(|m| move_type_of(sim, bk, obs, opp_vp, opp_active, m.move_index));
+            match (adapted, ty) {
+                (Some(a), Some(t)) if a == t => base * 2,
+                _ => base,
+            }
+        }
+        PowerRule::CounterEstimatedIncoming { num, den, cap, floor } => {
+            // Estimate the damage the opponent's chosen attack deals the mock mon, then counter it —
+            // but never below `floor`, so it's a reliable attack rather than a wasted commit.
+            let est = match opp_move {
+                Some(m) if m.move_index < 4 => match move_slot(sim, obs, bk, opp_vp, opp_active, m.move_index as usize) {
+                    Some(word) => {
+                        let mut ctx = build_damage_calc_context(sim, obs, bk, opp_vp, opp_active, self_vp, self_active);
+                        let mc = slot_move_class(sim, bk, word);
+                        estimate_damage(sim, bk, &mut ctx, word, mc)
+                    }
+                    None => 0,
+                },
+                _ => 0,
+            };
+            let counter = (est.max(0) * num as i64 / den.max(1) as i64) as u32;
+            counter.max(floor).min(cap)
+        }
+        _ => rule.base(),
     }
 }
 
@@ -129,6 +227,20 @@ fn write_word(sim: &mut Sim, bk: B256, phys: u64, mon_slot: usize, lane: usize, 
     let cfg = sim.world.Engine.battleConfig.get_mut(&bk);
     let team = if phys == 0 { &mut cfg.p0Team } else { &mut cfg.p1Team };
     team.get_mut(&U256::from(mon_slot as u64)).moves[lane] = word;
+}
+
+/// Heal a mon by writing its `hpDelta` storage directly (survives re-transpile; touches no engine
+/// code). A heal only raises HP, so there is no KO / forced-switch inconsistency. Mirrors the
+/// engine's own updateMonState sentinel handling, and clamps at max (hpDelta ≤ 0).
+pub fn heal_mon(sim: &mut Sim, bk: B256, phys: u64, mon_slot: usize, amount: i32) {
+    let cfg = sim.world.Engine.battleConfig.get_mut(&bk);
+    let st = if phys == 0 {
+        cfg.p0States.get_mut(&U256::from(mon_slot as u64))
+    } else {
+        cfg.p1States.get_mut(&U256::from(mon_slot as u64))
+    };
+    let cur = if st.hpDelta == chomp_engine::Constants::CLEARED_MON_STATE_SENTINEL { 0 } else { st.hpDelta };
+    st.hpDelta = (cur + amount).min(0);
 }
 
 // The instrumented mock loop lives in game.rs (needs the private seat/decide helpers); this module
@@ -144,18 +256,41 @@ pub fn run_mock_ab(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, s
     let (specs, _) = build_specs(roster, games, wseed, seed_base);
     let base = fold(&run_games_instrumented(&specs, &book, threads));
 
-    // Mocked: swap the lane's word to the mock's nominal, run the mock-aware loop that repacks it.
-    let (mut mspecs, _) = build_specs(roster, games, wseed, seed_base);
+    // Mocked: clone the same drafts, swap the lane, run the mock-aware loop that repacks it.
+    let mut mspecs = specs.clone();
     for spec in &mut mspecs {
         swap_lane(spec, target_id, mock);
     }
-    let mocked = fold(&crate::game::run_games_mock(&mspecs, &book, threads, target_id, mock.lane, mock.clone()));
+    let mocked = fold(&run_games_mock(&mspecs, &book, threads, target_id, mock.lane, mock));
 
     let empty = MonStat::default();
     (
         base.per_mon.get(&target_id).cloned().unwrap_or_else(|| empty.clone()),
         mocked.per_mon.get(&target_id).cloned().unwrap_or(empty),
         )
+}
+
+/// Same A/B, but under an explicit pilot rotation — e.g. the no-peek pilots as a "ceiling", which
+/// actually play the reads/setups the greedy basket ignores, so a conditional/yomi move shows its
+/// upside rather than just its floor.
+pub fn run_mock_ab_with(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, seed_base: u32, threads: usize, pairs: &[(StrategyKind, StrategyKind)]) -> (MonStat, MonStat) {
+    let book = roster::address_book();
+    let target_id = roster.mons.iter().find(|m| m.name == mock.mon).expect("mock mon in roster").id;
+
+    let (specs, _) = build_specs_with(roster, games, wseed, seed_base, pairs);
+    let base = fold(&run_games_instrumented(&specs, &book, threads));
+
+    let mut mspecs = specs.clone();
+    for spec in &mut mspecs {
+        swap_lane(spec, target_id, mock);
+    }
+    let mocked = fold(&run_games_mock(&mspecs, &book, threads, target_id, mock.lane, mock));
+
+    let empty = MonStat::default();
+    (
+        base.per_mon.get(&target_id).cloned().unwrap_or_else(|| empty.clone()),
+        mocked.per_mon.get(&target_id).cloned().unwrap_or(empty),
+    )
 }
 
 fn swap_lane(spec: &mut GameSpec, target_id: u32, mock: &MockMove) {
@@ -180,28 +315,55 @@ fn set_team_lane(mon: &mut Mon, lane: usize, word: U256) {
 
 /// The per-turn repack, called from the mock loop: for each acting side whose active mon is the
 /// mock mon, recompute the mock's power from that side's perspective and write the word.
-pub fn repack_turn(sim: &mut Sim, bk: B256, spec: &GameSpec, target_id: u32, lane: usize, mock: &MockMove) {
+pub fn repack_turn(sim: &mut Sim, bk: B256, spec: &GameSpec, target_id: u32, lane: usize, mock: &MockMove, last_dmg: &[i32; 2]) {
     let obs = Seat { cpu: 1 };
     let (p0a, p1a) = active_mon_indices(sim, obs, bk);
     if spec.p0_ids.get(p0a) == Some(&target_id) {
         let seat = Seat { cpu: 0 };
-        let pow = compute_power(sim, seat, bk, /*opp*/ p1a, /*self*/ p0a, mock.power);
+        let pow = compute_power(sim, seat, bk, /*opp*/ p1a, /*self*/ p0a, mock.power, last_dmg[0]);
         write_word(sim, bk, 0, p0a, lane, mock.word_for(pow));
     }
     if spec.p1_ids.get(p1a) == Some(&target_id) {
         let seat = Seat { cpu: 1 };
-        let pow = compute_power(sim, seat, bk, /*opp*/ p0a, /*self*/ p1a, mock.power);
+        let pow = compute_power(sim, seat, bk, /*opp*/ p0a, /*self*/ p1a, mock.power, last_dmg[1]);
+        write_word(sim, bk, 1, p1a, lane, mock.word_for(pow));
+    }
+}
+
+/// Repack opp-action mock moves after both sides have chosen (their power depends on the opponent's
+/// move / the tracked adapted type). A no-op for the state-only rules.
+pub fn repack_postdecide(sim: &mut Sim, bk: B256, spec: &GameSpec, target_id: u32, lane: usize, mock: &MockMove, p0_move: Option<Mv>, p1_move: Option<Mv>, adapted: &[Option<Type>; 2]) {
+    if !mock.power.is_opp_action() {
+        return;
+    }
+    let obs = Seat { cpu: 1 };
+    let (p0a, p1a) = active_mon_indices(sim, obs, bk);
+    if spec.p0_ids.get(p0a) == Some(&target_id) {
+        // p0's mock: opponent is p1 (obs VCPU), self is p0 (obs VOPP).
+        let pow = opp_action_power(sim, bk, obs, mock.power, p1_move, VCPU, p1a, VOPP, p0a, adapted[0]);
+        write_word(sim, bk, 0, p0a, lane, mock.word_for(pow));
+    }
+    if spec.p1_ids.get(p1a) == Some(&target_id) {
+        let pow = opp_action_power(sim, bk, obs, mock.power, p0_move, VOPP, p0a, VCPU, p1a, adapted[1]);
         write_word(sim, bk, 1, p1a, lane, mock.word_for(pow));
     }
 }
 
 /// The five power-repack mocks validated in this first batch.
 pub fn batch1() -> Vec<MockMove> {
+    let p = MockPost::None;
     vec![
-        MockMove { name: "Collapse", mon: "Xmon", lane: 3, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppMissingStamina { base: 40, per: 20, cap: 140 } },
-        MockMove { name: "Killing Blow", mon: "Ekineki", lane: 2, mtype: Type::Liquid, mclass: MoveClass::Special, stamina: 4, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppKOs { base: 100, bonus: 50, threshold: 2 } },
-        MockMove { name: "All In", mon: "Sofabbi", lane: 3, mtype: Type::Nature, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::SelfStamina { base: 90, per: 20, cap: 200 } },
-        MockMove { name: "Lucid Nightmare", mon: "Xmon", lane: 2, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfTargetAsleep { base: 90 } },
-        MockMove { name: "Cold Front", mon: "Pengym", lane: 0, mtype: Type::Ice, mclass: MoveClass::Special, stamina: 2, priority: 0, eff_acc: 100, effect: Some("FrostbiteStatus"), power: PowerRule::Fixed(70) },
+        MockMove { name: "Collapse", mon: "Xmon", lane: 3, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppMissingStamina { base: 40, per: 20, cap: 140 }, post: p },
+        MockMove { name: "Killing Blow", mon: "Ekineki", lane: 2, mtype: Type::Liquid, mclass: MoveClass::Special, stamina: 4, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppKOs { base: 100, bonus: 50, threshold: 2 }, post: p },
+        MockMove { name: "All In", mon: "Sofabbi", lane: 3, mtype: Type::Nature, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::SelfStamina { base: 90, per: 20, cap: 200 }, post: p },
+        MockMove { name: "Lucid Nightmare", mon: "Xmon", lane: 2, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfTargetAsleep { base: 90 }, post: p },
+        MockMove { name: "Cold Front", mon: "Pengym", lane: 0, mtype: Type::Ice, mclass: MoveClass::Special, stamina: 2, priority: 0, eff_acc: 100, effect: Some("FrostbiteStatus"), power: PowerRule::Fixed(70), post: p },
+        MockMove { name: "Counterweight", mon: "Aurox", lane: 0, mtype: Type::Metal, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::CounterEstimatedIncoming { num: 3, den: 2, cap: 255, floor: 70 }, post: p },
+        // Golden Hour: sustain for the slow tank — a Metal attack that heals Aurox 20% max HP via the
+        // write-mutator, so it survives to leverage Up Only (the reliable Aurox buff the counter isn't).
+        MockMove { name: "Golden Hour", mon: "Aurox", lane: 0, mtype: Type::Metal, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::Fixed(60), post: MockPost::HealPctMaxHp(35) },
+        MockMove { name: "Tremor Sense", mon: "Gorillax", lane: 0, mtype: Type::Earth, mclass: MoveClass::Physical, stamina: 4, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfOppPassive { base: 120 }, post: p },
+        MockMove { name: "Counter-Proof", mon: "Nirvamma", lane: 0, mtype: Type::Math, mclass: MoveClass::Physical, stamina: 2, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X2IfOppTypeMatchesAdapted { base: 70 }, post: p },
+        MockMove { name: "Immolate", mon: "Embursa", lane: 0, mtype: Type::Fire, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfSelfBurned { base: 80 }, post: p },
     ]
 }

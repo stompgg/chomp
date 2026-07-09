@@ -53,6 +53,7 @@ impl StrategyKind {
     }
 }
 
+#[derive(Clone)]
 pub struct GameSpec {
     pub seed: u32,
     pub max_turns: u32,
@@ -324,31 +325,29 @@ pub fn narrate_game(
     }
 }
 
-fn run_one(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> Result<GameOutcome, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game(spec, book, trace))).map_err(|e| {
-        e.downcast_ref::<String>()
-            .cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
-/// Run a batch of independent games, optionally across threads (each game
-/// owns its whole world, so parallelism is trivially safe). Results come
-/// back in spec order; a panicking game yields Err instead of poisoning
-/// the batch.
-pub fn run_games(
+/// Run each spec through `play`, serial or across `threads` scoped workers (each game owns its
+/// whole world, so parallelism is trivially safe). Results come back in spec order; a panicking
+/// game yields `Err` instead of poisoning the batch. The one home for the scheduling + panic-string
+/// extraction that every `run_games_*` variant shares.
+fn run_batch<T: Send>(
     specs: &[GameSpec],
-    book: &HashMap<String, Address>,
     threads: usize,
-    trace: bool,
-) -> Vec<Result<GameOutcome, String>> {
+    play: impl Fn(&GameSpec) -> T + Sync,
+) -> Vec<Result<T, String>> {
+    let run_one = |spec: &GameSpec| -> Result<T, String> {
+        catch_unwind(AssertUnwindSafe(|| play(spec))).map_err(|e| {
+            e.downcast_ref::<String>()
+                .cloned()
+                .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "panic".to_string())
+        })
+    };
     if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one(spec, book, trace)).collect();
+        return specs.iter().map(|spec| run_one(spec)).collect();
     }
 
     let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<GameOutcome, String>>> = Vec::with_capacity(specs.len());
+    let mut slots: Vec<Option<Result<T, String>>> = Vec::with_capacity(specs.len());
     slots.resize_with(specs.len(), || None);
     let slots = std::sync::Mutex::new(slots);
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -360,13 +359,23 @@ pub fn run_games(
                 if idx >= specs.len() {
                     break;
                 }
-                let r = run_one(&specs[idx], book, trace);
+                let r = run_one(&specs[idx]);
                 slots.lock().unwrap()[idx] = Some(r);
             });
         }
     });
 
     slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+}
+
+/// Run a batch of independent games (see `run_batch`).
+pub fn run_games(
+    specs: &[GameSpec],
+    book: &HashMap<String, Address>,
+    threads: usize,
+    trace: bool,
+) -> Vec<Result<GameOutcome, String>> {
+    run_batch(specs, threads, |spec| play_game(spec, book, trace))
 }
 
 // ── Trace table: per-turn rows for face-off extraction + role measures (measure.md) ──
@@ -476,39 +485,13 @@ pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> Tra
     TraceRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), rows }
 }
 
-fn run_one_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> Result<TraceRecord, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game_traced(spec, book))).map_err(|e| {
-        e.downcast_ref::<String>().cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
-/// Threaded traced batch — same scheduling as `run_games`.
+/// Threaded traced batch (see `run_batch`).
 pub fn run_games_traced(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
 ) -> Vec<Result<TraceRecord, String>> {
-    if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one_traced(spec, book)).collect();
-    }
-    let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<TraceRecord, String>>> = Vec::with_capacity(specs.len());
-    slots.resize_with(specs.len(), || None);
-    let slots = std::sync::Mutex::new(slots);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..n {
-            scope.spawn(|| loop {
-                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if idx >= specs.len() { break; }
-                let r = run_one_traced(&specs[idx], book);
-                slots.lock().unwrap()[idx] = Some(r);
-            });
-        }
-    });
-    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+    run_batch(specs, threads, |spec| play_game_traced(spec, book))
 }
 
 // ── Yomi sampler: EVPI over the no-peek grid at each two-sided decision (measure.md) ──
@@ -595,39 +578,13 @@ pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<Y
     samples
 }
 
-fn run_one_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Result<Vec<YomiSample>, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game_yomi(spec, book))).map_err(|e| {
-        e.downcast_ref::<String>().cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
-/// Threaded yomi batch — same scheduling as `run_games`.
+/// Threaded yomi batch (see `run_batch`).
 pub fn run_games_yomi(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
 ) -> Vec<Result<Vec<YomiSample>, String>> {
-    if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one_yomi(spec, book)).collect();
-    }
-    let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<Vec<YomiSample>, String>>> = Vec::with_capacity(specs.len());
-    slots.resize_with(specs.len(), || None);
-    let slots = std::sync::Mutex::new(slots);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..n {
-            scope.spawn(|| loop {
-                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if idx >= specs.len() { break; }
-                let r = run_one_yomi(&specs[idx], book);
-                slots.lock().unwrap()[idx] = Some(r);
-            });
-        }
-    });
-    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+    run_batch(specs, threads, |spec| play_game_yomi(spec, book))
 }
 
 // ── Breadth + close-call sampler: greedy's per-action scores at each decision (measure.md) ──
@@ -717,39 +674,13 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
     samples
 }
 
-fn run_one_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Result<Vec<BreadthSample>, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game_breadth(spec, book))).map_err(|e| {
-        e.downcast_ref::<String>().cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
-/// Threaded breadth batch — same scheduling as `run_games`.
+/// Threaded breadth batch (see `run_batch`).
 pub fn run_games_breadth(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
 ) -> Vec<Result<Vec<BreadthSample>, String>> {
-    if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one_breadth(spec, book)).collect();
-    }
-    let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<Vec<BreadthSample>, String>>> = Vec::with_capacity(specs.len());
-    slots.resize_with(specs.len(), || None);
-    let slots = std::sync::Mutex::new(slots);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..n {
-            scope.spawn(|| loop {
-                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if idx >= specs.len() { break; }
-                let r = run_one_breadth(&specs[idx], book);
-                slots.lock().unwrap()[idx] = Some(r);
-            });
-        }
-    });
-    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+    run_batch(specs, threads, |spec| play_game_breadth(spec, book))
 }
 
 // ── Instrumented runner: per-mon KO attribution + active-turns (measure.md) ──
@@ -893,45 +824,13 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
     }
 }
 
-fn run_one_instr(spec: &GameSpec, book: &HashMap<String, Address>) -> Result<InstrRecord, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game_instrumented(spec, book))).map_err(|e| {
-        e.downcast_ref::<String>()
-            .cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
-/// Threaded instrumented batch — same scheduling as `run_games`.
+/// Threaded instrumented batch (see `run_batch`).
 pub fn run_games_instrumented(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
 ) -> Vec<Result<InstrRecord, String>> {
-    if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one_instr(spec, book)).collect();
-    }
-
-    let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<InstrRecord, String>>> = Vec::with_capacity(specs.len());
-    slots.resize_with(specs.len(), || None);
-    let slots = std::sync::Mutex::new(slots);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-
-    std::thread::scope(|scope| {
-        for _ in 0..n {
-            scope.spawn(|| loop {
-                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if idx >= specs.len() {
-                    break;
-                }
-                let r = run_one_instr(&specs[idx], book);
-                slots.lock().unwrap()[idx] = Some(r);
-            });
-        }
-    });
-
-    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+    run_batch(specs, threads, |spec| play_game_instrumented(spec, book))
 }
 
 // ── Mock loop (mock2 T2): repack a mock move's word from live state each turn, then instrument ──
@@ -960,6 +859,8 @@ pub fn play_game_mock(
     let mut active_turns_p0 = vec![0u32; spec.p0_ids.len()];
     let mut active_turns_p1 = vec![0u32; spec.p1_ids.len()];
     let mut kos: Vec<KoEvent> = Vec::new();
+    let mut last_dmg = [0i32; 2]; // HP the mock mon lost last turn (for the counter power rule)
+    let mut adapted: [Option<chomp_engine::Enums::Type>; 2] = [None, None]; // the mock mon's Adapted type per side
 
     for t in 0..spec.max_turns {
         let winner = sim.winner_index();
@@ -969,7 +870,7 @@ pub fn play_game_mock(
         let bk: B256 = sim.battle_key;
 
         // T2: recompute the mock move's word from live state before the pilots decide.
-        crate::mock2::repack_turn(&mut sim, bk, spec, target_id, lane, mock);
+        crate::mock2::repack_turn(&mut sim, bk, spec, target_id, lane, mock, &last_dmg);
 
         let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag;
         let p0_acts = flag != 1;
@@ -995,6 +896,11 @@ pub fn play_game_mock(
         if let Some(c) = active_turns_p1.get_mut(p1a) { *c += 1; }
         let ko_before_p0 = ko_bitmap(&mut sim, obs, bk, VOPP);
         let ko_before_p1 = ko_bitmap(&mut sim, obs, bk, VCPU);
+        // T2: opp-action mocks get their power set now, from the opponent's chosen move.
+        crate::mock2::repack_postdecide(&mut sim, bk, spec, target_id, lane, mock, p0_move, p1_move, &adapted);
+        // Mock mon's HP before the turn (sentinel = not the active mon this turn), for the counter rule.
+        let mhp0_before = if spec.p0_ids.get(p0a) == Some(&target_id) { mon_current_hp(&mut sim, obs, bk, VOPP, p0a) } else { i64::MIN };
+        let mhp1_before = if spec.p1_ids.get(p1a) == Some(&target_id) { mon_current_hp(&mut sim, obs, bk, VCPU, p1a) } else { i64::MIN };
 
         let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
         let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
@@ -1004,6 +910,22 @@ pub fn play_game_mock(
         );
 
         let bk2: B256 = sim.battle_key;
+        if mhp0_before != i64::MIN { last_dmg[0] = (mhp0_before - mon_current_hp(&mut sim, obs, bk2, VOPP, p0a)).max(0) as i32; }
+        if mhp1_before != i64::MIN { last_dmg[1] = (mhp1_before - mon_current_hp(&mut sim, obs, bk2, VCPU, p1a)).max(0) as i32; }
+        // Adaptor: record the mock mon's adapted type the first time it takes damage.
+        if last_dmg[0] > 0 && adapted[0].is_none() { adapted[0] = p1_move.and_then(|m| crate::mock2::move_type_of(&mut sim, bk2, obs, VCPU, p1a, m.move_index)); }
+        if last_dmg[1] > 0 && adapted[1].is_none() { adapted[1] = p0_move.and_then(|m| crate::mock2::move_type_of(&mut sim, bk2, obs, VOPP, p0a, m.move_index)); }
+        // Write-mutator post-effect: if the mock mon used the mock lane this turn, apply its heal rider.
+        if let crate::mock2::MockPost::HealPctMaxHp(pct) = mock.post {
+            if spec.p0_ids.get(p0a) == Some(&target_id) && p0_move.map(|m| m.move_index as usize) == Some(lane) {
+                let max = mon_max_hp(&mut sim, obs, bk2, VOPP, p0a);
+                crate::mock2::heal_mon(&mut sim, bk2, 0, p0a, (max * pct as i64 / 100) as i32);
+            }
+            if spec.p1_ids.get(p1a) == Some(&target_id) && p1_move.map(|m| m.move_index as usize) == Some(lane) {
+                let max = mon_max_hp(&mut sim, obs, bk2, VCPU, p1a);
+                crate::mock2::heal_mon(&mut sim, bk2, 1, p1a, (max * pct as i64 / 100) as i32);
+            }
+        }
         let new_p0 = ko_bitmap(&mut sim, obs, bk2, VOPP) & !ko_before_p0;
         let new_p1 = ko_bitmap(&mut sim, obs, bk2, VCPU) & !ko_before_p1;
         if new_p0 != 0 {
@@ -1026,40 +948,14 @@ pub fn play_game_mock(
     InstrRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, turns: spec.max_turns, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos }
 }
 
-fn run_one_mock(spec: &GameSpec, book: &HashMap<String, Address>, target_id: u32, lane: usize, mock: &crate::mock2::MockMove) -> Result<InstrRecord, String> {
-    catch_unwind(AssertUnwindSafe(|| play_game_mock(spec, book, target_id, lane, mock))).map_err(|e| {
-        e.downcast_ref::<String>().cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-            .unwrap_or_else(|| "panic".to_string())
-    })
-}
-
+/// Threaded mock batch (see `run_batch`); the mock's word is repacked each turn in play_game_mock.
 pub fn run_games_mock(
     specs: &[GameSpec],
     book: &HashMap<String, Address>,
     threads: usize,
     target_id: u32,
     lane: usize,
-    mock: crate::mock2::MockMove,
+    mock: &crate::mock2::MockMove,
 ) -> Vec<Result<InstrRecord, String>> {
-    let mock = &mock;
-    if threads <= 1 || specs.len() <= 1 {
-        return specs.iter().map(|spec| run_one_mock(spec, book, target_id, lane, mock)).collect();
-    }
-    let n = threads.min(specs.len());
-    let mut slots: Vec<Option<Result<InstrRecord, String>>> = Vec::with_capacity(specs.len());
-    slots.resize_with(specs.len(), || None);
-    let slots = std::sync::Mutex::new(slots);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..n {
-            scope.spawn(|| loop {
-                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if idx >= specs.len() { break; }
-                let r = run_one_mock(&specs[idx], book, target_id, lane, mock);
-                slots.lock().unwrap()[idx] = Some(r);
-            });
-        }
-    });
-    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+    run_batch(specs, threads, |spec| play_game_mock(spec, book, target_id, lane, mock))
 }

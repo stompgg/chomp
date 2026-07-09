@@ -56,5 +56,3 @@ fn main() {
 
     eprintln!("\n2×{} games in {:.2}s", games, elapsed);
 }
-
-// Make MoveOverride Debug-printable in the summary line.
