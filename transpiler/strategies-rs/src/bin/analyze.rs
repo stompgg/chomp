@@ -5,7 +5,8 @@
 //!
 //! Data (drool/*.csv, src/mons/*.json) is read relative to CHOMP_ROOT.
 
-use chomp_strategies::analysis::run_mon_analysis;
+use chomp_strategies::analysis::{run_mon_analysis, run_mon_analysis_with};
+use chomp_strategies::game::StrategyKind;
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
@@ -39,8 +40,23 @@ fn main() {
     let roster = load_roster(&chomp_root);
     eprintln!("analyze: {} mons · {} games · {} threads · seed {:#x}", roster.mons.len(), games, threads, seed);
 
+    // Optional pilot override: --p1 <strat> --p0 <strat> runs that single matched-draft matchup
+    // (e.g. --p1 nopeek --p0 greedy for the no-peek-vs-peek split). Default = the full basket.
+    let p1 = arg(&args, "--p1");
+    let p0 = arg(&args, "--p0");
+
     let started = std::time::Instant::now();
-    let a = run_mon_analysis(&roster, games, seed, seed_base, threads);
+    let a = match (&p1, &p0) {
+        (Some(p1s), Some(p0s)) => {
+            let pair = (
+                StrategyKind::parse(p1s).expect("bad --p1 strategy"),
+                StrategyKind::parse(p0s).expect("bad --p0 strategy"),
+            );
+            eprintln!("  pilots: p1={p1s} vs p0={p0s}");
+            run_mon_analysis_with(&roster, games, seed, seed_base, threads, &[pair])
+        }
+        _ => run_mon_analysis(&roster, games, seed, seed_base, threads),
+    };
     let elapsed = started.elapsed().as_secs_f64();
 
     // Per-mon table, sorted by win rate. KOd = KOs dealt, KOt = KOs taken; (W)/(L) split by game result.

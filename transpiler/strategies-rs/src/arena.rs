@@ -35,7 +35,7 @@ impl Wrand {
 }
 
 /// Draw TEAM_SIZE distinct mon ids (0..NUM_MONS) — port of workload.ts:drawTeam.
-fn draw_team(roster: &Roster, rng: &mut Wrand) -> Vec<u32> {
+pub fn draw_team(roster: &Roster, rng: &mut Wrand) -> Vec<u32> {
     let mut pool: Vec<u32> = roster.mons.iter().map(|m| m.id).collect();
     (0..TEAM_SIZE)
         .map(|_| pool.remove((rng.next() * pool.len() as f64) as usize))
@@ -73,13 +73,29 @@ impl PairStats {
 /// Build every game's spec (STRAT_PAIRS rotation, two random team draws each), returning the specs
 /// parallel to their pair index. Exposed so trace tooling can reconstruct the exact same games.
 pub fn build_specs(roster: &Roster, games: usize, wseed: u32, seed_base: u32) -> (Vec<GameSpec>, Vec<usize>) {
+    let pairs: Vec<(StrategyKind, StrategyKind)> = STRAT_PAIRS
+        .iter()
+        .map(|&(p1, p0)| (StrategyKind::parse(p1).unwrap(), StrategyKind::parse(p0).unwrap()))
+        .collect();
+    build_specs_with(roster, games, wseed, seed_base, &pairs)
+}
+
+/// Like `build_specs` but with an explicit [p1, p0] strategy rotation (e.g. a single no-peek-vs-peek
+/// pair). Team draws stay identical per seed regardless of the pilots — matched drafts.
+pub fn build_specs_with(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    pairs: &[(StrategyKind, StrategyKind)],
+) -> (Vec<GameSpec>, Vec<usize>) {
     let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
     let mut rng = Wrand::new(wseed);
     let mut specs = Vec::with_capacity(games);
     let mut pair_of = Vec::with_capacity(games);
     for i in 0..games {
-        let pi = i % STRAT_PAIRS.len();
-        let (p1s, p0s) = STRAT_PAIRS[pi];
+        let pi = i % pairs.len();
+        let (p1s, p0s) = pairs[pi];
         // workload draw order: teams[0] (→ p0) first, teams[1] (→ p1) second.
         let p0_ids = draw_team(roster, &mut rng);
         let p1_ids = draw_team(roster, &mut rng);
@@ -91,8 +107,8 @@ pub fn build_specs(roster: &Roster, games: usize, wseed: u32, seed_base: u32) ->
             p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
             p0_ids,
             p1_ids,
-            p0_strategy: StrategyKind::parse(p0s).unwrap(),
-            p1_strategy: StrategyKind::parse(p1s).unwrap(),
+            p0_strategy: p0s,
+            p1_strategy: p1s,
         });
         pair_of.push(pi);
     }

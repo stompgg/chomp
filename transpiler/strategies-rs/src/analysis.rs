@@ -9,8 +9,8 @@
 
 use std::collections::HashMap;
 
-use crate::arena::build_specs;
-use crate::game::{run_games_instrumented, InstrRecord};
+use crate::arena::{build_specs, build_specs_with};
+use crate::game::{run_games_instrumented, InstrRecord, StrategyKind};
 use crate::roster::{self, Roster};
 
 /// Per-mon accumulators, split by the mon's own team result that game.
@@ -65,7 +65,22 @@ pub fn run_mon_analysis(roster: &Roster, games: usize, wseed: u32, seed_base: u3
     fold(&records)
 }
 
-fn fold(records: &[Result<InstrRecord, String>]) -> MonAnalysis {
+/// Same, with an explicit [p1, p0] pilot rotation (e.g. a no-peek-vs-peek matched-draft split).
+pub fn run_mon_analysis_with(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    pairs: &[(StrategyKind, StrategyKind)],
+) -> MonAnalysis {
+    let book = roster::address_book();
+    let (specs, _pair_of) = build_specs_with(roster, games, wseed, seed_base, pairs);
+    let records = run_games_instrumented(&specs, &book, threads);
+    fold(&records)
+}
+
+pub fn fold(records: &[Result<InstrRecord, String>]) -> MonAnalysis {
     let mut per_mon: HashMap<u32, MonStat> = HashMap::new();
     let mut ko_matrix: HashMap<(u32, u32), u32> = HashMap::new();
     let (mut n_games, mut decided, mut draws, mut errors) = (0u32, 0u32, 0u32, 0u32);
