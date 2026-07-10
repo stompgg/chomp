@@ -3,25 +3,39 @@
 ---------------------------------------------------------------------------------------------
 
 Volthare:
-- change dual shock to not inflict zap on self, but instead also damage self?
-- change mega star blast to inflict zap on self unless overclocked, buff default accuracy a bit more?
+- Quickstorm, 2 stamina, 30 power, inflicts zap on opponent, can only be used first turn volthare comes out
 
 Aurox:
-- Give another damaging move that can complement bull rush
-- Inspire Greed:
-    - If the opponent is using a self/other move, instead replace it with:
-        - deal 10% of max hp to opponent (for X turns)
-
-Sofabbi
-- Change guest feature on sofabbi to something else stamina related (gifting stamina to another mon?)
+- New move at lv 6: Big Bellow, 1 stamina, Metal, Other (any target)
+    - Reduces target's SpATK and Speed by 50% (until switch out)
 
 Embursa
 - Q5 can only be active once per side (unique across mons)
-    - Which effects should be global, which should be stackable across mons?
 - Heat Beacon rework:
     +1 to next turn's move
     if Embursa is Burned, apply Burn on opponent
     0 stamina
+
+Iblivion
+- Change Baselight to be acquired only when taking damage, not at end of turn
+- Loop, change top end boost % to be 50% [x]
+
+Xmon
+- Change Somniphobia to affect opponents only (still stackable)
+- Add new move, Old Vengeance, 40 power, Cosmic, 3 stamina +1 priority
+    - at the end of the turn, hits an additional time for each stamina the opponent spent this turn
+- Remove Night Terrors
+
+Nirvamma
+- Buff status % to be 50% for Modal Bolt [x]
+- Change Hard Reset to Inversion, 0 stamina Math, normal priority:
+    - Change direction of all stat boosts from opponent
+
+Blessed Status rework
+- A Blessed mon takes no damage from the next source of damage, and the status, when removed, heals 1/16 max hp
+
+Audit:
+    - Which effects should be global, which should be stackable across mons?
 
 ---------------------------------------------------------------------------------------------
 

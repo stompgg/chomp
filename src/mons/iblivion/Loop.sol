@@ -23,7 +23,7 @@ import {Baselight} from "./Baselight.sol";
 contract Loop is IMoveSet, BasicEffect {
     uint8 public constant BOOST_PERCENT_LEVEL_1 = 15;
     uint8 public constant BOOST_PERCENT_LEVEL_2 = 30;
-    uint8 public constant BOOST_PERCENT_LEVEL_3 = 40;
+    uint8 public constant BOOST_PERCENT_LEVEL_3 = 50;
 
     Baselight immutable BASELIGHT;
 

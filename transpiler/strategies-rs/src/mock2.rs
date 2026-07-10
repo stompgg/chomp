@@ -355,13 +355,15 @@ pub fn batch1() -> Vec<MockMove> {
     vec![
         MockMove { name: "Collapse", mon: "Xmon", lane: 3, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppMissingStamina { base: 40, per: 20, cap: 140 }, post: p },
         MockMove { name: "Killing Blow", mon: "Ekineki", lane: 2, mtype: Type::Liquid, mclass: MoveClass::Special, stamina: 4, priority: 0, eff_acc: 0, effect: None, power: PowerRule::OppKOs { base: 100, bonus: 50, threshold: 2 }, post: p },
-        MockMove { name: "All In", mon: "Sofabbi", lane: 3, mtype: Type::Nature, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::SelfStamina { base: 90, per: 20, cap: 200 }, post: p },
+        MockMove { name: "All In", mon: "Sofabbi", lane: 3, mtype: Type::Nature, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::SelfStamina { base: 60, per: 15, cap: 130 }, post: p },
         MockMove { name: "Lucid Nightmare", mon: "Xmon", lane: 2, mtype: Type::Cosmic, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfTargetAsleep { base: 90 }, post: p },
         MockMove { name: "Cold Front", mon: "Pengym", lane: 0, mtype: Type::Ice, mclass: MoveClass::Special, stamina: 2, priority: 0, eff_acc: 100, effect: Some("FrostbiteStatus"), power: PowerRule::Fixed(70), post: p },
         MockMove { name: "Counterweight", mon: "Aurox", lane: 0, mtype: Type::Metal, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::CounterEstimatedIncoming { num: 3, den: 2, cap: 255, floor: 70 }, post: p },
-        // Golden Hour: sustain for the slow tank — a Metal attack that heals Aurox 20% max HP via the
-        // write-mutator, so it survives to leverage Up Only (the reliable Aurox buff the counter isn't).
-        MockMove { name: "Golden Hour", mon: "Aurox", lane: 0, mtype: Type::Metal, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::Fixed(60), post: MockPost::HealPctMaxHp(35) },
+        // Golden Hour: heal-on-hit write-mutator demo (Metal attack + heal 30% max HP). Proves the
+        // storage-write post-effect, but REJECTED as an Aurox keeper: a damaging heal lane competes
+        // with Bull Rush and, as Up Only stacks Attack, strictly dominates it → homogenizing, not a
+        // new role. Aurox's real fix is a disruptor (deferred). Kept as the write-mutator reference.
+        MockMove { name: "Golden Hour", mon: "Aurox", lane: 0, mtype: Type::Metal, mclass: MoveClass::Physical, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::Fixed(60), post: MockPost::HealPctMaxHp(30) },
         MockMove { name: "Tremor Sense", mon: "Gorillax", lane: 0, mtype: Type::Earth, mclass: MoveClass::Physical, stamina: 4, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfOppPassive { base: 120 }, post: p },
         MockMove { name: "Counter-Proof", mon: "Nirvamma", lane: 0, mtype: Type::Math, mclass: MoveClass::Physical, stamina: 2, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X2IfOppTypeMatchesAdapted { base: 70 }, post: p },
         MockMove { name: "Immolate", mon: "Embursa", lane: 0, mtype: Type::Fire, mclass: MoveClass::Special, stamina: 3, priority: 0, eff_acc: 0, effect: None, power: PowerRule::X15IfSelfBurned { base: 80 }, post: p },
