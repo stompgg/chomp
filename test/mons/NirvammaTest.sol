@@ -503,6 +503,90 @@ contract NirvammaTest is Test, BattleHelper {
         );
     }
 
+    /// @dev ModalBolt dispatches as a PHYSICAL attack: with Atk 100 vs SpAtk 10 the damage
+    ///      must scale off Atk (a Special dispatch would deal ~10x less).
+    function test_modalBolt_dispatchesPhysical() public {
+        ModalBolt modalBolt = new ModalBolt(new BurnStatus(), new FrostbiteStatus(), new ZapStatus());
+
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(modalBolt)));
+
+        Mon memory nirvamma = _createMon();
+        nirvamma.moves = moves;
+        nirvamma.stats.hp = 1000;
+        nirvamma.stats.stamina = 30;
+        nirvamma.stats.speed = 2;
+        nirvamma.stats.attack = 100;
+        nirvamma.stats.specialAttack = 10;
+
+        Mon memory bob = _createMon();
+        bob.moves = moves;
+        bob.stats.hp = 5000;
+        bob.stats.stamina = 30;
+        bob.stats.speed = 1;
+        bob.stats.defense = 10;
+        bob.stats.specialDefense = 10;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = nirvamma;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bob;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
+        // Precomputed: rng 1 -> effect roll 54 (>= 50), no status DOT muddies the damage read.
+        mockOracle.setRNG(1);
+
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        // Physical: 90 * 100 * [90..110]% / (10 * 100) = 810..990; Special would be 81..149.
+        assertLe(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -500, "damage scales off Atk"
+        );
+    }
+
+    /// @dev Chronoffense's release dispatches as a PHYSICAL attack (same Atk-vs-SpAtk probe).
+    function test_chronoffense_dispatchesPhysical() public {
+        Chronoffense chrono = new Chronoffense();
+
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(chrono)));
+
+        Mon memory nirvamma = _createMon();
+        nirvamma.moves = moves;
+        nirvamma.stats.hp = 1000;
+        nirvamma.stats.stamina = 30;
+        nirvamma.stats.speed = 2;
+        nirvamma.stats.attack = 100;
+        nirvamma.stats.specialAttack = 10;
+
+        Mon memory bob = _createMon();
+        bob.moves = moves;
+        bob.stats.hp = 5000;
+        bob.stats.stamina = 30;
+        bob.stats.speed = 1;
+        bob.stats.defense = 10;
+        bob.stats.specialDefense = 10;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = nirvamma;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bob;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
+
+        // Anchor, idle a turn, then release: elapsed 2 -> BP 80.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        // Physical: 80 * 100 * [90..110]% / (10 * 100) = 720..880; Special would be 72..148.
+        assertLe(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -500, "damage scales off Atk"
+        );
+    }
+
     // ===== Adaptor =====
 
     function _setupAdaptor()
