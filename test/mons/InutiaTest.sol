@@ -52,7 +52,7 @@ contract InutiaTest is Test, BattleHelper {
         matchmaker = new DefaultMatchmaker(engine);
     }
 
-    // Sanctify gives Inutia the Blessed status, which heals maxHp/16 at the end of each turn.
+    // Sanctify gives Inutia the Blessed status: it absorbs the next damage source, then heals maxHp/16 when removed.
     function test_sanctifyBlessedHeals() public {
         uint256[] memory aliceMoves = new uint256[](1);
         aliceMoves[0] = uint256(uint160(address(sanctify)));
@@ -138,10 +138,10 @@ contract InutiaTest is Test, BattleHelper {
             damageTaken, int32(160) / blessedStatus.HEAL_DENOM(), "Alice should be wounded by more than one heal tick"
         );
 
-        // Turn 3: Alice uses Sanctify; Bob no-ops. Blessed is applied and ticks once at this round's end.
+        // Turn 3: Alice uses Sanctify; Bob no-ops. Blessed applies but does NOT heal on its own.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Alice should now carry the Blessed status.
+        // Alice should now carry the Blessed status, with no passive heal (HP unchanged).
         (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasBlessed = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
@@ -150,10 +150,32 @@ contract InutiaTest is Test, BattleHelper {
             }
         }
         assertTrue(hasBlessed, "Alice should have the Blessed status");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            aliceAfterDamage,
+            "Blessed does not heal on its own turn"
+        );
 
-        int32 aliceAfterHeal = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
-        int32 healAmt = aliceAfterHeal - aliceAfterDamage;
-        assertEq(healAmt, int32(160) / blessedStatus.HEAL_DENOM(), "Blessed should heal maxHp/16 at round end");
+        // Turn 4: Bob attacks Alice again. Blessed absorbs the whole hit (0 damage), then pops and
+        // heals maxHp/16 on removal.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        (EffectInstance[] memory aliceEffectsAfter,) = engine.getEffects(battleKey, 0, 0);
+        bool stillBlessed = false;
+        for (uint256 i = 0; i < aliceEffectsAfter.length; i++) {
+            if (keccak256(bytes(aliceEffectsAfter[i].effect.name())) == keccak256(bytes("Blessed"))) {
+                stillBlessed = true;
+            }
+        }
+        assertFalse(stillBlessed, "Blessed should be consumed by the absorbed hit");
+
+        // The hit dealt 0 (absorbed) and removal healed maxHp/16, so HP improves by exactly one tick.
+        int32 aliceAfterAbsorb = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
+        assertEq(
+            aliceAfterAbsorb - aliceAfterDamage,
+            int32(160) / blessedStatus.HEAL_DENOM(),
+            "Absorbed hit deals no damage; removal heals maxHp/16"
+        );
     }
 
     function test_interweaving() public {

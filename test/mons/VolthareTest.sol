@@ -7,7 +7,7 @@ import "../../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {Engine} from "../../src/Engine.sol";
-import {MonStateIndexName, Type} from "../../src/Enums.sol";
+import {MonStateIndexName, MoveClass, Type} from "../../src/Enums.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 
 import {IEngine} from "../../src/IEngine.sol";
@@ -19,18 +19,22 @@ import {MockRandomnessOracle} from "../mocks/MockRandomnessOracle.sol";
 import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
+import {IEffect} from "../../src/effects/IEffect.sol";
 import {Overclock} from "../../src/effects/battlefield/Overclock.sol";
 import {ZapStatus} from "../../src/effects/status/ZapStatus.sol";
 
 import {DualShock} from "../../src/mons/volthare/DualShock.sol";
 import {MegaStarBlast} from "../../src/mons/volthare/MegaStarBlast.sol";
 import {PreemptiveShock} from "../../src/mons/volthare/PreemptiveShock.sol";
+import {Quickstorm} from "../../src/mons/volthare/Quickstorm.sol";
 
 import {DummyStatus} from "../mocks/DummyStatus.sol";
 import {GlobalEffectAttack} from "../mocks/GlobalEffectAttack.sol";
 
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
+import {StandardAttack} from "../../src/moves/StandardAttack.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
+import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 
 contract VolthareTest is Test, BattleHelper {
     Engine engine;
@@ -42,6 +46,7 @@ contract VolthareTest is Test, BattleHelper {
     Overclock overclock;
     StandardAttackFactory attackFactory;
     DefaultMatchmaker matchmaker;
+    ZapStatus qsZap;
 
     function setUp() public {
         typeCalc = new TestTypeCalculator();
@@ -388,5 +393,101 @@ contract VolthareTest is Test, BattleHelper {
 
         // Alice's mon should have the skip turn flag set
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.ShouldSkipTurn), 1);
+    }
+
+    // Deploys a Volthare (Quickstorm + filler, PreemptiveShock ability) vs a plain Bob, starts the
+    // battle, and completes the send-in. Quickstorm's Zap is deployed into `qsZap`.
+    function _quickstormBattle() internal returns (bytes32) {
+        qsZap = new ZapStatus();
+        Quickstorm quickstorm = new Quickstorm(ITypeCalculator(address(typeCalc)), IEffect(address(qsZap)));
+        StandardAttack filler = attackFactory.createAttack(
+            ATTACK_PARAMS({
+                BASE_POWER: 10,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: DEFAULT_PRIORITY,
+                MOVE_TYPE: Type.Lightning,
+                EFFECT_ACCURACY: 0,
+                MOVE_CLASS: MoveClass.Special,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Filler",
+                EFFECT: IEffect(address(0))
+            })
+        );
+
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(quickstorm)));
+        moves[1] = uint256(uint160(address(filler)));
+
+        Mon memory aliceMon = Mon({
+            stats: MonStats({
+                hp: 1000,
+                stamina: 10,
+                speed: 100,
+                attack: 100,
+                defense: 100,
+                specialAttack: 100,
+                specialDefense: 100,
+                type1: Type.Lightning,
+                type2: Type.None
+            }),
+            moves: moves,
+            ability: uint160(address(preemptiveShock))
+        });
+        Mon memory bobMon = Mon({
+            stats: MonStats({
+                hp: 1000,
+                stamina: 10,
+                speed: 50,
+                attack: 100,
+                defense: 100,
+                specialAttack: 100,
+                specialDefense: 100,
+                type1: Type.Fire,
+                type2: Type.None
+            }),
+            moves: moves,
+            ability: 0
+        });
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+        return battleKey;
+    }
+
+    // Quickstorm lands on Volthare's first acting turn: damages and Zaps the opponent.
+    function test_quickstormLandsOnFirstTurn() public {
+        bytes32 battleKey = _quickstormBattle();
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertLt(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), 0, "Quickstorm should damage Bob");
+        (bool bobZapped,,) = engine.getEffectData(battleKey, 1, 0, address(qsZap));
+        assertTrue(bobZapped, "Quickstorm should Zap Bob on the first turn");
+    }
+
+    // Once Volthare acts with anything else, its first-turn window closes and Quickstorm fizzles.
+    function test_quickstormFizzlesAfterFirstTurn() public {
+        bytes32 battleKey = _quickstormBattle();
+        // Turn 1: act with the filler (move 1), spending the first-turn window.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
+        int32 bobHpAfterT1 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+
+        // Turn 2: Quickstorm now does nothing.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
+            bobHpAfterT1,
+            "Quickstorm should do nothing after the first turn"
+        );
+        (bool bobZapped,,) = engine.getEffectData(battleKey, 1, 0, address(qsZap));
+        assertFalse(bobZapped, "Quickstorm should not Zap after the first turn");
     }
 }

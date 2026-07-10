@@ -15,7 +15,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
     uint256 public constant DURATION = 4;
     int32 public constant DAMAGE_DENOM = 8;
 
-    // Global-coordinator data: [stack: bits 8-15 | remainingDuration: bits 0-7].
+    // Global-coordinator data: [casterSide: bit 16 | stack: bits 8-15 | remainingDuration: bits 0-7].
     // Per-mon-punisher data: this marker bit set (distinguishes the two roles, which share a contract).
     uint256 internal constant PUNISHER_MARKER = 1 << 255;
 
@@ -42,14 +42,14 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
         if (exists) {
-            // Bump the stack but keep the original countdown; the effect must fade before it resets.
+            // Bump the stack but keep the original countdown and caster side.
             uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
-            engine.editEffect(2, effectIndex, bytes32((stack << 8) | (uint256(data) & 0xFF)));
+            engine.editEffect(2, effectIndex, bytes32((uint256(data) & 0x100FF) | (stack << 8)));
         } else {
-            engine.addEffect(2, attackerPlayerIndex, this, bytes32((uint256(1) << 8) | DURATION));
+            engine.addEffect(2, attackerPlayerIndex, this, bytes32((attackerPlayerIndex << 16) | (uint256(1) << 8) | DURATION));
         }
 
-        _applyPunisher(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
+        // Opponents only: never punish the caster's own team.
         _applyPunisher(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
     }
 
@@ -115,9 +115,12 @@ contract Somniphobia is IMoveSet, BasicEffect {
         uint256 monIndex,
         uint256
     ) external override returns (bytes32, bool) {
-        // Global coordinator only: apply the punisher to the mon that just switched in.
+        // Global coordinator only: punish a switched-in mon, but only on the side opposite the caster.
         if (uint256(extraData) & PUNISHER_MARKER == 0) {
-            _applyPunisher(engine, battleKey, targetIndex, monIndex);
+            uint256 casterSide = (uint256(extraData) >> 16) & 1;
+            if (targetIndex != casterSide) {
+                _applyPunisher(engine, battleKey, targetIndex, monIndex);
+            }
         }
         return (extraData, false);
     }
@@ -148,7 +151,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         if (duration <= 1) {
             return (extraData, true);
         }
-        return (bytes32((uint256(extraData) & 0xFF00) | (duration - 1)), false);
+        return (bytes32((uint256(extraData) & 0x1FF00) | (duration - 1)), false);
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)

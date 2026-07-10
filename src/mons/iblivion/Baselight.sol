@@ -2,6 +2,7 @@
 
 pragma solidity ^0.8.0;
 
+import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -10,7 +11,7 @@ import {IEffect} from "../../effects/IEffect.sol";
 /**
  * Baselight Ability for Iblivion
  * - Starts at 1 stack when the mon first switches in (only on first switch-in of the game)
- * - Gains 1 stack at the end of each turn, up to a max of 3
+ * - Gains 1 stack each time Iblivion takes damage, up to a max of 3 (no gain on a KO'ing hit)
  * - Level is stored in the effect's extraData
  */
 contract Baselight is IAbility, BasicEffect {
@@ -83,17 +84,26 @@ contract Baselight is IAbility, BasicEffect {
         engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(uint256(INITIAL_BASELIGHT_LEVEL)));
     }
 
-    // Steps: RoundEnd
+    // Steps: AfterDamage
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8004;
+        return 0x8040;
     }
 
-    function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
-        external
-        pure
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
+    // Gain 1 Baselight per damage event (capped), but never from a lethal hit.
+    function onAfterDamage(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256,
+        int32,
+        uint256
+    ) external view override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        if (engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) != 0) {
+            return (extraData, false);
+        }
         uint256 currentLevel = uint256(extraData);
         if (currentLevel < MAX_BASELIGHT_LEVEL) {
             return (bytes32(currentLevel + 1), false);

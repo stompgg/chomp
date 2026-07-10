@@ -915,17 +915,9 @@ pub fn play_game_mock(
         // Adaptor: record the mock mon's adapted type the first time it takes damage.
         if last_dmg[0] > 0 && adapted[0].is_none() { adapted[0] = p1_move.and_then(|m| crate::mock2::move_type_of(&mut sim, bk2, obs, VCPU, p1a, m.move_index)); }
         if last_dmg[1] > 0 && adapted[1].is_none() { adapted[1] = p0_move.and_then(|m| crate::mock2::move_type_of(&mut sim, bk2, obs, VOPP, p0a, m.move_index)); }
-        // Write-mutator post-effect: if the mock mon used the mock lane this turn, apply its heal rider.
-        if let crate::mock2::MockPost::HealPctMaxHp(pct) = mock.post {
-            if spec.p0_ids.get(p0a) == Some(&target_id) && p0_move.map(|m| m.move_index as usize) == Some(lane) {
-                let max = mon_max_hp(&mut sim, obs, bk2, VOPP, p0a);
-                crate::mock2::heal_mon(&mut sim, bk2, 0, p0a, (max * pct as i64 / 100) as i32);
-            }
-            if spec.p1_ids.get(p1a) == Some(&target_id) && p1_move.map(|m| m.move_index as usize) == Some(lane) {
-                let max = mon_max_hp(&mut sim, obs, bk2, VCPU, p1a);
-                crate::mock2::heal_mon(&mut sim, bk2, 1, p1a, (max * pct as i64 / 100) as i32);
-            }
-        }
+        // Write-mutator post-effect (MockPost rider): applies if the mock mon used the mock lane this
+        // turn. Uses the pre-execute active indices (the mon that acted) at the post-execute key.
+        crate::mock2::apply_post(&mut sim, bk2, spec, target_id, lane, mock, p0a, p1a, p0_move, p1_move);
         let new_p0 = ko_bitmap(&mut sim, obs, bk2, VOPP) & !ko_before_p0;
         let new_p1 = ko_bitmap(&mut sim, obs, bk2, VCPU) & !ko_before_p1;
         if new_p0 != 0 {

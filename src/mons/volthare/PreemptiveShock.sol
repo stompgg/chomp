@@ -23,7 +23,10 @@ contract PreemptiveShock is IAbility {
         return "Preemptive Shock";
     }
 
-    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256) external override {
+    function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        external
+        override
+    {
         AttackCalculator._calculateDamage(
             engine,
             TYPE_CALCULATOR,
@@ -38,5 +41,16 @@ contract PreemptiveShock is IAbility {
             engine.tempRNG(),
             0
         );
+
+        // Arm Quickstorm's "first acting turn" window. Turn 0 is always a send-in (moves are coerced
+        // to switches), so a mon that enters on turn T first *acts* on turn T+1 for every entry path
+        // (lead or mid-battle switch). Store firstActTurn+1 = T+2 so 0 stays "unset".
+        uint256 t = engine.getTurnIdForBattleState(battleKey);
+        engine.setGlobalKV(_windowKey(playerIndex, monIndex), uint192(t + 2));
+    }
+
+    // Shared with Quickstorm: keyed per (side, mon) so it re-arms cleanly on every switch-in.
+    function _windowKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, "QUICKSTORM"))));
     }
 }

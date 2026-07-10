@@ -16,7 +16,7 @@ Chain Expansion,Inutia,0,1,100,0,Faith,Other,"Sets up battlefield effect with 4 
 Initialize,Inutia,0,2,100,0,Faith,Self,"Boosts ATK/SpATK by {ATTACK_BUFF_PERCENT}. Can only be used once each time Inutia is sent out. When Inutia switches out, the bonus is transferred to the next incoming mon.",,none,0,ATTACK_BUFF_PERCENT=50;SP_ATTACK_BUFF_PERCENT=50,self-only
 Big Bite,Inutia,80,2,100,0,Faith,Physical,Deals damage.,,none,0,,opponent-slot
 Hit And Dip,Inutia,60,2,100,0,Faith,Special,"Deals damage, then swaps out.",,self-mon,0,,opponent-slot
-Sanctify,Inutia,0,2,100,0,Faith,Other,Applies Blessed status on a team member.,,self-mon,6,,none
+Sanctify,Inutia,0,2,100,0,Faith,Other,"Blesses a team member: it takes no damage from the next source of damage, then heals 1/16 max HP when Blessed ends.",,self-mon,6,,none
 Triple Think,Malalien,0,2,100,0,Math,Self,Boosts SpATK by {SP_ATTACK_BUFF_PERCENT}.,,none,0,SP_ATTACK_BUFF_PERCENT=75,self-only
 Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,none,0,,opponent-slot
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Panic.",,none,0,EFFECT_ACCURACY=10,opponent-slot
@@ -34,18 +34,20 @@ Electrocute,Volthare,90,2,100,0,Lightning,Special,"Deals damage, {EFFECT_ACCURAC
 Round Trip,Volthare,30,1,100,0,Lightning,Special,"Deals damage, then switches out.",,self-mon,0,,opponent-slot
 Mega Star Blast,Volthare,150,3,?,2,Lightning,Special,"If used during Overclock, clears Overclock and accuracy is 100%. Otherwise accuracy is 60%. Deals damage, {ZAP_ACCURACY} chance to inflict Zap.",,none,0,ZAP_ACCURACY=30,opponent-slot
 Dual Shock,Volthare,60,0,100,0,Cyber,Special,Deals damage and inflicts Zap on self. Overclocks your team,,none,0,,opponent-slot
+Quickstorm,Volthare,30,2,100,0,Lightning,Special,"Inflicts Zap on the opponent. Only usable the turn Volthare enters.",,none,6,,opponent-slot
 Honey Bribe,Embursa,0,2,100,0,Nature,Self,Heals self by {DEFAULT_HEAL_DENOM} of max HP and the opponent by 25% of max HP (each subsequent use cuts the healing in half). Lowers opponent SpDEF by {SP_DEF_PERCENT} until they switch out.,,none,0,DEFAULT_HEAL_DENOM=2;SP_DEF_PERCENT=50,opponent-slot
 Set Ablaze,Embursa,90,3,100,0,Fire,Special,"Deals damage, {EFFECT_ACCURACY} chance of Burn.",,none,0,EFFECT_ACCURACY=30,opponent-slot
-Heat Beacon,Embursa,0,2,100,0,Fire,Self,+1 priority to next turn's move. Inflicts Burn.,,none,0,,opponent-slot
-Q5,Embursa,150,2,100,0,Fire,Special,"Deals 150 damage at the start of the 5th round after casting, to whichever enemy is active then.",,none,0,,opponent-slot
+Heat Beacon,Embursa,0,0,100,0,Fire,Self,"+1 priority to next turn's move. If Embursa is Burned, inflicts Burn on the opponent.",,none,0,,opponent-slot
+Q5,Embursa,150,2,100,0,Fire,Special,"Deals 150 damage at the start of the 5th round after casting, to whichever enemy is active then. Only one Q5 can be queued per side at a time.",,none,0,,opponent-slot
 Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn and 25% chance of Frostbite.,,none,0,,opponent-slot
 Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon (Aurox included) from a status condition. If successful, Aurox heals {HEAL_PERCENT} of max HP and the target gains +1 stamina (this can exceed the stamina maximum). If the target has no status, the cast does nothing but still costs stamina.",,self-mon,0,HEAL_PERCENT=50,none
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate {HEAL_PERCENT} of all damage taken, its own recoil included. When activated for the first time each switch-in, Aurox heals {INITIAL_HEAL_PERCENT} of max HP.",,none,0,HEAL_PERCENT=50;INITIAL_HEAL_PERCENT=20,self-only
 Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals {SELF_DAMAGE_PERCENT} of max HP to self.,,none,0,SELF_DAMAGE_PERCENT=20,opponent-slot
+Big Bellow,Aurox,0,1,100,0,Metal,Other,"Lowers the target's SpATK and Speed by 50%.",,opponent-mon,6,,any-other-slot
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,Inflicts Sleep on self and opponent.,,none,0,,opponent-slot
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, {STAMINA_STEAL_PERCENT} chance to steal 1 stamina from opponent.",,none,0,STAMINA_STEAL_PERCENT=50,opponent-slot
 Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any opposing mon that gains stamina takes {DAMAGE_DENOM:frac} of its max HP per stack as damage. Repeated casts while active increase the damage but do not reset the cooldown.",,none,0,DAMAGE_DENOM=8,opponent-slot
-Night Terrors,Xmon,0,0,100,0,Cosmic,Special,Gain a Terror stack. Deals damage and costs stamina at end of turn for each Terror stack. Deals extra damage if opponent is alseep.,,none,0,,self-only
+Old Vengeance,Xmon,33,3,100,1,Cosmic,Special,"Deals damage first, then at end of turn deals damage again once per stamina the opponent spent this turn.",,none,0,,opponent-slot
 Invoke Taboo,Xmon,0,1,100,-1,Cosmic,Other,"Taboos the opponent's last used move. Until they switch out, if they use that move again they fall asleep.",,none,6,,opponent-slot
 Bubble Bop,Ekineki,50,3,100,0,Liquid,Special,Hits twice. Each hit deals 50 base power.,,none,0,,opponent-slot
 Sneak Attack,Ekineki,60,2,100,1,Liquid,Special,Hits any opponent mon (even non-active). Can only be used once per switch-in.,,opponent-mon,0,,none

@@ -28,9 +28,7 @@ import {BurnStatus} from "../../src/effects/status/BurnStatus.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {HeatBeacon} from "../../src/mons/embursa/HeatBeacon.sol";
 import {Q5} from "../../src/mons/embursa/Q5.sol";
-import {SetAblaze} from "../../src/mons/embursa/SetAblaze.sol";
 import {Tinderclaws} from "../../src/mons/embursa/Tinderclaws.sol";
-import {DummyStatus} from "../mocks/DummyStatus.sol";
 
 contract EmbursaTest is Test, BattleHelper {
     Engine engine;
@@ -119,70 +117,60 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function test_heatBeacon() public {
-        DummyStatus dummyStatus = new DummyStatus();
-        HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(dummyStatus)));
-        Q5 q5 = new Q5(typeCalc);
-        SetAblaze setAblaze = new SetAblaze(typeCalc, IEffect(address(dummyStatus)));
+        BurnStatus burnStatus = new BurnStatus();
+        HeatBeacon heatBeacon = new HeatBeacon(IEffect(address(burnStatus)));
 
-        IMoveSet koMove = attackFactory.createAttack(
+        // A 0-power move that burns its target at 100%, so we can burn Embursa on demand.
+        IMoveSet burnMove = attackFactory.createAttack(
             ATTACK_PARAMS({
-                BASE_POWER: 200,
-                STAMINA_COST: 1,
+                BASE_POWER: 0,
+                STAMINA_COST: 0,
                 ACCURACY: 100,
-                PRIORITY: 1,
+                PRIORITY: DEFAULT_PRIORITY,
                 MOVE_TYPE: Type.Fire,
-                EFFECT_ACCURACY: 0,
-                MOVE_CLASS: MoveClass.Physical,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Other,
                 CRIT_RATE: 0,
                 VOLATILITY: 0,
-                NAME: "KO Move",
-                EFFECT: IEffect(address(0))
+                NAME: "Burn Move",
+                EFFECT: IEffect(address(burnStatus))
             })
         );
 
-        // Engine team storage holds MOVE_LANES_PER_MON (4) moves per mon, matching prod.
-        uint256[] memory aliceMoves = new uint256[](4);
-        aliceMoves[0] = uint256(uint160(address(heatBeacon)));
-        aliceMoves[1] = uint256(uint160(address(q5)));
-        aliceMoves[2] = uint256(uint160(address(setAblaze)));
-        aliceMoves[3] = uint256(uint160(address(koMove)));
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = uint256(uint160(address(heatBeacon)));
+        moves[1] = uint256(uint160(address(burnMove)));
+        moves[2] = uint256(uint160(address(burnMove)));
+        moves[3] = uint256(uint160(address(burnMove)));
 
         Mon memory aliceMon = Mon({
             stats: MonStats({
-                hp: 100,
+                hp: 1000,
                 stamina: 10,
                 speed: 1,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
+                attack: 100,
+                defense: 100,
+                specialAttack: 100,
+                specialDefense: 100,
                 type1: Type.Yin,
                 type2: Type.None
             }),
-            moves: aliceMoves,
+            moves: moves,
             ability: 0
         });
-
-        // 5. Create Bob's mon with higher speed
-        uint256[] memory bobMoves = new uint256[](4);
-        bobMoves[0] = uint256(uint160(address(heatBeacon)));
-        bobMoves[1] = uint256(uint160(address(q5)));
-        bobMoves[2] = uint256(uint160(address(setAblaze)));
-        bobMoves[3] = uint256(uint160(address(koMove)));
-
         Mon memory bobMon = Mon({
             stats: MonStats({
-                hp: 1000, // Large enough to survive a crit on SetAblaze so the test isolates Heat Beacon behavior
+                hp: 1000,
                 stamina: 10,
-                speed: 2, // Higher speed than Alice
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
+                speed: 2,
+                attack: 100,
+                defense: 100,
+                specialAttack: 100,
+                specialDefense: 100,
                 type1: Type.Yin,
                 type2: Type.None
             }),
-            moves: bobMoves,
+            moves: moves,
             ability: 0
         });
         Mon[] memory aliceTeam = new Mon[](1);
@@ -192,104 +180,42 @@ contract EmbursaTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
 
-        // Set Ablaze test
-        // Start battle
-        // Alice uses Heat Beacon, Bob does nothing
-        // Verify dummy status was applied to Bob's mon
-        // Verify Alice's priority boost
-        // Alice uses Set Ablaze, Bob uses KO move
-        // Verify Alice's priority boost is cleared
-        // Verify Alice's mon is KO'ed but Bob has taken damage
+        // Heat Beacon now costs 0 stamina.
+        assertEq(heatBeacon.stamina(IEngine(address(0)), bytes32(0), 0, 0), 0, "Heat Beacon should cost 0 stamina");
+
         bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Advance time to avoid GameStartsAndEndsSameBlock error
         vm.warp(vm.getBlockTimestamp() + 1);
-
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects.length, 1, "Bob's mon should have 1 effect (Dummy status)");
-        assertEq(address(effects[0].effect), address(dummyStatus), "Bob's mon should have Dummy status");
-        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Alice should have priority boost");
-        mockOracle.setRNG(2);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, 3, 0, 0);
-        assertEq(
-            heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY, "Alice's priority boost should be cleared"
-        );
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
-            1,
-            "Alice's mon should be KOed"
-        );
-        // Bob takes damage from SetAblaze but survives (exact amount depends on volatility/crit RNG)
-        assertLt(
-            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
-            0,
-            "Bob's mon should take damage from SetAblaze"
-        );
 
-        // Heat Beacon test
-        // Start a new battle
-        // Alice uses Heat Beacon, Bob does nothing
-        // Alice uses Heat Beacon again, Bob uses KO Move
-        // Verify Alice's mon is KO'ed but Bob's mon now has 2x Dummy status
-        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Advance time to avoid GameStartsAndEndsSameBlock error
-        vm.warp(vm.getBlockTimestamp() + 1);
-
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-        (effects,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects.length, 0, "Bob's mon should have no effects");
+        // Turn 1: Alice (not burned) uses Heat Beacon -> no burn spreads, but +1 priority is granted.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        (effects,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects.length, 2, "Bob's mon should have 2x Dummy status");
+        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(bobEffects.length, 0, "Heat Beacon must not burn the opponent while Embursa is unburned");
+        assertEq(heatBeacon.priority(engine, battleKey, 0), DEFAULT_PRIORITY + 1, "Heat Beacon grants +1 priority");
 
-        /* TODO later
-        // Q5 test
-        // Start a new battle
-        // Alice uses Heat Beacon, Bob does nothing
-        // Alice uses Q5, Bob uses KO move
-        // Verify Q5 was applied to global effects, verify Alice is KOed
-        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 3, 0, 0);
-        (effects, ) = engine.getEffects(battleKey, 2, 0);
-        assertEq(address(effects[0].effect), address(q5), "Q5 should be applied to global effects");
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
-            1,
-            "Alice's mon should be KOed"
-        );
+        // Turn 2: Bob burns Alice; Alice rests.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 1, 0, 0);
+        {
+            (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
+            bool aliceBurned = false;
+            for (uint256 i; i < aliceEffects.length; i++) {
+                if (address(aliceEffects[i].effect) == address(burnStatus)) aliceBurned = true;
+            }
+            assertTrue(aliceBurned, "Alice should be burned by Bob");
+        }
 
-        // Honey Bribe test (NOTE when un-TODOing: teams hold 4 moves — swap honeyBribe into a
-        // lane (e.g. replace q5) and redeploy it here; it was dropped from the shared move array)
-        // Start a new battle
-        // Alice uses Heat Beacon, Bob does nothing
-        // Alice uses Honey Bribe, Bob uses KO move
-        // Verify Honey Bribe applied stat boost to Bob's mon, verify Alice is KOed
-        battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
+        // Turn 3: Alice (now burned) uses Heat Beacon -> the burn spreads to Bob.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, 4, 0, 0);
-        (effects, ) = engine.getEffects(battleKey, 1, 0);
-        assertEq(address(effects[1].effect), STAT_BOOST_ADDRESS, "StatBoosts should be applied to Bob's mon");
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.IsKnockedOut),
-            1,
-            "Alice's mon should be KOed"
-        );
-        */
+        {
+            (EffectInstance[] memory bobEffectsAfter,) = engine.getEffects(battleKey, 1, 0);
+            bool bobBurned = false;
+            for (uint256 i; i < bobEffectsAfter.length; i++) {
+                if (address(bobEffectsAfter[i].effect) == address(burnStatus)) bobBurned = true;
+            }
+            assertTrue(bobBurned, "Heat Beacon spreads Burn to the opponent when Embursa is burned");
+        }
     }
 
     // Verifies that when Q5 fires on RoundStart and KOs Bob's active mon (in a 2v2),

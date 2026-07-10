@@ -2,7 +2,7 @@ Name,Mon,Effect
 Rise From The Grave,Ghouliath,"Once per game, after being KO'ed, Ghouliath revives after 3 turns with 1 HP."
 Tinderclaws,Embursa,"After every move, Embursa has a 33% chance of burning itself. If burned, gain a 50% SpATK boost. When resting, Embursa heals from burn."
 Actus Reus,Malalien,"If Malalien KO's an opposing mon, they gain an Indictment. Upon KO, if they have an Indictment, Malalien cripples their murderer."
-Baselight,Iblivion,"At the end of every turn, Iblivion gains a Baselight point. Points can be used to empower moves."
+Baselight,Iblivion,"Whenever Iblivion takes damage, it gains a Baselight point. Points can be used to empower moves."
 Carrot Harvest,Sofabbi,"At the end of every turn, Sofabbi has a 50% chance of regaining 1 stamina. This can bank stamina past the maximum."
 Post-Workout,Pengym,"On swap out, if Pengym has a status condition, heal it (any status). If healed, Pengym regains 1 stamina, which can exceed the maximum."
 Angery,Gorillax,"Each time Gorillax takes damage, they get Angerier. At 3 stacks, they heal for 16.6% of max HP."

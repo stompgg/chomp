@@ -31,7 +31,7 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 import {ContagiousSlumber} from "../../src/mons/xmon/ContagiousSlumber.sol";
 import {Dreamcatcher} from "../../src/mons/xmon/Dreamcatcher.sol";
 import {InvokeTaboo} from "../../src/mons/xmon/InvokeTaboo.sol";
-import {NightTerrors} from "../../src/mons/xmon/NightTerrors.sol";
+import {OldVengeance} from "../../src/mons/xmon/OldVengeance.sol";
 import {Somniphobia} from "../../src/mons/xmon/Somniphobia.sol";
 import {VitalSiphon} from "../../src/mons/xmon/VitalSiphon.sol";
 
@@ -44,9 +44,8 @@ import {VitalSiphon} from "../../src/mons/xmon/VitalSiphon.sol";
  *     - Dreamcatcher heals on inline stamina regen (INLINE_STAMINA_REGEN_RULESET) [x]
  *     - Invoke Taboo brands the opponent's move; repeating it puts them to sleep [x]
  *     - Invoke Taboo brand clears when the opponent switches out [x]
- *     - Night Terrors doesn't trigger when terror stacks > available stamina [ ]
- *     - Night Terrors effect clears on swap [ ]
- *     - Night Terrors damage differs when opponent is asleep vs awake [ ]
+ *     - Somniphobia punishes opponents only, never the caster's own team [x]
+ *     - Old Vengeance hits once immediately, then again per stamina the opponent spent [x]
  */
 
 contract XmonTest is Test, BattleHelper {
@@ -278,18 +277,16 @@ contract XmonTest is Test, BattleHelper {
         // StaminaRegen tops each mon back up by 1, and that gain triggers Somniphobia on both.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
 
-        // The global coordinator exists and both active mons carry the per-mon effect.
+        // The global coordinator exists; only the opponent (not the caster) carries the per-mon effect.
         (bool coordinatorExists,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
         (bool aliceHas,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
         (bool bobHas,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
         assertTrue(coordinatorExists, "Somniphobia coordinator should exist");
-        assertTrue(aliceHas, "Alice should have Somniphobia effect");
-        assertTrue(bobHas, "Bob should have Somniphobia effect");
+        assertFalse(aliceHas, "Caster's own mon should NOT get Somniphobia");
+        assertTrue(bobHas, "Opponent should have Somniphobia effect");
 
-        // Round-end regen (a non-rest stamina gain) dealt one tick to each.
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick, "Alice tick from round-end regen"
-        );
+        // Round-end regen (a non-rest stamina gain) dealt one tick to the opponent only.
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0, "Caster takes no damage");
         assertEq(
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick, "Bob tick from round-end regen"
         );
@@ -299,15 +296,10 @@ contract XmonTest is Test, BattleHelper {
         );
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), -1, "Bob stamina still -1");
 
-        // Turn 2: both rest. Alice is already at full stamina -> no gain -> NO damage.
-        // Bob is at -1 -> resting regens +1 -> gain -> one more tick.
+        // Turn 2: both rest. The caster is untouched throughout; Bob at -1 regens +1 -> one more tick.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
 
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
-            tick,
-            "Alice took NO new damage: resting at full stamina is not a gain"
-        );
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0, "Caster still takes no damage");
         assertEq(
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
             tick * 2,
@@ -363,9 +355,10 @@ contract XmonTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Turn 1: Alice casts Somniphobia (stack 1), Bob burns stamina. Round-end regen deals 1 stack.
+        // Turn 1: Alice casts Somniphobia (stack 1), Bob burns stamina. Round-end regen deals 1 stack
+        // to the opponent only.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1, "Alice 1-stack tick");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0, "Caster takes no damage");
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1, "Bob 1-stack tick");
 
         // Turn 2: Alice casts again (stack 2), Bob burns stamina. Round-end regen now deals 2 stacks.
@@ -373,9 +366,7 @@ contract XmonTest is Test, BattleHelper {
 
         (,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
         assertEq((uint256(data) >> 8) & 0xFF, 2, "Coordinator should be at stack 2");
-        assertEq(
-            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), stack1 * 3, "Alice: 1 stack + 2 stacks"
-        );
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), 0, "Caster still takes no damage");
         assertEq(
             engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), stack1 * 3, "Bob: 1 stack + 2 stacks"
         );
@@ -516,7 +507,8 @@ contract XmonTest is Test, BattleHelper {
         // Turn 4: the 4th round end expires it; the per-mon copy self-clears the same round.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
         (bool coordinatorGone,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
-        (bool punisherGone,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
+        // The punisher lives on the opponent (Bob, side 1); the caster never gets one.
+        (bool punisherGone,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
         assertFalse(coordinatorGone, "Coordinator should expire after DURATION turns");
         assertFalse(punisherGone, "Per-mon copy should clear once the coordinator is gone");
     }
@@ -917,235 +909,45 @@ contract XmonTest is Test, BattleHelper {
         );
     }
 
-    function test_nightTerrorsDoesNotTriggerWhenStaminaTooLow() public {
-        /**
-         * Test that Night Terrors doesn't trigger damage when terror stacks > available stamina.
-         *
-         * Setup: Alice has 5 stamina
-         * Turn 1: Alice uses Night Terrors (1 stack on Alice), Alice loses 1 stamina at end of turn (5 -> 4)
-         * Turn 2: Alice uses Night Terrors (2 stacks on Alice), Alice loses 2 stamina at end of turn (4 -> 2)
-         * Turn 3: Alice uses Night Terrors (3 stacks on Alice), Alice has only 2 stamina, so no trigger
-         */
-        SleepStatus sleepStatus = new SleepStatus();
-        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
-
-        uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(nightTerrors)));
-
-        Mon memory mon = _createMon();
-        mon.moves = moves;
-        mon.stats.stamina = 5;
-        mon.stats.hp = 1000; // High HP to avoid KO
-        Mon[] memory team = new Mon[](1);
-        team[0] = mon;
-
-        defaultRegistry.setTeam(ALICE, team);
-        defaultRegistry.setTeam(BOB, team);
-
-        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Both players select their first mon
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-
-        // Turn 1: Alice uses Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Verify Alice has 1 stack and lost 1 stamina (5 -> 4), Bob took damage
-        int32 aliceStaminaAfterTurn1 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
-        int32 bobHpAfterTurn1 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        assertEq(aliceStaminaAfterTurn1, -1, "Alice should have -1 stamina delta after turn 1");
-        assertTrue(bobHpAfterTurn1 < 0, "Bob should have taken damage");
-
-        // Turn 2: Alice uses Night Terrors again, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Verify Alice has 2 stacks and lost 2 more stamina (4 -> 2), Bob took more damage
-        int32 aliceStaminaAfterTurn2 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
-        int32 bobHpAfterTurn2 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        assertEq(aliceStaminaAfterTurn2, -3, "Alice should have -3 stamina delta after turn 2");
-        assertTrue(bobHpAfterTurn2 < bobHpAfterTurn1, "Bob should have taken more damage");
-
-        // Turn 3: Alice uses Night Terrors again, Bob does nothing
-        // Alice has 2 stamina but 3 stacks, so no trigger
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Verify Alice's stamina didn't change (still at 2) and Bob's HP didn't change
-        int32 aliceStaminaAfterTurn3 = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Stamina);
-        int32 bobHpAfterTurn3 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        assertEq(aliceStaminaAfterTurn3, -3, "Alice should still have -3 stamina delta (no trigger)");
-        assertEq(bobHpAfterTurn3, bobHpAfterTurn2, "Bob's HP should not have changed (no damage dealt)");
-    }
-
-    function test_nightTerrorsClearsOnSwap() public {
-        /**
-         * Test that Night Terrors effect clears when the mon switches out.
-         *
-         * Setup: Both players have 2-mon teams
-         * Turn 1: Alice uses Night Terrors (effect on Alice's mon 0)
-         * Turn 2: Alice swaps to mon 1
-         * Verify: Alice's mon 0 no longer has Night Terrors effect
-         */
-        SleepStatus sleepStatus = new SleepStatus();
-        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
-
-        uint256[] memory moves = new uint256[](1);
-        moves[0] = uint256(uint160(address(nightTerrors)));
-
-        Mon memory mon = _createMon();
-        mon.moves = moves;
-        mon.stats.hp = 1000;
-        mon.stats.stamina = 10;
-
-        Mon[] memory team = new Mon[](2);
-        team[0] = mon;
-        team[1] = mon;
-
-        defaultRegistry.setTeam(ALICE, team);
-        defaultRegistry.setTeam(BOB, team);
-
-        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Both players select their first mon
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
-        );
-
-        // Turn 1: Alice uses Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Verify Alice's mon 0 has Night Terrors effect
-        (EffectInstance[] memory aliceEffectsBeforeSwap,) = engine.getEffects(battleKey, 0, 0);
-        bool hasNightTerrorsBeforeSwap = false;
-        for (uint256 i = 0; i < aliceEffectsBeforeSwap.length; i++) {
-            if (address(aliceEffectsBeforeSwap[i].effect) == address(nightTerrors)) {
-                hasNightTerrorsBeforeSwap = true;
-                break;
-            }
-        }
-        assertTrue(hasNightTerrorsBeforeSwap, "Alice's mon 0 should have Night Terrors effect before swap");
-
-        // Turn 2: Alice swaps to mon 1, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
-        );
-
-        // Verify Alice's mon 0 no longer has Night Terrors effect
-        (EffectInstance[] memory aliceEffectsAfterSwap,) = engine.getEffects(battleKey, 0, 0);
-        bool hasNightTerrorsAfterSwap = false;
-        for (uint256 i = 0; i < aliceEffectsAfterSwap.length; i++) {
-            if (address(aliceEffectsAfterSwap[i].effect) == address(nightTerrors)) {
-                hasNightTerrorsAfterSwap = true;
-                break;
-            }
-        }
-        assertFalse(hasNightTerrorsAfterSwap, "Alice's mon 0 should not have Night Terrors effect after swap");
-    }
-
-    function test_nightTerrorsDamageIncreasesWhenAsleep() public {
-        /**
-         * Test that Night Terrors deals more damage when the opponent is asleep.
-         *
-         * Setup: Create a sleep-inflicting move
-         * Turn 1: Alice uses Night Terrors (effect on Alice), damages Bob (awake)
-         * Turn 2: Alice swaps out to clear Night Terrors
-         * Turn 3: Alice swaps back in
-         * Turn 4: Alice uses Sleep move on Bob
-         * Turn 5: Alice uses Night Terrors, damages sleeping Bob
-         * Verify: Asleep damage is at least 50% more than awake damage (30/20 = 1.5)
-         */
-        SleepStatus sleepStatus = new SleepStatus();
-        NightTerrors nightTerrors = new NightTerrors(ITypeCalculator(address(typeCalc)), IEffect(address(sleepStatus)));
-
-        // Create a sleep-inflicting move with zero cost and zero damage
-        StandardAttack sleepMove = attackFactory.createAttack(
-            ATTACK_PARAMS({
-                BASE_POWER: 0,
-                STAMINA_COST: 0,
-                ACCURACY: 100,
-                PRIORITY: DEFAULT_PRIORITY,
-                MOVE_TYPE: Type.Cosmic,
-                EFFECT_ACCURACY: 100,
-                MOVE_CLASS: MoveClass.Special,
-                CRIT_RATE: 0,
-                VOLATILITY: 0,
-                NAME: "Sleep Move",
-                EFFECT: IEffect(address(sleepStatus))
-            })
-        );
+    // Old Vengeance hits once on cast, then again at end of turn for each stamina the opponent spent.
+    function test_oldVengeanceFollowUpScalesWithOpponentStamina() public {
+        OldVengeance oldVengeance = new OldVengeance(ITypeCalculator(address(typeCalc)));
+        StandardAttack staminaBurn = _staminaBurn(3);
 
         uint256[] memory moves = new uint256[](2);
-        moves[0] = uint256(uint160(address(nightTerrors)));
-        moves[1] = uint256(uint160(address(sleepMove)));
+        moves[0] = uint256(uint160(address(oldVengeance)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
 
         Mon memory mon = _createMon();
         mon.moves = moves;
-        mon.stats.hp = 1000;
-        mon.stats.stamina = 20;
+        mon.stats.hp = 100000; // large so nobody is KO'd across many hits
+        mon.stats.stamina = 10;
 
-        Mon[] memory team = new Mon[](2);
+        Mon[] memory team = new Mon[](1);
         team[0] = mon;
-        team[1] = mon;
-
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
         bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
-
-        // Both players select their first mon
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Precomputed seed: Bob stays asleep through turn 5 + no crit/volatility so the awake/asleep
-        // damage ratio is clean.
-        mockOracle.setRNG(28);
-
-        // Turn 1: Alice uses Night Terrors, Bob does nothing
+        // Turn 1: Alice uses Old Vengeance, Bob rests (0 stamina) -> only the immediate hit.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        int32 bobAfterT1 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 immediateOnly = -bobAfterT1;
+        assertTrue(immediateOnly > 0, "Immediate hit should deal damage");
 
-        // Check damage dealt to Bob (should be BASE_DAMAGE_PER_STACK = 20)
-        int32 bobHpAfterAwakeDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        int32 awakeDamage = -bobHpAfterAwakeDamage;
+        // The follow-up is one-shot: it fired at round end and removed itself.
+        (bool stillArmed,,) = engine.getEffectData(battleKey, 0, 0, address(oldVengeance));
+        assertFalse(stillArmed, "Old Vengeance effect should not persist past its turn");
 
-        // Turn 2: Alice swaps out to mon 1 to clear Night Terrors, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
-        );
+        // Turn 2: Alice uses Old Vengeance, Bob spends 3 stamina -> immediate hit + 3 follow-ups.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
+        int32 bobAfterT2 = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        int32 turn2Damage = bobAfterT1 - bobAfterT2; // this turn's HP loss (immediate + 3 hits)
 
-        // Turn 3: Alice swaps back to mon 0, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(
-            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(0), 0
-        );
-
-        // Turn 4: Alice uses Sleep move on Bob, Bob does nothing
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Verify Bob is asleep
-        (EffectInstance[] memory bobEffects,) = engine.getEffects(battleKey, 1, 0);
-        bool bobIsAsleep = false;
-        for (uint256 i = 0; i < bobEffects.length; i++) {
-            if (address(bobEffects[i].effect) == address(sleepStatus)) {
-                bobIsAsleep = true;
-                break;
-            }
-        }
-        assertTrue(bobIsAsleep, "Bob should be asleep");
-
-        // Get Bob's HP before asleep damage
-        int32 bobHpBeforeAsleepDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-
-        // Turn 5: Alice uses Night Terrors on sleeping Bob, Bob does nothing (forced by sleep)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
-
-        // Check damage dealt to Bob (should be ASLEEP_DAMAGE_PER_STACK = 30)
-        int32 bobHpAfterAsleepDamage = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
-        int32 asleepDamage = bobHpBeforeAsleepDamage - bobHpAfterAsleepDamage;
-
-        // Verify asleep damage is at least 50% more than awake damage (30/20 = 1.5)
-        assertTrue(
-            asleepDamage * 100 >= awakeDamage * 150, "Asleep damage should be at least 50% more than awake damage"
-        );
+        assertTrue(turn2Damage > immediateOnly, "More opponent stamina spent -> more Old Vengeance hits");
     }
 }

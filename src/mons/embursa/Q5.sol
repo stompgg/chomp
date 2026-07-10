@@ -46,6 +46,11 @@ contract Q5 is IMoveSet, BasicEffect {
         attackerPlayerIndex = uint256(data) & type(uint64).max;
     }
 
+    // Per-side (no monIndex) so only one Q5 can be queued per side at a time, unique across mons.
+    function _q5GuardKey(uint256 attackerPlayerIndex) internal pure returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(attackerPlayerIndex, "Q5_ACTIVE"))));
+    }
+
     function move(
         IEngine engine,
         bytes32 battleKey,
@@ -62,6 +67,12 @@ contract Q5 is IMoveSet, BasicEffect {
         if (targetSlot == NO_SLOT) {
             return;
         }
+        // One active Q5 bomb per side at a time (recastable once the previous one detonates).
+        uint64 guardKey = _q5GuardKey(attackerPlayerIndex);
+        if (engine.getGlobalKV(battleKey, guardKey) != 0) {
+            return;
+        }
+        engine.setGlobalKV(guardKey, 1);
         engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex, targetSlot));
 
         // Clear the priority boost
@@ -114,6 +125,8 @@ contract Q5 is IMoveSet, BasicEffect {
                 rng,
                 DEFAULT_CRIT_RATE
             );
+            // Free the side's Q5 slot so a new bomb can be queued.
+            engine.setGlobalKV(_q5GuardKey(attackerPlayerIndex), 0);
             return (extraData, true);
         } else {
             return (_packExtraData(turnCount + 1, attackerPlayerIndex, targetSlot), false);

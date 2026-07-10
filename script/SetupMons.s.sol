@@ -9,6 +9,7 @@ import {Type} from "../src/Enums.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
+import {BigBellow} from "../src/mons/aurox/BigBellow.sol";
 import {BullRush} from "../src/mons/aurox/BullRush.sol";
 import {GildedRecovery} from "../src/mons/aurox/GildedRecovery.sol";
 import {IronWall} from "../src/mons/aurox/IronWall.sol";
@@ -59,11 +60,12 @@ import {SnackBreak} from "../src/mons/sofabbi/SnackBreak.sol";
 import {DualShock} from "../src/mons/volthare/DualShock.sol";
 import {MegaStarBlast} from "../src/mons/volthare/MegaStarBlast.sol";
 import {PreemptiveShock} from "../src/mons/volthare/PreemptiveShock.sol";
+import {Quickstorm} from "../src/mons/volthare/Quickstorm.sol";
 import {RoundTrip} from "../src/mons/volthare/RoundTrip.sol";
 import {ContagiousSlumber} from "../src/mons/xmon/ContagiousSlumber.sol";
 import {Dreamcatcher} from "../src/mons/xmon/Dreamcatcher.sol";
 import {InvokeTaboo} from "../src/mons/xmon/InvokeTaboo.sol";
-import {NightTerrors} from "../src/mons/xmon/NightTerrors.sol";
+import {OldVengeance} from "../src/mons/xmon/OldVengeance.sol";
 import {Somniphobia} from "../src/mons/xmon/Somniphobia.sol";
 import {VitalSiphon} from "../src/mons/xmon/VitalSiphon.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
@@ -552,13 +554,13 @@ contract SetupMons is Script {
     }
 
     function deployVolthare(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](4);
+        DeployData[] memory deployedContracts = new DeployData[](5);
 
         // Cache commonly used addresses
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
         address zapstatus = vm.envAddress("ZAP_STATUS");
 
-        address[4] memory addrs;
+        address[5] memory addrs;
 
         {
             addrs[0] = address(new RoundTrip(ITypeCalculator(typecalculator)));
@@ -573,8 +575,12 @@ contract SetupMons is Script {
             deployedContracts[2] = DeployData({name: "Dual Shock", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new PreemptiveShock(ITypeCalculator(typecalculator)));
-            deployedContracts[3] = DeployData({name: "Preemptive Shock", contractAddress: addrs[3]});
+            addrs[3] = address(new Quickstorm(ITypeCalculator(typecalculator), IEffect(zapstatus)));
+            deployedContracts[3] = DeployData({name: "Quickstorm", contractAddress: addrs[3]});
+        }
+        {
+            addrs[4] = address(new PreemptiveShock(ITypeCalculator(typecalculator)));
+            deployedContracts[4] = DeployData({name: "Preemptive Shock", contractAddress: addrs[4]});
         }
 
         _registerVolthare(registry, addrs);
@@ -582,7 +588,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerVolthare(GachaTeamRegistry registry, address[4] memory addrs) internal {
+    function _registerVolthare(GachaTeamRegistry registry, address[5] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 310,
             stamina: 5,
@@ -594,25 +600,26 @@ contract SetupMons is Script {
             type1: Type.Lightning,
             type2: Type.Cyber
         });
-        uint256[] memory moves = new uint256[](4);
+        uint256[] memory moves = new uint256[](5);
         moves[0] = 0x5a4820a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("ZAP_STATUS")));
         moves[1] = uint256(uint160(addrs[0]));
         moves[2] = uint256(uint160(addrs[1]));
         moves[3] = uint256(uint160(addrs[2]));
+        moves[4] = uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = uint256(uint160(addrs[3]));
+        abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(8, stats, moves, abilities, keys, values);
     }
 
     function deployAurox(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
-        DeployData[] memory deployedContracts = new DeployData[](5);
+        DeployData[] memory deployedContracts = new DeployData[](6);
 
         // Cache commonly used addresses
         address typecalculator = vm.envAddress("TYPE_CALCULATOR");
 
-        address[5] memory addrs;
+        address[6] memory addrs;
 
         {
             addrs[0] = address(new VolatilePunch(ITypeCalculator(typecalculator), IEffect(vm.envAddress("BURN_STATUS")), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
@@ -631,8 +638,12 @@ contract SetupMons is Script {
             deployedContracts[3] = DeployData({name: "Bull Rush", contractAddress: addrs[3]});
         }
         {
-            addrs[4] = address(new UpOnly());
-            deployedContracts[4] = DeployData({name: "Up Only", contractAddress: addrs[4]});
+            addrs[4] = address(new BigBellow());
+            deployedContracts[4] = DeployData({name: "Big Bellow", contractAddress: addrs[4]});
+        }
+        {
+            addrs[5] = address(new UpOnly());
+            deployedContracts[5] = DeployData({name: "Up Only", contractAddress: addrs[5]});
         }
 
         _registerAurox(registry, addrs);
@@ -640,7 +651,7 @@ contract SetupMons is Script {
         return deployedContracts;
     }
 
-    function _registerAurox(GachaTeamRegistry registry, address[5] memory addrs) internal {
+    function _registerAurox(GachaTeamRegistry registry, address[6] memory addrs) internal {
         MonStats memory stats = MonStats({
             hp: 400,
             stamina: 5,
@@ -652,13 +663,14 @@ contract SetupMons is Script {
             type1: Type.Metal,
             type2: Type.None
         });
-        uint256[] memory moves = new uint256[](4);
+        uint256[] memory moves = new uint256[](5);
         moves[0] = uint256(uint160(addrs[0]));
         moves[1] = uint256(uint160(addrs[1]));
         moves[2] = uint256(uint160(addrs[2]));
         moves[3] = uint256(uint160(addrs[3]));
+        moves[4] = uint256(uint160(addrs[4]));
         uint256[] memory abilities = new uint256[](1);
-        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[4]));
+        abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[5]));
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(9, stats, moves, abilities, keys, values);
@@ -686,8 +698,8 @@ contract SetupMons is Script {
             deployedContracts[2] = DeployData({name: "Somniphobia", contractAddress: addrs[2]});
         }
         {
-            addrs[3] = address(new NightTerrors(ITypeCalculator(typecalculator), IEffect(sleepstatus)));
-            deployedContracts[3] = DeployData({name: "Night Terrors", contractAddress: addrs[3]});
+            addrs[3] = address(new OldVengeance(ITypeCalculator(typecalculator)));
+            deployedContracts[3] = DeployData({name: "Old Vengeance", contractAddress: addrs[3]});
         }
         {
             addrs[4] = address(new InvokeTaboo(IEffect(sleepstatus)));

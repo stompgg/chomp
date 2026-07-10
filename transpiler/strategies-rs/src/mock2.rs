@@ -20,8 +20,8 @@ use crate::roster::{self, Roster};
 use crate::sim::Sim;
 use crate::shared::{build_damage_calc_context, estimate_damage};
 use crate::view::{
-    active_mon_indices, ko_bitmap, mon_skip_turn, mon_state, mon_value, move_slot, slot_move_class,
-    slot_move_type, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    active_mon_indices, ko_bitmap, mon_max_hp, mon_skip_turn, mon_state, mon_value, move_slot,
+    slot_move_class, slot_move_type, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 /// Pack an inline move word from its fields.
@@ -169,9 +169,9 @@ fn compute_power(sim: &mut Sim, seat: Seat, bk: B256, opp_active: usize, self_ac
                 chomp_engine::Engine::getEffectData(&mut sim.world, bk, seat.phys(VCPU), U256::from(self_active as u64), roster::addr_of("BurnStatus"));
             if burned { base * 3 / 2 } else { base }
         }
-        // Opp-action rules: base pre-decide, overridden by repack_postdecide once the opponent commits.
-        PowerRule::X15IfOppPassive { base } | PowerRule::X2IfOppTypeMatchesAdapted { base } => base,
-        PowerRule::CounterEstimatedIncoming { floor, .. } => floor,
+        // Opp-action rules: the pre-decide estimate is just PowerRule::base()/floor; repack_postdecide
+        // overrides it once the opponent commits.
+        PowerRule::X15IfOppPassive { .. } | PowerRule::X2IfOppTypeMatchesAdapted { .. } | PowerRule::CounterEstimatedIncoming { .. } => rule.base(),
     }
 }
 
@@ -229,62 +229,83 @@ fn write_word(sim: &mut Sim, bk: B256, phys: u64, mon_slot: usize, lane: usize, 
     team.get_mut(&U256::from(mon_slot as u64)).moves[lane] = word;
 }
 
-/// Heal a mon by writing its `hpDelta` storage directly (survives re-transpile; touches no engine
-/// code). A heal only raises HP, so there is no KO / forced-switch inconsistency. Mirrors the
-/// engine's own updateMonState sentinel handling, and clamps at max (hpDelta ≤ 0).
-pub fn heal_mon(sim: &mut Sim, bk: B256, phys: u64, mon_slot: usize, amount: i32) {
+/// Apply a signed delta to one of a mon's MonState fields via direct storage (survives re-transpile;
+/// touches no engine code) — the general write-mutator primitive behind post-effect riders. Mirrors
+/// the engine's updateMonState sentinel handling, then clamps the resulting delta to `[lo, hi]`: an
+/// HP heal passes `(i32::MIN, 0)` so it never overheals past max; a stat sap passes a floor. Because
+/// it only writes a delta field (never a KO/skip flag), it can't create a forced-switch inconsistency.
+pub fn apply_mon_delta(sim: &mut Sim, bk: B256, phys: u64, mon_slot: usize, field: MonStateIndexName, amount: i32, lo: i32, hi: i32) {
     let cfg = sim.world.Engine.battleConfig.get_mut(&bk);
     let st = if phys == 0 {
         cfg.p0States.get_mut(&U256::from(mon_slot as u64))
     } else {
         cfg.p1States.get_mut(&U256::from(mon_slot as u64))
     };
-    let cur = if st.hpDelta == chomp_engine::Constants::CLEARED_MON_STATE_SENTINEL { 0 } else { st.hpDelta };
-    st.hpDelta = (cur + amount).min(0);
+    // The index enum uses American spelling; the struct fields British — map explicitly.
+    let slot: &mut i32 = match field {
+        MonStateIndexName::Hp => &mut st.hpDelta,
+        MonStateIndexName::Stamina => &mut st.staminaDelta,
+        MonStateIndexName::Speed => &mut st.speedDelta,
+        MonStateIndexName::Attack => &mut st.attackDelta,
+        MonStateIndexName::Defense => &mut st.defenceDelta,
+        MonStateIndexName::SpecialAttack => &mut st.specialAttackDelta,
+        MonStateIndexName::SpecialDefense => &mut st.specialDefenceDelta,
+        _ => return,
+    };
+    let cur = if *slot == chomp_engine::Constants::CLEARED_MON_STATE_SENTINEL { 0 } else { *slot };
+    *slot = (cur + amount).clamp(lo, hi);
+}
+
+/// The post-execute mock hook: if the mock mon used the mock lane this turn, apply its `MockPost`
+/// rider via the write-mutator. Takes the pre-execute active indices (the mon that actually acted)
+/// and handles both seats symmetrically; called after execute_turn (writes the post-execute key).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_post(sim: &mut Sim, bk: B256, spec: &GameSpec, target_id: u32, lane: usize, mock: &MockMove, p0a: usize, p1a: usize, p0_move: Option<Mv>, p1_move: Option<Mv>) {
+    let pct = match mock.post {
+        MockPost::HealPctMaxHp(pct) => pct,
+        MockPost::None => return,
+    };
+    for (phys, ids, active, vp, mv) in [
+        (0u64, &spec.p0_ids, p0a, VOPP, p0_move),
+        (1u64, &spec.p1_ids, p1a, VCPU, p1_move),
+    ] {
+        if ids.get(active) == Some(&target_id) && mv.map(|m| m.move_index as usize) == Some(lane) {
+            let max = mon_max_hp(sim, Seat { cpu: 1 }, bk, vp, active);
+            apply_mon_delta(sim, bk, phys, active, MonStateIndexName::Hp, (max * pct as i64 / 100) as i32, i32::MIN, 0);
+        }
+    }
 }
 
 // The instrumented mock loop lives in game.rs (needs the private seat/decide helpers); this module
 // owns the move definitions, power math, and the A/B driver.
 
 /// Build the A/B: baseline (real kit) vs the mock swapped into `mock.lane` of `mock.mon`, on the
-/// same drafts. Returns (baseline, mocked) stats for the mock mon.
+/// same drafts (the default greedy basket). Returns (baseline, mocked) stats for the mock mon.
 pub fn run_mock_ab(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, seed_base: u32, threads: usize) -> (MonStat, MonStat) {
-    let book = roster::address_book();
-    let target_id = roster.mons.iter().find(|m| m.name == mock.mon).expect("mock mon in roster").id;
-
-    // Baseline.
     let (specs, _) = build_specs(roster, games, wseed, seed_base);
-    let base = fold(&run_games_instrumented(&specs, &book, threads));
-
-    // Mocked: clone the same drafts, swap the lane, run the mock-aware loop that repacks it.
-    let mut mspecs = specs.clone();
-    for spec in &mut mspecs {
-        swap_lane(spec, target_id, mock);
-    }
-    let mocked = fold(&run_games_mock(&mspecs, &book, threads, target_id, mock.lane, mock));
-
-    let empty = MonStat::default();
-    (
-        base.per_mon.get(&target_id).cloned().unwrap_or_else(|| empty.clone()),
-        mocked.per_mon.get(&target_id).cloned().unwrap_or(empty),
-        )
+    run_mock_ab_on(roster, mock, specs, threads)
 }
 
 /// Same A/B, but under an explicit pilot rotation — e.g. the no-peek pilots as a "ceiling", which
 /// actually play the reads/setups the greedy basket ignores, so a conditional/yomi move shows its
 /// upside rather than just its floor.
 pub fn run_mock_ab_with(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, seed_base: u32, threads: usize, pairs: &[(StrategyKind, StrategyKind)]) -> (MonStat, MonStat) {
+    let (specs, _) = build_specs_with(roster, games, wseed, seed_base, pairs);
+    run_mock_ab_on(roster, mock, specs, threads)
+}
+
+/// Fold both legs of the A/B on the same drafts and return (baseline, mocked) stats for the mock mon.
+/// The baseline (real kit) run finishes folding before the drafts are swapped in place for the mocked
+/// leg — so `specs` is mutated rather than deep-cloned (each draft owns two `Vec<Mon>` teams).
+fn run_mock_ab_on(roster: &Roster, mock: &MockMove, mut specs: Vec<GameSpec>, threads: usize) -> (MonStat, MonStat) {
     let book = roster::address_book();
     let target_id = roster.mons.iter().find(|m| m.name == mock.mon).expect("mock mon in roster").id;
 
-    let (specs, _) = build_specs_with(roster, games, wseed, seed_base, pairs);
     let base = fold(&run_games_instrumented(&specs, &book, threads));
-
-    let mut mspecs = specs.clone();
-    for spec in &mut mspecs {
+    for spec in &mut specs {
         swap_lane(spec, target_id, mock);
     }
-    let mocked = fold(&run_games_mock(&mspecs, &book, threads, target_id, mock.lane, mock));
+    let mocked = fold(&run_games_mock(&specs, &book, threads, target_id, mock.lane, mock));
 
     let empty = MonStat::default();
     (

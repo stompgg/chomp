@@ -8,6 +8,7 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveMeta} from "../../Structs.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
@@ -27,32 +28,32 @@ contract HeatBeacon is IMoveSet {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
         uint256
     ) external {
-        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == NO_SLOT) {
-            return; // no chosen target (defensive; the engine fizzles first)
+        // Only spread Burn to the opponent if Embursa is itself Burned.
+        uint64 selfStatusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, attackerMonIndex);
+        if (engine.getGlobalKV(battleKey, selfStatusKey) == uint192(uint160(address(BURN_STATUS)))) {
+            uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+            if (targetSlot != NO_SLOT) {
+                uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
+                uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
+                engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
+            }
         }
-        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
-        // Apply burn to opposing mon
-        engine.addEffect(defenderPlayerIndex, defenderMonIndex, BURN_STATUS, "");
 
-        // Clear the priority boost
+        // Grant +1 priority to next turn's move (refresh if already set).
         if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
             HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
         }
-
-        // Set a new priority boost
         HeatBeaconLib._setPriorityBoost(engine, attackerPlayerIndex);
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
-        return 2;
+        return 0;
     }
 
     function priority(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex) public view returns (uint32) {

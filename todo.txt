@@ -3,7 +3,7 @@
 ---------------------------------------------------------------------------------------------
 
 Volthare:
-- Quickstorm, 2 stamina, 30 power, inflicts zap on opponent, can only be used first turn volthare comes out
+- New move at lv 6: Quickstorm, 2 stamina, 30 power, inflicts zap on opponent, can only be used first turn volthare comes out
 
 Aurox:
 - New move at lv 6: Big Bellow, 1 stamina, Metal, Other (any target)
@@ -18,7 +18,6 @@ Embursa
 
 Iblivion
 - Change Baselight to be acquired only when taking damage, not at end of turn
-- Loop, change top end boost % to be 50% [x]
 
 Xmon
 - Change Somniphobia to affect opponents only (still stackable)
@@ -27,7 +26,6 @@ Xmon
 - Remove Night Terrors
 
 Nirvamma
-- Buff status % to be 50% for Modal Bolt [x]
 - Change Hard Reset to Inversion, 0 stamina Math, normal priority:
     - Change direction of all stat boosts from opponent
 

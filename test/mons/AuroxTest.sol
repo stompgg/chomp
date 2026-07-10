@@ -25,6 +25,7 @@ import {TestTeamRegistry} from "../mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // Aurox moves
+import {BigBellow} from "../../src/mons/aurox/BigBellow.sol";
 import {BullRush} from "../../src/mons/aurox/BullRush.sol";
 import {GildedRecovery} from "../../src/mons/aurox/GildedRecovery.sol";
 import {IronWall} from "../../src/mons/aurox/IronWall.sol";
@@ -87,6 +88,68 @@ contract AuroxTest is Test, BattleHelper {
         int32 aliceHpDelta = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         int32 expectedSelfDamage = -1 * int32(maxHp) * int32(bullRush.SELF_DAMAGE_PERCENT()) / 100;
         assertEq(aliceHpDelta, expectedSelfDamage, "Alice should take self damage");
+    }
+
+    // Big Bellow halves the target's SpATK and Speed until it switches out.
+    function test_bigBellowHalvesSpatkAndSpeed() public {
+        BigBellow bigBellow = new BigBellow();
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = uint256(uint160(address(bigBellow)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = moves;
+        aliceMon.stats.speed = 100;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = moves;
+        bobMon.stats.specialAttack = 100;
+        bobMon.stats.speed = 50;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Alice uses Big Bellow on Bob; Bob rests.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        // Bob's SpATK and Speed are halved (Divide 50) -> the boost delta is -base/2.
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.SpecialAttack),
+            -int32(uint32(bobMon.stats.specialAttack)) / 2,
+            "Bob SpATK should be halved"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Speed),
+            -int32(uint32(bobMon.stats.speed)) / 2,
+            "Bob Speed should be halved"
+        );
+
+        // Temp boost drops once Bob switches out and back in.
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(1)
+        );
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, NO_OP_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, uint16(0)
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.SpecialAttack),
+            int32(0),
+            "Bob SpATK restored after switch-out"
+        );
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Speed),
+            int32(0),
+            "Bob Speed restored after switch-out"
+        );
     }
 
     function test_gildedRecoveryHealsWithStatus() public {

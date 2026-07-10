@@ -107,12 +107,12 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Check that Baselight level is 2 (1 from switch-in + 1 from round end)
+        // Baselight seeds at 1 on switch-in; it no longer gains at round end (gains on damage).
         uint256 baselightLevel = baselight.getBaselightLevel(engine, battleKey, 0, 0);
-        assertEq(baselightLevel, 2, "Baselight should be 2 after first switch in (1 initial + 1 from round end)");
+        assertEq(baselightLevel, 1, "Baselight should be 1 after first switch in (seed only, no round-end gain)");
     }
 
-    function test_baselightGainsOnePerRound() public {
+    function test_baselightGainsOnDamage() public {
         uint256[] memory moves = new uint256[](4);
         moves[0] = uint256(uint160(address(brightback)));
         moves[1] = uint256(uint160(address(unboundedStrike)));
@@ -148,15 +148,19 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Baselight starts at 2 (1 from switch + 1 from round end)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start at 2 after switch-in round");
+        // Seeds at 1; no round-end gain.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should seed at 1 after switch-in");
 
-        // After one more round, should be 3 (max)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after one more round");
+        // Each time Iblivion takes damage it gains 1 (Bob attacks with move 0). 1 -> 2.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should be 2 after taking a hit");
 
-        // After another round, should still be 3 (capped at max)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        // 2 -> 3 (max).
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after another hit");
+
+        // Capped at 3.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should stay at 3 (max)");
     }
 
@@ -218,25 +222,25 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Alice starts with 2 Baselight stacks (1 from switch + 1 from round end)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should start with 2 stacks");
+        // Alice seeds at 1 Baselight stack.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should seed with 1 stack");
 
-        // Bob damages Alice first
+        // Bob damages Alice first -> Alice gains a Baselight stack (1 -> 2).
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         // Get Alice's HP before Brightback
         int32 aliceHpBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
         assertTrue(aliceHpBefore < 0, "Alice should have taken damage");
 
-        // After round, Baselight is now 3 (max)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should be 3 (max) after round");
+        // Taking the hit bumped Baselight to 2.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should be 2 after taking a hit");
 
         // Alice uses Brightback - should consume 1 stack and heal
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Check Baselight decreased by 1 (3 - 1 = 2, then +1 at round end = 3 max)
+        // Consumed 1 (2 -> 1); no round-end gain.
         uint256 afterBrightback = baselight.getBaselightLevel(engine, battleKey, 0, 0);
-        assertEq(afterBrightback, 3, "Baselight should be 3 (consumed 1 from 3, gained 1 at round end, capped at 3)");
+        assertEq(afterBrightback, 1, "Baselight should be 1 (consumed 1 from 2)");
 
         // Check Alice healed
         int32 aliceHpAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp);
@@ -353,8 +357,8 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Alice has 2 stacks (not 3), so normal power (80)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
+        // Alice has 1 stack (not 3), so normal power (80).
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should have 1 stack");
 
         // Alice uses Unbounded Strike
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, NO_OP_MOVE_INDEX, 0, 0);
@@ -362,11 +366,9 @@ contract IblivionTest is Test, BattleHelper {
         int32 bobHpDelta = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertTrue(bobHpDelta < 0, "Bob should have taken damage");
 
-        // Stacks should NOT be consumed (still 2, but round end adds 1 = 3 max)
+        // Below 3 stacks Unbounded Strike consumes nothing; Alice took no damage, so still 1.
         assertEq(
-            baselight.getBaselightLevel(engine, battleKey, 0, 0),
-            3,
-            "Stacks should not be consumed at < 3, capped at 3 after round end"
+            baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Stacks unchanged below the 3-stack threshold"
         );
     }
 
@@ -426,8 +428,9 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Wait for 3 stacks (start at 2, need 1 more round)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        // Accrue to 3 stacks: Iblivion gains 1 per hit (seed 1 -> 2 -> 3). Bob attacks with move 0.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should have 3 stacks");
 
@@ -441,12 +444,8 @@ contract IblivionTest is Test, BattleHelper {
         int32 damageDealt = bobHpBefore - bobHpAfter;
         assertTrue(damageDealt > 0, "Bob should have taken damage");
 
-        // All stacks consumed (but round end adds 1, so should be 1)
-        assertEq(
-            baselight.getBaselightLevel(engine, battleKey, 0, 0),
-            1,
-            "Stacks should be consumed to 0 then gain 1 at round end"
-        );
+        // All 3 stacks consumed; Alice took no damage this turn, so Baselight is 0.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 0, "All stacks consumed to 0");
     }
 
     // ============ Loop Tests ============
@@ -487,8 +486,8 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // At Baselight 2, Loop should give 30% boost
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
+        // At Baselight 1 (seed), Loop should give a 15% boost.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should have 1 stack");
 
         // Get stats before Loop
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
@@ -496,9 +495,9 @@ contract IblivionTest is Test, BattleHelper {
         // Alice uses Loop
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Check stats are boosted (30% of 100 = 30)
+        // Check stats are boosted (15% of 100 = 15)
         int32 attackAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
-        assertEq(attackAfter - attackBefore, 30, "Attack should be boosted by 30%");
+        assertEq(attackAfter - attackBefore, 15, "Attack should be boosted by 15%");
 
         // Loop should be marked as active
         assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");
@@ -624,7 +623,7 @@ contract IblivionTest is Test, BattleHelper {
 
     function test_loopBoostPercentages() public {
         // Test that Loop gives correct boosts at different Baselight levels
-        // Level 1: 15%, Level 2: 30%, Level 3: 40%
+        // Level 1: 15%, Level 2: 30%, Level 3: 50%
 
         uint256[] memory moves = new uint256[](4);
         moves[0] = uint256(uint160(address(brightback)));
@@ -661,19 +660,20 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Wait for 3 stacks (start at 2, need 1 more round)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        // Accrue to 3 stacks: 1 per hit (seed 1 -> 2 -> 3). Bob attacks with move 0.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Should have 3 stacks");
 
         // Get stats before Loop
         int32 attackBefore = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
 
-        // Alice uses Loop at level 3 - should get 40% boost
+        // Alice uses Loop at level 3 - should get 50% boost
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
         int32 attackAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
-        assertEq(attackAfter - attackBefore, 40, "Attack should be boosted by 40% at level 3");
+        assertEq(attackAfter - attackBefore, 50, "Attack should be boosted by 50% at level 3");
     }
 
     // ============ Renormalize Tests ============
@@ -714,13 +714,13 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Start at 2 stacks (1 initial + 1 from round end)
-        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 2, "Should have 2 stacks");
+        // Seeds at 1 stack.
+        assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should seed at 1 stack");
 
         // Alice uses Renormalize
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 3, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Should be at 3 stacks (set to 3, then capped at max even with round end)
+        // Should be at 3 stacks (Renormalize sets it to 3).
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 3, "Baselight should be set to 3");
     }
 
