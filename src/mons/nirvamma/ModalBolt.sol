@@ -12,7 +12,7 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract ModalBolt is IMoveSet {
     uint32 public constant BASE_POWER = 90;
-    uint8 public constant EFFECT_ACCURACY = 33;
+    uint8 public constant EFFECT_ACCURACY = 50;
 
     uint16 public constant MODE_FIRE = 0;
     uint16 public constant MODE_ICE = 1;
