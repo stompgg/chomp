@@ -164,7 +164,7 @@ contract HardReset is IMoveSet, BasicEffect {
     ) internal {
         // The random pick can collide with the ally slot's occupant in doubles; the engine's
         // ally-collision gate then no-ops the swap (accepted: the trigger fizzles).
-        int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, playerIndex, currentMonIndex, rng);
+        int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, playerIndex, slot & 1, currentMonIndex, rng);
         if (target != -1) {
             engine.switchActiveMonForSlot(playerIndex, slot & 1, uint256(uint32(target)));
         }

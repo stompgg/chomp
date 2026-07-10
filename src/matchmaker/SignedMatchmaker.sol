@@ -21,6 +21,7 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     error InvalidOpenBattleOfferNonce();
     error MissingConsent();
     error CreatorSeatCannotBeOpen();
+    error InvalidOpenSeatsMask();
 
     constructor(IEngine engine) {
         ENGINE = engine;
@@ -37,7 +38,8 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     }
 
     /// @param openSeatsMask Canonical-order bits ([p0, p2, p1, p3]) marking seats that were
-    ///        address(0) in the signed form; bit 0 (the creator) may not be open.
+    ///        address(0) in the signed form; bit 0 (the creator) may not be open. The mask byte
+    ///        is a signed field of the offer digest, so every signer consents to it as-is.
     /// @param seatSigs Per-seat signatures in canonical order; empty for msg.sender and CPU
     ///        seats. Open-marked seats sign a SeatFill over the open digest; named seats sign
     ///        the open digest itself.
@@ -70,6 +72,10 @@ contract SignedMatchmaker is IMatchmaker, EIP712 {
     ///      nonce (open-offer sequential nonce, else the engine's pair/party nonce). Mutates only
     ///      the creator's open-offer nonce; the caller performs the engine start.
     function _verifyOfferAndNonce(BattleOffer memory offer, uint8 openSeatsMask, bytes[4] calldata seatSigs) internal {
+        // Only 4 seats exist; non-multi modes forbid p2/p3 (canonical bits 1/3), so opening them is meaningless.
+        if (openSeatsMask >= 16 || (offer.battleMode != BATTLE_MODE_MULTI && openSeatsMask & 0xA != 0)) {
+            revert InvalidOpenSeatsMask();
+        }
         if (openSeatsMask & 1 != 0) {
             revert CreatorSeatCannotBeOpen();
         }

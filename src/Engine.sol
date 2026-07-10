@@ -47,6 +47,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     mapping(bytes32 storageKey => mapping(uint64 turnId => uint256 packed)) private moveBuffer;
     uint256 public transient tempRNG; // Used to provide RNG during execute() tx
     uint256 private transient koOccurredFlag; // Set when a KO occurs, checked by _handleEffects/_handleMove
+    uint256 private transient actedSlotsThisTurnMask; // bit per absolute slot: acted (or acting) this turn
     int32 private transient tempPreDamage; // Running damage during PreDamage hook pipeline; mutated via setPreDamage
     // Current-turn move + salt data exposed to external effects (ZapStatus, SleepStatus, StaminaRegen, etc.).
     // Packed per player into ONE transient slot: [salt: bits 0-103 | encoded move: bits 104-127].
@@ -1143,6 +1144,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Set the battle key for the stack frame
         // (gets cleared at the end of the transaction)
         battleKeyForWrite = battleKey;
+        // Fresh per-turn acted mask (batched flows run many turns per tx, so auto-clear isn't enough).
+        actedSlotsThisTurnMask = 0;
 
         // Hook loops are gated on the per-battle hook-steps union: prod battles carry the
         // OnBattleEnd-only gacha hook, so without the gate every turn pays per-hook bitmap
@@ -1310,6 +1313,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
 
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
+            actedSlotsThisTurnMask |= 1 << (priorityPlayerIndex << 1);
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
 
@@ -1359,6 +1363,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
 
             // Run the non priority player's move
+            actedSlotsThisTurnMask |= 1 << (otherPlayerIndex << 1);
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
@@ -1835,14 +1840,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check if we have to run an onApply state update (use bitmap instead of external call)
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
-                // Get active mon indices for both players
-                BattleData storage battle = battleData[battleKey];
-                uint256 activesPacked = TargetLib.singlesActives(
-                    _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
-                );
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(
-                    IEngine(address(this)), battleKey, tempRNG, extraData, targetIndex, monIndex, activesPacked
+                    IEngine(address(this)),
+                    battleKey,
+                    tempRNG,
+                    extraData,
+                    targetIndex,
+                    monIndex,
+                    _hookActivesWord(battleData[battleKey])
                 );
             }
             if (!removeAfterRun) {
@@ -1955,11 +1961,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
-            BattleData storage battle = battleData[battleKey];
-            uint256 activesPacked = TargetLib.singlesActives(
-                _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+            effect.onRemove(
+                IEngine(address(this)),
+                battleKey,
+                eff.data,
+                targetIndex,
+                monIndex,
+                _hookActivesWord(battleData[battleKey])
             );
-            effect.onRemove(IEngine(address(this)), battleKey, eff.data, targetIndex, monIndex, activesPacked);
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
@@ -2557,6 +2566,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
@@ -2574,19 +2584,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKeyForWrite];
         // Resolve the target slot to (side, active mon); empty targetBits = fizzled/malformed,
-        // report a miss rather than resolving garbage. In singles the engine always passes the
-        // opposing slot-0 bit, so the odd-lane branch never runs and both mon reads share the
-        // ONE activeMonIndex SLOAD (cached local — keeps the pre-2v2 load count exactly).
+        // report a miss rather than resolving garbage. The attacker is the caller-supplied mon
+        // (moves know their own identity) — never a lane read, which would alias slot-1/3
+        // attackers onto their slot-0 ally.
         uint256 defSlot = TargetLib.lowestSlot(targetBits);
         if (defSlot == NO_SLOT) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
         uint256 defenderPlayerIndex = TargetLib.sideOf(defSlot);
-        uint16 activeMain = battle.activeMonIndex;
-        uint256 attackerMonIndex = _unpackActiveMonIndex(activeMain, attackerPlayerIndex);
         uint256 defenderMonIndex = (defSlot & 1) == 0
-            ? _unpackActiveMonIndex(activeMain, defenderPlayerIndex)
+            ? _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex)
             : uint256(uint8(battle.activeMonExt >> (defenderPlayerIndex << 3)));
+        // Empty lane = self-constructed target on a vacant slot; miss rather than a phantom
+        // mon-255 state write.
+        if (defenderMonIndex == EMPTY_ACTIVE_LANE) {
+            return (0, MOVE_MISS_EVENT_TYPE);
+        }
 
         return _dispatchStandardAttackInternal(
             config,
@@ -2618,6 +2631,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      damage when `damage != 0`.
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
@@ -2632,17 +2646,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKeyForWrite];
-        // Same slot resolution + empty-target miss guard as dispatchStandardAttack.
+        // Same slot resolution + empty-target miss guards as dispatchStandardAttack; attacker is
+        // caller-supplied, never a lane read.
         uint256 defSlot = TargetLib.lowestSlot(targetBits);
         if (defSlot == NO_SLOT) {
             return (0, MOVE_MISS_EVENT_TYPE);
         }
         uint256 defenderPlayerIndex = TargetLib.sideOf(defSlot);
-        uint16 activeMain = battle.activeMonIndex;
-        uint256 attackerMonIndex = _unpackActiveMonIndex(activeMain, attackerPlayerIndex);
         uint256 defenderMonIndex = (defSlot & 1) == 0
-            ? _unpackActiveMonIndex(activeMain, defenderPlayerIndex)
+            ? _unpackActiveMonIndex(battle.activeMonIndex, defenderPlayerIndex)
             : uint256(uint8(battle.activeMonExt >> (defenderPlayerIndex << 3)));
+        if (defenderMonIndex == EMPTY_ACTIVE_LANE) {
+            return (0, MOVE_MISS_EVENT_TYPE);
+        }
 
         // Fold attacker index into a single damage hash to break mirror symmetry; rolls read disjoint slices.
         uint256 h = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
@@ -2820,6 +2836,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     function computeBattleKey(address p0, address p1) public view returns (bytes32 battleKey, bytes32 pairHash) {
+        // Duplicate seats are never valid; a self-battle would double-settle rewards.
+        if (p0 == p1) {
+            revert InvalidBattleConfig();
+        }
         // Order the pair first, hash once (was: hash then conditionally re-hash swapped).
         (address lo, address hi) = uint256(uint160(p0)) > uint256(uint160(p1)) ? (p1, p0) : (p0, p1);
         pairHash = keccak256(abi.encode(lo, hi));
@@ -2981,7 +3001,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
         if (currentMonState.shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
-            return playerSwitchForTurnFlag;
+            // A forced-switch turn's coerced send-in is not an action the skip flag may eat.
+            uint8 storedFlag = battle.playerSwitchForTurnFlag;
+            if (storedFlag != 0 && storedFlag != 1) {
+                return playerSwitchForTurnFlag;
+            }
         }
 
         // If we've already determined next turn only one player has to move,
@@ -3368,6 +3392,23 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return playerSwitchForTurnFlag;
     }
 
+    /// @notice Per-slot "acted (or acting) this turn". Set at action start in both the singles
+    ///         turn body and the 2-slot scheduler — the mode-agnostic primitive status effects
+    ///         use to decide between an immediate move-cancel and waiting for next RoundStart.
+    function hasSlotActedThisTurn(uint256 absSlot) external view returns (bool) {
+        return (actedSlotsThisTurnMask >> absSlot) & 1 != 0;
+    }
+
+    /// @notice The roster range a slot may switch within (Multi: the seat's quarter).
+    function getRosterBoundsForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (uint256 lo, uint256 hi)
+    {
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        return _slotRosterBounds(config, (playerIndex << 1) | (slotIndex & 1));
+    }
+
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         BattleConfig storage config = battleConfig[storageKey];
@@ -3643,10 +3684,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @dev The packed actives word passed to effects/moves: one 8-bit lane per absolute slot.
+    ///      2-slot only — singles never writes activeMonExt, so its slot-1 lanes would read
+    ///      0x00 ("mon 0") instead of EMPTY_ACTIVE_LANE; singles paths use TargetLib.singlesActives.
     function _buildActivesWord(BattleData storage battle) private view returns (uint256) {
         uint256 main = battle.activeMonIndex; // [side0 slot0 : 8 | side1 slot0 : 8]
         uint256 ext = battle.activeMonExt; // [side0 slot1 : 8 | side1 slot1 : 8]
         return (main & 0xFF) | ((ext & 0xFF) << 8) | ((main >> 8) << 16) | ((ext >> 8) << 24);
+    }
+
+    /// @dev Mode-gated actives word for the hook sites shared by both modes (onApply/onRemove).
+    function _hookActivesWord(BattleData storage battle) private view returns (uint256) {
+        if (battle.isTwoSlotMode) {
+            return _buildActivesWord(battle);
+        }
+        return TargetLib.singlesActives(
+            _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+        );
     }
 
     /// @dev The 2-slot turn body + the duplicated _executeInternal tail (round-end hooks,
@@ -3750,6 +3803,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 break;
             }
             actedMask |= (1 << slot);
+            actedSlotsThisTurnMask = actedMask;
             actionOrder |= slot << (numActed << 3);
             unchecked {
                 ++numActed;
@@ -3782,7 +3836,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (inlineRegen && actorAlive) {
                 MoveDecision memory fresh = _getCurrentTurnMoveForSlot(side, slot & 1);
                 if (StaminaRegenLogic._isRestingMove(fresh.packedMoveIndex)) {
-                    _inlineRegenStaminaForMon(config, side, actorMon);
+                    // Re-read the lane: an AfterMove effect may have swapped the rester out, and
+                    // the regen follows the lane (matching the singles regen's fresh read).
+                    _inlineRegenStaminaForMon(config, side, _slotActive(battle, slot));
                 }
             }
             unchecked {
@@ -3905,7 +3961,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 }
                 if (candidate) {
                     uint256 prio = (lockedPriorities >> (s << 5)) & 0xFFFFFFFF;
-                    uint256 jitter = (h >> (s << 3)) & 0xFF;
+                    // 64-bit jitter lanes: wide enough that exact ties (which would favor the
+                    // lower slot) effectively never happen.
+                    uint256 jitter = uint64(h >> (s << 6));
                     if (
                         best == NO_SLOT || prio > bestPrio
                             || (prio == bestPrio && (speed > bestSpeed || (speed == bestSpeed && jitter > bestJitter)))
@@ -3952,7 +4010,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             MonState storage currentMonState = _getMonState(config, side, activeMon);
             if (currentMonState.shouldSkipTurn) {
                 currentMonState.shouldSkipTurn = false;
-                return;
+                // A coerced send-in is not an action the skip flag may eat: clear it (it would
+                // otherwise linger on the KO'd mon) but let the forced switch proceed.
+                if (!isForcedSwitchTurn) {
+                    return;
+                }
             }
             // D6/D7: on a full turn a KO'd active (exhausted slot or mid-turn casualty) loses
             // its action outright — no stamina, no rest, nothing.
@@ -4020,7 +4082,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // dead/empty skips the move. Inline attacks always require a chosen target in
             // 2-slot modes; nibble-less custom moves (no slot target) pass through with
             // targetBits == 0.
-            uint256 targetBits = (uint256(move.extraData) >> TARGET_BITS_SHIFT) & 0xF;
+            uint256 targetBits = uint256(move.extraData) >> TARGET_BITS_SHIFT;
             uint256 tSlot;
             uint256 tMon = EMPTY_ACTIVE_LANE;
             if (targetBits != 0) {
@@ -4033,8 +4095,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return;
             }
 
+            // Fold odd slots into the combat rng so same-side attackers don't share
+            // accuracy/crit/volatility/proc rolls; slot-0 lanes keep the raw stream. The tag
+            // domain-separates this from the scheduler jitter and mixForAttacker keccaks.
+            uint256 actionRng = tempRNG;
+            if (absSlot & 1 != 0) {
+                actionRng = uint256(keccak256(abi.encode(actionRng, absSlot, "SLOT_ACTION")));
+            }
+
             if (isInlineAttack) {
-                _inlineStandardAttack(config, rawMoveSlot, side, activeMon, tSlot >> 1, tMon, tempRNG);
+                _inlineStandardAttack(config, rawMoveSlot, side, activeMon, tSlot >> 1, tMon, actionRng);
             } else {
                 IMoveSet(address(uint160(rawMoveSlot)))
                     .move(
@@ -4045,7 +4115,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         targetBits,
                         _buildActivesWord(battle),
                         move.extraData & EXTRA_DATA_PAYLOAD_MASK,
-                        tempRNG
+                        actionRng
                     );
             }
         }
@@ -4169,8 +4239,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         EffectStep step
     ) private {
         uint256 doneMask;
+        // Distinct jitter-seed ranges per pass (and from the action scheduler's 0-3) so the
+        // RoundStart and RoundEnd orderings roll independently.
+        uint256 pickBase = step == EffectStep.RoundStart ? 16 : 24;
         for (uint256 pick; pick < 4;) {
-            uint256 slot = _pickNextSlot(config, battle, 0, doneMask, rng, 16 + pick, false);
+            uint256 slot = _pickNextSlot(config, battle, 0, doneMask, rng, pickBase + pick, false);
             if (slot == NO_SLOT) {
                 break;
             }
@@ -5050,16 +5123,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         ctx.defenderType2 = defenderMon.stats.type2;
     }
 
-    function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
-        external
-        view
-        returns (DamageCalcContext memory ctx)
-    {
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex
+    ) external view returns (DamageCalcContext memory ctx) {
         bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleData storage data = battleData[battleKey];
         BattleConfig storage config = battleConfig[storageKey];
-        uint256 attackerMonIndex = _unpackActiveMonIndex(data.activeMonIndex, attackerPlayerIndex);
-        uint256 defenderMonIndex = _unpackActiveMonIndex(data.activeMonIndex, defenderPlayerIndex);
         return _getDamageCalcContextInternal(
             config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
         );

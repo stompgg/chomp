@@ -459,6 +459,9 @@ contract NirvammaTest is Test, BattleHelper {
         FrostbiteStatus frost = new FrostbiteStatus();
         ZapStatus zap = new ZapStatus();
         (bytes32 battleKey, ModalBolt modalBolt) = _setupModalBolt(burn, frost, zap);
+        // Precomputed: rng 1 -> effect roll 54 (>= 50), so no status procs and no round-end
+        // DOT muddies the "no damage after lockout" assertion.
+        mockOracle.setRNG(1);
 
         // Pick Fire.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);

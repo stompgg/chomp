@@ -61,12 +61,13 @@ contract Chronoffense is IMoveSet {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             uint32(bp),
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
             Type.Math,
-            MoveClass.Special,
+            MoveClass.Physical,
             DEFAULT_CRIT_RATE,
             0,
             IEffect(address(0)),

@@ -57,6 +57,7 @@ contract OldVengeance is IMoveSet, BasicEffect {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
@@ -105,7 +106,7 @@ contract OldVengeance is IMoveSet, BasicEffect {
         uint256 rng,
         bytes32 extraData,
         uint256 targetIndex,
-        uint256,
+        uint256 monIndex,
         uint256 activesPacked
     ) external override returns (bytes32, bool) {
         uint256 targetSlot = uint256(extraData) & 0xFF;
@@ -115,8 +116,7 @@ contract OldVengeance is IMoveSet, BasicEffect {
             return (extraData, true);
         }
 
-        uint256 extraHits =
-            _opponentStaminaSpent(engine, battleKey, defenderPlayerIndex, defenderMonIndex, targetSlot);
+        uint256 extraHits = _opponentStaminaSpent(engine, battleKey, defenderPlayerIndex, defenderMonIndex, targetSlot);
 
         for (uint256 i; i < extraHits; i++) {
             AttackCalculator._calculateDamage(
@@ -124,19 +124,23 @@ contract OldVengeance is IMoveSet, BasicEffect {
                 TYPE_CALCULATOR,
                 battleKey,
                 targetIndex,
+                monIndex,
                 uint256(1) << targetSlot,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
                 DEFAULT_VOL,
                 moveType(engine, battleKey),
                 moveClass(engine, battleKey),
-                uint256(keccak256(abi.encode(rng, i))),
+                // Fold the owner identity + hit index so same-side instances roll independently
+                // and the stream can't collide with the engine's scheduler keccak domain.
+                uint256(keccak256(abi.encode(rng, targetIndex, monIndex, i, "OLD_VENGEANCE"))),
                 DEFAULT_CRIT_RATE
             );
             // Stop once the target is down.
             if (
-                engine.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut)
-                    != 0
+                engine.getMonStateForBattle(
+                        battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
+                    ) != 0
             ) {
                 break;
             }

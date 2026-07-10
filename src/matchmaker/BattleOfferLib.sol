@@ -9,8 +9,8 @@ import {Battle, BattleOffer} from "../Structs.sol";
 library BattleOfferLib {
     // Battle(address p0,uint96 p0TeamIndex,address p1,uint96 p1TeamIndex,address p2,uint96 p2TeamIndex,address p3,uint96 p3TeamIndex,address teamRegistry,address rngOracle,address ruleset,address moveManager,address matchmaker,address[] engineHooks)
     bytes32 public constant BATTLE_TYPEHASH = 0xdf0031fd9cbf0d756cd8f6b99864409022693748ce3c5f2b65124630ebcdf8a2;
-    // BattleOffer(Battle battle,uint256 pairHashNonce,uint8 battleMode)Battle(address p0,uint96 p0TeamIndex,address p1,uint96 p1TeamIndex,address p2,uint96 p2TeamIndex,address p3,uint96 p3TeamIndex,address teamRegistry,address rngOracle,address ruleset,address moveManager,address matchmaker,address[] engineHooks)
-    bytes32 public constant BATTLE_OFFER_TYPEHASH = 0x2b0b083ae850c27f3b772d2110980336a1eb2f3498090fabceeb92f429c1d2f9;
+    // BattleOffer(Battle battle,uint256 pairHashNonce,uint8 battleMode,uint8 openSeatsMask)Battle(address p0,uint96 p0TeamIndex,address p1,uint96 p1TeamIndex,address p2,uint96 p2TeamIndex,address p3,uint96 p3TeamIndex,address teamRegistry,address rngOracle,address ruleset,address moveManager,address matchmaker,address[] engineHooks)
+    bytes32 public constant BATTLE_OFFER_TYPEHASH = 0x4b3ed10267f4afeecfb21fdff8753c23b5d479a989a433f64150787c6ce3e350;
     // SeatFill(bytes32 offerDigest,uint8 seatIndex)
     bytes32 public constant SEAT_FILL_TYPEHASH = 0x89bafd036f6be8d20c1d689e07ddd24ce79caf6e2995ceccb4f272833776b1f5;
 
@@ -29,7 +29,9 @@ library BattleOfferLib {
     }
 
     /// @dev Hashes the SIGNING FORM: team indices zeroed, seats marked open in
-    ///      `openSeatsMask` (canonical-order bits) zeroed.
+    ///      `openSeatsMask` (canonical-order bits) zeroed. The raw mask byte is itself a signed
+    ///      field, so one signature binds exactly one (offer, mask) pair — masks that blind the
+    ///      same seats still produce distinct digests (blocks nonce-namespace replay).
     function hashBattleOfferForSigning(BattleOffer memory offer, uint8 openSeatsMask) internal pure returns (bytes32) {
         Battle memory b = offer.battle;
         address[] memory hookAddresses = new address[](b.engineHooks.length);
@@ -55,7 +57,9 @@ library BattleOfferLib {
                 keccak256(abi.encodePacked(hookAddresses))
             )
         );
-        return keccak256(abi.encode(BATTLE_OFFER_TYPEHASH, battleHash, offer.pairHashNonce, offer.battleMode));
+        return keccak256(
+            abi.encode(BATTLE_OFFER_TYPEHASH, battleHash, offer.pairHashNonce, offer.battleMode, openSeatsMask)
+        );
     }
 
     function hashSeatFill(bytes32 offerDigest, uint8 seatIndex) internal pure returns (bytes32) {

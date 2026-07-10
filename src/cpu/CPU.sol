@@ -20,11 +20,18 @@ import {ITeamRegistry} from "../game-layer/ITeamRegistry.sol";
 /// @notice On-chain CPU host: self-registers as an approved matchmaker, hosts PvE battles, and
 ///         relays client-computed CPU moves through the engine (see CPUMoveManager).
 contract CPU is CPUMoveManager, IMatchmaker {
+    error SeatNotCpu();
+
     constructor(IEngine engine, address[] memory matchmakers) CPUMoveManager(engine, matchmakers) {}
 
     /// @dev Singles-only by design: ProposedBattle is the legacy 2-seat shape with no mode
     ///      field. Doubles PvE goes through startCustomBattle (battleMode in the proposal).
+    ///      Caller-bound: msg.sender must be p0 and p1 must be a CPU seat.
     function startBattle(ProposedBattle memory proposal) external returns (bytes32 battleKey) {
+        if (msg.sender != proposal.p0) {
+            revert NotP0();
+        }
+        _assertCpuSeat(proposal.teamRegistry, proposal.p1);
         (battleKey,) = ENGINE.computeBattleKey(proposal.p0, proposal.p1);
         ENGINE.startBattle(
             Battle({
@@ -50,7 +57,11 @@ contract CPU is CPUMoveManager, IMatchmaker {
     /// and p1TeamIndex is the caller's phantom slot — both filled in here so callers can't write
     /// to other users' slots. The registry must implement IPhantomTeamRegistry; the relay gate
     /// enforces that only whitelisted CPUs (i.e. this contract once added) can land the write.
+    /// Caller-bound: msg.sender must be p0 (the sole human seat).
     function startCustomBattle(CustomBattleProposal calldata p) external returns (bytes32 battleKey) {
+        if (msg.sender != p.p0) {
+            revert NotP0();
+        }
         IPhantomTeamRegistry(address(p.teamRegistry))
             .setOpponentTeamFor(p.p0, p.monIndices, p.facetIds, p.moveSelections);
 
@@ -79,8 +90,17 @@ contract CPU is CPUMoveManager, IMatchmaker {
 
     /// @notice 4-seat analog of startCustomBattle: writes each CPU seat's phantom config for
     /// p0 (own seat via the relay entry, other whitelisted seats via the peer entry) and
-    /// starts the Multi battle, all in one tx.
+    /// starts the Multi battle, all in one tx. Caller-bound: msg.sender must be p0 and every
+    /// other seat must be a CPU — non-consenting humans can't be seated here; mixed-human
+    /// parties go through the SignedMatchmaker's signed Multi offers.
     function startCustomMultiBattle(CustomMultiBattleProposal calldata p) external returns (bytes32 battleKey) {
+        if (msg.sender != p.p0) {
+            revert NotP0();
+        }
+        _assertCpuSeat(p.teamRegistry, p.p1);
+        _assertCpuSeat(p.teamRegistry, p.p2);
+        _assertCpuSeat(p.teamRegistry, p.p3);
+
         uint96 phantomKey = uint96(uint16(uint160(p.p0)));
         uint96 p1TeamIndex = _configureSeat(p.teamRegistry, p.p0, p.p1, p.seatConfigs[0], p.p1TeamIndex, phantomKey);
         uint96 p2TeamIndex = _configureSeat(p.teamRegistry, p.p0, p.p2, p.seatConfigs[1], p.p2TeamIndex, phantomKey);
@@ -106,6 +126,13 @@ contract CPU is CPUMoveManager, IMatchmaker {
             }),
             BATTLE_MODE_MULTI
         );
+    }
+
+    /// @dev Only this host or a registry-whitelisted CPU may fill a non-caller seat.
+    function _assertCpuSeat(ITeamRegistry registry, address seat) private view {
+        if (seat != address(this) && !registry.isWhitelistedOpponent(seat)) {
+            revert SeatNotCpu();
+        }
     }
 
     /// @dev Human seats pass through untouched. CPU (whitelisted) seats get their phantom

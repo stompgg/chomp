@@ -390,5 +390,94 @@ contract SignedMatchmakerTest is Test, BattleHelper {
         // Check that nonce for p0 is now 2
         assertEq(matchmaker.openBattleOfferNonce(p0), 2);
     }
+
+    /*
+        Test: A closed-offer signature cannot be replayed through the open-nonce namespace by
+        resubmitting with a junk mask (16 blinds no seat, so the digest used to be identical).
+    */
+    function test_replayClosedSigWithJunkMaskFails() public {
+        (, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
+        BattleOffer memory offer = _createBattleOffer(0, 0, engine.pairHashNonces(pairHash));
+        bytes memory signature = _signOffer(offer);
+
+        // First (legitimate, closed) start succeeds
+        vm.prank(p1);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 0, seatSigs);
+        }
+
+        // Replay through the open-nonce namespace with mask 16 - should fail
+        vm.prank(p1);
+        vm.expectRevert(SignedMatchmaker.InvalidOpenSeatsMask.selector);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 16, seatSigs);
+        }
+    }
+
+    /*
+        Test: The vacant-seat replay variant - mask 2 blinds p2, which is already address(0) on a
+        singles offer, so the digest used to collide with the closed form. Now rejected outright.
+    */
+    function test_replayClosedSigWithVacantSeatMaskFails() public {
+        (, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
+        BattleOffer memory offer = _createBattleOffer(0, 0, engine.pairHashNonces(pairHash));
+        bytes memory signature = _signOffer(offer);
+
+        vm.prank(p1);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 0, seatSigs);
+        }
+
+        vm.prank(p1);
+        vm.expectRevert(SignedMatchmaker.InvalidOpenSeatsMask.selector);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 2, seatSigs);
+        }
+    }
+
+    /*
+        Test: Masks with junk high bits (only 4 seats exist) are rejected before anything else.
+    */
+    function test_openSeatsMaskJunkBitsRejected() public {
+        (, bytes32 pairHash) = engine.computeBattleKey(p0, p1);
+        BattleOffer memory offer = _createBattleOffer(0, 0, engine.pairHashNonces(pairHash));
+        bytes memory signature = _signOffer(offer);
+
+        vm.prank(p1);
+        vm.expectRevert(SignedMatchmaker.InvalidOpenSeatsMask.selector);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 16, seatSigs);
+        }
+
+        vm.prank(p1);
+        vm.expectRevert(SignedMatchmaker.InvalidOpenSeatsMask.selector);
+        {
+            bytes[4] memory seatSigs;
+            seatSigs[0] = signature;
+            matchmaker.startGame(offer, 255, seatSigs);
+        }
+    }
+
+    /*
+        Test: The offer digest binds the raw mask byte - masks that blind the same seat set
+        (0 vs 2 on a singles offer, where p2 is already vacant) produce distinct digests.
+    */
+    function test_offerDigestBindsOpenSeatsMask() public view {
+        BattleOffer memory offer = _createBattleOffer(0, 0, 0);
+        assertTrue(
+            BattleOfferLib.hashBattleOfferForSigning(offer, 0) != BattleOfferLib.hashBattleOfferForSigning(offer, 2),
+            "digest must differ across masks even when the blinded seat set is identical"
+        );
+    }
 }
 

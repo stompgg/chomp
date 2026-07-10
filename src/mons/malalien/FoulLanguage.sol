@@ -45,7 +45,7 @@ contract FoulLanguage is StandardAttack {
         uint16,
         uint256 rng
     ) public override {
-        (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, targetBits, rng);
+        (int32 damage,) = _move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, rng);
         if (damage > 0) {
             engine.dealDamage(attackerPlayerIndex, attackerMonIndex, damage / RECOIL_DENOM);
         }

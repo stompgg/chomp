@@ -66,6 +66,7 @@ contract UnboundedStrike is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             power,
             DEFAULT_ACCURACY,

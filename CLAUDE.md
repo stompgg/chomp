@@ -40,8 +40,8 @@ chomp/
 │   ├── abilities/          # Ability interface (IAbility.sol)
 │   ├── commit-manager/     # External commit-reveal move managers (singles only; the dual-signed
 │   │                       #   per-turn buffer and all 2-slot flows now live in the Engine)
-│   │   ├── DefaultCommitManager.sol  # Classic 2-player commit/reveal (base class)
-│   │   ├── SignedCommitManager.sol   # EIP-712 single-tx dual-signed moves (deployed manager)
+│   │   ├── DefaultCommitManager.sol  # Classic 2-player commit/reveal (base class) (deprecated)
+│   │   ├── SignedCommitManager.sol   # EIP-712 single-tx dual-signed moves (deployed manager) (deprecated)
 │   │   ├── SignedCommitLib.sol       # Shared signed-commit helpers
 │   │   └── ICommitManager.sol
 │   ├── cpu/                # PvE host (on-chain CPU decision-making removed; moves come from the client)
@@ -54,8 +54,6 @@ chomp/
 │   │   ├── StaminaRegen.sol
 │   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect(Lib)
 │   │   ├── battlefield/    # Battlefield effects (Overclock)
-│   │   # NOTE: stat boosts are inlined into the Engine (see "Stat Boosts" below); the math
-│   │   #       helpers live in src/lib/StatBoostLib.sol, there is no StatBoosts effect contract.
 │   ├── game-layer/         # Team / mon registry, gacha, exp, facets, quests, gifts
 │   │   ├── GachaTeamRegistry.sol   # Concrete leaf: composes the abstracts below
 │   │   ├── MonOwnership.sol        # monsOwned set + ownership view/check helpers
@@ -125,7 +123,7 @@ chomp/
 │   ├── packMoves.py                 # Pack move data for distribution
 │   ├── inputToEnv.py                # Parse forge output to .env
 │   └── removeUnusedImports.py       # Clean up unused Solidity imports
-├── transpiler/             # Solidity-to-TypeScript transpiler (Python)
+├── transpiler/             # Solidity-to-TypeScript/Rust transpiler (Python)
 │   ├── sol2ts.py           # Main entry point
 │   ├── lexer/              # Tokenizer
 │   ├── parser/             # AST construction
@@ -385,7 +383,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 
 **CPU opponent facets.** When fighting a whitelisted opponent (CPU), the human caller picks the CPU's team *and* its facet config in one call: `setOpponentTeam(opponent, monIndices, facetIds)`. Per-user-per-CPU storage (`opponentTeamFacetsPacked[opponent][phantomKey]`) keyed by the same `uint16(uint160(msg.sender))` phantom slot as the team. No ownership/unlock checks — any facet 0..12 is allowed. `getTeamsWithDeltas` short-circuits to this slot-indexed config when a side is `isWhitelistedOpponent`, so per-user CPU facet configurations stay isolated even when many users fight the same CPU.
 
-**Quests.** Owner-managed `questPool` + a single `activeQuestPacked` slot (current day + active quest id). One quest is active per day, picked pseudorandomly via lazy rotation at the *end* of `onBattleEnd` so the current battle is judged against the pre-rotation quest. Each quest has up to `MAX_PREDICATES_PER_QUEST` (6) AND-composed predicates packed into one storage slot (41 bits each: `op` 5b, `cmp` 3b, `negate` 1b, `arg` 16b, `operand` 16b — total 246b + 3b count). Opcodes cover battle context (`TURNS`, `ALIVE_COUNT`, `ACTIVE_SLOT_INDEX`, `MON_KO_AT_SLOT`), team composition (`HAS_MON_ID`), per-mon progression (`MON_LEVEL`, `MON_FACET`), and live battle state (`MON_STATE` via `Engine.getMonStateForBattle`).
+**Quests.** Owner-managed `questPool`. One quest is active per UTC day, derived statelessly as `keccak256(day) % poolLength` (day = `block.timestamp / 1 days` + an owner-settable `_dayOffset`) — no rotation SSTORE and no race between concurrent battles. Each quest has up to `MAX_PREDICATES_PER_QUEST` (6) AND-composed predicates packed into one storage slot (41 bits each: `op` 5b, `cmp` 3b, `negate` 1b, `arg` 16b, `operand` 16b — total 246b + 3b count). Opcodes cover battle context (`TURNS`, `ALIVE_COUNT`, `ACTIVE_SLOT_INDEX`, `MON_KO_AT_SLOT`), team composition (`HAS_MON_ID`), per-mon progression (`MON_LEVEL`, `MON_FACET`), and live battle state (`MON_STATE` via `Engine.getMonStateForBattle`).
 
 **Events.**
 

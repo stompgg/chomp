@@ -37,6 +37,7 @@ interface IEngine {
     function dealDamage(uint256 playerIndex, uint256 monIndex, int32 damage) external;
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
@@ -50,6 +51,7 @@ interface IEngine {
     ) external returns (int32 damage, bytes32 eventType);
     function dispatchCustomAttack(
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint32 basePower,
         uint32 accuracy,
@@ -139,6 +141,14 @@ interface IEngine {
         returns (bytes32 battleKey, bytes32 partyHash);
     function getSeats(bytes32 battleKey) external view returns (address[4] memory seats);
     function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
+    // Per-slot "has acted (or is acting) this turn" — the mode-agnostic primitive status effects
+    // use to decide between an immediate move-cancel and waiting for next RoundStart.
+    function hasSlotActedThisTurn(uint256 absSlot) external view returns (bool);
+    // The roster range a slot may switch within (Multi partitions each side by seat quarter).
+    function getRosterBoundsForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+        external
+        view
+        returns (uint256 lo, uint256 hi);
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
@@ -183,10 +193,13 @@ interface IEngine {
     function getWinner(bytes32 battleKey) external view returns (address);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);
-    function getDamageCalcContext(bytes32 battleKey, uint256 attackerPlayerIndex, uint256 defenderPlayerIndex)
-        external
-        view
-        returns (DamageCalcContext memory);
+    function getDamageCalcContext(
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex
+    ) external view returns (DamageCalcContext memory);
     function getBattleEndContext(bytes32 battleKey) external view returns (BattleEndContext memory);
     function getMonStatesForSide(bytes32 battleKey, uint256 playerIndex) external view returns (MonState[] memory);
 }

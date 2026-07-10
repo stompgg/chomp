@@ -1717,6 +1717,89 @@ contract GachaTeamRegistryTest is Test {
         assertEq(t4[1], 5);
     }
 
+    // Single-position update (arrays shorter than MONS_PER_TEAM) used to Panic in _checkForDuplicates.
+    function test_updateTeam_partialUpdate_preservesUntouchedLanes() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3)); // slot 0, lane 0
+        gachaTeamRegistry.createTeam(_aliceTeam(4, 5)); // slot 1, lane 1 (same group)
+
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 1;
+        uint256[] memory newMons = new uint256[](1);
+        newMons[0] = 4;
+        gachaTeamRegistry.updateTeam(0, positions, newMons);
+
+        uint256[] memory t0 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
+        assertEq(t0[0], 0, "untouched position preserved");
+        assertEq(t0[1], 4, "updated position written");
+        uint256[] memory t1 = gachaTeamRegistry.getMonRegistryIndicesForTeam(ALICE, 1);
+        assertEq(t1[0], 4, "sibling lane untouched");
+        assertEq(t1[1], 5, "sibling lane untouched");
+    }
+
+    // Positions >= MONS_PER_TEAM used to shift writes into sibling teams' lanes instead of reverting.
+    function test_updateTeam_revertsOnOutOfRangePosition() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3)); // slot 0
+        gachaTeamRegistry.createTeam(_aliceTeam(4, 5)); // slot 1
+
+        uint256[] memory positions = new uint256[](1);
+        uint256[] memory newMons = new uint256[](1);
+        newMons[0] = 4;
+
+        positions[0] = MONS_PER_TEAM; // first out-of-range position
+        vm.expectRevert(PackedTeamStore.InvalidMonPosition.selector);
+        gachaTeamRegistry.updateTeam(0, positions, newMons);
+
+        positions[0] = 8; // would land in slot 1's lane within the same packed word
+        vm.expectRevert(PackedTeamStore.InvalidMonPosition.selector);
+        gachaTeamRegistry.updateTeam(0, positions, newMons);
+    }
+
+    // Partial update whose new id collides with an untouched position must revert.
+    function test_updateTeam_revertsOnDuplicateWithUntouchedPosition() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 1;
+        uint256[] memory newMons = new uint256[](1);
+        newMons[0] = 0; // resulting team would be [0, 0]
+        vm.expectRevert(PackedTeamStore.DuplicateMonId.selector);
+        gachaTeamRegistry.updateTeam(0, positions, newMons);
+    }
+
+    function test_updateTeam_revertsOnDuplicateIncomingIds() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+
+        uint256[] memory positions = new uint256[](2);
+        positions[0] = 0;
+        positions[1] = 1;
+        vm.expectRevert(PackedTeamStore.DuplicateMonId.selector);
+        gachaTeamRegistry.updateTeam(0, positions, _aliceTeam(4, 4));
+    }
+
+    // Mismatched array lengths used to Panic with an array OOB; now a clean revert.
+    function test_updateTeam_revertsOnMismatchedArrayLengths() public {
+        vm.startPrank(ALICE);
+        gachaTeamRegistry.createTeam(_aliceTeam(0, 3));
+
+        uint256[] memory positions = new uint256[](2);
+        positions[0] = 0;
+        positions[1] = 1;
+        uint256[] memory newMons = new uint256[](1);
+        newMons[0] = 4;
+        vm.expectRevert(PackedTeamStore.InvalidTeamSize.selector);
+        gachaTeamRegistry.updateTeam(0, positions, newMons);
+    }
+
+    function test_createTeam_revertsOnDuplicateMonIds() public {
+        vm.startPrank(ALICE);
+        vm.expectRevert(PackedTeamStore.DuplicateMonId.selector);
+        gachaTeamRegistry.createTeam(_aliceTeam(3, 3));
+    }
+
     function test_deleteTeam_clearsLiveBit() public {
         vm.startPrank(ALICE);
         gachaTeamRegistry.createTeam(_aliceTeam(0, 3));

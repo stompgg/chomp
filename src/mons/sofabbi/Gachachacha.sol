@@ -57,12 +57,17 @@ contract Gachachacha is IMoveSet {
         uint256 chance = RNGLib.mixForAttacker(rng, attackerPlayerIndex) % OPP_KO_THRESHOLD_R;
         uint32 basePower;
         uint256 playerForCalculator = attackerPlayerIndex;
+        uint256 monForCalculator = attackerMonIndex;
+        uint256 calcTargetBits = 1 << targetSlot;
         if (chance <= SELF_KO_THRESHOLD_L) {
             basePower = uint32(chance);
         } else if (chance > SELF_KO_THRESHOLD_L && chance <= SELF_KO_THRESHOLD_R) {
+            // Self-KO band: the chosen target's stats drive a max-HP hit on Sofabbi's own slot.
             basePower =
                 engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
             playerForCalculator = defenderPlayerIndex;
+            monForCalculator = defenderMonIndex;
+            calcTargetBits = 1 << TargetLib.slotOfMon(activesPacked, attackerPlayerIndex, attackerMonIndex);
         } else {
             basePower =
                 engine.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
@@ -72,7 +77,8 @@ contract Gachachacha is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             playerForCalculator,
-            TargetLib.impliedSinglesTargetBits(playerForCalculator),
+            monForCalculator,
+            calcTargetBits,
             basePower,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,

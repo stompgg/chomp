@@ -47,6 +47,7 @@ contract RoundTrip is StandardAttack {
         // Deal the damage
         (int32 damage,) = engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

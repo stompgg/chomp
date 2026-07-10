@@ -5,8 +5,9 @@ contracts: the canonical typehash strings (SignedCommitLib.sol) and the per-cont
 EIP-712 domain name/version. These were previously hand-mirrored in munch's wallet.ts
 and belch's offerSigVerify.ts.
 
-(BattleOffer/Battle EIP-712 types are NOT emitted here — both repos derive those from the
-generated SignedMatchmaker ABI via abiComponentsToEip712Types, so the ABI is their source.)
+(BattleOffer/Battle typehash strings ARE emitted: the signed BattleOffer form carries
+openSeatsMask, which is not a Solidity struct field, so ABI derivation alone cannot
+reconstruct the signed type — these strings are the source.)
 """
 
 import re
@@ -17,11 +18,11 @@ from pathlib import Path
 TYPEHASH_SOURCES = ["src/commit-manager/SignedCommitLib.sol"]
 # Typehashes whose canonical EIP-712 string lives in a comment because the constant itself is a
 # precomputed hex value (the keccak256("...") regex can't reach it). Struct name → source file.
-# Battle / BattleOffer are intentionally NOT here — clients derive those from the SignedMatchmaker
-# ABI (see the module docstring).
 COMMENT_TYPEHASHES = {
     "DualSignedSlotReveal": "src/commit-manager/SignedCommitLib.sol",
     "SeatFill": "src/matchmaker/BattleOfferLib.sol",
+    "BattleOffer": "src/matchmaker/BattleOfferLib.sol",
+    "Battle": "src/matchmaker/BattleOfferLib.sol",
 }
 # Files to scan for an EIP-712 domain (adjacent `name = "..."; version = "...";`).
 DOMAIN_SOURCES = [
@@ -51,12 +52,13 @@ def collect_typehashes(chomp_dir: Path) -> list[tuple[str, str]]:
 
 def collect_comment_typehashes(chomp_dir: Path) -> list[tuple[str, str]]:
     """[(STRUCT_NAME_SCREAMING, typehash_string)] for hex-constant typehashes whose canonical
-    string is documented in a comment. Matched as `StructName(...)`, which only appears in the
-    doc comment (function decls read `hashStructName(` — no word boundary before the struct)."""
+    string is documented in a comment. Matched as `StructName(...)` plus any appended referenced
+    component types (EIP-712 encodeType), which only appears in the doc comment (function decls
+    read `hashStructName(` — no word boundary before the struct)."""
     out: list[tuple[str, str]] = []
     for struct_name, rel in COMMENT_TYPEHASHES.items():
         text = (chomp_dir / rel).read_text()
-        m = re.search(rf"\b{re.escape(struct_name)}\([^)]*\)", text)
+        m = re.search(rf"\b{re.escape(struct_name)}\([^)]*\)(?:[A-Za-z][A-Za-z0-9]*\([^)]*\))*", text)
         if not m:
             raise ValueError(f"typehash string for {struct_name} not found in {rel}")
         out.append((screaming_snake(struct_name), m.group(0)))

@@ -47,6 +47,8 @@ class ContractData:
     consumes_target: Optional[bool] = None
     # All plain-integer `constant NAME = <int>;` declarations found in the file
     constants: Dict[str, int] = field(default_factory=dict)
+    # Literal MoveClass.X arguments found inside damage-dispatch calls (dynamic args are skipped)
+    dispatch_move_classes: List[str] = field(default_factory=list)
 
 class MoveValidator:
     """Main validator class for checking move contracts against CSV data"""
@@ -220,6 +222,9 @@ class MoveValidator:
         # Behavioral targeting signal: does move() resolve a defender from the targetBits nibble?
         contract_data.consumes_target = self._move_consumes_target(content, contract_data.is_standard_attack)
 
+        # Literal MoveClass arguments passed to damage dispatch (dynamic getters resolve to no literal)
+        contract_data.dispatch_move_classes = self._extract_dispatch_move_classes(content)
+
         # Apply mon-specific parsing rules after standard parsing (allows overrides)
         if mon_name and mon_name in self.mon_specific_rules:
             custom_parser = self.mon_specific_rules[mon_name]
@@ -254,6 +259,26 @@ class MoveValidator:
         if body is None:
             return is_standard_attack
         return bool(re.search(r'\btargetBits\b', body))
+
+    DISPATCH_CALL_NAMES = ('dispatchStandardAttack', 'dispatchCustomAttack', '_calculateDamage', '_calculateDamageView')
+
+    def _extract_dispatch_move_classes(self, content: str) -> List[str]:
+        """Literal MoveClass.X arguments inside damage-dispatch call sites. Catches a dispatch
+        hardcoding a class that disagrees with the moveClass() getter / CSV; calls that pass the
+        getter (dynamic) contribute nothing."""
+        classes = []
+        for name in self.DISPATCH_CALL_NAMES:
+            for m in re.finditer(rf'\b{name}\s*\(', content):
+                depth = 0
+                for i in range(m.end() - 1, len(content)):
+                    if content[i] == '(':
+                        depth += 1
+                    elif content[i] == ')':
+                        depth -= 1
+                        if depth == 0:
+                            classes.extend(re.findall(r'\bMoveClass\.(\w+)', content[m.end():i]))
+                            break
+        return classes
 
     def _parse_standard_attack(self, content: str, contract_data: ContractData) -> ContractData:
         """Parse StandardAttack constructor parameters"""
@@ -460,6 +485,13 @@ class MoveValidator:
             result['errors'].append(f"Move class not found in contract (expected: {move_data.move_class})")
         elif contract_data.move_class != move_data.move_class:
             result['errors'].append(f"Move class mismatch: contract={contract_data.move_class}, csv={move_data.move_class}")
+
+        # A dispatch call hardcoding a class must agree with the CSV (the getter is validated
+        # above; this catches the dispatch-arg divergence the getter check can't see)
+        for cls in contract_data.dispatch_move_classes:
+            if cls != move_data.move_class:
+                result['errors'].append(
+                    f"Dispatch MoveClass mismatch: dispatches MoveClass.{cls}, csv={move_data.move_class}")
 
         # Behavioral target-consumption check: move() must resolve a defender from targetBits iff
         # the CSV TargetSpec names an active slot. self-only / none moves must ignore the nibble

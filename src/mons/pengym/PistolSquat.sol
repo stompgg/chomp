@@ -39,7 +39,7 @@ contract PistolSquat is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
@@ -54,6 +54,7 @@ contract PistolSquat is StandardAttack {
         // Deal the damage
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),
@@ -71,7 +72,9 @@ contract PistolSquat is StandardAttack {
             battleKey, otherPlayerIndex, defenderMonIndex, MonStateIndexName.IsKnockedOut
         ) == 1;
         if (!isKOed) {
-            int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, otherPlayerIndex, defenderMonIndex, rng);
+            int32 target = SwitchTargetLib.findRandomNonKOed(
+                engine, battleKey, otherPlayerIndex, targetSlot & 1, defenderMonIndex, rng
+            );
             if (target != -1) {
                 engine.switchActiveMonForSlot(otherPlayerIndex, targetSlot & 1, uint256(uint32(target)));
             }

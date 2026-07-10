@@ -54,6 +54,7 @@ contract VitalSiphon is StandardAttack {
         // Deal the damage
         (int32 damage,) = engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),
@@ -69,7 +70,7 @@ contract VitalSiphon is StandardAttack {
         // 50% chance to steal stamina (assuming move dealt damage). Mix in attacker player index to
         // break symmetry on mirror matchups.
         uint256 stealRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STAMINA_STEAL")));
-        if (damage > 0 && stealRng % 100 >= STAMINA_STEAL_PERCENT) {
+        if (damage > 0 && stealRng % 100 < STAMINA_STEAL_PERCENT) {
             // Check if opponent has at least 1 stamina
             int32 defenderStamina = engine.getMonStateForBattle(
                 battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina

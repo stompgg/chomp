@@ -8,7 +8,6 @@ import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
-import {RNGLib} from "../../lib/RNGLib.sol";
 
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -50,8 +49,8 @@ contract CarrotHarvest is IAbility, BasicEffect {
         uint256 monIndex,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        // Mix in target player index to break symmetry on mirror matchups
-        if (RNGLib.mixForAttacker(rng, targetIndex) % CHANCE == 1) {
+        // Mix in the mon identity so same-side instances (and mirror matchups) roll independently
+        if (uint256(keccak256(abi.encode(rng, targetIndex, monIndex, "CARROT_HARVEST"))) % CHANCE == 1) {
             // Update the stamina of the mon
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
         }

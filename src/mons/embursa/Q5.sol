@@ -28,20 +28,22 @@ contract Q5 is IMoveSet, BasicEffect {
         return "Q5";
     }
 
-    function _packExtraData(uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return bytes32((turnCount << 128) | (targetSlot << 64) | attackerPlayerIndex);
+    function _packExtraData(
+        uint256 turnCount,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetSlot
+    ) internal pure returns (bytes32) {
+        return bytes32((turnCount << 128) | (attackerMonIndex << 72) | (targetSlot << 64) | attackerPlayerIndex);
     }
 
     function _unpackExtraData(bytes32 data)
         internal
         pure
-        returns (uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot)
+        returns (uint256 turnCount, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 targetSlot)
     {
         turnCount = uint256(data) >> 128;
+        attackerMonIndex = (uint256(data) >> 72) & 0xFF;
         targetSlot = (uint256(data) >> 64) & 0xFF;
         attackerPlayerIndex = uint256(data) & type(uint64).max;
     }
@@ -55,7 +57,7 @@ contract Q5 is IMoveSet, BasicEffect {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
@@ -73,7 +75,10 @@ contract Q5 is IMoveSet, BasicEffect {
             return;
         }
         engine.setGlobalKV(guardKey, 1);
-        engine.addEffect(2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex, targetSlot));
+        // The bomb detonates with the casting mon's stats, even if it has since left the field.
+        engine.addEffect(
+            2, attackerPlayerIndex, this, _packExtraData(1, attackerPlayerIndex, attackerMonIndex, targetSlot)
+        );
 
         // Clear the priority boost
         if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
@@ -108,7 +113,8 @@ contract Q5 is IMoveSet, BasicEffect {
         override
         returns (bytes32, bool)
     {
-        (uint256 turnCount, uint256 attackerPlayerIndex, uint256 targetSlot) = _unpackExtraData(extraData);
+        (uint256 turnCount, uint256 attackerPlayerIndex, uint256 attackerMonIndex, uint256 targetSlot) =
+            _unpackExtraData(extraData);
         if (turnCount == DELAY) {
             // Deal damage
             AttackCalculator._calculateDamage(
@@ -116,6 +122,7 @@ contract Q5 is IMoveSet, BasicEffect {
                 TYPE_CALCULATOR,
                 battleKey,
                 attackerPlayerIndex,
+                attackerMonIndex,
                 uint256(1) << targetSlot,
                 BASE_POWER,
                 DEFAULT_ACCURACY,
@@ -129,7 +136,7 @@ contract Q5 is IMoveSet, BasicEffect {
             engine.setGlobalKV(_q5GuardKey(attackerPlayerIndex), 0);
             return (extraData, true);
         } else {
-            return (_packExtraData(turnCount + 1, attackerPlayerIndex, targetSlot), false);
+            return (_packExtraData(turnCount + 1, attackerPlayerIndex, attackerMonIndex, targetSlot), false);
         }
     }
 

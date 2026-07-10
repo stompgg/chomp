@@ -37,7 +37,7 @@ contract Overflow is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
@@ -46,6 +46,7 @@ contract Overflow is StandardAttack {
         uint32 effectiveCritRate = NineNineNineLib._getEffectiveCritRate(engine, battleKey, attackerPlayerIndex);
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

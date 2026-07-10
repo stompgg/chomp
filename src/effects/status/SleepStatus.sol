@@ -100,9 +100,9 @@ contract SleepStatus is StatusEffect {
         engine.setGlobalKV(
             _globalSleepKey(targetIndex), uint192(uint160(address(this))) | (uint192(monIndex + 1) << 160)
         );
-        // Check if opponent has yet to move and if so, also affect their move for this round
-        uint256 priorityPlayerIndex = engine.computePriorityPlayerIndex(battleKey, rng);
-        if (targetIndex != priorityPlayerIndex) {
+        // If the target hasn't acted yet this turn, also cancel its pending move.
+        uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (slot != NO_SLOT && !engine.hasSlotActedThisTurn(slot)) {
             _applySleep(engine, battleKey, targetIndex, monIndex, activesPacked);
         }
         return (bytes32(DURATION), false);

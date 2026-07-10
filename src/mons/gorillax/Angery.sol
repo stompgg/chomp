@@ -48,14 +48,15 @@ contract Angery is IAbility, BasicEffect {
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         uint256 numCharges = uint256(extraData);
-        if (numCharges == CHARGE_COUNT) {
+        // >= so multiple hits in one round (routine in doubles) can't overshoot past the trigger.
+        if (numCharges >= CHARGE_COUNT) {
             // Heal
             int32 healAmount = int32(
                     engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)
                 ) / MAX_HP_DENOM;
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
-            // Reset the charges
-            return (bytes32(numCharges - CHARGE_COUNT), false);
+            // Consume all charges
+            return (bytes32(0), false);
         } else {
             return (extraData, false);
         }

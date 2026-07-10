@@ -52,6 +52,7 @@ contract DualShock is StandardAttack {
         // Deal the damage
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

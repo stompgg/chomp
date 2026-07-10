@@ -104,7 +104,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0, // Alice's index
+            0, // Alice's mon index
             1, // Bob's index
+            0, // Bob's mon index
             basePower,
             accuracy,
             volatility,
@@ -137,7 +139,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             1, // Bob's index
+            0, // Bob's mon index
             0, // ALice's index
+            0, // Alice's mon index
             basePower,
             accuracy,
             volatility,
@@ -165,7 +169,20 @@ contract AttackCalculatorTest is Test, BattleHelper {
 
         // Precomputed seed: accuracy roll lands a hit
         (int32 damage1,) = AttackCalculator._calculateDamageView(
-            engine, typeCalc, battleKey, 0, 1, basePower, accuracy, volatility, attackType, attackSupertype, 6, critRate
+            engine,
+            typeCalc,
+            battleKey,
+            0,
+            0,
+            1,
+            0,
+            basePower,
+            accuracy,
+            volatility,
+            attackType,
+            attackSupertype,
+            6,
+            critRate
         );
 
         // Precomputed seed: accuracy roll lands a miss
@@ -174,7 +191,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             volatility,
@@ -210,7 +229,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             volatility,
@@ -226,7 +247,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             volatility,
@@ -256,7 +279,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             volatility,
@@ -272,7 +297,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             volatility,
@@ -288,7 +315,9 @@ contract AttackCalculatorTest is Test, BattleHelper {
             typeCalc,
             battleKey,
             0,
+            0,
             1,
+            0,
             basePower,
             accuracy,
             0, // No volatility

@@ -458,9 +458,10 @@ contract CPUTest is Test {
         assertTrue(engine.isMatchmakerFor(address(cpu), externalMatchmaker), "supplied matchmaker approved (D34)");
     }
 
-    /// @dev Format (a): ALICE + CARL vs two CPU hosts. One tx configures both CPU seats'
-    ///      phantom slots for ALICE and starts the MULTI battle; a second tx (executeSlotGame)
-    ///      settles the whole game. cpu2 approves cpu1 as matchmaker at construction (D34).
+    /// @dev PvE Multi: ALICE (p0, the caller) + a CPU teammate vs two CPU hosts. One tx
+    ///      configures all three CPU seats' phantom slots for ALICE and starts the MULTI
+    ///      battle; a second tx (executeSlotGame) settles the whole game. cpu2/cpu3 approve
+    ///      cpu1 as matchmaker at construction (D34).
     function test_startCustomMultiBattle_bundledConfigStartAndOneTxSettle() public {
         TestTypeCalculator typeCalc = new TestTypeCalculator();
         CustomAttack killAttack = new CustomAttack(
@@ -474,11 +475,13 @@ contract CPUTest is Test {
         address[] memory cpu1AsMatchmaker = new address[](1);
         cpu1AsMatchmaker[0] = address(cpu1);
         CPU cpu2 = new CPU(engine, cpu1AsMatchmaker);
+        CPU cpu3 = new CPU(engine, cpu1AsMatchmaker);
         teamRegistry.setWhitelistedOpponent(address(cpu1), true);
         teamRegistry.setWhitelistedOpponent(address(cpu2), true);
+        teamRegistry.setWhitelistedOpponent(address(cpu3), true);
 
-        // 4-mon seat teams: humans kill in one hit, CPUs chip.
-        address[4] memory seats = [ALICE, CARL, address(cpu1), address(cpu2)];
+        // 4-mon seat teams: side 0 (ALICE + cpu3) kills in one hit, side 1 (cpu1 + cpu2) chips.
+        address[4] memory seats = [ALICE, address(cpu3), address(cpu1), address(cpu2)];
         for (uint256 i; i < 4; ++i) {
             Mon[] memory team = new Mon[](4);
             for (uint256 j; j < 4; ++j) {
@@ -494,26 +497,28 @@ contract CPUTest is Test {
             }
             teamRegistry.setTeam(seats[i], team);
         }
-        for (uint256 i; i < 2; ++i) {
-            vm.prank(seats[i]);
-            engine.updateMatchmakers(cpu1AsMatchmaker, new address[](0));
-        }
+        vm.prank(ALICE);
+        engine.updateMatchmakers(cpu1AsMatchmaker, new address[](0));
 
-        // Bundle: p1 = cpu1 (own-seat relay write), p2 = CARL (human, untouched), p3 = cpu2
-        // (peer write). CARL's supplied team index must survive; CPU indices get forced.
+        // Bundle: p1 = cpu1 (own-seat relay write), p2 = cpu3 (peer write, side-0 teammate),
+        // p3 = cpu2 (peer write). Every CPU seat's supplied team index gets forced.
         CustomMultiBattleProposal memory p;
         p.p0 = ALICE;
         p.p0TeamIndex = 0;
         p.p1 = address(cpu1);
         p.p1TeamIndex = 999; // must be overridden with ALICE's phantom key
-        p.p2 = CARL;
-        p.p2TeamIndex = 0;
+        p.p2 = address(cpu3);
+        p.p2TeamIndex = 999;
         p.p3 = address(cpu2);
         p.p3TeamIndex = 999;
         p.seatConfigs[0].monIndices = new uint256[](1);
         p.seatConfigs[0].monIndices[0] = 7;
         p.seatConfigs[0].facetIds = new uint8[](1);
         p.seatConfigs[0].moveSelections = new uint8[](1);
+        p.seatConfigs[1].monIndices = new uint256[](1);
+        p.seatConfigs[1].monIndices[0] = 8;
+        p.seatConfigs[1].facetIds = new uint8[](1);
+        p.seatConfigs[1].moveSelections = new uint8[](1);
         p.seatConfigs[2].monIndices = new uint256[](1);
         p.seatConfigs[2].monIndices[0] = 9;
         p.seatConfigs[2].facetIds = new uint8[](1);
@@ -525,26 +530,31 @@ contract CPUTest is Test {
         p.matchmaker = cpu1;
         p.engineHooks = new IEngineHook[](0);
 
+        vm.prank(ALICE);
         bytes32 battleKey = cpu1.startCustomMultiBattle(p);
 
-        // Both CPU seats' phantom configs were written for ALICE in the same tx.
-        assertEq(teamRegistry.phantomWriteCount(), 2);
+        // All three CPU seats' phantom configs were written for ALICE in the same tx.
+        assertEq(teamRegistry.phantomWriteCount(), 3);
         (address user0, address opp0, uint256[] memory mons0) = teamRegistry.phantomWriteAt(0);
         (address user1, address opp1, uint256[] memory mons1) = teamRegistry.phantomWriteAt(1);
+        (address user2, address opp2, uint256[] memory mons2) = teamRegistry.phantomWriteAt(2);
         assertEq(user0, ALICE);
         assertEq(opp0, address(cpu1));
         assertEq(mons0[0], 7);
         assertEq(user1, ALICE);
-        assertEq(opp1, address(cpu2));
-        assertEq(mons1[0], 9);
+        assertEq(opp1, address(cpu3));
+        assertEq(mons1[0], 8);
+        assertEq(user2, ALICE);
+        assertEq(opp2, address(cpu2));
+        assertEq(mons2[0], 9);
 
-        // CPU team indices forced to ALICE's phantom key; the human teammate's passed through.
+        // Every CPU team index forced to ALICE's phantom key.
         BattleEndContext memory ctx = engine.getBattleEndContext(battleKey);
         assertEq(ctx.p1TeamIndex, uint16(uint160(ALICE)));
+        assertEq(ctx.p2TeamIndex, uint16(uint160(ALICE)));
         assertEq(ctx.p3TeamIndex, uint16(uint160(ALICE)));
-        assertEq(ctx.p2TeamIndex, 0);
         address[4] memory canonical = engine.getSeats(battleKey);
-        assertEq(canonical[1], CARL, "canonical order [p0, p2, p1, p3]");
+        assertEq(canonical[1], address(cpu3), "canonical order [p0, p2, p1, p3]");
 
         // One-tx settle by p0: send-ins, then 4 kill rounds with forced switches between.
         vm.warp(vm.getBlockTimestamp() + 1);
@@ -574,5 +584,114 @@ contract CPUTest is Test {
         vm.prank(ALICE);
         address winner = cpu1.executeSlotGame(battleKey, stream);
         assertEq(winner, ALICE, "side wipe settles the whole Multi game in one tx");
+    }
+
+    /// @dev Minimal Multi proposal for guard tests (seat checks fire before any config work).
+    function _multiProposal(CPU cpu, address p0, address p1, address p2, address p3)
+        internal
+        view
+        returns (CustomMultiBattleProposal memory p)
+    {
+        p.p0 = p0;
+        p.p1 = p1;
+        p.p2 = p2;
+        p.p3 = p3;
+        p.teamRegistry = teamRegistry;
+        p.rngOracle = defaultOracle;
+        p.ruleset = IRuleset(address(0));
+        p.moveManager = address(cpu);
+        p.matchmaker = cpu;
+        p.engineHooks = new IEngineHook[](0);
+    }
+
+    /// @dev Finding #9 guard: a caller who isn't p0 can't open a Multi battle seating other
+    ///      humans, even when every seat has broadly approved this host as matchmaker.
+    function test_startCustomMultiBattle_revertsForNonP0Caller() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        address[] memory cpuAsMatchmaker = new address[](1);
+        cpuAsMatchmaker[0] = address(cpu);
+        CPU cpu2 = new CPU(engine, cpuAsMatchmaker);
+        teamRegistry.setWhitelistedOpponent(address(cpu), true);
+        teamRegistry.setWhitelistedOpponent(address(cpu2), true);
+        vm.prank(ALICE);
+        engine.updateMatchmakers(cpuAsMatchmaker, new address[](0));
+
+        CustomMultiBattleProposal memory p = _multiProposal(cpu, ALICE, address(cpu), CARL, address(cpu2));
+        vm.prank(address(0xBAD));
+        vm.expectRevert(CPUMoveManager.NotP0.selector);
+        cpu.startCustomMultiBattle(p);
+    }
+
+    /// @dev Finding #9 scenario: griefer as p0 seating a human victim (whose only opt-in was
+    ///      approving the host as matchmaker) is rejected — non-caller seats must be CPUs.
+    function test_startCustomMultiBattle_revertsWhenSeatingNonCpuHuman() public {
+        address griefer = address(0xBAD);
+        CPU cpu = new CPU(engine, new address[](0));
+        address[] memory cpuAsMatchmaker = new address[](1);
+        cpuAsMatchmaker[0] = address(cpu);
+        CPU cpu2 = new CPU(engine, cpuAsMatchmaker);
+        teamRegistry.setWhitelistedOpponent(address(cpu), true);
+        teamRegistry.setWhitelistedOpponent(address(cpu2), true);
+
+        // Victim ALICE only did the standard PvE opt-in.
+        vm.prank(ALICE);
+        engine.updateMatchmakers(cpuAsMatchmaker, new address[](0));
+
+        CustomMultiBattleProposal memory p = _multiProposal(cpu, griefer, ALICE, address(cpu), address(cpu2));
+        vm.prank(griefer);
+        vm.expectRevert(CPU.SeatNotCpu.selector);
+        cpu.startCustomMultiBattle(p);
+    }
+
+    /// @dev startCustomBattle p0 is caller-bound: a third party can't start (and phantom-
+    ///      configure) a PvE battle on someone else's behalf.
+    function test_startCustomBattle_revertsForNonP0Caller() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        CustomBattleProposal memory p = CustomBattleProposal({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            monIndices: new uint256[](0),
+            facetIds: new uint8[](0),
+            moveSelections: new uint8[](0),
+            teamRegistry: teamRegistry,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            moveManager: address(cpu),
+            matchmaker: cpu,
+            engineHooks: new IEngineHook[](0),
+            battleMode: BATTLE_MODE_DOUBLES
+        });
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(CPUMoveManager.NotP0.selector);
+        cpu.startCustomBattle(p);
+    }
+
+    /// @dev startBattle (legacy singles) gets the same guard: caller must be p0 and the
+    ///      opponent seat must be a CPU.
+    function test_startBattle_revertsForNonP0CallerOrHumanOpponent() public {
+        CPU cpu = new CPU(engine, new address[](0));
+        ProposedBattle memory proposal = ProposedBattle({
+            p0: ALICE,
+            p0TeamIndex: 0,
+            p0TeamHash: bytes32(0),
+            p1: address(cpu),
+            p1TeamIndex: 0,
+            teamRegistry: teamRegistry,
+            rngOracle: defaultOracle,
+            ruleset: IRuleset(address(0)),
+            moveManager: address(cpu),
+            matchmaker: cpu,
+            engineHooks: new IEngineHook[](0)
+        });
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(CPUMoveManager.NotP0.selector);
+        cpu.startBattle(proposal);
+
+        proposal.p1 = CARL;
+        vm.prank(ALICE);
+        vm.expectRevert(CPU.SeatNotCpu.selector);
+        cpu.startBattle(proposal);
     }
 }

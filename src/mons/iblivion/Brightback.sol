@@ -45,6 +45,7 @@ contract Brightback is IMoveSet {
             TYPE_CALCULATOR,
             battleKey,
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,

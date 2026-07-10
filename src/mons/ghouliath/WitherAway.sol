@@ -46,6 +46,7 @@ contract WitherAway is StandardAttack {
         // Deal the damage and inflict panic
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

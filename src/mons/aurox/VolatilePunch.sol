@@ -45,7 +45,7 @@ contract VolatilePunch is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
@@ -59,6 +59,7 @@ contract VolatilePunch is StandardAttack {
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         (int32 damage,) = engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, NO_SLOT} from "../../Constants.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
@@ -46,11 +46,18 @@ contract Somniphobia is IMoveSet, BasicEffect {
             uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
             engine.editEffect(2, effectIndex, bytes32((uint256(data) & 0x100FF) | (stack << 8)));
         } else {
-            engine.addEffect(2, attackerPlayerIndex, this, bytes32((attackerPlayerIndex << 16) | (uint256(1) << 8) | DURATION));
+            engine.addEffect(
+                2, attackerPlayerIndex, this, bytes32((attackerPlayerIndex << 16) | (uint256(1) << 8) | DURATION)
+            );
         }
 
-        // Opponents only: never punish the caster's own team.
+        // Opponents only: never punish the caster's own team. Every on-field opposing mon is
+        // tagged at cast — the coordinator's onMonSwitchIn only covers later arrivals.
         _applyPunisher(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
+        uint256 allyMon = TargetLib.activeAt(activesPacked, targetSlot ^ 1);
+        if (allyMon != EMPTY_ACTIVE_LANE) {
+            _applyPunisher(engine, battleKey, defenderPlayerIndex, allyMon);
+        }
     }
 
     function _applyPunisher(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) internal {

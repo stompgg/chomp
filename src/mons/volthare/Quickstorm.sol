@@ -62,6 +62,7 @@ contract Quickstorm is StandardAttack {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

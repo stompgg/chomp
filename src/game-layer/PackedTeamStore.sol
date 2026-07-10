@@ -14,6 +14,7 @@ abstract contract PackedTeamStore is ITeamRegistry {
     error TeamCapReached();
     error TeamNotLive();
     error MonIdTooLarge();
+    error InvalidMonPosition();
 
     // ----- Team layout -----
     // 4 teams pack into one storage slot: 256 bits / 64 bits per lane = 4 lanes.
@@ -100,23 +101,32 @@ abstract contract PackedTeamStore is ITeamRegistry {
         if ((_liveBitmap(msg.sender) & (uint256(1) << teamIndex)) == 0) {
             revert TeamNotLive();
         }
-        _checkForDuplicates(newMonIndices);
+        uint256 n = teamMonIndicesToOverride.length;
+        if (n != newMonIndices.length) {
+            revert InvalidTeamSize();
+        }
 
         uint256 groupKey = teamIndex >> 2;
         uint256 laneShift = (teamIndex & 0x3) * BITS_PER_LANE;
         uint256 group = teamGroupsPacked[msg.sender][groupKey];
-        uint256 n = teamMonIndicesToOverride.length;
         for (uint256 i; i < n;) {
             uint256 monId = newMonIndices[i];
             if (monId > ONES_MASK) {
                 revert MonIdTooLarge();
             }
-            uint256 monShift = laneShift + teamMonIndicesToOverride[i] * BITS_PER_MON_INDEX;
+            // Bound positions to this team's lane so writes can't shift into sibling lanes.
+            uint256 position = teamMonIndicesToOverride[i];
+            if (position >= MONS_PER_TEAM) {
+                revert InvalidMonPosition();
+            }
+            uint256 monShift = laneShift + position * BITS_PER_MON_INDEX;
             group = (group & ~(ONES_MASK << monShift)) | (monId << monShift);
             unchecked {
                 ++i;
             }
         }
+        // Dedup the resulting lane so partial updates can't collide with untouched positions.
+        _checkForDuplicates((group >> laneShift) & LANE_MASK);
         teamGroupsPacked[msg.sender][groupKey] = group;
     }
 
@@ -202,7 +212,7 @@ abstract contract PackedTeamStore is ITeamRegistry {
 
     function _packTeam(uint256[] memory monIndices) internal view returns (uint256 packed) {
         packed = _packIndices(monIndices);
-        _checkForDuplicates(monIndices);
+        _checkForDuplicates(packed);
     }
 
     function _packIndices(uint256[] memory monIndices) internal view returns (uint256 packed) {
@@ -231,12 +241,17 @@ abstract contract PackedTeamStore is ITeamRegistry {
         }
     }
 
-    function _checkForDuplicates(uint256[] memory monIndices) internal view {
-        for (uint256 i; i < MONS_PER_TEAM - 1; i++) {
-            for (uint256 j = i + 1; j < MONS_PER_TEAM; j++) {
-                if (monIndices[i] == monIndices[j]) {
-                    revert DuplicateMonId();
-                }
+    /// @dev Reverts if any two of the lane's MONS_PER_TEAM 8-bit ids collide (seen-bitmap keyed by id).
+    function _checkForDuplicates(uint256 packedTeam) internal view {
+        uint256 seen;
+        for (uint256 i; i < MONS_PER_TEAM;) {
+            uint256 bit = uint256(1) << ((packedTeam >> (i * BITS_PER_MON_INDEX)) & ONES_MASK);
+            if (seen & bit != 0) {
+                revert DuplicateMonId();
+            }
+            seen |= bit;
+            unchecked {
+                ++i;
             }
         }
     }

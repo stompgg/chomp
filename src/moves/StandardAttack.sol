@@ -48,13 +48,13 @@ contract StandardAttack is IMoveSet, Ownable {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256,
         uint16,
         uint256 rng
     ) public virtual {
-        _move(engine, battleKey, attackerPlayerIndex, targetBits, rng);
+        _move(engine, battleKey, attackerPlayerIndex, attackerMonIndex, targetBits, rng);
     }
 
     /// @dev Routes through engine.dispatchStandardAttack which collapses the previous three
@@ -63,13 +63,17 @@ contract StandardAttack is IMoveSet, Ownable {
     ///      production deploys TYPE_CALCULATOR as TypeCalculator (a thin wrapper around
     ///      TypeCalcLib), so the chart is the same. The injected TYPE_CALCULATOR is no
     ///      longer consulted on the attack path — only the engine's internal chart.
-    function _move(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 targetBits, uint256 rng)
-        internal
-        virtual
-        returns (int32 damage, bytes32 eventType)
-    {
+    function _move(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 rng
+    ) internal virtual returns (int32 damage, bytes32 eventType) {
         return engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

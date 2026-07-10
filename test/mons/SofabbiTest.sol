@@ -175,9 +175,9 @@ contract SofabbiTest is Test, BattleHelper {
         // Start battle
         bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
 
-        // CarrotHarvest folds the owner player index into the regen roll, so seeds are precomputed
-        // for the per-player outcome: 1 = both mons regen, 5 = neither regens.
-        mockOracle.setRNG(1);
+        // CarrotHarvest folds the owner (player, mon) identity into the regen roll, so seeds are
+        // precomputed for the per-owner outcome: 4 = both mons regen, 2 = neither regens.
+        mockOracle.setRNG(4);
 
         // First move: Both players select their first mon (index 0)
         _commitRevealExecuteForAliceAndBob(
@@ -189,7 +189,7 @@ contract SofabbiTest is Test, BattleHelper {
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Stamina), 1);
 
         // Neither mon regens
-        mockOracle.setRNG(5);
+        mockOracle.setRNG(2);
 
         // Alice and Bob both do nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);

@@ -50,6 +50,7 @@ library AttackCalculator {
         ITypeCalculator, /* TYPE_CALCULATOR — unused, see above */
         bytes32, /* battleKey — unused, the engine resolves its own transient context */
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint32 basePower,
         uint32 accuracy, // out of 100
@@ -60,7 +61,16 @@ library AttackCalculator {
         uint256 critRate // out of 100
     ) internal returns (int32, bytes32) {
         return ENGINE.dispatchCustomAttack(
-            attackerPlayerIndex, targetBits, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
+            attackerPlayerIndex,
+            attackerMonIndex,
+            targetBits,
+            basePower,
+            accuracy,
+            volatility,
+            attackType,
+            attackSupertype,
+            rng,
+            critRate
         );
     }
 
@@ -69,7 +79,9 @@ library AttackCalculator {
         ITypeCalculator TYPE_CALCULATOR,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
         uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex,
         uint32 basePower,
         uint32 accuracy, // out of 100
         uint256 volatility,
@@ -79,7 +91,9 @@ library AttackCalculator {
         uint256 critRate // out of 100
     ) internal view returns (int32, bytes32) {
         // Use batch getter to reduce external calls (7 -> 1)
-        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(battleKey, attackerPlayerIndex, defenderPlayerIndex);
+        DamageCalcContext memory ctx = ENGINE.getDamageCalcContext(
+            battleKey, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
+        );
         return _calculateDamageFromContext(
             TYPE_CALCULATOR, ctx, basePower, accuracy, volatility, attackType, attackSupertype, rng, critRate
         );

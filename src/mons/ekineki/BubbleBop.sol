@@ -37,7 +37,7 @@ contract BubbleBop is StandardAttack {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256,
+        uint256 attackerMonIndex,
         uint256 targetBits,
         uint256 activesPacked,
         uint16,
@@ -48,6 +48,7 @@ contract BubbleBop is StandardAttack {
         // First hit
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),
@@ -64,6 +65,7 @@ contract BubbleBop is StandardAttack {
         uint256 rng2 = uint256(keccak256(abi.encode(rng, "SECOND_HIT")));
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

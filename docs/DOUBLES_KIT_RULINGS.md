@@ -36,11 +36,11 @@ opposing active" when each side has one slot).
 | Interweaving | Swap-in and swap-out debuffs land on Inutia's mirror slot. |
 | Preemptive Shock | Unchanged (dispatch resolves the implied singles bit in singles; in doubles it chips the target resolved by its dispatch call — slot 0 of the opposing side; acceptable until a kit pass gives it a chosen target). |
 | Actus Reus | Arms when EITHER opposing occupant is KO'd after Malalien's move; the death-trigger speed halving lands on Malalien's mirror slot. |
-| Night Terrors | Each tick lands on Xmon's mirror slot (re-evaluated per round end). |
+| Old Vengeance | Each tick lands on Xmon's mirror slot (re-evaluated per round end). |
 | Rock Pull | The punisher *stance* (priority bump) arms if either opposing slot committed a switch (priority() has no target context); the punish damage still requires the *targeted* slot to be switching, else the usual self-hit. |
 | Hard Reset | Rest detection is per-slot (the Resting mon's own committed move); the forced swap vacates that mon's slot. |
 | Tinderclaws | Rest detection reads Embursa's own slot. |
-| Sleep / Zap | The move rewrite / skip check binds to the sleeper's own slot; a benched victim is untouched that round. |
+| Sleep / Zap | The move rewrite / skip check binds to the sleeper's own slot; a benched victim is untouched that round. "Has the victim acted" is the engine's per-slot acted mask, not a priority compare. Sleep's one-sleeper gate stays per-SIDE in all modes (in Multi one seat's sleeper blocks Sleep on the partner seat's mons — accepted). |
 | Overclock / Dual Shock | Boost applies to every occupied lane of the summoner's side and is removed from both at expiry (side-scoped by design, D11). |
 | Pivots (Hit And Dip, Round Trip, Pistol Squat, Hard Reset) | Slot-addressed switches per the pivot rule above. |
 | Sneak Attack / Guest Feature / Gilded Recovery / Savior Complex | Roster-index domains unchanged in Doubles (own/opposing team is the side roster). Multi's per-seat quarters are a validation concern for the Multi phase. |

@@ -47,6 +47,7 @@ contract BullRush is StandardAttack {
         // Deal the damage to opponent
         (int32 damage,) = engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             basePower(battleKey),
             accuracy(battleKey),

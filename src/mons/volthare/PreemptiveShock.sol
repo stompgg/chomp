@@ -27,18 +27,22 @@ contract PreemptiveShock is IAbility {
         external
         override
     {
+        // Fold the mon identity into the turn rng so same-side/same-turn activations (and the
+        // side's slot-0 attacker, which keeps the raw stream) roll independently.
+        uint256 shockRng = uint256(keccak256(abi.encode(engine.tempRNG(), playerIndex, monIndex, "PREEMPTIVE_SHOCK")));
         AttackCalculator._calculateDamage(
             engine,
             TYPE_CALCULATOR,
             battleKey,
             playerIndex,
+            monIndex,
             TargetLib.impliedSinglesTargetBits(playerIndex),
             BASE_POWER,
             100,
             DEFAULT_VOL,
             Type.Lightning,
             MoveClass.Physical,
-            engine.tempRNG(),
+            shockRng,
             0
         );
 

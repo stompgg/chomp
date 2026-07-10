@@ -48,7 +48,7 @@ struct CustomBattleProposal {
 // bundles the phantom-config writes for every CPU seat with the battle start. seatConfigs
 // aligns with (p1, p2, p3); a config is applied only when the registry whitelists that seat
 // (its team index is then forced to p0's phantom key), and an empty monIndices skips the
-// write (seat already configured). Human seats use their supplied team index.
+// write (seat already configured). The caller (p0) is the only allowed human seat.
 struct SeatPhantomConfig {
     uint256[] monIndices;
     uint8[] facetIds;

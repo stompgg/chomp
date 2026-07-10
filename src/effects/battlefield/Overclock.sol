@@ -130,15 +130,6 @@ contract Overclock is BasicEffect {
         return (extraData, false);
     }
 
-    function onRoundStart(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)
-        external
-        pure
-        override
-        returns (bytes32 updatedExtraData, bool removeAfterRun)
-    {
-        return (extraData, false);
-    }
-
     function onRemove(IEngine engine, bytes32, bytes32 extraData, uint256, uint256, uint256 activesPacked)
         external
         override

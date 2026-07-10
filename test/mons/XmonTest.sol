@@ -158,8 +158,8 @@ contract XmonTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Set RNG to guarantee stamina steal (>= 50)
-        mockOracle.setRNG(50);
+        // Precomputed: rng 1 -> accuracy roll 29 (hit), steal roll 40 (< 50, steal procs)
+        mockOracle.setRNG(1);
 
         // Alice uses Vital Siphon, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);

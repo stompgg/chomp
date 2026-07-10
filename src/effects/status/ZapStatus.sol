@@ -32,19 +32,15 @@ contract ZapStatus is StatusEffect {
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
 
-        // Compute priority player index
-        uint256 priorityPlayerIndex = engine.computePriorityPlayerIndex(battleKey, rng);
-
         uint8 state;
 
-        // Check if opponent has yet to move
-        if (targetIndex != priorityPlayerIndex) {
-            // Opponent hasn't moved yet (they're the non-priority player)
-            // Set skip turn flag immediately
+        // If the target hasn't acted yet this turn, skip it immediately; otherwise wait for
+        // next RoundStart (a lingering flag would eat a forced switch instead of a move).
+        uint256 slot = TargetLib.slotOfMon(activesPacked, targetIndex, monIndex);
+        if (slot != NO_SLOT && !engine.hasSlotActedThisTurn(slot)) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.ShouldSkipTurn, 1);
             state = ALREADY_SKIPPED; // Ready to remove at RoundEnd
         }
-        // else: Opponent has already moved, state = 0 (not yet skipped), wait for RoundStart
 
         return (bytes32(uint256(state)), false);
     }
@@ -70,17 +66,6 @@ contract ZapStatus is StatusEffect {
         }
         engine.updateMonState(targetIndex, monIndex, MonStateIndexName.ShouldSkipTurn, 1);
         return (bytes32(uint256(ALREADY_SKIPPED)), false);
-    }
-
-    function onRemove(
-        IEngine engine,
-        bytes32 battleKey,
-        bytes32 data,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 activesPacked
-    ) public override {
-        super.onRemove(engine, battleKey, data, targetIndex, monIndex, activesPacked);
     }
 
     function onRoundEnd(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)

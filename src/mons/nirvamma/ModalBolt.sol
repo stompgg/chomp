@@ -90,12 +90,13 @@ contract ModalBolt is IMoveSet {
 
         engine.dispatchStandardAttack(
             attackerPlayerIndex,
+            attackerMonIndex,
             targetBits,
             BASE_POWER,
             DEFAULT_ACCURACY,
             DEFAULT_VOL,
             t,
-            MoveClass.Special,
+            MoveClass.Physical,
             DEFAULT_CRIT_RATE,
             EFFECT_ACCURACY,
             status,

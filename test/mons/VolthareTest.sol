@@ -388,11 +388,20 @@ contract VolthareTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Both players use Dual Shock, Alice should move first and skip their next move
+        // Alice uses Dual Shock; the self-zap lands after she has already acted, so no
+        // immediate skip flag — the skip is armed at next RoundStart.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.ShouldSkipTurn), 0);
+        int32 bobHpAfterFirstShock = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
+        assertTrue(bobHpAfterFirstShock < 0, "first Dual Shock landed");
 
-        // Alice's mon should have the skip turn flag set
-        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.ShouldSkipTurn), 1);
+        // Next turn: Alice's committed Dual Shock is skipped by the zap (no new damage).
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp),
+            bobHpAfterFirstShock,
+            "zap skipped Alice's next move"
+        );
     }
 
     // Deploys a Volthare (Quickstorm + filler, PreemptiveShock ability) vs a plain Bob, starts the

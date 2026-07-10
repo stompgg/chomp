@@ -13,6 +13,7 @@ import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {defaultBattle, sideWord, signOffer, signSeatFill, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
+import {RandomForceOutMove} from "./mocks/RandomForceOutMove.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
@@ -624,5 +625,31 @@ contract MultiFlowsTest is BatchHelper {
             );
         }
         assertEq(engine.getWinner(battleKey), p0, "side-0 lead reported as winner");
+    }
+
+    /// @dev Random force-outs (Pistol Squat / Hard Reset shape) must pick replacements from
+    ///      the target slot's seat quarter. Salts precomputed offline: with 0x113/0x222 the
+    ///      pre-fix full-roster walk lands on seat-0's mon 0 (cross-quarter -> the switch
+    ///      no-ops); the quarter-bounded walk always lands in [4, 8).
+    function test_multiForceOut_randomPickStaysInSeatQuarter() public {
+        RandomForceOutMove forceOut = new RandomForceOutMove();
+        registry.setTeam(p0, _mkTeam(1000, 40, IMoveSet(address(forceOut))));
+        registry.setTeam(p2, _mkTeam(1000, 30, weakAttack));
+        registry.setTeam(p1, _mkTeam(1000, 20, weakAttack));
+        registry.setTeam(p3, _mkTeam(1000, 10, weakAttack));
+        (battleKey,) = engine.computePartyKey(p0, p1, p2, p3);
+        engine.startBattleWithMode(_battle(address(this)), BATTLE_MODE_MULTI);
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _sendInLeads();
+
+        // A0 forces out B1 (side 1, seat-1 quarter [4, 8), currently roster index 4).
+        engine.executeWithSlotMoves(
+            battleKey,
+            sideWord(0, targetBits(3), NO_OP_MOVE_INDEX, 0, uint104(0x113)),
+            sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, uint104(0x222))
+        );
+        uint256 newActive = engine.getActiveSlots(battleKey)[3];
+        assertTrue(newActive != 4, "forced switch landed");
+        assertTrue(newActive >= 4 && newActive < 8, "replacement stays in the seat's quarter");
     }
 }
