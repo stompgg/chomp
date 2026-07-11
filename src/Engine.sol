@@ -4257,6 +4257,21 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 rng,
         EffectStep step
     ) private {
+        // The steps union only says SOME mon (possibly benched or replaced) listens at this
+        // step; when none of the four current actives carries any effect the ordering pass has
+        // nothing to run. Empty lanes (0xFF) shift out to a zero count.
+        {
+            uint96 c0 = config.packedP0EffectsCount;
+            uint96 c1 = config.packedP1EffectsCount;
+            if (
+                _getMonEffectCount(c0, _slotActive(battle, 0)) == 0
+                    && _getMonEffectCount(c0, _slotActive(battle, 1)) == 0
+                    && _getMonEffectCount(c1, _slotActive(battle, 2)) == 0
+                    && _getMonEffectCount(c1, _slotActive(battle, 3)) == 0
+            ) {
+                return;
+            }
+        }
         uint256 doneMask;
         // Distinct jitter-seed ranges per pass (and from the action scheduler's 0-3) so the
         // RoundStart and RoundEnd orderings roll independently.
