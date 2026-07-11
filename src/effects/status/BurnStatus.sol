@@ -21,10 +21,14 @@ contract BurnStatus is StatusEffect {
         return "Burn";
     }
 
-    // Steps: OnApply, RoundStart, RoundEnd, OnRemove
+    // Steps: OnApply, RoundEnd, OnRemove (no RoundStart behavior — the bit would only buy a
+    // no-op external call per burned turn)
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0F;
+        return 0x0D;
     }
+
+    // extraData layout: [burn degree: bits 0-7 | cached max HP: bits 32-63]. Base HP is fixed
+    // for the battle, so caching it at apply saves the per-tick engine read.
 
     function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
         public
@@ -81,17 +85,19 @@ contract BurnStatus is StatusEffect {
             for (uint256 i = 0; i < effects.length; i++) {
                 if (address(effects[i].effect) == address(this)) {
                     indexOfBurnEffect = indices[i];
-                    burnDegree = uint256(effects[i].data);
+                    burnDegree = uint256(effects[i].data) & 0xFF;
                     newExtraData = effects[i].data;
                 }
             }
             if (burnDegree < MAX_BURN_DEGREE) {
-                newExtraData = bytes32(burnDegree + 1);
+                newExtraData = bytes32((uint256(newExtraData) & ~uint256(0xFF)) | (burnDegree + 1));
             }
             engine.editEffect(targetIndex, indexOfBurnEffect, newExtraData);
+            return (bytes32(0), true);
         }
 
-        return (bytes32(uint256(1)), hasBurnAlready);
+        uint256 maxHp = uint256(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+        return (bytes32(uint256(1) | (maxHp << 32)), false);
     }
 
     function onRemove(
@@ -121,7 +127,7 @@ contract BurnStatus is StatusEffect {
         uint256 monIndex,
         uint256
     ) external override returns (bytes32, bool) {
-        uint256 burnDegree = uint256(extraData);
+        uint256 burnDegree = uint256(extraData) & 0xFF;
         int32 damageDenom = DEG1_DAMAGE_DENOM;
         if (burnDegree == 2) {
             damageDenom = DEG2_DAMAGE_DENOM;
@@ -129,8 +135,7 @@ contract BurnStatus is StatusEffect {
         if (burnDegree == 3) {
             damageDenom = DEG3_DAMAGE_DENOM;
         }
-        int32 damage =
-            int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / damageDenom;
+        int32 damage = int32(uint32(uint256(extraData) >> 32)) / damageDenom;
         engine.dealDamage(targetIndex, monIndex, damage);
         return (extraData, false);
     }

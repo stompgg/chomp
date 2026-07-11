@@ -38,8 +38,9 @@ contract FrostbiteStatus is StatusEffect {
         });
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
-        // Do not update data
-        return (extraData, false);
+        // Cache max HP (bits 32-63; fixed for the battle) so each tick skips the engine read.
+        uint256 maxHp = uint256(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+        return (bytes32(maxHp << 32), false);
     }
 
     function onRemove(
@@ -65,9 +66,8 @@ contract FrostbiteStatus is StatusEffect {
         uint256 monIndex,
         uint256
     ) public override returns (bytes32, bool) {
-        // Calculate damage to deal
-        uint32 maxHealth = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
-        int32 damage = int32(maxHealth) / DAMAGE_DENOM;
+        // Damage from the max HP cached at apply
+        int32 damage = int32(uint32(uint256(extraData) >> 32)) / DAMAGE_DENOM;
         engine.dealDamage(targetIndex, monIndex, damage);
 
         // Do not update data
