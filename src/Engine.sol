@@ -1991,6 +1991,43 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         eff.effect = IEffect(TOMBSTONE_ADDRESS);
+        if (targetIndex == 2) {
+            uint256 len = config.globalEffectsLength;
+            uint256 newLen = len;
+            while (newLen > 0 && address(config.globalEffects[newLen - 1].effect) == TOMBSTONE_ADDRESS) {
+                unchecked {
+                    --newLen;
+                }
+            }
+            if (newLen != len) {
+                config.globalEffectsLength = uint8(newLen);
+            }
+        } else {
+            _compactTrailingTombstones(config, targetIndex, monIndex);
+        }
+    }
+
+    /// @dev Shrink a mon's packed effect count over any trailing tombstones so the count-gated
+    ///      passes (and the all-actives-clean early-out) regain their zero fast path. Only the
+    ///      tail can shrink — a live entry above a tombstone pins the count.
+    function _compactTrailingTombstones(BattleConfig storage config, uint256 targetIndex, uint256 monIndex) private {
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 count = _getMonEffectCount(packedCounts, monIndex);
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        uint256 newCount = count;
+        while (newCount > 0 && address(effects[baseSlot + newCount - 1].effect) == TOMBSTONE_ADDRESS) {
+            unchecked {
+                --newCount;
+            }
+        }
+        if (newCount != count) {
+            if (targetIndex == 0) {
+                config.packedP0EffectsCount = _setMonEffectCount(packedCounts, monIndex, newCount);
+            } else {
+                config.packedP1EffectsCount = _setMonEffectCount(packedCounts, monIndex, newCount);
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -2055,6 +2092,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (removeCount == 0) {
             return;
         }
+        _compactTrailingTombstones(config, targetIndex, monIndex);
 
         // Reset to base by applying with empty aggregation.
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
@@ -2186,6 +2224,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return;
         }
         effects[foundSlot].effect = IEffect(TOMBSTONE_ADDRESS);
+        _compactTrailingTombstones(config, targetIndex, monIndex);
         _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
@@ -2341,6 +2380,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
         }
 
+        _compactTrailingTombstones(config, targetIndex, monIndex);
         _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
