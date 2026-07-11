@@ -45,6 +45,8 @@ import {VitalSiphon} from "../../src/mons/xmon/VitalSiphon.sol";
  *     - Invoke Taboo brands the opponent's move; repeating it puts them to sleep [x]
  *     - Invoke Taboo brand clears when the opponent switches out [x]
  *     - Somniphobia punishes opponents only, never the caster's own team [x]
+ *     - Somniphobia per-side instances: each cast punishes only the caster's opponents [x]
+ *     - Somniphobia per-side instances expire on independent schedules [x]
  *     - Old Vengeance hits once immediately, then again per stamina the opponent spent [x]
  */
 
@@ -372,24 +374,27 @@ contract XmonTest is Test, BattleHelper {
         );
     }
 
-    // Both players casting in the same battle share one global instance; the stack just accumulates.
-    function test_somniphobiaSingleInstanceWhenBothCast() public {
+    // Each side's cast is its own instance: independent stacks, each punishing only the other side.
+    function test_somniphobiaPerSideInstancesWhenBothCast() public {
         Somniphobia somniphobia = new Somniphobia();
+        StaminaRegen staminaRegen = new StaminaRegen();
 
-        uint256[] memory moves = new uint256[](2);
+        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 100; // 800 HP -> 100 per stack
+        int32 tick = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -100
+
+        uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(somniphobia)));
-        moves[1] = uint256(uint160(address(_staminaBurn(2))));
 
         Mon memory aliceMon = _createMon();
         aliceMon.moves = moves;
-        aliceMon.stats.hp = 1000;
-        aliceMon.stats.stamina = 10;
+        aliceMon.stats.hp = maxHp;
+        aliceMon.stats.stamina = 5;
         aliceMon.stats.speed = 2;
 
         Mon memory bobMon = _createMon();
         bobMon.moves = moves;
-        bobMon.stats.hp = 1000;
-        bobMon.stats.stamina = 10;
+        bobMon.stats.hp = maxHp;
+        bobMon.stats.stamina = 5;
         bobMon.stats.speed = 1;
 
         Mon[] memory aliceTeam = new Mon[](1);
@@ -398,18 +403,119 @@ contract XmonTest is Test, BattleHelper {
         bobTeam[0] = bobMon;
         defaultRegistry.setTeam(ALICE, aliceTeam);
         defaultRegistry.setTeam(BOB, bobTeam);
-        bytes32 battleKey = _startBattle(engine, mockOracle, defaultRegistry, matchmaker, address(commitManager));
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+        bytes32 battleKey = _startBattle(
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
+        );
 
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Both players cast Somniphobia on the same turn -> one coordinator, stack 2.
+        // Both cast on the same turn. Each cast costs 1 stamina, so round-end regen gives both
+        // mons a stamina gain: each side takes ONE 1-stack tick from the enemy instance, not two.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
-        assertTrue(exists, "Single global coordinator should exist");
-        assertEq((uint256(data) >> 8) & 0xFF, 2, "Both casts accumulate into one stack-2 instance");
+        assertTrue(exists, "Coordinator should exist");
+        assertEq((uint256(data) >> 8) & 0xFF, 1, "Side 0's instance should be at stack 1");
+        assertEq((uint256(data) >> 24) & 0xFF, 1, "Side 1's instance should be at stack 1");
+        (bool aliceHas,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
+        (bool bobHas,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
+        assertTrue(aliceHas, "Alice's mon is punished by Bob's instance");
+        assertTrue(bobHas, "Bob's mon is punished by Alice's instance");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick, "Alice: one 1-stack tick");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick, "Bob: one 1-stack tick");
+    }
+
+    // The two sides' instances count down on their own schedules: when the earlier cast expires,
+    // its punishers stop, while the later cast keeps ticking its own targets.
+    function test_somniphobiaPerSideIndependentDurations() public {
+        Somniphobia somniphobia = new Somniphobia();
+        StaminaRegen staminaRegen = new StaminaRegen();
+
+        uint32 maxHp = uint32(somniphobia.DAMAGE_DENOM()) * 100; // 800 HP -> 100 per stack
+        int32 tick = -int32(maxHp) / somniphobia.DAMAGE_DENOM(); // -100
+
+        StandardAttack staminaBurn = _staminaBurn(2);
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(somniphobia)));
+        moves[1] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = moves;
+        aliceMon.stats.hp = maxHp;
+        aliceMon.stats.stamina = 5;
+        aliceMon.stats.speed = 2;
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = moves;
+        bobMon.stats.hp = maxHp;
+        bobMon.stats.stamina = 5;
+        bobMon.stats.speed = 1;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        Mon[] memory bobTeam = new Mon[](1);
+        bobTeam[0] = bobMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+        IEffect[] memory effects = new IEffect[](1);
+        effects[0] = staminaRegen;
+        DefaultRuleset ruleset = new DefaultRuleset(IEngine(address(engine)), effects);
+        bytes32 battleKey = _startBattle(
+            engine,
+            mockOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(address(ruleset)),
+            address(commitManager)
+        );
+
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Turn 1: Alice casts (active turns 1-4). Bob burns 2 -> regen tick: Bob -100.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
+        // Turn 2: both rest. Alice is full (no gain); Bob's rest gain (-1 -> 0) ticks: Bob -200.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        // Turn 3: Bob casts (active turns 3-6); Alice burns 2. Regen ticks both: Alice -100, Bob -300.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 0, 0, 0);
+        // Turn 4: Alice rests back to full (one gain, -100 more); Bob rests at full (no gain).
+        // Alice's cast expires at this round end, clearing Bob's punisher while Alice's stays.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+
+        (bool coordinatorAlive,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        (bool bobPunished,,) = engine.getEffectData(battleKey, 1, 0, address(somniphobia));
+        (bool alicePunished,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
+        assertTrue(coordinatorAlive, "Bob's instance keeps the coordinator alive");
+        assertFalse(bobPunished, "Bob's punisher clears when Alice's instance expires");
+        assertTrue(alicePunished, "Alice stays punished by Bob's still-active instance");
+
+        // Turn 5: both burn 2 and regen. Bob's gain deals NO damage (Alice's instance is gone);
+        // Alice's gain still takes Bob's tick: Alice -300, Bob still -300.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, 1, 0, 0);
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick * 3, "Alice keeps ticking");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick * 3, "Bob stopped ticking");
+
+        // Turn 6: Bob's instance's last round (one more Alice tick from resting), then all clears.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, NO_OP_MOVE_INDEX, 0, 0);
+        (bool coordinatorGone,,) = engine.getEffectData(battleKey, 2, 2, address(somniphobia));
+        (bool alicePunisherGone,,) = engine.getEffectData(battleKey, 0, 0, address(somniphobia));
+        assertFalse(coordinatorGone, "Coordinator drops once both instances expire");
+        assertFalse(alicePunisherGone, "Alice's punisher clears with Bob's instance");
+        assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), tick * 4, "Alice: final tick");
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), tick * 3, "Bob: unchanged");
     }
 
     // A mon switched in while Somniphobia is active picks up the effect; the one switched out loses it.

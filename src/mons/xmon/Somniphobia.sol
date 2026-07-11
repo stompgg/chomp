@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
+import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, EMPTY_ACTIVE_LANE} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
@@ -15,9 +15,14 @@ contract Somniphobia is IMoveSet, BasicEffect {
     uint256 public constant DURATION = 4;
     int32 public constant DAMAGE_DENOM = 8;
 
-    // Global-coordinator data: [casterSide: bit 16 | stack: bits 8-15 | remainingDuration: bits 0-7].
+    // Global-coordinator data: one independent 16-bit lane per caster side at bit offset side*16,
+    // each [stack: bits 8-15 | remainingDuration: bits 0-7]; a side's cast punishes the other side.
     // Per-mon-punisher data: this marker bit set (distinguishes the two roles, which share a contract).
     uint256 internal constant PUNISHER_MARKER = 1 << 255;
+
+    function _lane(bytes32 data, uint256 casterSide) internal pure returns (uint256) {
+        return (uint256(data) >> (casterSide << 4)) & 0xFFFF;
+    }
 
     function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
         return "Somniphobia";
@@ -27,36 +32,32 @@ contract Somniphobia is IMoveSet, BasicEffect {
         IEngine engine,
         bytes32 battleKey,
         uint256 attackerPlayerIndex,
-        uint256 attackerMonIndex,
-        uint256 targetBits,
+        uint256,
+        uint256,
         uint256 activesPacked,
         uint16,
         uint256
     ) external {
-        uint256 targetSlot = TargetLib.lowestSlot(targetBits);
-        if (targetSlot == NO_SLOT) {
-            return; // no chosen target (defensive; the engine fizzles first)
-        }
-        uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
-        uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
-
         (bool exists, uint256 effectIndex, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
+        // Bump this side's stack but keep its countdown; an expired lane restarts fresh.
+        uint256 lane = _lane(data, attackerPlayerIndex);
+        lane = lane == 0 ? (uint256(1) << 8) | DURATION : lane + (1 << 8);
+        uint256 shift = attackerPlayerIndex << 4;
+        bytes32 updated = bytes32((uint256(data) & ~(uint256(0xFFFF) << shift)) | ((lane & 0xFFFF) << shift));
         if (exists) {
-            // Bump the stack but keep the original countdown and caster side.
-            uint256 stack = ((uint256(data) >> 8) & 0xFF) + 1;
-            engine.editEffect(2, effectIndex, bytes32((uint256(data) & 0x100FF) | (stack << 8)));
+            engine.editEffect(2, effectIndex, updated);
         } else {
-            engine.addEffect(
-                2, attackerPlayerIndex, this, bytes32((attackerPlayerIndex << 16) | (uint256(1) << 8) | DURATION)
-            );
+            engine.addEffect(2, 2, this, updated);
         }
 
         // Opponents only: never punish the caster's own team. Every on-field opposing mon is
         // tagged at cast — the coordinator's onMonSwitchIn only covers later arrivals.
-        _applyPunisher(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
-        uint256 allyMon = TargetLib.activeAt(activesPacked, targetSlot ^ 1);
-        if (allyMon != EMPTY_ACTIVE_LANE) {
-            _applyPunisher(engine, battleKey, defenderPlayerIndex, allyMon);
+        uint256 defenderPlayerIndex = attackerPlayerIndex ^ 1;
+        for (uint256 slotIndex; slotIndex < 2; slotIndex++) {
+            uint256 mon = TargetLib.activeAt(activesPacked, TargetLib.toAbsSlot(defenderPlayerIndex, slotIndex));
+            if (mon != EMPTY_ACTIVE_LANE) {
+                _applyPunisher(engine, battleKey, defenderPlayerIndex, mon);
+            }
         }
     }
 
@@ -101,8 +102,9 @@ contract Somniphobia is IMoveSet, BasicEffect {
     ) external override returns (bytes32, bool) {
         if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
             (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
-            if (exists) {
-                int32 stack = int32(uint32((uint256(data) >> 8) & 0xFF));
+            uint256 lane = exists ? _lane(data, playerIndex ^ 1) : 0;
+            if (lane != 0) {
+                int32 stack = int32(uint32(lane >> 8));
                 uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
                 int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM * stack;
                 if (damage > 0) {
@@ -122,12 +124,9 @@ contract Somniphobia is IMoveSet, BasicEffect {
         uint256 monIndex,
         uint256
     ) external override returns (bytes32, bool) {
-        // Global coordinator only: punish a switched-in mon, but only on the side opposite the caster.
-        if (uint256(extraData) & PUNISHER_MARKER == 0) {
-            uint256 casterSide = (uint256(extraData) >> 16) & 1;
-            if (targetIndex != casterSide) {
-                _applyPunisher(engine, battleKey, targetIndex, monIndex);
-            }
+        // Coordinator only: tag an arrival when the opposing side's instance is live.
+        if (uint256(extraData) & PUNISHER_MARKER == 0 && _lane(extraData, targetIndex ^ 1) != 0) {
+            _applyPunisher(engine, battleKey, targetIndex, monIndex);
         }
         return (extraData, false);
     }
@@ -142,23 +141,31 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (extraData, uint256(extraData) & PUNISHER_MARKER != 0);
     }
 
-    function onRoundEnd(IEngine engine, bytes32 battleKey, uint256, bytes32 extraData, uint256, uint256, uint256)
-        external
-        view
-        override
-        returns (bytes32, bool)
-    {
+    function onRoundEnd(
+        IEngine engine,
+        bytes32 battleKey,
+        uint256,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256,
+        uint256
+    ) external view override returns (bytes32, bool) {
         if (uint256(extraData) & PUNISHER_MARKER != 0) {
-            // Punisher: drop self once the coordinator is gone.
-            (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
-            return (extraData, !exists);
+            // Punisher: drop self once the opposing side's instance is gone.
+            (bool exists,, bytes32 data) = engine.getEffectData(battleKey, 2, 2, address(this));
+            return (extraData, !exists || _lane(data, targetIndex ^ 1) == 0);
         }
-        // Global coordinator: count down, preserving the stack.
-        uint256 duration = uint256(extraData) & 0xFF;
-        if (duration <= 1) {
-            return (extraData, true);
+        // Global coordinator: count each side's lane down independently; drop once both expire.
+        uint256 updated = uint256(extraData);
+        for (uint256 side; side < 2; side++) {
+            uint256 lane = _lane(extraData, side);
+            if (lane != 0) {
+                uint256 shift = side << 4;
+                uint256 next = (lane & 0xFF) <= 1 ? 0 : lane - 1;
+                updated = (updated & ~(uint256(0xFFFF) << shift)) | (next << shift);
+            }
         }
-        return (bytes32((uint256(extraData) & 0x1FF00) | (duration - 1)), false);
+        return (bytes32(updated), updated == 0);
     }
 
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)

@@ -25,7 +25,7 @@ import {MoveSlotLib} from "../../moves/MoveSlotLib.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract OldVengeance is IMoveSet, BasicEffect {
-    uint32 public constant BASE_POWER = 33;
+    uint32 public constant BASE_POWER = 30;
 
     ITypeCalculator immutable TYPE_CALCULATOR;
 

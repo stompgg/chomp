@@ -795,6 +795,13 @@ class MoveValidator:
 
         # Handle custom IMoveSet implementations with simple constant returns
         elif result['is_custom_implementation']:
+            # Update power constant if there's a mismatch and it's not a complex move
+            if move_data.power != '?' and isinstance(move_data.power, int) and move_data.power > 0:
+                power_pattern = r'(\bBASE_POWER\s*=\s*)(\d+)'
+                if re.search(power_pattern, content):
+                    content = re.sub(power_pattern, rf'\g<1>{move_data.power}', content)
+                    modified = True
+
             # Update accuracy constant if there's a mismatch and it's not a complex move
             if move_data.accuracy != '?' and isinstance(move_data.accuracy, int):
                 # Try DEFAULT_ACCURACY first

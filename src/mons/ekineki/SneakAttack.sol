@@ -16,7 +16,7 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 import {NineNineNineLib} from "./NineNineNineLib.sol";
 
 contract SneakAttack is IMoveSet, BasicEffect {
-    uint32 public constant BASE_POWER = 60;
+    uint32 public constant BASE_POWER = 70;
     uint32 public constant STAMINA_COST = 2;
 
     ITypeCalculator immutable TYPE_CALCULATOR;
