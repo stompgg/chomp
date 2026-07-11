@@ -17,9 +17,12 @@ import {Vm} from "forge-std/Vm.sol";
 
 Vm constant _VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-/// Wire word per side: [m0 8 | e0 16 | m1 8 | e1 16 | salt 104].
+/// Wire word per side: [m0 8 | e0 16 | m1 8 | e1 16 | salt 80] (128 bits — a staged turn's
+/// pair shares one buffer slot). The salt param stays uint104 for call-site compatibility
+/// and is masked to the 80-bit wire width here.
 function sideWord(uint8 m0, uint16 e0, uint8 m1, uint16 e1, uint104 salt) pure returns (uint256) {
-    return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32) | (uint256(salt) << 48);
+    return uint256(m0) | (uint256(e0) << 8) | (uint256(m1) << 24) | (uint256(e1) << 32)
+        | ((uint256(salt) & ((uint256(1) << 80) - 1)) << 48);
 }
 
 /// extraData target nibble: one bit per absolute slot.

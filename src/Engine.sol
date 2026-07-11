@@ -72,6 +72,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     error NotSinglePlayerTurn();
     // Built-in dual-signed buffer flow (BUILTIN_DUAL_SIGNED_MANAGER battles)
     error NotBuiltInManager();
+    error SideWordOverflow();
     error WrongBattleMode();
     error NotCommitter();
     error InvalidSignature();
@@ -875,9 +876,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     // ---------------------------------------------------------------------
     // Built-in dual-signed buffer flow for 2-slot battles. Per-turn payload = one wire word per
-    // side (the executeWithSlotMoves layout); roles alternate by turnId parity as in the singles
-    // flow. Buffered turns store two words at keys (turnId << 1) | side — safe on recycled
-    // storage since entries are only read in [turnId, turnId + numBuffered).
+    // side (the executeWithSlotMoves layout, 128 bits each); roles alternate by turnId parity as
+    // in the singles flow. A staged turn's two words pack into ONE buffer slot at key turnId
+    // (side0 low half, side1 high half) — safe on recycled storage since entries are only read
+    // in [turnId, turnId + numBuffered).
     // ---------------------------------------------------------------------
 
     function submitSlotTurnMoves(
@@ -889,8 +891,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) external {
         (bytes32 storageKey, uint256 side0, uint256 side1, uint64 turnId, BattleData storage data) =
             _validateAndPackSlotTurn(battleKey, committerSidePacked, revealerSidePacked, r, vs);
-        moveBuffer[storageKey][uint64(turnId << 1)] = side0;
-        moveBuffer[storageKey][uint64((turnId << 1) | 1)] = side1;
+        moveBuffer[storageKey][turnId] = side0 | (side1 << 128);
         data.numBuffered = data.numBuffered + 1;
         emit SlotMovesSubmitted(battleKey, side0, side1);
     }
@@ -917,6 +918,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 r,
         bytes32 vs
     ) internal view returns (bytes32 storageKey, uint256 side0, uint256 side1, uint64 turnId, BattleData storage data) {
+        // Side wire words are 128 bits ([m0 8 | e0 16 | m1 8 | e1 16 | salt 80]) so a staged
+        // turn's pair packs into ONE buffer slot; wider words would bleed across the halves.
+        if (committerSidePacked >> 128 != 0 || revealerSidePacked >> 128 != 0) {
+            revert SideWordOverflow();
+        }
         data = battleData[battleKey];
         if (!data.usesBuiltinManager) {
             revert NotBuiltInManager();
@@ -1028,13 +1034,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         storageKeyForWrite = storageKey;
         battleKeyForWrite = battleKey;
         for (uint256 i = 0; i < numBuffered; i++) {
-            uint64 t = startTurn + uint64(i);
-            address winner = _executeBufferedSlotEntry(
-                battleKey,
-                storageKey,
-                moveBuffer[storageKey][uint64(t << 1)],
-                moveBuffer[storageKey][uint64((t << 1) | 1)]
-            );
+            uint256 pair = moveBuffer[storageKey][startTurn + uint64(i)];
+            address winner =
+                _executeBufferedSlotEntry(battleKey, storageKey, pair & ((uint256(1) << 128) - 1), pair >> 128);
             if (winner != address(0)) {
                 break;
             }
@@ -1052,14 +1054,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         battleKeyForWrite = battleKey;
 
         for (uint256 i = 0; i < numBuffered; i++) {
-            uint64 t = startTurn + uint64(i);
+            uint256 pair = moveBuffer[storageKey][startTurn + uint64(i)];
             if (
-                _executeBufferedSlotEntry(
-                        battleKey,
-                        storageKey,
-                        moveBuffer[storageKey][uint64(t << 1)],
-                        moveBuffer[storageKey][uint64((t << 1) | 1)]
-                    ) != address(0)
+                _executeBufferedSlotEntry(battleKey, storageKey, pair & ((uint256(1) << 128) - 1), pair >> 128)
+                    != address(0)
             ) {
                 data.numBuffered = 0;
                 return;
@@ -1073,7 +1071,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @notice Buffer reload for 2-slot battles: two wire words per staged turn
-    ///         ([2i] = side 0, [2i+1] = side 1).
+    ///         ([2i] = side 0, [2i+1] = side 1), expanded from the packed per-turn slot.
     function getBufferedSlotTurns(bytes32 battleKey)
         external
         view
@@ -1088,9 +1086,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         sideWords = new uint256[](n * 2);
         for (uint256 i = 0; i < n; i++) {
-            uint64 t = numExecuted + uint64(i);
-            sideWords[i * 2] = moveBuffer[storageKey][uint64(t << 1)];
-            sideWords[i * 2 + 1] = moveBuffer[storageKey][uint64((t << 1) | 1)];
+            uint256 pair = moveBuffer[storageKey][numExecuted + uint64(i)];
+            sideWords[i * 2] = pair & ((uint256(1) << 128) - 1);
+            sideWords[i * 2 + 1] = pair >> 128;
         }
     }
 
@@ -3601,7 +3599,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev Wire word -> transient word: apply MOVE_INDEX_OFFSET + IS_REAL_TURN_BIT per lane and
     ///      move the salt to the low bits. Both lanes are always encoded; non-acting lanes are
     ///      ignored by the flag mask, and exhausted slots are skipped by the engine regardless of
-    ///      lane content (D6 — clients submit NO_OP filler there).
+    ///      lane content (D6 — clients submit NO_OP filler there). Side salts are 80 bits so a
+    ///      staged turn's two 128-bit wire words share one buffer slot.
     function _packSideTurn(uint256 sidePacked) private pure returns (uint256) {
         uint256 m0 = sidePacked & 0xFF;
         uint256 m1 = (sidePacked >> 24) & 0xFF;
@@ -3609,7 +3608,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             | (((sidePacked >> 8) & 0xFFFF) << 8);
         uint256 enc1 = ((m1 < SWITCH_MOVE_INDEX ? m1 + MOVE_INDEX_OFFSET : m1) | IS_REAL_TURN_BIT)
             | (((sidePacked >> 32) & 0xFFFF) << 8);
-        return ((sidePacked >> 48) & ((uint256(1) << 104) - 1)) | (enc0 << 104) | (enc1 << 128);
+        return ((sidePacked >> 48) & ((uint256(1) << 80) - 1)) | (enc0 << 104) | (enc1 << 128);
     }
 
     /// @notice One-tx PvE settlement for 2-slot battles: `entries` holds one (side0, side1)
