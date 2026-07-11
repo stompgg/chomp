@@ -1532,10 +1532,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // End of turn cleanup:
         // - Progress turn index
         // - Set the player switch for turn flag on battle data
-        // - Clear move flags for next turn (clear isRealTurn bit by setting packedMoveIndex to 0)
         // - Update lastExecuteTimestamp for timeout tracking
+        // - Clear move flags for next turn (clear isRealTurn bit by setting packedMoveIndex to 0)
+        // The three BattleData fields share slot 1 and are written adjacently (no storage
+        // barrier between) so the optimizer coalesces them into one SSTORE.
         battle.turnId += 1;
         battle.playerSwitchForTurnFlag = uint8(playerSwitchForTurnFlag);
+        battle.lastExecuteTimestamp = uint40(block.timestamp);
         // Clear storage move slots only when they were actually written via setMove (execute() path).
         // executeWithMoves never writes, so the slots stay zero and a clear here would burn ~4.4k on
         // a cold-access SSTORE 0→0.
@@ -1543,7 +1546,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             config.p0Move.packedMoveIndex = 0;
             config.p1Move.packedMoveIndex = 0;
         }
-        battle.lastExecuteTimestamp = uint40(block.timestamp);
     }
 
     /// @notice Clears transient storage that otherwise persists across multiple execute()/executeWithMoves()
