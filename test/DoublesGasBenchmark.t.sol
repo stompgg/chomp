@@ -10,11 +10,14 @@ import "../src/Structs.sol";
 import {Engine} from "../src/Engine.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
+import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
 import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
+import {VitalSiphon} from "../src/mons/xmon/VitalSiphon.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
 import {StandardAttack} from "../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
+import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
 import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {GasMeasure} from "./abstract/GasMeasure.sol";
@@ -217,6 +220,82 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         _endMeasure("Doubles_Drain6");
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 6, "all six buffered turns executed");
+    }
+
+    /// @notice Real-kit shape: a burn DOT ticking all game plus VitalSiphon's engine-read-heavy
+    ///         steal path every turn — the external-call surface mock attacks hide.
+    function test_doublesKitBatchGas() public {
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
+        BurnStatus burn = new BurnStatus();
+        StandardAttack burnDart = new StandardAttack(
+            address(this),
+            typeCalc,
+            ATTACK_PARAMS({
+                BASE_POWER: 0,
+                STAMINA_COST: 1,
+                ACCURACY: 100,
+                PRIORITY: DEFAULT_PRIORITY,
+                MOVE_TYPE: Type.Fire,
+                EFFECT_ACCURACY: 100,
+                MOVE_CLASS: MoveClass.Other,
+                CRIT_RATE: 0,
+                VOLATILITY: 0,
+                NAME: "Burn Dart",
+                EFFECT: IEffect(address(burn))
+            })
+        );
+        VitalSiphon siphon = new VitalSiphon(ITypeCalculator(address(typeCalc)));
+
+        address[] memory toAdd = new address[](1);
+        toAdd[0] = address(this);
+        vm.prank(p0);
+        engine.updateMatchmakers(toAdd, new address[](0));
+        vm.prank(p1);
+        engine.updateMatchmakers(toAdd, new address[](0));
+
+        Mon[] memory aTeam = new Mon[](2);
+        aTeam[0] = _mkMon(1000, 40, IMoveSet(address(burnDart)));
+        aTeam[1] = _mkMon(1000, 30, IMoveSet(address(siphon)));
+        Mon[] memory bTeam = new Mon[](2);
+        bTeam[0] = _mkMon(4000, 20, weakAttack);
+        bTeam[1] = _mkMon(4000, 10, weakAttack);
+        registry.setTeam(p0, aTeam);
+        registry.setTeam(p1, bTeam);
+        Battle memory battle = defaultBattle(p0, p1, registry, address(this), IMatchmaker(address(this)));
+        battle.ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
+        (bytes32 battleKey,) = engine.computeBattleKey(p0, p1);
+        engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // T0 send-ins; T1 burn B0 + siphon B1 while B rests; T2-T9 siphon every turn while
+        // the burn ticks (B side rests; regen keeps stamina alive).
+        uint256[] memory entries = new uint256[](20);
+        for (uint64 t = 0; t < 10; t++) {
+            uint104 s0 = uint104(uint256(keccak256(abi.encode("k0", t))));
+            uint104 s1 = uint104(uint256(keccak256(abi.encode("k1", t))));
+            if (t == 0) {
+                entries[0] = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, s0);
+                entries[1] = sideWord(SWITCH_MOVE_INDEX, 0, SWITCH_MOVE_INDEX, 1, s1);
+            } else if (t == 1) {
+                entries[2] = sideWord(1, targetBits(2), 1, targetBits(3), s0);
+                entries[3] = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, s1);
+            } else {
+                entries[t * 2] = sideWord(NO_OP_MOVE_INDEX, 0, 1, targetBits(3), s0);
+                entries[t * 2 + 1] = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, s1);
+            }
+        }
+
+        _beginMeasure();
+        vm.cool(address(engine));
+        vm.startStateDiffRecording();
+        uint256 g0 = gasleft();
+        engine.executeBatchedSlotTurns(battleKey, entries);
+        _accGas += g0 - gasleft();
+        _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff()));
+        engine.resetCallContext();
+        _endMeasure("Doubles_KitBatch10");
+
+        assertEq(engine.getTurnIdForBattleState(battleKey), 10, "all ten turns executed");
     }
 
     // ----- GasMeasure plumbing (mirrors ProdPvPGasBenchmark) -----
