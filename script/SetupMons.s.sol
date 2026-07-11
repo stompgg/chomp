@@ -166,11 +166,11 @@ contract SetupMons is Script {
             type2: Type.Fire
         });
         uint256[] memory moves = new uint256[](5);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = uint256(uint160(addrs[2]));
+        moves[0] = 0x0040200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
         moves[3] = 0x5a00200000000000000000000000000000000000000000000000000000000000;
-        moves[4] = uint256(uint160(addrs[3]));
+        moves[4] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
@@ -225,11 +225,11 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](5);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
+        moves[0] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
         moves[2] = 0x5009200000000000000000000000000000000000000000000000000000000000;
-        moves[3] = uint256(uint160(addrs[2]));
-        moves[4] = uint256(uint160(addrs[3]));
+        moves[3] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[4] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
@@ -273,11 +273,11 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](5);
-        moves[0] = uint256(uint160(addrs[0]));
+        moves[0] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
         moves[1] = 0x644c300000000000000000000000000000000000000000000000000000000000;
         moves[2] = 0x504b30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
         moves[3] = 0x5a4d30a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("SLEEP_STATUS")));
-        moves[4] = uint256(uint160(addrs[1]));
+        moves[4] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[2]));
         bytes32[] memory keys = new bytes32[](0);
@@ -332,10 +332,10 @@ contract SetupMons is Script {
             type2: Type.Air
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[1]));
-        moves[1] = uint256(uint160(addrs[2]));
-        moves[2] = uint256(uint160(addrs[3]));
-        moves[3] = uint256(uint160(addrs[4]));
+        moves[0] = 0x0030f00000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[1] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[2] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
+        moves[3] = 0x0020000000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[4]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[0]));
         bytes32[] memory keys = new bytes32[](0);
@@ -375,7 +375,7 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[0]));
+        moves[0] = 0x00f0300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
         moves[1] = 0x5f02300000000000000000000000000000000000000000000000000000000000;
         moves[2] = 0x460a200000000000000000000000000000000000000000000000000000000000;
         moves[3] = 0x2802100000000000000000000000000000000000000000000000000000000000;
@@ -429,10 +429,10 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
+        moves[0] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
         moves[2] = 0x7807400000000000000000000000000000000000000000000000000000000000;
-        moves[3] = uint256(uint160(addrs[2]));
+        moves[3] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[3]));
         bytes32[] memory keys = new bytes32[](0);
@@ -484,9 +484,9 @@ contract SetupMons is Script {
         });
         uint256[] memory moves = new uint256[](4);
         moves[0] = 0x00c6064000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("FROSTBITE_STATUS")));
-        moves[1] = uint256(uint160(addrs[0]));
-        moves[2] = uint256(uint160(addrs[1]));
-        moves[3] = uint256(uint160(addrs[2]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[2] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[3] = 0x0020200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[3]));
         bytes32[] memory keys = new bytes32[](0);
@@ -542,10 +542,10 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = uint256(uint160(addrs[2]));
-        moves[3] = uint256(uint160(addrs[3]));
+        moves[0] = 0x00f0200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x00f0300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x00f0000000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[3] = 0x00f0200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
@@ -602,10 +602,10 @@ contract SetupMons is Script {
         });
         uint256[] memory moves = new uint256[](5);
         moves[0] = 0x5a4820a000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("ZAP_STATUS")));
-        moves[1] = uint256(uint160(addrs[0]));
-        moves[2] = uint256(uint160(addrs[1]));
-        moves[3] = uint256(uint160(addrs[2]));
-        moves[4] = uint256(uint160(addrs[3]));
+        moves[1] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[2] = 0x0050300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[3] = 0x0030000000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[4] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
@@ -664,11 +664,11 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](5);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = uint256(uint160(addrs[2]));
-        moves[3] = uint256(uint160(addrs[3]));
-        moves[4] = uint256(uint160(addrs[4]));
+        moves[0] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[3] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
+        moves[4] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[4]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[5]));
         bytes32[] memory keys = new bytes32[](0);
@@ -728,11 +728,11 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](5);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = uint256(uint160(addrs[2]));
-        moves[3] = uint256(uint160(addrs[3]));
-        moves[4] = uint256(uint160(addrs[4]));
+        moves[0] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[3] = 0x0040400000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
+        moves[4] = 0x0020100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[4]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[5]));
         bytes32[] memory keys = new bytes32[](0);
@@ -787,10 +787,10 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[0]));
-        moves[1] = uint256(uint160(addrs[1]));
-        moves[2] = uint256(uint160(addrs[2]));
-        moves[3] = uint256(uint160(addrs[3]));
+        moves[0] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0040f00000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x0030100000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        moves[3] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[3]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = uint256(uint160(addrs[4]));
         bytes32[] memory keys = new bytes32[](0);
@@ -838,10 +838,10 @@ contract SetupMons is Script {
             type2: Type.None
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(addrs[0]));
+        moves[0] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
         moves[1] = 0x500b314000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("PANIC_STATUS")));
-        moves[2] = uint256(uint160(addrs[1]));
-        moves[3] = uint256(uint160(addrs[2]));
+        moves[2] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[3] = 0x0030300000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
         uint256[] memory abilities = new uint256[](1);
         abilities[0] = (uint256(1) << 248) | uint256(uint160(addrs[3]));
         bytes32[] memory keys = new bytes32[](0);

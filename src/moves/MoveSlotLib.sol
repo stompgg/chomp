@@ -8,11 +8,21 @@ import {MoveMeta} from "../Structs.sol";
 import {IMoveSet} from "./IMoveSet.sol";
 
 /// @notice Abstracts reading move properties from a raw uint256 move slot.
-/// If upper bits are set (rawSlot >> 160 != 0), the slot is packed inline data.
-/// Otherwise, the lower 160 bits are an IMoveSet contract address.
+/// Three forms: MOVE_META_TAG set = a deployed IMoveSet address with packed static
+/// stamina/priority (0xF nibble = dynamic, staticcall live); untagged with upper bits set =
+/// packed inline data; bare address = deployed move without metadata.
 library MoveSlotLib {
     function isInline(uint256 raw) internal pure returns (bool) {
-        return raw >> 160 != 0;
+        return raw & MOVE_META_TAG == 0 && raw >> 160 != 0;
+    }
+
+    /// @notice Pack a deployed move address with its static metadata (0xF = dynamic).
+    function packDeployed(address moveAddr, uint256 staminaVal, uint256 priorityVal)
+        internal
+        pure
+        returns (uint256)
+    {
+        return uint256(uint160(moveAddr)) | MOVE_META_TAG | ((staminaVal & 0xF) << 236) | ((priorityVal & 0xF) << 244);
     }
 
     function basePower(
@@ -23,7 +33,7 @@ library MoveSlotLib {
         pure
         returns (uint32)
     {
-        if (raw >> 160 != 0) {
+        if (isInline(raw)) {
             return uint32((raw >> 248) & 0xFF);
         }
         // External: try IAttackMove.basePower — not all external moves expose this
@@ -32,14 +42,14 @@ library MoveSlotLib {
     }
 
     function moveClass(uint256 raw, IEngine engine, bytes32 battleKey) internal view returns (MoveClass) {
-        if (raw >> 160 != 0) {
+        if (isInline(raw)) {
             return MoveClass(uint8((raw >> 246) & 0x3));
         }
         return IMoveSet(address(uint160(raw))).moveClass(engine, battleKey);
     }
 
     function moveType(uint256 raw, IEngine engine, bytes32 battleKey) internal view returns (Type) {
-        if (raw >> 160 != 0) {
+        if (isInline(raw)) {
             return Type(uint8((raw >> 240) & 0xF));
         }
         return IMoveSet(address(uint160(raw))).moveType(engine, battleKey);
@@ -50,8 +60,13 @@ library MoveSlotLib {
         view
         returns (uint32)
     {
+        // Inline and tagged deployed words share the stamina nibble position; only the
+        // dynamic sentinel (tagged) falls through to the live call.
         if (raw >> 160 != 0) {
-            return uint32((raw >> 236) & 0xF);
+            uint256 s = (raw >> 236) & 0xF;
+            if (raw & MOVE_META_TAG == 0 || s != MOVE_META_DYNAMIC) {
+                return uint32(s);
+            }
         }
         return IMoveSet(address(uint160(raw))).stamina(engine, battleKey, playerIndex, monIndex);
     }
@@ -61,8 +76,13 @@ library MoveSlotLib {
         view
         returns (uint32)
     {
-        if (raw >> 160 != 0) {
-            return uint32(DEFAULT_PRIORITY + ((raw >> 244) & 0x3));
+        if (raw & MOVE_META_TAG != 0) {
+            uint256 p = (raw >> 244) & 0xF;
+            if (p != MOVE_META_DYNAMIC) {
+                return uint32(p); // tagged words store the ABSOLUTE priority
+            }
+        } else if (raw >> 160 != 0) {
+            return uint32(DEFAULT_PRIORITY + ((raw >> 244) & 0x3)); // inline: 2-bit offset
         }
         return IMoveSet(address(uint160(raw))).priority(engine, battleKey, playerIndex);
     }
@@ -84,7 +104,7 @@ library MoveSlotLib {
         view
         returns (MoveMeta memory meta)
     {
-        if (raw >> 160 != 0) {
+        if (isInline(raw)) {
             // Inline slot: bit-unpack everything in one function. Same bit positions as the
             // individual getters above — keep them in sync.
             meta.basePower = uint32((raw >> 248) & 0xFF);

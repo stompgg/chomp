@@ -12,6 +12,7 @@ import {IEngineHook} from "../src/IEngineHook.sol";
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
+import {MoveSlotLib} from "../src/moves/MoveSlotLib.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
@@ -70,7 +71,8 @@ contract ProdPvPGasBenchmark is BattleHelper, BatchHelper, GasMeasure {
         mon.stats.specialDefense = 10;
         mon.moves = new uint256[](4);
         for (uint256 i; i < 4; i++) {
-            mon.moves[i] = uint256(uint160(address(attack)));
+            // Prod catalog words carry packed static metadata (stamina 1, priority 1).
+            mon.moves[i] = MoveSlotLib.packDeployed(address(attack), 1, 1);
         }
 
         Mon[] memory team = new Mon[](4);

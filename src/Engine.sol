@@ -3115,7 +3115,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return playerSwitchForTurnFlag;
             }
 
-            if (rawMoveSlot >> 160 != 0) {
+            if (rawMoveSlot & MOVE_META_TAG == 0 && rawMoveSlot >> 160 != 0) {
                 // === INLINE PATH ===
                 // Stamina from packed params
                 uint8 staminaVal = uint8((rawMoveSlot >> 236) & 0xF);
@@ -3150,7 +3150,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     int256 effectiveDelta =
                         staminaDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(staminaDelta);
                     uint256 currentStamina = uint256(int256(uint256(baseStamina)) + effectiveDelta);
-                    uint32 moveStamina = moveSet.stamina(self, battleKey, playerIndex, activeMonIndex);
+                    // Packed metadata skips the staticcall; the 0xF sentinel calls live.
+                    uint256 metaStamina = (rawMoveSlot >> 236) & 0xF;
+                    uint32 moveStamina = (rawMoveSlot & MOVE_META_TAG != 0 && metaStamina != MOVE_META_DYNAMIC)
+                        ? uint32(metaStamina)
+                        : moveSet.stamina(self, battleKey, playerIndex, activeMonIndex);
                     if (moveStamina > currentStamina) {
                         return playerSwitchForTurnFlag;
                     }
@@ -3549,7 +3553,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (raw == 0) {
             return SWITCH_PRIORITY;
         }
-        if (raw >> 160 != 0) {
+        if (raw & MOVE_META_TAG != 0) {
+            // Deployed move with packed metadata: absolute priority, 0xF = dynamic (call live).
+            uint256 p = (raw >> 244) & 0xF;
+            if (p != MOVE_META_DYNAMIC) {
+                return p;
+            }
+        } else if (raw >> 160 != 0) {
             return DEFAULT_PRIORITY + ((raw >> 244) & 0x3);
         }
         return IMoveSet(address(uint160(raw))).priority(IEngine(address(this)), battleKey, playerIndex);
@@ -4119,13 +4129,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return;
             }
 
-            bool isInlineAttack = rawMoveSlot >> 160 != 0;
+            bool hasMetaTag = rawMoveSlot & MOVE_META_TAG != 0;
+            bool isInlineAttack = !hasMetaTag && rawMoveSlot >> 160 != 0;
 
             // Stamina gate first (unaffordable = silent skip, nothing spent — singles rule).
+            // Inline and tagged words share the stamina nibble; the 0xF sentinel calls live.
             MonState storage st = _getMonState(config, side, activeMon);
             int32 staminaCost;
-            if (isInlineAttack) {
-                staminaCost = int32(uint32((rawMoveSlot >> 236) & 0xF));
+            uint256 metaStamina = (rawMoveSlot >> 236) & 0xF;
+            if (isInlineAttack || (hasMetaTag && metaStamina != MOVE_META_DYNAMIC)) {
+                staminaCost = int32(uint32(metaStamina));
             } else {
                 staminaCost = int32(
                     IMoveSet(address(uint160(rawMoveSlot))).stamina(IEngine(address(this)), battleKey, side, activeMon)

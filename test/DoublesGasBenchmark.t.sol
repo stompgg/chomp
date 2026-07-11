@@ -15,6 +15,7 @@ import {ZapStatus} from "../src/effects/status/ZapStatus.sol";
 import {IMatchmaker} from "../src/matchmaker/IMatchmaker.sol";
 import {VitalSiphon} from "../src/mons/xmon/VitalSiphon.sol";
 import {IMoveSet} from "../src/moves/IMoveSet.sol";
+import {MoveSlotLib} from "../src/moves/MoveSlotLib.sol";
 import {StandardAttack} from "../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
@@ -87,11 +88,16 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         );
     }
 
-    function _mkMon(uint32 hp, uint32 speed, IMoveSet move1) internal view returns (Mon memory mon) {
+    /// @dev Deployed moves carry packed static metadata, mirroring the prod catalog shape.
+    function _mkMon(uint32 hp, uint32 speed, IMoveSet move1, uint256 move1Stamina)
+        internal
+        view
+        returns (Mon memory mon)
+    {
         uint256[] memory moves = new uint256[](3);
-        moves[0] = uint256(uint160(address(weakAttack)));
-        moves[1] = uint256(uint160(address(move1)));
-        moves[2] = uint256(uint160(address(killAttack)));
+        moves[0] = MoveSlotLib.packDeployed(address(weakAttack), 1, DEFAULT_PRIORITY);
+        moves[1] = MoveSlotLib.packDeployed(address(move1), move1Stamina, DEFAULT_PRIORITY);
+        moves[2] = MoveSlotLib.packDeployed(address(killAttack), 1, DEFAULT_PRIORITY);
         mon = Mon({
             stats: MonStats({
                 hp: hp,
@@ -118,13 +124,13 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         engine.updateMatchmakers(toAdd, new address[](0));
 
         Mon[] memory aTeam = new Mon[](3);
-        aTeam[0] = _mkMon(1000, 40, zapDart);
-        aTeam[1] = _mkMon(1000, 30, zapDart);
-        aTeam[2] = _mkMon(1000, 25, zapDart);
+        aTeam[0] = _mkMon(1000, 40, IMoveSet(address(zapDart)), 1);
+        aTeam[1] = _mkMon(1000, 30, IMoveSet(address(zapDart)), 1);
+        aTeam[2] = _mkMon(1000, 25, IMoveSet(address(zapDart)), 1);
         Mon[] memory bTeam = new Mon[](3);
-        bTeam[0] = _mkMon(1000, 20, weakAttack);
-        bTeam[1] = _mkMon(120, 10, weakAttack);
-        bTeam[2] = _mkMon(1000, 5, weakAttack);
+        bTeam[0] = _mkMon(1000, 20, weakAttack, 1);
+        bTeam[1] = _mkMon(120, 10, weakAttack, 1);
+        bTeam[2] = _mkMon(1000, 5, weakAttack, 1);
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
 
@@ -254,11 +260,11 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         engine.updateMatchmakers(toAdd, new address[](0));
 
         Mon[] memory aTeam = new Mon[](2);
-        aTeam[0] = _mkMon(1000, 40, IMoveSet(address(burnDart)));
-        aTeam[1] = _mkMon(1000, 30, IMoveSet(address(siphon)));
+        aTeam[0] = _mkMon(1000, 40, IMoveSet(address(burnDart)), 1);
+        aTeam[1] = _mkMon(1000, 30, IMoveSet(address(siphon)), 2);
         Mon[] memory bTeam = new Mon[](2);
-        bTeam[0] = _mkMon(4000, 20, weakAttack);
-        bTeam[1] = _mkMon(4000, 10, weakAttack);
+        bTeam[0] = _mkMon(4000, 20, weakAttack, 1);
+        bTeam[1] = _mkMon(4000, 10, weakAttack, 1);
         registry.setTeam(p0, aTeam);
         registry.setTeam(p1, bTeam);
         Battle memory battle = defaultBattle(p0, p1, registry, address(this), IMatchmaker(address(this)));

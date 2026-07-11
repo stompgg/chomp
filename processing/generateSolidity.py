@@ -288,6 +288,56 @@ def load_json_move(mon_name: str, move_name: str, base_path: str) -> Optional[di
     return None
 
 
+MOVE_META_TAG = 1 << 160
+MOVE_META_DYNAMIC = 0xF
+DEFAULT_PRIORITY = 3
+
+
+def _extract_static_int(content: str, fn_name: str, param_name: str) -> Optional[int]:
+    """Value of `function <fn_name>` if it provably returns a compile-time constant
+    (plain int or DEFAULT_PRIORITY +/- k), else the ATTACK_PARAMS `<param_name>` field.
+    Returns None when the value is battle/state-dependent (anything non-constant)."""
+    fn = re.search(rf'function\s+{fn_name}\s*\([^)]*\)\s*[^{{]*\{{\s*return\s+([^;]+);\s*\}}', content, re.DOTALL)
+    if fn:
+        expr = fn.group(1).strip()
+    else:
+        # A declared-but-complex override (multi-statement body) is dynamic.
+        if re.search(rf'function\s+{fn_name}\s*\(', content):
+            return None
+        param = re.search(rf'\b{param_name}\b:\s*([^,\n]+)', content)
+        if not param:
+            return None
+        expr = param.group(1).strip()
+    expr = expr.replace('DEFAULT_PRIORITY', str(DEFAULT_PRIORITY)).replace(' ', '')
+    if not re.match(r'^[\d+\-]+$', expr):
+        return None
+    try:
+        return int(eval(expr))
+    except (ValueError, SyntaxError):
+        return None
+
+
+def deployed_move_meta(mon_name: str, move_name: str, base_path: str) -> int:
+    """Metadata OR-mask for a deployed move word: [tag bit 160 | stamina 236-239 |
+    priority 244-247], 0xF nibble = dynamic (the engine staticcalls the move live).
+    Values come from the move's OWN Solidity (constant returns / ATTACK_PARAMS) so a
+    state-dependent override (Rock Pull, HeatBeacon-boosted casts) is never frozen."""
+    mon_dir = get_mon_directory_name(mon_name)
+    contract_name = contract_name_from_move_or_ability(move_name)
+    sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
+    stamina_val = priority_val = None
+    if os.path.exists(sol_path):
+        with open(sol_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        stamina_val = _extract_static_int(content, "stamina", "STAMINA_COST")
+        priority_val = _extract_static_int(content, "priority", "PRIORITY")
+    if stamina_val is None or not 0 <= stamina_val < MOVE_META_DYNAMIC:
+        stamina_val = MOVE_META_DYNAMIC
+    if priority_val is None or not 0 <= priority_val < MOVE_META_DYNAMIC:
+        priority_val = MOVE_META_DYNAMIC
+    return MOVE_META_TAG | (stamina_val << 236) | (priority_val << 244)
+
+
 def effect_name_to_env_var(effect_name: str) -> str:
     """Convert CamelCase effect name to SCREAMING_SNAKE_CASE env var.
     e.g. 'ZapStatus' -> 'ZAP_STATUS'
@@ -492,11 +542,13 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
                     else:
                         lines.append(f"        moves[{i}] = 0x{packed:064x};")
                 else:
-                    # External move contract: use deployed address
+                    # External move contract: deployed address + packed static metadata
+                    # (stamina/priority; 0xF nibble = state-dependent, engine calls live).
                     contract_name = contract_name_from_move_or_ability(move_name)
                     if contract_name in deployed_indices:
                         idx = deployed_indices[contract_name]
-                        lines.append(f"        moves[{i}] = uint256(uint160(addrs[{idx}]));")
+                        meta = deployed_move_meta(mon.name, move_name, base_path)
+                        lines.append(f"        moves[{i}] = 0x{meta:064x} | uint256(uint160(addrs[{idx}]));")
         else:
             lines.append("        uint256[] memory moves = new uint256[](0);")
 

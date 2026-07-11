@@ -21,6 +21,7 @@ import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
+import {MoveSlotLib} from "../../moves/MoveSlotLib.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 contract OldVengeance is IMoveSet, BasicEffect {
@@ -168,11 +169,8 @@ contract OldVengeance is IMoveSet, BasicEffect {
         if (rawMoveSlot == 0) {
             return 0;
         }
-        // Inline-packed StandardAttack: stamina lives in bits 236-239. Otherwise it's a move contract.
-        if (rawMoveSlot >> 160 != 0) {
-            return (rawMoveSlot >> 236) & 0xF;
-        }
-        return IMoveSet(address(uint160(rawMoveSlot))).stamina(engine, battleKey, defenderPlayerIndex, defenderMonIndex);
+        // Inline or metadata-tagged slots carry stamina in bits 236-239 (0xF = dynamic).
+        return MoveSlotLib.stamina(rawMoveSlot, engine, battleKey, defenderPlayerIndex, defenderMonIndex);
     }
 
     function onMonSwitchOut(IEngine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256)

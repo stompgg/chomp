@@ -21,6 +21,8 @@ import {StandardAttack} from "../src/moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../src/types/ITypeCalculator.sol";
 
+import {MoveSlotLib} from "../src/moves/MoveSlotLib.sol";
+
 import {defaultBattle, sideWord, targetBits} from "./abstract/SlotWire.sol";
 import {CustomAttack} from "./mocks/CustomAttack.sol";
 import {StatBoostsMove} from "./mocks/StatBoostsMove.sol";
@@ -80,6 +82,60 @@ contract OverclockCastMove is IMoveSet {
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
             basePower: 0
         });
+    }
+}
+
+/// @dev Metadata getters revert: a battle only executes with this move if the engine reads
+///      the word's packed stamina/priority instead of staticcalling.
+contract RevertingMetaAttack is IMoveSet {
+    function name() external pure returns (string memory) {
+        return "Reverting Meta";
+    }
+
+    function move(
+        IEngine engine,
+        bytes32,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256,
+        uint16,
+        uint256 rng
+    ) external {
+        engine.dispatchStandardAttack(
+            attackerPlayerIndex,
+            attackerMonIndex,
+            targetBits,
+            10,
+            100,
+            0,
+            Type.Fire,
+            MoveClass.Physical,
+            0,
+            0,
+            IEffect(address(0)),
+            rng
+        );
+    }
+
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
+        revert("META_CALLED");
+    }
+
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
+        revert("META_CALLED");
+    }
+
+    function moveType(IEngine, bytes32) public pure returns (Type) {
+        return Type.Fire;
+    }
+
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
+        return MoveClass.Physical;
+    }
+
+    function getMeta(IEngine, bytes32, uint256, uint256) external pure returns (MoveMeta memory) {
+        revert("META_CALLED");
     }
 }
 
@@ -501,5 +557,69 @@ contract DoublesDispatchStatusTest is Test {
     function test_computeBattleKey_rejectsDuplicateSeats() public {
         vm.expectRevert(Engine.InvalidBattleConfig.selector);
         engine.computeBattleKey(ALICE, ALICE);
+    }
+
+    // ---------------------------------------------------------------------
+    // Packed deployed-move metadata
+    // ---------------------------------------------------------------------
+
+    function _mkMonWord(uint32 hp, uint32 speed, uint256 move0Word) internal pure returns (Mon memory mon) {
+        uint256[] memory moves = new uint256[](1);
+        moves[0] = move0Word;
+        mon = Mon({
+            stats: MonStats({
+                hp: hp,
+                stamina: 5,
+                speed: speed,
+                attack: 10,
+                defense: 10,
+                specialAttack: 10,
+                specialDefense: 10,
+                type1: Type.Air,
+                type2: Type.None
+            }),
+            ability: 0,
+            moves: moves
+        });
+    }
+
+    /// @dev With packed metadata the engine must execute a whole turn (priority lock +
+    ///      stamina gate) without ever staticcalling the move's reverting getters.
+    function test_packedMoveMeta_skipsMetadataCalls() public {
+        uint256 word = MoveSlotLib.packDeployed(address(new RevertingMetaAttack()), 1, DEFAULT_PRIORITY);
+        Mon[] memory aTeam = new Mon[](2);
+        aTeam[0] = _mkMonWord(1000, 40, word);
+        aTeam[1] = _mkMonWord(1000, 30, word);
+        Mon[] memory bTeam = new Mon[](2);
+        bTeam[0] = _mkMonWord(1000, 20, word);
+        bTeam[1] = _mkMonWord(1000, 10, word);
+        _startDoubles(aTeam, bTeam);
+        _turn0Leads();
+
+        engine.executeWithSlotMoves(
+            battleKey, _side(0, targetBits(B0), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+        );
+        assertEq(_hp(1, 0), -10, "turn executed off packed metadata alone");
+        assertEq(_stamina(0, 0), -1, "packed stamina cost applied");
+    }
+
+    /// @dev The dynamic sentinel (0xF) must fall back to the live metadata calls.
+    function test_packedMoveMeta_dynamicSentinelCallsLive() public {
+        uint256 word =
+            MoveSlotLib.packDeployed(address(weakAttack), MOVE_META_DYNAMIC, MOVE_META_DYNAMIC);
+        Mon[] memory aTeam = new Mon[](2);
+        aTeam[0] = _mkMonWord(1000, 40, word);
+        aTeam[1] = _mkMonWord(1000, 30, word);
+        Mon[] memory bTeam = new Mon[](2);
+        bTeam[0] = _mkMonWord(1000, 20, word);
+        bTeam[1] = _mkMonWord(1000, 10, word);
+        _startDoubles(aTeam, bTeam);
+        _turn0Leads();
+
+        engine.executeWithSlotMoves(
+            battleKey, _side(0, targetBits(B0), NO_OP_MOVE_INDEX, 0), _side(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0)
+        );
+        assertEq(_hp(1, 0), -10, "sentinel falls back to live metadata");
+        assertEq(_stamina(0, 0), -2, "live stamina cost (2) applied");
     }
 }
