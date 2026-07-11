@@ -9,7 +9,7 @@ Pound Ground,Gorillax,95,3,100,0,Earth,Physical,Deals damage.,,none,0,,opponent-
 Blow,Gorillax,70,2,100,0,Air,Physical,Deals damage.,,none,0,,opponent-slot
 Throw Pebble,Gorillax,40,1,100,0,Earth,Physical,Deals damage.,,none,0,,opponent-slot
 Unbounded Strike,Iblivion,?,?,100,0,Air,Physical,"Consume 3 Baselight stacks to deal 130 damage at 1 stamina cost. Otherwise, deals 80 damage at 2 stamina cost.",,none,0,,opponent-slot
-Loop,Iblivion,0,1,100,0,Yang,Self,Sets all stats to +{BOOST_PERCENT_LEVEL_1}/{BOOST_PERCENT_LEVEL_2}/{BOOST_PERCENT_LEVEL_3} based on Baselight level. Does not stack.,,none,0,BOOST_PERCENT_LEVEL_1=15;BOOST_PERCENT_LEVEL_2=30;BOOST_PERCENT_LEVEL_3=50,self-only
+Loop,Iblivion,0,1,100,0,Yang,Self,Sets all stats to +{BOOST_PERCENT_LEVEL_1}/{BOOST_PERCENT_LEVEL_2}/{BOOST_PERCENT_LEVEL_3} based on Baselight level. Does not stack.,,none,0,BOOST_PERCENT_LEVEL_1=20;BOOST_PERCENT_LEVEL_2=35;BOOST_PERCENT_LEVEL_3=50,self-only
 Brightback,Iblivion,70,2,100,0,Yang,Physical,Deals damage. Consume 1 Baselight stack to heal for {HEAL_DENOM} of damage dealt.,,none,0,HEAL_DENOM=2,opponent-slot
 Renormalize,Iblivion,0,0,100,-1,Yang,Self,"Sets Baselight level to 3. Clears all stat boosts, positive or negative.",,none,0,,self-only
 Chain Expansion,Inutia,0,1,100,0,Faith,Other,"Sets up battlefield effect with 4 charges, consumed by switch-ins on either side. An enemy switch-in takes damage scaled by its Faith weakness; a friendly switch-in heals {HEAL_DENOM} of max HP.",,none,0,HEAL_DENOM=8;DAMAGE_1_DENOM=16;DAMAGE_2_DENOM=8;DAMAGE_3_DENOM=4,none

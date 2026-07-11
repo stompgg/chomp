@@ -21,8 +21,8 @@ import {Baselight} from "./Baselight.sol";
  *   re-arms it, so a fresh switch-in lets Loop fire again. The used flag is the active check.
  */
 contract Loop is IMoveSet, BasicEffect {
-    uint8 public constant BOOST_PERCENT_LEVEL_1 = 15;
-    uint8 public constant BOOST_PERCENT_LEVEL_2 = 30;
+    uint8 public constant BOOST_PERCENT_LEVEL_1 = 20;
+    uint8 public constant BOOST_PERCENT_LEVEL_2 = 35;
     uint8 public constant BOOST_PERCENT_LEVEL_3 = 50;
 
     Baselight immutable BASELIGHT;

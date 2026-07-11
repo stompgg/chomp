@@ -48,6 +48,19 @@ def compute_content_bottom(frames: list[Image.Image]) -> int:
     return max(bottoms) if bottoms else FRAME_SIZE
 
 
+def compute_content_left(frames: list[Image.Image]) -> int:
+    """Leftmost non-transparent source column, min across frames — with contentRight,
+    bounds the hover hitbox so overlapping arena lanes hand off at the art's edge."""
+    lefts = [bbox[0] for f in frames if (bbox := f.getchannel('A').getbbox())]
+    return min(lefts) if lefts else 0
+
+
+def compute_content_right(frames: list[Image.Image]) -> int:
+    """Rightmost non-transparent source column (exclusive), max across frames."""
+    rights = [bbox[2] for f in frames if (bbox := f.getchannel('A').getbbox())]
+    return max(rights) if rights else FRAME_SIZE
+
+
 def to_white_silhouette(frame: Image.Image) -> Image.Image:
     """Convert frame to white pixels preserving transparency."""
     result = Image.new('RGBA', frame.size, (0, 0, 0, 0))
@@ -285,7 +298,7 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
         # Main animation frames
         frame_start = len(all_frames)
         all_frames.extend(frames)
-        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames), "contentTop": compute_content_top(frames), "contentBottom": compute_content_bottom(frames)}
+        metadata[name] = {"msPerFrame": frame_rate, "_main_start": frame_start, "_main_count": len(frames), "contentTop": compute_content_top(frames), "contentBottom": compute_content_bottom(frames), "contentLeft": compute_content_left(frames), "contentRight": compute_content_right(frames)}
 
         # Damage frames immediately follow the idle frames for this mon
         if name in damage_by_parent:

@@ -91,11 +91,10 @@ def build_sprite_config(
         "frameDurationMs": source.get("msPerFrame", 100),
         "loop": loop,
     }
-    # Only front/back idle entries carry contentTop/contentBottom; scopes the fields to those.
-    if source.get("contentTop") is not None:
-        config["contentTop"] = source["contentTop"]
-    if source.get("contentBottom") is not None:
-        config["contentBottom"] = source["contentBottom"]
+    # Only front/back idle entries carry content bounds; scopes the fields to those.
+    for bound in ("contentTop", "contentBottom", "contentLeft", "contentRight"):
+        if source.get(bound) is not None:
+            config[bound] = source[bound]
     # Ground shadows carry the footprint center column (cx) used to align the blob under the mon.
     if source.get("cx") is not None:
         config["cx"] = source["cx"]

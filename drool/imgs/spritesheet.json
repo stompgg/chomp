@@ -3,6 +3,8 @@
     "msPerFrame": 200,
     "contentTop": 44,
     "contentBottom": 96,
+    "contentLeft": 9,
+    "contentRight": 57,
     "frames": [[0, 0], [96, 0]],
     "switchOut": {
       "msPerFrame": 100,
@@ -17,6 +19,8 @@
     "msPerFrame": 100,
     "contentTop": 17,
     "contentBottom": 80,
+    "contentLeft": 24,
+    "contentRight": 74,
     "frames": [[192, 0], [288, 0], [384, 0], [480, 0]],
     "switchOut": {
       "msPerFrame": 100,
@@ -35,6 +39,8 @@
     "msPerFrame": 100,
     "contentTop": 16,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 69,
     "frames": [[960, 0], [1056, 0], [0, 96], [96, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -49,6 +55,8 @@
     "msPerFrame": 100,
     "contentTop": 15,
     "contentBottom": 79,
+    "contentLeft": 16,
+    "contentRight": 80,
     "frames": [[192, 96], [288, 96], [384, 96], [480, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -67,6 +75,8 @@
     "msPerFrame": 200,
     "contentTop": 1,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 83,
     "frames": [[960, 96], [1056, 96]],
     "switchOut": {
       "msPerFrame": 100,
@@ -81,6 +91,8 @@
     "msPerFrame": 200,
     "contentTop": 1,
     "contentBottom": 95,
+    "contentLeft": 16,
+    "contentRight": 82,
     "frames": [[0, 192], [96, 192], [192, 192], [288, 192]],
     "switchOut": {
       "msPerFrame": 100,
@@ -99,6 +111,8 @@
     "msPerFrame": 200,
     "contentTop": 2,
     "contentBottom": 96,
+    "contentLeft": 2,
+    "contentRight": 79,
     "frames": [[768, 192], [864, 192]],
     "switchOut": {
       "msPerFrame": 100,
@@ -113,6 +127,8 @@
     "msPerFrame": 100,
     "contentTop": 17,
     "contentBottom": 78,
+    "contentLeft": 21,
+    "contentRight": 74,
     "frames": [[960, 192], [1056, 192], [0, 288], [96, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -131,6 +147,8 @@
     "msPerFrame": 200,
     "contentTop": 7,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 94,
     "frames": [[576, 288], [672, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -145,6 +163,8 @@
     "msPerFrame": 100,
     "contentTop": 7,
     "contentBottom": 89,
+    "contentLeft": 16,
+    "contentRight": 79,
     "frames": [[768, 288], [864, 288], [960, 288], [1056, 288]],
     "switchOut": {
       "msPerFrame": 100,
@@ -163,6 +183,8 @@
     "msPerFrame": 200,
     "contentTop": 13,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 93,
     "frames": [[384, 384], [480, 384]],
     "switchOut": {
       "msPerFrame": 100,
@@ -177,6 +199,8 @@
     "msPerFrame": 100,
     "contentTop": 18,
     "contentBottom": 81,
+    "contentLeft": 18,
+    "contentRight": 79,
     "frames": [[576, 384], [672, 384], [768, 384], [864, 384]],
     "switchOut": {
       "msPerFrame": 100,
@@ -195,6 +219,8 @@
     "msPerFrame": 200,
     "contentTop": 19,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 78,
     "frames": [[192, 480], [288, 480]],
     "switchOut": {
       "msPerFrame": 100,
@@ -209,6 +235,8 @@
     "msPerFrame": 100,
     "contentTop": 20,
     "contentBottom": 76,
+    "contentLeft": 16,
+    "contentRight": 77,
     "frames": [[384, 480], [480, 480], [576, 480], [672, 480]],
     "switchOut": {
       "msPerFrame": 100,
@@ -227,6 +255,8 @@
     "msPerFrame": 200,
     "contentTop": 9,
     "contentBottom": 96,
+    "contentLeft": 5,
+    "contentRight": 65,
     "frames": [[0, 576], [96, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -241,6 +271,8 @@
     "msPerFrame": 100,
     "contentTop": 16,
     "contentBottom": 80,
+    "contentLeft": 29,
+    "contentRight": 64,
     "frames": [[192, 576], [288, 576], [384, 576], [480, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -259,6 +291,8 @@
     "msPerFrame": 100,
     "contentTop": 1,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 65,
     "frames": [[960, 576], [1056, 576]],
     "switchOut": {
       "msPerFrame": 100,
@@ -273,6 +307,8 @@
     "msPerFrame": 100,
     "contentTop": 1,
     "contentBottom": 93,
+    "contentLeft": 20,
+    "contentRight": 79,
     "frames": [[0, 672], [96, 672], [192, 672], [288, 672], [384, 672], [480, 672], [576, 672], [672, 672]],
     "switchOut": {
       "msPerFrame": 100,
@@ -291,6 +327,8 @@
     "msPerFrame": 200,
     "contentTop": 14,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 91,
     "frames": [[0, 768], [96, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -305,6 +343,8 @@
     "msPerFrame": 100,
     "contentTop": 21,
     "contentBottom": 88,
+    "contentLeft": 19,
+    "contentRight": 75,
     "frames": [[192, 768], [288, 768], [384, 768], [480, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -323,6 +363,8 @@
     "msPerFrame": 200,
     "contentTop": 25,
     "contentBottom": 96,
+    "contentLeft": 1,
+    "contentRight": 90,
     "frames": [[960, 768], [1056, 768]],
     "switchOut": {
       "msPerFrame": 100,
@@ -337,6 +379,8 @@
     "msPerFrame": 200,
     "contentTop": 20,
     "contentBottom": 80,
+    "contentLeft": 20,
+    "contentRight": 69,
     "frames": [[0, 864], [96, 864], [192, 864], [288, 864]],
     "switchOut": {
       "msPerFrame": 100,
@@ -355,6 +399,8 @@
     "msPerFrame": 200,
     "contentTop": 0,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 87,
     "frames": [[768, 864], [864, 864]],
     "switchOut": {
       "msPerFrame": 100,
@@ -369,6 +415,8 @@
     "msPerFrame": 100,
     "contentTop": 10,
     "contentBottom": 85,
+    "contentLeft": 23,
+    "contentRight": 74,
     "frames": [[960, 864], [1056, 864], [0, 960], [96, 960]],
     "switchOut": {
       "msPerFrame": 100,
@@ -387,6 +435,8 @@
     "msPerFrame": 200,
     "contentTop": 11,
     "contentBottom": 96,
+    "contentLeft": 0,
+    "contentRight": 93,
     "frames": [[576, 960], [672, 960]],
     "switchOut": {
       "msPerFrame": 100,
@@ -401,6 +451,8 @@
     "msPerFrame": 100,
     "contentTop": 16,
     "contentBottom": 85,
+    "contentLeft": 10,
+    "contentRight": 86,
     "frames": [[768, 960], [864, 960], [960, 960], [1056, 960]],
     "switchOut": {
       "msPerFrame": 100,
