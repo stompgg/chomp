@@ -130,10 +130,8 @@ contract HardReset is IMoveSet, BasicEffect {
             ed |= OWN_FIRED_BIT;
             ownFired = true;
         } else if (!isOwnTeam && !oppFired) {
-            int32 cur = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
-            int32 baseStam =
-                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina));
-            if (cur > -baseStam) {
+            int32 curStam = engine.getMonCurrentValue(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
+            if (curStam > 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -1);
             }
             uint32 maxHp = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);

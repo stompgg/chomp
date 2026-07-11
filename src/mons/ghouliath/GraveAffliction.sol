@@ -44,12 +44,10 @@ contract GraveAffliction is IMoveSet {
         }
 
         // Both mons lose half their *current* HP (max HP + signed delta).
-        int32 attackerCurrentHp = int32(
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp)
-        ) + engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
-        int32 defenderCurrentHp = int32(
-            engine.getMonValueForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp)
-        ) + engine.getMonStateForBattle(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
+        int32 attackerCurrentHp =
+            engine.getMonCurrentValue(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        int32 defenderCurrentHp =
+            engine.getMonCurrentValue(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Hp);
 
         engine.dealDamage(attackerPlayerIndex, attackerMonIndex, attackerCurrentHp / FRACTION_DENOM);
         engine.dealDamage(defenderPlayerIndex, defenderMonIndex, defenderCurrentHp / FRACTION_DENOM);

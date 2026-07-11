@@ -4978,6 +4978,36 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
     }
 
+    /// @notice Current (base + delta, sentinel-aware) value of a mon stat in one call — the
+    ///         merged form of the getMonValueForBattle + getMonStateForBattle pair. Only
+    ///         meaningful for Hp/Stamina and the five stats (booleans have no base value).
+    function getMonCurrentValue(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonStateIndexName stateVarIndex
+    ) external view returns (int32) {
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        StoredMon storage mon = _getTeamMon(config, playerIndex, monIndex);
+        uint32 base;
+        if (stateVarIndex == MonStateIndexName.Hp) {
+            base = mon.stats.hp;
+        } else if (stateVarIndex == MonStateIndexName.Stamina) {
+            base = mon.stats.stamina;
+        } else if (stateVarIndex == MonStateIndexName.Speed) {
+            base = mon.stats.speed;
+        } else if (stateVarIndex == MonStateIndexName.Attack) {
+            base = mon.stats.attack;
+        } else if (stateVarIndex == MonStateIndexName.Defense) {
+            base = mon.stats.defense;
+        } else if (stateVarIndex == MonStateIndexName.SpecialAttack) {
+            base = mon.stats.specialAttack;
+        } else if (stateVarIndex == MonStateIndexName.SpecialDefense) {
+            base = mon.stats.specialDefense;
+        }
+        return int32(base) + _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
+    }
+
     function _readMonStateDelta(
         BattleConfig storage config,
         uint256 playerIndex,

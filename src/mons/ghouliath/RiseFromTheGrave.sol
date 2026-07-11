@@ -87,9 +87,8 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         else if (turnsLeft == 1) {
             // Revive the mon and set HP to 1
             engine.updateMonState(playerIndex, monIndex, MonStateIndexName.IsKnockedOut, 0);
-            int32 currentDamage = engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
-            uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
-            int32 hpShiftAmount = 1 - currentDamage - int32(maxHp);
+            int32 currentHp = engine.getMonCurrentValue(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            int32 hpShiftAmount = 1 - currentHp;
             engine.updateMonState(playerIndex, monIndex, MonStateIndexName.Hp, hpShiftAmount);
 
             // Clear the effect after running

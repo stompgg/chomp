@@ -46,12 +46,9 @@ contract EternalGrudge is IMoveSet {
         });
         engine.addStatBoost(defenderPlayerIndex, defenderMonIndex, statBoosts, StatBoostFlag.Temp);
 
-        // KO self by dealing just enough damage
-        int32 currentDamage =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
-        uint32 maxHp =
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
-        int32 damageNeededToKOSelf = int32(maxHp) + currentDamage;
+        // KO self by dealing just enough damage (current HP = max HP + signed delta)
+        int32 damageNeededToKOSelf =
+            engine.getMonCurrentValue(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         engine.dealDamage(attackerPlayerIndex, attackerMonIndex, damageNeededToKOSelf);
     }
 

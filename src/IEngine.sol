@@ -167,6 +167,14 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
+    // Current (base + delta, sentinel-aware) stat value in one call — the merged form of the
+    // getMonValueForBattle + getMonStateForBattle pair.
+    function getMonCurrentValue(
+        bytes32 battleKey,
+        uint256 playerIndex,
+        uint256 monIndex,
+        MonStateIndexName stateVarIndex
+    ) external view returns (int32);
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view

@@ -61,12 +61,8 @@ contract PanicStatus is StatusEffect {
         uint256 monIndex,
         uint256
     ) external override returns (bytes32, bool removeAfterRun) {
-        // Get current stamina delta of the target mon
-        int32 staminaDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
-
-        // If the stamina is less than the max stamina, then reduce stamina by 1 (as long as it's not already 0)
-        uint32 maxStamina = engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina);
-        if (staminaDelta + int32(maxStamina) > 0) {
+        // Reduce stamina by 1 unless current stamina is already 0
+        if (engine.getMonCurrentValue(battleKey, targetIndex, monIndex, MonStateIndexName.Stamina) > 0) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, -1);
         }
 

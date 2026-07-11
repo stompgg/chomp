@@ -72,13 +72,8 @@ contract VitalSiphon is StandardAttack {
         uint256 stealRng = uint256(keccak256(abi.encode(rng, attackerPlayerIndex, "STAMINA_STEAL")));
         if (damage > 0 && stealRng % 100 < STAMINA_STEAL_PERCENT) {
             // Check if opponent has at least 1 stamina
-            int32 defenderStamina = engine.getMonStateForBattle(
-                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina
-            );
-            uint32 defenderBaseStamina = engine.getMonValueForBattle(
-                battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina
-            );
-            int32 totalDefenderStamina = int32(defenderBaseStamina) + defenderStamina;
+            int32 totalDefenderStamina =
+                engine.getMonCurrentValue(battleKey, defenderPlayerIndex, defenderMonIndex, MonStateIndexName.Stamina);
 
             if (totalDefenderStamina >= 1) {
                 // Steal 1 stamina from opponent
