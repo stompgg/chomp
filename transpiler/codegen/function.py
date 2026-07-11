@@ -471,11 +471,9 @@ class FunctionGenerator(BaseGenerator):
         self.inherited_methods = methods
 
     def _get_visibility_modifier(self, visibility: str) -> str:
-        """Get TypeScript visibility modifier from Solidity visibility."""
-        if visibility == 'private':
-            return 'private '
-        elif visibility == 'internal':
-            return 'protected ' if self._ctx.current_contract_kind != 'library' else ''
+        """Everything is emitted public: Solidity visibility is consensus-side
+        encapsulation, meaningless in the client mirror — and off-chain consumers
+        (e.g. munch's move-dynamic resolvers) read internal helpers directly."""
         return ''
 
     def _get_static_modifier(self) -> str:
