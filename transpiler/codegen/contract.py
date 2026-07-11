@@ -492,14 +492,12 @@ class ContractGenerator(BaseGenerator):
         ts_type = self._type_converter.solidity_type_to_ts(var.type_name)
         modifier = ''
 
+        # Visibility is intentionally not mirrored (everything public) — see
+        # FunctionGenerator._get_visibility_modifier.
         if var.mutability == 'constant':
             modifier = 'static readonly '
         elif var.mutability == 'immutable':
             modifier = 'readonly '
-        elif var.visibility == 'private':
-            modifier = 'private '
-        elif var.visibility == 'internal':
-            modifier = 'protected '
 
         if var.type_name.is_mapping:
             return self._generate_mapping_variable(var, modifier, ts_type)

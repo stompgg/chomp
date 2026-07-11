@@ -206,11 +206,9 @@ class ReplacementStubGenerator:
     ) -> List[str]:
         ts_type = self._ts_type(var.type_name, viem_imports, other_imports)
         default = self._type_converter.default_value(ts_type, var.type_name)
-        visibility = 'private' if var.visibility in ('private', 'internal') else 'protected'
-        # Public mutable state vars in Solidity generate getters; user may want 'public'.
-        if var.visibility == 'public':
-            visibility = 'protected'  # we can't auto-generate getters in a stub
-        return [f'  {visibility} {var.name}: {ts_type} = {default};']
+        # Visibility is intentionally not mirrored (everything public) — matches
+        # FunctionGenerator._get_visibility_modifier.
+        return [f'  {var.name}: {ts_type} = {default};']
 
     def _emit_constant(
         self,
@@ -276,17 +274,11 @@ class ReplacementStubGenerator:
         params = self._format_params(func.parameters, viem_imports, other_imports)
         ret_type = self._format_return_type(func.return_parameters, viem_imports, other_imports)
 
-        # Visibility mapping: internal/private → protected, external/public → public
-        if func.visibility in ('internal', 'private'):
-            vis_kw = 'protected '
-        else:
-            vis_kw = ''  # public is default in TS
-
         name = emit_name or func.name
         out: List[str] = []
         if overload_note:
             out.append(f'  {overload_note}')
-        sig = f'  {vis_kw}{name}({params}): {ret_type} {{'
+        sig = f'  {name}({params}): {ret_type} {{'
         body_msg = f"Not implemented: {func.visibility or 'public'} {name}"
         out.append(sig)
         out.append(f'    throw new Error(\'{body_msg}\');')

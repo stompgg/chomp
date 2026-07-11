@@ -402,6 +402,46 @@ contract DoublesEngineTest is Test {
         _assertSlots(0, 1, 2, 3);
     }
 
+    function test_forcedDualKO_benchCollision_coercesDistinctFills() public {
+        (Mon[] memory aTeam, Mon[] memory bTeam) = _standardTeams();
+        bTeam[0] = _mkMon(100, 20, weakAttack);
+        bTeam[1] = _mkMon(100, 10, weakAttack);
+        aTeam[0] = _mkMon(1000, 40, killAttack);
+        aTeam[1] = _mkMon(1000, 30, killAttack);
+        _startDoubles(aTeam, bTeam, address(0));
+        _turn0(0, 1, 0, 1);
+        engine.executeWithSlotMoves(
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
+        );
+
+        // Both masked B slots ask for bench mon 2. A must-fill lane coerces the colliding pick
+        // to the next legal mon — a no-op here would re-mask the lane every turn (stall vector).
+        engine.executeWithSlotMoves(battleKey, _side(0, 0, 0, 0), _side(SWITCH_MOVE_INDEX, 2, SWITCH_MOVE_INDEX, 2));
+        _assertSlots(0, 1, 2, 3);
+        assertEq(engine.getBattleContext(battleKey).playerSwitchForTurnFlag, 2, "no re-mask after coerced fill");
+    }
+
+    function test_forcedDualKO_oneSurvivor_collisionFillsLowerOnly() public {
+        (Mon[] memory aTeam,) = _standardTeams();
+        aTeam[0] = _mkMon(1000, 40, killAttack);
+        aTeam[1] = _mkMon(1000, 30, killAttack);
+        Mon[] memory bTeam = new Mon[](3); // 3-of-4 shape: one bench survivor for two masked lanes
+        bTeam[0] = _mkMon(100, 20, weakAttack);
+        bTeam[1] = _mkMon(100, 10, weakAttack);
+        bTeam[2] = _mkMon(1000, 15, weakAttack);
+        _startDoubles(aTeam, bTeam, address(0));
+        _turn0(0, 1, 0, 1);
+        engine.executeWithSlotMoves(
+            battleKey, _side(0, targetBits(B0), 0, targetBits(B1)), _side(0, targetBits(A0), 0, targetBits(A0))
+        );
+
+        // One survivor can't fill both: the lower masked lane takes it, the other finds no legal
+        // target and exhausts as a tombstone — no infinite re-mask.
+        engine.executeWithSlotMoves(battleKey, _side(0, 0, 0, 0), _side(SWITCH_MOVE_INDEX, 2, SWITCH_MOVE_INDEX, 2));
+        _assertSlots(0, 1, 2, 1);
+        assertEq(engine.getBattleContext(battleKey).playerSwitchForTurnFlag, 2, "exhausted, not re-masked");
+    }
+
     function test_exhaustedSlot_skippedAndBattleContinues() public {
         (Mon[] memory aTeam,) = _standardTeams();
         aTeam[0] = _mkMon(1000, 40, killAttack);

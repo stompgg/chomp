@@ -4103,10 +4103,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         if (moveIndex == SWITCH_MOVE_INDEX) {
             uint256 monToSwitchIndex = moveExtra & EXTRA_DATA_PAYLOAD_MASK;
-            if (activeMon == EMPTY_ACTIVE_LANE && !_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex))
-            {
-                // Turn-0 send-ins must land: coerce an illegal pick to the first legal one so
-                // no slot starts the battle vacant.
+            // A lane that MUST fill — a turn-0 send-in, or a KO'd active on its forced-switch
+            // turn — can't be left vacant by an illegal pick: a colliding switch would re-mask
+            // the lane every turn (an infinite-stall vector). Coerce to the first legal target;
+            // a genuinely empty bench (one survivor) finds none and falls to the no-op guard.
+            bool laneMustFill = activeMon == EMPTY_ACTIVE_LANE
+                || _getMonState(config, side, activeMon).isKnockedOut;
+            if (laneMustFill && !_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) {
                 (monToSwitchIndex,) = _firstLegalSwitchTarget(config, battle, absSlot);
             }
             if (!_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) {
