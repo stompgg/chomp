@@ -622,6 +622,7 @@ CSV-to-code mapping notes:
 - If an effect calls `dealDamage()` and triggers `AfterDamage`, it can cause infinite loops - avoid dealing damage in `onAfterDamage` hooks
 - RNG reuse: `StandardAttack` uses the same RNG for both accuracy and effect chance, making them correlated rather than independent
 - Malicious p0 can modify mon moves between commit and battle start - mitigate via team registry or adding move indices to integrity hash
+- Forced-switch turns (KO replacements) run with `tempRNG == 0` in every flow — switch-in effects/abilities that consume rng (currently only PreemptiveShock's damage variance) roll a fixed constant on those turns. Deliberate for now; if chance-on-switch-in mechanics land, derive a fair value (e.g. persist the previous turn's rng and use `keccak(prevRng, turnId)`) rather than the switcher's own salt (grindable) or the stale batched rng (diverges between batched and per-turn flows)
 - `MAX_BATTLE_DURATION` is 1 hour, enforced in `Engine.end()` (once elapsed, anyone can end a stale battle, awarding p0). There is no external validator anymore and no per-turn timeout currently wired in — `ValidatorLogic.validateTimeoutLogic` exists but is dormant
 - DefaultMatchmaker (deprecated, test-suite-only) leaks/strands MappingAllocator pool keys on re-proposals and open-proposal cycles — documented won't-fix in its contract header; do not promote it back to production without fixing
 

@@ -17,7 +17,7 @@
   "BuiltinHooked_5Turns_totalSload": "460",
   "BuiltinHooked_5Turns_totalSstore": "45",
   "BuiltinHooked_5Turns_zToNz": "2",
-  "Builtin_Drain3_coldGas": "167102",
+  "Builtin_Drain3_coldGas": "165134",
   "Builtin_Drain3_coldSload": "20",
   "Builtin_Drain3_extraAccounts": "3",
   "Builtin_Drain3_noop": "7",

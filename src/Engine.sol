@@ -574,10 +574,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
                 _turnP0Packed =
                     _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+                // Clear the non-acting lane and the turn rng: switch-only turns have no fresh
+                // rng, and only the batched dispatch can carry stale values into them.
+                _turnP1Packed = 0;
+                tempRNG = 0;
             } else {
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
                 _turnP1Packed =
                     _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+                _turnP0Packed = 0;
+                tempRNG = 0;
             }
 
             winner = _executeInternal(battleKey, storageKey, false, false, false);
@@ -586,15 +592,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 break;
             }
 
-            // Reset per-turn transients so the next sub-turn starts like a fresh legacy tx. Kept inline
-            // here (rather than calling _resetBatchedTurnTransients, which _drainBuffer uses) for the
-            // same inliner reason this whole loop body is inlined — see the _executeBatchedEntry note.
-            _turnP0Packed = 0;
-            _turnP1Packed = 0;
-            tempRNG = 0;
+            // Between sub-turns only koOccurredFlag needs a reset: the turn lanes are (re)written
+            // by the flag dispatch above, forced-switch turns zero tempRNG themselves, the
+            // PreDamage pipeline restores tempPreDamage, and a stale dirty bit only costs a safe
+            // count re-read. Kept inline here (rather than calling _resetBatchedTurnTransients,
+            // which _drainBuffer uses) for the same inliner reason this whole loop body is
+            // inlined — see the _executeBatchedEntry note.
             koOccurredFlag = 0;
-            tempPreDamage = 0;
-            effectsDirtyBitmap = 0;
         }
         // The batched flow emits NO per-turn events (each sub-turn passes emitEvents=false to
         // _executeInternal: no EngineExecute, no MonMoves, and BattleComplete is suppressed in
@@ -665,22 +669,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else if (flag == 0) {
             uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
             _turnP0Packed = _packTurn((uint256(p0Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p0Extra) << 8), p0Salt);
+            // Clear the non-acting lane and the turn rng: switch-only turns have no fresh
+            // rng, and only the batched dispatch can carry stale values into them.
+            _turnP1Packed = 0;
+            tempRNG = 0;
         } else {
             uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
             _turnP1Packed = _packTurn((uint256(p1Stored) | uint256(IS_REAL_TURN_BIT)) | (uint256(p1Extra) << 8), p1Salt);
+            _turnP0Packed = 0;
+            tempRNG = 0;
         }
 
         return _executeInternal(battleKey, storageKey, false, true, false);
     }
 
-    /// @dev Reset per-turn transients between batched sub-turns so the next starts like a fresh tx.
+    /// @dev Between batched sub-turns only koOccurredFlag needs a reset: the turn lanes are
+    ///      (re)written by every entry's dispatch, forced-switch turns zero tempRNG themselves,
+    ///      the PreDamage pipeline restores tempPreDamage, and a stale dirty bit only costs a
+    ///      safe count re-read.
     function _resetBatchedTurnTransients() internal {
-        _turnP0Packed = 0;
-        _turnP1Packed = 0;
-        tempRNG = 0;
         koOccurredFlag = 0;
-        tempPreDamage = 0;
-        effectsDirtyBitmap = 0;
     }
 
     // ---------------------------------------------------------------------
@@ -3568,14 +3576,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (winner != address(0)) {
                 break;
             }
-            // Reset per-turn transients so the next sub-turn starts like a fresh tx. Inlined
-            // copy for the same inliner reason as executeBatchedTurns (see _executeBatchedEntry).
-            _turnP0Packed = 0;
-            _turnP1Packed = 0;
-            tempRNG = 0;
+            // Between sub-turns only koOccurredFlag needs a reset (see _resetBatchedTurnTransients);
+            // inlined copy for the same inliner reason as executeBatchedTurns (see _executeBatchedEntry).
             koOccurredFlag = 0;
-            tempPreDamage = 0;
-            effectsDirtyBitmap = 0;
         }
         if (winner != address(0)) {
             emit BattleCompleteWithBatchSlotTurns(battleKey, _packBatchSlotPayload(entries, executed, winner));
@@ -3748,6 +3751,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // (D8 blind/simultaneous). Resolution runs in absolute-slot order; the mons being
         // replaced are KO'd, so speed-ordering the send-ins has no gameplay surface.
         if (flagIn != 2) {
+            // No fresh turn rng on a forced-switch turn; zero it explicitly (batched sub-turns
+            // no longer reset it between turns).
+            tempRNG = 0;
             uint256 mask = flagIn & 0x0F;
             for (uint256 s; s < 4;) {
                 if (mask & (1 << s) != 0) {
