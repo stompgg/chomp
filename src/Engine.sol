@@ -3674,8 +3674,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev Current-turn move for (side, slotIndex). 2-slot flows are transient-only, so there
     ///      is no storage fallback; an unpopulated lane decodes to packedMoveIndex == 0.
     function _getCurrentTurnMoveForSlot(uint256 side, uint256 slotIndex) private view returns (MoveDecision memory) {
+        return _decodeMove(_currentTurnMoveWordForSlot(side, slotIndex));
+    }
+
+    /// @dev Raw 24-bit move lane [extraData 16 | packedMoveIndex 8] — the allocation-free form
+    ///      of _getCurrentTurnMoveForSlot for the per-turn hot paths.
+    function _currentTurnMoveWordForSlot(uint256 side, uint256 slotIndex) private view returns (uint256) {
         uint256 packed = side == 0 ? _turnP0Packed : _turnP1Packed;
-        return _decodeMove((packed >> (104 + slotIndex * 24)) & 0xFFFFFF);
+        return (packed >> (104 + slotIndex * 24)) & 0xFFFFFF;
     }
 
     /// @dev Active roster index of an absolute slot. Slot-0 lanes read the legacy field (so in
@@ -3853,8 +3859,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
             if (inlineRegen && actorAlive) {
-                MoveDecision memory fresh = _getCurrentTurnMoveForSlot(side, slot & 1);
-                if (StaminaRegenLogic._isRestingMove(fresh.packedMoveIndex)) {
+                if (StaminaRegenLogic._isRestingMove(uint8(_currentTurnMoveWordForSlot(side, slot & 1)))) {
                     // Re-read the lane: an AfterMove effect may have swapped the rester out, and
                     // the regen follows the lane (matching the singles regen's fresh read).
                     _inlineRegenStaminaForMon(config, side, _slotActive(battle, slot));
@@ -3929,8 +3934,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (mon == EMPTY_ACTIVE_LANE) {
                 prio = SWITCH_PRIORITY;
             } else {
-                MoveDecision memory move = _getCurrentTurnMoveForSlot(side, s & 1);
-                uint8 stored = move.packedMoveIndex & MOVE_INDEX_MASK;
+                uint8 stored = uint8(_currentTurnMoveWordForSlot(side, s & 1)) & MOVE_INDEX_MASK;
                 uint8 moveIndex = stored == 0
                     ? NO_OP_MOVE_INDEX
                     : (stored >= SWITCH_MOVE_INDEX ? stored : stored - MOVE_INDEX_OFFSET);
@@ -4011,8 +4015,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bool isForcedSwitchTurn
     ) private {
         uint256 side = absSlot >> 1;
-        MoveDecision memory move = _getCurrentTurnMoveForSlot(side, absSlot & 1);
-        uint8 stored = move.packedMoveIndex & MOVE_INDEX_MASK;
+        uint256 moveWord = _currentTurnMoveWordForSlot(side, absSlot & 1);
+        uint256 moveExtra = moveWord >> 8;
+        uint8 stored = uint8(moveWord) & MOVE_INDEX_MASK;
         if (stored == 0) {
             return; // lane not populated
         }
@@ -4043,12 +4048,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if ((battle.turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
                 moveIndex = SWITCH_MOVE_INDEX;
                 (uint256 coerced,) = _firstLegalSwitchTarget(config, battle, absSlot);
-                move.extraData = uint16(coerced);
+                moveExtra = coerced;
             }
         }
 
         if (moveIndex == SWITCH_MOVE_INDEX) {
-            uint256 monToSwitchIndex = uint256(move.extraData & EXTRA_DATA_PAYLOAD_MASK);
+            uint256 monToSwitchIndex = moveExtra & EXTRA_DATA_PAYLOAD_MASK;
             if (activeMon == EMPTY_ACTIVE_LANE && !_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex))
             {
                 // Turn-0 send-ins must land: coerce an illegal pick to the first legal one so
@@ -4101,7 +4106,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // dead/empty skips the move. Inline attacks always require a chosen target in
             // 2-slot modes; nibble-less custom moves (no slot target) pass through with
             // targetBits == 0.
-            uint256 targetBits = uint256(move.extraData) >> TARGET_BITS_SHIFT;
+            uint256 targetBits = moveExtra >> TARGET_BITS_SHIFT;
             uint256 tSlot;
             uint256 tMon = EMPTY_ACTIVE_LANE;
             if (targetBits != 0) {
@@ -4133,7 +4138,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         activeMon,
                         targetBits,
                         _buildActivesWord(battle),
-                        move.extraData & EXTRA_DATA_PAYLOAD_MASK,
+                        uint16(moveExtra & EXTRA_DATA_PAYLOAD_MASK),
                         actionRng
                     );
             }
