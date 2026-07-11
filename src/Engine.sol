@@ -454,6 +454,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Cache storage key in transient storage for the duration of the call
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         BattleConfig storage config = battleConfig[storageKey];
 
@@ -494,6 +495,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
+        battleKeyForWrite = battleKey;
 
         // Populate transient directly. _executeInternal sees non-zero _turnP0Packed and skips the
         // mirror-from-storage step. No SSTORE happens; transient auto-clears at tx end in prod.
@@ -522,6 +524,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
+        battleKeyForWrite = battleKey;
 
         BattleData storage battle = battleData[battleKey];
         uint256 playerIndex = battle.playerSwitchForTurnFlag;
@@ -547,6 +550,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
         BattleConfig storage config = battleConfig[storageKey];
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
@@ -800,6 +804,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
         for (uint256 i = 0; i < numBuffered; i++) {
             // Execute directly off the buffer slot. Sub-turns emit no per-turn events (moves were
             // announced via MovesSubmitted at submit), so there's no end-of-drain batch payload to
@@ -824,6 +829,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint64 startTurn = data.turnId;
         uint256 numBuffered = data.numBuffered;
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         for (uint256 i = 0; i < numBuffered; i++) {
             if (
@@ -1020,6 +1026,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert EmptyBuffer();
         }
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
         for (uint256 i = 0; i < numBuffered; i++) {
             uint64 t = startTurn + uint64(i);
             address winner = _executeBufferedSlotEntry(
@@ -1042,6 +1049,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint64 startTurn = data.turnId;
         uint256 numBuffered = data.numBuffered;
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
 
         for (uint256 i = 0; i < numBuffered; i++) {
             uint64 t = startTurn + uint64(i);
@@ -1149,22 +1157,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerSwitchForTurnFlag = 2;
         uint256 priorityPlayerIndex;
 
-        // Set the battle key for the stack frame
-        // (gets cleared at the end of the transaction)
-        battleKeyForWrite = battleKey;
-        // Fresh per-turn acted mask (batched flows run many turns per tx, so auto-clear isn't enough).
+        // battleKeyForWrite is set by every entrypoint next to storageKeyForWrite (once per tx,
+        // not per sub-turn). Fresh per-turn acted mask (batched flows run many turns per tx,
+        // so auto-clear isn't enough).
         actedSlotsThisTurnMask = 0;
 
         // Hook loops are gated on the per-battle hook-steps union: prod battles carry the
         // OnBattleEnd-only gacha hook, so without the gate every turn pays per-hook bitmap
-        // probes for steps no hook listens at (~2.2k/turn measured).
-        uint256 numHooks = config.engineHooksLength;
+        // probes for steps no hook listens at (~2.2k/turn measured). The hook COUNT is read
+        // lazily inside each gated branch — prod turns never need it.
         uint16 hookStepsUnion = config.engineHookStepsUnion;
         // Read the mode ADJACENT to the union load (same slot, no call barrier between) so
         // via-IR merges the two into one SLOAD; the hook loop below is a storage barrier that
         // would otherwise force a second slot-3 read for the gate.
         uint8 battleMode = config.battleMode;
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
+            uint256 numHooks = config.engineHooksLength;
             for (uint256 i = 0; i < numHooks;) {
                 if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
                     config.engineHooks[i].hook.onRoundStart(battleKey);
@@ -1183,7 +1191,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert WrongBattleMode();
         }
         if (slotPacked) {
-            return _finishSlotTurn(battleKey, config, battle, numHooks, hookStepsUnion, emitBattleComplete);
+            return _finishSlotTurn(battleKey, config, battle, hookStepsUnion, emitBattleComplete);
         }
 
         // Emit MonMoves upfront with both players' moves + salts packed into one event.
@@ -1491,6 +1499,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Run the round end hooks (union-gated, same rationale as the RoundStart gate)
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
+            uint256 numHooks = config.engineHooksLength;
             for (uint256 i = 0; i < numHooks;) {
                 if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
                     config.engineHooks[i].hook.onRoundEnd(battleKey);
@@ -3526,6 +3535,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
         BattleConfig storage config = battleConfig[storageKey];
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
@@ -3561,6 +3571,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         bytes32 storageKey = _getStorageKey(battleKey);
         storageKeyForWrite = storageKey;
+        battleKeyForWrite = battleKey;
         BattleConfig storage config = battleConfig[storageKey];
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
@@ -3712,13 +3723,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         bytes32 battleKey,
         BattleConfig storage config,
         BattleData storage battle,
-        uint256 numHooks,
         uint16 hookStepsUnion,
         bool emitBattleComplete
     ) private returns (address winner) {
         uint256 newFlag = _runSlotTurn(battleKey, config, battle);
 
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
+            uint256 numHooks = config.engineHooksLength;
             for (uint256 i = 0; i < numHooks;) {
                 if ((config.engineHooks[i].stepsBitmap & (1 << uint8(EngineHookStep.OnRoundEnd))) != 0) {
                     config.engineHooks[i].hook.onRoundEnd(battleKey);
