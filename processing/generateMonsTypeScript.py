@@ -75,6 +75,13 @@ def read_json(file_path: str) -> Dict[str, Any]:
         return json.load(f)
 
 
+# Global playback speedup applied to every sprite/attack frame delay. Authored
+# source-GIF delays are 100ms (10fps) / 200ms (5fps) / 50ms (20fps); dividing by
+# 1.2 yields ~12 / 6 / 24 fps without re-encoding any art, preserving each
+# animation's relative timing.
+FRAME_RATE_SPEEDUP = 1.2
+
+
 def build_sprite_config(
     spritesheet_url: str,
     source: Dict[str, Any],
@@ -88,7 +95,7 @@ def build_sprite_config(
         "frames": source["frames"],
         "frameWidth": frame_width,
         "frameHeight": frame_height,
-        "frameDurationMs": source.get("msPerFrame", 100),
+        "frameDurationMs": round(source.get("msPerFrame", 100) / FRAME_RATE_SPEEDUP),
         "loop": loop,
     }
     # Only front/back idle entries carry content bounds; scopes the fields to those.
@@ -496,7 +503,7 @@ export type MoveSpriteVariants = {{
 // Where a move's attack overlay renders. Default 'target' overlays the sprite
 // on the opposing mon; 'canvas-center' lifts it to the middle of the battle
 // canvas (works across desktop/mobile/large without per-breakpoint coords).
-export type AttackOverlayPlacement = 'target' | 'canvas-center';
+export type AttackOverlayPlacement = 'target' | 'canvas-center' | 'self';
 
 export type Move = {{
   readonly address: LowercaseHex;

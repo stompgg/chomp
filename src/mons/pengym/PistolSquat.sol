@@ -73,7 +73,13 @@ contract PistolSquat is StandardAttack {
         ) == 1;
         if (!isKOed) {
             int32 target = SwitchTargetLib.findRandomNonKOed(
-                engine, battleKey, otherPlayerIndex, targetSlot & 1, defenderMonIndex, rng
+                engine,
+                battleKey,
+                otherPlayerIndex,
+                targetSlot & 1,
+                defenderMonIndex,
+                TargetLib.activeAt(activesPacked, targetSlot ^ 1),
+                rng
             );
             if (target != -1) {
                 engine.switchActiveMonForSlot(otherPlayerIndex, targetSlot & 1, uint256(uint32(target)));

@@ -126,7 +126,7 @@ contract HardReset is IMoveSet, BasicEffect {
             if (healAmt > 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmt);
             }
-            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, rng);
+            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, activesPacked, rng);
             ed |= OWN_FIRED_BIT;
             ownFired = true;
         } else if (!isOwnTeam && !oppFired) {
@@ -142,7 +142,7 @@ contract HardReset is IMoveSet, BasicEffect {
             // _forceSwap's per-candidate KO check + the (candidate != currentMonIndex) guard mean a
             // post-dealDamage KO read here would be pure overhead — the helper just no-ops if the
             // damaged mon is the only live one.
-            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, rng);
+            _forceSwap(engine, battleKey, targetIndex, monIndex, restSlot, activesPacked, rng);
             ed |= OPP_FIRED_BIT;
             oppFired = true;
         } else {
@@ -158,11 +158,12 @@ contract HardReset is IMoveSet, BasicEffect {
         uint256 playerIndex,
         uint256 currentMonIndex,
         uint256 slot,
+        uint256 activesPacked,
         uint256 rng
     ) internal {
-        // The random pick can collide with the ally slot's occupant in doubles; the engine's
-        // ally-collision gate then no-ops the swap (accepted: the trigger fizzles).
-        int32 target = SwitchTargetLib.findRandomNonKOed(engine, battleKey, playerIndex, slot & 1, currentMonIndex, rng);
+        int32 target = SwitchTargetLib.findRandomNonKOed(
+            engine, battleKey, playerIndex, slot & 1, currentMonIndex, TargetLib.activeAt(activesPacked, slot ^ 1), rng
+        );
         if (target != -1) {
             engine.switchActiveMonForSlot(playerIndex, slot & 1, uint256(uint32(target)));
         }

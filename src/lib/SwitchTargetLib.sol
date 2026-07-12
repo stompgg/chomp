@@ -6,8 +6,10 @@ import {IEngine} from "../IEngine.sol";
 import {RNGLib} from "./RNGLib.sol";
 
 library SwitchTargetLib {
-    /// Returns a non-KO'd replacement index (other than `currentMonIndex`) legal for the given
-    /// slot, chosen by walking the slot's roster range from a random offset, or -1 if none exists.
+    /// Returns a non-KO'd replacement index legal for the given slot, chosen by walking the
+    /// slot's roster range from a random offset, or -1 if none exists. Excludes `currentMonIndex`
+    /// and `allyMonIndex` (the other lane's active — pass TargetLib.activeAt(activesPacked,
+    /// absSlot ^ 1); EMPTY_ACTIVE_LANE when vacant), since the engine rejects both as targets.
     /// The range matters in Multi, where each slot may only switch within its seat's quarter.
     function findRandomNonKOed(
         IEngine engine,
@@ -15,6 +17,7 @@ library SwitchTargetLib {
         uint256 playerIndex,
         uint256 slotIndex,
         uint256 currentMonIndex,
+        uint256 allyMonIndex,
         uint256 rng
     ) internal view returns (int32) {
         // Mix in target player index to break symmetry on mirror matchups
@@ -23,7 +26,7 @@ library SwitchTargetLib {
         uint256 span = hi - lo;
         for (uint256 i; i < span; ++i) {
             uint256 candidate = lo + ((i + offset) % span);
-            if (candidate != currentMonIndex) {
+            if (candidate != currentMonIndex && candidate != allyMonIndex) {
                 bool isKOed =
                     engine.getMonStateForBattle(battleKey, playerIndex, candidate, MonStateIndexName.IsKnockedOut) == 1;
                 if (!isKOed) {

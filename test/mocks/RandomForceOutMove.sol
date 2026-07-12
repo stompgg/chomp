@@ -34,7 +34,9 @@ contract RandomForceOutMove is IMoveSet {
         }
         uint256 targetSide = TargetLib.sideOf(targetSlot);
         uint256 targetMon = TargetLib.activeAt(activesPacked, targetSlot);
-        int32 pick = SwitchTargetLib.findRandomNonKOed(engine, battleKey, targetSide, targetSlot & 1, targetMon, rng);
+        int32 pick = SwitchTargetLib.findRandomNonKOed(
+            engine, battleKey, targetSide, targetSlot & 1, targetMon, TargetLib.activeAt(activesPacked, targetSlot ^ 1), rng
+        );
         if (pick != -1) {
             engine.switchActiveMonForSlot(targetSide, targetSlot & 1, uint256(uint32(pick)));
         }
