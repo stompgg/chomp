@@ -299,16 +299,16 @@ impl Sim {
         B256::new(b)
     }
 
-    /// Clone the live battle's state tree under a fresh fork key
-    /// (battleData + battleConfig + the globalKV entries holding move
-    /// locks / once-per-game flags). No storage-key redirect:
-    /// `_getStorageKey(fork) == fork`.
-    fn fork_battle(&mut self) -> B256 {
-        let bk = self.battle_key;
+    /// Clone the battle state tree at `src` under a fresh fork key (battleData +
+    /// battleConfig — which carries per-mon + global effects — + the globalKV
+    /// entries holding move locks / once-per-game flags). `src` may be the live
+    /// key or another fork (depth search); forks have no storage-key redirect
+    /// (`_getStorageKey(fork) == fork`), so this nests correctly.
+    fn fork_battle_from(&mut self, src: B256) -> B256 {
         let fork = self.next_fork_key();
         let world = &mut self.world;
-        let sk = Engine::_getStorageKey(world, bk);
-        let data = world.Engine.battleData.get(&bk);
+        let sk = Engine::_getStorageKey(world, src);
+        let data = world.Engine.battleData.get(&src);
         world.Engine.battleData.set(fork, data);
         let cfg = world.Engine.battleConfig.get(&sk);
         world.Engine.battleConfig.set(fork, cfg);
@@ -319,12 +319,12 @@ impl Sim {
         fork
     }
 
-    /// Fork the live battle, run ONE silent hypothetical turn on the fork
-    /// (`applyHypotheticalMove` semantics — either side may be None on a
-    /// forced-switch turn), and return the fork key for follow-up reads.
-    /// PHYSICAL p0/p1 — seat translation happens in the caller.
-    pub fn apply_hypothetical(&mut self, p0: Option<HypoMove>, p1: Option<HypoMove>) -> B256 {
-        let fork = self.fork_battle();
+    /// Fork `src`, run ONE silent hypothetical turn on the fork (either side may
+    /// be None on a forced-switch turn), return the fork key. PHYSICAL p0/p1 —
+    /// seat translation happens in the caller. `src` = live key (1-ply) or a
+    /// fork key (deeper plies in the search tree).
+    pub fn apply_hypothetical_from(&mut self, src: B256, p0: Option<HypoMove>, p1: Option<HypoMove>) -> B256 {
+        let fork = self.fork_battle_from(src);
         let world = &mut self.world;
         world.reset_transient();
         world.env.msg_sender = world.Engine.battleConfig.get_mut(&fork).moveManager;
@@ -351,6 +351,29 @@ impl Sim {
         world.Engine.storageKeyForWrite = fork;
         Engine::_executeInternal(world, fork, fork, false, false, false); // slotPacked=false (singles)
         world.reset_transient(); // fork tx over; capture reads boundary-clean
+        fork
+    }
+
+    /// 1-ply hypothetical from the LIVE battle (the common case).
+    pub fn apply_hypothetical(&mut self, p0: Option<HypoMove>, p1: Option<HypoMove>) -> B256 {
+        let src = self.battle_key;
+        self.apply_hypothetical_from(src, p0, p1)
+    }
+
+    /// DOUBLES analogue of [`apply_hypothetical_from`]: fork `src`, run ONE silent slot-turn
+    /// from each side's packed word (see [`pack_side`]), return the fork key. Mirrors
+    /// `executeWithSlotMoves` (turns come from `_packSideTurn` + `slotPacked=true`); `src` may be
+    /// the live key or a fork (depth search).
+    pub fn apply_hypothetical_slot(&mut self, src: B256, side0_packed: U256, side1_packed: U256) -> B256 {
+        let fork = self.fork_battle_from(src);
+        let world = &mut self.world;
+        world.reset_transient();
+        world.env.msg_sender = world.Engine.battleConfig.get_mut(&fork).moveManager;
+        world.Engine._turnP0Packed = Engine::_packSideTurn(side0_packed);
+        world.Engine._turnP1Packed = Engine::_packSideTurn(side1_packed);
+        world.Engine.storageKeyForWrite = fork;
+        Engine::_executeInternal(world, fork, fork, false, false, true); // slotPacked=true, silent
+        world.reset_transient();
         fork
     }
 

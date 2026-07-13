@@ -5,6 +5,7 @@
 //! replies, aggregated by expectation (mean) or worst-case (min). The same grid is the yomi
 //! substrate — yomi tension is the value of knowing the reply (EVPI over that grid).
 
+use crate::evaluator::Weights;
 use crate::jsrng::JsRng;
 use crate::native::ForkCache;
 use crate::sim::{HypoMove, Sim};
@@ -50,8 +51,8 @@ pub fn action_grid(
     (my, opp_options, grid)
 }
 
-fn decide_agg(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng, worst_case: bool) -> Mv {
-    let mut fc = ForkCache::new();
+fn decide_agg(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng, w: &Weights, worst_case: bool) -> Mv {
+    let mut fc = ForkCache::new(*w);
     let (my, _opp, grid) = action_grid(sim, seat, view, rng, &mut fc);
     fc.dispose_all(sim);
     if my.is_empty() {
@@ -76,13 +77,13 @@ fn decide_agg(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng, wor
 }
 
 /// No-peek greedy, expectation variant: maximize the mean score over the opponent's replies.
-pub fn decide_expect(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng) -> Mv {
-    decide_agg(sim, seat, view, rng, false)
+pub fn decide_expect(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng, w: &Weights) -> Mv {
+    decide_agg(sim, seat, view, rng, w, false)
 }
 
 /// No-peek greedy, worst-case variant: maximin over the opponent's replies (a counter-play pilot).
-pub fn decide_worst(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng) -> Mv {
-    decide_agg(sim, seat, view, rng, true)
+pub fn decide_worst(sim: &mut Sim, seat: Seat, view: &BattleView, rng: &mut JsRng, w: &Weights) -> Mv {
+    decide_agg(sim, seat, view, rng, w, true)
 }
 
 /// Yomi tension = EVPI over the grid: mean_o[max_a grid[a][o]] − max_a[mean_o grid[a][o]]. Zero iff

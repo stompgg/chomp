@@ -6,6 +6,7 @@
 
 use chomp_strategies::analysis::run_mon_analysis;
 use chomp_strategies::arena::build_team_mon;
+use chomp_strategies::evaluator::DEFAULT_WEIGHTS;
 use chomp_strategies::game::{play_game, GameSpec, StrategyKind};
 use chomp_strategies::matrix::compute_static_matrix;
 use chomp_strategies::roster::{self, load_roster};
@@ -50,6 +51,14 @@ fn main() {
                     p1_ids: vec![m.ids[i]],
                     p0_strategy: StrategyKind::Greedy,
                     p1_strategy: StrategyKind::Greedy,
+                    p0_weights: DEFAULT_WEIGHTS,
+                    p1_weights: DEFAULT_WEIGHTS,
+                    p0_search_depth: 0,
+                    p1_search_depth: 0,
+                    p0_search_peek: false,
+                    p1_search_peek: false,
+                    p0_search_mixed: false,
+                    p1_search_mixed: false,
                 };
                 let o = play_game(&spec, &book, false);
                 checked += 1;

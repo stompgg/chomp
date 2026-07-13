@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use crate::arena::{build_team_mon, draw_team, Wrand};
+use crate::evaluator::DEFAULT_WEIGHTS;
 use crate::game::{run_games, GameSpec, StrategyKind};
 use crate::roster::{self, Roster};
 
@@ -75,6 +76,14 @@ pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_
                 p1_ids: team_ids.clone(),
                 p0_strategy: StrategyKind::Greedy,
                 p1_strategy: StrategyKind::Greedy,
+                p0_weights: DEFAULT_WEIGHTS,
+                p1_weights: DEFAULT_WEIGHTS,
+                p0_search_depth: 0,
+                p1_search_depth: 0,
+                p0_search_peek: false,
+                p1_search_peek: false,
+                p0_search_mixed: false,
+                p1_search_mixed: false,
             });
             team_of.push(ti);
             counter = counter.wrapping_add(1);

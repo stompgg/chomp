@@ -26,7 +26,7 @@ const FLIP_ARG_POSITIONS: Record<string, number[]> = {
   getTeamSize: [1],
   getMoveDecisionForBattleState: [1],
   validatePlayerMoveForBattle: [2],
-  getDamageCalcContext: [1, 2],
+  getDamageCalcContext: [1, 3], // (bk, atkPlayer, atkMon, defPlayer, defMon) — player args at 1 & 3
   // forward-model fork submission: _setMoveInternal(config, playerIndex, ...)
   _setMoveInternal: [1],
 };

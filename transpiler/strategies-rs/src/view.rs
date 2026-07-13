@@ -225,6 +225,21 @@ pub fn apply_hypothetical(sim: &mut Sim, seat: Seat, vp0: Option<HypoMove>, vp1:
     }
 }
 
+/// Seat-mapped hypothetical from an arbitrary source key (depth search forks a child node).
+pub fn apply_hypothetical_from(
+    sim: &mut Sim,
+    seat: Seat,
+    src: B256,
+    vp0: Option<HypoMove>,
+    vp1: Option<HypoMove>,
+) -> B256 {
+    if seat.flipped() {
+        sim.apply_hypothetical_from(src, vp1, vp0)
+    } else {
+        sim.apply_hypothetical_from(src, vp0, vp1)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Battle view (battle-view.ts) — read-once snapshot of a position.
 // ---------------------------------------------------------------------------

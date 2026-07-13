@@ -1,5 +1,5 @@
 import { ContractContainer, addressToUint, contractAddresses } from '../../transpiler/ts-output/runtime';
-import { Contract, globalEventStream, runAsTransaction, type CallEntry } from '../../transpiler/ts-output/runtime/base';
+import { CallTreeObserver, globalEventStream, runAsTransaction, type CallEntry } from '../../transpiler/ts-output/runtime/base';
 import { setupContainer } from '../../transpiler/ts-output/factories';
 import { Engine } from '../../transpiler/ts-output/Engine';
 import * as Structs from '../../transpiler/ts-output/Structs';
@@ -169,7 +169,8 @@ export interface StartedBattle {
   p1Team: Structs.Mon[];
 }
 
-export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[]): StartedBattle {
+/** `battleMode`: 0 = Singles (default), 1 = Doubles (2 active slots/side, slot-packed turns). */
+export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Structs.Mon[], battleMode = 0): StartedBattle {
   const { engine, teamRegistry, matchmaker } = ctx;
   const p0Idx = teamRegistry.registerTeam(P0_ADDR, p0Team);
   const p1Idx = teamRegistry.registerTeam(P1_ADDR, p1Team);
@@ -178,7 +179,6 @@ export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Stru
   (engine as any).__mutateIsMatchmakerFor(P0_ADDR, matchmaker._contractAddress, true);
   (engine as any).__mutateIsMatchmakerFor(P1_ADDR, matchmaker._contractAddress, true);
 
-  const validator = { _contractAddress: '0x0000000000000000000000000000000000000000' } as any; // inline validator path
   const rngOracle = ctx.container.resolve<any>('IRandomnessOracle');
   const ruleset = { _contractAddress: INLINE_STAMINA_REGEN_RULESET } as any;
   const battle: Structs.Battle = {
@@ -186,15 +186,22 @@ export function startBattle(ctx: SimContext, p0Team: Structs.Mon[], p1Team: Stru
     p0TeamIndex: p0Idx,
     p1: P1_ADDR,
     p1TeamIndex: p1Idx,
+    // Multi seats: zero in Singles/Doubles (startBattle validates the p2/p3 invariant).
+    p2: '0x0000000000000000000000000000000000000000',
+    p2TeamIndex: 0n,
+    p3: '0x0000000000000000000000000000000000000000',
+    p3TeamIndex: 0n,
     teamRegistry: teamRegistry as any,
-    validator,
     rngOracle,
     ruleset,
     moveManager: HARNESS_MOVE_MANAGER,
     matchmaker: matchmaker as any,
     engineHooks: [],
   };
-  runAsTransaction(matchmaker._contractAddress, [], () => { (engine as any).startBattle(battle); });
+  runAsTransaction(matchmaker._contractAddress, [], () => {
+    if (battleMode === 0) (engine as any).startBattle(battle);
+    else (engine as any).startBattleWithMode(battle, BigInt(battleMode));
+  });
   // Initialize per-mon states (Solidity zero-fill semantics — TS needs explicit defaults).
   const storageKey = (engine as any)._getStorageKey(battleKey);
   const config = (engine as any).battleConfig[storageKey];
@@ -232,9 +239,11 @@ export interface TurnSnapshot {
 export function executeTurn(ctx: SimContext, battleKey: `0x${string}`, input: TurnInput, captureCallLog = false): TurnSnapshot {
   const engine = ctx.engine as any;
   globalEventStream.clear();
-  if (captureCallLog) Contract._turnCallLog = [];
+  // Call capture moved to the runtime's Observer side-channel (the old Contract._turnCallLog
+  // static is gone). Externals are always captured; no internal methods are subscribed.
+  const callObserver = captureCallLog ? new CallTreeObserver(new Set<string>()) : null;
   engine._block.timestamp = engine._block.timestamp + 1n;
-  runAsTransaction(HARNESS_MOVE_MANAGER, [], () => {
+  runAsTransaction(HARNESS_MOVE_MANAGER, callObserver ? [callObserver] : [], () => {
     engine.executeWithMoves(
       battleKey,
       BigInt(input.p0MoveIndex),
@@ -245,8 +254,7 @@ export function executeTurn(ctx: SimContext, battleKey: `0x${string}`, input: Tu
       input.p1ExtraData ?? 0n,
     );
   });
-  const callLog = Contract._turnCallLog ?? [];
-  Contract._turnCallLog = null;
+  const callLog = callObserver?.roots ?? [];
   const storageKey = engine._getStorageKey(battleKey);
   const config = engine.battleConfig[storageKey];
   const battle = engine.battleData[battleKey];
@@ -274,4 +282,14 @@ export function executeTurn(ctx: SimContext, battleKey: `0x${string}`, input: Tu
     events: globalEventStream.getAll(),
     callLog,
   };
+}
+
+/** Execute one DOUBLES turn from each side's packed slot word (see cpu/forward-model `packSide`). */
+export function executeSlotTurn(ctx: SimContext, battleKey: `0x${string}`, side0Packed: bigint, side1Packed: bigint): void {
+  const engine = ctx.engine as any;
+  globalEventStream.clear();
+  engine._block.timestamp = engine._block.timestamp + 1n;
+  runAsTransaction(HARNESS_MOVE_MANAGER, [], () => {
+    engine.executeWithSlotMoves(battleKey, side0Packed, side1Packed);
+  });
 }

@@ -235,6 +235,22 @@ export function applyHypotheticalMove(
   p0: HypotheticalMove | null,
   p1: HypotheticalMove | null,
 ): BattleView {
+  const forkKey = applyHypotheticalMoveKeyed(e, bk, p0, p1);
+  return captureBattleView(e, forkKey);
+}
+
+/**
+ * Like {@link applyHypotheticalMove} but returns the FORK KEY instead of a view — the depth-search
+ * primitive: the caller can read/evaluate the fork, fork AGAIN from it (child plies), and must
+ * `disposeFork` it when its subtree is scored. `bk` may itself be a fork key (forkBattle resolves
+ * any live key).
+ */
+export function applyHypotheticalMoveKeyed(
+  e: any,
+  bk: string,
+  p0: HypotheticalMove | null,
+  p1: HypotheticalMove | null,
+): Hex {
   const eng = e as any;
   const forkKey = forkBattle(eng, bk);
   const config = eng.battleConfig[forkKey];
@@ -242,7 +258,10 @@ export function applyHypotheticalMove(
   // runNested keeps callDepth > 0 so the transaction-boundary transient reset does NOT
   // fire between us setting the turn transients and `_executeInternal` reading them.
   runNested(() => {
+    // Match executeWithMoves: BOTH write transients (the inlined stat-boost path gates external
+    // engine writes — ability/effect re-entry — on battleKeyForWrite being set).
     eng.__mutateStorageKeyForWrite(forkKey);
+    eng.__mutateBattleKeyForWrite(forkKey);
 
     // (1) write both moves onto the fork config, and (2) set the encoded turn transients that
     // executeWithMoves would set (these win in _getCurrentTurnMove / _getCurrentTurnSalt).
@@ -256,15 +275,48 @@ export function applyHypotheticalMove(
     }
 
     try {
-      // (3) run the turn on the fork (silent).
-      eng._executeInternal(forkKey, forkKey, false);
+      // (3) run the turn on the fork (silent; singles — slotPacked=false, explicit because the
+      // doubles-era engine's WrongBattleMode guard compares it against the battle's mode byte).
+      eng._executeInternal(forkKey, forkKey, false, false, false);
     } finally {
       // (4) clear write-context transients.
       eng.resetCallContext();
     }
   });
 
-  return captureBattleView(eng, forkKey);
+  return forkKey;
+}
+
+/**
+ * Build a side's raw slot-turn word for `executeWithSlotMoves` (doubles): slot-0 = (m0, e0) in
+ * bits 0-23, slot-1 = (m1, e1) in bits 24-47, salt in bits 48+. extraData carries the target
+ * nibble in bits 12-15. Mirrors the Rust `pack_side`.
+ */
+export function packSide(m0: number, e0: number, m1: number, e1: number, salt: bigint): bigint {
+  return BigInt(m0) | (BigInt(e0) << 8n) | (BigInt(m1) << 24n) | (BigInt(e1) << 32n) | (salt << 48n);
+}
+
+/**
+ * DOUBLES analogue of {@link applyHypotheticalMoveKeyed}: fork `bk`, run ONE silent slot-turn
+ * from each side's packed word (see {@link packSide}), return the fork key. Mirrors
+ * `executeWithSlotMoves` (turns via `_packSideTurn` transients + `slotPacked=true`); `bk` may be
+ * the live key or a fork (depth search). Caller must `disposeFork`.
+ */
+export function applyHypotheticalSlotMoveKeyed(e: any, bk: string, side0Packed: bigint, side1Packed: bigint): Hex {
+  const eng = e as any;
+  const forkKey = forkBattle(eng, bk);
+  runNested(() => {
+    eng.__mutateStorageKeyForWrite(forkKey);
+    eng.__mutateBattleKeyForWrite(forkKey);
+    eng.__mutate_turnP0Packed(eng._packSideTurn(side0Packed));
+    eng.__mutate_turnP1Packed(eng._packSideTurn(side1Packed));
+    try {
+      eng._executeInternal(forkKey, forkKey, false, false, true); // slotPacked=true, silent
+    } finally {
+      eng.resetCallContext();
+    }
+  });
+  return forkKey;
 }
 
 // Mirror Engine.executeWithMoves's transient packing: storedIndex = moveIndex (+offset if a real

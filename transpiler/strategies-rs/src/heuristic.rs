@@ -1,4 +1,4 @@
-//! HARD CPU — port of `sims/src/cpu/strategies/hard-cpu.ts`: best-response
+//! HEURISTIC CPU — port of `sims/src/cpu/strategies/hard-cpu.ts`: best-response
 //! with foreknowledge (peeks the revealed move), sim-measured damage on
 //! both sides, guarded free-turn setup punishment, defensive switching,
 //! anti-wall pivot, and the eval-veto wrapper. Every phase, threshold and
@@ -9,6 +9,7 @@ use chomp_engine::Enums::MoveClass;
 use chomp_engine::Structs::{DamageCalcContext, MoveMeta};
 use chomp_rt::{B256, U256};
 
+use crate::evaluator::Weights;
 use crate::jsrng::JsRng;
 use crate::native::{
     anti_wall_switch, ev_scale_damages, fork_measure_incoming_damage, fork_measure_move_damages,
@@ -55,7 +56,7 @@ fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
 /// Per-battle persistent state: the configured-move lane bitmap (the
 /// on-chain cpuMoveUsedBitmap semantics — setup fires once per switch-in).
 #[derive(Default)]
-pub struct HardState {
+pub struct HeuristicState {
     pub move_used_bitmap: u32,
 }
 
@@ -344,9 +345,10 @@ pub fn decide(
     view: &BattleView,
     pm: Mv,
     rng: &mut JsRng,
-    st: &mut HardState,
+    st: &mut HeuristicState,
+    w: &Weights,
 ) -> Mv {
-    let mut fc = ForkCache::new();
+    let mut fc = ForkCache::new(*w);
     let (mv, bitmap) = decide_inner(sim, seat, view, pm, rng, st.move_used_bitmap, &mut fc);
     fc.dispose_all(sim);
     st.move_used_bitmap = bitmap; // every TS return path goes through DONE

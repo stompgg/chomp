@@ -1,5 +1,5 @@
 import { Hex } from './hex';
-import { MoveClass, MonStateIndexName, ExtraDataType, Type } from '../../../transpiler/ts-output/Enums';
+import { MoveClass, MonStateIndexName, Type } from '../../../transpiler/ts-output/Enums';
 import { moveSlotLib } from '../../../transpiler/ts-output/moves/MoveSlotLib';
 import { typeCalcLib } from '../../../transpiler/ts-output/types/TypeCalcLib';
 import { SWITCH_MOVE_INDEX, NO_OP_INDEX } from './constants';
@@ -155,10 +155,31 @@ export function moveTypeOf(e: any, bk: Hex, slot: bigint): Type {
   return moveSlotLib.moveType(slot, e, bk) as Type;
 }
 
-export function moveExtraDataType(e: any, bk: Hex, slot: bigint, monIndex: number): ExtraDataType {
-  // Inline moves are always ExtraDataType.None (MoveSlotLib.decodeMeta short-circuits before the
-  // external getMeta call); decodeMeta handles both inline and external uniformly.
-  return moveSlotLib.decodeMeta(slot, e, bk, CPU_PLAYER_INDEX, BigInt(monIndex)).extraDataType as ExtraDataType;
+// Deployed-move address → its moves.csv InputType ('none' | 'self-mon' | 'opponent-mon') — the
+// off-chain replacement for the removed on-chain ExtraDataType, mirroring the Rust port's
+// INPUT_TYPE_BY_ADDR. Filled by `buildTeamMon` at team-resolve time (before any game runs).
+const INPUT_TYPE_BY_ADDR = new Map<bigint, string>();
+
+export function registerMoveInputType(addr: bigint, inputType: string): void {
+  INPUT_TYPE_BY_ADDR.set(addr, inputType);
+}
+
+/** InputType of an EXTERNAL move word (address = low 160 bits); 'none' for unknown moves. */
+export function moveInputTypeOf(slot: bigint): string {
+  return INPUT_TYPE_BY_ADDR.get(slot & ((1n << 160n) - 1n)) ?? 'none';
+}
+
+// Deployed-move address → its moves.csv TargetSpec (self-only / none / opponent-slot / …) —
+// the client-facing target domain; nibble-free specs (self-only/none) need no target bits.
+const TARGET_SPEC_BY_ADDR = new Map<bigint, string>();
+
+export function registerMoveTargetSpec(addr: bigint, targetSpec: string): void {
+  TARGET_SPEC_BY_ADDR.set(addr, targetSpec);
+}
+
+/** TargetSpec of an EXTERNAL move word; 'any-other-slot' (the blank default) for unknown moves. */
+export function moveTargetSpecOf(slot: bigint): string {
+  return TARGET_SPEC_BY_ADDR.get(slot & ((1n << 160n) - 1n)) ?? 'any-other-slot';
 }
 
 // The opponent's (p0's) revealed move this turn — BetterCPU peeks at this. { moveIndex, extraData }
@@ -255,16 +276,17 @@ export function calculateValidMoves(
     let extraDataToUse = 0;
 
     if (!moveSlotLib.isInline(slot)) {
-      const edt = moveExtraDataType(e, bk, slot, activeMonIndex);
+      // The engine dropped the on-chain ExtraDataType getter; consult the off-chain InputType
+      // (moves.csv) instead, a uniform pick like the old CPU._calculateValidMoves (Rust-port parity).
+      const it = moveInputTypeOf(slot);
 
-      if (edt === ExtraDataType.SelfTeamIndex) {
-        // CPU.sol:122-129 — needs a self switch target; skip the move if there are none.
+      if (it === 'self-mon') {
+        // Needs a self switch target; skip the move if there are none.
         if (validSwitchIndices.length === 0) continue;
-        // _sampleRNG(...) % validSwitchCount -> uniform pick among valid switch indices.
         const r = Math.floor(rng() * validSwitchIndices.length);
         extraDataToUse = validSwitchIndices[r];
-      } else if (edt === ExtraDataType.OpponentNonKOTeamIndex) {
-        // CPU.sol:130-146 — build non-KO opponent targets; skip the move if there are none.
+      } else if (it === 'opponent-mon') {
+        // Build non-KO opponent targets; skip the move if there are none.
         const opponentTeamSize = oppTeamSize(e, bk);
         const oppKO = koBitmap(e, bk, OPP_PLAYER_INDEX);
         const validTargets: number[] = [];
@@ -272,11 +294,10 @@ export function calculateValidMoves(
           if ((oppKO & (1 << j)) === 0) validTargets.push(j);
         }
         if (validTargets.length === 0) continue;
-        // _sampleRNG(...) % validTargetCount -> uniform pick among non-KO opponent mons.
         const r = Math.floor(rng() * validTargets.length);
         extraDataToUse = validTargets[r];
       }
-      // ExtraDataType.None / InclusiveRange fall through with extraData 0, like the Solidity.
+      // 'none' / inline moves fall through with extraData 0.
     }
 
     // CPU.sol:149-151 — validate the candidate (stamina + move-specific) and keep it if legal.

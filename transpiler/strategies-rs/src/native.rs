@@ -8,7 +8,7 @@ use chomp_engine::moves::MoveSlotLib;
 use chomp_engine::Structs::MoveMeta;
 use chomp_rt::B256;
 
-use crate::evaluator::score_state;
+use crate::evaluator::{score_state, Weights};
 use crate::jsrng::JsRng;
 use crate::shared::{
     find_best_damage_move, floor_div, offensive_matchup_score, SIMILAR_DAMAGE_THRESHOLD,
@@ -52,14 +52,15 @@ struct CacheEntry {
     score: Option<f64>,
 }
 
-#[derive(Default)]
 pub struct ForkCache {
     entries: Vec<CacheEntry>,
+    /// Evaluator weights every `score` in this decision is measured with.
+    weights: Weights,
 }
 
 impl ForkCache {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(weights: Weights) -> Self {
+        Self { entries: Vec::new(), weights }
     }
 
     /// Fork-or-reuse: returns a cache index for the (p0, p1, salt)
@@ -100,7 +101,7 @@ impl ForkCache {
         if let Some(s) = self.entries[idx].score {
             return s;
         }
-        let s = score_state(sim, seat, &self.entries[idx].view);
+        let s = score_state(sim, seat, &self.entries[idx].view, &self.weights);
         self.entries[idx].score = Some(s);
         s
     }

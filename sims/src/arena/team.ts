@@ -11,6 +11,7 @@
 import { contracts as CONTRACT_REGISTRY } from '../../../transpiler/ts-output/factories';
 import { Type } from '../../../transpiler/ts-output/Enums';
 import { addressToUint } from '../../../transpiler/ts-output/runtime';
+import { registerMoveInputType, registerMoveTargetSpec } from '../cpu/engine-view';
 import * as Structs from '../../../transpiler/ts-output/Structs';
 import type { SimContext } from '../harness';
 import { moveNameToContract } from '../util/mon-builder';
@@ -33,7 +34,7 @@ function isImplemented(contractName: string): boolean {
 }
 
 type ResolvedSlot =
-  | { kind: 'contract'; contractName: string; name: string }
+  | { kind: 'contract'; contractName: string; name: string; inputType: string; targetSpec: string }
   | { kind: 'inline'; json: InlineMoveJson; name: string };
 
 /**
@@ -49,7 +50,7 @@ export function monCatalog(roster: Roster, mon: MonRow): ResolvedSlot[] {
   for (const mv of csvMoves) {
     const contract = moveNameToContract(mv.name);
     if (isImplemented(contract)) {
-      slots.push({ kind: 'contract', contractName: contract, name: mv.name });
+      slots.push({ kind: 'contract', contractName: contract, name: mv.name, inputType: mv.inputType, targetSpec: mv.targetSpec });
       continue;
     }
     const inlineJson = findInlineMoveJson(monDir, contract);
@@ -116,7 +117,14 @@ export function buildTeamMon(ctx: SimContext, roster: Roster, monId: number, equ
   while (slots.length < 4) slots.push(slots[slots.length - 1]);
 
   const moves = slots.map((s) => {
-    if (s.kind === 'contract') return resolveContractAddress(ctx, s.contractName);
+    if (s.kind === 'contract') {
+      const addr = resolveContractAddress(ctx, s.contractName);
+      // Address → InputType / TargetSpec registries (the off-chain replacement for the removed
+      // on-chain ExtraDataType) — CPU enumeration consults them for payload/slot targeting.
+      registerMoveInputType(addr, s.inputType);
+      registerMoveTargetSpec(addr, s.targetSpec);
+      return addr;
+    }
     const effectAddr = s.json.effect ? resolveContractAddress(ctx, s.json.effect) : 0n;
     return packInlineMove(s.json, effectAddr);
   });

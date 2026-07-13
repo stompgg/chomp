@@ -15,11 +15,12 @@ import { Type } from '../../../transpiler/ts-output/Enums';
 
 const SRC_MONS_DIR = join(import.meta.dir, '..', '..', '..', 'src', 'mons');
 
+// Current 15-type chart (Mythic→Faith rename; Wild removed) — names must match Enums.Type.
 const TYPE_MAP: Record<string, number> = {
   Yin: Type.Yin, Yang: Type.Yang, Earth: Type.Earth, Liquid: Type.Liquid,
   Fire: Type.Fire, Metal: Type.Metal, Ice: Type.Ice, Nature: Type.Nature,
-  Lightning: Type.Lightning, Mythic: Type.Mythic, Air: Type.Air, Math: Type.Math,
-  Cyber: Type.Cyber, Wild: Type.Wild, Cosmic: Type.Cosmic, None: Type.None,
+  Lightning: Type.Lightning, Faith: Type.Faith, Air: Type.Air, Math: Type.Math,
+  Cyber: Type.Cyber, Cosmic: Type.Cosmic, None: Type.None,
 };
 
 const CLASS_MAP: Record<string, number> = {

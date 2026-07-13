@@ -275,7 +275,7 @@ export function koIsGuaranteed(
   }
   if (oppClass !== MoveClass.Physical && oppClass !== MoveClass.Special) return true;
 
-  const ctxToUs = e.getDamageCalcContext(bk, OPP_PLAYER_INDEX, CPU_PLAYER_INDEX);
+  const ctxToUs = e.getDamageCalcContext(bk, OPP_PLAYER_INDEX, BigInt(view.oppActive), CPU_PLAYER_INDEX, BigInt(view.cpuActive));
   const damageToUs = estimateDamage(e, bk, ctxToUs, oppSlot, oppClass);
   if (damageToUs < monCurrentHp(e, bk, CPU_PLAYER_INDEX, view.cpuActive)) return true;
 

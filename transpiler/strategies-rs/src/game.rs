@@ -15,11 +15,13 @@ use chomp_rt::{Address, B256};
 
 use crate::native::ForkCache;
 
+use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::greedy;
-use crate::hard::{self, HardState};
+use crate::heuristic::{self, HeuristicState};
 use crate::jsrng::{random_salt, JsRng};
 use crate::nopeek;
 use crate::override_cpu::{self, OverrideState};
+use crate::search;
 use crate::sim::Sim;
 use crate::view::{
     active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp, Mv,
@@ -28,7 +30,7 @@ use crate::view::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StrategyKind {
-    Hard,
+    Heuristic,
     Greedy,
     Override,
     /// No-peek greedy, expectation over the opponent's plausible replies.
@@ -43,7 +45,7 @@ impl StrategyKind {
     /// strategy.
     pub fn parse(name: &str) -> Option<StrategyKind> {
         match name {
-            "hard" => Some(StrategyKind::Hard),
+            "heuristic" => Some(StrategyKind::Heuristic),
             "greedy" => Some(StrategyKind::Greedy),
             "override" => Some(StrategyKind::Override),
             "nopeek" => Some(StrategyKind::NoPeekExpect),
@@ -66,6 +68,21 @@ pub struct GameSpec {
     pub p1_ids: Vec<u32>,
     pub p0_strategy: StrategyKind,
     pub p1_strategy: StrategyKind,
+    /// Per-seat evaluator weights (default [`DEFAULT_WEIGHTS`]); lets a candidate
+    /// weight vector face a baseline opponent in the same game.
+    pub p0_weights: Weights,
+    pub p1_weights: Weights,
+    /// Per-seat search depth: 0 = the seat plays its `StrategyKind`; ≥1 = maximin
+    /// search at that depth over the seat's evaluator (ignores the strategy).
+    pub p0_search_depth: u32,
+    pub p1_search_depth: u32,
+    /// Peek-at-root: best-respond to the revealed opponent move at the root, maximin deeper.
+    pub p0_search_peek: bool,
+    pub p1_search_peek: bool,
+    /// Mixed play: sample from the root matrix game's Nash mix (regret matching) instead of
+    /// pure maximin — mind-games at yomi points, seeded (deterministic per game seed).
+    pub p0_search_mixed: bool,
+    pub p1_search_mixed: bool,
 }
 
 /// One turn's submitted moves (physical p0/p1; None = side didn't act).
@@ -85,7 +102,7 @@ pub struct GameOutcome {
 
 /// Per-seat mutable strategy state (`createState()` in the TS framework).
 enum StratState {
-    Hard(HardState),
+    Heuristic(HeuristicState),
     Greedy,
     Override(OverrideState),
     NoPeekExpect,
@@ -95,7 +112,7 @@ enum StratState {
 impl StratState {
     fn new(kind: StrategyKind) -> StratState {
         match kind {
-            StrategyKind::Hard => StratState::Hard(HardState::default()),
+            StrategyKind::Heuristic => StratState::Heuristic(HeuristicState::default()),
             StrategyKind::Greedy => StratState::Greedy,
             StrategyKind::Override => StratState::Override(OverrideState::default()),
             StrategyKind::NoPeekExpect => StratState::NoPeekExpect,
@@ -108,16 +125,50 @@ struct SeatState {
     seat: Seat,
     state: StratState,
     last_own_move: Mv,
+    weights: Weights,
+    search_depth: u32,
+    search_peek: bool,
+    search_mixed: bool,
+}
+
+/// The two seats for a spec — the one place per-seat weights get wired in.
+fn init_seats(spec: &GameSpec) -> [SeatState; 2] {
+    [
+        SeatState {
+            seat: Seat { cpu: 0 },
+            state: StratState::new(spec.p0_strategy),
+            last_own_move: Mv { move_index: 0, extra_data: 0 },
+            weights: spec.p0_weights,
+            search_depth: spec.p0_search_depth,
+            search_peek: spec.p0_search_peek,
+            search_mixed: spec.p0_search_mixed,
+        },
+        SeatState {
+            seat: Seat { cpu: 1 },
+            state: StratState::new(spec.p1_strategy),
+            last_own_move: Mv { move_index: 0, extra_data: 0 },
+            weights: spec.p1_weights,
+            search_depth: spec.p1_search_depth,
+            search_peek: spec.p1_search_peek,
+            search_mixed: spec.p1_search_mixed,
+        },
+    ]
 }
 
 fn decide_one(sim: &mut Sim, s: &mut SeatState, pm: Mv, rng: &mut JsRng) -> Mv {
     let view = capture_view(sim, s.seat, sim.battle_key);
+    let w = s.weights;
+    if s.search_depth >= 1 {
+        // Maximin search over the seat's evaluator (ignores the strategy). `pm` (the revealed
+        // opponent move) is used only when `search_peek` is set.
+        return search::decide(sim, s.seat, &view, pm, &w, s.search_depth, s.search_peek, s.search_mixed, rng);
+    }
     match &mut s.state {
-        StratState::Hard(st) => hard::decide(sim, s.seat, &view, pm, rng, st),
-        StratState::Greedy => greedy::decide(sim, s.seat, &view, pm, rng),
-        StratState::Override(st) => override_cpu::decide(sim, s.seat, &view, pm, rng, st),
-        StratState::NoPeekExpect => nopeek::decide_expect(sim, s.seat, &view, rng),
-        StratState::NoPeekWorst => nopeek::decide_worst(sim, s.seat, &view, rng),
+        StratState::Heuristic(st) => heuristic::decide(sim, s.seat, &view, pm, rng, st, &w),
+        StratState::Greedy => greedy::decide(sim, s.seat, &view, pm, rng, &w),
+        StratState::Override(st) => override_cpu::decide(sim, s.seat, &view, pm, rng, st, &w),
+        StratState::NoPeekExpect => nopeek::decide_expect(sim, s.seat, &view, rng, &w),
+        StratState::NoPeekWorst => nopeek::decide_worst(sim, s.seat, &view, rng, &w),
     }
 }
 
@@ -132,18 +183,7 @@ pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) 
         book,
     );
 
-    let mut seats = [
-        SeatState {
-            seat: Seat { cpu: 0 },
-            state: StratState::new(spec.p0_strategy),
-            last_own_move: Mv { move_index: 0, extra_data: 0 },
-        },
-        SeatState {
-            seat: Seat { cpu: 1 },
-            state: StratState::new(spec.p1_strategy),
-            last_own_move: Mv { move_index: 0, extra_data: 0 },
-        },
-    ];
+    let mut seats = init_seats(spec);
 
     let mut traces: Vec<TurnTrace> = Vec::new();
 
@@ -221,10 +261,7 @@ pub fn narrate_game(
     // Non-flipped observer seat: VOPP reads physical p0, VCPU reads physical p1.
     let obs = Seat { cpu: 1 };
 
-    let mut seats = [
-        SeatState { seat: Seat { cpu: 0 }, state: StratState::new(spec.p0_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-        SeatState { seat: Seat { cpu: 1 }, state: StratState::new(spec.p1_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-    ];
+    let mut seats = init_seats(spec);
 
     let team_str = |ids: &[u32]| ids.iter().map(|&id| name_mon(id)).collect::<Vec<_>>().join(", ");
     println!(
@@ -278,11 +315,13 @@ pub fn narrate_game(
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
             // Counterfactual: what would greedy pick in this exact state? A copied rng + restored
             // fork counter + greedy's own dispose_all leave the live decision fully unperturbed.
-            if !matches!(seats[1].state, StratState::Greedy) {
+            // Run it for a search seat too (the search overrides the strategy), so `⟂ greedy→`
+            // flags where the search diverges from the greedy baseline.
+            if seats[1].search_depth >= 1 || !matches!(seats[1].state, StratState::Greedy) {
                 let cf_view = capture_view(&mut sim, seats[1].seat, bk);
                 let mut cf_rng = rng; // JsRng: Copy — a throwaway snapshot of the live stream
                 let saved_fc = sim.fork_counter();
-                p1_greedy_cf = Some(greedy::decide(&mut sim, seats[1].seat, &cf_view, peek, &mut cf_rng));
+                p1_greedy_cf = Some(greedy::decide(&mut sim, seats[1].seat, &cf_view, peek, &mut cf_rng, &seats[1].weights));
                 sim.set_fork_counter(saved_fc);
             }
             let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
@@ -416,10 +455,7 @@ pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> Tra
         spec.p1_ids.clone(),
         book,
     );
-    let mut seats = [
-        SeatState { seat: Seat { cpu: 0 }, state: StratState::new(spec.p0_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-        SeatState { seat: Seat { cpu: 1 }, state: StratState::new(spec.p1_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-    ];
+    let mut seats = init_seats(spec);
     let obs = Seat { cpu: 1 };
     let mut rows: Vec<TurnRow> = Vec::new();
 
@@ -517,10 +553,7 @@ pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<Y
         spec.p1_ids.clone(),
         book,
     );
-    let mut seats = [
-        SeatState { seat: Seat { cpu: 0 }, state: StratState::new(spec.p0_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-        SeatState { seat: Seat { cpu: 1 }, state: StratState::new(spec.p1_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-    ];
+    let mut seats = init_seats(spec);
     let obs = Seat { cpu: 1 };
     let mut samples: Vec<YomiSample> = Vec::new();
 
@@ -543,7 +576,7 @@ pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<Y
                 let seat = seats[si].seat;
                 let view = capture_view(&mut sim, seat, bk);
                 let mut scratch = rng; // JsRng: Copy — leaves the live stream untouched
-                let mut fc = ForkCache::new();
+                let mut fc = ForkCache::new(DEFAULT_WEIGHTS);
                 let (_my, _opp, grid) = nopeek::action_grid(&mut sim, seat, &view, &mut scratch, &mut fc);
                 fc.dispose_all(&mut sim);
                 if let Some(e) = nopeek::yomi_tension(&grid) {
@@ -644,7 +677,7 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let view = capture_view(&mut sim, seat0, bk);
-            let (chosen, scored) = greedy::decide_scored(&mut sim, seat0, &view, last1, &mut rng);
+            let (chosen, scored) = greedy::decide_scored(&mut sim, seat0, &view, last1, &mut rng, &DEFAULT_WEIGHTS);
             if !scored.is_empty() {
                 let (lane, t1, t2, w) = summarize_scored(&scored);
                 samples.push(BreadthSample { mon_id: spec.p0_ids[p0a], chosen_move: chosen.move_index as i16, lane_scores: lane, top1: t1, top2: t2, worst: w });
@@ -655,7 +688,7 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
             let view = capture_view(&mut sim, seat1, bk);
-            let (chosen, scored) = greedy::decide_scored(&mut sim, seat1, &view, peek, &mut rng);
+            let (chosen, scored) = greedy::decide_scored(&mut sim, seat1, &view, peek, &mut rng, &DEFAULT_WEIGHTS);
             if !scored.is_empty() {
                 let (lane, t1, t2, w) = summarize_scored(&scored);
                 samples.push(BreadthSample { mon_id: spec.p1_ids[p1a], chosen_move: chosen.move_index as i16, lane_scores: lane, top1: t1, top2: t2, worst: w });
@@ -723,18 +756,7 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
         book,
     );
 
-    let mut seats = [
-        SeatState {
-            seat: Seat { cpu: 0 },
-            state: StratState::new(spec.p0_strategy),
-            last_own_move: Mv { move_index: 0, extra_data: 0 },
-        },
-        SeatState {
-            seat: Seat { cpu: 1 },
-            state: StratState::new(spec.p1_strategy),
-            last_own_move: Mv { move_index: 0, extra_data: 0 },
-        },
-    ];
+    let mut seats = init_seats(spec);
 
     // Non-flipped observer: active_mon_indices → (p0_active, p1_active);
     // ko_bitmap(VOPP) = physical p0, ko_bitmap(VCPU) = physical p1.
@@ -851,10 +873,7 @@ pub fn play_game_mock(
         spec.mons_per_team, spec.p0_team.clone(), spec.p1_team.clone(),
         spec.p0_ids.clone(), spec.p1_ids.clone(), book,
     );
-    let mut seats = [
-        SeatState { seat: Seat { cpu: 0 }, state: StratState::new(spec.p0_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-        SeatState { seat: Seat { cpu: 1 }, state: StratState::new(spec.p1_strategy), last_own_move: Mv { move_index: 0, extra_data: 0 } },
-    ];
+    let mut seats = init_seats(spec);
     let obs = Seat { cpu: 1 };
     let mut active_turns_p0 = vec![0u32; spec.p0_ids.len()];
     let mut active_turns_p1 = vec![0u32; spec.p1_ids.len()];

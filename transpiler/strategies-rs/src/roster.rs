@@ -175,6 +175,36 @@ pub fn input_type_of(addr: Address) -> InputType {
         .unwrap_or(InputType::None)
 }
 
+/// A move's client-facing target domain, from moves.csv's TargetSpec column (blank defaults to
+/// any-other-slot per the data contract). SelfOnly/NoTarget moves ignore the target nibble.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TargetSpec {
+    OpponentSlot,
+    SelfOnly,
+    NoTarget,
+    AnyOtherSlot,
+}
+
+fn parse_target_spec(s: &str) -> TargetSpec {
+    match s.trim() {
+        "opponent-slot" => TargetSpec::OpponentSlot,
+        "self-only" => TargetSpec::SelfOnly,
+        "none" => TargetSpec::NoTarget,
+        _ => TargetSpec::AnyOtherSlot,
+    }
+}
+
+static TARGET_SPEC_BY_ADDR: OnceLock<std::collections::HashMap<Address, TargetSpec>> = OnceLock::new();
+
+/// The target domain for a deployed move's address (defaults to AnyOtherSlot for unknown moves —
+/// callers that need nibble-free targeting should require SelfOnly/NoTarget explicitly).
+pub fn target_spec_of(addr: Address) -> TargetSpec {
+    TARGET_SPEC_BY_ADDR
+        .get()
+        .and_then(|m| m.get(&addr).copied())
+        .unwrap_or(TargetSpec::AnyOtherSlot)
+}
+
 // CSV field split with quoted-field support ("a, b" is one field, "" is an escaped quote) — moves.csv
 // has commas inside quoted description columns, so a naive split misaligns later columns.
 fn parse_csv_line(line: &str) -> Vec<String> {
@@ -215,8 +245,10 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
     let (mh, mrows) = read_csv(&drool.join("moves.csv"));
     let (m_name, m_mon, m_unlock) = (col(&mh, "Name"), col(&mh, "Mon"), col(&mh, "UnlockLevel"));
     let m_input = col(&mh, "InputType");
+    let m_tspec = col(&mh, "TargetSpec");
     let mut moves_by_mon: Vec<(String, Vec<(String, u8)>)> = Vec::new();
     let mut input_by_addr: std::collections::HashMap<Address, InputType> = std::collections::HashMap::new();
+    let mut tspec_by_addr: std::collections::HashMap<Address, TargetSpec> = std::collections::HashMap::new();
     for r in &mrows {
         let mon = &r[m_mon];
         let entry = match moves_by_mon.iter_mut().find(|(m, _)| m == mon) {
@@ -228,9 +260,11 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
         let contract = move_name_to_contract(&r[m_name]);
         if is_deployed(&contract) {
             input_by_addr.insert(addr_of(&contract), parse_input_type(&r[m_input]));
+            tspec_by_addr.insert(addr_of(&contract), parse_target_spec(&r[m_tspec]));
         }
     }
     let _ = INPUT_TYPE_BY_ADDR.set(input_by_addr); // first load wins; deterministic, so re-loads are no-ops
+    let _ = TARGET_SPEC_BY_ADDR.set(tspec_by_addr);
     let moves_for = |mon: &str| moves_by_mon.iter().find(|(m, _)| m == mon).map(|(_, v)| v.clone()).unwrap_or_default();
 
     // abilities.csv → per-mon ability name.

@@ -4,6 +4,7 @@
 
 use chomp_engine::Structs::Mon;
 use crate::doubles::{run_doubles_games, Difficulty, DoublesSpec};
+use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::game::{run_games, GameSpec, StrategyKind};
 use crate::roster::{self, Roster, RosterMon};
 
@@ -13,8 +14,8 @@ const MAX_TURNS: u32 = 300;
 /// [p1_strategy, p0_strategy] — matches workload.ts STRAT_PAIRS. The a-vs-b / b-vs-a entries are the
 /// seat swap that cancels the p1 move-peek when aggregated.
 pub const STRAT_PAIRS: &[(&str, &str)] = &[
-    ("hard", "hard"), ("hard", "greedy"), ("greedy", "hard"),
-    ("greedy", "greedy"), ("override", "greedy"), ("override", "hard"),
+    ("heuristic", "heuristic"), ("heuristic", "greedy"), ("greedy", "heuristic"),
+    ("greedy", "greedy"), ("override", "greedy"), ("override", "heuristic"),
 ];
 
 /// xorshift32 in [0,1) — a faithful port of workload.ts:makeWrand (the `>> 17` step is JS's signed
@@ -111,6 +112,14 @@ pub fn build_specs_with(
             p1_ids,
             p0_strategy: p0s,
             p1_strategy: p1s,
+            p0_weights: DEFAULT_WEIGHTS,
+            p1_weights: DEFAULT_WEIGHTS,
+            p0_search_depth: 0,
+            p1_search_depth: 0,
+            p0_search_peek: false,
+            p1_search_peek: false,
+            p0_search_mixed: false,
+            p1_search_mixed: false,
         });
         pair_of.push(pi);
     }
@@ -140,6 +149,50 @@ pub fn run_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u32, thre
         }
     }
     stats
+}
+
+/// The win share of a candidate weight vector — played on p1 by `p1_strat` at `p1_search_depth`
+/// (0 = 1-ply, ≥1 = maximin search) — against a baseline field (`p0_strat` scoring with the linear
+/// [`DEFAULT_WEIGHTS`]) over `games` matched drafts. Draws excluded from the denominator. Passing
+/// `DEFAULT_WEIGHTS` at depth 0 reproduces the corresponding STRAT_PAIRS row exactly.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
+pub fn eval_weights_winrate(
+    roster: &Roster,
+    cand: &Weights,
+    p1_search_depth: u32,
+    p1_search_peek: bool,
+    p1_strat: StrategyKind,
+    p0_strat: StrategyKind,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+) -> f64 {
+    let book = roster::address_book();
+    let (mut specs, _) = build_specs_with(roster, games, wseed, seed_base, &[(p1_strat, p0_strat)]);
+    for s in &mut specs {
+        s.p1_weights = *cand; // candidate under test
+        s.p1_search_depth = p1_search_depth; // 0 = 1-ply greedy; ≥1 = maximin search
+        s.p1_search_peek = p1_search_peek; // peek-at-root best-response
+        s.p0_weights = DEFAULT_WEIGHTS; // frozen baseline
+    }
+    let outcomes = run_games(&specs, &book, threads, false);
+
+    let (mut p1_wins, mut decisive) = (0u32, 0u32);
+    for o in &outcomes {
+        if let Ok(g) = o {
+            match g.winner_seat {
+                Some(1) => {
+                    p1_wins += 1;
+                    decisive += 1;
+                }
+                Some(0) => decisive += 1,
+                _ => {}
+            }
+        }
+    }
+    if decisive == 0 { 0.0 } else { p1_wins as f64 / decisive as f64 }
 }
 
 // ── Doubles arena (difficulty matchups) ──────────────────────────────────────
@@ -173,6 +226,45 @@ impl DiffPairStats {
 }
 
 /// Play `games` doubles matchups (DIFF_PAIRS rotation, two random team draws each) and tally per pair.
+/// Win share of the doubles maximin search (side 1, depth `depth`) vs the epsilon-greedy `Hard`
+/// pilot (side 0) over `games` matched drafts. The Phase-3 substrate exit check.
+pub fn doubles_search_winrate(roster: &Roster, depth: u32, games: usize, wseed: u32, seed_base: u32, threads: usize) -> f64 {
+    let book = roster::address_book();
+    let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
+    let mut rng = Wrand::new(wseed);
+    let mut specs = Vec::with_capacity(games);
+    for i in 0..games {
+        let p0_ids = draw_team(roster, &mut rng);
+        let p1_ids = draw_team(roster, &mut rng);
+        specs.push(DoublesSpec {
+            seed: seed_base.wrapping_add(i as u32),
+            max_turns: MAX_TURNS,
+            mons_per_team: TEAM_SIZE as u64,
+            p0_team: p0_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
+            p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
+            p0_ids,
+            p1_ids,
+            p0_difficulty: Difficulty::Hard, // side 0 = epsilon-greedy Hard baseline
+            p1_difficulty: Difficulty::Hard, // unused (side 1 searches)
+            p0_search_depth: 0,
+            p1_search_depth: depth,
+        });
+    }
+    let outcomes = run_doubles_games(&specs, &book, threads);
+    let (mut p1, mut decisive) = (0u32, 0u32);
+    for o in &outcomes {
+        match o.winner_side {
+            Some(1) => {
+                p1 += 1;
+                decisive += 1;
+            }
+            Some(0) => decisive += 1,
+            _ => {}
+        }
+    }
+    if decisive == 0 { 0.0 } else { p1 as f64 / decisive as f64 }
+}
+
 pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> Vec<DiffPairStats> {
     let book = roster::address_book();
     let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
@@ -195,6 +287,8 @@ pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u
             p1_ids,
             p0_difficulty: p0d,
             p1_difficulty: p1d,
+            p0_search_depth: 0,
+            p1_search_depth: 0,
         });
         pair_of.push(pi);
     }

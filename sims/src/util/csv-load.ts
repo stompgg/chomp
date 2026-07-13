@@ -31,6 +31,8 @@ export interface MoveRow {
   cls: MoveClass;
   description: string;
   inputType: string;
+  /** Client-facing target domain (kebab-case; blank = any-other-slot per the data contract). */
+  targetSpec: string;
 }
 
 function parseNumOrNull(s: string): number | null {
@@ -119,6 +121,7 @@ export function loadMoves(): MoveRow[] {
     cls: r[7] as MoveClass,
     description: r[8],
     inputType: r[10] ?? 'none',
+    targetSpec: r[13] || 'any-other-slot',
   }));
 }
 

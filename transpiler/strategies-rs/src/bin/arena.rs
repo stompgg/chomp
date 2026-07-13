@@ -5,9 +5,23 @@
 //! Data (drool/*.csv, src/mons/*.json) is read relative to CHOMP_ROOT (default: the repo root
 //! inferred from the crate location).
 
-use chomp_strategies::arena::{run_arena, run_doubles_arena};
+use chomp_strategies::arena::{doubles_search_winrate, eval_weights_winrate, run_arena, run_doubles_arena};
+use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
+use chomp_strategies::game::StrategyKind;
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
+
+/// Parse a comma-separated candidate weight vector (exactly `N_FEATURES` floats).
+fn parse_weights(s: &str) -> Weights {
+    let vals: Vec<f64> = s
+        .split(',')
+        .map(|x| x.trim().parse::<f64>().expect("--weights: each entry must be a float"))
+        .collect();
+    assert_eq!(vals.len(), N_FEATURES, "--weights: expected {N_FEATURES} comma-separated values");
+    let mut w = [0.0f64; N_FEATURES];
+    w.copy_from_slice(&vals);
+    w
+}
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
@@ -36,6 +50,40 @@ fn main() {
 
     let roster = load_roster(&chomp_root);
     eprintln!("arena[{mode}]: {} mons · {} games · {} threads · seed {:#x}", roster.mons.len(), games, threads, seed);
+
+    // A/B a candidate linear weight vector vs the frozen baseline. `--search-depth N` (≥1) makes p1
+    // play no-peek maximin search at depth N over the weights; 0 = 1-ply greedy over them.
+    let search_depth = arg_u(&args, "--search-depth", 0) as u32;
+    let peek = args.iter().any(|a| a == "--peek"); // peek-at-root best-response for the search seat
+
+    // Doubles maximin search vs the epsilon-greedy Hard baseline (Phase-3 substrate check).
+    if mode == "doubles" && search_depth >= 1 {
+        let started = std::time::Instant::now();
+        let wr = doubles_search_winrate(&roster, search_depth, games, seed, seed_base, threads);
+        let elapsed = started.elapsed().as_secs_f64();
+        println!("doubles d{search_depth}-search (side1)  vs  Hard (side0)  ·  {games} games  ·  win {:.1}%", wr * 100.0);
+        eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
+        return;
+    }
+
+    let cand: Option<(&str, Weights)> = if let Some(wstr) = arg(&args, "--weights") {
+        Some(("weights", parse_weights(&wstr)))
+    } else if search_depth >= 1 {
+        Some(("default", DEFAULT_WEIGHTS)) // validate the search itself
+    } else {
+        None
+    };
+    if let Some((label, cand)) = cand {
+        let started = std::time::Instant::now();
+        let wr = eval_weights_winrate(
+            &roster, &cand, search_depth, peek, StrategyKind::Greedy, StrategyKind::Greedy, games, seed, seed_base, threads,
+        );
+        let elapsed = started.elapsed().as_secs_f64();
+        let m = if search_depth >= 1 { format!("d{search_depth}-search") } else { "1-ply".to_string() };
+        println!("{label} ({m}) p1  vs  greedy(default) p0  ·  {games} games  ·  win {:.1}%", wr * 100.0);
+        eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
+        return;
+    }
 
     let started = std::time::Instant::now();
     println!("\n{:>9}  {:>9}  {:>6}  {:>8}  {:>12}", "p1", "p0", "games", "p1 win%", "w-l-draw");

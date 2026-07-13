@@ -448,7 +448,7 @@ export class HardCpu extends BaseCpuStrategy {
     const attackCtx =
       playerMoveIndex === SWITCH_MOVE_INDEX
         ? buildDamageCalcContext(e, bk, CPU_PLAYER_INDEX, activeMonIndex, OPP_PLAYER_INDEX, opponentMonIndex)
-        : e.getDamageCalcContext(bk, CPU_PLAYER_INDEX, OPP_PLAYER_INDEX);
+        : e.getDamageCalcContext(bk, CPU_PLAYER_INDEX, BigInt(activeMonIndex), OPP_PLAYER_INDEX, BigInt(view.oppActive));
     const staticDamages = computeMoveDamages(attackCtx, metas, moves);
     const saltSeed = BigInt(Number(e.getTurnIdForBattleState(bk)) + 1);
     const measured = forkMeasureMoveDamages(e, bk, playerMoveIndex, playerExtraData, moves, saltSeed);
@@ -482,7 +482,7 @@ export class HardCpu extends BaseCpuStrategy {
         oppMoveSlot = e.getMoveForMonForBattle(bk, OPP_PLAYER_INDEX, BigInt(opponentMonIndex), BigInt(playerMoveIndex));
         oppMoveClass = moveSlotLib.moveClass(oppMoveSlot!, e, bk) as MoveClass;
         if (oppMoveClass === MoveClass.Physical || oppMoveClass === MoveClass.Special) {
-          const ctxToUs = e.getDamageCalcContext(bk, OPP_PLAYER_INDEX, CPU_PLAYER_INDEX);
+          const ctxToUs = e.getDamageCalcContext(bk, OPP_PLAYER_INDEX, BigInt(opponentMonIndex), CPU_PLAYER_INDEX, BigInt(activeMonIndex));
           damageToUs = estimateDamage(e, bk, ctxToUs, oppMoveSlot!, oppMoveClass);
         }
       } catch {

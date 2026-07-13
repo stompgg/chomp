@@ -15,7 +15,8 @@
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::hard::{self, HardState};
+use crate::evaluator::Weights;
+use crate::heuristic::{self, HeuristicState};
 use crate::jsrng::JsRng;
 use crate::native::{fork_measure_incoming_damage, ForkCache};
 use crate::sim::Sim;
@@ -120,7 +121,7 @@ pub struct OverrideState {
     pub turn: u32,
     /// Fire counts keyed by (active mon slot, rule index) — per game.
     pub uses: HashMap<(usize, usize), u32>,
-    pub fallback: HardState,
+    pub fallback: HeuristicState,
 }
 
 fn build_ctx(
@@ -130,6 +131,7 @@ fn build_ctx(
     active_idx: usize,
     pm: Mv,
     turn: u32,
+    w: &Weights,
 ) -> OverrideCtx {
     let bk = view.bk;
     let cur_hp = mon_current_hp(sim, seat, bk, VCPU, active_idx);
@@ -142,7 +144,7 @@ fn build_ctx(
     // drops — bounded, and the TS reference leaks the same way.)
     let mut incoming_lethal = false;
     if pm.move_index < SWITCH_MOVE_INDEX {
-        let mut fc = ForkCache::new();
+        let mut fc = ForkCache::new(*w);
         incoming_lethal = catch_unwind(AssertUnwindSafe(|| {
             fork_measure_incoming_damage(sim, seat, &mut fc, pm.move_index, pm.extra_data, None, 0) >= cur_hp
         }))
@@ -169,6 +171,7 @@ pub fn decide(
     pm: Mv,
     rng: &mut JsRng,
     st: &mut OverrideState,
+    w: &Weights,
 ) -> Mv {
     let bk = view.bk;
     st.turn += 1;
@@ -193,7 +196,7 @@ pub fn decide(
             };
             if let Some(pred) = r.when {
                 if ctx.is_none() {
-                    ctx = Some(build_ctx(sim, seat, view, active_idx, pm, st.turn));
+                    ctx = Some(build_ctx(sim, seat, view, active_idx, pm, st.turn, w));
                 }
                 let mut c = ctx.unwrap();
                 c.uses = fired;
@@ -209,5 +212,5 @@ pub fn decide(
         }
     }
 
-    hard::decide(sim, seat, view, pm, rng, &mut st.fallback)
+    heuristic::decide(sim, seat, view, pm, rng, &mut st.fallback, w)
 }

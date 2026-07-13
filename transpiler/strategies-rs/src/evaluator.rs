@@ -1,5 +1,7 @@
-//! Static position evaluation — port of `sims/src/cpu/evaluator.ts` with
-//! the DEFAULT weights (the arena's `greedy`/`hard` both score with them).
+//! Static position evaluation — port of `sims/src/cpu/evaluator.ts`.
+//! The score is a linear function `φ(state)·w`: [`features`] reads the raw
+//! feature vector, [`dot`] weights it. [`DEFAULT_WEIGHTS`] reproduces the
+//! original hardcoded weights, so the default path is byte-identical.
 //! Float ops mirror the TS source order exactly: f64 products summed
 //! left-to-right, no reassociation, no FMA.
 
@@ -10,12 +12,29 @@ use crate::view::{
     VCPU, VOPP,
 };
 
-const W_HP: f64 = 1.0;
-const W_KO: f64 = 150.0;
-const W_MATCHUP: f64 = 0.5;
-const W_STAMINA: f64 = 2.0;
-const W_STAT_DELTA: f64 = 40.0;
-const W_SKIP: f64 = 30.0;
+/// Feature-vector lanes (indices into [`features`] / [`Weights`]). This is the
+/// BASELINE linear evaluator the `heuristic`/`greedy` pilots score with; the
+/// learned CPU uses the raw-obs MLP in `mlp.rs` instead.
+pub const F_HP: usize = 0;
+pub const F_KO: usize = 1;
+pub const F_MATCHUP: usize = 2;
+pub const F_STAMINA: usize = 3;
+pub const F_STAT_DELTA: usize = 4;
+pub const F_SKIP: usize = 5;
+pub const N_FEATURES: usize = 6;
+
+/// A weight per feature lane.
+pub type Weights = [f64; N_FEATURES];
+
+/// The original hardcoded baseline weights — the byte-identical default.
+pub const DEFAULT_WEIGHTS: Weights = [
+    1.0,   // F_HP
+    150.0, // F_KO
+    0.5,   // F_MATCHUP
+    2.0,   // F_STAMINA
+    40.0,  // F_STAT_DELTA
+    30.0,  // F_SKIP
+];
 
 /// hp% (0..100) for a slot — pure-view.
 fn hp_percent(mon: &MonSnap) -> f64 {
@@ -25,8 +44,9 @@ fn hp_percent(mon: &MonSnap) -> f64 {
     (mon.hp.max(0) * 100) as f64 / mon.max_hp as f64
 }
 
-/// Weighted sum of the six terms, CPU-perspective (higher = better).
-pub fn score_state(sim: &mut Sim, seat: Seat, view: &BattleView) -> f64 {
+/// Raw feature vector, CPU-perspective. The lanes are the six original
+/// terms (see the `F_*` indices); their computation order is unchanged.
+pub fn features(sim: &mut Sim, seat: Seat, view: &BattleView) -> [f64; N_FEATURES] {
     // 1. HP swing: Σ cpu hp% − Σ opp hp% over all roster slots.
     let mut cpu_hp_pct = 0.0f64;
     for m in &view.p1 {
@@ -61,10 +81,29 @@ pub fn score_state(sim: &mut Sim, seat: Seat, view: &BattleView) -> f64 {
         skip = ((opp_skips as i64) - (cpu_skips as i64)) as f64;
     }
 
-    W_HP * hp
-        + W_KO * ko
-        + W_MATCHUP * matchup
-        + W_STAMINA * stamina
-        + W_STAT_DELTA * stat_delta
-        + W_SKIP * skip
+    let mut f = [0.0f64; N_FEATURES];
+    f[F_HP] = hp;
+    f[F_KO] = ko;
+    f[F_MATCHUP] = matchup;
+    f[F_STAMINA] = stamina;
+    f[F_STAT_DELTA] = stat_delta;
+    f[F_SKIP] = skip;
+    f
+}
+
+/// φ·w, summed left-to-right (accumulator seeded with the first term, not
+/// 0.0) so the default weights reproduce the original expression bit-for-bit.
+pub fn dot(f: &[f64; N_FEATURES], w: &Weights) -> f64 {
+    let mut acc = w[0] * f[0];
+    let mut i = 1;
+    while i < N_FEATURES {
+        acc += w[i] * f[i];
+        i += 1;
+    }
+    acc
+}
+
+/// Weighted position score, CPU-perspective (higher = better).
+pub fn score_state(sim: &mut Sim, seat: Seat, view: &BattleView, w: &Weights) -> f64 {
+    dot(&features(sim, seat, view), w)
 }
