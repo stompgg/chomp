@@ -72,7 +72,9 @@ def create_morph_animation(start_frame: Image.Image, is_back: bool = False) -> l
     """Create morphing animation from sprite to diamond shape."""
     w, h = start_frame.size
     cx, cy = (w // 4, int(h * 0.65)) if is_back else (w // 2, h // 2)
-    dw, dh = 4.0, 7.0  # half diamond dimensions
+    # Half diamond dimensions. Back-facing sprites get a larger diamond to
+    # read better with the added perspective offset.
+    dw, dh = (8, 14) if is_back else (4.0, 7.0)
 
     # Get white pixel positions
     white_pixels = [(x, y) for y in range(h) for x in range(w) if start_frame.getpixel((x, y))[3] > 0]
@@ -398,7 +400,7 @@ def compact_json(obj, indent=2):
             return json.dumps(v)  # All arrays inline, no indentation
         else:
             return json.dumps(v)
-    
+
     return format_value(obj, 0)
 
 def run(target_dir: str = None) -> bool:
