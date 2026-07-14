@@ -44,17 +44,22 @@ def _format_percent(value: float) -> str:
     return f"{rounded:.1f}%"
 
 
-def substitute_description(description: str, constants: Dict[str, int]) -> str:
+def substitute_description(
+    description: str, constants: Dict[str, int], allow_unknown: bool = False
+) -> str:
     """Replace {NAME} / {NAME:frac} tokens with percentage strings.
 
     A token is a fraction (converted 100/value) when it carries the :frac modifier or its
     name ends in _DENOM; otherwise the constant is treated as an already-percent value.
+    Unknown tokens pass through raw; with allow_unknown they do so silently — a battle
+    template intentionally leaves live tokens for MoveDynamic resolvers to fill at runtime.
     """
 
     def repl(m: re.Match) -> str:
         name, modifier = m.group(1), m.group(2)
         if name not in constants:
-            print(f"⚠ description token {{{name}}} has no matching Constants entry — left raw")
+            if not allow_unknown:
+                print(f"⚠ description token {{{name}}} has no matching Constants entry — left raw")
             return m.group(0)
         value = constants[name]
         is_frac = modifier == "frac" or name.endswith("_DENOM")
@@ -323,6 +328,7 @@ def read_moves_data(
         move_key = to_spritesheet_key(move_name)
         all_move_keys.add(move_key)
 
+        constants = parse_constants(row.get("Constants", ""))
         move_data: Dict[str, Any] = {
             "address": f"Address.{to_address_key(move_name)}",
             "name": move_name,
@@ -332,13 +338,18 @@ def read_moves_data(
             "priority": parse_int_or_unknown(row["Priority"]),
             "type": row["Type"],
             "class": row["Class"],
-            "description": substitute_description(
-                row["DevDescription"], parse_constants(row.get("Constants", ""))
-            ),
+            "description": substitute_description(row["DevDescription"], constants),
             "inputType": row.get("InputType", "none").strip() or "none",
             "targetSpec": (row.get("TargetSpec") or "").strip() or "any-other-slot",
             "unlockLevel": int((row.get("UnlockLevel") or "0").strip() or "0"),
         }
+        # Battle-context template: static tokens pre-baked, live tokens left raw for a
+        # MoveDynamic resolver to fill at render time. Only emitted when authored.
+        battle_template = substitute_description(
+            row.get("BattleDescription", ""), constants, allow_unknown=True
+        )
+        if battle_template:
+            move_data["descriptionTemplate"] = battle_template
         # Inline (JSON) moves carry an effect-address-independent identity (the upper 96 bits of the
         # packed move word) so the frontend can map a frozen on-chain move word back to its catalog
         # entry. Deployed moves are matched by `address`, so they need no inlineKey.
@@ -515,6 +526,9 @@ export type Move = {{
   readonly type: Type;
   readonly class: MoveClass;
   readonly description: string;
+  // Battle-context description with live {{token}}s left raw for MoveDynamic resolvers to fill
+  // (static tokens are pre-baked). Absent when the move has no dynamic display value.
+  readonly descriptionTemplate?: string;
   readonly inputType: MoveInputType;
   readonly targetSpec: MoveTargetSpec;
   // Level a player's mon must reach before this move can be brought into battle. 0 = always
