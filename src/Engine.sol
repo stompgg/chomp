@@ -1366,13 +1366,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // Stamina regen decision is encapsulated in _inlineStaminaRegen, which reads the move FRESH
             // — required because effects (SleepStatus) can rewrite the move to a resting NO_OP mid-turn.
             if (inlineStaminaRegen) {
-                _inlineStaminaRegen(
+                playerSwitchForTurnFlag = _inlineStaminaRegen(
                     config,
                     EffectStep.AfterMove,
                     priorityPlayerIndex,
                     _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex),
                     0,
-                    0
+                    0,
+                    playerSwitchForTurnFlag
                 );
             }
 
@@ -1433,13 +1434,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
 
             if (inlineStaminaRegen) {
-                _inlineStaminaRegen(
+                playerSwitchForTurnFlag = _inlineStaminaRegen(
                     config,
                     EffectStep.AfterMove,
                     otherPlayerIndex,
                     _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex),
                     0,
-                    0
+                    0,
+                    playerSwitchForTurnFlag
                 );
             }
 
@@ -1491,7 +1493,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (inlineStaminaRegen) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-                _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon);
+                playerSwitchForTurnFlag =
+                    _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, playerSwitchForTurnFlag);
             }
         }
 
@@ -4482,11 +4485,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 playerIndex,
         uint256 monIndex,
         uint256 p0ActiveMonIndex,
-        uint256 p1ActiveMonIndex
-    ) private {
+        uint256 p1ActiveMonIndex,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
         if (round == EffectStep.RoundEnd) {
             if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) {
-                return;
+                return playerSwitchForTurnFlag;
             }
             _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
             _inlineRegenStaminaForMon(config, 1, p1ActiveMonIndex);
@@ -4494,9 +4499,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // Fetch packedMoveIndex via helper - resolves to transient during executeWithMoves, storage otherwise.
             uint8 packedMoveIndex = _getCurrentTurnMove(config, playerIndex).packedMoveIndex;
             if (!StaminaRegenLogic._isRestingMove(packedMoveIndex)) {
-                return;
+                return playerSwitchForTurnFlag;
             }
             _inlineRegenStaminaForMon(config, playerIndex, monIndex);
+        }
+
+        // A regen tick fires OnUpdateMonState, which an effect (e.g. Somniphobia's nightmare) can
+        // turn into dealDamage and KO the mon that just gained stamina. Mirror the koOccurredFlag
+        // handling in _handleMove / _handleEffects: without it, a KO landing on the round-end regen
+        // (the last thing in the turn) is never observed, so playerSwitchForTurnFlag stays 2 and the
+        // engine wrongly runs the next turn as a normal both-sides-act turn instead of a forced switch.
+        if (koOccurredFlag != 0) {
+            koOccurredFlag = 0;
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battleData[battleKeyForWrite], 2);
         }
     }
 
