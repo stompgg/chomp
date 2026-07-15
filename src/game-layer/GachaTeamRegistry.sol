@@ -156,6 +156,9 @@ contract GachaTeamRegistry is
         PREVIOUS_REGISTRY = _PREVIOUS_REGISTRY;
         _initializeOwner(msg.sender);
         _seedInitialQuests();
+
+        // Set deployer to be assigner
+        isAssigner[msg.sender] = true;
     }
 
     /// @dev Seeds the day-rotated quest pool. Pool size and content fix the schedule, since
@@ -206,11 +209,7 @@ contract GachaTeamRegistry is
     // =====================================================================
 
     /// @notice Admin: write `monIndices` into `user`'s `slot` and apply parallel
-    /// `facetIds` for those mons in one tx. The slot is marked live if it wasn't
-    /// already (so fresh-slot allocation and overwrite share one path). Facet writes
-    /// bypass the ownership + unlock checks in `assignFacets` and also mark each
-    /// non-zero facet bit as unlocked, so the user's own `assignFacets` won't revert
-    /// `FacetNotUnlocked` later. Does NOT add the mons to `monsOwned` — the user
+    /// `facetIds` for those mons in one tx. Does NOT add the mons to `monsOwned` — the user
     /// still can't swap mons they don't own via `updateTeam`.
     function setTeamForUser(address user, uint256 slot, uint256[] memory monIndices, uint8[] memory facetIds)
         external

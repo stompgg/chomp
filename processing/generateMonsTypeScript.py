@@ -132,6 +132,8 @@ MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
 # same kind of override as MOVE_SPRITE_VARIANTS, keyed by exact move name.
 MOVE_OVERLAY_PLACEMENT: Dict[str, str] = {
     "Gachachacha": "canvas-center",
+    "Loop": "self",
+    "Triple Think": "self",
 }
 
 
