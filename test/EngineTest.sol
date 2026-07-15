@@ -36,6 +36,7 @@ import {IEngineHook} from "../src/IEngineHook.sol";
 import {OneTurnStatBoost} from "./mocks/OneTurnStatBoost.sol";
 import {SingleInstanceEffect} from "./mocks/SingleInstanceEffect.sol";
 import {SkipTurnMove} from "./mocks/SkipTurnMove.sol";
+import {StaminaGainKOEffect} from "./mocks/StaminaGainKOEffect.sol";
 import {TempStatBoostEffect} from "./mocks/TempStatBoostEffect.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
@@ -2731,6 +2732,79 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
         (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));
+    }
+
+    // Regression: a KO delivered by an effect's OnUpdateMonState -> dealDamage hook, fired off the
+    // inline round-end stamina regen (INLINE_STAMINA_REGEN_RULESET is production's default path), must
+    // still set playerSwitchForTurnFlag for the next turn. _handleMove / _handleEffects recompute the
+    // flag via _checkForGameOverOrKO whenever koOccurredFlag is set; _inlineStaminaRegen must do the
+    // same, because a regen tick's OnUpdateMonState listener can reach dealDamage. When the killing
+    // tick is the round-end regen -- the last thing in the turn -- nothing downstream observes the KO,
+    // so pre-fix the flag stayed at 2 and the engine wrongly ran the next turn as a normal two-sided turn.
+    function test_inlineRegenKOSetsForcedSwitchFlag() public {
+        // Bob's mon carries a KO-on-stamina-gain effect via its ability; the effect's OnUpdateMonState
+        // hook deals lethal damage on any positive stamina gain -- a mon-agnostic stand-in for an
+        // effect (e.g. a nightmare tick) that reaches dealDamage from a regen.
+        StaminaGainKOEffect koOnStaminaGain = new StaminaGainKOEffect();
+        IAbility koAbility = new EffectAbility(koOnStaminaGain);
+
+        // Non-resting stamina burn: costs stamina (so a round-end regen has something to top up) but
+        // deals no damage, so the killing blow is unambiguously the regen-triggered effect.
+        IMoveSet staminaBurn = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 0, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: 0})
+        );
+        uint256[] memory burnMoves = new uint256[](1);
+        burnMoves[0] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = burnMoves;
+        aliceMon.stats.hp = 100;
+        aliceMon.stats.speed = 2; // faster, so move order is deterministic
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = burnMoves;
+        bobMon.ability = uint160(address(koAbility));
+        bobMon.stats.hp = 100;
+        bobMon.stats.speed = 1;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        // Bob gets a second mon so the KO forces a switch rather than ending the game.
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(
+            engine,
+            defaultOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
+            address(commitManager)
+        );
+
+        // Both select mon 0; Bob's ability registers the KO-on-stamina-gain effect on switch-in.
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+
+        // Alice rests; Bob burns stamina (does NOT rest, so its only regen is the round-end top-up --
+        // the LAST inline-regen call in the turn). That regen fires the KO effect, the killing blow: a
+        // KO that originates inside _inlineStaminaRegen with nothing running afterwards to notice it.
+        _commitRevealExecuteForAliceAndBob(battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut),
+            1,
+            "Bob's active mon should be KOed by the regen-triggered effect"
+        );
+
+        // Bob's active mon just died inside _inlineStaminaRegen, so the next turn must be a one-sided
+        // forced switch for Bob (playerSwitchForTurnFlag == 1). Pre-fix the flag was left at 2.
+        (, BattleData memory state) = engine.getBattle(battleKey);
+        assertEq(state.playerSwitchForTurnFlag, 1, "Bob should be forced to switch after the regen KO");
     }
 
     function test_maxBattleDuration() public {
