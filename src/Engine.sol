@@ -422,6 +422,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         config.koBitmaps = 0;
         config.globalKVCount = 0;
+        config.p0BoostCounts = 0;
         config.teamSizes = newTeamSizes;
         config.hasInlineStaminaRegen = hasInlineRegen;
         config.globalEffectsLength = newGlobalEffectsLength;
@@ -437,6 +438,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.engineHookStepsUnion = hookStepsUnion;
         config.battleMode = battleMode;
         config.monStatusLanes = 0;
+        config.p1BoostCounts = 0;
 
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
             for (uint256 i = 0; i < numHooks;) {
@@ -2204,31 +2206,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             revert NoWriteAllowed();
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
-        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
-
-        uint256 removeCount;
-        for (uint256 i; i < monEffectCount; ++i) {
-            EffectInstance storage eff = effects[baseSlot + i];
-            if (address(eff.effect) == STAT_BOOST_ADDRESS) {
-                eff.effect = IEffect(TOMBSTONE_ADDRESS);
-                unchecked {
-                    ++removeCount;
-                }
-            }
-        }
-        if (removeCount == 0) {
+        if (_boostCountOf(config, targetIndex, monIndex) == 0) {
             return;
         }
-        _compactTrailingTombstones(config, targetIndex, monIndex);
+        _setBoostCountOf(config, targetIndex, monIndex, 0);
+        config.statBoostAcc[(targetIndex << 3) | monIndex] = 0; // also clears a DISABLED flag
 
-        // Reset to base by applying with empty aggregation.
+        // Telescope back to base stats.
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
-        uint32[5] memory numBoostsPerStat;
-        uint256[5] memory accumulatedNumeratorPerStat;
-        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyBoostedStats(config, targetIndex, monIndex, baseStats, baseStats);
     }
 
     function _getStatBoostBaseStats(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -2244,6 +2230,37 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         stats[4] = monStats.speed;
     }
 
+    // Boost-source store: one packed word per source at slot monIndex * 16 + i (i < the mon's
+    // 4-bit count nibble). 15 sources/mon is far above the plausible distinct-caller ceiling.
+
+    function _boostWordsOf(BattleConfig storage config, uint256 targetIndex)
+        private
+        view
+        returns (mapping(uint256 => bytes32) storage)
+    {
+        return targetIndex == 0 ? config.p0BoostWords : config.p1BoostWords;
+    }
+
+    function _boostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
+        private
+        view
+        returns (uint256)
+    {
+        uint32 packed = targetIndex == 0 ? config.p0BoostCounts : config.p1BoostCounts;
+        return (packed >> (monIndex * 4)) & 0xF;
+    }
+
+    function _setBoostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, uint256 newCount)
+        private
+    {
+        uint256 shift = monIndex * 4;
+        if (targetIndex == 0) {
+            config.p0BoostCounts = uint32((config.p0BoostCounts & ~(uint256(0xF) << shift)) | (newCount << shift));
+        } else {
+            config.p1BoostCounts = uint32((config.p1BoostCounts & ~(uint256(0xF) << shift)) | (newCount << shift));
+        }
+    }
+
     function _addStatBoostWithKey(
         uint256 targetIndex,
         uint256 monIndex,
@@ -2253,158 +2270,127 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 count = _boostCountOf(config, targetIndex, monIndex);
+        uint256 baseSlot = monIndex * 16;
 
-        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
-        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
-
+        // Find an existing same-key/same-permanence source (header-only reads — no lane unpack).
         bool found;
-        uint256 foundSlot;
-        bytes32 existingData;
-        uint256 tombstoneSlot = type(uint256).max;
-        uint32[5] memory numBoostsPerStat;
-        uint256[5] memory accumulatedNumeratorPerStat;
-
-        // Single pass: find the matching key, aggregate every OTHER boost source on the mon, and
-        // remember the first tombstoned slot — a fresh source reuses it instead of appending, so
-        // temp-boost churn (Overclock re-applying every switch-in) stops growing the list.
-        for (uint256 i; i < monEffectCount; ++i) {
-            uint256 slotIndex = baseSlot + i;
-            EffectInstance storage eff = effects[slotIndex];
-            address effAddr = address(eff.effect);
-            if (effAddr == TOMBSTONE_ADDRESS && tombstoneSlot == type(uint256).max) {
-                tombstoneSlot = slotIndex;
-                continue;
-            }
-            if (effAddr != STAT_BOOST_ADDRESS) {
-                continue;
-            }
-            bytes32 data = eff.data;
-            (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
-                StatBoostLib.unpackBoostData(data);
-            if (existingKey == key && effIsPerm == isPerm) {
+        uint256 foundIdx;
+        bytes32 oldWord;
+        for (uint256 i; i < count; ++i) {
+            bytes32 w = words[baseSlot + i];
+            (bool wPerm, uint168 wKey) = StatBoostLib.unpackBoostHeader(w);
+            if (wKey == key && wPerm == isPerm) {
                 found = true;
-                foundSlot = slotIndex;
-                existingData = data;
-                continue; // excluded from aggregation; merged version is added below
+                foundIdx = i;
+                oldWord = w;
+                break;
             }
-            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
         }
 
-        // Compute the new/merged source and add its contribution. Fresh sources accumulate
-        // straight from the caller's entries (no pack -> unpack round-trip).
-        bytes32 newData;
+        bytes32 newWord;
         if (found) {
-            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) = StatBoostLib.unpackBoostData(existingData);
+            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) = StatBoostLib.unpackBoostData(oldWord);
             (uint8[5] memory fp, uint8[5] memory fc, bool[5] memory fm) =
                 StatBoostLib.mergeExistingAndNewBoosts(ep, ec, em, statBoostsToApply);
-            newData = StatBoostLib.packBoostDataWithArrays(key, isPerm, fp, fc, fm);
-            StatBoostLib.accumulateBoosts(baseStats, fp, fc, fm, numBoostsPerStat, accumulatedNumeratorPerStat);
+            newWord = StatBoostLib.packBoostDataWithArrays(key, isPerm, fp, fc, fm);
+            words[baseSlot + foundIdx] = newWord;
         } else {
-            newData = StatBoostLib.packBoostData(key, isPerm, statBoostsToApply);
-            StatBoostLib.accumulateBoostsToApply(
-                baseStats, statBoostsToApply, numBoostsPerStat, accumulatedNumeratorPerStat
-            );
+            if (count == 15) {
+                revert InvalidBattleConfig();
+            }
+            newWord = StatBoostLib.packBoostData(key, isPerm, statBoostsToApply);
+            words[baseSlot + count] = newWord;
+            _setBoostCountOf(config, targetIndex, monIndex, count + 1);
         }
 
-        // Persist the source entry.
-        if (found) {
-            effects[foundSlot].data = newData;
+        // Accumulator update: O(changed lanes), replacing the legacy all-source rescan. A merge
+        // divides the old word out and multiplies the merged word in (always correct, order-free).
+        // count-before == 0 initializes — stale recycled-key accumulators are never read.
+        uint256 lane = (targetIndex << 3) | monIndex;
+        uint256 acc = count == 0 ? 0 : config.statBoostAcc[lane];
+        if (acc & StatBoostLib.ACC_DISABLED_BIT == 0) {
+            bool ok = true;
+            if (found) {
+                (acc, ok) = StatBoostLib.applyWordToAcc(acc, oldWord, baseStats, false);
+            }
+            if (ok) {
+                (acc, ok) = StatBoostLib.applyWordToAcc(acc, newWord, baseStats, true);
+            }
+            if (!ok) {
+                acc = StatBoostLib.ACC_DISABLED_BIT; // overflow: recompute-from-sources from here on
+            }
+            config.statBoostAcc[lane] = acc;
         } else {
-            _addStatBoostEffectSlot(
-                config, targetIndex, monIndex, packedCounts, effects, monEffectCount, newData, tombstoneSlot
-            );
+            acc = StatBoostLib.ACC_DISABLED_BIT;
         }
 
-        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        _applyStatBoostAggregates(config, targetIndex, monIndex, baseStats, acc);
     }
 
     function _removeStatBoostWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, bool isPerm) private {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 count = _boostCountOf(config, targetIndex, monIndex);
+        uint256 baseSlot = monIndex * 16;
 
-        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
-        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
-
-        bool found;
-        uint256 foundSlot;
-        uint32[5] memory numBoostsPerStat;
-        uint256[5] memory accumulatedNumeratorPerStat;
-
-        for (uint256 i; i < monEffectCount; ++i) {
-            uint256 slotIndex = baseSlot + i;
-            EffectInstance storage eff = effects[slotIndex];
-            if (address(eff.effect) != STAT_BOOST_ADDRESS) {
+        for (uint256 i; i < count; ++i) {
+            bytes32 w = words[baseSlot + i];
+            (bool wPerm, uint168 wKey) = StatBoostLib.unpackBoostHeader(w);
+            if (wKey != key || wPerm != isPerm) {
                 continue;
             }
-            (bool effIsPerm, uint168 existingKey, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
-                StatBoostLib.unpackBoostData(eff.data);
-            if (existingKey == key && effIsPerm == isPerm) {
-                found = true;
-                foundSlot = slotIndex;
-                continue; // removed: excluded from aggregation
+            // Swap-remove (aggregation is commutative; source order is meaningless).
+            uint256 last = count - 1;
+            if (i != last) {
+                words[baseSlot + i] = words[baseSlot + last];
             }
-            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
-        }
+            _setBoostCountOf(config, targetIndex, monIndex, last);
 
-        if (!found) {
+            uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+            uint256 lane = (targetIndex << 3) | monIndex;
+            uint256 acc = config.statBoostAcc[lane];
+            if (acc & StatBoostLib.ACC_DISABLED_BIT == 0) {
+                bool ok;
+                (acc, ok) = StatBoostLib.applyWordToAcc(acc, w, baseStats, false);
+                if (!ok) {
+                    acc = StatBoostLib.ACC_DISABLED_BIT;
+                }
+                config.statBoostAcc[lane] = acc;
+            }
+            _applyStatBoostAggregates(config, targetIndex, monIndex, baseStats, acc);
             return;
         }
-        effects[foundSlot].effect = IEffect(TOMBSTONE_ADDRESS);
-        _compactTrailingTombstones(config, targetIndex, monIndex);
-        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
     }
 
-    /// @dev Write a fresh stat-boost source into the next free per-mon effect slot. Mirrors the
-    ///      player-effect storage block in _addEffectInternal (count bump + dirty bit) but writes
-    ///      the sentinel address and fixed steps bitmap directly — no external IEffect calls.
-    function _addStatBoostEffectSlot(
+    /// @dev Telescope from either the fast-path accumulator or (when DISABLED) a full
+    ///      recompute over the mon's source words — the recompute IS the legacy aggregation,
+    ///      so overflow behavior degrades to exactly the old math.
+    function _applyStatBoostAggregates(
         BattleConfig storage config,
         uint256 targetIndex,
         uint256 monIndex,
-        uint96 packedCounts,
-        mapping(uint256 => EffectInstance) storage effects,
-        uint256 monEffectCount,
-        bytes32 data,
-        uint256 tombstoneSlot
+        uint32[5] memory baseStats,
+        uint256 acc
     ) private {
-        // Reuse a tombstoned slot when the caller's scan found one: the effect word goes
-        // TOMBSTONE -> STAT_BOOST (nz->nz, 2.9k instead of a fresh 20k on virgin keys), the
-        // count is NOT bumped (the slot is already inside it — no packed-count SSTORE, no dirty
-        // TSTORE), and the list stops growing monotonically. Position shift is safe: boost
-        // entries only act at OnMonSwitchOut and aggregation order is commutative; a boost
-        // landing in an already-passed slot mid-_runEffects-iteration is skipped for that pass
-        // (only reachable via OnMonSwitchOut listeners adding boosts, and harmless then).
-        if (tombstoneSlot != type(uint256).max) {
-            EffectInstance storage reused = effects[tombstoneSlot];
-            reused.effect = IEffect(STAT_BOOST_ADDRESS);
-            reused.stepsBitmap = STAT_BOOST_STEPS;
-            reused.data = data;
-            // Same playerEffectStepsUnion invariant as the append path below.
-            config.playerEffectStepsUnion |= STAT_BOOST_STEPS;
-            return;
-        }
-        uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
-        EffectInstance storage effectSlot = effects[slotIndex];
-        effectSlot.effect = IEffect(STAT_BOOST_ADDRESS);
-        effectSlot.stepsBitmap = STAT_BOOST_STEPS;
-        effectSlot.data = data;
-        // Upholds the playerEffectStepsUnion invariant documented in _addEffectInternal: this is the
-        // one player-effect add-path that bypasses _addEffectInternal, so it must fold its steps in too.
-        // Without this the union under-reports OnMonSwitchOut and _handleSwitch would skip dropping
-        // temp boosts on switch-out.
-        config.playerEffectStepsUnion |= STAT_BOOST_STEPS;
-        uint96 newCounts = _setMonEffectCount(packedCounts, monIndex, monEffectCount + 1);
-        if (targetIndex == 0) {
-            config.packedP0EffectsCount = newCounts;
-            effectsDirtyBitmap |= (1 << (1 + monIndex));
+        uint32[5] memory newBoostedStats;
+        if (acc & StatBoostLib.ACC_DISABLED_BIT != 0) {
+            mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+            uint256 count = _boostCountOf(config, targetIndex, monIndex);
+            uint256 baseSlot = monIndex * 16;
+            uint32[5] memory numBoostsPerStat;
+            uint256[5] memory accumulatedNumeratorPerStat;
+            for (uint256 i; i < count; ++i) {
+                (,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
+                    StatBoostLib.unpackBoostData(words[baseSlot + i]);
+                StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
+            }
+            newBoostedStats = StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
         } else {
-            config.packedP1EffectsCount = newCounts;
-            effectsDirtyBitmap |= (1 << (9 + monIndex));
+            newBoostedStats = StatBoostLib.finalizeAccStats(acc, baseStats);
         }
+        _applyBoostedStats(config, targetIndex, monIndex, baseStats, newBoostedStats);
     }
 
     /// @dev Re-apply a mon's aggregated stat boosts by telescoping its monState deltas. The
@@ -2413,17 +2399,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      base + currentDelta. We compute the new boosted stat and feed the difference through
     ///      _updateMonStateInternal, which fires OnUpdateMonState for listeners exactly as before.
     ///      No globalKV snapshot is kept — being inside the Engine we read the delta back directly.
-    function _applyStatBoosts(
+    function _applyBoostedStats(
         BattleConfig storage config,
         uint256 targetIndex,
         uint256 monIndex,
         uint32[5] memory baseStats,
-        uint32[5] memory numBoostsPerStat,
-        uint256[5] memory accumulatedNumeratorPerStat
+        uint32[5] memory newBoostedStats
     ) private {
-        uint32[5] memory newBoostedStats = StatBoostLib.finalizeBoostedStats(
-            baseStats, numBoostsPerStat, accumulatedNumeratorPerStat
-        );
         MonState storage st = _getMonState(config, targetIndex, monIndex);
 
         // Listener gate hoisted ONCE per apply (was paid inside _updateMonStateInternal per stat).
@@ -2482,36 +2464,45 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return d == CLEARED_MON_STATE_SENTINEL ? int32(0) : d;
     }
 
-    /// @dev Switch-out handling for stat-boost entries: in a single pass drop EVERY temp source on
-    ///      the mon (they all expire on switch-out) and re-aggregate the surviving permanent sources,
-    ///      applying the result once. _runEffects only routes here when it hits a temp entry; that
-    ///      first hit does all the work and tombstones its siblings, so the remaining temp slots are
-    ///      skipped by the loop's tombstone guard (collapses the legacy per-instance O(n^2) recompute).
+    /// @dev Switch-out expiry: drop EVERY temp source on the mon in one pass (swap-compacting the
+    ///      store) and apply the surviving aggregate once. Called directly from the switch path —
+    ///      boost sources no longer live in the effect list, so no OnMonSwitchOut pass is involved.
     function _inlineStatBoostSwitchOut(BattleConfig storage config, uint256 targetIndex, uint256 monIndex) private {
-        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
-        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
-        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
-        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 count = _boostCountOf(config, targetIndex, monIndex);
+        uint256 baseSlot = monIndex * 16;
         uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
-        uint32[5] memory numBoostsPerStat;
-        uint256[5] memory accumulatedNumeratorPerStat;
 
-        for (uint256 i; i < monEffectCount; ++i) {
-            EffectInstance storage eff = effects[baseSlot + i];
-            if (address(eff.effect) != STAT_BOOST_ADDRESS) {
+        uint256 lane = (targetIndex << 3) | monIndex;
+        uint256 acc = config.statBoostAcc[lane];
+        bool live = acc & StatBoostLib.ACC_DISABLED_BIT == 0;
+        uint256 kept = count;
+        uint256 i;
+        while (i < kept) {
+            bytes32 w = words[baseSlot + i];
+            if (StatBoostLib.isPerm(w)) {
+                ++i;
                 continue;
             }
-            (bool effIsPerm,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
-                StatBoostLib.unpackBoostData(eff.data);
-            if (!effIsPerm) {
-                eff.effect = IEffect(TOMBSTONE_ADDRESS); // temp sources all expire on switch-out
-                continue;
+            if (live) {
+                bool ok;
+                (acc, ok) = StatBoostLib.applyWordToAcc(acc, w, baseStats, false);
+                if (!ok) {
+                    acc = StatBoostLib.ACC_DISABLED_BIT;
+                    live = false;
+                }
             }
-            StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
+            --kept;
+            if (i != kept) {
+                words[baseSlot + i] = words[baseSlot + kept];
+            }
         }
-
-        _compactTrailingTombstones(config, targetIndex, monIndex);
-        _applyStatBoosts(config, targetIndex, monIndex, baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+        if (kept == count) {
+            return; // nothing expired: no writes, no telescope
+        }
+        _setBoostCountOf(config, targetIndex, monIndex, kept);
+        config.statBoostAcc[lane] = acc;
+        _applyStatBoostAggregates(config, targetIndex, monIndex, baseStats, acc);
     }
 
     function setGlobalKV(uint64 key, uint192 value) external {
@@ -3121,6 +3112,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", outCount);
             }
 
+            // Temp stat-boost expiry, called directly (boost sources live in their own store, not
+            // the effect list — mons with only boosts skip the whole OnMonSwitchOut pass above).
+            // After the pass so switch-out effects observe the outgoing mon's boosted stats.
+            if (_boostCountOf(config, playerIndex, currentActiveMonIndex) != 0) {
+                _inlineStatBoostSwitchOut(config, playerIndex, currentActiveMonIndex);
+            }
+
             // Then run the global on mon switch out hook as well
             if (config.globalEffectsLength > 0) {
                 _runEffects(battleKey, tempRNG, 2, playerIndex, EffectStep.OnMonSwitchOut, "", type(uint256).max);
@@ -3444,16 +3442,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private {
         // Use stored bitmap instead of external call to shouldRunAtStep()
         if ((stepsBitmap & (1 << uint8(round))) == 0) {
-            return;
-        }
-
-        // Inline execution for stat-boost sentinel entries. Only OnMonSwitchOut is in their steps
-        // bitmap; a temp boost is dropped on switch-out and the mon's stats recomputed from the
-        // remaining permanent sources (mirrors the legacy StatBoosts.onMonSwitchOut path).
-        if (address(effect) == STAT_BOOST_ADDRESS) {
-            if (!StatBoostLib.isPerm(data)) {
-                _inlineStatBoostSwitchOut(config, effectIndex, monIndex);
-            }
             return;
         }
 
@@ -4929,6 +4917,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             p0Move: config.p0Move,
             p1Move: config.p1Move,
             globalEffects: globalEffects,
+            p0StatBoosts: _boostWordsView(config, 0),
+            p1StatBoosts: _boostWordsView(config, 1),
             p0Effects: p0Effects,
             p1Effects: p1Effects,
             teams: teams,
@@ -5284,6 +5274,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         return _getEffectsForTarget(storageKey, targetIndex, monIndex);
+    }
+
+    /// @dev View shape of a side's stat-boost store: per-mon arrays of packed source words
+    ///      (StatBoostLib layout — clients decode key/perm/lanes off-chain).
+    function _boostWordsView(BattleConfig storage config, uint256 side)
+        private
+        view
+        returns (bytes32[][] memory out)
+    {
+        uint256 teamSize = side == 0 ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, side);
+        out = new bytes32[][](teamSize);
+        for (uint256 m; m < teamSize; ++m) {
+            uint256 cnt = _boostCountOf(config, side, m);
+            bytes32[] memory ws = new bytes32[](cnt);
+            for (uint256 i; i < cnt; ++i) {
+                ws[i] = words[m * 16 + i];
+            }
+            out[m] = ws;
+        }
     }
 
     /// @notice Class id (stepsBitmap bits 10-13) of the mon's exclusive status; 0 = none.

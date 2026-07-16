@@ -34,6 +34,106 @@ library StatBoostLib {
         return uint8(uint256(data) >> PERM_FLAG_OFFSET) != 0;
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Aggregation accumulator (one uint256 per mon, cached by the Engine).
+    //
+    // 5 stat lanes of [numerator:48 | count:3] at bit k*51, plus bit 255 = DISABLED. A lane
+    // mirrors _accumulateOne's running product exactly: numerator = base × ∏(100 ± pct) with
+    // count total instances, finalized as numerator / 100^count (single divide — so incremental
+    // multiply-in / divide-out is bit-identical to a full recompute). An update that would
+    // overflow a lane's 48-bit numerator or 3-bit count returns ok = false; the Engine then sets
+    // DISABLED and falls back to recompute-from-sources for the rest of the battle.
+    // ---------------------------------------------------------------------------------------------
+
+    uint256 internal constant ACC_LANE_BITS = 51;
+    uint256 internal constant ACC_NUM_MASK = (1 << 48) - 1;
+    uint256 internal constant ACC_CNT_MASK = 0x7;
+    uint256 internal constant ACC_DISABLED_BIT = 1 << 255;
+
+    /// @dev Lane k of a packed source word: (pct, count, isMul). count == 0 means "no boost".
+    function laneAt(bytes32 data, uint256 k) internal pure returns (uint256 pct, uint256 cnt, bool mul) {
+        uint256 inst = (uint256(data) >> (k * 16)) & 0xFFFF;
+        pct = inst >> 8;
+        cnt = (inst >> 1) & 0x7F;
+        mul = (inst & 0x1) == 1;
+    }
+
+    /// @dev Fold a source word into (mulIn = true) or out of (mulIn = false) the accumulator.
+    ///      Divide-out is exact by construction (the factors were multiplied in); a lane drained
+    ///      to count 0 resets its numerator to 0 (canonical empty — finalize reads base then).
+    function applyWordToAcc(uint256 acc, bytes32 word, uint32[5] memory baseStats, bool mulIn)
+        internal
+        pure
+        returns (uint256 newAcc, bool ok)
+    {
+        for (uint256 k; k < 5; ++k) {
+            (uint256 pct, uint256 cnt, bool mul) = laneAt(word, k);
+            if (cnt == 0) {
+                continue;
+            }
+            uint256 factor = mul ? DENOM + pct : DENOM - pct;
+            uint256 shift = k * ACC_LANE_BITS;
+            uint256 num = (acc >> shift) & ACC_NUM_MASK;
+            uint256 laneCnt = (acc >> (shift + 48)) & ACC_CNT_MASK;
+            if (mulIn) {
+                if (laneCnt + cnt > ACC_CNT_MASK) {
+                    return (acc, false);
+                }
+                if (laneCnt == 0) {
+                    num = baseStats[k];
+                }
+                for (uint256 j; j < cnt; ++j) {
+                    num *= factor;
+                    if (num > ACC_NUM_MASK) {
+                        return (acc, false);
+                    }
+                }
+                laneCnt += cnt;
+            } else {
+                // factor 0 lanes (pct == 100 Divide) zero the product permanently; the Engine
+                // never reaches here for them — mulIn already failed the fit check (num 0 is
+                // fine to multiply but a later divide-out would div-by-zero), so guard:
+                if (factor == 0 || laneCnt < cnt) {
+                    return (acc, false);
+                }
+                for (uint256 j; j < cnt; ++j) {
+                    num /= factor;
+                }
+                laneCnt -= cnt;
+                if (laneCnt == 0) {
+                    num = 0;
+                }
+            }
+            acc = (acc & ~(((ACC_NUM_MASK) | (ACC_CNT_MASK << 48)) << shift)) | (num << shift)
+                | (laneCnt << (shift + 48));
+        }
+        return (acc, true);
+    }
+
+    /// @dev finalizeBoostedStats over the packed accumulator — same divide + clamp semantics.
+    function finalizeAccStats(uint256 acc, uint32[5] memory baseStats)
+        internal
+        pure
+        returns (uint32[5] memory newBoostedStats)
+    {
+        for (uint256 k; k < 5; ++k) {
+            uint256 shift = k * ACC_LANE_BITS;
+            uint256 laneCnt = (acc >> (shift + 48)) & ACC_CNT_MASK;
+            if (laneCnt == 0) {
+                newBoostedStats[k] = baseStats[k];
+                continue;
+            }
+            uint256 raw = ((acc >> shift) & ACC_NUM_MASK) / denomPower(laneCnt);
+            if (raw > MAX_BOOSTED_STAT) {
+                newBoostedStats[k] = MAX_BOOSTED_STAT;
+            } else if (raw == 0) {
+                newBoostedStats[k] = 1;
+            } else {
+                newBoostedStats[k] = uint32(raw);
+            }
+        }
+    }
+
     // Pack a fresh boost instance from the caller-supplied boosts.
     function packBoostData(uint168 key, bool perm, StatBoostToApply[] memory statBoostsToApply)
         internal
