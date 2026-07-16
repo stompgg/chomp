@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {ALWAYS_APPLIES_BIT, STATUS_CLASS_SHIFT} from "../../Constants.sol";
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {StatBoostToApply} from "../../Structs.sol";
@@ -8,6 +9,8 @@ import {StatBoostToApply} from "../../Structs.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract FrostbiteStatus is StatusEffect {
+    uint256 constant STATUS_CLASS = 2;
+
     int32 constant DAMAGE_DENOM = 16;
     uint8 constant SP_ATTACK_PERCENT = 50;
 
@@ -17,7 +20,7 @@ contract FrostbiteStatus is StatusEffect {
 
     // Steps: OnApply, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0D;
+        return 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 
     function onApply(
@@ -29,8 +32,6 @@ contract FrostbiteStatus is StatusEffect {
         uint256 monIndex,
         uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
-
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
         statBoosts[0] = StatBoostToApply({
@@ -43,16 +44,10 @@ contract FrostbiteStatus is StatusEffect {
         return (bytes32(maxHp << 32), false);
     }
 
-    function onRemove(
-        IEngine engine,
-        bytes32 battleKey,
-        bytes32 data,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 activesPacked
-    ) public override {
-        super.onRemove(engine, battleKey, data, targetIndex, monIndex, activesPacked);
-
+    function onRemove(IEngine engine, bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
+        public
+        override
+    {
         // Reset the special attack reduction
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
     }

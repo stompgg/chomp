@@ -349,6 +349,7 @@ impl Sim {
             world.Engine._turnP1Packed = pack_turn(m.move_index, m.salt, m.extra_data);
         }
         world.Engine.storageKeyForWrite = fork;
+        world.Engine.battleKeyForWrite = fork; // write-gates (addEffect etc.) check this transient
         Engine::_executeInternal(world, fork, fork, false, false, false); // slotPacked=false (singles)
         world.reset_transient(); // fork tx over; capture reads boundary-clean
         fork
@@ -372,6 +373,7 @@ impl Sim {
         world.Engine._turnP0Packed = Engine::_packSideTurn(side0_packed);
         world.Engine._turnP1Packed = Engine::_packSideTurn(side1_packed);
         world.Engine.storageKeyForWrite = fork;
+        world.Engine.battleKeyForWrite = fork; // write-gates (addEffect etc.) check this transient
         Engine::_executeInternal(world, fork, fork, false, false, true); // slotPacked=true, silent
         world.reset_transient();
         fork

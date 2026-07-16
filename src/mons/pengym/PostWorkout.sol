@@ -11,8 +11,6 @@ import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
-
 contract PostWorkout is IAbility, BasicEffect {
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Post-Workout";
@@ -36,25 +34,15 @@ contract PostWorkout is IAbility, BasicEffect {
 
     function onMonSwitchOut(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-        uint192 statusAddress = engine.getGlobalKV(battleKey, keyForMon);
-
-        // Check if a status exists
-        if (statusAddress != 0) {
-            IEffect statusEffect = IEffect(address(uint160(statusAddress)));
-
-            // Get the index of the status effect and remove it (one status per mon)
-            (, uint256 effectIndex,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(statusEffect));
-            engine.removeEffect(targetIndex, monIndex, effectIndex);
-
-            // Boost stamina by 1
+        // Clear any status (one per mon); on success boost stamina by 1
+        if (engine.clearMonStatus(targetIndex, monIndex, 0)) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
         }
         return (bytes32(0), false);

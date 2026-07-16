@@ -8,16 +8,17 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveMeta} from "../../Structs.sol";
 import {IEffect} from "../../effects/IEffect.sol";
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 import {HeatBeaconLib} from "./HeatBeaconLib.sol";
 
 contract HeatBeacon is IMoveSet {
     IEffect immutable BURN_STATUS;
+    uint256 immutable BURN_CLASS;
 
     constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
+        BURN_CLASS = (uint256(_BURN_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
     }
 
     function name() public pure override returns (string memory) {
@@ -35,8 +36,7 @@ contract HeatBeacon is IMoveSet {
         uint256
     ) external {
         // Only spread Burn to the opponent if Embursa is itself Burned.
-        uint64 selfStatusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, attackerMonIndex);
-        if (engine.getGlobalKV(battleKey, selfStatusKey) == uint192(uint160(address(BURN_STATUS)))) {
+        if (engine.getMonStatusClass(battleKey, attackerPlayerIndex, attackerMonIndex) == BURN_CLASS) {
             uint256 targetSlot = TargetLib.lowestSlot(targetBits);
             if (targetSlot != NO_SLOT) {
                 uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);

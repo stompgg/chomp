@@ -241,6 +241,88 @@ contract MainnetReplayGasTest is Test, SetupMons {
         }
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // R2.0 — turn-pipeline floor: same rosters/config, but the turns carry ZERO content
+    // (turn 0 = send-ins, then NO_OPs: no moves, no effects, no damage). Prices the fixed
+    // per-turn engine cost so the replay's per-turn self-gas can be split into floor vs content.
+    // Raw exec gas, warm storage, no vm.cool — comparable to trace frame-self numbers.
+    // ---------------------------------------------------------------------------------------------
+
+    function _packEntry(uint8 p0Move, uint16 p0Extra, uint104 p0Salt, uint8 p1Move, uint16 p1Extra, uint104 p1Salt)
+        internal
+        pure
+        returns (uint256)
+    {
+        return uint256(p0Move) | (uint256(p0Extra) << 8) | (uint256(p0Salt) << 24) | (uint256(p1Move) << 128)
+            | (uint256(p1Extra) << 136) | (uint256(p1Salt) << 152);
+    }
+
+    function _noopEntries(uint256 n, uint256 saltBase) internal pure returns (uint256[] memory e) {
+        e = new uint256[](n);
+        for (uint256 i; i < n; i++) {
+            e[i] =
+                _packEntry(NO_OP_MOVE_INDEX, 0, uint104(saltBase + 2 * i), NO_OP_MOVE_INDEX, 0, uint104(saltBase + 2 * i + 1));
+        }
+    }
+
+    function _execBatch(bytes32 battleKey, uint256[] memory entries) internal returns (uint256 raw) {
+        bytes memory cd = abi.encodeCall(engine.executeBatchedTurns, (battleKey, entries));
+        vm.prank(address(mgr));
+        uint256 g0 = gasleft();
+        (bool ok,) = address(engine).call(cd);
+        raw = g0 - gasleft();
+        require(ok, "batch reverted");
+        engine.resetCallContext();
+    }
+
+    function test_noopFloor_batchedExecute() public {
+        vm.warp(vm.getBlockTimestamp() + 1);
+
+        // Battle 1: the real replay, unmeasured — completes and frees the storageKey.
+        bytes32 key1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _replayOneTx(key1, false);
+        require(engine.getWinner(key1) != address(0), "warmup replay must finish");
+
+        // Battle 2 (reused key): send-ins, then 1-noop and 25-noop batches to split
+        // per-batch fixed cost from per-turn cost.
+        bytes32 key2 = _startBattle();
+        require(engine.getStorageKey(key1) == engine.getStorageKey(key2), "storageKey must be reused");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256[] memory sw = new uint256[](1);
+        sw[0] = _packEntry(SWITCH_MOVE_INDEX, 0, 11, SWITCH_MOVE_INDEX, 0, 12);
+        uint256 switchTurn = _execBatch(key2, sw);
+        uint256 t1 = _execBatch(key2, _noopEntries(1, 100));
+        uint256 t25 = _execBatch(key2, _noopEntries(25, 300));
+        uint256 perTurn = t25 / 25;
+
+        // Battle 3 (reused again after forfeit): the whole no-op game in ONE batch, mirroring
+        // the replay's shape (1 tx, 27 entries) for a like-for-like total. Capture the storage
+        // key BEFORE forfeit — freeing deletes the battleKey mapping (identity fallback after).
+        bytes32 liveStorageKey = engine.getStorageKey(key2);
+        vm.prank(p0);
+        engine.forfeit(key2);
+        bytes32 key3 = _startBattle();
+        require(engine.getStorageKey(key3) == liveStorageKey, "storageKey must be reused (3)");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256[] memory whole = new uint256[](27);
+        whole[0] = _packEntry(SWITCH_MOVE_INDEX, 0, 13, SWITCH_MOVE_INDEX, 0, 14);
+        uint256[] memory noops = _noopEntries(26, 500);
+        for (uint256 i; i < 26; i++) {
+            whole[i + 1] = noops[i];
+        }
+        uint256 t27 = _execBatch(key3, whole);
+
+        console.log("");
+        console.log("=== R2.0 no-op floor (reused key, raw exec gas, warm) ===");
+        console.log("  send-in turn (batch of 1)          :", switchTurn);
+        console.log("  1 no-op turn (batch of 1)          :", t1);
+        console.log("  25 no-op turns (one batch)         :", t25);
+        console.log("  floor per no-op turn (t25/25)      :", perTurn);
+        console.log("  per-batch fixed (t1 - floor)       :", t1 - perTurn);
+        console.log("  whole no-op game, 1 batch of 27    :", t27);
+    }
+
     function test_mainnetReplay_batchedExecute() public {
         vm.warp(vm.getBlockTimestamp() + 1);
 

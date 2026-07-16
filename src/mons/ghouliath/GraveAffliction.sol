@@ -7,7 +7,6 @@ import "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
@@ -36,10 +35,8 @@ contract GraveAffliction is IMoveSet {
         uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
-        // Only fires if the opposing mon currently has a status condition. The StatusEffect base sets
-        // this per-mon flag in onApply for every status (Sleep/Panic/Burn/Frostbite/Zap/Blessed).
-        uint64 statusKey = StatusEffectLib.getKeyForMonIndex(defenderPlayerIndex, defenderMonIndex);
-        if (engine.getGlobalKV(battleKey, statusKey) == 0) {
+        // Only fires if the opposing mon currently has a status condition (any class).
+        if (engine.getMonStatusClass(battleKey, defenderPlayerIndex, defenderMonIndex) == 0) {
             return;
         }
 

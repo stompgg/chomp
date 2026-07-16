@@ -23,6 +23,7 @@ interface IEngine {
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
+    function clearMonStatus(uint256 targetIndex, uint256 monIndex, uint256 expectedClass) external returns (bool);
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
     // Inlined stat boosts (formerly the StatBoosts effect contract). Keyed by msg.sender.
@@ -198,6 +199,10 @@ interface IEngine {
         external
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
+    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
+        external
+        view
+        returns (uint256);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);

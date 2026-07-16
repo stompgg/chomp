@@ -4,13 +4,19 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {
+    MOVE_INDEX_MASK,
+    NO_OP_MOVE_INDEX,
+    NO_SLOT,
+    STATUS_CLASS_MASK,
+    STATUS_CLASS_SHIFT,
+    SWITCH_MOVE_INDEX
+} from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract Tinderclaws is IAbility, BasicEffect {
@@ -18,9 +24,11 @@ contract Tinderclaws is IAbility, BasicEffect {
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
     IEffect immutable BURN_STATUS;
+    uint256 immutable BURN_CLASS;
 
     constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
+        BURN_CLASS = (uint256(_BURN_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
     }
 
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
@@ -63,7 +71,7 @@ contract Tinderclaws is IAbility, BasicEffect {
 
         // If resting, remove burn
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            _removeBurnIfPresent(engine, battleKey, targetIndex, monIndex);
+            engine.clearMonStatus(targetIndex, monIndex, BURN_CLASS);
         }
         // If used a move (not switch), 1/3 chance to self-burn
         else if (moveIndex != SWITCH_MOVE_INDEX) {
@@ -116,15 +124,6 @@ contract Tinderclaws is IAbility, BasicEffect {
         view
         returns (bool)
     {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
-        return monStatusFlag == uint192(uint160(address(BURN_STATUS)));
-    }
-
-    function _removeBurnIfPresent(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
-        (bool exists, uint256 index,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(BURN_STATUS));
-        if (exists) {
-            engine.removeEffect(targetIndex, monIndex, index);
-        }
+        return engine.getMonStatusClass(battleKey, targetIndex, monIndex) == BURN_CLASS;
     }
 }

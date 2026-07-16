@@ -74,6 +74,7 @@
   "dispatchInterfaces": [
     "IMoveSet",
     "IEffect",
+    "IStatusEffect",
     "IAbility"
   ],
   "duckDispatchMethods": [

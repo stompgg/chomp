@@ -192,6 +192,11 @@ struct BattleConfig {
     // piggybacks on the engineHookStepsUnion SLOAD; rewritten every startBattle (recycled
     // storage must never leak a previous battle's mode).
     uint8 battleMode; //   8
+    // Per-mon exclusive-status lanes: one 4-bit class nibble per mon, laneIndex = side*8 +
+    // monIndex (stride 8 = the Engine's hard team-size cap, NOT MONS_PER_TEAM). 0 = no status.
+    // Engine-owned: set in _addEffectInternal, cleared in _removeEffectAtSlot / startBattle's
+    // consolidated reset. Rides slot 3 so both writes coalesce with SSTOREs already paid.
+    uint64 monStatusLanes; //  64
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
@@ -232,6 +237,7 @@ struct BattleConfigView {
     uint104 p1Salt;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
+    uint64 monStatusLanes; // Per-mon exclusive-status class nibbles (see BattleConfig)
     MoveDecision p0Move;
     MoveDecision p1Move;
     EffectInstance[] globalEffects;

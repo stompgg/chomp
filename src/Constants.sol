@@ -68,6 +68,18 @@ address constant BUILTIN_DUAL_SIGNED_MANAGER = address(0x5165); // "SIGS" - buil
 // Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
 uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
 
+// Bits 10-13 of stepsBitmap: exclusive-status class (0 = not a status; 1-14 = a deployable
+// status class; 15 is reserved for test-only mocks and rejected in src/ by the validator).
+// Each status declares its own id (an internal STATUS_CLASS constant folded into its
+// getStepsBitmap()); validateEffectBitmaps.py asserts uniqueness across src/. The Engine keys
+// the per-mon status lane (BattleConfig.monStatusLanes) off these bits — it holds no status list.
+uint256 constant STATUS_CLASS_SHIFT = 10;
+uint256 constant STATUS_CLASS_MASK = 0xF;
+
+// Bit 14 of stepsBitmap: when set, Engine calls onReapply() on a same-class re-apply
+// (escalating statuses, e.g. Burn). Clear = a same-class re-apply is a zero-call no-op.
+uint16 constant HAS_REAPPLY_BIT = 0x4000;
+
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
 bytes32 constant MOVE_MISS_EVENT_TYPE = sha256(abi.encode("MoveMiss"));

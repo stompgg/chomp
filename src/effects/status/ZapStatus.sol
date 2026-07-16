@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {
+    ALWAYS_APPLIES_BIT, MOVE_INDEX_MASK, NO_SLOT, STATUS_CLASS_SHIFT, SWITCH_MOVE_INDEX
+} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
@@ -10,6 +12,8 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract ZapStatus is StatusEffect {
+    uint256 constant STATUS_CLASS = 5;
+
     uint8 private constant ALREADY_SKIPPED = 1;
 
     function name() public pure override returns (string memory) {
@@ -18,7 +22,7 @@ contract ZapStatus is StatusEffect {
 
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0F;
+        return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 
     function onApply(
@@ -30,8 +34,6 @@ contract ZapStatus is StatusEffect {
         uint256 monIndex,
         uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, extraData, targetIndex, monIndex, activesPacked);
-
         uint8 state;
 
         // If the target hasn't acted yet this turn, skip it immediately; otherwise wait for

@@ -9,6 +9,7 @@ import "./moves/IMoveSet.sol";
 
 import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
+import {IStatusEffect} from "./effects/status/IStatusEffect.sol";
 import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
 import {ECDSA} from "./lib/ECDSA.sol";
 import {EIP712} from "./lib/EIP712.sol";
@@ -130,6 +131,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @param _DEFAULT_MONS_PER_TEAM Default mons per team for inline validation
     /// @param _DEFAULT_MOVES_PER_MON Default moves per mon for inline validation
     constructor(uint256 _DEFAULT_MONS_PER_TEAM, uint256 _DEFAULT_MOVES_PER_MON) {
+        // Hard cap shared by koBitmaps (8 KO bits/side) and monStatusLanes (8 nibbles/side).
+        if (_DEFAULT_MONS_PER_TEAM > 8) {
+            revert InvalidBattleConfig();
+        }
         DEFAULT_MONS_PER_TEAM = _DEFAULT_MONS_PER_TEAM;
         DEFAULT_MOVES_PER_MON = _DEFAULT_MOVES_PER_MON;
     }
@@ -431,6 +436,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.playerEffectStepsUnion = 0;
         config.engineHookStepsUnion = hookStepsUnion;
         config.battleMode = battleMode;
+        config.monStatusLanes = 0;
 
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
             for (uint256 i = 0; i < numHooks;) {
@@ -1843,8 +1849,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) internal {
         bytes32 battleKey = battleKeyForWrite;
-        // Fetch steps bitmap once (reused for storage and ALWAYS_APPLIES check)
+        // Fetch steps bitmap once (reused for the status gate, ALWAYS_APPLIES check, and storage)
         uint16 stepsBitmap = effect.getStepsBitmap();
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+
+        // Exclusive-status gate (class-bearing player effects only), ahead of any external call:
+        // a different status blocks, and a same-class re-apply is a no-op unless HAS_REAPPLY
+        // routes it to the existing entry's onReapply. Both blocked paths cost zero external
+        // calls; the free-lane path falls through to the normal gate below.
+        {
+            uint256 statusClass = (stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
+            if (statusClass != 0 && targetIndex != 2) {
+                uint256 lane = (config.monStatusLanes >> _statusLaneShift(targetIndex, monIndex)) & 0xF;
+                if (lane != 0) {
+                    if (lane == statusClass && (stepsBitmap & HAS_REAPPLY_BIT) != 0) {
+                        _reapplyStatus(config, battleKey, targetIndex, monIndex, statusClass);
+                    }
+                    return;
+                }
+            }
+        }
 
         // Skip external shouldApply() call if ALWAYS_APPLIES_BIT is set
         bool applies;
@@ -1872,9 +1896,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
             if (!removeAfterRun) {
-                // Add to the appropriate effects mapping based on targetIndex
-                BattleConfig storage config = battleConfig[storageKeyForWrite];
-
                 // INVARIANT: every path that adds a player effect MUST fold its steps bitmap into
                 // playerEffectStepsUnion here. The step-skip guards in _executeInternal / _handleSwitch
                 // treat a clear union bit as "no player effect listens at this step" and skip the whole
@@ -1884,6 +1905,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
                 if (targetIndex != 2) {
                     config.playerEffectStepsUnion |= stepsBitmap;
+                    // Status-lane set: same slot as the union write, so both coalesce into one
+                    // SSTORE. INVARIANT: lane nonzero ⇔ exactly one class-bearing entry on the
+                    // mon; the only clears are _removeEffectAtSlot + startBattle's reset.
+                    uint256 statusClass = (stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
+                    if (statusClass != 0) {
+                        uint256 laneShift = _statusLaneShift(targetIndex, monIndex);
+                        config.monStatusLanes = uint64(
+                            (uint256(config.monStatusLanes) & ~(uint256(0xF) << laneShift))
+                                | (statusClass << laneShift)
+                        );
+                    }
                 }
 
                 if (targetIndex == 2) {
@@ -1924,6 +1956,48 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @dev Same-class re-apply with HAS_REAPPLY set: find the live entry and let it rewrite
+    ///      (or remove) itself. The scan is bounded by the mon's short effect list and only
+    ///      runs for escalating statuses (Burn) — plain re-applies never get here.
+    function _reapplyStatus(
+        BattleConfig storage config,
+        bytes32 battleKey,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 statusClass
+    ) private {
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        for (uint256 i; i < monEffectCount;) {
+            EffectInstance storage e = effects[baseSlot + i];
+            if (
+                address(e.effect) != TOMBSTONE_ADDRESS
+                    && ((e.stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK) == statusClass
+            ) {
+                (bytes32 newData, bool removeAfterRun) = IStatusEffect(address(e.effect)).onReapply(
+                    IEngine(address(this)),
+                    battleKey,
+                    tempRNG,
+                    e.data,
+                    targetIndex,
+                    monIndex,
+                    _hookActivesWord(battleData[battleKey])
+                );
+                if (removeAfterRun) {
+                    _removeEffectAtSlot(config, battleKey, targetIndex, monIndex, baseSlot + i);
+                } else {
+                    e.data = newData;
+                }
+                return;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
@@ -1959,6 +2033,49 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _removeEffectAtSlot(battleConfig[storageKeyForWrite], battleKey, targetIndex, monIndex, indexToRemove);
     }
 
+    /// @dev Bit offset of a mon's 4-bit status-class nibble in monStatusLanes (stride 8/side).
+    function _statusLaneShift(uint256 targetIndex, uint256 monIndex) private pure returns (uint256) {
+        return ((targetIndex << 3) | monIndex) << 2;
+    }
+
+    /// @notice Remove a mon's exclusive status (running its onRemove) and clear its lane.
+    /// @param expectedClass 0 = clear any status; nonzero = only a matching class.
+    /// @return cleared Whether a status entry was removed.
+    function clearMonStatus(uint256 targetIndex, uint256 monIndex, uint256 expectedClass)
+        external
+        returns (bool cleared)
+    {
+        bytes32 battleKey = battleKeyForWrite;
+        if (battleKey == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        uint256 lane = (config.monStatusLanes >> _statusLaneShift(targetIndex, monIndex)) & 0xF;
+        if (lane == 0 || (expectedClass != 0 && lane != expectedClass)) {
+            return false;
+        }
+        // Scan the mon's short effect list for the class-bearing entry (cold path; the lane
+        // answers the hot existence/identity reads without a scan).
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 monEffectCount = _getMonEffectCount(packedCounts, monIndex);
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        for (uint256 i; i < monEffectCount;) {
+            EffectInstance storage e = effects[baseSlot + i];
+            if (
+                address(e.effect) != TOMBSTONE_ADDRESS
+                    && ((e.stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK) == lane
+            ) {
+                _removeEffectAtSlot(config, battleKey, targetIndex, monIndex, baseSlot + i);
+                return true;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        return false;
+    }
+
     function _removeEffectAtSlot(
         BattleConfig storage config,
         bytes32 battleKey,
@@ -1979,8 +2096,20 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (address(effect) == TOMBSTONE_ADDRESS) {
             return;
         }
+        uint16 stepsBitmap = eff.stepsBitmap;
 
-        if ((eff.stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
+        // Status-lane clear (free: stepsBitmap shares the slot just loaded). Cleared before
+        // onRemove so a nested add during the hook sees the lane free. This is the SOLE
+        // class-bearing removal chokepoint — the direct tombstone writers elsewhere are all
+        // stat-boost slots, which never carry class bits.
+        if (targetIndex != 2) {
+            uint256 statusClass = (stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
+            if (statusClass != 0) {
+                config.monStatusLanes &= ~uint64(uint256(0xF) << _statusLaneShift(targetIndex, monIndex));
+            }
+        }
+
+        if ((stepsBitmap & (1 << uint8(EffectStep.OnRemove))) != 0) {
             effect.onRemove(
                 IEngine(address(this)),
                 battleKey,
@@ -4796,6 +4925,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             p1Salt: config.p1Salt,
             p0TeamIndex: data.p0TeamIndex,
             p1TeamIndex: data.p1TeamIndex,
+            monStatusLanes: config.monStatusLanes,
             p0Move: config.p0Move,
             p1Move: config.p1Move,
             globalEffects: globalEffects,
@@ -5154,6 +5284,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     {
         bytes32 storageKey = _resolveStorageKey(battleKey);
         return _getEffectsForTarget(storageKey, targetIndex, monIndex);
+    }
+
+    /// @notice Class id (stepsBitmap bits 10-13) of the mon's exclusive status; 0 = none.
+    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
+        external
+        view
+        returns (uint256)
+    {
+        bytes32 storageKey = _resolveStorageKey(battleKey);
+        return (battleConfig[storageKey].monStatusLanes >> _statusLaneShift(targetIndex, monIndex)) & 0xF;
     }
 
     /// @notice Targeted single-effect lookup. Scans a mon's (or the global) effect list for

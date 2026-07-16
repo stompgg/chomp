@@ -158,9 +158,19 @@ pub fn move_slot(sim: &mut Sim, seat: Seat, bk: B256, vp: u8, mon: usize, mi: us
 }
 
 /// Damage context between the two ACTIVE mons (proxied: both player-index
-/// args seat-mapped).
+/// args seat-mapped; the engine now takes explicit mon indices, so each
+/// side's active is resolved here).
 pub fn damage_calc_context(sim: &mut Sim, seat: Seat, bk: B256, atk_vp: u8, def_vp: u8) -> DamageCalcContext {
-    Engine::getDamageCalcContext(&mut sim.world, bk, seat.phys(atk_vp), seat.phys(def_vp))
+    let (opp_active, cpu_active) = active_mon_indices(sim, seat, bk);
+    let active_of = |vp: u8| if vp == VCPU { cpu_active } else { opp_active };
+    Engine::getDamageCalcContext(
+        &mut sim.world,
+        bk,
+        seat.phys(atk_vp),
+        U256::from(active_of(atk_vp) as u64),
+        seat.phys(def_vp),
+        U256::from(active_of(def_vp) as u64),
+    )
 }
 
 /// `TYPE_CALC.getTypeEffectiveness` — TypeCalculator delegates straight to

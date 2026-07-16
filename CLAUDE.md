@@ -52,7 +52,7 @@ chomp/
 │   │   ├── IEffect.sol     # Effect interface with lifecycle hooks
 │   │   ├── BasicEffect.sol
 │   │   ├── StaminaRegen.sol
-│   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect(Lib)
+│   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect marker base + IStatusEffect (onReapply)
 │   │   ├── battlefield/    # Battlefield effects (Overclock)
 │   ├── game-layer/         # Team / mon registry, gacha, exp, facets, quests, gifts
 │   │   ├── GachaTeamRegistry.sol   # Concrete leaf: composes the abstracts below
@@ -124,15 +124,18 @@ chomp/
 │   ├── packMoves.py                 # Pack move data for distribution
 │   ├── inputToEnv.py                # Parse forge output to .env
 │   └── removeUnusedImports.py       # Clean up unused Solidity imports
-├── transpiler/             # Solidity-to-TypeScript/Rust transpiler (Python)
-│   ├── sol2ts.py           # Main entry point
+├── transpiler/             # Solidity-to-TypeScript/Rust transpiler (Python; run via `python3 -m transpiler`)
+│   ├── sol2ts.py           # TypeScript backend driver (not directly runnable — use `-m transpiler`)
+│   ├── sol2rs.py           # Rust backend driver (`--target rust`)
 │   ├── lexer/              # Tokenizer
 │   ├── parser/             # AST construction
 │   ├── type_system/        # Type registry
 │   ├── codegen/            # TypeScript code generation
+│   ├── codegen_rs/         # Rust code generation
 │   ├── runtime/            # TypeScript runtime library
+│   ├── runtime-rs/, strategies-rs/  # Hand-written Rust crates (rsynced into rs-output/)
 │   ├── dependency_resolver/ # Dependency resolution
-│   └── test/               # TypeScript integration tests (vitest)
+│   └── test_transpiler.py  # Transpiler unit tests (the TS integration tests live in munch)
 ├── drool/                  # Game data (CSV) and frontend assets
 │   ├── mons.csv            # Mon stats (HP, attack, speed, types, etc.)
 │   ├── moves.csv           # Move definitions (power, stamina, accuracy, etc.)
@@ -520,7 +523,7 @@ For once-per-battle abilities (e.g., `RiseFromTheGrave`), use a `globalKV` flag 
 
 Effects fall into several categories depending on scope:
 
-- **Status effects** (`src/effects/status/`): Extend `StatusEffect` which enforces one-status-per-mon via a KV flag. Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
+- **Status effects** (`src/effects/status/`): Extend the `StatusEffect` marker base. One-status-per-mon is **Engine-native**: each status folds a unique class id into `getStepsBitmap()` bits 10-13 (an internal `STATUS_CLASS` constant; deployable ids 1-14, 15 reserved for test mocks), and the Engine tracks it in a per-mon lane (`BattleConfig.monStatusLanes`, slot 3) — gating adds before any external call, setting the lane on apply, clearing it on removal. Readers use `engine.getMonStatusClass` (identity/existence) and `engine.clearMonStatus(player, mon, expectedClass)` (remove; 0 = any class); reader contracts cache the class id as a constructor `immutable` derived from the injected status's `getStepsBitmap()`. Escalating statuses (Burn) set `HAS_REAPPLY_BIT` (bit 14) and implement `IStatusEffect.onReapply`, which the Engine calls on a same-class re-apply; without the bit a re-apply is a zero-call no-op. Extra apply conditions beyond exclusivity (Sleep's single-sleeper rule) live in a `shouldApply` override (no `ALWAYS_APPLIES_BIT`). Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
 - **Battlefield effects** (`src/effects/battlefield/`): Extend `BasicEffect`, use `targetIndex=2` for global scope. (e.g., `Overclock`)
 - **Shared utility effects** (`src/effects/`): Deployed once, used by many contracts. (e.g., `StaminaRegen` for per-turn recovery). NOTE: stat modifiers are **not** an effect — they are inlined Engine functions (`addStatBoost`/`removeStatBoost`/…); see "Stat Boosts" above.
 - **Mon-local effects** (`src/mons/<monname>/`): Abilities or move-effect hybrids that only apply to one mon. These live in the mon's directory, not in `src/effects/`.
@@ -528,7 +531,7 @@ Effects fall into several categories depending on scope:
 To implement a new effect:
 1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
 2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, `onPreDamage`, …) — each receives `activesPacked` for local slot resolution via `TargetLib`
-3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call — if the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `StatusEffect` subclasses) must NOT set this bit. `python processing/validateEffectBitmaps.py` checks this invariant across `src/` and is run as part of `deploy.py`.
+3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call — if the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `SleepStatus`'s single-sleeper rule) must NOT set this bit. Statuses additionally carry their class id in bits 10-13 and `HAS_REAPPLY_BIT` (bit 14) iff they implement `onReapply`. `python processing/validateEffectBitmaps.py` checks all of these invariants (bit pairing, class range 1-14, cross-src uniqueness) and is run as part of `deploy.py`.
 4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
 5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
 
@@ -553,10 +556,10 @@ Converts Solidity contracts to TypeScript for local battle simulation:
 
 ```bash
 # Transpile all contracts
-python3 transpiler/sol2ts.py src/ -o transpiler/ts-output -d src --emit-metadata
+python3 -m transpiler src/ -o transpiler/ts-output -d src --emit-metadata
 
-# Run transpiler tests
-cd transpiler && npm install && npx vitest run
+# Run transpiler unit tests (the TS runtime/integration tests moved to munch with the codegen sync)
+python3 transpiler/test_transpiler.py
 ```
 
 **Rust target (sim performance).** The same front-end also drives a Rust

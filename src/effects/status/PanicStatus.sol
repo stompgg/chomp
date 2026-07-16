@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {ALWAYS_APPLIES_BIT, STATUS_CLASS_SHIFT} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract PanicStatus is StatusEffect {
+    uint256 constant STATUS_CLASS = 4;
+
     uint256 constant DURATION = 3;
 
     function name() public pure override returns (string memory) {
@@ -15,7 +18,7 @@ contract PanicStatus is StatusEffect {
 
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0F;
+        return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 
     // At the start of the turn, check to see if we should apply stamina debuff or end early
@@ -37,17 +40,13 @@ contract PanicStatus is StatusEffect {
         return (extraData, false);
     }
 
-    // On apply, checks to apply the flag, and then sets the extraData to be the duration
-    function onApply(
-        IEngine engine,
-        bytes32 battleKey,
-        uint256 rng,
-        bytes32 data,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 activesPacked
-    ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, activesPacked);
+    // On apply, sets the extraData to be the duration
+    function onApply(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
+        public
+        pure
+        override
+        returns (bytes32 updatedExtraData, bool removeAfterRun)
+    {
         return (bytes32(DURATION), false);
     }
 

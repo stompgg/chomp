@@ -7,7 +7,6 @@ import "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract GildedRecovery is IMoveSet {
@@ -31,20 +30,8 @@ contract GildedRecovery is IMoveSet {
         // extraData contains the mon index as raw uint16
         uint256 targetMonIndex = uint256(extraData);
 
-        // Check if the target mon has a status effect
-        uint64 statusKey = StatusEffectLib.getKeyForMonIndex(attackerPlayerIndex, targetMonIndex);
-        uint192 statusFlag = engine.getGlobalKV(battleKey, statusKey);
-
-        // If the mon has a status effect, remove it and heal
-        if (statusFlag != 0) {
-            // Find and remove the status effect
-            // Targeted lookup: engine scans for the status effect internally, no full-array build.
-            address statusEffectAddress = address(uint160(statusFlag));
-            (bool exists, uint256 idx,) =
-                engine.getEffectData(battleKey, attackerPlayerIndex, targetMonIndex, statusEffectAddress);
-            if (exists) {
-                engine.removeEffect(attackerPlayerIndex, targetMonIndex, idx);
-            }
+        // Remove the target mon's status (any class); heal + grant stamina only on success
+        if (engine.clearMonStatus(attackerPlayerIndex, targetMonIndex, 0)) {
             // Give +1 stamina
             engine.updateMonState(attackerPlayerIndex, targetMonIndex, MonStateIndexName.Stamina, STAMINA_BONUS);
 
