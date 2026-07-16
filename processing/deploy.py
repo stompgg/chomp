@@ -338,6 +338,11 @@ def run_deploy(args, network, rpc_url, password, chomp_dir, env_path):
         if not run_validate():
             raise RuntimeError("Move validation failed. Fix issues before deploying.")
 
+        print_banner("Validating effect getStepsBitmap() ALWAYS_APPLIES_BIT usage")
+        from validateEffectBitmaps import run as run_validate_effect_bitmaps
+        if not run_validate_effect_bitmaps():
+            raise RuntimeError("Effect bitmap validation failed. Fix issues before deploying.")
+
         print_banner("Generating Solidity deployment script (SetupMons.s.sol)")
         from generateSolidity import run as run_solidity
         if not run_solidity():

@@ -110,6 +110,7 @@ chomp/
 │   ├── generateSolidity.py          # Generate SetupMons.s.sol from CSV data
 │   ├── generateSetupCPU.py          # Generate SetupCPU.s.sol team config from cpu-teams.json
 │   ├── validateMoves.py             # Validate move contracts match CSV data
+│   ├── validateEffectBitmaps.py     # Validate IEffect contracts set ALWAYS_APPLIES_BIT correctly
 │   ├── deploy.py                    # Full deployment pipeline orchestrator
 │   ├── deploy_addresses.py          # Inline ability/move address packing for the deploy pipeline
 │   ├── buildTypeChart.py            # Build type effectiveness chart
@@ -527,7 +528,7 @@ Effects fall into several categories depending on scope:
 To implement a new effect:
 1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
 2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, `onPreDamage`, …) — each receives `activesPacked` for local slot resolution via `TargetLib`
-3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call
+3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call — if the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `StatusEffect` subclasses) must NOT set this bit. `python processing/validateEffectBitmaps.py` checks this invariant across `src/` and is run as part of `deploy.py`.
 4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
 5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
 
@@ -537,6 +538,7 @@ To implement a new effect:
 
 ```bash
 python processing/validateMoves.py          # Validate contracts vs CSV
+python processing/validateEffectBitmaps.py  # Validate ALWAYS_APPLIES_BIT usage on IEffect contracts
 python processing/generateSolidity.py       # Generate SetupMons.s.sol
 python processing/generateSetupCPU.py       # Generate SetupCPU.s.sol from cpu-teams.json
 python processing/deploy.py --testnet       # Full deployment (forge scripts + codegen)

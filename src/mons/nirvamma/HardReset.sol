@@ -82,9 +82,9 @@ contract HardReset is IMoveSet, BasicEffect {
         });
     }
 
-    // Steps: AfterMove
+    // Steps: AfterMove, ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x80;
+        return 0x8080;
     }
 
     function onAfterMove(

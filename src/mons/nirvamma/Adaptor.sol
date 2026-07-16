@@ -33,9 +33,9 @@ contract Adaptor is IAbility, BasicEffect {
         engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
-    // Steps: AfterDamage, PreDamage
+    // Steps: AfterDamage, PreDamage, ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint16) {
-        return 0x240;
+        return 0x8240;
     }
 
     function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256 source)
