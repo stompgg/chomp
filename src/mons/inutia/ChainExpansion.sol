@@ -43,12 +43,10 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        // Check if the ability is already applied globally
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 2);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Skip if the ability is already applied globally (single instance by address)
+        (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
+        if (exists) {
+            return;
         }
         // Otherwise, add this effect globally
         engine.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));

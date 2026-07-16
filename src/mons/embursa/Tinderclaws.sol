@@ -122,13 +122,9 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     function _removeBurnIfPresent(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
-        (EffectInstance[] memory effects, uint256[] memory indices) =
-            engine.getEffects(battleKey, targetIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(BURN_STATUS)) {
-                engine.removeEffect(targetIndex, monIndex, indices[i]);
-                return;
-            }
+        (bool exists, uint256 index,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(BURN_STATUS));
+        if (exists) {
+            engine.removeEffect(targetIndex, monIndex, index);
         }
     }
 }

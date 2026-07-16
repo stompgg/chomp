@@ -50,16 +50,8 @@ contract PostWorkout is IAbility, BasicEffect {
         if (statusAddress != 0) {
             IEffect statusEffect = IEffect(address(uint160(statusAddress)));
 
-            // Get the index of the effect and remove it
-            uint256 effectIndex;
-            (EffectInstance[] memory effects, uint256[] memory indices) =
-                engine.getEffects(battleKey, targetIndex, monIndex);
-            for (uint256 i; i < effects.length; i++) {
-                if (address(effects[i].effect) == address(statusEffect)) {
-                    effectIndex = indices[i];
-                    break;
-                }
-            }
+            // Get the index of the status effect and remove it (one status per mon)
+            (, uint256 effectIndex,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(statusEffect));
             engine.removeEffect(targetIndex, monIndex, effectIndex);
 
             // Boost stamina by 1

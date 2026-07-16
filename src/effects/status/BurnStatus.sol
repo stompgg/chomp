@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 import {StatusEffectLib} from "./StatusEffectLib.sol";
@@ -77,18 +77,11 @@ contract BurnStatus is StatusEffect {
             });
             engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
         } else {
-            (EffectInstance[] memory effects, uint256[] memory indices) =
-                engine.getEffects(battleKey, targetIndex, monIndex);
-            uint256 indexOfBurnEffect;
-            uint256 burnDegree;
-            bytes32 newExtraData;
-            for (uint256 i = 0; i < effects.length; i++) {
-                if (address(effects[i].effect) == address(this)) {
-                    indexOfBurnEffect = indices[i];
-                    burnDegree = uint256(effects[i].data) & 0xFF;
-                    newExtraData = effects[i].data;
-                }
-            }
+            // Single burn per mon (one-status invariant), so the first by-address match is the one.
+            (, uint256 indexOfBurnEffect, bytes32 burnData) =
+                engine.getEffectData(battleKey, targetIndex, monIndex, address(this));
+            uint256 burnDegree = uint256(burnData) & 0xFF;
+            bytes32 newExtraData = burnData;
             if (burnDegree < MAX_BURN_DEGREE) {
                 newExtraData = bytes32((uint256(newExtraData) & ~uint256(0xFF)) | (burnDegree + 1));
             }

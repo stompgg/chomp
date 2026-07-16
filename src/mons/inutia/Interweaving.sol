@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {EMPTY_ACTIVE_LANE, NO_SLOT} from "../../Constants.sol";
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
@@ -37,15 +37,11 @@ contract Interweaving is IAbility, BasicEffect {
         });
         engine.addStatBoost(otherPlayerIndex, otherPlayerActiveMonIndex, statBoosts, StatBoostFlag.Temp);
 
-        // Check if the effect has already been set for this mon
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Skip if the switch-out effect is already registered on this mon
+        (bool exists,,) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
+        if (exists) {
+            return;
         }
-        // Otherwise, add this effect to the mon when it switches in
-        // This way we can trigger on switch out
         engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 

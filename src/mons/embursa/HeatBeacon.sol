@@ -45,10 +45,7 @@ contract HeatBeacon is IMoveSet {
             }
         }
 
-        // Grant +1 priority to next turn's move (refresh if already set).
-        if (HeatBeaconLib._getPriorityBoost(engine, battleKey, attackerPlayerIndex) == 1) {
-            HeatBeaconLib._clearPriorityBoost(engine, attackerPlayerIndex);
-        }
+        // Grant +1 priority to next turn's move (idempotent refresh; consumed by the payoff move).
         HeatBeaconLib._setPriorityBoost(engine, attackerPlayerIndex);
     }
 
