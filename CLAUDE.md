@@ -339,7 +339,7 @@ The leaf adds: the `onBattleEnd` orchestration (streak / quest / points / exp lo
 
 **Rolling.** Mon ids are sequential starting at 0 (`createMon` enforces `monId == monIds.length()`). Ids `[0, NUM_STARTERS)` (= 3) are *starter* mons.
 
-- `firstRoll(uint256 starterId)` — one-shot per player. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free.
+- `firstRoll(uint256 starterId)` — one-shot per player, onboarding in a single tx. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free. Also creates the player's first team (slot 0) from the first `MONS_PER_TEAM` rolled ids, via the same internal path `createTeam` uses (`_createTeamForUser`) — skipping the redundant ownership check since those ids were just written. The constructor reverts `MonsPerTeamExceedsInitialRolls` if `MONS_PER_TEAM > INITIAL_ROLLS`, since a deployment configured that way could never satisfy this.
 - `roll(uint256 numRolls)` — paid (`ROLL_COST` per roll, default 16 points). Uniform across the entire pool. Reverts `NoMoreStock` once the caller owns every mon.
 - Linear-probing dedup keeps draws inside their window so `firstRoll`'s 3 random picks never land on a starter.
 

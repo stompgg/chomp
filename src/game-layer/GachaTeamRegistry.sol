@@ -103,6 +103,7 @@ contract GachaTeamRegistry is
     error NotEngine();
     error NoPreviousRegistry();
     error AlreadyMigrated();
+    error MonsPerTeamExceedsInitialRolls();
 
     // ----- Events -----
     event Roll(address indexed player, uint256[] monIds, uint256 pointsSpent);
@@ -151,6 +152,9 @@ contract GachaTeamRegistry is
         IGachaRNG _RNG,
         GachaTeamRegistry _PREVIOUS_REGISTRY
     ) PackedTeamStore(_MONS_PER_TEAM, _MOVES_PER_MON) {
+        if (_MONS_PER_TEAM > INITIAL_ROLLS) {
+            revert MonsPerTeamExceedsInitialRolls();
+        }
         ENGINE = _ENGINE;
         RNG = address(_RNG) == address(0) ? IGachaRNG(address(this)) : _RNG;
         PREVIOUS_REGISTRY = _PREVIOUS_REGISTRY;
@@ -583,6 +587,15 @@ contract GachaTeamRegistry is
         // Remaining rolls are uniform across non-starter pool [NUM_STARTERS, numMons).
         _rollInto(rolledIds, 1, NUM_STARTERS);
         emit Roll(msg.sender, rolledIds, 0);
+
+        uint256[] memory starterTeam = rolledIds;
+        if (MONS_PER_TEAM != INITIAL_ROLLS) {
+            starterTeam = new uint256[](MONS_PER_TEAM);
+            for (uint256 i; i < MONS_PER_TEAM; ++i) {
+                starterTeam[i] = rolledIds[i];
+            }
+        }
+        _createTeamForUser(msg.sender, starterTeam);
     }
 
     function roll(uint256 numRolls) external returns (uint256[] memory rolledIds) {
