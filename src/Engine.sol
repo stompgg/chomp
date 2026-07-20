@@ -1902,8 +1902,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 // playerEffectStepsUnion here. The step-skip guards in _executeInternal / _handleSwitch
                 // treat a clear union bit as "no player effect listens at this step" and skip the whole
                 // _runEffects shell, so a missed update would silently drop live effects. This is the
-                // canonical chokepoint (addEffect -> _addEffectInternal); the ONLY other player-effect
-                // writer is _addStatBoostEffectSlot, which mirrors this with `|= STAT_BOOST_STEPS`.
+                // SOLE add chokepoint for player effects (stat-boost sources live in their own
+                // boost-word store, not the effect list).
                 // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
                 if (targetIndex != 2) {
                     config.playerEffectStepsUnion |= stepsBitmap;
@@ -2165,14 +2165,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // ---------------------------------------------------------------------------------------------
     // Inlined stat boosts
     //
-    // Formerly the standalone `StatBoosts` effect contract. Boost sources are stored in the normal
-    // per-mon effect mappings under the STAT_BOOST_ADDRESS sentinel (stepsBitmap = STAT_BOOST_STEPS),
-    // and the aggregated multiplier snapshot lives in globalKV — both already recycled across battles
-    // by the MappingAllocator-managed storageKey, so no new storage is introduced. Callers (moves,
-    // abilities, shared effects) invoke these directly during execute, so the boost-source key is
-    // still derived from msg.sender exactly as it was when StatBoosts saw the caller. The math lives
-    // in StatBoostLib; here we only touch storage and fire the OnUpdateMonState pipeline via
-    // _updateMonStateInternal (matching the legacy updateMonState path).
+    // Formerly the standalone `StatBoosts` effect contract. Boost sources live in their own
+    // per-mon store — one packed word per source in p0/p1BoostWords, 4-bit counts in
+    // p0/p1BoostCounts, aggregation cache in statBoostAcc — NOT in the effect mappings, so effect
+    // passes never iterate them; Temp expiry is a direct _inlineStatBoostSwitchOut call in
+    // _handleSwitch. Callers (moves, abilities, shared effects) invoke these directly during
+    // execute, so the boost-source key is still derived from msg.sender exactly as it was when
+    // StatBoosts saw the caller. The math lives in StatBoostLib; here we only touch storage and
+    // fire the OnUpdateMonState pipeline via _updateMonStateInternal (matching the legacy path).
     // ---------------------------------------------------------------------------------------------
 
     /// @notice Apply a stat-boost source keyed by msg.sender (no salt). Merges into an existing
@@ -3113,8 +3113,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If so, remove the effect and the extra data.
         // Guard each _runEffects so we don't pay its setup (storage re-resolution + count load) when
         // there's provably nothing to run: the switching mon has no effects (count == 0) or no effect
-        // anywhere listens at this step (union bit clear — stat boosts now fold their OnMonSwitchOut
-        // step into the union via _addStatBoostEffectSlot), and the global list is empty.
+        // anywhere listens at this step (union bit clear), and the global list is empty.
         if (!currentMonState.isKnockedOut) {
             uint256 outCount = playerIndex == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, currentActiveMonIndex)
@@ -3406,8 +3405,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // Skip tombstones AND entries that don't listen at this step. The step filter is
             // hoisted here on purpose: stepsBitmap shares slot 0 with the effect address (free
             // check), while letting _runSingleEffect do it would first pay the eff.data SLOAD
-            // (slot 1) + 13-arg call setup. Stat-boost sentinel entries (OnMonSwitchOut-only)
-            // otherwise tax every RoundStart/RoundEnd/AfterMove/AfterDamage pass over their mon.
+            // (slot 1) + 13-arg call setup.
             if (address(eff.effect) != TOMBSTONE_ADDRESS && (eff.stepsBitmap & (1 << uint8(round))) != 0) {
                 _runSingleEffect(
                     config,
@@ -5125,12 +5123,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
-    function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        uint8 teamSizes = battleConfig[storageKey].teamSizes;
-        return (playerIndex == 0) ? (teamSizes & 0x0F) : (teamSizes >> 4);
-    }
-
     function getMoveForMonForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex, uint256 moveIndex)
         external
         view
@@ -5153,15 +5145,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return _getCurrentTurnMoveForSlot(playerIndex, slotIndex & 1);
         }
         return _getCurrentTurnMove(battleConfig[_resolveStorageKey(battleKey)], playerIndex);
-    }
-
-    function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MoveDecision memory)
-    {
-        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
-        return _getCurrentTurnMove(config, playerIndex);
     }
 
     function getMonStatsForBattle(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
@@ -5251,14 +5234,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256) {
         return battleData[battleKey].turnId;
-    }
-
-    function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory) {
-        uint16 packed = battleData[battleKey].activeMonIndex;
-        uint256[] memory result = new uint256[](2);
-        result[0] = _unpackActiveMonIndex(packed, 0);
-        result[1] = _unpackActiveMonIndex(packed, 1);
-        return result;
     }
 
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192) {

@@ -75,11 +75,11 @@ pub fn switch_flag(sim: &mut Sim, seat: Seat, bk: B256) -> u8 {
     }
 }
 
-/// Virtual [opp active, cpu active] (the proxied getActiveMonIndex swap).
+/// Virtual [opp active, cpu active] — active indices off getBattleContext, seat-swapped.
 pub fn active_mon_indices(sim: &mut Sim, seat: Seat, bk: B256) -> (usize, usize) {
-    let r = Engine::getActiveMonIndexForBattleState(&mut sim.world, bk);
-    let p0 = u64::try_from(r[0]).unwrap() as usize;
-    let p1 = u64::try_from(r[1]).unwrap() as usize;
+    let ctx = Engine::getBattleContext(&mut sim.world, bk);
+    let p0 = ctx.p0ActiveMonIndex as usize;
+    let p1 = ctx.p1ActiveMonIndex as usize;
     if seat.flipped() {
         (p1, p0)
     } else {

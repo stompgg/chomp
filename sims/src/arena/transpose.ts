@@ -23,8 +23,7 @@ const FLIP_ARG_POSITIONS: Record<string, number[]> = {
   getMonValueForBattle: [1],
   getMoveForMonForBattle: [1],
   getKOBitmap: [1],
-  getTeamSize: [1],
-  getMoveDecisionForBattleState: [1],
+  getMoveDecisionForSlot: [1],
   validatePlayerMoveForBattle: [2],
   getDamageCalcContext: [1, 3], // (bk, atkPlayer, atkMon, defPlayer, defMon) — player args at 1 & 3
   // forward-model fork submission: _setMoveInternal(config, playerIndex, ...)
@@ -72,10 +71,13 @@ export function transposeEngine(engine: any): any {
         out = (...args: any[]) => {
           const ctx = val.apply(target, args);
           const flag = Number(ctx.playerSwitchForTurnFlag);
-          if (flag === 0 || flag === 1) {
-            return { ...ctx, playerSwitchForTurnFlag: BigInt(1 - flag) };
-          }
-          return ctx;
+          // Seat-swap the active indices; flip the singles switch flag (0/1).
+          return {
+            ...ctx,
+            p0ActiveMonIndex: ctx.p1ActiveMonIndex,
+            p1ActiveMonIndex: ctx.p0ActiveMonIndex,
+            playerSwitchForTurnFlag: flag === 0 || flag === 1 ? BigInt(1 - flag) : ctx.playerSwitchForTurnFlag,
+          };
         };
       } else {
         out = val.bind(target);

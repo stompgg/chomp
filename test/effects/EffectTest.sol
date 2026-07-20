@@ -307,7 +307,7 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
     }
 
     /**
@@ -631,13 +631,13 @@ contract EffectTest is Test, BattleHelper {
 
         // The move should outspeed the swap, so the swap doesn't happen
         // So Bob's active mon index should still be 0
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
 
         // Alice uses slower Zap, Bob switches to mon index 1
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, SWITCH_MOVE_INDEX, 0, uint16(1));
 
         // Bob's active mon index should be 1 (swap goes before getting Zapped)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 1);
 
         // Bob's active mon should have the Zap effect
         (EffectInstance[] memory zapEffects,) = engine.getEffects(battleKey, 1, 1);
@@ -649,7 +649,7 @@ contract EffectTest is Test, BattleHelper {
         );
 
         // Check that Bob's active mon index is now 0, and the effect is still there
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
         (EffectInstance[] memory zapEffectsAfter,) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffectsAfter.length, 1);
 

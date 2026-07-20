@@ -59,14 +59,10 @@ export function makeRng(seed: number = (Math.random() * 0x100000000) >>> 0): () 
 // Small readers (the state CPU.sol's `_buildCPUContext` pulls off the engine)
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Active mon indices [p0, p1]. The transpiled `getActiveMonIndexForBattleState` already UNPACKS to
- * a 2-element array `[p0Index, p1Index]` (it is NOT a packed byte pair in the local engine — the
- * on-chain `data.activeMonIndex` packing is hidden behind the getter), so we read it directly.
- */
+/** Active mon indices [p0, p1], off getBattleContext (the transpose proxy seat-swaps them). */
 export function activeMonIndices(e: any, bk: Hex): [number, number] {
-  const r = e.getActiveMonIndexForBattleState(bk);
-  return [Number(r[0]), Number(r[1])];
+  const ctx = e.getBattleContext(bk);
+  return [Number(ctx.p0ActiveMonIndex), Number(ctx.p1ActiveMonIndex)];
 }
 
 export function cpuActiveMonIndex(e: any, bk: Hex): number {
@@ -78,7 +74,8 @@ export function oppActiveMonIndex(e: any, bk: Hex): number {
 }
 
 export function teamSize(e: any, bk: Hex, playerIndex: bigint): number {
-  return Number(e.getTeamSize(bk, playerIndex));
+  const packed = Number(e.battleConfig[e._getStorageKey(bk)].teamSizes);
+  return playerIndex === 0n ? packed & 0x0f : packed >> 4;
 }
 
 export function cpuTeamSize(e: any, bk: Hex): number {
@@ -185,7 +182,7 @@ export function moveTargetSpecOf(slot: bigint): string {
 // The opponent's (p0's) revealed move this turn — BetterCPU peeks at this. { moveIndex, extraData }
 // with the on-chain packing decoded (low 7 bits = move index; bit 7 = isRealTurn).
 export function opponentRevealedMove(e: any, bk: Hex): RevealedMove {
-  const d = e.getMoveDecisionForBattleState(bk, OPP_PLAYER_INDEX);
+  const d = e.getMoveDecisionForSlot(bk, OPP_PLAYER_INDEX, 0n);
   return { moveIndex: Number(d.packedMoveIndex) & 0x7f, extraData: Number(d.extraData) };
 }
 

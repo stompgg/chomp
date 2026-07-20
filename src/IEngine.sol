@@ -180,13 +180,7 @@ interface IEngine {
         external
         view
         returns (uint256);
-    function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MoveDecision memory);
-    function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
-    function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external

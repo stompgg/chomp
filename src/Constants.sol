@@ -47,15 +47,6 @@ uint256 constant EFFECT_COUNT_MASK = 0x3F; // 6 bits = max count of 63
 
 address constant TOMBSTONE_ADDRESS = address(0xdead);
 
-// Sentinel effect address used for inlined stat-boost entries. Boost sources are stored in the
-// normal per-mon effect mappings under this address; the Engine recognizes it and runs the
-// inlined stat-boost switch-out logic instead of making an external IEffect call (mirrors the
-// address(0) StaminaRegen inline path). It is never a real deployed contract.
-address constant STAT_BOOST_ADDRESS = address(0x57B); // "STB" - stat boost
-// Steps bitmap stored on inlined stat-boost effect entries: ALWAYS_APPLIES | OnMonSwitchOut (bit 5).
-// Matches the legacy StatBoosts.getStepsBitmap() (0x8020) so view/round-trip behavior is unchanged.
-uint16 constant STAT_BOOST_STEPS = 0x8020;
-
 // Sentinel ruleset address: when passed as battle.ruleset, the Engine adds
 // inline StaminaRegen as a global effect without calling an external contract.
 address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A); // "STA"mina

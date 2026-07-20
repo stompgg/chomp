@@ -754,9 +754,9 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
         _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, uint16(1), NO_OP_MOVE_INDEX, 0);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "turn should advance");
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[0], 1, "p0 should have switched in mon 1 via valid SWITCH");
-        assertEq(active[1], 0, "p1 should have been force-switched to mon 0");
+        BattleContext memory active = engine.getBattleContext(battleKey);
+        assertEq(active.p0ActiveMonIndex, 1, "p0 should have switched in mon 1 via valid SWITCH");
+        assertEq(active.p1ActiveMonIndex, 0, "p1 should have been force-switched to mon 0");
     }
 
     /// @notice Turn 0 with a regular (attack) moveIndex must also coerce, not try to run the attack.
@@ -767,9 +767,9 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
         _executeDualSigned(battleKey, 0, 0, 0, 0, 0);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 1, "turn should advance");
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[0], 0, "p0 force-switched to mon 0");
-        assertEq(active[1], 0, "p1 force-switched to mon 0");
+        BattleContext memory active = engine.getBattleContext(battleKey);
+        assertEq(active.p0ActiveMonIndex, 0, "p0 force-switched to mon 0");
+        assertEq(active.p1ActiveMonIndex, 0, "p1 force-switched to mon 0");
     }
 
     /// @notice Regular move with an out-of-bounds moveIndex must silently no-op rather than revert
@@ -806,8 +806,8 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
         _executeDualSigned(battleKey, 1, SWITCH_MOVE_INDEX, uint16(99), NO_OP_MOVE_INDEX, 0);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance");
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[1], 0, "p1 still on mon 0 - OOB switch silently no-oped");
+        BattleContext memory active = engine.getBattleContext(battleKey);
+        assertEq(active.p1ActiveMonIndex, 0, "p1 still on mon 0 - OOB switch silently no-oped");
     }
 
     /// @notice Switch to the same mon on a non-turn-0 must silently no-op.
@@ -816,14 +816,14 @@ contract SignedCommitManagerEngineSafetyTest is SignedCommitManagerTestBase {
 
         // Turn 0: p0 switches to mon 1, p1 to mon 0.
         _executeDualSigned(battleKey, 0, SWITCH_MOVE_INDEX, uint16(1), SWITCH_MOVE_INDEX, 0);
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
 
         // Turn 1: p1 is committer. p1 tries to switch to their own active mon (0). p0 NO_OP.
         _executeDualSigned(battleKey, 1, SWITCH_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 2, "turn should advance");
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[1], 0, "p1 still on mon 0 - same-mon switch silent no-op");
+        BattleContext memory active = engine.getBattleContext(battleKey);
+        assertEq(active.p1ActiveMonIndex, 0, "p1 still on mon 0 - same-mon switch silent no-op");
     }
 
     function test_revertBattleNotCommiter() public {

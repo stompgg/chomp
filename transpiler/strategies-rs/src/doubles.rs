@@ -251,7 +251,7 @@ pub fn pick_side_moves(
     let is_forced = flag != 2; // 2 == both slots take a normal action
     let mask = flag & 0x0f; // which absolute slots must forced-switch
     let slots = active_slots(sim, bk);
-    let team_size = u64::try_from(Engine::getTeamSize(&mut sim.world, bk, U256::from(cpu_side))).unwrap_or(0) as usize;
+    let team_size = sim.team_size_phys(U256::from(cpu_side));
 
     let m0 = decide_slot(sim, bk, cpu_side, difficulty, is_forced, mask, &slots, team_size, a0, rng);
     let m1 = decide_slot(sim, bk, cpu_side, difficulty, is_forced, mask, &slots, team_size, a1, rng);
@@ -306,8 +306,8 @@ const D_W_HP: f64 = 1.0;
 const D_W_KO: f64 = 150.0;
 const D_W_STAMINA: f64 = 2.0;
 
-fn team_size_of(sim: &mut Sim, bk: B256, side: u8) -> usize {
-    u64::try_from(Engine::getTeamSize(&mut sim.world, bk, U256::from(side))).unwrap_or(0) as usize
+fn team_size_of(sim: &mut Sim, _bk: B256, side: u8) -> usize {
+    sim.team_size_phys(U256::from(side))
 }
 
 /// Σ hp% over a side's whole roster.

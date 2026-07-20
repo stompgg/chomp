@@ -574,7 +574,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the switched in mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -5);
     }
 
@@ -623,7 +623,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the previous mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -5);
     }
 
@@ -1381,7 +1381,7 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(1, 1), 0);
 
         // Verify that Bob's mon is now index 1
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 1);
 
         // Verify that Alice's mon took damage
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -5);
@@ -1455,7 +1455,7 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(0, 1), 0);
 
         // Assert that Alice's mon is now index 1
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
 
         // Assert that Alice's new mon took damage
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -5);
@@ -1545,7 +1545,7 @@ contract EngineTest is Test, BattleHelper {
         engine.execute(battleKey);
 
         // Check that the active mon index for Alice is still 0 (no switch happened)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 0);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 0);
     }
 
     function test_forceSwitchMoveIgnoresInvalidSwitchTargetNonPriorityPlayerAfterAttacking() public {
@@ -1631,7 +1631,7 @@ contract EngineTest is Test, BattleHelper {
         engine.execute(battleKey);
 
         // Check that the active mon index for Alice is still 0 (no switch happened)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 0);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 0);
     }
 
     // environmental effect kills mon after switch in from player move and forces switch
@@ -2703,7 +2703,7 @@ contract EngineTest is Test, BattleHelper {
         // Switch for turn flag should be 0, Bob's active mon index should now be 0
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.playerSwitchForTurnFlag, 0);
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
     }
 
     // `AttackCalculator._calculateDamageCore` clamps a huge rawDamage to `type(int32).max` and hands

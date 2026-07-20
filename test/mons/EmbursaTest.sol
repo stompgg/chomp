@@ -425,11 +425,11 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function _aliceActive(bytes32 battleKey) internal view returns (uint256) {
-        return engine.getActiveMonIndexForBattleState(battleKey)[0];
+        return engine.getBattleContext(battleKey).p0ActiveMonIndex;
     }
 
     function _bobActive(bytes32 battleKey) internal view returns (uint256) {
-        return engine.getActiveMonIndexForBattleState(battleKey)[1];
+        return engine.getBattleContext(battleKey).p1ActiveMonIndex;
     }
 
     /**

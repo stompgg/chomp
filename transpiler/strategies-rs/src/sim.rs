@@ -81,9 +81,8 @@ pub struct Sim {
     pub world: World,
     pub battle_key: B256,
     pub engine_addr: Address,
-    /// (p0, p1) team sizes, immutable after `startBattle` — cached because
-    /// the transpiled `getTeamSize` getter deep-clones the whole
-    /// BattleConfig per call, and view captures read sizes per fork.
+    /// (p0, p1) team sizes, immutable after `startBattle` — cached so a size
+    /// read doesn't deep-clone BattleConfig; view captures read sizes per fork.
     team_sizes: (usize, usize),
     /// (p0, p1) global mon-ids per team slot — carried from the drafted teams
     /// so the CPU can look up per-mon config by identity (the engine only

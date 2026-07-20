@@ -18,7 +18,7 @@ import { Hex } from './hex';
 import { MoveClass, MonStateIndexName } from '../../../transpiler/ts-output/Enums';
 import { moveSlotLib } from '../../../transpiler/ts-output/moves/MoveSlotLib';
 import { buildDamageCalcContext, estimateDamageMeta } from './heuristic-shared';
-import { koBitmap, monCurrentHp, monCurrentStamina, moveSlot, moveInputTypeOf, moveTargetSpecOf } from './engine-view';
+import { koBitmap, monCurrentHp, monCurrentStamina, moveSlot, moveInputTypeOf, moveTargetSpecOf, teamSize } from './engine-view';
 import { applyHypotheticalSlotMoveKeyed, disposeFork, packSide } from './forward-model';
 
 const SWITCH = 125;
@@ -51,7 +51,7 @@ function activeSlots(e: any, bk: Hex): number[] {
 }
 
 function teamSizeOf(e: any, bk: Hex, side: 0 | 1): number {
-  return Number(e.getTeamSize(bk, BigInt(side)));
+  return teamSize(e, bk, BigInt(side));
 }
 
 function monMaxHp(e: any, bk: Hex, side: 0 | 1, mon: number): number {

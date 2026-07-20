@@ -304,11 +304,13 @@ The packing/aggregation math lives in `src/lib/StatBoostLib.sol`. (Historically 
 round-trips.)
 
 How it works:
-- Each boost **source** is one packed entry stored in the mon's normal effect mapping under the
-  `STAT_BOOST_ADDRESS` sentinel (steps bitmap `STAT_BOOST_STEPS` = `OnMonSwitchOut | ALWAYS_APPLIES`).
+- Each boost **source** is one packed word in a dedicated per-mon boost store
+  (`p0BoostWords`/`p1BoostWords`; 4-bit counts in `p0/p1BoostCounts`, aggregation cache in
+  `statBoostAcc`) — NOT an effect-list entry, so effect passes never iterate boost sources.
   Sources are keyed by `msg.sender`, so each move/ability/effect
   stacks independently and can remove its own boost. Boosts are **multiplicative** per source; `Temp`
-  boosts are dropped automatically on switch-out (`_inlineStatBoostSwitchOut`), `Perm` ones persist.
+  boosts are dropped on switch-out by a direct `_inlineStatBoostSwitchOut` call in `_handleSwitch`,
+  `Perm` ones persist.
 - Boosts apply only to the 5 stat deltas: `Speed`, `Attack`, `Defense`, `SpecialAttack`,
   `SpecialDefense`. There is **no globalKV snapshot** — the Engine telescopes off the live `monState`
   delta (`new boosted − base − currentDelta`) and fires `OnUpdateMonState` like any other delta write.
@@ -398,7 +400,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 
 - `BattleData` and `BattleConfig` are stored per battle key (derived from player addresses)
 - `MonState` tracks deltas from base stats (hpDelta, staminaDelta, etc.). The 5 stat deltas are written only by the inlined stat-boost path (see "Stat Boosts"); other deltas via `updateMonState`.
-- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources reuse these same mappings under the `STAT_BOOST_ADDRESS` sentinel.
+- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources live in dedicated per-mon boost-word mappings (`p0/p1BoostWords` + packed counts), not the effect mappings.
 - Heavy use of bit packing for gas efficiency (KO bitmaps, effect counts, active mon indices)
 - Battle mode is a `uint8` in `BattleConfig.battleMode` (mirrored to `BattleData.isTwoSlotMode`/`isMultiMode`). Slot-0 active lanes pack into `BattleData.activeMonIndex` (side 0 = low byte, side 1 = high byte); 2-slot modes add slot-1 lanes in `activeMonExt`. Multi's extra seats (p2/p3) live in `multiSeats[battleKey]` (`MultiSeatData`), written only when `battleMode == MULTI`.
 - Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`, in-flight `PreDamage`)

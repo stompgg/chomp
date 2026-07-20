@@ -186,8 +186,8 @@ contract NirvammaTest is Test, BattleHelper {
                 "Nirvamma HP after own trigger mismatch"
             );
             // Alice should have force-swapped to filler (mon 1).
-            uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-            assertEq(active[0], 1, "Alice should have force-swapped to filler");
+            BattleContext memory active = engine.getBattleContext(battleKey);
+            assertEq(active.p0ActiveMonIndex, 1, "Alice should have force-swapped to filler");
         }
     }
 
@@ -215,8 +215,8 @@ contract NirvammaTest is Test, BattleHelper {
         int32 hpAfter = engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp);
         assertLe(hpAfter, bobHpBefore - 10, "Bob's mon should take >= 10 extra damage from opp trigger");
         // Bob should have force-swapped.
-        uint256[] memory active = engine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(active[1], 1, "Bob should have force-swapped to filler");
+        BattleContext memory active = engine.getBattleContext(battleKey);
+        assertEq(active.p1ActiveMonIndex, 1, "Bob should have force-swapped to filler");
     }
 
     function test_hardReset_selfRemovesAfterBothFire() public {
