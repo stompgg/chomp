@@ -155,13 +155,54 @@ fn damaging_options(sim: &mut Sim, bk: B256, cpu_side: u8, my_mon: u32) -> Vec<(
             if meta.moveClass != MoveClass::Physical && meta.moveClass != MoveClass::Special {
                 continue; // only weigh damaging moves
             }
-            let dmg = estimate_damage_meta(&mut ctx, meta);
-            if dmg > 0 {
-                options.push((SlotMove { move_index: *mi, extra_data: target_bits(t_abs) }, dmg));
-            }
+            let mv = SlotMove { move_index: *mi, extra_data: target_bits(t_abs) };
+            // A hand-written getMeta() may quote 0 for a move that does deal damage, so 0 means
+            // "unknown", not "harmless" — dropping it here empties the option set and leaves the slot
+            // resting all game. Simulate instead of trusting a declared number: nominal power is not
+            // damage-this-turn for delayed (Q5), multi-hit (Bubble Bop), or spent (Sneak Attack) moves.
+            let dmg = if meta.basePower != 0 {
+                estimate_damage_meta(&mut ctx, meta)
+            } else {
+                probe_damage(sim, bk, cpu_side, my_mon, mv, opp_side, t_mon)
+            };
+            options.push((mv, dmg));
         }
     }
     options
+}
+
+/// Exact damage for one (move, target), by simulating it: fork a turn where only `my_mon`'s slot
+/// acts and read how much HP the target actually lost. Used for moves whose power the static quote
+/// can't know; costs one fork, so it runs only on moves whose `getMeta()` quotes no power.
+fn probe_damage(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    my_mon: u32,
+    mv: SlotMove,
+    opp_side: u8,
+    t_mon: usize,
+) -> i64 {
+    let slots = active_slots(sim, bk);
+    let [a0, a1] = side_slots(cpu_side);
+    // Place the probed action on whichever of my slots holds the acting mon; everything else rests,
+    // so the observed HP change is attributable to this move alone.
+    let (m0, m1) = if slots[a0] == my_mon {
+        (mv, NO_OP_MOVE)
+    } else if slots[a1] == my_mon {
+        (NO_OP_MOVE, mv)
+    } else {
+        return 0; // not an active slot this turn
+    };
+    let mine = pack_side(m0.move_index, m0.extra_data, m1.move_index, m1.extra_data, 0);
+    let theirs = pack_side(NO_OP, 0, NO_OP, 0, 0);
+    let (side0, side1) = if cpu_side == 0 { (mine, theirs) } else { (theirs, mine) };
+
+    let before = mon_state(sim, OBS, bk, opp_side, t_mon, MonStateIndexName::Hp);
+    let fork = sim.apply_hypothetical_slot(bk, side0, side1);
+    let after = mon_state(sim, OBS, fork, opp_side, t_mon, MonStateIndexName::Hp);
+    sim.dispose_fork(fork);
+    (before - after).max(0) // hp deltas run negative; damage is how much further it fell
 }
 
 /// Greedy attack for one acting mon: the affordable damaging (move, target-slot) with the highest
@@ -705,6 +746,413 @@ pub fn run_doubles_games(
                     break;
                 }
                 let r = run_one_doubles(&specs[idx], book);
+                slots.lock().unwrap()[idx] = Some(r);
+            });
+        }
+    });
+    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+}
+
+// ── Diagnostic: per-turn trace of one mon's doubles game ────────────────────
+
+/// What a tracked mon did / had on one doubles turn.
+pub struct MonTurnTrace {
+    pub turn: u32,
+    pub active: bool,
+    pub move_index: u8,
+    pub hp_pct: f64,
+    pub stamina: i64,
+    /// Attack stat delta — non-zero once Loop's boost lands (the setup payoff).
+    pub atk_delta: i64,
+}
+
+/// A KO credited to one attacker. Doubles can't reuse singles' "opposing active" proxy — there are
+/// two of them — so credit comes from the target nibble the killer's side actually aimed.
+pub struct DoublesKoEvent {
+    pub turn: u32,
+    pub killer_seat: u8,
+    pub killer_id: u32,
+    pub victim_id: u32,
+}
+
+pub struct DoublesInstr {
+    pub winner_side: Option<u8>,
+    pub turns: u32,
+    pub p0_ids: Vec<u32>,
+    pub p1_ids: Vec<u32>,
+    /// Active-turn count per team slot (parallel to p0_ids / p1_ids).
+    pub active_turns_p0: Vec<u32>,
+    pub active_turns_p1: Vec<u32>,
+    pub kos: Vec<DoublesKoEvent>,
+    /// KOs both opposing slots aimed at — a genuine co-kill, so no single attacker earns the credit.
+    pub kos_shared: u32,
+    /// KOs no opposing move aimed at (status, recoil, ally damage).
+    pub kos_incidental: u32,
+    /// Per-turn rows for the `track`ed mon, if any.
+    pub rows: Vec<MonTurnTrace>,
+    pub tracked_active_turns: u32,
+}
+
+/// Was `mv` a real attack aimed at absolute slot `abs`? Switch / rest carry no target nibble.
+fn aimed_at(mv: SlotMove, abs: usize) -> bool {
+    mv.move_index != SWITCH && mv.move_index != NO_OP && (mv.extra_data >> 12) & (1u16 << abs) != 0
+}
+
+/// Counterfactual: replayed from `snap` with only `mv` on `atk_side`'s slot `atk_i` and everything
+/// else resting, does `victim` still go down? Lets a KO both opposing slots aimed at be credited to
+/// whichever one was actually lethal — usually only one is, the other being redundant overkill.
+///
+/// The real turn's salts are reused so accuracy/crit land as close to the observed turn as a
+/// one-sided replay can; it is still a counterfactual, not a replay of what happened.
+fn would_ko_alone(
+    sim: &mut Sim,
+    snap: B256,
+    atk_side: u8,
+    atk_i: usize,
+    mv: SlotMove,
+    victim_side: u8,
+    victim_mon: usize,
+    salts: (u128, u128),
+) -> bool {
+    let (m0, m1) = if atk_i == 0 { (mv, NO_OP_MOVE) } else { (NO_OP_MOVE, mv) };
+    let mine = pack_side(m0.move_index, m0.extra_data, m1.move_index, m1.extra_data, if atk_side == 0 { salts.0 } else { salts.1 });
+    let theirs = pack_side(NO_OP, 0, NO_OP, 0, if atk_side == 0 { salts.1 } else { salts.0 });
+    let (side0, side1) = if atk_side == 0 { (mine, theirs) } else { (theirs, mine) };
+    let fork = sim.apply_hypothetical_slot(snap, side0, side1);
+    let down = ko_bitmap(sim, fork, victim_side) & (1u32 << victim_mon) != 0;
+    sim.dispose_fork(fork);
+    down
+}
+
+/// Replay `spec` recording per-mon active turns and attributed KOs, plus optional per-turn rows for
+/// one tracked `(side, mon)`. Mirrors `play_doubles_game`; the hot path stays uninstrumented.
+pub fn play_doubles_game_instrumented(
+    spec: &DoublesSpec,
+    book: &HashMap<String, Address>,
+    track: Option<(u8, usize)>,
+) -> DoublesInstr {
+    let mut rng = JsRng::new(spec.seed);
+    let mut sim = Sim::new_doubles(
+        spec.mons_per_team,
+        spec.p0_team.clone(),
+        spec.p1_team.clone(),
+        spec.p0_ids.clone(),
+        spec.p1_ids.clone(),
+        book,
+    );
+    let mut out = DoublesInstr {
+        winner_side: None,
+        turns: spec.max_turns,
+        p0_ids: spec.p0_ids.clone(),
+        p1_ids: spec.p1_ids.clone(),
+        active_turns_p0: vec![0; spec.p0_ids.len()],
+        active_turns_p1: vec![0; spec.p1_ids.len()],
+        kos: Vec::new(),
+        kos_shared: 0,
+        kos_incidental: 0,
+        rows: Vec::new(),
+        tracked_active_turns: 0,
+    };
+
+    for t in 0..spec.max_turns {
+        let w = sim.winner_index();
+        if w != 2 {
+            out.winner_side = Some(w);
+            out.turns = t;
+            return out;
+        }
+        let bk = sim.battle_key;
+        let (p0a, p0b) = if spec.p0_search_depth > 0 {
+            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth)
+        } else {
+            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
+        };
+        let (p1a, p1b) = if spec.p1_search_depth > 0 {
+            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth)
+        } else {
+            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
+        };
+
+        // Slot occupancy + KO state before the turn — the victim's slot must be read pre-execute,
+        // since a KO'd slot may already have been vacated by the time we look.
+        let slots = active_slots(&mut sim, bk);
+        for side in 0u8..2 {
+            for abs in side_slots(side) {
+                let mon = slots[abs];
+                if mon == EMPTY_LANE {
+                    continue;
+                }
+                let counts = if side == 0 { &mut out.active_turns_p0 } else { &mut out.active_turns_p1 };
+                if let Some(c) = counts.get_mut(mon as usize) {
+                    *c += 1;
+                }
+            }
+        }
+        let ko_before = [ko_bitmap(&mut sim, bk, 0), ko_bitmap(&mut sim, bk, 1)];
+
+        if let Some((side, mon)) = track {
+            let [s0, s1] = side_slots(side);
+            let picked = if side == 0 { (p0a, p0b) } else { (p1a, p1b) };
+            let (active, move_index) = if slots[s0] == mon as u32 {
+                (true, picked.0.move_index)
+            } else if slots[s1] == mon as u32 {
+                (true, picked.1.move_index)
+            } else {
+                (false, NO_OP)
+            };
+            if active {
+                out.tracked_active_turns += 1;
+            }
+            let mhp = mon_max_hp(&mut sim, OBS, bk, side, mon).max(1);
+            let hp = mhp + mon_state(&mut sim, OBS, bk, side, mon, MonStateIndexName::Hp);
+            out.rows.push(MonTurnTrace {
+                turn: t,
+                active,
+                move_index,
+                hp_pct: (hp.max(0) * 100) as f64 / mhp as f64,
+                stamina: mon_current_stamina(&mut sim, OBS, bk, side, mon),
+                atk_delta: mon_state(&mut sim, OBS, bk, side, mon, MonStateIndexName::Attack),
+            });
+        }
+
+        let salt0 = random_salt(&mut rng);
+        let salt1 = random_salt(&mut rng);
+        let side0 = pack_side(p0a.move_index, p0a.extra_data, p0b.move_index, p0b.extra_data, salt0);
+        let side1 = pack_side(p1a.move_index, p1a.extra_data, p1b.move_index, p1b.extra_data, salt1);
+        // Rollback point for the co-kill counterfactuals below — the real turn is about to advance
+        // the battle past the state they need to be posed from.
+        let snap = sim.snapshot(bk);
+        sim.execute_slot_turn(side0, side1);
+
+        // Fresh KOs → credit whichever opposing slot aimed at the victim's slot. Exactly one aimer
+        // is a clean attribution; two gets resolved by replaying each alone; none means it wasn't a
+        // targeted move that did it.
+        let bk2 = sim.battle_key;
+        for side in 0u8..2 {
+            let fresh = ko_bitmap(&mut sim, bk2, side) & !ko_before[side as usize];
+            if fresh == 0 {
+                continue;
+            }
+            let opp = 1 - side;
+            let opp_moves = if opp == 0 { [p0a, p0b] } else { [p1a, p1b] };
+            let (victim_ids, killer_ids) = if side == 0 {
+                (&spec.p0_ids, &spec.p1_ids)
+            } else {
+                (&spec.p1_ids, &spec.p0_ids)
+            };
+            for v in 0..victim_ids.len() {
+                if fresh & (1u32 << v) == 0 {
+                    continue;
+                }
+                let Some(v_abs) = side_slots(side).into_iter().find(|&a| slots[a] == v as u32) else {
+                    out.kos_incidental += 1; // victim wasn't an active slot this turn
+                    continue;
+                };
+                let aimers: Vec<usize> = (0..2).filter(|&i| aimed_at(opp_moves[i], v_abs)).collect();
+                if aimers.is_empty() {
+                    out.kos_incidental += 1; // nothing targeted it — status, recoil, or ally damage
+                    continue;
+                }
+                // Both aimed → replay each alone; the one lethal by itself earns the credit. If
+                // neither or both are, the KO is genuinely shared and stays out of the matrix.
+                let lethal: Vec<usize> = if aimers.len() == 2 {
+                    aimers
+                        .iter()
+                        .copied()
+                        .filter(|&i| {
+                            would_ko_alone(&mut sim, snap, opp, i, opp_moves[i], side, v, (salt0, salt1))
+                        })
+                        .collect()
+                } else {
+                    aimers
+                };
+                let [i] = lethal.as_slice() else {
+                    out.kos_shared += 1;
+                    continue;
+                };
+                let k_abs = side_slots(opp)[*i];
+                match killer_ids.get(slots[k_abs] as usize) {
+                    Some(&killer_id) => out.kos.push(DoublesKoEvent {
+                        turn: t,
+                        killer_seat: opp,
+                        killer_id,
+                        victim_id: victim_ids[v],
+                    }),
+                    None => out.kos_incidental += 1,
+                }
+            }
+        }
+        sim.dispose_fork(snap);
+    }
+    let fw = sim.winner_index();
+    out.winner_side = if fw != 2 { Some(fw) } else { None };
+    out
+}
+
+#[cfg(test)]
+mod pilot_tests {
+    use super::*;
+    use crate::arena::build_doubles_specs;
+    use crate::roster::{self, load_roster};
+
+    fn chomp_root() -> std::path::PathBuf {
+        std::env::var("CHOMP_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
+        })
+    }
+
+    /// Every mon must be able to take a real action in doubles. A move whose hand-written
+    /// `getMeta()` quotes `basePower: 0` used to be dropped from the option set, which left a mon
+    /// with an all-custom kit (Iblivion) with nothing to pick and resting every turn of every game.
+    #[test]
+    fn every_mon_can_act_in_doubles() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let (specs, _) = build_doubles_specs(&roster, 240, 0xbeefcafe, 10_000, true, 0);
+
+        for m in &roster.mons {
+            let mut appearances = 0;
+            let mut acted = false;
+            for spec in &specs {
+                for side in 0u8..2 {
+                    let ids = if side == 0 { &spec.p0_ids } else { &spec.p1_ids };
+                    let Some(mon) = ids.iter().position(|&x| x == m.id) else { continue };
+                    appearances += 1;
+                    let tr = play_doubles_game_instrumented(spec, &book, Some((side, mon)));
+                    if tr.rows.iter().any(|r| r.active && r.move_index != NO_OP && r.move_index != SWITCH) {
+                        acted = true;
+                        break;
+                    }
+                }
+                if acted {
+                    break;
+                }
+            }
+            assert!(appearances > 0, "{} never drafted — widen the sample", m.name);
+            assert!(acted, "{} never used a move in {appearances} doubles appearances", m.name);
+        }
+    }
+
+    /// KO attribution must stay conservative and well-covered: every KO lands in exactly one of
+    /// credited / co-kill / incidental (no double-counting), and the co-kill replay must recover the
+    /// bulk of the turns where both slots aimed at the same victim — without it, coverage sits near
+    /// half and focus-fired mons are systematically under-counted as victims.
+    #[test]
+    fn ko_attribution_is_covered_and_conserved() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let (specs, _) = build_doubles_specs(&roster, 300, 0xbeefcafe, 10_000, true, 0);
+        let recs = run_doubles_games_instrumented(&specs, &book, 1);
+
+        let credited: usize = recs.iter().map(|r| r.kos.len()).sum();
+        let shared: u32 = recs.iter().map(|r| r.kos_shared).sum();
+        let incidental: u32 = recs.iter().map(|r| r.kos_incidental).sum();
+        let total = credited as u32 + shared + incidental;
+        assert!(total > 0, "no KOs observed — widen the sample");
+
+        // A credited KO names a killer on the crediting side and a victim on the other. (killer_id
+        // == victim_id is legal: the two teams are drawn independently, so mirrors happen.)
+        for r in &recs {
+            for ko in &r.kos {
+                let (killers, victims) = if ko.killer_seat == 0 {
+                    (&r.p0_ids, &r.p1_ids)
+                } else {
+                    (&r.p1_ids, &r.p0_ids)
+                };
+                assert!(killers.contains(&ko.killer_id), "killer not on the crediting side");
+                assert!(victims.contains(&ko.victim_id), "victim not on the opposing side");
+            }
+        }
+
+        let coverage = credited as f64 / total as f64;
+        assert!(coverage > 0.6, "KO attribution coverage fell to {:.0}% — co-kill replay regressed", coverage * 100.0);
+    }
+
+    /// The probe must actually price a zero-quote move. Iblivion's kit is entirely hand-written
+    /// `IMoveSet`, so every one of its damage options comes from simulation — if the probe silently
+    /// returned 0 the pilot would be picking blind even though it has candidates.
+    #[test]
+    fn probe_prices_a_zero_quote_kit() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let iblivion = roster.mons.iter().find(|m| m.name == "Iblivion").expect("Iblivion in roster");
+        let (specs, _) = build_doubles_specs(&roster, 240, 0xbeefcafe, 10_000, true, 0);
+
+        let mut priced = false;
+        'outer: for spec in &specs {
+            for side in 0u8..2 {
+                let ids = if side == 0 { &spec.p0_ids } else { &spec.p1_ids };
+                if !ids.contains(&iblivion.id) {
+                    continue;
+                }
+                let mut sim = Sim::new_doubles(
+                    spec.mons_per_team,
+                    spec.p0_team.clone(),
+                    spec.p1_team.clone(),
+                    spec.p0_ids.clone(),
+                    spec.p1_ids.clone(),
+                    &book,
+                );
+                let bk = sim.battle_key;
+                // Turn 0 is the send-in; step once so both sides have live actives to price against.
+                sim.execute_slot_turn(
+                    pack_side(SWITCH, 0, SWITCH, 1, 0),
+                    pack_side(SWITCH, 0, SWITCH, 1, 0),
+                );
+                let mon = ids.iter().position(|&x| x == iblivion.id).unwrap() as u32;
+                let opts = damaging_options(&mut sim, bk, side, mon);
+                if opts.iter().any(|&(_, d)| d > 0) {
+                    priced = true;
+                    break 'outer;
+                }
+            }
+        }
+        assert!(priced, "probe never produced a non-zero damage estimate for Iblivion's all-custom kit");
+    }
+}
+
+/// One instrumented doubles game, with the same engine-panic guard as the plain runner (a panic
+/// yields an empty record, counted as a draw, rather than taking down the batch).
+fn run_one_doubles_instrumented(spec: &DoublesSpec, book: &HashMap<String, Address>) -> DoublesInstr {
+    catch_unwind(AssertUnwindSafe(|| play_doubles_game_instrumented(spec, book, None))).unwrap_or_else(|_| {
+        DoublesInstr {
+            winner_side: None,
+            turns: 0,
+            p0_ids: spec.p0_ids.clone(),
+            p1_ids: spec.p1_ids.clone(),
+            active_turns_p0: vec![0; spec.p0_ids.len()],
+            active_turns_p1: vec![0; spec.p1_ids.len()],
+            kos: Vec::new(),
+            kos_shared: 0,
+            kos_incidental: 0,
+            rows: Vec::new(),
+            tracked_active_turns: 0,
+        }
+    })
+}
+
+/// Instrumented counterpart of [`run_doubles_games`]; results come back in spec order.
+pub fn run_doubles_games_instrumented(
+    specs: &[DoublesSpec],
+    book: &HashMap<String, Address>,
+    threads: usize,
+) -> Vec<DoublesInstr> {
+    if threads <= 1 || specs.len() <= 1 {
+        return specs.iter().map(|s| run_one_doubles_instrumented(s, book)).collect();
+    }
+    let n = threads.min(specs.len());
+    let mut slots: Vec<Option<DoublesInstr>> = Vec::with_capacity(specs.len());
+    slots.resize_with(specs.len(), || None);
+    let slots = std::sync::Mutex::new(slots);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..n {
+            scope.spawn(|| loop {
+                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if idx >= specs.len() {
+                    break;
+                }
+                let r = run_one_doubles_instrumented(&specs[idx], book);
                 slots.lock().unwrap()[idx] = Some(r);
             });
         }

@@ -379,6 +379,13 @@ impl Sim {
         fork
     }
 
+    /// Clone `src`'s state under a fresh key WITHOUT running a turn — a rollback point for
+    /// counterfactuals that can only be posed after the real turn has already advanced the battle.
+    /// Dispose it like any other fork.
+    pub fn snapshot(&mut self, src: B256) -> B256 {
+        self.fork_battle_from(src)
+    }
+
     /// Reclaim a fork's cloned state.
     pub fn dispose_fork(&mut self, fork: B256) {
         self.world.Engine.battleData.remove(&fork);

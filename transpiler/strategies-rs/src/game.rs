@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use chomp_engine::Engine;
+use chomp_engine::Enums::MonStateIndexName;
 use chomp_engine::Structs::Mon;
 use chomp_rt::{Address, B256};
 
@@ -24,8 +25,8 @@ use crate::override_cpu::{self, OverrideState};
 use crate::search;
 use crate::sim::Sim;
 use crate::view::{
-    active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp, Mv,
-    Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp,
+    mon_state, mon_value, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -743,6 +744,10 @@ pub struct InstrRecord {
     pub active_turns_p0: Vec<u32>,
     pub active_turns_p1: Vec<u32>,
     pub kos: Vec<KoEvent>,
+    /// Largest (base + delta) any combat stat reached, and which mon-id held it — stat boosts are
+    /// multiplicative, so this shows how far compounding actually runs in a real game.
+    pub peak_stat: i64,
+    pub peak_stat_mon: u32,
 }
 
 pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) -> InstrRecord {
@@ -764,14 +769,39 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
     let mut active_turns_p0 = vec![0u32; spec.p0_ids.len()];
     let mut active_turns_p1 = vec![0u32; spec.p1_ids.len()];
     let mut kos: Vec<KoEvent> = Vec::new();
+    let (mut peak_stat, mut peak_stat_mon) = (0i64, 0u32);
 
     for t in 0..spec.max_turns {
+        // Boosts are multiplicative and stack per source, so track how far the combat stats actually
+        // compound; MAX_BOOSTED_STAT lets a stat reach int32::max, which the damage formula then
+        // scales by base power.
+        {
+            let bk_now: B256 = sim.battle_key;
+            for (vp, ids) in [(VOPP, &spec.p0_ids), (VCPU, &spec.p1_ids)] {
+                for (mi, &id) in ids.iter().enumerate() {
+                    for ix in [
+                        MonStateIndexName::Attack,
+                        MonStateIndexName::SpecialAttack,
+                        MonStateIndexName::Defense,
+                        MonStateIndexName::SpecialDefense,
+                    ] {
+                        let v = mon_value(&mut sim, obs, bk_now, vp, mi, ix)
+                            + mon_state(&mut sim, obs, bk_now, vp, mi, ix);
+                        if v > peak_stat {
+                            peak_stat = v;
+                            peak_stat_mon = id;
+                        }
+                    }
+                }
+            }
+        }
         let winner = sim.winner_index();
         if winner != 2 {
             return InstrRecord {
                 winner_seat: Some(winner), turns: t,
                 p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
                 active_turns_p0, active_turns_p1, kos,
+                peak_stat, peak_stat_mon,
             };
         }
 
@@ -843,6 +873,7 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
         turns: spec.max_turns,
         p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
         active_turns_p0, active_turns_p1, kos,
+        peak_stat, peak_stat_mon,
     }
 }
 
@@ -884,7 +915,7 @@ pub fn play_game_mock(
     for t in 0..spec.max_turns {
         let winner = sim.winner_index();
         if winner != 2 {
-            return InstrRecord { winner_seat: Some(winner), turns: t, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos };
+            return InstrRecord { winner_seat: Some(winner), turns: t, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos, peak_stat: 0, peak_stat_mon: 0 };
         }
         let bk: B256 = sim.battle_key;
 
@@ -956,7 +987,7 @@ pub fn play_game_mock(
     }
 
     let fw = sim.winner_index();
-    InstrRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, turns: spec.max_turns, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos }
+    InstrRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, turns: spec.max_turns, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos, peak_stat: 0, peak_stat_mon: 0 }
 }
 
 /// Threaded mock batch (see `run_batch`); the mock's word is repacked each turn in play_game_mock.

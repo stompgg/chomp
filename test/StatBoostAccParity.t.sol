@@ -50,6 +50,49 @@ contract StatBoostAccParity is Test {
         _run(3, 12, 41968);
     }
 
+    /// Regression: a 100% Divide zeroes a lane's numerator. The recompute used to read a 0
+    /// numerator as "lane not seeded yet" and restart from baseStats, resurrecting the stat and
+    /// diverging from the accumulator (which seeds off the boost count).
+    function test_zeroedLaneDoesNotReseedFromBase() public pure {
+        _run(14, 179, 9452);
+    }
+
+    /// boostPercent is a uint8, so a Divide can be handed anything up to 255. `DENOM - pct` would
+    /// underflow and revert (wedging the battle mid-move), and a factor of 0 would zero the numerator
+    /// into a state the (numerator, count) aggregation cannot represent or invert. Both saturate.
+    function test_divideSaturatesInsteadOfRevertingOrZeroing() public pure {
+        assertEq(StatBoostLib.boostFactor(50, false), 50, "ordinary divide");
+        assertEq(StatBoostLib.boostFactor(99, false), 1, "max representable reduction");
+        assertEq(StatBoostLib.boostFactor(100, false), 1, "100% divide floors, not zeroes");
+        assertEq(StatBoostLib.boostFactor(255, false), 1, "uint8 max divide floors, not underflows");
+        assertEq(StatBoostLib.boostFactor(50, true), 150, "multiply unaffected");
+
+        // End to end: a 255% Divide folds in, stays invertible, and both paths agree.
+        uint32[5] memory baseStats = [uint32(100), 100, 100, 100, 100];
+        StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
+        boosts[0] = StatBoostToApply({
+            stat: MonStateIndexName(2), boostPercent: 255, boostType: StatBoostType.Divide
+        });
+        bytes32[] memory words = new bytes32[](1);
+        words[0] = StatBoostLib.packBoostData(uint168(1), true, boosts);
+
+        (uint256 acc, bool ok) = StatBoostLib.applyWordToAcc(0, words[0], baseStats, true);
+        assertTrue(ok, "extreme divide folds in");
+        uint32[5] memory fast = StatBoostLib.finalizeAccStats(acc, baseStats);
+        uint32[5] memory ref = _referenceStats(words, type(uint256).max, baseStats);
+        for (uint256 k; k < 5; ++k) {
+            assertEq(fast[k], ref[k], "extreme divide parity");
+        }
+
+        // And it divides back out cleanly rather than refusing.
+        (uint256 acc2, bool ok2) = StatBoostLib.applyWordToAcc(acc, words[0], baseStats, false);
+        assertTrue(ok2, "extreme divide inverts");
+        uint32[5] memory restored = StatBoostLib.finalizeAccStats(acc2, baseStats);
+        for (uint256 k; k < 5; ++k) {
+            assertEq(restored[k], baseStats[k], "removing the source restores base");
+        }
+    }
+
     function testFuzz_accMatchesRecompute(uint256 seed, uint8 numSourcesRaw, uint16 baseRaw) public pure {
         _run(seed, numSourcesRaw, baseRaw);
     }

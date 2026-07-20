@@ -81,6 +81,28 @@ pub fn build_specs(roster: &Roster, games: usize, wseed: u32, seed_base: u32) ->
     build_specs_with(roster, games, wseed, seed_base, &pairs)
 }
 
+/// Every legal 4-move loadout for a mon: each 4-subset of its catalog, in lane order. Mons with a
+/// catalog of 4 or fewer yield exactly one loadout (identical to [`build_team_mon`]), so rotation is
+/// a no-op for them.
+pub fn loadouts(m: &RosterMon) -> Vec<Mon> {
+    if m.catalog.len() <= 4 {
+        return vec![build_team_mon(m)];
+    }
+    crate::teams::combos(m.catalog.len(), 4)
+        .into_iter()
+        .map(|pick| Mon {
+            stats: m.stats.clone(),
+            ability: m.ability,
+            moves: pick.iter().map(|&i| m.catalog[i].word).collect(),
+        })
+        .collect()
+}
+
+/// Per-mon loadout tables for a rotated draft. Indexed by mon id.
+fn loadout_table(roster: &Roster) -> std::collections::HashMap<u32, Vec<Mon>> {
+    roster.mons.iter().map(|m| (m.id, loadouts(m))).collect()
+}
+
 /// Like `build_specs` but with an explicit [p1, p0] strategy rotation (e.g. a single no-peek-vs-peek
 /// pair). Team draws stay identical per seed regardless of the pilots — matched drafts.
 pub fn build_specs_with(
@@ -90,10 +112,37 @@ pub fn build_specs_with(
     seed_base: u32,
     pairs: &[(StrategyKind, StrategyKind)],
 ) -> (Vec<GameSpec>, Vec<usize>) {
-    // Build each mon's default loadout once (13 mons), then clone per draft — avoids an O(n) find
+    build_specs_full(roster, games, wseed, seed_base, pairs, false)
+}
+
+/// `build_specs_with` plus a `rotate` switch: when set, each drafted slot draws a uniform loadout
+/// from that mon's full 4-subset set instead of always equipping catalog lanes 0-3. The loadout draw
+/// runs on its own rng stream so team drafts stay bit-identical to an unrotated run at the same seed.
+///
+/// Callers that map an equipped lane index back to a move name (trace narration via
+/// `Roster::move_name`) must leave this off — with rotation the lane→catalog mapping is per-game.
+pub fn build_specs_full(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    pairs: &[(StrategyKind, StrategyKind)],
+    rotate: bool,
+) -> (Vec<GameSpec>, Vec<usize>) {
+    // Build each mon's loadout set once (13 mons), then clone per draft — avoids an O(n) find
     // and a fresh build_team_mon on every drafted slot across tens of thousands of games.
-    let built: std::collections::HashMap<u32, Mon> = roster.mons.iter().map(|m| (m.id, build_team_mon(m))).collect();
+    let table = loadout_table(roster);
     let mut rng = Wrand::new(wseed);
+    let mut lrng = Wrand::new(wseed ^ 0x9e37_79b9);
+    let equip = |ids: &[u32], lrng: &mut Wrand| -> Vec<Mon> {
+        ids.iter()
+            .map(|id| {
+                let opts = &table[id];
+                let k = if rotate && opts.len() > 1 { (lrng.next() * opts.len() as f64) as usize } else { 0 };
+                opts[k.min(opts.len() - 1)].clone()
+            })
+            .collect()
+    };
     let mut specs = Vec::with_capacity(games);
     let mut pair_of = Vec::with_capacity(games);
     for i in 0..games {
@@ -102,12 +151,14 @@ pub fn build_specs_with(
         // workload draw order: teams[0] (→ p0) first, teams[1] (→ p1) second.
         let p0_ids = draw_team(roster, &mut rng);
         let p1_ids = draw_team(roster, &mut rng);
+        let p0_team = equip(&p0_ids, &mut lrng);
+        let p1_team = equip(&p1_ids, &mut lrng);
         specs.push(GameSpec {
             seed: seed_base.wrapping_add(i as u32),
             max_turns: MAX_TURNS,
             mons_per_team: TEAM_SIZE as u64,
-            p0_team: p0_ids.iter().map(|&id| built[&id].clone()).collect(),
-            p1_team: p1_ids.iter().map(|&id| built[&id].clone()).collect(),
+            p0_team,
+            p1_team,
             p0_ids,
             p1_ids,
             p0_strategy: p0s,
@@ -265,11 +316,28 @@ pub fn doubles_search_winrate(roster: &Roster, depth: u32, games: usize, wseed: 
     if decisive == 0 { 0.0 } else { p1 as f64 / decisive as f64 }
 }
 
-pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> Vec<DiffPairStats> {
-    let book = roster::address_book();
-    let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
-
+/// Build the doubles field (DIFF_PAIRS rotation, two random team draws each). `rotate` draws each
+/// slot's loadout from that mon's full 4-subset set; see [`build_specs_full`].
+pub fn build_doubles_specs(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    rotate: bool,
+    search_depth: u32,
+) -> (Vec<DoublesSpec>, Vec<usize>) {
+    let table = loadout_table(roster);
     let mut rng = Wrand::new(wseed);
+    let mut lrng = Wrand::new(wseed ^ 0x9e37_79b9);
+    let equip = |ids: &[u32], lrng: &mut Wrand| -> Vec<Mon> {
+        ids.iter()
+            .map(|id| {
+                let opts = &table[id];
+                let k = if rotate && opts.len() > 1 { (lrng.next() * opts.len() as f64) as usize } else { 0 };
+                opts[k.min(opts.len() - 1)].clone()
+            })
+            .collect()
+    };
     let mut specs = Vec::with_capacity(games);
     let mut pair_of = Vec::with_capacity(games);
     for i in 0..games {
@@ -277,22 +345,29 @@ pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u
         let (p1d, p0d) = DIFF_PAIRS[pi];
         let p0_ids = draw_team(roster, &mut rng);
         let p1_ids = draw_team(roster, &mut rng);
+        let p0_team = equip(&p0_ids, &mut lrng);
+        let p1_team = equip(&p1_ids, &mut lrng);
         specs.push(DoublesSpec {
             seed: seed_base.wrapping_add(i as u32),
             max_turns: MAX_TURNS,
             mons_per_team: TEAM_SIZE as u64,
-            p0_team: p0_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
-            p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
+            p0_team,
+            p1_team,
             p0_ids,
             p1_ids,
             p0_difficulty: p0d,
             p1_difficulty: p1d,
-            p0_search_depth: 0,
-            p1_search_depth: 0,
+            p0_search_depth: search_depth,
+            p1_search_depth: search_depth,
         });
         pair_of.push(pi);
     }
+    (specs, pair_of)
+}
 
+pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> Vec<DiffPairStats> {
+    let book = roster::address_book();
+    let (specs, pair_of) = build_doubles_specs(roster, games, wseed, seed_base, false, 0);
     let outcomes = run_doubles_games(&specs, &book, threads);
 
     let mut stats: Vec<DiffPairStats> = DIFF_PAIRS
@@ -309,4 +384,68 @@ pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u
         }
     }
     stats
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::roster::load_roster;
+    use std::collections::HashSet;
+
+    fn chomp_root() -> std::path::PathBuf {
+        std::env::var("CHOMP_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
+        })
+    }
+
+    /// Each mon's loadout set is exactly C(catalog, 4), and every catalog move reaches some loadout —
+    /// the level-6 moves that the default lanes-0-3 loadout can never equip.
+    #[test]
+    fn loadouts_cover_every_catalog_move() {
+        let roster = load_roster(&chomp_root());
+        for m in &roster.mons {
+            let ls = loadouts(m);
+            let expected = if m.catalog.len() <= 4 { 1 } else { combos_len(m.catalog.len(), 4) };
+            assert_eq!(ls.len(), expected, "{}: expected {expected} loadouts, got {}", m.name, ls.len());
+            for l in &ls {
+                assert_eq!(l.moves.len(), 4, "{}: loadout must equip 4 lanes", m.name);
+            }
+            let seen: HashSet<_> = ls.iter().flat_map(|l| l.moves.iter().copied()).collect();
+            for c in &m.catalog {
+                assert!(seen.contains(&c.word), "{}: catalog move {} unreachable", m.name, c.name);
+            }
+        }
+    }
+
+    fn combos_len(n: usize, k: usize) -> usize {
+        (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
+    }
+
+    /// Rotation leaves the team draft untouched (matched drafts) but does vary the equipped moves.
+    #[test]
+    fn rotation_preserves_drafts_and_varies_loadouts() {
+        let roster = load_roster(&chomp_root());
+        let pairs = [(StrategyKind::Greedy, StrategyKind::Greedy)];
+        let (plain, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, false);
+        let (rot, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, true);
+
+        for (a, b) in plain.iter().zip(rot.iter()) {
+            assert_eq!(a.p0_ids, b.p0_ids, "rotation must not disturb the p0 draft");
+            assert_eq!(a.p1_ids, b.p1_ids, "rotation must not disturb the p1 draft");
+        }
+        // The plain field equips one fixed loadout per mon; the rotated field must show more.
+        let variants = |specs: &[GameSpec]| -> usize {
+            let mut s: HashSet<(u32, Vec<chomp_rt::U256>)> = HashSet::new();
+            for sp in specs {
+                for (ids, team) in [(&sp.p0_ids, &sp.p0_team), (&sp.p1_ids, &sp.p1_team)] {
+                    for (id, mon) in ids.iter().zip(team.iter()) {
+                        s.insert((*id, mon.moves.clone()));
+                    }
+                }
+            }
+            s.len()
+        };
+        assert_eq!(variants(&plain), roster.mons.len(), "unrotated field should equip one loadout per mon");
+        assert!(variants(&rot) > variants(&plain), "rotated field should equip more than one loadout per mon");
+    }
 }

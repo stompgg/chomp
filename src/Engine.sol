@@ -2604,11 +2604,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return;
         }
 
-        // If sentinel, replace with -damage; otherwise subtract damage
-        monState.hpDelta = (monState.hpDelta == CLEARED_MON_STATE_SENTINEL) ? -damage : monState.hpDelta - damage;
+        // If sentinel, replace with -damage; otherwise subtract damage. The damage formula clamps at
+        // type(int32).max, so a large hit on an already-damaged mon can carry the delta past int32 —
+        // a revert that would wedge the battle. Do the subtraction unchecked and detect the wrap:
+        // damage is positive, so a result that did not decrease means it overflowed.
+        int32 priorDelta = monState.hpDelta;
+        int32 newDelta;
+        unchecked {
+            newDelta = (priorDelta == CLEARED_MON_STATE_SENTINEL) ? -damage : priorDelta - damage;
+        }
 
         // Set KO flag if the total hpDelta is greater than the original mon HP
         uint32 baseHp = _getTeamMon(config, playerIndex, monIndex).stats.hp;
+        if (priorDelta != CLEARED_MON_STATE_SENTINEL && newDelta > priorDelta) {
+            newDelta = -int32(baseHp); // past fully-dead; the exact magnitude carries no meaning
+        }
+        monState.hpDelta = newDelta;
         if (monState.hpDelta + int32(baseHp) <= 0) {
             monState.isKnockedOut = true;
             _setMonKO(config, playerIndex, monIndex);

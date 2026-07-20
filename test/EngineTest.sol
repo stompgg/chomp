@@ -29,6 +29,7 @@ import {GlobalEffectAttack} from "./mocks/GlobalEffectAttack.sol";
 import {InstantDeathEffect} from "./mocks/InstantDeathEffect.sol";
 import {InstantDeathOnSwitchInEffect} from "./mocks/InstantDeathOnSwitchInEffect.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {RawDamageMove} from "./mocks/RawDamageMove.sol";
 import {SelfSwitchAndDamageMove} from "./mocks/SelfSwitchAndDamageMove.sol";
 
 import {IEngineHook} from "../src/IEngineHook.sol";
@@ -2703,6 +2704,37 @@ contract EngineTest is Test, BattleHelper {
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.playerSwitchForTurnFlag, 0);
         assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+    }
+
+    // `AttackCalculator._calculateDamageCore` clamps a huge rawDamage to `type(int32).max` and hands
+    // it back as a legitimate damage value, so `_dealDamageInternal` must absorb it. Subtracting it
+    // from an already-negative hpDelta underflows int32 — which in 0.8 reverts, wedging the battle.
+    function test_dealDamageAbsorbsClampedMaxWithoutUnderflow() public {
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(new RawDamageMove(2))));
+        moves[1] = uint256(uint160(address(new RawDamageMove(type(int32).max))));
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = 100;
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+
+        // Chip both actives so neither hpDelta is the cleared sentinel any more.
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, uint16(0), uint16(0));
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2);
+
+        // The clamped max lands on a mon already sitting at a negative hpDelta.
+        _commitRevealExecuteForAliceAndBob(battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
+
+        // It should read as a KO, not revert and not wrap to a positive hpDelta.
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut), 1);
+        // Floored at exactly -baseHp: fully dead, and still a value int32 can hold.
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -int32(uint32(mon.stats.hp)));
     }
 
     function test_editEffect() public {

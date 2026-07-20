@@ -58,6 +58,20 @@ library StatBoostLib {
         mul = (inst & 0x1) == 1;
     }
 
+    /// @dev Scaling factor for one boost application, as a numerator over DENOM. A Divide can never
+    ///      drive this to 0: the aggregation stores a stat as (numerator, count), so a zeroed
+    ///      numerator is indistinguishable from an empty lane, and a divide-out of a 0 factor cannot
+    ///      be inverted. A reduction of DENOM% or more therefore saturates at the smallest
+    ///      representable factor rather than reverting (a revert here would wedge the battle — note
+    ///      `DENOM - boostPercent` underflows for the uint8 range above 100). Every live move uses
+    ///      15-50%, so this is defensive only.
+    function boostFactor(uint256 boostPercent, bool isMul) internal pure returns (uint256) {
+        if (isMul) {
+            return DENOM + boostPercent;
+        }
+        return boostPercent >= DENOM ? 1 : DENOM - boostPercent;
+    }
+
     /// @dev Fold a source word into (mulIn = true) or out of (mulIn = false) the accumulator.
     ///      Divide-out is exact by construction (the factors were multiplied in); a lane drained
     ///      to count 0 resets its numerator to 0 (canonical empty — finalize reads base then).
@@ -71,7 +85,7 @@ library StatBoostLib {
             if (cnt == 0) {
                 continue;
             }
-            uint256 factor = mul ? DENOM + pct : DENOM - pct;
+            uint256 factor = boostFactor(pct, mul);
             uint256 shift = k * ACC_LANE_BITS;
             uint256 num = (acc >> shift) & ACC_NUM_MASK;
             uint256 laneCnt = (acc >> (shift + 48)) & ACC_CNT_MASK;
@@ -90,9 +104,8 @@ library StatBoostLib {
                 }
                 laneCnt += cnt;
             } else {
-                // factor 0 lanes (pct == 100 Divide) zero the product permanently; the Engine
-                // never reaches here for them — mulIn already failed the fit check (num 0 is
-                // fine to multiply but a later divide-out would div-by-zero), so guard:
+                // `boostFactor` floors at 1, so the div-by-zero arm is unreachable; kept as a cheap
+                // assertion that the invariant holds for anything folded in here.
                 if (factor == 0 || laneCnt < cnt) {
                     return (acc, false);
                 }
@@ -258,10 +271,12 @@ library StatBoostLib {
         uint32[5] memory numBoostsPerStat,
         uint256[5] memory accumulatedNumeratorPerStat
     ) private pure {
-        uint256 existingStatValue = (accumulatedNumeratorPerStat[k] == 0)
-            ? baseStats[k]
-            : accumulatedNumeratorPerStat[k];
-        uint256 scalingFactor = isMul ? DENOM + boostPercent : DENOM - boostPercent;
+        // Seed off the boost COUNT, not the numerator: a 100% Divide gives factor 0, so a numerator
+        // of 0 is a legitimately zeroed stat, not an empty lane. Reading it as empty would re-seed
+        // from base and resurrect the stat, diverging from the accumulator (which seeds off count).
+        uint256 existingStatValue =
+            (numBoostsPerStat[k] == 0) ? baseStats[k] : accumulatedNumeratorPerStat[k];
+        uint256 scalingFactor = boostFactor(boostPercent, isMul);
         unchecked {
             accumulatedNumeratorPerStat[k] = existingStatValue * (scalingFactor ** boostCount);
             numBoostsPerStat[k] += uint32(boostCount);
