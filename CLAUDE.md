@@ -24,6 +24,18 @@ forge test           # Run all tests
 forge test -vvv      # Run tests with verbose output
 ```
 
+Engine edits invalidate most of the production-profile dependency graph. For correctness-only
+iteration, use the separate fast profile and a narrow path; it keeps via-IR (required by Engine)
+but disables optimization/build-info, enables sparse compilation, and uses a separate cache:
+
+```bash
+FOUNDRY_PROFILE=fast forge test --match-path test/EngineTest.sol
+```
+
+Do not use `profile.fast` for gas comparisons or snapshots. Run those and the final full-suite
+gate under the default profile (`forge test ...`); the fast profile disables snapshot emission so
+an accidental gas-test run cannot overwrite production-profile numbers.
+
 ## Repository Structure
 
 ```

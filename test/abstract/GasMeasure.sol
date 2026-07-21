@@ -2,7 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {CommonBase} from "../../lib/forge-std/src/Base.sol";
-import {Vm} from "../../lib/forge-std/src/Vm.sol";
+import {Vm, VmSafe} from "../../lib/forge-std/src/Vm.sol";
+
+import {EFFECT_SLOTS_PER_MON} from "../../src/Constants.sol";
 
 /// @notice Shared production-faithful gas measurement: a deterministic storage/account access
 ///         tally per measured window (one prod-tx-equivalent unit), plus a synthetic
@@ -17,6 +19,14 @@ import {Vm} from "../../lib/forge-std/src/Vm.sol";
 ///         pure compute (non-semantic), polluting cross-version scalar diffs. The tally is
 ///         immune to all three: opcode counts are warmth- and layout-independent.
 abstract contract GasMeasure is CommonBase {
+    // Engine storage roots and BattleConfig-relative mapping offsets are compiler-layout
+    // facts, not production constants. Keep them test-only: the census tests assert the
+    // expected reads are non-zero, so a layout change fails loudly instead of silently
+    // emitting a misleading zero. See `forge inspect Engine storage-layout`.
+    uint256 private constant ENGINE_BATTLE_CONFIG_ROOT = 7;
+    uint256 private constant CONFIG_P0_EFFECTS_OFFSET = 12;
+    uint256 private constant CONFIG_P1_EFFECTS_OFFSET = 13;
+
     struct Tally {
         uint256 totalSload;
         uint256 coldSload; // slot's first touch in the window is this READ
@@ -28,6 +38,13 @@ abstract contract GasMeasure is CommonBase {
         uint256 noop; // value unchanged (~100)
         uint256 coldWriteTouch; // slot's first touch in the window is a WRITE (cold surcharge lands there)
         uint256 extraAccounts; // unique non-precompile accounts beyond the call target (2,600 cold each in prod)
+    }
+
+    struct EffectStorageTally {
+        uint256 headerReads;
+        uint256 dataReads;
+        uint256 headerWrites;
+        uint256 dataWrites;
     }
 
     /// @dev Classify a state-diff window as ONE transaction: first touch of a slot is cold,
@@ -122,6 +139,118 @@ abstract contract GasMeasure is CommonBase {
         o.noop = a.noop + b.noop;
         o.coldWriteTouch = a.coldWriteTouch + b.coldWriteTouch;
         o.extraAccounts = a.extraAccounts + b.extraAccounts;
+    }
+
+    /// @notice Count calls matching an exact `(accessor, account, selector)` tuple.
+    /// @dev Address zero is a wildcard for either address. Resume records and reverted calls
+    ///      are excluded. This operates after the measured bracket, so it cannot perturb gas.
+    function _countCalls(Vm.AccountAccess[] memory accesses, address accessor, address account, bytes4 selector)
+        internal
+        pure
+        returns (uint256 count)
+    {
+        for (uint256 i; i < accesses.length; i++) {
+            Vm.AccountAccess memory a = accesses[i];
+            if (
+                !a.reverted && _isCallKind(a.kind) && a.data.length >= 4
+                    && (accessor == address(0) || a.accessor == accessor)
+                    && (account == address(0) || a.account == account) && bytes4(a.data) == selector
+            ) {
+                count++;
+            }
+        }
+    }
+
+    function _isCallKind(VmSafe.AccountAccessKind kind) private pure returns (bool) {
+        return kind == VmSafe.AccountAccessKind.Call || kind == VmSafe.AccountAccessKind.StaticCall
+            || kind == VmSafe.AccountAccessKind.DelegateCall || kind == VmSafe.AccountAccessKind.CallCode;
+    }
+
+    /// @notice Count reads/writes to player EffectInstance header/data slots for one Engine
+    ///         storage key. Player effect arrays are mappings at BattleConfig offsets 12/13;
+    ///         each EffectInstance occupies two consecutive slots.
+    function _effectStorageTally(Vm.AccountAccess[] memory accesses, address engine, bytes32 storageKey)
+        internal
+        pure
+        returns (EffectStorageTally memory t)
+    {
+        bytes32 configBase = keccak256(abi.encode(storageKey, ENGINE_BATTLE_CONFIG_ROOT));
+        bytes32 p0Root = bytes32(uint256(configBase) + CONFIG_P0_EFFECTS_OFFSET);
+        bytes32 p1Root = bytes32(uint256(configBase) + CONFIG_P1_EFFECTS_OFFSET);
+        (bytes32[] memory slotKeys, uint8[] memory slotKinds) = _buildPlayerEffectSlotTable(p0Root, p1Root);
+
+        for (uint256 i; i < accesses.length; i++) {
+            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
+            for (uint256 j; j < sa.length; j++) {
+                Vm.StorageAccess memory a = sa[j];
+                if (a.account != engine || a.reverted) {
+                    continue;
+                }
+                uint256 kind = _playerEffectSlotKind(a.slot, slotKeys, slotKinds);
+                if (kind == 1) {
+                    if (a.isWrite) {
+                        t.headerWrites++;
+                    } else {
+                        t.headerReads++;
+                    }
+                } else if (kind == 2) {
+                    if (a.isWrite) {
+                        t.dataWrites++;
+                    } else {
+                        t.dataReads++;
+                    }
+                }
+            }
+        }
+    }
+
+    /// @dev Precompute the player EffectInstance header/data slots for O(1) census lookup.
+    function _buildPlayerEffectSlotTable(bytes32 p0Root, bytes32 p1Root)
+        private
+        pure
+        returns (bytes32[] memory keys, uint8[] memory kinds)
+    {
+        // 8 mons/side, 64 stable effect indices per mon. The mapping key is already the
+        // flattened `monIndex * EFFECT_SLOTS_PER_MON + effectIndex` value. A 4096-entry
+        // open-addressed table stays at 50% load for the 2048 header+data slots.
+        keys = new bytes32[](4096);
+        kinds = new uint8[](4096);
+        uint256 slotsPerSide = 8 * EFFECT_SLOTS_PER_MON;
+        for (uint256 i; i < slotsPerSide; i++) {
+            bytes32 p0Header = keccak256(abi.encode(i, p0Root));
+            bytes32 p1Header = keccak256(abi.encode(i, p1Root));
+            _insertEffectSlot(keys, kinds, p0Header, 1);
+            _insertEffectSlot(keys, kinds, bytes32(uint256(p0Header) + 1), 2);
+            _insertEffectSlot(keys, kinds, p1Header, 1);
+            _insertEffectSlot(keys, kinds, bytes32(uint256(p1Header) + 1), 2);
+        }
+    }
+
+    function _insertEffectSlot(bytes32[] memory keys, uint8[] memory kinds, bytes32 key, uint8 kind) private pure {
+        uint256 mask = keys.length - 1;
+        uint256 i = uint256(key) & mask;
+        while (kinds[i] != 0) {
+            i = (i + 1) & mask;
+        }
+        keys[i] = key;
+        kinds[i] = kind;
+    }
+
+    /// @return kind 0 = unrelated, 1 = EffectInstance header, 2 = EffectInstance data.
+    function _playerEffectSlotKind(bytes32 slot, bytes32[] memory keys, uint8[] memory kinds)
+        private
+        pure
+        returns (uint256 kind)
+    {
+        uint256 mask = keys.length - 1;
+        uint256 i = uint256(slot) & mask;
+        while (kinds[i] != 0) {
+            if (keys[i] == slot) {
+                return kinds[i];
+            }
+            i = (i + 1) & mask;
+        }
+        return 0;
     }
 
     /// @notice Conservative production storage+account cost for a window, priced from the tally

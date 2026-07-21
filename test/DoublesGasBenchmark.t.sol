@@ -2,12 +2,14 @@
 pragma solidity ^0.8.0;
 
 import "../lib/forge-std/src/Test.sol";
+import {Vm} from "../lib/forge-std/src/Vm.sol";
 
 import "../src/Constants.sol";
 import "../src/Enums.sol";
 import "../src/Structs.sol";
 
 import {Engine} from "../src/Engine.sol";
+import {IEngine} from "../src/IEngine.sol";
 import {IRuleset} from "../src/IRuleset.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
@@ -50,6 +52,51 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
     bool private _measuring;
     Tally private _acc;
     uint256 private _accGas;
+
+    function _snapshotEffectCensus(string memory name, Vm.AccountAccess[] memory accesses, bytes32 storageKey) private {
+        EffectStorageTally memory effectStorage = _effectStorageTally(accesses, address(engine), storageKey);
+        uint256 roundStartCalls = _countCalls(accesses, address(engine), address(0), IEffect.onRoundStart.selector);
+        uint256 roundEndCalls = _countCalls(accesses, address(engine), address(0), IEffect.onRoundEnd.selector);
+        uint256 afterMoveCalls = _countCalls(accesses, address(engine), address(0), IEffect.onAfterMove.selector);
+        uint256 preDamageCalls = _countCalls(accesses, address(engine), address(0), IEffect.onPreDamage.selector);
+        uint256 afterDamageCalls = _countCalls(accesses, address(engine), address(0), IEffect.onAfterDamage.selector);
+        uint256 updateStateCalls = _countCalls(accesses, address(engine), address(0), IEffect.onUpdateMonState.selector);
+        uint256 moveDecisionCallbacks =
+            _countCalls(accesses, address(0), address(engine), IEngine.getMoveDecisionForSlot.selector);
+        uint256 lifecycleCalls =
+            roundStartCalls + roundEndCalls + afterMoveCalls + preDamageCalls + afterDamageCalls + updateStateCalls;
+        uint256 nonHookHeaderReadUpperBound =
+            effectStorage.headerReads > lifecycleCalls ? effectStorage.headerReads - lifecycleCalls : 0;
+
+        vm.snapshotValue(string.concat(name, "_effectHeaderReads"), effectStorage.headerReads);
+        vm.snapshotValue(string.concat(name, "_effectDataReads"), effectStorage.dataReads);
+        vm.snapshotValue(string.concat(name, "_effectHeaderWrites"), effectStorage.headerWrites);
+        vm.snapshotValue(string.concat(name, "_effectDataWrites"), effectStorage.dataWrites);
+        vm.snapshotValue(string.concat(name, "_roundStartCalls"), roundStartCalls);
+        vm.snapshotValue(string.concat(name, "_roundEndCalls"), roundEndCalls);
+        vm.snapshotValue(string.concat(name, "_afterMoveCalls"), afterMoveCalls);
+        vm.snapshotValue(string.concat(name, "_preDamageCalls"), preDamageCalls);
+        vm.snapshotValue(string.concat(name, "_afterDamageCalls"), afterDamageCalls);
+        vm.snapshotValue(string.concat(name, "_updateStateCalls"), updateStateCalls);
+        vm.snapshotValue(string.concat(name, "_moveDecisionCallbacks"), moveDecisionCallbacks);
+        vm.snapshotValue(string.concat(name, "_lifecycleCalls"), lifecycleCalls);
+        vm.snapshotValue(string.concat(name, "_nonHookHeaderReadUpperBound"), nonHookHeaderReadUpperBound);
+
+        console.log(
+            string.concat(name, " effect header/data reads:"), effectStorage.headerReads, effectStorage.dataReads
+        );
+        console.log(
+            string.concat(name, " RoundStart/RoundEnd/AfterMove:"), roundStartCalls, roundEndCalls, afterMoveCalls
+        );
+        console.log(
+            string.concat(name, " PreDamage/AfterDamage/UpdateState:"),
+            preDamageCalls,
+            afterDamageCalls,
+            updateStateCalls
+        );
+        console.log(string.concat(name, " moveDecision callbacks:"), moveDecisionCallbacks);
+        console.log(string.concat(name, " non-hook header read upper bound:"), nonHookHeaderReadUpperBound);
+    }
 
     function setUp() public {
         p0 = vm.addr(P0_PK);
@@ -173,6 +220,7 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
     function test_doublesBatchedReplayGas() public {
         engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
         bytes32 battleKey = _startDoubles(address(this));
+        bytes32 storageKey = engine.getStorageKey(battleKey);
 
         uint256[] memory entries = new uint256[](24);
         for (uint64 t = 0; t < 12; t++) {
@@ -185,9 +233,11 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         uint256 g0 = gasleft();
         engine.executeBatchedSlotTurns(battleKey, entries);
         _accGas += g0 - gasleft();
-        _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff()));
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        _acc = _addTally(_acc, _tally(accesses));
         engine.resetCallContext();
         _endMeasure("Doubles_Batch12");
+        _snapshotEffectCensus("Doubles_Batch12", accesses, storageKey);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 12, "all twelve turns executed");
     }
@@ -271,6 +321,7 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         battle.ruleset = IRuleset(INLINE_STAMINA_REGEN_RULESET);
         (bytes32 battleKey,) = engine.computeBattleKey(p0, p1);
         engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
+        bytes32 storageKey = engine.getStorageKey(battleKey);
         vm.warp(vm.getBlockTimestamp() + 1);
 
         // T0 send-ins; T1 burn B0 + siphon B1 while B rests; T2-T9 siphon every turn while
@@ -297,11 +348,78 @@ contract DoublesGasBenchmark is BatchHelper, GasMeasure {
         uint256 g0 = gasleft();
         engine.executeBatchedSlotTurns(battleKey, entries);
         _accGas += g0 - gasleft();
-        _acc = _addTally(_acc, _tally(vm.stopAndReturnStateDiff()));
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        _acc = _addTally(_acc, _tally(accesses));
         engine.resetCallContext();
         _endMeasure("Doubles_KitBatch10");
+        _snapshotEffectCensus("Doubles_KitBatch10", accesses, storageKey);
 
         assertEq(engine.getTurnIdForBattleState(battleKey), 10, "all ten turns executed");
+    }
+
+    function _tailEntries(uint256 n, uint256 shape) private pure returns (uint256[] memory entries) {
+        entries = new uint256[](n * 2);
+        for (uint256 t; t < n; t++) {
+            uint104 s0 = uint104(10_000 + 2 * t);
+            uint104 s1 = uint104(10_001 + 2 * t);
+            if (shape == 0) {
+                entries[t * 2] = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, s0);
+                entries[t * 2 + 1] = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, s1);
+            } else if (shape == 1) {
+                entries[t * 2] = sideWord(0, targetBits(2), NO_OP_MOVE_INDEX, 0, s0);
+                entries[t * 2 + 1] = sideWord(NO_OP_MOVE_INDEX, 0, NO_OP_MOVE_INDEX, 0, s1);
+            } else {
+                entries[t * 2] = sideWord(0, targetBits(2), 0, targetBits(3), s0);
+                entries[t * 2 + 1] = sideWord(0, targetBits(0), 0, targetBits(1), s1);
+            }
+        }
+    }
+
+    function _measureDoublesTail(uint256 shape, uint256 n) private returns (uint256 rawGas) {
+        bytes32 battleKey = _startDoubles(address(this));
+        (uint256 side0, uint256 side1) = _scriptSides(0);
+        uint256[] memory sendIns = new uint256[](2);
+        sendIns[0] = side0;
+        sendIns[1] = side1;
+        engine.executeBatchedSlotTurns(battleKey, sendIns);
+        engine.resetCallContext();
+
+        uint256[] memory entries = _tailEntries(n, shape);
+        vm.cool(address(engine));
+        uint256 g0 = gasleft();
+        engine.executeBatchedSlotTurns(battleKey, entries);
+        rawGas = g0 - gasleft();
+        engine.resetCallContext();
+        vm.prank(p0);
+        engine.forfeit(battleKey);
+    }
+
+    /// @notice Differential 2-slot pipeline matrix on the same recycled storage key and teams.
+    ///         The tails vary only action shape: four rests, one attack, or four attacks.
+    function test_doublesTurnFloorMatrix() public {
+        engine = new Engine(GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON);
+
+        // Seed and free the one-key pool so every measured scenario is reused-key steady state.
+        bytes32 warmup = _startDoubles(address(this));
+        vm.prank(p0);
+        engine.forfeit(warmup);
+
+        uint256 n = 8;
+        uint256 allRest = _measureDoublesTail(0, n);
+        uint256 oneAttack = _measureDoublesTail(1, n);
+        uint256 allAttack = _measureDoublesTail(2, n);
+
+        vm.snapshotValue("DoublesFloor_AllRest8_rawGas", allRest);
+        vm.snapshotValue("DoublesFloor_OneAttack8_rawGas", oneAttack);
+        vm.snapshotValue("DoublesFloor_AllAttack8_rawGas", allAttack);
+        vm.snapshotValue("DoublesFloor_AllRest_perTurn", allRest / n);
+        vm.snapshotValue("DoublesFloor_OneAttack_perTurn", oneAttack / n);
+        vm.snapshotValue("DoublesFloor_AllAttack_perTurn", allAttack / n);
+
+        console.log("Doubles floor matrix, 8-turn tails:");
+        console.log("  all rest total/per turn:", allRest, allRest / n);
+        console.log("  one attack total/per turn:", oneAttack, oneAttack / n);
+        console.log("  all attack total/per turn:", allAttack, allAttack / n);
     }
 
     // ----- GasMeasure plumbing (mirrors ProdPvPGasBenchmark) -----

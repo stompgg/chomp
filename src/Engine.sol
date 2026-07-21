@@ -57,6 +57,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // signal — and the salt read collapses from two transient loads to one.
     uint256 private transient _turnP0Packed;
     uint256 private transient _turnP1Packed;
+    // Two-slot action scheduler invalidation. Speed-mutating API chokepoints mark active lanes;
+    // the next greedy pick refreshes only those lanes from mon storage.
+    uint256 private transient _speedDirtySlots;
 
     // Errors
     error NoWriteAllowed();
@@ -439,6 +442,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.battleMode = battleMode;
         config.monStatusLanes = 0;
         config.p1BoostCounts = 0;
+        config.playerEffectStepsByMon = 0;
 
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnBattleStart))) != 0) {
             for (uint256 i = 0; i < numHooks;) {
@@ -1578,6 +1582,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         koOccurredFlag = 0;
         tempPreDamage = 0;
         effectsDirtyBitmap = 0;
+        _speedDirtySlots = 0;
     }
 
     /// @notice Forcibly end a stalled battle once it has run past MAX_BATTLE_DURATION.
@@ -1686,6 +1691,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else if (stateVarIndex == MonStateIndexName.Speed) {
             monState.speedDelta =
                 (monState.speedDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.speedDelta + valueToAdd;
+            if (config.battleMode != BATTLE_MODE_SINGLES) {
+                _markActiveMonSpeedDirty(playerIndex, monIndex);
+            }
         } else if (stateVarIndex == MonStateIndexName.Attack) {
             monState.attackDelta =
                 (monState.attackDelta == CLEARED_MON_STATE_SENTINEL) ? valueToAdd : monState.attackDelta + valueToAdd;
@@ -1717,19 +1725,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             monState.shouldSkipTurn = (valueToAdd % 2) == 1;
         }
 
-        // Trigger OnUpdateMonState lifecycle hook only if some player effect actually listens at it
-        // (battle-wide union) AND this mon has effects. OnUpdateMonState has a single listener in the
-        // whole game (Dreamcatcher), so the union bit is unset in almost every battle — skipping the
-        // abi.encode(4-tuple) + _runEffects shell entirely. Stat-boost delta writes hit this path a lot.
-        // Union bit FIRST: OnUpdateMonState has a single listener game-wide, so the bit is clear
-        // in almost every battle — short-circuiting on it skips the per-mon count SLOAD entirely
-        // (this path fires on every stat-boost delta write, up to 5 per boost application).
-        if (
-            (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
-                && (playerIndex == 0
-                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
-        ) {
+        // Exact per-mon step lane skips abi.encode + the whole effect shell unless THIS mon has an
+        // OnUpdateMonState listener. This path is hot for stamina and stat-boost delta writes.
+        if (_monListensAt(config, playerIndex, monIndex, EffectStep.OnUpdateMonState)) {
             _runEffectsPipeline(
                 config,
                 playerIndex,
@@ -1898,15 +1896,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
             if (!removeAfterRun) {
-                // INVARIANT: every path that adds a player effect MUST fold its steps bitmap into
-                // playerEffectStepsUnion here. The step-skip guards in _executeInternal / _handleSwitch
-                // treat a clear union bit as "no player effect listens at this step" and skip the whole
-                // _runEffects shell, so a missed update would silently drop live effects. This is the
-                // SOLE add chokepoint for player effects (stat-boost sources live in their own
-                // boost-word store, not the effect list).
+                // INVARIANT: every player-effect add folds its bitmap into BOTH routing caches here:
+                // the over-approximate battle-wide outer union and this mon's exact lane. A missed
+                // update would silently skip a live hook. This is the sole player-effect add chokepoint
+                // (stat boosts use their own store).
                 // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
                 if (targetIndex != 2) {
                     config.playerEffectStepsUnion |= stepsBitmap;
+                    uint256 stepLaneShift = _effectStepLaneShift(targetIndex, monIndex);
+                    config.playerEffectStepsByMon |= uint256(stepsBitmap) << stepLaneShift;
                     // Status-lane set: same slot as the union write, so both coalesce into one
                     // SSTORE. INVARIANT: lane nonzero ⇔ exactly one class-bearing entry on the
                     // mon; the only clears are _removeEffectAtSlot + startBattle's reset.
@@ -2040,6 +2038,35 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return ((targetIndex << 3) | monIndex) << 2;
     }
 
+    /// @dev Bit offset of a mon's uint16 exact lifecycle-step union (stride 8/side).
+    function _effectStepLaneShift(uint256 targetIndex, uint256 monIndex) private pure returns (uint256) {
+        return ((targetIndex << 3) | monIndex) << 4;
+    }
+
+    function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
+        private
+        view
+        returns (uint16)
+    {
+        return uint16(config.playerEffectStepsByMon >> _effectStepLaneShift(targetIndex, monIndex));
+    }
+
+    function _monListensAt(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, EffectStep step)
+        private
+        view
+        returns (bool)
+    {
+        return _stepsWordListens(config.playerEffectStepsByMon, targetIndex, monIndex, step);
+    }
+
+    function _stepsWordListens(uint256 stepsWord, uint256 targetIndex, uint256 monIndex, EffectStep step)
+        private
+        pure
+        returns (bool)
+    {
+        return ((stepsWord >> _effectStepLaneShift(targetIndex, monIndex)) & (1 << uint8(step))) != 0;
+    }
+
     /// @notice Remove a mon's exclusive status (running its onRemove) and clear its lane.
     /// @param expectedClass 0 = clear any status; nonzero = only a matching class.
     /// @return cleared Whether a status entry was removed.
@@ -2136,7 +2163,30 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
         } else {
             _compactTrailingTombstones(config, targetIndex, monIndex);
+            _rebuildMonEffectSteps(config, targetIndex, monIndex);
         }
+    }
+
+    /// @dev Exact-clear the changed mon's step lane after a removal. Removal is cold and already
+    ///      scans/compacts this short list; the hot turn and damage paths consume the exact cache.
+    function _rebuildMonEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex) private {
+        uint96 packedCounts = targetIndex == 0 ? config.packedP0EffectsCount : config.packedP1EffectsCount;
+        uint256 count = _getMonEffectCount(packedCounts, monIndex);
+        mapping(uint256 => EffectInstance) storage effects = targetIndex == 0 ? config.p0Effects : config.p1Effects;
+        uint256 baseSlot = _getEffectSlotIndex(monIndex, 0);
+        uint16 rebuilt;
+        for (uint256 i; i < count;) {
+            EffectInstance storage e = effects[baseSlot + i];
+            if (address(e.effect) != TOMBSTONE_ADDRESS) {
+                rebuilt |= e.stepsBitmap;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        uint256 shift = _effectStepLaneShift(targetIndex, monIndex);
+        uint256 mask = uint256(type(uint16).max) << shift;
+        config.playerEffectStepsByMon = (config.playerEffectStepsByMon & ~mask) | (uint256(rebuilt) << shift);
     }
 
     /// @dev Shrink a mon's packed effect count over any trailing tombstones so the count-gated
@@ -2414,10 +2464,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // reverts StatRequiresStatBoost for them), so the stored delta after any telescoped op is
         // exactly newBoosted - base — writing that directly is bit-identical to the dispatcher's
         // sentinel-aware add, minus its 2 TLOADs + 2 mapping keccaks + enum chain per stat.
-        bool hasListener = (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
-            && (targetIndex == 0
-                        ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                        : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0;
+        bool hasListener = _monListensAt(config, targetIndex, monIndex, EffectStep.OnUpdateMonState);
 
         for (uint256 i; i < 5; ++i) {
             // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
@@ -2441,6 +2488,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     st.specialDefenceDelta = newDelta;
                 } else {
                     st.speedDelta = newDelta;
+                    if (config.battleMode != BATTLE_MODE_SINGLES) {
+                        _markActiveMonSpeedDirty(targetIndex, monIndex);
+                    }
                 }
             }
         }
@@ -2582,18 +2632,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // PreDamage pipeline: victim-side mon-local effects can mutate the in-flight damage by
         // calling engine.setPreDamage(). Reuses the standard _runEffects loop; running damage is
         // threaded through the transient `tempPreDamage` slot so the iteration logic doesn't change.
-        // Union bits FIRST (PreDamage and AfterDamage each have a single listener game-wide):
-        // one shared union read covers both gates in the common no-listener case, and the per-mon
-        // count SLOAD is deferred until a bit actually passes — counts never shrink (tombstones),
-        // so the lazy >0 check stays fresh-safe.
-        uint16 stepsUnion = config.playerEffectStepsUnion;
+        // One exact per-mon lane read covers both gates, preventing another mon's listener from
+        // routing this victim through a non-matching scan.
+        uint16 monSteps = _monEffectSteps(config, playerIndex, monIndex);
         bool ranPreDamage;
-        if (
-            (stepsUnion & uint16(1 << uint8(EffectStep.PreDamage))) != 0
-                && (playerIndex == 0
-                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
-        ) {
+        if ((monSteps & uint16(1 << uint8(EffectStep.PreDamage))) != 0) {
             tempPreDamage = damage;
             _runEffectsPipeline(config, playerIndex, monIndex, EffectStep.PreDamage, abi.encode(source));
             damage = tempPreDamage;
@@ -2628,18 +2671,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // Lock in winner immediately if this KO ends the game
             _checkAndSetWinnerIfGameOver(config, playerIndex);
         }
-        // AfterDamage gate. The union is re-read ONLY when the PreDamage pipeline actually ran
+        // AfterDamage gate. The mon lane is re-read ONLY when the PreDamage pipeline actually ran
         // (its effects may have added an AfterDamage listener mid-call); otherwise the shared
         // read above is still authoritative — nothing else can mutate it inside this function.
         if (ranPreDamage) {
-            stepsUnion = config.playerEffectStepsUnion;
+            monSteps = _monEffectSteps(config, playerIndex, monIndex);
         }
-        if (
-            (stepsUnion & uint16(1 << uint8(EffectStep.AfterDamage))) != 0
-                && (playerIndex == 0
-                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
-        ) {
+        if ((monSteps & uint16(1 << uint8(EffectStep.AfterDamage))) != 0) {
             _runEffectsPipeline(config, playerIndex, monIndex, EffectStep.AfterDamage, abi.encode(damage, source));
         }
     }
@@ -3118,7 +3156,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 outCount = playerIndex == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, currentActiveMonIndex)
                 : _getMonEffectCount(config.packedP1EffectsCount, currentActiveMonIndex);
-            if (outCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchOut))) != 0) {
+            if (outCount > 0 && _monListensAt(config, playerIndex, currentActiveMonIndex, EffectStep.OnMonSwitchOut)) {
                 _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchOut, "", outCount);
             }
 
@@ -3142,7 +3180,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 inCount = playerIndex == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monToSwitchIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monToSwitchIndex);
-        if (inCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchIn))) != 0) {
+        if (inCount > 0 && _monListensAt(config, playerIndex, monToSwitchIndex, EffectStep.OnMonSwitchIn)) {
             _runEffects(battleKey, tempRNG, playerIndex, playerIndex, EffectStep.OnMonSwitchIn, "", inCount);
         }
 
@@ -3299,7 +3337,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     staminaCost = int32(moveStamina);
                 }
                 _deductStamina(currentMonState, staminaCost);
-
                 moveSet.move(
                     self,
                     battleKey,
@@ -3555,6 +3592,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effectsCount = config.globalEffectsLength;
         } else {
             uint256 monIndex = _unpackActiveMonIndex(battle.activeMonIndex, playerIndex);
+
+            // The battle-wide union is only the cheap outer gate. This exact mon lane prevents
+            // one listener (including a benched mon's) from routing unrelated active lists.
+            if (!_monListensAt(config, effectIndex, monIndex, round)) {
+                return playerSwitchForTurnFlag;
+            }
 
             // Check if mon is KOed (reuse monIndex we already computed)
             if (condition == EffectRunCondition.SkipIfGameOverOrMonKO) {
@@ -3883,6 +3926,23 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @dev Mark any active lane currently occupied by this mon. All authored speed changes route
+    ///      through the Engine's stat-boost/state chokepoints before reaching this helper.
+    function _markActiveMonSpeedDirty(uint256 side, uint256 monIndex) private {
+        BattleData storage battle = battleData[battleKeyForWrite];
+        uint256 slot = side << 1;
+        uint256 dirty;
+        if (_slotActive(battle, slot) == monIndex) {
+            dirty = 1 << slot;
+        }
+        if (_slotActive(battle, slot + 1) == monIndex) {
+            dirty |= 1 << (slot + 1);
+        }
+        if (dirty != 0) {
+            _speedDirtySlots |= dirty;
+        }
+    }
+
     /// @dev The packed actives word passed to effects/moves: one 8-bit lane per absolute slot.
     ///      2-slot only — singles never writes activeMonExt, so its slot-1 lanes would read
     ///      0x00 ("mon 0") instead of EMPTY_ACTIVE_LANE; singles paths use TargetLib.singlesActives.
@@ -4000,8 +4060,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 actedMask;
         uint256 actionOrder;
         uint256 numActed;
+        uint256 cachedSpeeds;
+        // RoundStart mutations are captured by the first full load; only later mutations need
+        // invalidation. Clear stale bits from a prior batched sub-turn here.
+        _speedDirtySlots = 0;
         for (uint256 pick; pick < 4;) {
-            uint256 slot = _pickNextSlot(config, battle, lockedPriorities, actedMask, rng, pick, turnZero);
+            uint256 slot;
+            (slot, cachedSpeeds) =
+                _pickNextSlot(config, battle, lockedPriorities, actedMask, rng, pick, turnZero, cachedSpeeds);
             if (slot == NO_SLOT) {
                 break;
             }
@@ -4021,7 +4087,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 side = slot >> 1;
             uint256 actorMon = _slotActive(battle, slot);
             bool actorAlive = actorMon != EMPTY_ACTIVE_LANE && !_getMonState(config, side, actorMon).isKnockedOut;
-            if (actorAlive && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
+            if (actorAlive && _monListensAt(config, side, actorMon, EffectStep.AfterMove)) {
                 uint256 cnt = side == 0
                     ? _getMonEffectCount(config.packedP0EffectsCount, actorMon)
                     : _getMonEffectCount(config.packedP1EffectsCount, actorMon);
@@ -4135,12 +4201,24 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 actedMask,
         uint256 rng,
         uint256 pick,
-        bool turnZero
-    ) private view returns (uint256 best) {
+        bool turnZero,
+        uint256 cachedSpeeds
+    ) private returns (uint256 best, uint256 newSpeeds) {
         best = NO_SLOT;
+        newSpeeds = cachedSpeeds;
         uint256 bestPrio;
         uint256 bestSpeed;
         uint256 bestJitter;
+        uint256 dirtyMask;
+        if (pick == 0) {
+            dirtyMask = 0xF;
+        } else {
+            dirtyMask = _speedDirtySlots;
+            if (dirtyMask != 0) {
+                _speedDirtySlots = 0;
+            }
+        }
+        uint256 koBitmaps = config.koBitmaps;
         uint256 h = uint256(keccak256(abi.encode(rng, pick)));
         for (uint256 s; s < 4;) {
             if (actedMask & (1 << s) == 0) {
@@ -4151,13 +4229,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     candidate = turnZero;
                 } else {
                     uint256 side = s >> 1;
-                    MonState storage st = _getMonState(config, side, mon);
-                    if (!st.isKnockedOut) {
+                    if ((koBitmaps & (1 << ((side << 3) | mon))) == 0) {
                         candidate = true;
-                        int32 spdDelta = st.speedDelta;
-                        int256 spd = int256(uint256(_getTeamMon(config, side, mon).stats.speed))
-                            + (spdDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(spdDelta));
-                        speed = spd > 0 ? uint256(spd) : 0;
+                        uint256 shift = s << 6;
+                        if (dirtyMask & (1 << s) != 0) {
+                            int32 spdDelta = _getMonState(config, side, mon).speedDelta;
+                            int256 spd = int256(uint256(_getTeamMon(config, side, mon).stats.speed))
+                                + (spdDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(spdDelta));
+                            speed = spd > 0 ? uint256(spd) : 0;
+                            newSpeeds = (newSpeeds & ~(uint256(type(uint64).max) << shift)) | (speed << shift);
+                        } else {
+                            speed = uint64(newSpeeds >> shift);
+                        }
                     }
                 }
                 if (candidate) {
@@ -4180,6 +4263,82 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 ++s;
             }
         }
+    }
+
+    /// @dev Effect-pass picker with the same rank-dependent jitter as `_pickNextSlot`, but it
+    ///      reads each remaining slot's live speed only once while advancing over consecutive
+    ///      non-listeners. The caller invokes it again after every listener runs, preserving D29:
+    ///      effects may change speed, KO a mon, or replace an active before the next hook.
+    function _pickNextEffectSlot(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 stepsWord,
+        uint256 doneMask,
+        uint256 rng,
+        uint256 pickBase,
+        uint256 pick,
+        EffectStep step
+    ) private view returns (uint256 slot, uint256 newDoneMask, uint256 nextPick) {
+        uint256 candidateMask;
+        uint256 listenerMask;
+        uint256 speeds;
+        for (uint256 s; s < 4;) {
+            if (doneMask & (1 << s) == 0) {
+                uint256 side = s >> 1;
+                uint256 mon = _slotActive(battle, s);
+                if (mon != EMPTY_ACTIVE_LANE) {
+                    MonState storage st = _getMonState(config, side, mon);
+                    if (!st.isKnockedOut) {
+                        candidateMask |= 1 << s;
+                        int32 spdDelta = st.speedDelta;
+                        int256 spd = int256(uint256(_getTeamMon(config, side, mon).stats.speed))
+                            + (spdDelta == CLEARED_MON_STATE_SENTINEL ? int256(0) : int256(spdDelta));
+                        if (spd > 0) {
+                            speeds |= uint256(spd) << (s << 6);
+                        }
+                        if (_stepsWordListens(stepsWord, side, mon, step)) {
+                            listenerMask |= 1 << s;
+                        }
+                    }
+                }
+            }
+            unchecked {
+                ++s;
+            }
+        }
+
+        newDoneMask = doneMask;
+        nextPick = pick;
+        while (nextPick < 4 && candidateMask != 0) {
+            uint256 best = NO_SLOT;
+            uint256 bestSpeed;
+            uint256 bestJitter;
+            uint256 h = uint256(keccak256(abi.encode(rng, pickBase + nextPick)));
+            for (uint256 s; s < 4;) {
+                if (candidateMask & (1 << s) != 0) {
+                    uint256 speed = uint64(speeds >> (s << 6));
+                    uint256 jitter = uint64(h >> (s << 6));
+                    if (best == NO_SLOT || speed > bestSpeed || (speed == bestSpeed && jitter > bestJitter)) {
+                        best = s;
+                        bestSpeed = speed;
+                        bestJitter = jitter;
+                    }
+                }
+                unchecked {
+                    ++s;
+                }
+            }
+            uint256 bit = 1 << best;
+            candidateMask &= ~bit;
+            newDoneMask |= bit;
+            unchecked {
+                ++nextPick;
+            }
+            if (listenerMask & bit != 0) {
+                return (best, newDoneMask, nextPick);
+            }
+        }
+        return (NO_SLOT, newDoneMask, nextPick);
     }
 
     /// @dev Resolve one slot's action: coercion (turn-0 / KO'd -> switch), switch legality
@@ -4405,7 +4564,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 outCount = side == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, currentActive)
                 : _getMonEffectCount(config.packedP1EffectsCount, currentActive);
-            if (outCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchOut))) != 0) {
+            if (outCount > 0 && _monListensAt(config, side, currentActive, EffectStep.OnMonSwitchOut)) {
                 _runEffectsForMon(
                     config, battle, rng, side, side, currentActive, EffectStep.OnMonSwitchOut, "", outCount
                 );
@@ -4421,7 +4580,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 inCount = side == 0
             ? _getMonEffectCount(config.packedP0EffectsCount, monToSwitchIndex)
             : _getMonEffectCount(config.packedP1EffectsCount, monToSwitchIndex);
-        if (inCount > 0 && (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnMonSwitchIn))) != 0) {
+        if (inCount > 0 && _monListensAt(config, side, monToSwitchIndex, EffectStep.OnMonSwitchIn)) {
             _runEffectsForMon(config, battle, rng, side, side, monToSwitchIndex, EffectStep.OnMonSwitchIn, "", inCount);
         }
         uint256 inGlobals = config.globalEffectsLength;
@@ -4446,31 +4605,28 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 rng,
         EffectStep step
     ) private {
-        // The steps union only says SOME mon (possibly benched or replaced) listens at this
-        // step; when none of the four current actives carries any effect the ordering pass has
-        // nothing to run. Empty lanes (0xFF) shift out to a zero count.
-        {
-            uint96 c0 = config.packedP0EffectsCount;
-            uint96 c1 = config.packedP1EffectsCount;
-            if (
-                _getMonEffectCount(c0, _slotActive(battle, 0)) == 0
-                    && _getMonEffectCount(c0, _slotActive(battle, 1)) == 0
-                    && _getMonEffectCount(c1, _slotActive(battle, 2)) == 0
-                    && _getMonEffectCount(c1, _slotActive(battle, 3)) == 0
-            ) {
-                return;
-            }
+        // One exact word answers both "has effects" and "listens at this step" for all actives.
+        // Empty lanes (0xFF) naturally shift beyond the word and read false.
+        uint256 stepsWord = config.playerEffectStepsByMon;
+        if (
+            !_stepsWordListens(stepsWord, 0, _slotActive(battle, 0), step)
+                && !_stepsWordListens(stepsWord, 0, _slotActive(battle, 1), step)
+                && !_stepsWordListens(stepsWord, 1, _slotActive(battle, 2), step)
+                && !_stepsWordListens(stepsWord, 1, _slotActive(battle, 3), step)
+        ) {
+            return;
         }
         uint256 doneMask;
         // Distinct jitter-seed ranges per pass (and from the action scheduler's 0-3) so the
         // RoundStart and RoundEnd orderings roll independently.
         uint256 pickBase = step == EffectStep.RoundStart ? 16 : 24;
-        for (uint256 pick; pick < 4;) {
-            uint256 slot = _pickNextSlot(config, battle, 0, doneMask, rng, pickBase + pick, false);
+        uint256 pick;
+        while (pick < 4) {
+            uint256 slot;
+            (slot, doneMask, pick) = _pickNextEffectSlot(config, battle, stepsWord, doneMask, rng, pickBase, pick, step);
             if (slot == NO_SLOT) {
                 break;
             }
-            doneMask |= (1 << slot);
             if (battle.winnerIndex != 2) {
                 return;
             }
@@ -4479,12 +4635,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 cnt = side == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, mon)
                 : _getMonEffectCount(config.packedP1EffectsCount, mon);
-            if (cnt > 0) {
-                _runEffectsForMon(config, battle, rng, side, side, mon, step, "", cnt);
-            }
-            unchecked {
-                ++pick;
-            }
+            _runEffectsForMon(config, battle, rng, side, side, mon, step, "", cnt);
         }
     }
 
@@ -4650,14 +4801,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return;
         }
         monState.staminaDelta += 1;
-        // Union bit first (single OnUpdateMonState listener game-wide) — skips the count SLOAD
-        // on the up-to-two regen ticks every round end.
-        if (
-            (config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.OnUpdateMonState))) != 0
-                && (playerIndex == 0
-                            ? _getMonEffectCount(config.packedP0EffectsCount, monIndex)
-                            : _getMonEffectCount(config.packedP1EffectsCount, monIndex)) > 0
-        ) {
+        // Exact lane skips unrelated mons without loading their effect count.
+        if (_monListensAt(config, playerIndex, monIndex, EffectStep.OnUpdateMonState)) {
             _runEffectsPipeline(
                 config,
                 playerIndex,
@@ -4923,6 +5068,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             p0TeamIndex: data.p0TeamIndex,
             p1TeamIndex: data.p1TeamIndex,
             monStatusLanes: config.monStatusLanes,
+            playerEffectStepsByMon: config.playerEffectStepsByMon,
             p0Move: config.p0Move,
             p1Move: config.p1Move,
             globalEffects: globalEffects,

@@ -223,6 +223,10 @@ struct BattleConfig {
     // Never read when the mon's source count is 0 (initialize-on-first-add), so recycled-key
     // staleness is unobservable; count > 0 implies this battle wrote it.
     mapping(uint256 => uint256) statBoostAcc;
+    // Exact OR of live EffectInstance.stepsBitmap values for each player mon.
+    // Lane index = side*8 + monIndex; one uint16 lane per mon fills one word exactly.
+    // Appended after mappings so existing BattleConfig mapping roots remain stable.
+    uint256 playerEffectStepsByMon;
 }
 
 struct EffectInstance {
@@ -252,6 +256,7 @@ struct BattleConfigView {
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
     uint64 monStatusLanes; // Per-mon exclusive-status class nibbles (see BattleConfig)
+    uint256 playerEffectStepsByMon; // Exact uint16 lifecycle-step union per mon
     MoveDecision p0Move;
     MoveDecision p1Move;
     EffectInstance[] globalEffects;
