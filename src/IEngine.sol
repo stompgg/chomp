@@ -168,6 +168,11 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
+    // Focused overheal-clamp snapshot: both HP quantities in one external frame.
+    function getMonHpState(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        external
+        view
+        returns (uint32 maxHp, int32 hpDelta);
     // Current (base + delta, sentinel-aware) stat value in one call — the merged form of the
     // getMonValueForBattle + getMonStateForBattle pair.
     function getMonCurrentValue(

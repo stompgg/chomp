@@ -97,9 +97,8 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         (uint256 chargesLeft, uint256 ownerIndex) = _decodeState(extraData);
         // If it's a friendly mon, then we heal (flat 1/8 of max HP)
         if (targetIndex == ownerIndex) {
-            int32 amtToHeal =
-                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / HEAL_DENOM;
-            int32 damageReceived = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+            (uint32 maxHp, int32 damageReceived) = engine.getMonHpState(battleKey, targetIndex, monIndex);
+            int32 amtToHeal = int32(maxHp) / HEAL_DENOM;
             // Prevent overhealing
             if (amtToHeal > (-1 * damageReceived)) {
                 amtToHeal = -1 * damageReceived;

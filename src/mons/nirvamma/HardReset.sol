@@ -118,9 +118,9 @@ contract HardReset is IMoveSet, BasicEffect {
             } else if (cur < 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
             }
-            int32 maxHp = int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+            (uint32 maxHpRaw, int32 curHp) = engine.getMonHpState(battleKey, targetIndex, monIndex);
+            int32 maxHp = int32(maxHpRaw);
             int32 healAmt = maxHp / HP_DENOM;
-            int32 curHp = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
             if (curHp + healAmt > 0) {
                 healAmt = -curHp;
             }

@@ -13,6 +13,7 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
+import {MoveSlotLib} from "../../src/moves/MoveSlotLib.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -138,7 +139,7 @@ contract EmbursaTest is Test, BattleHelper {
         );
 
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(address(heatBeacon)));
+        moves[0] = MoveSlotLib.packDeployed(address(heatBeacon), 0, MOVE_META_DYNAMIC) | MOVE_CONTEXT_STATUS_LANES;
         moves[1] = uint256(uint160(address(burnMove)));
         moves[2] = uint256(uint160(address(burnMove)));
         moves[3] = uint256(uint160(address(burnMove)));

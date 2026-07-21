@@ -26,10 +26,11 @@ interface IEffect {
     // `activesPacked` carries every slot's active roster index in its low 32 bits (one 8-bit lane
     // per absolute slot, EMPTY_ACTIVE_LANE = no mon there). Opted-in AfterMove hooks also receive
     // fresh 24-bit move lanes at bits 32..127 and the acted-slot mask at bits 128..131. Opted-in
-    // RoundEnd hooks receive fresh 4-bit status lanes at bits 132..195. Opted-in OnUpdateMonState
-    // hooks receive target max HP at bits 32..63 and normalized signed HP delta at bits 64..95.
-    // Context layouts are hook-specific; existing effects remain compatible and opt-in readers
-    // decode the high context via TargetLib.
+    // OnApply hooks receive target max HP at bits 32..63. RoundEnd hooks receive fresh 4-bit status
+    // lanes at bits 132..195. Opted-in AfterDamage hooks receive the target KO bit at bit 32.
+    // Opted-in OnUpdateMonState hooks receive target max HP at bits 32..63 and normalized signed HP
+    // delta at bits 64..95. Context layouts are hook-specific; existing effects remain compatible
+    // and opt-in readers decode the high context via TargetLib.
     function onRoundStart(
         IEngine engine,
         bytes32 battleKey,
@@ -88,7 +89,8 @@ interface IEffect {
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     // Runs before damage is applied; effects can mutate the in-flight damage by calling
-    // `engine.setPreDamage(int32)`. Read the current running damage via `engine.getPreDamage()`.
+    // `engine.setPreDamage(int32)`. Opted-in effects read the fresh current running damage via
+    // `TargetLib.hookPreDamage(activesPacked)`; legacy effects may use `engine.getPreDamage()`.
     // Multiple subscribed effects compose sequentially in effect-array order, each observing
     // the post-mutation value from prior effects.
     function onPreDamage(

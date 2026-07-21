@@ -1898,15 +1898,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Check if we have to run an onApply state update (use bitmap instead of external call)
             if ((stepsBitmap & (1 << uint8(EffectStep.OnApply))) != 0) {
+                uint256 applyContext = _hookActivesWord(battleData[battleKey]);
+                if ((hookContextBitmap & (1 << uint8(EffectStep.OnApply))) != 0 && targetIndex < 2) {
+                    // OnApply is executed before the effect is stored, so its exact request bit is
+                    // still available. Max HP is immutable for the battle and occupies bits 32..63.
+                    applyContext |= uint256(_getTeamMon(config, targetIndex, monIndex).stats.hp) << 32;
+                }
                 // If so, we run the effect first, and get updated extraData if necessary
                 (extraDataToUse, removeAfterRun) = effect.onApply(
-                    IEngine(address(this)),
-                    battleKey,
-                    tempRNG,
-                    extraData,
-                    targetIndex,
-                    monIndex,
-                    _hookActivesWord(battleData[battleKey])
+                    IEngine(address(this)), battleKey, tempRNG, extraData, targetIndex, monIndex, applyContext
                 );
             }
             if (!removeAfterRun) {
@@ -2104,8 +2104,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private {
         uint256 raw = uint256(data);
         uint256 encoded = raw < EFFECT_COMPACT_DATA_MASK ? raw + 1 : 0;
+        // OnApply has already run before installation. Do not persist an OnApply-only request as
+        // the broad capability flag, which would make multi-hook statuses build unused contexts.
+        uint16 storedContextBitmap = hookContextBitmap & ~uint16(1 << uint8(EffectStep.OnApply));
         uint256 header = uint256(uint160(address(effect))) | (uint256(stepsBitmap) << 160) | (encoded << 176)
-            | (hookContextBitmap != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
+            | (storedContextBitmap != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
         assembly ("memory-safe") {
             sstore(effectInstance.slot, header)
         }
@@ -3423,15 +3426,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     staminaCost = int32(moveStamina);
                 }
                 _deductStamina(currentMonState, staminaCost);
+                uint256 moveContext = TargetLib.singlesActives(
+                    _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
+                );
+                if (rawMoveSlot & MOVE_CONTEXT_STATUS_LANES != 0) {
+                    moveContext |= uint256(config.monStatusLanes) << 132;
+                }
                 moveSet.move(
                     self,
                     battleKey,
                     playerIndex,
                     activeMonIndex,
                     TargetLib.impliedSinglesTargetBits(playerIndex),
-                    TargetLib.singlesActives(
-                        _unpackActiveMonIndex(battle.activeMonIndex, 0), _unpackActiveMonIndex(battle.activeMonIndex, 1)
-                    ),
+                    moveContext,
                     move.extraData & EXTRA_DATA_PAYLOAD_MASK,
                     tempRNG
                 );
@@ -3525,10 +3532,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 eff = config.p1Effects[slotIndex];
             }
 
-            // Skip tombstones AND entries that don't listen at this step. The step filter is
-            // hoisted here on purpose: stepsBitmap shares slot 0 with the effect address (free
-            // check), while letting _runSingleEffect do it would first pay the eff.data SLOAD
-            // (slot 1) + 13-arg call setup.
+            // Skip tombstones AND entries that don't listen at this step before reading slot-1 data.
             if (address(eff.effect) != TOMBSTONE_ADDRESS && (eff.stepsBitmap & (1 << uint8(round))) != 0) {
                 (bytes32 effectData, bool needsFreshContext) = _effectDataAndHookContext(eff);
                 uint256 hookContext = activesPacked;
@@ -3537,6 +3541,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         // Built immediately before this effect call, after every earlier effect in
                         // the same pass, so status mutations cannot stale the snapshot.
                         hookContext |= uint256(config.monStatusLanes) << 132;
+                    } else if (round == EffectStep.AfterDamage) {
+                        // Damage has landed and KO state is finalized. The loop already has the
+                        // exact effect owner and config, so this needs no dispatch-time lookup.
+                        if (_getMonState(config, playerIndex, monIndex).isKnockedOut) {
+                            hookContext |= uint256(1) << 32;
+                        }
+                    } else if (round == EffectStep.PreDamage) {
+                        // This transient is updated by every earlier PreDamage effect, so reading
+                        // it here gives each callback the current composed signed damage value.
+                        hookContext |= uint256(uint32(tempPreDamage)) << 32;
                     } else if (round == EffectStep.AfterMove || round == EffectStep.OnUpdateMonState) {
                         // These hook-specific builders need data resolved at dispatch time. Keep
                         // the request out of the public low-32 active lanes until then.
@@ -3585,15 +3599,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private {
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
-            battleKeyForWrite,
-            effect,
-            rng,
-            data,
-            playerIndex,
-            monIndex,
-            round,
-            extraEffectsData,
-            activesPacked
+            battleKeyForWrite, effect, rng, data, playerIndex, monIndex, round, extraEffectsData, activesPacked
         );
 
         // If we need to remove or update the effect
@@ -4606,6 +4612,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (isInlineAttack) {
                 _inlineStandardAttack(config, rawMoveSlot, side, activeMon, tSlot >> 1, tMon, actionRng);
             } else {
+                uint256 moveContext = _buildActivesWord(battle);
+                if (rawMoveSlot & MOVE_CONTEXT_STATUS_LANES != 0) {
+                    moveContext |= uint256(config.monStatusLanes) << 132;
+                }
                 IMoveSet(address(uint160(rawMoveSlot)))
                     .move(
                         IEngine(address(this)),
@@ -4613,7 +4623,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         side,
                         activeMon,
                         targetBits,
-                        _buildActivesWord(battle),
+                        moveContext,
                         uint16(moveExtra & EXTRA_DATA_PAYLOAD_MASK),
                         actionRng
                     );
@@ -5460,6 +5470,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) external view returns (int32) {
         BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
         return _readMonStateDelta(config, playerIndex, monIndex, stateVarIndex);
+    }
+
+    function getMonHpState(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        external
+        view
+        returns (uint32 maxHp, int32 hpDelta)
+    {
+        BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
+        maxHp = _getTeamMon(config, playerIndex, monIndex).stats.hp;
+        hpDelta = _getMonState(config, playerIndex, monIndex).hpDelta;
+        if (hpDelta == CLEARED_MON_STATE_SENTINEL) {
+            hpDelta = 0;
+        }
     }
 
     /// @notice Current (base + delta, sentinel-aware) value of a mon stat in one call — the

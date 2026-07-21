@@ -8,6 +8,7 @@ import {StatBoostToApply} from "../../Structs.sol";
 
 import {IStatusEffect} from "./IStatusEffect.sol";
 import {StatusEffect} from "./StatusEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract BurnStatus is StatusEffect, IStatusEffect {
     uint256 constant STATUS_CLASS = 1;
@@ -28,7 +29,7 @@ contract BurnStatus is StatusEffect, IStatusEffect {
     // no-op external call per burned turn). HAS_REAPPLY routes same-class re-applies to the
     // degree escalation in onReapply.
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | HAS_REAPPLY_BIT | ALWAYS_APPLIES_BIT;
+        return 0x00010000 | 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | HAS_REAPPLY_BIT | ALWAYS_APPLIES_BIT;
     }
 
     // extraData layout: [burn degree: bits 0-7 | cached max HP: bits 32-63]. Base HP is fixed
@@ -36,12 +37,12 @@ contract BurnStatus is StatusEffect, IStatusEffect {
 
     function onApply(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 context
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Fresh apply only — the Engine routes same-class re-applies to onReapply instead.
         // Reduce attack by 1/ATTACK_DENOM of base attack stat
@@ -51,7 +52,7 @@ contract BurnStatus is StatusEffect, IStatusEffect {
         });
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
-        uint256 maxHp = uint256(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+        uint256 maxHp = TargetLib.hookMonMaxHp(context);
         return (bytes32(uint256(1) | (maxHp << 32)), false);
     }
 

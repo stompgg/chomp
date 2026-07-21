@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @move-context: status-lanes
+
 import "../../Constants.sol";
 import "../../Enums.sol";
 
@@ -27,7 +29,7 @@ contract HeatBeacon is IMoveSet {
 
     function move(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
         uint256 targetBits,
@@ -36,7 +38,7 @@ contract HeatBeacon is IMoveSet {
         uint256
     ) external {
         // Only spread Burn to the opponent if Embursa is itself Burned.
-        if (engine.getMonStatusClass(battleKey, attackerPlayerIndex, attackerMonIndex) == BURN_CLASS) {
+        if (TargetLib.hookStatusClass(activesPacked, attackerPlayerIndex, attackerMonIndex) == BURN_CLASS) {
             uint256 targetSlot = TargetLib.lowestSlot(targetBits);
             if (targetSlot != NO_SLOT) {
                 uint256 defenderPlayerIndex = TargetLib.sideOf(targetSlot);

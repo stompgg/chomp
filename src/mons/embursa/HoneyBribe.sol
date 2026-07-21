@@ -57,11 +57,8 @@ contract HoneyBribe is IMoveSet {
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Heal active mon by max HP / 2**bribeLevel
         uint256 bribeLevel = _getBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
-        uint32 maxHp =
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        (uint32 maxHp, int32 currentDamage) = engine.getMonHpState(battleKey, attackerPlayerIndex, attackerMonIndex);
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** bribeLevel))));
-        int32 currentDamage =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }

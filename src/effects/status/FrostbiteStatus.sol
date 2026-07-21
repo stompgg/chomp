@@ -5,6 +5,7 @@ import {ALWAYS_APPLIES_BIT, STATUS_CLASS_SHIFT} from "../../Constants.sol";
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {StatBoostToApply} from "../../Structs.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
@@ -20,17 +21,17 @@ contract FrostbiteStatus is StatusEffect {
 
     // Steps: OnApply, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
+        return 0x00010000 | 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 
     function onApply(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256 rng,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256 activesPacked
+        uint256 context
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
         // Reduce special attack by half
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
@@ -40,7 +41,7 @@ contract FrostbiteStatus is StatusEffect {
         engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
         // Cache max HP (bits 32-63; fixed for the battle) so each tick skips the engine read.
-        uint256 maxHp = uint256(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+        uint256 maxHp = TargetLib.hookMonMaxHp(context);
         return (bytes32(maxHp << 32), false);
     }
 

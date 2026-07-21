@@ -316,8 +316,12 @@ return low bits remain compatible.
 
 Supported layouts, decoded through `TargetLib`:
 
+- `OnApply`: the target mon's max HP via `hookMonMaxHp(context)`. This request is consumed before
+  installation and is not persisted as a recurring context capability.
 - `AfterMove`: current 24-bit move words via `hookMoveWordAt(context, absSlot)` and acted bits via
   `hookSlotActed(context, absSlot)`.
+- `AfterDamage`: the damaged mon's finalized KO state via `hookMonIsKnockedOut(context)`.
+- `PreDamage`: current signed in-flight damage via `hookPreDamage(context)`.
 - `RoundEnd`: current status classes via `hookStatusClass(context, side, monIndex)`.
 - `OnUpdateMonState`: the changed mon's max HP and normalized signed HP delta via
   `hookMonMaxHp(context)` / `hookMonHpDelta(context)`.
@@ -332,7 +336,16 @@ Consequently, a multi-hook effect receives every context supported for each hook
 even if it requested only one step. Benchmark multi-hook migrations: an unused builder at a frequent
 hook can outweigh the removed callback. Ordinary `IMoveSet.move()` execution does not yet receive
 these lifecycle layouts; only moves/abilities that also register as effects can use them in their
-effect hooks. Do not add address-specific Engine dispatch to work around that boundary.
+effect hooks. Ordinary tagged deployed moves may separately opt into supported move context through
+metadata capabilities: `@move-context: status-lanes` makes the deployment generator set
+`MOVE_CONTEXT_STATUS_LANES`, and `move()` can then use `TargetLib.hookStatusClass`. Keep these
+capabilities generic; do not add address-specific Engine dispatch.
+
+For ordinary moves/effects outside a supported packed hook context, use the narrowest typed bundled
+getter matching the data shape. In particular, overheal clamps should call
+`getMonHpState(battleKey, player, mon)` for `(maxHp, hpDelta)` rather than making separate
+`getMonValueForBattle(Hp)` and `getMonStateForBattle(Hp)` external calls. Do not add raw-slot or
+large generic snapshot APIs; add a new bundle only when multiple mechanics share the exact shape.
 
 ### Stat Boosts (inlined into the Engine)
 

@@ -10,6 +10,7 @@ import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 /// @dev Source identity: low 160 bits = msg.sender for external dealDamage callers; full packed
 ///      move slot for the inline-StandardAttack path. Two attackers wielding the same
@@ -33,18 +34,23 @@ contract Adaptor is IAbility, BasicEffect {
         engine.addEffect(playerIndex, monIndex, IEffect(address(this)), bytes32(0));
     }
 
-    // Steps: AfterDamage, PreDamage, ALWAYS_APPLIES (0x8000)
+    // Steps: AfterDamage, PreDamage, ALWAYS_APPLIES (0x8000); fresh PreDamage context (0x0200_0000)
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x8240;
+        return 0x02008240;
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256 source)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onPreDamage(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256 hookContext,
+        uint256 source
+    ) external override returns (bytes32, bool) {
         if (extraData == bytes32(source)) {
-            int32 running = engine.getPreDamage();
+            int32 running = TargetLib.hookPreDamage(hookContext);
             engine.setPreDamage(running / DAMAGE_DENOM);
         }
         return (extraData, false);

@@ -13,6 +13,8 @@ library TargetLib {
     uint256 internal constant HOOK_STATUS_LANES_SHIFT = 132;
     uint256 internal constant HOOK_MON_MAX_HP_SHIFT = 32;
     uint256 internal constant HOOK_MON_HP_DELTA_SHIFT = 64;
+    uint256 internal constant HOOK_MON_KO_SHIFT = 32;
+    uint256 internal constant HOOK_PRE_DAMAGE_SHIFT = 32;
 
     function sideOf(uint256 absSlot) internal pure returns (uint256) {
         return absSlot >> 1;
@@ -88,6 +90,16 @@ library TargetLib {
 
     function hookMonHpDelta(uint256 hookContext) internal pure returns (int32) {
         return int32(uint32(hookContext >> HOOK_MON_HP_DELTA_SHIFT));
+    }
+
+    /// @notice Fresh target KO state embedded for an opted-in AfterDamage callback.
+    function hookMonIsKnockedOut(uint256 hookContext) internal pure returns (bool) {
+        return ((hookContext >> HOOK_MON_KO_SHIFT) & 1) != 0;
+    }
+
+    /// @notice Fresh signed in-flight damage embedded for an opted-in PreDamage callback.
+    function hookPreDamage(uint256 hookContext) internal pure returns (int32) {
+        return int32(uint32(hookContext >> HOOK_PRE_DAMAGE_SHIFT));
     }
 
     /// @dev Kit-audit ruling for untargeted "the opposing active" effects (switch-in chips,

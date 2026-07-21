@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {ALWAYS_APPLIES_BIT, STATUS_CLASS_SHIFT} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 import {StatusEffect} from "./StatusEffect.sol";
 
@@ -17,18 +18,23 @@ contract BlessedStatus is StatusEffect {
         return "Blessed";
     }
 
-    // Steps: OnApply (0x01), OnRemove (0x08), PreDamage (0x200)
+    // Steps: OnApply (0x01), OnRemove (0x08), PreDamage (0x200); fresh PreDamage context (0x0200_0000)
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x209 | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
+        return uint32(0x02000209) | uint32(uint16(STATUS_CLASS << STATUS_CLASS_SHIFT)) | uint32(ALWAYS_APPLIES_BIT);
     }
 
     // Absorb the next incoming damage source entirely, then remove (which grants the heal).
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool removeAfterRun)
-    {
-        if (engine.getPreDamage() > 0) {
+    function onPreDamage(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256 hookContext,
+        uint256
+    ) external override returns (bytes32, bool removeAfterRun) {
+        if (TargetLib.hookPreDamage(hookContext) > 0) {
             engine.setPreDamage(0);
             return (extraData, true);
         }
@@ -45,9 +51,8 @@ contract BlessedStatus is StatusEffect {
 
     // Heal maxHp/HEAL_DENOM, clamped so we never overheal (copy of the ChainExpansion clamp).
     function _heal(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
-        int32 amtToHeal =
-            int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / HEAL_DENOM;
-        int32 hpDelta = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+        (uint32 maxHp, int32 hpDelta) = engine.getMonHpState(battleKey, targetIndex, monIndex);
+        int32 amtToHeal = int32(maxHp) / HEAL_DENOM;
         // hpDelta is negative when damaged; cap the heal to the damage taken so we can't exceed max HP.
         if (amtToHeal > (-1 * hpDelta)) {
             amtToHeal = -1 * hpDelta;

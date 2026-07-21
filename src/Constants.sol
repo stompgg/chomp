@@ -124,12 +124,13 @@ uint8 constant BATTLE_MODE_DOUBLES = 1;
 uint8 constant BATTLE_MODE_MULTI = 2;
 
 // Deployed-move word with packed static metadata: [address 0-159 | tag bit 160 |
-// stamina 236-239 | priority 244-247]. The nibble value 0xF means "battle/state-dependent —
+// context capabilities 161+ | stamina 236-239 | priority 244-247]. The nibble value 0xF means "battle/state-dependent —
 // staticcall the move live" (Rock Pull's punisher priority, HeatBeacon-boosted casts,
 // Unbounded Strike's stamina). Inline move words never set bit 160 (their 160-227 range is
 // unused), so the tag cleanly three-ways the discriminator: tagged = deployed+meta,
 // untagged with high bits = inline, bare address = deployed without meta (legacy/tests).
 uint256 constant MOVE_META_TAG = 1 << 160;
+uint256 constant MOVE_CONTEXT_STATUS_LANES = 1 << 161;
 uint256 constant MOVE_META_DYNAMIC = 0xF;
 
 // The 16-bit move extraData splits [targetBits 4 | movePayload 12]. The nibble is a bitmask
