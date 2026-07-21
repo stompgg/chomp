@@ -3,7 +3,7 @@
 //! aggregates win rates. No bun, no chomp_run_games.
 
 use chomp_engine::Structs::Mon;
-use crate::doubles::{run_doubles_games, Difficulty, DoublesSpec};
+use crate::doubles::{run_doubles_games, Difficulty, DoublesEvalW, DoublesSpec};
 use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::game::{run_games, GameSpec, StrategyKind};
 use crate::roster::{self, Roster, RosterMon};
@@ -281,25 +281,20 @@ impl DiffPairStats {
 /// pilot (side 0) over `games` matched drafts. The Phase-3 substrate exit check.
 pub fn doubles_search_winrate(roster: &Roster, depth: u32, games: usize, wseed: u32, seed_base: u32, threads: usize) -> f64 {
     let book = roster::address_book();
-    let mon = |id: u32| roster.mons.iter().find(|m| m.id == id).expect("drawn mon id in roster");
     let mut rng = Wrand::new(wseed);
     let mut specs = Vec::with_capacity(games);
     for i in 0..games {
-        let p0_ids = draw_team(roster, &mut rng);
-        let p1_ids = draw_team(roster, &mut rng);
-        specs.push(DoublesSpec {
-            seed: seed_base.wrapping_add(i as u32),
-            max_turns: MAX_TURNS,
-            mons_per_team: TEAM_SIZE as u64,
-            p0_team: p0_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
-            p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
+        let (p0_team, p0_ids) = draw_built_team(roster, &mut rng);
+        let (p1_team, p1_ids) = draw_built_team(roster, &mut rng);
+        specs.push(doubles_spec(
+            seed_base.wrapping_add(i as u32),
+            p0_team,
             p0_ids,
+            DoublesSideCfg::default(), // side 0 = epsilon-greedy Hard baseline
+            p1_team,
             p1_ids,
-            p0_difficulty: Difficulty::Hard, // side 0 = epsilon-greedy Hard baseline
-            p1_difficulty: Difficulty::Hard, // unused (side 1 searches)
-            p0_search_depth: 0,
-            p1_search_depth: depth,
-        });
+            DoublesSideCfg { depth, ..Default::default() },
+        ));
     }
     let outcomes = run_doubles_games(&specs, &book, threads);
     let (mut p1, mut decisive) = (0u32, 0u32);
@@ -347,19 +342,15 @@ pub fn build_doubles_specs(
         let p1_ids = draw_team(roster, &mut rng);
         let p0_team = equip(&p0_ids, &mut lrng);
         let p1_team = equip(&p1_ids, &mut lrng);
-        specs.push(DoublesSpec {
-            seed: seed_base.wrapping_add(i as u32),
-            max_turns: MAX_TURNS,
-            mons_per_team: TEAM_SIZE as u64,
+        specs.push(doubles_spec(
+            seed_base.wrapping_add(i as u32),
             p0_team,
-            p1_team,
             p0_ids,
+            DoublesSideCfg { difficulty: p0d, depth: search_depth, ..Default::default() },
+            p1_team,
             p1_ids,
-            p0_difficulty: p0d,
-            p1_difficulty: p1d,
-            p0_search_depth: search_depth,
-            p1_search_depth: search_depth,
-        });
+            DoublesSideCfg { difficulty: p1d, depth: search_depth, ..Default::default() },
+        ));
         pair_of.push(pi);
     }
     (specs, pair_of)
@@ -384,6 +375,116 @@ pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u
         }
     }
     stats
+}
+
+/// One side's doubles driver config: pilot difficulty (used at depth 0), search depth, eval weights.
+#[derive(Clone, Copy)]
+pub struct DoublesSideCfg {
+    pub difficulty: Difficulty,
+    pub depth: u32,
+    pub eval: DoublesEvalW,
+}
+impl Default for DoublesSideCfg {
+    fn default() -> Self {
+        Self { difficulty: Difficulty::Hard, depth: 0, eval: DoublesEvalW::default() }
+    }
+}
+
+/// Draw a team and materialize its default-loadout mons.
+fn draw_built_team(roster: &Roster, rng: &mut Wrand) -> (Vec<Mon>, Vec<u32>) {
+    let ids = draw_team(roster, rng);
+    let team = ids.iter().map(|&id| build_team_mon(roster.mon_by_id(id).expect("drawn mon id in roster"))).collect();
+    (team, ids)
+}
+
+/// Fill a DoublesSpec from per-side configs — the one place the spec's field mapping lives.
+#[allow(clippy::too_many_arguments)]
+fn doubles_spec(
+    seed: u32,
+    p0_team: Vec<Mon>,
+    p0_ids: Vec<u32>,
+    p0: DoublesSideCfg,
+    p1_team: Vec<Mon>,
+    p1_ids: Vec<u32>,
+    p1: DoublesSideCfg,
+) -> DoublesSpec {
+    DoublesSpec {
+        seed,
+        max_turns: MAX_TURNS,
+        mons_per_team: TEAM_SIZE as u64,
+        p0_team,
+        p1_team,
+        p0_ids,
+        p1_ids,
+        p0_difficulty: p0.difficulty,
+        p1_difficulty: p1.difficulty,
+        p0_search_depth: p0.depth,
+        p1_search_depth: p1.depth,
+        p0_eval: p0.eval,
+        p1_eval: p1.eval,
+    }
+}
+
+pub struct DoublesAbResult {
+    /// Candidate's win share of decisive games.
+    pub share: f64,
+    pub cand_wins: u32,
+    pub base_wins: u32,
+    pub draws: u32,
+}
+
+/// A/B two search configs: every drawn team pair plays twice with the same teams and seats but the
+/// CONFIGS exchanged, so team-matchup luck and any engine side bias cancel per pair. Returns the
+/// candidate (`cand`) side's record vs the baseline (`base`).
+pub fn doubles_ab_winrate(
+    roster: &Roster,
+    cand: DoublesSideCfg,
+    base: DoublesSideCfg,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+) -> DoublesAbResult {
+    let book = roster::address_book();
+    let mut rng = Wrand::new(wseed);
+    // Both seats search in an A/B (depth 0 would compare the un-evaluated greedy pilot instead).
+    let cand = DoublesSideCfg { depth: cand.depth.max(1), ..cand };
+    let base = DoublesSideCfg { depth: base.depth.max(1), ..base };
+    let pairs = (games / 2).max(1);
+    let mut specs = Vec::with_capacity(pairs * 2);
+    for i in 0..pairs {
+        let (p0_team, p0_ids) = draw_built_team(roster, &mut rng);
+        let (p1_team, p1_ids) = draw_built_team(roster, &mut rng);
+        // Game A: candidate in the p1 seat; game B: same everything, configs swapped.
+        for &(c1, c0) in &[(cand, base), (base, cand)] {
+            specs.push(doubles_spec(
+                seed_base.wrapping_add(i as u32),
+                p0_team.clone(),
+                p0_ids.clone(),
+                c0,
+                p1_team.clone(),
+                p1_ids.clone(),
+                c1,
+            ));
+        }
+    }
+    let outcomes = run_doubles_games(&specs, &book, threads);
+    let (mut cand_wins, mut base_wins, mut draws) = (0u32, 0u32, 0u32);
+    for (i, o) in outcomes.iter().enumerate() {
+        let cand_seat = if i % 2 == 0 { 1 } else { 0 };
+        match o.winner_side {
+            Some(s) if s == cand_seat => cand_wins += 1,
+            Some(_) => base_wins += 1,
+            None => draws += 1,
+        }
+    }
+    let decisive = cand_wins + base_wins;
+    DoublesAbResult {
+        share: if decisive == 0 { 0.0 } else { cand_wins as f64 / decisive as f64 },
+        cand_wins,
+        base_wins,
+        draws,
+    }
 }
 
 #[cfg(test)]

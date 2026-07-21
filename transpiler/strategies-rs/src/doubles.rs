@@ -24,7 +24,9 @@ use crate::jsrng::{random_salt, JsRng};
 use crate::roster::{input_type_of, target_spec_of, InputType, TargetSpec};
 use crate::shared::{build_damage_calc_context, estimate_damage_meta};
 use crate::sim::{pack_side, Sim};
-use crate::view::{decode_meta, mon_current_stamina, mon_max_hp, mon_state, move_slot, turn_id, Seat};
+use crate::view::{
+    decode_meta, mon_current_stamina, mon_max_hp, mon_skip_turn, mon_state, move_slot, stat_delta_score, turn_id, Seat,
+};
 
 const SWITCH: u8 = 125;
 const NO_OP: u8 = 126;
@@ -306,6 +308,38 @@ const D_W_HP: f64 = 1.0;
 const D_W_KO: f64 = 150.0;
 const D_W_STAMINA: f64 = 2.0;
 
+/// Doubles eval weights. Defaults reproduce the frozen baseline (hp/ko/stamina, corpses counted),
+/// so every existing caller is unchanged; the extra terms exist to be A/B'd in the arena.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct DoublesEvalW {
+    pub w_hp: f64,
+    pub w_ko: f64,
+    pub w_stamina: f64,
+    /// Per Σ(delta/base) unit over a live active's five combat stats (the TS twin's 0.4-per-% ≡ 40 here).
+    pub w_boost: f64,
+    /// Per live opposing active carrying a status class, minus ours (statuses hurt their carrier).
+    pub w_status: f64,
+    /// Per live opposing active flagged ShouldSkipTurn, minus ours.
+    pub w_skip: f64,
+    /// Exclude KO'd actives from the per-active terms — a corpse holds its lane (and stat deltas)
+    /// until the forced switch, but its stamina/boosts/status are worth nothing.
+    pub gate_ko: bool,
+}
+
+impl Default for DoublesEvalW {
+    fn default() -> Self {
+        Self {
+            w_hp: D_W_HP,
+            w_ko: D_W_KO,
+            w_stamina: D_W_STAMINA,
+            w_boost: 0.0,
+            w_status: 0.0,
+            w_skip: 0.0,
+            gate_ko: false,
+        }
+    }
+}
+
 fn team_size_of(sim: &mut Sim, _bk: B256, side: u8) -> usize {
     sim.team_size_phys(U256::from(side))
 }
@@ -324,28 +358,49 @@ fn side_roster_hp(sim: &mut Sim, bk: B256, side: u8, team_size: usize) -> f64 {
     sum
 }
 
-/// Σ current stamina over a side's two active slots.
-fn side_active_stamina(sim: &mut Sim, bk: B256, side: u8, slots: &[u32; 4]) -> i64 {
-    let mut sum = 0;
+/// Per-active term sums (stamina, boost, status, skip) over a side's two active slots. Feature
+/// reads are skipped while their weight is 0 so the default eval costs what it always did.
+fn side_active_terms(sim: &mut Sim, bk: B256, side: u8, slots: &[u32; 4], w: &DoublesEvalW, ko: u32) -> (f64, f64, f64, f64) {
+    let (mut stam, mut boost, mut status, mut skip) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for &abs in &side_slots(side) {
         let mon = slots[abs];
-        if mon != EMPTY_LANE {
-            sum += mon_current_stamina(sim, OBS, bk, side, mon as usize);
+        if mon == EMPTY_LANE || (w.gate_ko && ko & (1 << mon) != 0) {
+            continue;
+        }
+        stam += mon_current_stamina(sim, OBS, bk, side, mon as usize) as f64;
+        if w.w_boost != 0.0 {
+            boost += stat_delta_score(sim, OBS, bk, side, mon as usize);
+        }
+        if w.w_status != 0.0
+            && Engine::getMonStatusClass(&mut sim.world, bk, U256::from(side), U256::from(mon)) != U256::from(0u64)
+        {
+            status += 1.0;
+        }
+        if w.w_skip != 0.0 && mon_skip_turn(sim, OBS, bk, side, mon as usize) {
+            skip += 1.0;
         }
     }
-    sum
+    (stam, boost, status, skip)
 }
 
 /// Linear 2-slot position value, `cpu_side`-perspective (higher = better).
-fn doubles_eval(sim: &mut Sim, bk: B256, cpu_side: u8) -> f64 {
+fn doubles_eval(sim: &mut Sim, bk: B256, cpu_side: u8, w: &DoublesEvalW) -> f64 {
     let opp_side = 1 - cpu_side;
     let cpu_ts = team_size_of(sim, bk, cpu_side);
     let opp_ts = team_size_of(sim, bk, opp_side);
     let hp = side_roster_hp(sim, bk, cpu_side, cpu_ts) - side_roster_hp(sim, bk, opp_side, opp_ts);
-    let ko = (ko_bitmap(sim, bk, opp_side).count_ones() as i64 - ko_bitmap(sim, bk, cpu_side).count_ones() as i64) as f64;
+    let my_ko = ko_bitmap(sim, bk, cpu_side);
+    let op_ko = ko_bitmap(sim, bk, opp_side);
+    let ko = (op_ko.count_ones() as i64 - my_ko.count_ones() as i64) as f64;
     let slots = active_slots(sim, bk);
-    let stam = (side_active_stamina(sim, bk, cpu_side, &slots) - side_active_stamina(sim, bk, opp_side, &slots)) as f64;
-    D_W_HP * hp + D_W_KO * ko + D_W_STAMINA * stam
+    let (my_stam, my_boost, my_status, my_skip) = side_active_terms(sim, bk, cpu_side, &slots, w, my_ko);
+    let (op_stam, op_boost, op_status, op_skip) = side_active_terms(sim, bk, opp_side, &slots, w, op_ko);
+    w.w_hp * hp
+        + w.w_ko * ko
+        + w.w_stamina * (my_stam - op_stam)
+        + w.w_boost * (my_boost - op_boost)
+        + w.w_status * (op_status - my_status)
+        + w.w_skip * (op_skip - my_skip)
 }
 
 /// Terminal value if a side is fully KO'd, else None. Mate-distance discounted:
@@ -483,12 +538,12 @@ fn forced_joint_model(sim: &mut Sim, bk: B256, side: u8, mask: u32, slots: &[u32
 /// Recursive maximin value at `bk`, cpu_side-perspective. Forced half-turns are resolved
 /// deterministically and recursed WITHOUT consuming depth (they don't burn horizon; the chain is
 /// bounded by roster size / the terminal check).
-fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
+fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> f64 {
     if let Some(v) = terminal(sim, bk, cpu_side, depth) {
         return v;
     }
     if depth == 0 {
-        return doubles_eval(sim, bk, cpu_side);
+        return doubles_eval(sim, bk, cpu_side, w);
     }
     let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag as u32;
     if flag != 2 {
@@ -497,10 +552,10 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
         let mine = forced_joint_model(sim, bk, cpu_side, mask, &slots);
         let theirs = forced_joint_model(sim, bk, 1 - cpu_side, mask, &slots);
         if mine == (NO_OP_MOVE, NO_OP_MOVE) && theirs == (NO_OP_MOVE, NO_OP_MOVE) {
-            return doubles_eval(sim, bk, cpu_side); // no legal resolution — don't loop
+            return doubles_eval(sim, bk, cpu_side, w); // no legal resolution — don't loop
         }
         let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-        let v = search_value(sim, child, cpu_side, depth);
+        let v = search_value(sim, child, cpu_side, depth, w);
         sim.dispose_fork(child);
         return v;
     }
@@ -512,7 +567,7 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
         let mut worst = f64::INFINITY;
         for &theirs in &opp {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth - 1);
+            let v = search_value(sim, child, cpu_side, depth - 1, w);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -531,9 +586,9 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
 /// Pick `cpu_side`'s two slot moves by depth-`depth` joint maximin (turn 0 → leads; forced-switch →
 /// first-legal bench; normal turn → search). A reverting hypothetical mid-search is contained to
 /// this decision (fall back to resting both slots) rather than aborting the game.
-pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (SlotMove, SlotMove) {
+pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> (SlotMove, SlotMove) {
     let saved_fc = sim.fork_counter();
-    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth))) {
+    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth, w))) {
         Ok(m) => m,
         Err(_) => {
             sim.set_fork_counter(saved_fc);
@@ -542,7 +597,7 @@ pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (
     }
 }
 
-fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (SlotMove, SlotMove) {
+fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> (SlotMove, SlotMove) {
     let [a0, a1] = side_slots(cpu_side);
     let sw = |i: u16| SlotMove { move_index: SWITCH, extra_data: i };
 
@@ -567,7 +622,7 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
             let mut worst = f64::INFINITY;
             for &theirs in &opp {
                 let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-                let v = search_value(sim, child, cpu_side, depth.saturating_sub(1));
+                let v = search_value(sim, child, cpu_side, depth.saturating_sub(1), w);
                 sim.dispose_fork(child);
                 if v < worst {
                     worst = v;
@@ -618,7 +673,7 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
         let mut best_val = f64::NEG_INFINITY;
         for &mine in &combos {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth);
+            let v = search_value(sim, child, cpu_side, depth, w);
             sim.dispose_fork(child);
             if v > best_val {
                 best_val = v;
@@ -638,7 +693,7 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
         let mut worst = f64::INFINITY;
         for &theirs in &opp {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth - 1);
+            let v = search_value(sim, child, cpu_side, depth - 1, w);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -670,6 +725,9 @@ pub struct DoublesSpec {
     /// Per-side search depth: 0 = epsilon-greedy at the difficulty; ≥1 = joint maximin search.
     pub p0_search_depth: u32,
     pub p1_search_depth: u32,
+    /// Per-side eval weights for the search tiers (ignored at depth 0).
+    pub p0_eval: DoublesEvalW,
+    pub p1_eval: DoublesEvalW,
 }
 
 pub struct DoublesOutcome {
@@ -698,12 +756,12 @@ pub fn play_doubles_game(spec: &DoublesSpec, book: &HashMap<String, Address>) ->
         }
         let bk = sim.battle_key;
         let (p0a, p0b) = if spec.p0_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth)
+            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval)
         } else {
             pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
         };
         let (p1a, p1b) = if spec.p1_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth)
+            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval)
         } else {
             pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
         };
@@ -863,12 +921,12 @@ pub fn play_doubles_game_instrumented(
         }
         let bk = sim.battle_key;
         let (p0a, p0b) = if spec.p0_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth)
+            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval)
         } else {
             pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
         };
         let (p1a, p1b) = if spec.p1_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth)
+            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval)
         } else {
             pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
         };

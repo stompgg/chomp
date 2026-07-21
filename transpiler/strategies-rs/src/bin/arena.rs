@@ -5,7 +5,10 @@
 //! Data (drool/*.csv, src/mons/*.json) is read relative to CHOMP_ROOT (default: the repo root
 //! inferred from the crate location).
 
-use chomp_strategies::arena::{doubles_search_winrate, eval_weights_winrate, run_arena, run_doubles_arena};
+use chomp_strategies::arena::{
+    doubles_ab_winrate, doubles_search_winrate, eval_weights_winrate, run_arena, run_doubles_arena, DoublesSideCfg,
+};
+use chomp_strategies::doubles::DoublesEvalW;
 use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
 use chomp_strategies::game::StrategyKind;
 use chomp_strategies::roster::load_roster;
@@ -55,6 +58,33 @@ fn main() {
     // play no-peek maximin search at depth N over the weights; 0 = 1-ply greedy over them.
     let search_depth = arg_u(&args, "--search-depth", 0) as u32;
     let peek = args.iter().any(|a| a == "--peek"); // peek-at-root best-response for the search seat
+
+    // Doubles eval-weight A/B: candidate (side flags below) vs the default-weight baseline, both
+    // searching. Same teams/seats per pair with configs exchanged, so only the config differs.
+    //   --mode doubles-ab [--depth N] [--base-depth N] [--wboost F] [--wstatus F] [--wskip F] [--gateko]
+    if mode == "doubles-ab" {
+        let argf = |flag: &str, def: f64| arg(&args, flag).map(|v| v.parse().expect("float flag")).unwrap_or(def);
+        let depth = arg_u(&args, "--depth", 1) as u32;
+        let base_depth = arg_u(&args, "--base-depth", depth as u64) as u32;
+        let eval = DoublesEvalW {
+            w_boost: argf("--wboost", 0.0),
+            w_status: argf("--wstatus", 0.0),
+            w_skip: argf("--wskip", 0.0),
+            gate_ko: args.iter().any(|a| a == "--gateko"),
+            ..DoublesEvalW::default()
+        };
+        let cand = DoublesSideCfg { depth, eval, ..Default::default() };
+        let base = DoublesSideCfg { depth: base_depth, ..Default::default() };
+        let started = std::time::Instant::now();
+        let r = doubles_ab_winrate(&roster, cand, base, games, seed, seed_base, threads);
+        let elapsed = started.elapsed().as_secs_f64();
+        println!(
+            "cand d{depth} boost={} status={} skip={} gateko={}  vs  base d{base_depth} default  ·  {} games  ·  win {:.1}%  ({}-{}-{} draws)",
+            eval.w_boost, eval.w_status, eval.w_skip, eval.gate_ko, games, r.share * 100.0, r.cand_wins, r.base_wins, r.draws
+        );
+        eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
+        return;
+    }
 
     // Doubles maximin search vs the epsilon-greedy Hard baseline (Phase-3 substrate check).
     if mode == "doubles" && search_depth >= 1 {
