@@ -232,7 +232,7 @@ struct BattleConfig {
 struct EffectInstance {
     IEffect effect; // 160 bits
     uint16 stepsBitmap; // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
-    // 80 bits unused in slot 0
+    // High 80 bits carry Engine's offset-tagged compact data, or zero for slot-1 fallback.
     bytes32 data; // 256 bits in slot 1
 }
 

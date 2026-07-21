@@ -19,7 +19,7 @@ contract SleepStatus is StatusEffect {
     }
 
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT);
     }
 

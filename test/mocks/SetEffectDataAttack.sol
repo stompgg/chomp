@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: AGPL-3.0
+pragma solidity ^0.8.0;
+
+import {MoveClass, Type} from "../../src/Enums.sol";
+import {IEngine} from "../../src/IEngine.sol";
+import {MoveMeta} from "../../src/Structs.sol";
+import {IMoveSet} from "../../src/moves/IMoveSet.sol";
+
+contract SetEffectDataAttack is IMoveSet {
+    bytes32 immutable DATA;
+
+    constructor(bytes32 data) {
+        DATA = data;
+    }
+
+    function name() external pure returns (string memory) {
+        return "Set Effect Data";
+    }
+
+    function move(IEngine engine, bytes32, uint256, uint256, uint256, uint256, uint16 extraData, uint256) external {
+        uint256 targetIndex = uint256(extraData) & 0x3;
+        uint256 effectIndex = uint256(extraData) >> 2;
+        engine.editEffect(targetIndex, effectIndex, DATA);
+    }
+
+    function priority(IEngine, bytes32, uint256) public pure returns (uint32) {
+        return 1;
+    }
+
+    function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
+        return 0;
+    }
+
+    function moveType(IEngine, bytes32) public pure returns (Type) {
+        return Type.Fire;
+    }
+
+    function moveClass(IEngine, bytes32) public pure returns (MoveClass) {
+        return MoveClass.Physical;
+    }
+
+    function basePower(bytes32) external pure returns (uint32) {
+        return 0;
+    }
+
+    function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
+        external
+        pure
+        returns (MoveMeta memory)
+    {
+        return MoveMeta({
+            moveType: moveType(engine, battleKey),
+            moveClass: moveClass(engine, battleKey),
+            priority: priority(engine, battleKey, attackerPlayerIndex),
+            stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
+            basePower: 0
+        });
+    }
+}

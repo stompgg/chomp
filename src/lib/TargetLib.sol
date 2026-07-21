@@ -8,6 +8,9 @@ import "../Constants.sol";
 /// 2 = side1/slot0, 3 = side1/slot1). `activesPacked` carries one 8-bit lane per
 /// absolute slot holding that slot's active roster index (EMPTY_ACTIVE_LANE = no mon).
 library TargetLib {
+    uint256 internal constant HOOK_MOVE_LANES_SHIFT = 32;
+    uint256 internal constant HOOK_ACTED_MASK_SHIFT = 128;
+
     function sideOf(uint256 absSlot) internal pure returns (uint256) {
         return absSlot >> 1;
     }
@@ -55,6 +58,17 @@ library TargetLib {
             return s0 | 1;
         }
         return NO_SLOT;
+    }
+
+    /// @notice Fresh 24-bit current-move lane embedded by Engine immediately before an
+    ///         AfterMove callback: [extraData:16 | packedMoveIndex:8]. Other hook steps leave
+    ///         these context lanes unset. The low 32 active-mon lanes remain ABI-compatible.
+    function hookMoveWordAt(uint256 hookContext, uint256 absSlot) internal pure returns (uint256) {
+        return (hookContext >> (HOOK_MOVE_LANES_SHIFT + absSlot * 24)) & 0xFFFFFF;
+    }
+
+    function hookSlotActed(uint256 hookContext, uint256 absSlot) internal pure returns (bool) {
+        return ((hookContext >> (HOOK_ACTED_MASK_SHIFT + absSlot)) & 1) != 0;
     }
 
     /// @dev Kit-audit ruling for untargeted "the opposing active" effects (switch-in chips,

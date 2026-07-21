@@ -85,7 +85,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
     }
 
     // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return ALWAYS_APPLIES_BIT | 0x0134;
     }
 

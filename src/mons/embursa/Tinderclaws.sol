@@ -14,7 +14,7 @@ import {
 } from "../../Constants.sol";
 import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
+import {EffectInstance, IEffect, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
@@ -47,8 +47,9 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // Steps: RoundEnd, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8084;
+    function getStepsBitmap() external pure override returns (uint32) {
+        // Low 16 bits: lifecycle steps. High 16 bits: requested fresh-context steps.
+        return 0x00808084; // AfterMove context | ALWAYS_APPLIES | AfterMove | RoundEnd
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
@@ -65,9 +66,10 @@ contract Tinderclaws is IAbility, BasicEffect {
         if (ownSlot == NO_SLOT) {
             return (updatedExtraData, removeAfterRun);
         }
-        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);
-        // Unpack the move index from packedMoveIndex
-        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+        // Engine embeds a fresh current-move lane immediately before every AfterMove callback.
+        // Reading it here avoids a warm external round-trip while remaining correct when an
+        // earlier effect rewrites the move during the same pass.
+        uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(activesPacked, ownSlot)) & MOVE_INDEX_MASK;
 
         // If resting, remove burn
         if (moveIndex == NO_OP_MOVE_INDEX) {

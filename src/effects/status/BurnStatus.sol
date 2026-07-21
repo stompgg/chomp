@@ -27,7 +27,7 @@ contract BurnStatus is StatusEffect, IStatusEffect {
     // Steps: OnApply, RoundEnd, OnRemove (no RoundStart behavior — the bit would only buy a
     // no-op external call per burned turn). HAS_REAPPLY routes same-class re-applies to the
     // degree escalation in onReapply.
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | HAS_REAPPLY_BIT | ALWAYS_APPLIES_BIT;
     }
 

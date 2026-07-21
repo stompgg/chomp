@@ -19,7 +19,7 @@ contract SpAtkDebuffEffect is StatusEffect {
     }
 
     // Steps: OnApply, OnRemove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x09 | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 

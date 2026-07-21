@@ -75,7 +75,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
     }
 
     // Steps: OnMonSwitchOut (0x20), AfterMove (0x80), ALWAYS_APPLIES (0x8000)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return ALWAYS_APPLIES_BIT | 0x00A0;
     }
 

@@ -193,10 +193,7 @@ interface IEngine {
         external
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
-    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
-        external
-        view
-        returns (uint256);
+    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) external view returns (uint256);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);

@@ -45,7 +45,10 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {DummyStatus} from "./mocks/DummyStatus.sol";
 import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
+import {SetEffectDataAttack} from "./mocks/SetEffectDataAttack.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
+import {WideDataEffect} from "./mocks/WideDataEffect.sol";
+import {FreshMoveContextAbility} from "./mocks/FreshMoveContextAbility.sol";
 
 contract EngineTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -127,6 +130,29 @@ contract EngineTest is Test, BattleHelper {
         // Turn ID should now be 2
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.turnId, 2);
+    }
+
+    function test_afterMoveContextIsFreshAfterEarlierEffectRewrite() public {
+        FreshMoveContextAbility observer = new FreshMoveContextAbility();
+        Mon memory aliceMon = dummyMon;
+        aliceMon.ability = uint256(uint160(address(observer)));
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        Mon[] memory bobTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        bobTeam[0] = dummyMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Alice authors move 0. The first AfterMove effect rewrites it to rest; the context-aware
+        // observer runs second and must see the rewritten lane, not a pass-level snapshot.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(observer.observedMoveIndex(), NO_OP_MOVE_INDEX, "context must reflect prior hook rewrite");
     }
 
     function test_fasterSpeedKOsGameOver() public {
@@ -2764,6 +2790,48 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
         (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));
+    }
+
+    function test_effectDataCompactAndWideFallbackTransitions() public {
+        WideDataEffect wideEffect = new WideDataEffect();
+        // Exact representation boundary: max-1 is offset-tagged; max falls back to slot 1.
+        uint256 compactMarkerMax = (uint256(1) << 79) - 1;
+        bytes32 compactData = bytes32(compactMarkerMax - 1);
+        bytes32 secondWideData = bytes32(compactMarkerMax);
+        SetEffectDataAttack setCompact = new SetEffectDataAttack(compactData);
+        SetEffectDataAttack setWide = new SetEffectDataAttack(secondWideData);
+
+        Mon memory mon = _createMon();
+        mon.ability = uint160(address(new EffectAbility(wideEffect)));
+        mon.moves = new uint256[](2);
+        mon.moves[0] = uint256(uint160(address(setCompact)));
+        mon.moves[1] = uint256(uint160(address(setWide)));
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, wideEffect.INITIAL_DATA());
+        (bool exists,, bytes32 targetedData) = engine.getEffectData(battleKey, 1, 0, address(wideEffect));
+        assertTrue(exists);
+        assertEq(targetedData, wideEffect.INITIAL_DATA());
+
+        uint16 editExtraData = uint16(uint256(1) | (indices[0] << 2));
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, compactData);
+        (BattleConfigView memory battleView,) = engine.getBattle(battleKey);
+        assertEq(battleView.p1Effects[0][0].data, compactData);
+
+        _commitRevealExecuteForAliceAndBob(battleKey, 1, NO_OP_MOVE_INDEX, editExtraData, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, secondWideData);
+        (exists,, targetedData) = engine.getEffectData(battleKey, 1, 0, address(wideEffect));
+        assertTrue(exists);
+        assertEq(targetedData, secondWideData);
     }
 
     // Regression: a KO delivered by an effect's OnUpdateMonState -> dealDamage hook, fired off the

@@ -18,7 +18,7 @@ contract BlessedStatus is StatusEffect {
     }
 
     // Steps: OnApply (0x01), OnRemove (0x08), PreDamage (0x200)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x209 | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 

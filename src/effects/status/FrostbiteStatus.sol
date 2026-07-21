@@ -19,7 +19,7 @@ contract FrostbiteStatus is StatusEffect {
     }
 
     // Steps: OnApply, RoundEnd, OnRemove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;
     }
 

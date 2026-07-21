@@ -14,7 +14,7 @@ contract InstantDeathOnSwitchInEffect is BasicEffect {
     }
 
     // Steps: OnMonSwitchIn
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x10;
     }
 

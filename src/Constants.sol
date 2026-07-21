@@ -71,6 +71,11 @@ uint256 constant STATUS_CLASS_MASK = 0xF;
 // (escalating statuses, e.g. Burn). Clear = a same-class re-apply is a zero-call no-op.
 uint16 constant HAS_REAPPLY_BIT = 0x4000;
 
+// getStepsBitmap metadata: lifecycle steps remain in the low 16 bits; the high 16 bits opt an
+// effect into fresh per-step hook context. The EVM selector is unchanged from the legacy uint16
+// return, and legacy deployed effects decode as metadata with a zero context half.
+uint256 constant EFFECT_CONTEXT_SHIFT = 16;
+
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
 bytes32 constant MOVE_MISS_EVENT_TYPE = sha256(abi.encode("MoveMiss"));

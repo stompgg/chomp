@@ -16,7 +16,7 @@ contract AlwaysRejectsEffect is BasicEffect {
     }
 
     // ALWAYS_APPLIES_BIT (0x8000) | RoundEnd (0x04)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8004;
     }
 

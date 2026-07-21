@@ -1,29 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0
-
 pragma solidity ^0.8.0;
 
-import "../../src/Enums.sol";
-import "../../src/Structs.sol";
-
+import {ALWAYS_APPLIES_BIT} from "../../src/Constants.sol";
 import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
-contract InstantDeathEffect is BasicEffect {
+contract WideDataEffect is BasicEffect {
+    bytes32 public constant INITIAL_DATA = bytes32((uint256(1) << 200) | 123);
+
     function name() external pure override returns (string memory) {
-        return "Instant Death";
+        return "Wide Data";
     }
 
-    // Steps: RoundEnd
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x04;
+        return uint16(1) | ALWAYS_APPLIES_BIT;
     }
 
-    function onRoundEnd(IEngine engine, bytes32, uint256, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
+    function onApply(IEngine, bytes32, uint256, bytes32, uint256, uint256, uint256)
         external
+        pure
         override
         returns (bytes32 updatedExtraData, bool removeAfterRun)
     {
-        engine.updateMonState(targetIndex, monIndex, MonStateIndexName.IsKnockedOut, 1);
-        return (bytes32(0), true);
+        return (INITIAL_DATA, false);
     }
 }

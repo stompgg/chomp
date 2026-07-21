@@ -9,8 +9,8 @@ import "./moves/IMoveSet.sol";
 
 import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
-import {IStatusEffect} from "./effects/status/IStatusEffect.sol";
 import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
+import {IStatusEffect} from "./effects/status/IStatusEffect.sol";
 import {ECDSA} from "./lib/ECDSA.sol";
 import {EIP712} from "./lib/EIP712.sol";
 import {MappingAllocator} from "./lib/MappingAllocator.sol";
@@ -388,9 +388,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             (IEffect[] memory effects, bytes32[] memory data) = battle.ruleset.getInitialGlobalEffects();
             uint256 numEffects = effects.length;
             for (uint256 i = 0; i < numEffects;) {
-                config.globalEffects[i].effect = effects[i];
-                config.globalEffects[i].stepsBitmap = effects[i].getStepsBitmap();
-                config.globalEffects[i].data = data[i];
+                IEffect effect = effects[i];
+                uint32 metadata = effect.getStepsBitmap();
+                _writeEffectInstance(
+                    config.globalEffects[i], effect, uint16(metadata), data[i], uint16(metadata >> EFFECT_CONTEXT_SHIFT)
+                );
                 unchecked {
                     ++i;
                 }
@@ -568,7 +570,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
-
         for (uint256 i = 0; i < entries.length; i++) {
             uint256 entry = entries[i];
             uint8 p0Move = uint8(entry);
@@ -1137,6 +1138,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return _decodeMove(encoded);
         }
         return playerIndex == 0 ? config.p0Move : config.p1Move;
+    }
+
+    /// @dev Allocation-free current-turn lane with the same transient/storage fallback as
+    ///      _getCurrentTurnMove. Used to build fresh external hook context.
+    function _currentTurnMoveWord(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
+        uint256 encoded = (playerIndex == 0 ? _turnP0Packed : _turnP1Packed) >> 104;
+        if (encoded != 0) {
+            return encoded & 0xFFFFFF;
+        }
+        MoveDecision storage move = playerIndex == 0 ? config.p0Move : config.p1Move;
+        return uint256(move.packedMoveIndex) | (uint256(move.extraData) << 8);
     }
 
     /// @notice Internal execution logic shared by execute() and executeWithMoves()
@@ -1850,7 +1862,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _addEffectInternal(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) internal {
         bytes32 battleKey = battleKeyForWrite;
         // Fetch steps bitmap once (reused for the status gate, ALWAYS_APPLIES check, and storage)
-        uint16 stepsBitmap = effect.getStepsBitmap();
+        uint32 effectMetadata = effect.getStepsBitmap();
+        uint16 stepsBitmap = uint16(effectMetadata);
+        uint16 hookContextBitmap = uint16(effectMetadata >> EFFECT_CONTEXT_SHIFT);
         BattleConfig storage config = battleConfig[storageKeyForWrite];
 
         // Exclusive-status gate (class-bearing player effects only), ahead of any external call:
@@ -1912,8 +1926,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     if (statusClass != 0) {
                         uint256 laneShift = _statusLaneShift(targetIndex, monIndex);
                         config.monStatusLanes = uint64(
-                            (uint256(config.monStatusLanes) & ~(uint256(0xF) << laneShift))
-                                | (statusClass << laneShift)
+                            (uint256(config.monStatusLanes) & ~(uint256(0xF) << laneShift)) | (statusClass << laneShift)
                         );
                     }
                 }
@@ -1922,9 +1935,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     // Global effects use simple sequential indexing
                     uint256 effectIndex = config.globalEffectsLength;
                     EffectInstance storage effectSlot = config.globalEffects[effectIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
+                    _writeEffectInstance(effectSlot, effect, stepsBitmap, extraDataToUse, hookContextBitmap);
                     config.globalEffectsLength = uint8(effectIndex + 1);
                     // Set dirty bit 0 for global effects
                     effectsDirtyBitmap |= 1;
@@ -1933,9 +1944,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     uint256 monEffectCount = _getMonEffectCount(config.packedP0EffectsCount, monIndex);
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
                     EffectInstance storage effectSlot = config.p0Effects[slotIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
+                    _writeEffectInstance(effectSlot, effect, stepsBitmap, extraDataToUse, hookContextBitmap);
                     config.packedP0EffectsCount =
                         _setMonEffectCount(config.packedP0EffectsCount, monIndex, monEffectCount + 1);
                     // Set dirty bit (1 + monIndex) for P0 effects
@@ -1944,9 +1953,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     uint256 monEffectCount = _getMonEffectCount(config.packedP1EffectsCount, monIndex);
                     uint256 slotIndex = _getEffectSlotIndex(monIndex, monEffectCount);
                     EffectInstance storage effectSlot = config.p1Effects[slotIndex];
-                    effectSlot.effect = effect;
-                    effectSlot.stepsBitmap = stepsBitmap;
-                    effectSlot.data = extraDataToUse;
+                    _writeEffectInstance(effectSlot, effect, stepsBitmap, extraDataToUse, hookContextBitmap);
                     config.packedP1EffectsCount =
                         _setMonEffectCount(config.packedP1EffectsCount, monIndex, monEffectCount + 1);
                     // Set dirty bit (9 + monIndex) for P1 effects
@@ -1976,19 +1983,20 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 address(e.effect) != TOMBSTONE_ADDRESS
                     && ((e.stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK) == statusClass
             ) {
-                (bytes32 newData, bool removeAfterRun) = IStatusEffect(address(e.effect)).onReapply(
-                    IEngine(address(this)),
-                    battleKey,
-                    tempRNG,
-                    e.data,
-                    targetIndex,
-                    monIndex,
-                    _hookActivesWord(battleData[battleKey])
-                );
+                (bytes32 newData, bool removeAfterRun) = IStatusEffect(address(e.effect))
+                    .onReapply(
+                        IEngine(address(this)),
+                        battleKey,
+                        tempRNG,
+                        _effectData(e),
+                        targetIndex,
+                        monIndex,
+                        _hookActivesWord(battleData[battleKey])
+                    );
                 if (removeAfterRun) {
                     _removeEffectAtSlot(config, battleKey, targetIndex, monIndex, baseSlot + i);
                 } else {
-                    e.data = newData;
+                    _setEffectData(e, newData);
                 }
                 return;
             }
@@ -2022,7 +2030,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effectInstance = config.p1Effects[effectIndex];
         }
 
-        effectInstance.data = newExtraData;
+        _setEffectData(effectInstance, newExtraData);
     }
 
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 indexToRemove) public {
@@ -2041,6 +2049,84 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev Bit offset of a mon's uint16 exact lifecycle-step union (stride 8/side).
     function _effectStepLaneShift(uint256 targetIndex, uint256 monIndex) private pure returns (uint256) {
         return ((targetIndex << 3) | monIndex) << 4;
+    }
+
+    uint256 private constant EFFECT_COMPACT_DATA_BITS = 79;
+    uint256 private constant EFFECT_COMPACT_DATA_MASK = (uint256(1) << EFFECT_COMPACT_DATA_BITS) - 1;
+    uint256 private constant EFFECT_HOOK_CONTEXT_FLAG = uint256(1) << 255;
+    uint256 private constant EFFECT_HEADER_BASE_MASK = uint256(type(uint176).max) | EFFECT_HOOK_CONTEXT_FLAG;
+    uint256 private constant FRESH_HOOK_CONTEXT_REQUEST = uint256(1) << 255;
+
+    /// @dev Effect header layout: address[0:160], steps[160:176], compact-data marker[176:255],
+    /// fresh-hook-context capability[255]. A nonzero marker stores `data + 1`; zero means the
+    /// full bytes32 lives in slot 1. Reserving one capability bit leaves 79 compact data bits.
+    /// A nonzero marker stores `data + 1`; zero means the full bytes32 lives in slot 1. The offset
+    /// represents zero without giving up a tag bit and leaves arbitrary wide data fully supported.
+    function _effectData(EffectInstance storage effectInstance) private view returns (bytes32 data) {
+        uint256 header;
+        assembly ("memory-safe") {
+            header := sload(effectInstance.slot)
+        }
+        uint256 encoded = (header >> 176) & EFFECT_COMPACT_DATA_MASK;
+        if (encoded != 0) {
+            return bytes32(encoded - 1);
+        }
+        return effectInstance.data;
+    }
+
+    function _setEffectData(EffectInstance storage effectInstance, bytes32 data) private {
+        uint256 header;
+        assembly ("memory-safe") {
+            header := sload(effectInstance.slot)
+        }
+        uint256 raw = uint256(data);
+        if (raw < EFFECT_COMPACT_DATA_MASK) {
+            header = (header & EFFECT_HEADER_BASE_MASK) | ((raw + 1) << 176);
+            assembly ("memory-safe") {
+                sstore(effectInstance.slot, header)
+            }
+        } else {
+            if (((header >> 176) & EFFECT_COMPACT_DATA_MASK) != 0) {
+                header &= EFFECT_HEADER_BASE_MASK;
+                assembly ("memory-safe") {
+                    sstore(effectInstance.slot, header)
+                }
+            }
+            effectInstance.data = data;
+        }
+    }
+
+    function _writeEffectInstance(
+        EffectInstance storage effectInstance,
+        IEffect effect,
+        uint16 stepsBitmap,
+        bytes32 data,
+        uint16 hookContextBitmap
+    ) private {
+        uint256 raw = uint256(data);
+        uint256 encoded = raw < EFFECT_COMPACT_DATA_MASK ? raw + 1 : 0;
+        uint256 header = uint256(uint160(address(effect))) | (uint256(stepsBitmap) << 160) | (encoded << 176)
+            | (hookContextBitmap & (1 << uint8(EffectStep.AfterMove)) != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
+        assembly ("memory-safe") {
+            sstore(effectInstance.slot, header)
+        }
+        if (encoded == 0) {
+            effectInstance.data = data;
+        }
+    }
+
+    function _effectDataAndHookContext(EffectInstance storage effectInstance)
+        private
+        view
+        returns (bytes32 data, bool needsFreshContext)
+    {
+        uint256 header;
+        assembly ("memory-safe") {
+            header := sload(effectInstance.slot)
+        }
+        uint256 encoded = (header >> 176) & EFFECT_COMPACT_DATA_MASK;
+        data = encoded == 0 ? effectInstance.data : bytes32(encoded - 1);
+        needsFreshContext = (header & EFFECT_HOOK_CONTEXT_FLAG) != 0;
     }
 
     function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -2142,7 +2228,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             effect.onRemove(
                 IEngine(address(this)),
                 battleKey,
-                eff.data,
+                _effectData(eff),
                 targetIndex,
                 monIndex,
                 _hookActivesWord(battleData[battleKey])
@@ -2436,7 +2522,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     StatBoostLib.unpackBoostData(words[baseSlot + i]);
                 StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
             }
-            newBoostedStats = StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
+            newBoostedStats =
+                StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
         } else {
             newBoostedStats = StatBoostLib.finalizeAccStats(acc, baseStats);
         }
@@ -3444,6 +3531,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // check), while letting _runSingleEffect do it would first pay the eff.data SLOAD
             // (slot 1) + 13-arg call setup.
             if (address(eff.effect) != TOMBSTONE_ADDRESS && (eff.stepsBitmap & (1 << uint8(round))) != 0) {
+                (bytes32 effectData, bool needsFreshContext) = _effectDataAndHookContext(eff);
+                uint256 hookContext = activesPacked;
+                if (round == EffectStep.AfterMove && needsFreshContext) {
+                    hookContext |= FRESH_HOOK_CONTEXT_REQUEST;
+                }
                 _runSingleEffect(
                     config,
                     rng,
@@ -3454,9 +3546,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     extraEffectsData,
                     eff.effect,
                     eff.stepsBitmap,
-                    eff.data,
+                    effectData,
                     uint96(slotIndex),
-                    activesPacked
+                    hookContext
                 );
 
                 // Re-read count if a new effect was added during this iteration
@@ -3493,7 +3585,15 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
-            battleKeyForWrite, effect, rng, data, playerIndex, monIndex, round, extraEffectsData, activesPacked
+            battleKeyForWrite,
+            effect,
+            rng,
+            data,
+            playerIndex,
+            monIndex,
+            round,
+            extraEffectsData,
+            activesPacked
         );
 
         // If we need to remove or update the effect
@@ -3532,6 +3632,25 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 source = abi.decode(extraEffectsData, (uint256));
             return effect.onPreDamage(self, battleKey, rng, data, playerIndex, monIndex, activesPacked, source);
         } else if (round == EffectStep.AfterMove) {
+            // Enrich the existing active-lane word with a fresh current-turn snapshot immediately
+            // before each callback. An earlier effect may rewrite a move, so this cannot be cached
+            // once per pass. Low 32 bits remain the long-standing active-mon ABI; move lanes occupy
+            // bits 32..127 and the acted-slot mask bits 128..131.
+            if (activesPacked & FRESH_HOOK_CONTEXT_REQUEST != 0) {
+                activesPacked &= ~FRESH_HOOK_CONTEXT_REQUEST;
+                BattleData storage battle = battleData[battleKey];
+                if (battle.isTwoSlotMode) {
+                    activesPacked |= _currentTurnMoveWordForSlot(0, 0) << 32;
+                    activesPacked |= _currentTurnMoveWordForSlot(0, 1) << 56;
+                    activesPacked |= _currentTurnMoveWordForSlot(1, 0) << 80;
+                    activesPacked |= _currentTurnMoveWordForSlot(1, 1) << 104;
+                } else {
+                    BattleConfig storage config = battleConfig[storageKeyForWrite];
+                    activesPacked |= _currentTurnMoveWord(config, 0) << 32;
+                    activesPacked |= _currentTurnMoveWord(config, 1) << 80;
+                }
+                activesPacked |= actedSlotsThisTurnMask << 128;
+            }
             return effect.onAfterMove(self, battleKey, rng, data, playerIndex, monIndex, activesPacked);
         } else if (round == EffectStep.OnUpdateMonState) {
             (uint256 statePlayerIndex, uint256 stateMonIndex, MonStateIndexName stateVarIndex, int32 valueToAdd) =
@@ -3558,11 +3677,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else {
             // Update the data at the slot
             if (effectIndex == 2) {
-                config.globalEffects[slotIndex].data = updatedExtraData;
+                _setEffectData(config.globalEffects[slotIndex], updatedExtraData);
             } else if (effectIndex == 0) {
-                config.p0Effects[slotIndex].data = updatedExtraData;
+                _setEffectData(config.p0Effects[slotIndex], updatedExtraData);
             } else {
-                config.p1Effects[slotIndex].data = updatedExtraData;
+                _setEffectData(config.p1Effects[slotIndex], updatedExtraData);
             }
         }
     }
@@ -4395,8 +4514,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             // turn — can't be left vacant by an illegal pick: a colliding switch would re-mask
             // the lane every turn (an infinite-stall vector). Coerce to the first legal target;
             // a genuinely empty bench (one survivor) finds none and falls to the no-op guard.
-            bool laneMustFill = activeMon == EMPTY_ACTIVE_LANE
-                || _getMonState(config, side, activeMon).isKnockedOut;
+            bool laneMustFill = activeMon == EMPTY_ACTIVE_LANE || _getMonState(config, side, activeMon).isKnockedOut;
             if (laneMustFill && !_isLegalSlotSwitchTarget(config, battle, absSlot, monToSwitchIndex)) {
                 (monToSwitchIndex,) = _firstLegalSwitchTarget(config, battle, absSlot);
             }
@@ -4904,8 +5022,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256[] memory globalIndices = new uint256[](globalEffectsLength);
             uint256 globalIdx = 0;
             for (uint256 i = 0; i < globalEffectsLength;) {
-                if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                    globalResult[globalIdx] = config.globalEffects[i];
+                EffectInstance storage storedEffect = config.globalEffects[i];
+                if (address(storedEffect.effect) != TOMBSTONE_ADDRESS) {
+                    globalResult[globalIdx] = EffectInstance({
+                        effect: storedEffect.effect,
+                        stepsBitmap: storedEffect.stepsBitmap,
+                        data: _effectData(storedEffect)
+                    });
                     globalIndices[globalIdx] = i;
                     unchecked {
                         ++globalIdx;
@@ -4934,8 +5057,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 idx = 0;
         for (uint256 i = 0; i < monEffectCount;) {
             uint256 slotIndex = baseSlot + i;
-            if (address(effects[slotIndex].effect) != TOMBSTONE_ADDRESS) {
-                result[idx] = effects[slotIndex];
+            EffectInstance storage storedEffect = effects[slotIndex];
+            if (address(storedEffect.effect) != TOMBSTONE_ADDRESS) {
+                result[idx] = EffectInstance({
+                    effect: storedEffect.effect, stepsBitmap: storedEffect.stepsBitmap, data: _effectData(storedEffect)
+                });
                 indices[idx] = slotIndex;
                 unchecked {
                     ++idx;
@@ -4967,8 +5093,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         EffectInstance[] memory globalEffects = new EffectInstance[](globalLen);
         uint256 gIdx = 0;
         for (uint256 i = 0; i < globalLen;) {
-            if (address(config.globalEffects[i].effect) != TOMBSTONE_ADDRESS) {
-                globalEffects[gIdx] = config.globalEffects[i];
+            EffectInstance storage storedEffect = config.globalEffects[i];
+            if (address(storedEffect.effect) != TOMBSTONE_ADDRESS) {
+                globalEffects[gIdx] = EffectInstance({
+                    effect: storedEffect.effect, stepsBitmap: storedEffect.stepsBitmap, data: _effectData(storedEffect)
+                });
                 unchecked {
                     ++gIdx;
                 }
@@ -5124,8 +5253,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             EffectInstance[] memory monEffects = new EffectInstance[](monCount);
             uint256 idx = 0;
             for (uint256 i = 0; i < monCount;) {
-                if (address(effects[baseSlot + i].effect) != TOMBSTONE_ADDRESS) {
-                    monEffects[idx] = effects[baseSlot + i];
+                EffectInstance storage storedEffect = effects[baseSlot + i];
+                if (address(storedEffect.effect) != TOMBSTONE_ADDRESS) {
+                    monEffects[idx] = EffectInstance({
+                        effect: storedEffect.effect,
+                        stepsBitmap: storedEffect.stepsBitmap,
+                        data: _effectData(storedEffect)
+                    });
                     unchecked {
                         ++idx;
                     }
@@ -5410,11 +5544,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev View shape of a side's stat-boost store: per-mon arrays of packed source words
     ///      (StatBoostLib layout — clients decode key/perm/lanes off-chain).
-    function _boostWordsView(BattleConfig storage config, uint256 side)
-        private
-        view
-        returns (bytes32[][] memory out)
-    {
+    function _boostWordsView(BattleConfig storage config, uint256 side) private view returns (bytes32[][] memory out) {
         uint256 teamSize = side == 0 ? (config.teamSizes & 0x0F) : (config.teamSizes >> 4);
         mapping(uint256 => bytes32) storage words = _boostWordsOf(config, side);
         out = new bytes32[][](teamSize);
@@ -5455,7 +5585,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             for (uint256 i; i < len;) {
                 EffectInstance storage e = config.globalEffects[i];
                 if (address(e.effect) == effectAddr) {
-                    return (true, i, e.data);
+                    return (true, i, _effectData(e));
                 }
                 unchecked {
                     ++i;
@@ -5471,7 +5601,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 slotIndex = baseSlot + i;
             EffectInstance storage e = effects[slotIndex];
             if (address(e.effect) == effectAddr) {
-                return (true, slotIndex, e.data);
+                return (true, slotIndex, _effectData(e));
             }
             unchecked {
                 ++i;
