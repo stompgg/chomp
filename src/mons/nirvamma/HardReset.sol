@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
-import {EffectInstance, MoveDecision, MoveMeta} from "../../Structs.sol";
+import {EffectInstance, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -82,9 +82,10 @@ contract HardReset is IMoveSet, BasicEffect {
         });
     }
 
-    // Steps: AfterMove, ALWAYS_APPLIES (0x8000)
+    // Steps: AfterMove, ALWAYS_APPLIES (0x8000). Request fresh AfterMove context in the
+    // high 16-bit metadata lane so rest detection does not re-enter Engine.
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x8080;
+        return 0x00808080;
     }
 
     function onAfterMove(
@@ -100,8 +101,8 @@ contract HardReset is IMoveSet, BasicEffect {
         if (restSlot == NO_SLOT) {
             return (extraData, false);
         }
-        MoveDecision memory dec = engine.getMoveDecisionForSlot(battleKey, targetIndex, restSlot & 1);
-        if ((dec.packedMoveIndex & MOVE_INDEX_MASK) != NO_OP_MOVE_INDEX) {
+        uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(activesPacked, restSlot)) & MOVE_INDEX_MASK;
+        if (moveIndex != NO_OP_MOVE_INDEX) {
             return (extraData, false);
         }
 

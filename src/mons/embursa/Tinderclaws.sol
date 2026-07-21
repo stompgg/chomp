@@ -49,13 +49,13 @@ contract Tinderclaws is IAbility, BasicEffect {
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint32) {
         // Low 16 bits: lifecycle steps. High 16 bits: requested fresh-context steps.
-        return 0x00808084; // AfterMove context | ALWAYS_APPLIES | AfterMove | RoundEnd
+        return 0x00848084; // RoundEnd+AfterMove context | ALWAYS_APPLIES | AfterMove | RoundEnd
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
     function onAfterMove(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256 rng,
         bytes32 extraData,
         uint256 targetIndex,
@@ -92,14 +92,14 @@ contract Tinderclaws is IAbility, BasicEffect {
 
     function onRoundEnd(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 hookContext
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        bool isBurned = _isBurned(engine, battleKey, targetIndex, monIndex);
+        bool isBurned = TargetLib.hookStatusClass(hookContext, targetIndex, monIndex) == BURN_CLASS;
         bool hasBoost = uint256(extraData) == 1;
 
         if (isBurned && !hasBoost) {
@@ -119,13 +119,5 @@ contract Tinderclaws is IAbility, BasicEffect {
         }
 
         return (extraData, false);
-    }
-
-    function _isBurned(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
-        internal
-        view
-        returns (bool)
-    {
-        return engine.getMonStatusClass(battleKey, targetIndex, monIndex) == BURN_CLASS;
     }
 }

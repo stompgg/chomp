@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MoveClass, Type} from "../../Enums.sol";
 import {MoveDecision, MoveMeta} from "../../Structs.sol";
 
@@ -74,14 +74,15 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         return MoveClass.Other;
     }
 
-    // Steps: OnMonSwitchOut (0x20), AfterMove (0x80), ALWAYS_APPLIES (0x8000)
+    // Steps: OnMonSwitchOut (0x20), AfterMove (0x80), ALWAYS_APPLIES (0x8000).
+    // Request fresh AfterMove context in the high 16-bit metadata lane.
     function getStepsBitmap() external pure override returns (uint32) {
-        return ALWAYS_APPLIES_BIT | 0x00A0;
+        return 0x008080A0;
     }
 
     function onAfterMove(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
@@ -92,8 +93,7 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         if (ownSlot == NO_SLOT) {
             return (extraData, false);
         }
-        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);
-        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+        uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(activesPacked, ownSlot)) & MOVE_INDEX_MASK;
         uint8 tabooMoveIndex = uint8(uint256(extraData));
 
         if (moveIndex == tabooMoveIndex) {

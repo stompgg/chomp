@@ -305,6 +305,35 @@ into the Engine.
 Effects can be per-mon (local; `targetIndex` = the owning player index) or global (battlefield-wide;
 side index `2`). The `StaminaRegen` effect is a global default that regenerates 1 stamina per turn.
 
+#### Opt-in fresh hook context (gas path)
+
+Before adding an Engine getter inside a lifecycle hook, check whether the value is already available
+in that hook's packed context. `getStepsBitmap()` returns `uint32`: the low 16 bits are lifecycle
+subscriptions and the corresponding high 16 bits request fresh context. For example, an
+`AfterMove` listener (`0x80`) requests context with `0x0080_0000`, so a typical bitmap is
+`0x0080_8080` (`AfterMove` context + `ALWAYS_APPLIES_BIT` + `AfterMove`). Legacy effects that only
+return low bits remain compatible.
+
+Supported layouts, decoded through `TargetLib`:
+
+- `AfterMove`: current 24-bit move words via `hookMoveWordAt(context, absSlot)` and acted bits via
+  `hookSlotActed(context, absSlot)`.
+- `RoundEnd`: current status classes via `hookStatusClass(context, side, monIndex)`.
+- `OnUpdateMonState`: the changed mon's max HP and normalized signed HP delta via
+  `hookMonMaxHp(context)` / `hookMonHpDelta(context)`.
+
+Snapshots are built immediately before each requesting callback, after earlier effects in the same
+pass, so hooks must not cache them across calls. Context replaces read-only callbacks; mutations
+still go through Engine functions. Prefer it when a hook would otherwise call an Engine getter, and
+add a mutation-order regression when an earlier hook can change the observed value.
+
+The stored effect header currently collapses any nonzero high-half request to one capability bit.
+Consequently, a multi-hook effect receives every context supported for each hook it subscribes to,
+even if it requested only one step. Benchmark multi-hook migrations: an unused builder at a frequent
+hook can outweigh the removed callback. Ordinary `IMoveSet.move()` execution does not yet receive
+these lifecycle layouts; only moves/abilities that also register as effects can use them in their
+effect hooks. Do not add address-specific Engine dispatch to work around that boundary.
+
 ### Stat Boosts (inlined into the Engine)
 
 Stat modifiers are **not** a separate effect contract — they are native Engine functions:
@@ -545,7 +574,7 @@ Effects fall into several categories depending on scope:
 To implement a new effect:
 1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
 2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, `onPreDamage`, …) — each receives `activesPacked` for local slot resolution via `TargetLib`
-3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call — if the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `SleepStatus`'s single-sleeper rule) must NOT set this bit. Statuses additionally carry their class id in bits 10-13 and `HAS_REAPPLY_BIT` (bit 14) iff they implement `onReapply`. `python processing/validateEffectBitmaps.py` checks all of these invariants (bit pairing, class range 1-14, cross-src uniqueness) and is run as part of `deploy.py`.
+3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call. Before adding callback getters, opt into a supported fresh context by mirroring the applicable low lifecycle bit into bits 16-31 as described above. If the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the low bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `SleepStatus`'s single-sleeper rule) must NOT set this bit. Statuses additionally carry their class id in bits 10-13 and `HAS_REAPPLY_BIT` (bit 14) iff they implement `onReapply`. `python processing/validateEffectBitmaps.py` checks all of these invariants (bit pairing, class range 1-14, cross-src uniqueness) and is run as part of `deploy.py`.
 4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
 5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
 

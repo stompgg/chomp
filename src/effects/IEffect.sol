@@ -9,7 +9,9 @@ interface IEffect {
     function name() external returns (string memory);
 
     // Returns static metadata: lifecycle steps in bits 0-15 and requested fresh-context steps in
-    // bits 16-31. Lifecycle layout: OnApply=0x01, RoundStart=0x02, RoundEnd=0x04,
+    // bits 16-31. Storage collapses any nonzero context half to one capability bit; opted-in effects
+    // receive all context types supported for the hook currently running. Lifecycle layout:
+    // OnApply=0x01, RoundStart=0x02, RoundEnd=0x04,
     // OnRemove=0x08, OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40,
     // AfterMove=0x80, OnUpdateMonState=0x100, PreDamage=0x200. Legacy deployed effects returning
     // only the low uint16 remain EVM-compatible and simply request no fresh context.
@@ -22,9 +24,12 @@ interface IEffect {
 
     // Lifecycle hooks during normal battle flow.
     // `activesPacked` carries every slot's active roster index in its low 32 bits (one 8-bit lane
-    // per absolute slot, EMPTY_ACTIVE_LANE = no mon there). For an opted-in AfterMove hook, Engine
-    // also embeds fresh 24-bit move lanes at bits 32..127 and the acted-slot mask at bits 128..131.
-    // Existing effects remain compatible; opt-in readers decode the high context via TargetLib.
+    // per absolute slot, EMPTY_ACTIVE_LANE = no mon there). Opted-in AfterMove hooks also receive
+    // fresh 24-bit move lanes at bits 32..127 and the acted-slot mask at bits 128..131. Opted-in
+    // RoundEnd hooks receive fresh 4-bit status lanes at bits 132..195. Opted-in OnUpdateMonState
+    // hooks receive target max HP at bits 32..63 and normalized signed HP delta at bits 64..95.
+    // Context layouts are hook-specific; existing effects remain compatible and opt-in readers
+    // decode the high context via TargetLib.
     function onRoundStart(
         IEngine engine,
         bytes32 battleKey,

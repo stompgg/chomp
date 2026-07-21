@@ -10,6 +10,9 @@ import "../Constants.sol";
 library TargetLib {
     uint256 internal constant HOOK_MOVE_LANES_SHIFT = 32;
     uint256 internal constant HOOK_ACTED_MASK_SHIFT = 128;
+    uint256 internal constant HOOK_STATUS_LANES_SHIFT = 132;
+    uint256 internal constant HOOK_MON_MAX_HP_SHIFT = 32;
+    uint256 internal constant HOOK_MON_HP_DELTA_SHIFT = 64;
 
     function sideOf(uint256 absSlot) internal pure returns (uint256) {
         return absSlot >> 1;
@@ -69,6 +72,22 @@ library TargetLib {
 
     function hookSlotActed(uint256 hookContext, uint256 absSlot) internal pure returns (bool) {
         return ((hookContext >> (HOOK_ACTED_MASK_SHIFT + absSlot)) & 1) != 0;
+    }
+
+    /// @notice Fresh 4-bit exclusive-status class for any roster mon, embedded immediately
+    ///         before an opted-in lifecycle callback. Lanes use side*8+monIndex, matching Engine.
+    function hookStatusClass(uint256 hookContext, uint256 side, uint256 monIndex) internal pure returns (uint256) {
+        return (hookContext >> (HOOK_STATUS_LANES_SHIFT + (((side << 3) | monIndex) << 2))) & 0xF;
+    }
+
+    /// @notice Fresh target-mon state embedded for an opted-in OnUpdateMonState callback. Context
+    ///         layouts are hook-specific, so these lanes intentionally overlap AfterMove's moves.
+    function hookMonMaxHp(uint256 hookContext) internal pure returns (uint32) {
+        return uint32(hookContext >> HOOK_MON_MAX_HP_SHIFT);
+    }
+
+    function hookMonHpDelta(uint256 hookContext) internal pure returns (int32) {
+        return int32(uint32(hookContext >> HOOK_MON_HP_DELTA_SHIFT));
     }
 
     /// @dev Kit-audit ruling for untargeted "the opposing active" effects (switch-in chips,

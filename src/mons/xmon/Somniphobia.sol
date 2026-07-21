@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ALWAYS_APPLIES_BIT, DEFAULT_PRIORITY, EMPTY_ACTIVE_LANE} from "../../Constants.sol";
+import {DEFAULT_PRIORITY, EMPTY_ACTIVE_LANE} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
 
@@ -86,7 +86,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
 
     // Steps: RoundEnd (0x04), OnMonSwitchIn (0x10), OnMonSwitchOut (0x20), OnUpdateMonState (0x100), ALWAYS_APPLIES (0x8000)
     function getStepsBitmap() external pure override returns (uint32) {
-        return ALWAYS_APPLIES_BIT | 0x0134;
+        return 0x01008134; // OnUpdateMonState context | ALWAYS_APPLIES | lifecycle steps
     }
 
     function onUpdateMonState(
@@ -96,7 +96,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
-        uint256,
+        uint256 context,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {
@@ -105,7 +105,7 @@ contract Somniphobia is IMoveSet, BasicEffect {
             uint256 lane = exists ? _lane(data, playerIndex ^ 1) : 0;
             if (lane != 0) {
                 int32 stack = int32(uint32(lane >> 8));
-                uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+                uint32 maxHp = TargetLib.hookMonMaxHp(context);
                 int32 damage = int32(uint32(maxHp)) / DAMAGE_DENOM * stack;
                 if (damage > 0) {
                     engine.dealDamage(playerIndex, monIndex, damage);

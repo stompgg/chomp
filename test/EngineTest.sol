@@ -48,7 +48,11 @@ import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
 import {SetEffectDataAttack} from "./mocks/SetEffectDataAttack.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 import {WideDataEffect} from "./mocks/WideDataEffect.sol";
-import {FreshMoveContextAbility} from "./mocks/FreshMoveContextAbility.sol";
+import {
+    FreshMoveContextAbility,
+    FreshStatusContextAbility,
+    TEST_CONTEXT_STATUS_CLASS
+} from "./mocks/FreshMoveContextAbility.sol";
 
 contract EngineTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -153,6 +157,32 @@ contract EngineTest is Test, BattleHelper {
         // observer runs second and must see the rewritten lane, not a pass-level snapshot.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
         assertEq(observer.observedMoveIndex(), NO_OP_MOVE_INDEX, "context must reflect prior hook rewrite");
+    }
+
+    function test_roundEndContextIsFreshAfterEarlierEffectAddsStatus() public {
+        FreshStatusContextAbility observer = new FreshStatusContextAbility();
+        Mon memory aliceMon = dummyMon;
+        aliceMon.ability = uint256(uint160(address(observer)));
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        Mon[] memory bobTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        bobTeam[0] = dummyMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Ability registration installs a writer before the observer. During RoundEnd the writer
+        // adds a status, and the following opted-in hook must receive the new lane value.
+        assertEq(
+            observer.observedStatusClass(),
+            TEST_CONTEXT_STATUS_CLASS,
+            "context must reflect prior hook status mutation"
+        );
     }
 
     function test_fasterSpeedKOsGameOver() public {

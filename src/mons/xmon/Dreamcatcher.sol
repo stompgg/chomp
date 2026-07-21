@@ -11,6 +11,7 @@ import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract Dreamcatcher is IAbility, BasicEffect {
     int32 public constant HEAL_DENOM = 16;
@@ -32,27 +33,27 @@ contract Dreamcatcher is IAbility, BasicEffect {
 
     // Steps: OnUpdateMonState
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x8100;
+        return 0x01008100; // OnUpdateMonState context | ALWAYS_APPLIES | OnUpdateMonState
     }
 
     function onUpdateMonState(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 playerIndex,
         uint256 monIndex,
-        uint256,
+        uint256 context,
         MonStateIndexName stateVarIndex,
         int32 valueToAdd
     ) external override returns (bytes32, bool) {
         // Only trigger if Stamina is being increased (positive valueToAdd)
         if (stateVarIndex == MonStateIndexName.Stamina && valueToAdd > 0) {
-            uint32 maxHp = engine.getMonValueForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            uint32 maxHp = TargetLib.hookMonMaxHp(context);
             int32 healAmount = int32(uint32(maxHp)) / HEAL_DENOM;
 
             // Prevent overhealing
-            int32 existingHpDelta = engine.getMonStateForBattle(battleKey, playerIndex, monIndex, MonStateIndexName.Hp);
+            int32 existingHpDelta = TargetLib.hookMonHpDelta(context);
             if (existingHpDelta + healAmount > 0) {
                 healAmount = 0 - existingHpDelta;
             }

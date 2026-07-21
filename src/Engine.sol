@@ -2058,10 +2058,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     uint256 private constant FRESH_HOOK_CONTEXT_REQUEST = uint256(1) << 255;
 
     /// @dev Effect header layout: address[0:160], steps[160:176], compact-data marker[176:255],
-    /// fresh-hook-context capability[255]. A nonzero marker stores `data + 1`; zero means the
-    /// full bytes32 lives in slot 1. Reserving one capability bit leaves 79 compact data bits.
-    /// A nonzero marker stores `data + 1`; zero means the full bytes32 lives in slot 1. The offset
-    /// represents zero without giving up a tag bit and leaves arbitrary wide data fully supported.
+    /// fresh-hook-context capability[255]. A nonzero marker stores `data + 1`; zero means the full
+    /// bytes32 lives in slot 1. Reserving one capability bit leaves 79 compact data bits. Once opted
+    /// in, an effect receives whichever supported fresh context corresponds to its current hook.
     function _effectData(EffectInstance storage effectInstance) private view returns (bytes32 data) {
         uint256 header;
         assembly ("memory-safe") {
@@ -2106,7 +2105,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 raw = uint256(data);
         uint256 encoded = raw < EFFECT_COMPACT_DATA_MASK ? raw + 1 : 0;
         uint256 header = uint256(uint160(address(effect))) | (uint256(stepsBitmap) << 160) | (encoded << 176)
-            | (hookContextBitmap & (1 << uint8(EffectStep.AfterMove)) != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
+            | (hookContextBitmap != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
         assembly ("memory-safe") {
             sstore(effectInstance.slot, header)
         }
@@ -2126,7 +2125,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         uint256 encoded = (header >> 176) & EFFECT_COMPACT_DATA_MASK;
         data = encoded == 0 ? effectInstance.data : bytes32(encoded - 1);
-        needsFreshContext = (header & EFFECT_HOOK_CONTEXT_FLAG) != 0;
+        needsFreshContext = header & EFFECT_HOOK_CONTEXT_FLAG != 0;
     }
 
     function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -3533,8 +3532,16 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (address(eff.effect) != TOMBSTONE_ADDRESS && (eff.stepsBitmap & (1 << uint8(round))) != 0) {
                 (bytes32 effectData, bool needsFreshContext) = _effectDataAndHookContext(eff);
                 uint256 hookContext = activesPacked;
-                if (round == EffectStep.AfterMove && needsFreshContext) {
-                    hookContext |= FRESH_HOOK_CONTEXT_REQUEST;
+                if (needsFreshContext) {
+                    if (round == EffectStep.RoundEnd) {
+                        // Built immediately before this effect call, after every earlier effect in
+                        // the same pass, so status mutations cannot stale the snapshot.
+                        hookContext |= uint256(config.monStatusLanes) << 132;
+                    } else if (round == EffectStep.AfterMove || round == EffectStep.OnUpdateMonState) {
+                        // These hook-specific builders need data resolved at dispatch time. Keep
+                        // the request out of the public low-32 active lanes until then.
+                        hookContext |= FRESH_HOOK_CONTEXT_REQUEST;
+                    }
                 }
                 _runSingleEffect(
                     config,
@@ -3545,7 +3552,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     round,
                     extraEffectsData,
                     eff.effect,
-                    eff.stepsBitmap,
                     effectData,
                     uint96(slotIndex),
                     hookContext
@@ -3573,16 +3579,10 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         EffectStep round,
         bytes memory extraEffectsData,
         IEffect effect,
-        uint16 stepsBitmap,
         bytes32 data,
         uint96 slotIndex,
         uint256 activesPacked
     ) private {
-        // Use stored bitmap instead of external call to shouldRunAtStep()
-        if ((stepsBitmap & (1 << uint8(round))) == 0) {
-            return;
-        }
-
         // Run the effect and get result
         (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
             battleKeyForWrite,
@@ -3655,6 +3655,21 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         } else if (round == EffectStep.OnUpdateMonState) {
             (uint256 statePlayerIndex, uint256 stateMonIndex, MonStateIndexName stateVarIndex, int32 valueToAdd) =
                 abi.decode(extraEffectsData, (uint256, uint256, MonStateIndexName, int32));
+            // The state mutation has already landed before this lifecycle pass. Build the snapshot
+            // immediately before each opted-in callback so it observes nested/prior hook writes.
+            // Hook-specific context can reuse the AfterMove lanes: max HP is bits 32..63 and the
+            // normalized signed HP delta is bits 64..95.
+            if (activesPacked & FRESH_HOOK_CONTEXT_REQUEST != 0) {
+                activesPacked &= ~FRESH_HOOK_CONTEXT_REQUEST;
+                BattleConfig storage config = battleConfig[storageKeyForWrite];
+                uint32 maxHp = _getTeamMon(config, statePlayerIndex, stateMonIndex).stats.hp;
+                int32 hpDelta = _getMonState(config, statePlayerIndex, stateMonIndex).hpDelta;
+                if (hpDelta == CLEARED_MON_STATE_SENTINEL) {
+                    hpDelta = 0;
+                }
+                activesPacked |= uint256(maxHp) << 32;
+                activesPacked |= uint256(uint32(hpDelta)) << 64;
+            }
             return effect.onUpdateMonState(
                 self, battleKey, rng, data, statePlayerIndex, stateMonIndex, activesPacked, stateVarIndex, valueToAdd
             );
