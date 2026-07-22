@@ -2825,7 +2825,7 @@ contract EngineTest is Test, BattleHelper {
     function test_effectDataCompactAndWideFallbackTransitions() public {
         WideDataEffect wideEffect = new WideDataEffect();
         // Exact representation boundary: max-1 is offset-tagged; max falls back to slot 1.
-        uint256 compactMarkerMax = (uint256(1) << 79) - 1;
+        uint256 compactMarkerMax = (uint256(1) << 78) - 1;
         bytes32 compactData = bytes32(compactMarkerMax - 1);
         bytes32 secondWideData = bytes32(compactMarkerMax);
         SetEffectDataAttack setCompact = new SetEffectDataAttack(compactData);

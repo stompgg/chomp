@@ -12,14 +12,16 @@ import {
     STATUS_CLASS_SHIFT,
     SWITCH_MOVE_INDEX
 } from "../../Constants.sol";
-import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
+import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {EffectInstance, IEffect, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
+import {EffectCommandLib} from "../../effects/EffectCommandLib.sol";
+import {IEffectResolver} from "../../effects/IEffectResolver.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 
-contract Tinderclaws is IAbility, BasicEffect {
+contract Tinderclaws is IAbility, BasicEffect, IEffectResolver {
     uint256 constant BURN_CHANCE = 3; // 1 in 3 chance
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
@@ -49,7 +51,36 @@ contract Tinderclaws is IAbility, BasicEffect {
     // Steps: RoundEnd, AfterMove
     function getStepsBitmap() external pure override returns (uint32) {
         // Low 16 bits: lifecycle steps. High 16 bits: requested fresh-context steps.
-        return 0x00848084; // RoundEnd+AfterMove context | ALWAYS_APPLIES | AfterMove | RoundEnd
+        // Bit 31 opts into the read-only command resolver; bits 18/23 request fresh hook context.
+        return 0x80848084; // resolver | RoundEnd+AfterMove context | ALWAYS_APPLIES | hooks
+    }
+
+    function resolveEffect(
+        EffectStep step,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 hookContext
+    ) external view returns (bytes32 updatedExtraData, bool removeAfterRun, uint256 command) {
+        if (step == EffectStep.AfterMove) {
+            uint256 ownSlot = TargetLib.slotOfMon(hookContext, targetIndex, monIndex);
+            if (ownSlot == NO_SLOT) {
+                return (extraData, false, 0);
+            }
+            uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(hookContext, ownSlot)) & MOVE_INDEX_MASK;
+            if (moveIndex == NO_OP_MOVE_INDEX) {
+                command = EffectCommandLib.clearStatus(targetIndex, monIndex, BURN_CLASS);
+            } else if (moveIndex != SWITCH_MOVE_INDEX) {
+                rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
+                if (rng % BURN_CHANCE == BURN_CHANCE - 1) {
+                    command = EffectCommandLib.addEffect(targetIndex, monIndex, BURN_STATUS);
+                }
+            }
+            return (extraData, false, command);
+        }
+
+        return (extraData, false, 0);
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied

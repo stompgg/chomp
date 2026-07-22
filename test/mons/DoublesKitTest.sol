@@ -135,6 +135,7 @@ contract DoublesKitTest is Test {
         Mon[] memory aTeam = new Mon[](3);
         aTeam[0] = _mkMon(IMoveSet(address(hitAndDip)), 0);
         aTeam[1] = _mkMon(IMoveSet(address(hitAndDip)), 0);
+        aTeam[1].moves[0] |= MOVE_META_TAG | MOVE_RESOLVER_TAG | (uint256(2) << 236) | (DEFAULT_PRIORITY << 244);
         aTeam[2] = _mkMon(IMoveSet(address(hitAndDip)), 0);
         Mon[] memory bTeam = new Mon[](2);
         bTeam[0] = _mkMon(IMoveSet(address(hitAndDip)), 0);

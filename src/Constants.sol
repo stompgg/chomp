@@ -131,6 +131,7 @@ uint8 constant BATTLE_MODE_MULTI = 2;
 // untagged with high bits = inline, bare address = deployed without meta (legacy/tests).
 uint256 constant MOVE_META_TAG = 1 << 160;
 uint256 constant MOVE_CONTEXT_STATUS_LANES = 1 << 161;
+uint256 constant MOVE_RESOLVER_TAG = 1 << 162;
 uint256 constant MOVE_META_DYNAMIC = 0xF;
 
 // The 16-bit move extraData splits [targetBits 4 | movePayload 12]. The nibble is a bitmask

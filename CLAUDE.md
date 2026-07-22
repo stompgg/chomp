@@ -20,8 +20,8 @@
 ```bash
 forge install        # Install dependencies (forge-std)
 forge build          # Compile contracts
-forge test           # Run all tests
-forge test -vvv      # Run tests with verbose output
+FOUNDRY_PROFILE=fast forge test           # Run all tests
+FOUNDRY_PROFILE=fast forge test -vvv      # Run tests with verbose output
 ```
 
 Engine edits invalidate most of the production-profile dependency graph. For correctness-only
@@ -32,9 +32,9 @@ but disables optimization/build-info, enables sparse compilation, and uses a sep
 FOUNDRY_PROFILE=fast forge test --match-path test/EngineTest.sol
 ```
 
-Do not use `profile.fast` for gas comparisons or snapshots. Run those and the final full-suite
-gate under the default profile (`forge test ...`); the fast profile disables snapshot emission so
-an accidental gas-test run cannot overwrite production-profile numbers.
+Always use `profile.fast` for correctness, regression, and full-suite test gates. Use the default
+profile only for explicit gas comparisons and snapshots; the fast profile disables snapshot
+emission so an accidental gas-test run cannot overwrite production-profile numbers.
 
 ## Repository Structure
 

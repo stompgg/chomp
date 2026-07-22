@@ -10,6 +10,8 @@ import "./moves/IMoveSet.sol";
 import {IEngine} from "./IEngine.sol";
 import {IAbility} from "./abilities/IAbility.sol";
 import {SignedCommitLib} from "./commit-manager/SignedCommitLib.sol";
+import {EffectCommandLib} from "./effects/EffectCommandLib.sol";
+import {IEffectResolver} from "./effects/IEffectResolver.sol";
 import {IStatusEffect} from "./effects/status/IStatusEffect.sol";
 import {ECDSA} from "./lib/ECDSA.sol";
 import {EIP712} from "./lib/EIP712.sol";
@@ -19,6 +21,8 @@ import {StatBoostLib} from "./lib/StatBoostLib.sol";
 import {TargetLib} from "./lib/TargetLib.sol";
 import {ValidatorLogic} from "./lib/ValidatorLogic.sol";
 import {AttackCalculator} from "./moves/AttackCalculator.sol";
+import {IMoveResolver} from "./moves/IMoveResolver.sol";
+import {MoveCommandLib} from "./moves/MoveCommandLib.sol";
 import {TypeCalcLib} from "./types/TypeCalcLib.sol";
 
 contract Engine is IEngine, MappingAllocator, EIP712 {
@@ -2051,16 +2055,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return ((targetIndex << 3) | monIndex) << 4;
     }
 
-    uint256 private constant EFFECT_COMPACT_DATA_BITS = 79;
+    uint16 private constant EFFECT_RESOLVER_METADATA_BIT = uint16(1) << 15;
+    uint256 private constant EFFECT_COMPACT_DATA_BITS = 78;
     uint256 private constant EFFECT_COMPACT_DATA_MASK = (uint256(1) << EFFECT_COMPACT_DATA_BITS) - 1;
+    uint256 private constant EFFECT_RESOLVER_FLAG = uint256(1) << 254;
     uint256 private constant EFFECT_HOOK_CONTEXT_FLAG = uint256(1) << 255;
-    uint256 private constant EFFECT_HEADER_BASE_MASK = uint256(type(uint176).max) | EFFECT_HOOK_CONTEXT_FLAG;
+    uint256 private constant EFFECT_HEADER_BASE_MASK =
+        uint256(type(uint176).max) | EFFECT_RESOLVER_FLAG | EFFECT_HOOK_CONTEXT_FLAG;
     uint256 private constant FRESH_HOOK_CONTEXT_REQUEST = uint256(1) << 255;
 
-    /// @dev Effect header layout: address[0:160], steps[160:176], compact-data marker[176:255],
-    /// fresh-hook-context capability[255]. A nonzero marker stores `data + 1`; zero means the full
-    /// bytes32 lives in slot 1. Reserving one capability bit leaves 79 compact data bits. Once opted
-    /// in, an effect receives whichever supported fresh context corresponds to its current hook.
+    /// @dev Effect header layout: address[0:160], steps[160:176], compact-data marker[176:254],
+    /// resolver capability[254], fresh-hook-context capability[255]. A nonzero marker stores
+    /// `data + 1`; zero means the full bytes32 lives in slot 1.
     function _effectData(EffectInstance storage effectInstance) private view returns (bytes32 data) {
         uint256 header;
         assembly ("memory-safe") {
@@ -2106,8 +2112,11 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 encoded = raw < EFFECT_COMPACT_DATA_MASK ? raw + 1 : 0;
         // OnApply has already run before installation. Do not persist an OnApply-only request as
         // the broad capability flag, which would make multi-hook statuses build unused contexts.
-        uint16 storedContextBitmap = hookContextBitmap & ~uint16(1 << uint8(EffectStep.OnApply));
+        bool usesResolver = hookContextBitmap & EFFECT_RESOLVER_METADATA_BIT != 0;
+        uint16 storedContextBitmap = hookContextBitmap
+            & ~uint16((1 << uint8(EffectStep.OnApply)) | EFFECT_RESOLVER_METADATA_BIT);
         uint256 header = uint256(uint160(address(effect))) | (uint256(stepsBitmap) << 160) | (encoded << 176)
+            | (usesResolver ? EFFECT_RESOLVER_FLAG : 0)
             | (storedContextBitmap != 0 ? EFFECT_HOOK_CONTEXT_FLAG : 0);
         assembly ("memory-safe") {
             sstore(effectInstance.slot, header)
@@ -2120,7 +2129,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     function _effectDataAndHookContext(EffectInstance storage effectInstance)
         private
         view
-        returns (bytes32 data, bool needsFreshContext)
+        returns (bytes32 data, bool needsFreshContext, bool usesResolver)
     {
         uint256 header;
         assembly ("memory-safe") {
@@ -2129,6 +2138,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 encoded = (header >> 176) & EFFECT_COMPACT_DATA_MASK;
         data = encoded == 0 ? effectInstance.data : bytes32(encoded - 1);
         needsFreshContext = header & EFFECT_HOOK_CONTEXT_FLAG != 0;
+        usesResolver = header & EFFECT_RESOLVER_FLAG != 0;
     }
 
     function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -2162,10 +2172,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         external
         returns (bool cleared)
     {
-        bytes32 battleKey = battleKeyForWrite;
-        if (battleKey == bytes32(0)) {
+        if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
         }
+        return _clearMonStatus(targetIndex, monIndex, expectedClass);
+    }
+
+    function _clearMonStatus(uint256 targetIndex, uint256 monIndex, uint256 expectedClass)
+        private
+        returns (bool cleared)
+    {
+        bytes32 battleKey = battleKeyForWrite;
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         uint256 lane = (config.monStatusLanes >> _statusLaneShift(targetIndex, monIndex)) & 0xF;
         if (lane == 0 || (expectedClass != 0 && lane != expectedClass)) {
@@ -2882,6 +2899,85 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         );
     }
 
+    function _executeResolvedMove(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rawMoveSlot,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256 rng
+    ) private {
+        IMoveResolver resolver = IMoveResolver(address(uint160(rawMoveSlot)));
+        (uint256 command, uint32 continuation) = resolver.resolveMove(
+            0, 0, attackerPlayerIndex, attackerMonIndex, targetBits, activesPacked, extraData, rng
+        );
+        int32 result = _executeResolvedMoveCommand(
+            config, battle, rawMoveSlot, attackerPlayerIndex, attackerMonIndex, targetBits, command, rng
+        );
+        if (continuation != 0) {
+            (command,) = resolver.resolveMove(
+                continuation,
+                result,
+                attackerPlayerIndex,
+                attackerMonIndex,
+                targetBits,
+                activesPacked,
+                extraData,
+                rng
+            );
+            _executeResolvedMoveCommand(
+                config, battle, rawMoveSlot, attackerPlayerIndex, attackerMonIndex, targetBits, command, rng
+            );
+        }
+    }
+
+    function _executeResolvedMoveCommand(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rawMoveSlot,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint256 command,
+        uint256 rng
+    ) private returns (int32 result) {
+        uint256 op = uint8(command);
+        if (op == MoveCommandLib.OP_ATTACK) {
+            uint256 targetSlot = TargetLib.lowestSlot(targetBits);
+            if (targetSlot == NO_SLOT) {
+                return 0;
+            }
+            uint256 defenderMonIndex = _slotActive(battle, targetSlot);
+            if (defenderMonIndex == EMPTY_ACTIVE_LANE) {
+                return 0;
+            }
+            (result,) = _dispatchStandardAttackInternal(
+                config,
+                attackerPlayerIndex,
+                attackerMonIndex,
+                targetSlot >> 1,
+                defenderMonIndex,
+                uint32(command >> 8),
+                uint8(command >> 40),
+                uint8(command >> 48),
+                Type(uint8(command >> 56)),
+                MoveClass(uint8(command >> 64)),
+                uint8(command >> 72),
+                uint8(command >> 80),
+                IEffect(address(uint160(command >> 88))),
+                rng,
+                uint256(uint160(rawMoveSlot))
+            );
+        } else if (op == MoveCommandLib.OP_SWITCH) {
+            _switchActiveMonForSlotInternal(
+                uint8(command >> 8), uint8(command >> 16), uint8(command >> 24), config, battle
+            );
+        }
+    }
+
     function dispatchStandardAttack(
         uint256 attackerPlayerIndex,
         uint256 attackerMonIndex,
@@ -3009,6 +3105,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
         BattleConfig storage config = battleConfig[storageKeyForWrite];
         BattleData storage battle = battleData[battleKey];
+        _switchActiveMonForSlotInternal(playerIndex, slotIndex, monToSwitchIndex, config, battle);
+    }
+
+    function _switchActiveMonForSlotInternal(
+        uint256 playerIndex,
+        uint256 slotIndex,
+        uint256 monToSwitchIndex,
+        BattleConfig storage config,
+        BattleData storage battle
+    ) private {
+        bytes32 battleKey = battleKeyForWrite;
         // Flow-aware like the other slot surfaces: singles routes through the legacy switch
         // (whose validation has no ally lane to collide with).
         if (!battle.isTwoSlotMode) {
@@ -3432,16 +3539,31 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 if (rawMoveSlot & MOVE_CONTEXT_STATUS_LANES != 0) {
                     moveContext |= uint256(config.monStatusLanes) << 132;
                 }
-                moveSet.move(
-                    self,
-                    battleKey,
-                    playerIndex,
-                    activeMonIndex,
-                    TargetLib.impliedSinglesTargetBits(playerIndex),
-                    moveContext,
-                    move.extraData & EXTRA_DATA_PAYLOAD_MASK,
-                    tempRNG
-                );
+                uint256 targetBits = TargetLib.impliedSinglesTargetBits(playerIndex);
+                if (rawMoveSlot & MOVE_RESOLVER_TAG != 0) {
+                    _executeResolvedMove(
+                        config,
+                        battle,
+                        rawMoveSlot,
+                        playerIndex,
+                        activeMonIndex,
+                        targetBits,
+                        moveContext,
+                        move.extraData & EXTRA_DATA_PAYLOAD_MASK,
+                        tempRNG
+                    );
+                } else {
+                    moveSet.move(
+                        self,
+                        battleKey,
+                        playerIndex,
+                        activeMonIndex,
+                        targetBits,
+                        moveContext,
+                        move.extraData & EXTRA_DATA_PAYLOAD_MASK,
+                        tempRNG
+                    );
+                }
             }
         }
 
@@ -3534,7 +3656,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Skip tombstones AND entries that don't listen at this step before reading slot-1 data.
             if (address(eff.effect) != TOMBSTONE_ADDRESS && (eff.stepsBitmap & (1 << uint8(round))) != 0) {
-                (bytes32 effectData, bool needsFreshContext) = _effectDataAndHookContext(eff);
+                (bytes32 effectData, bool needsFreshContext, bool usesResolver) = _effectDataAndHookContext(eff);
                 uint256 hookContext = activesPacked;
                 if (needsFreshContext) {
                     if (round == EffectStep.RoundEnd) {
@@ -3568,7 +3690,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                     eff.effect,
                     effectData,
                     uint96(slotIndex),
-                    hookContext
+                    hookContext,
+                    usesResolver
                 );
 
                 // Re-read count if a new effect was added during this iteration
@@ -3595,18 +3718,79 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         IEffect effect,
         bytes32 data,
         uint96 slotIndex,
-        uint256 activesPacked
+        uint256 activesPacked,
+        bool usesResolver
     ) private {
         // Run the effect and get result
-        (bytes32 updatedExtraData, bool removeAfterRun) = _executeEffectHook(
-            battleKeyForWrite, effect, rng, data, playerIndex, monIndex, round, extraEffectsData, activesPacked
-        );
+        bytes32 updatedExtraData;
+        bool removeAfterRun;
+        if (round == EffectStep.AfterMove && usesResolver) {
+            (updatedExtraData, removeAfterRun) =
+                _executeResolvedEffect(effect, rng, data, playerIndex, monIndex, round, activesPacked);
+        } else {
+            (updatedExtraData, removeAfterRun) = _executeEffectHook(
+                battleKeyForWrite, effect, rng, data, playerIndex, monIndex, round, extraEffectsData, activesPacked
+            );
+        }
 
         // If we need to remove or update the effect
         if (removeAfterRun || updatedExtraData != data) {
             _updateOrRemoveEffect(
                 config, effectIndex, monIndex, effect, data, slotIndex, updatedExtraData, removeAfterRun
             );
+        }
+    }
+
+    function _executeResolvedEffect(
+        IEffect effect,
+        uint256 rng,
+        bytes32 data,
+        uint256 playerIndex,
+        uint256 monIndex,
+        EffectStep round,
+        uint256 activesPacked
+    ) private returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        uint256 command;
+        (updatedExtraData, removeAfterRun, command) = IEffectResolver(address(effect)).resolveEffect(
+            round, rng, data, playerIndex, monIndex, _freshHookContext(round, activesPacked)
+        );
+        _applyEffectCommand(command);
+    }
+
+    /// @dev Builds the dispatch-time portion shared by the legacy hook path and resolver prototype.
+    function _freshHookContext(EffectStep round, uint256 activesPacked) private view returns (uint256) {
+        if (activesPacked & FRESH_HOOK_CONTEXT_REQUEST == 0) {
+            return activesPacked;
+        }
+        activesPacked &= ~FRESH_HOOK_CONTEXT_REQUEST;
+        if (round == EffectStep.AfterMove) {
+            BattleData storage battle = battleData[battleKeyForWrite];
+            if (battle.isTwoSlotMode) {
+                activesPacked |= _currentTurnMoveWordForSlot(0, 0) << 32;
+                activesPacked |= _currentTurnMoveWordForSlot(0, 1) << 56;
+                activesPacked |= _currentTurnMoveWordForSlot(1, 0) << 80;
+                activesPacked |= _currentTurnMoveWordForSlot(1, 1) << 104;
+            } else {
+                BattleConfig storage config = battleConfig[storageKeyForWrite];
+                activesPacked |= _currentTurnMoveWord(config, 0) << 32;
+                activesPacked |= _currentTurnMoveWord(config, 1) << 80;
+            }
+            activesPacked |= actedSlotsThisTurnMask << 128;
+        }
+        return activesPacked;
+    }
+
+    function _applyEffectCommand(uint256 command) private {
+        uint256 op = uint8(command);
+        if (op == 0) {
+            return;
+        }
+        uint256 targetIndex = uint8(command >> 8);
+        uint256 monIndex = uint8(command >> 16);
+        if (op == EffectCommandLib.OP_CLEAR_STATUS) {
+            _clearMonStatus(targetIndex, monIndex, uint8(command >> 24));
+        } else if (op == EffectCommandLib.OP_ADD_EFFECT) {
+            _addEffectInternal(targetIndex, monIndex, IEffect(address(uint160(command >> 24))), bytes32(0));
         }
     }
 
@@ -4616,8 +4800,20 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 if (rawMoveSlot & MOVE_CONTEXT_STATUS_LANES != 0) {
                     moveContext |= uint256(config.monStatusLanes) << 132;
                 }
-                IMoveSet(address(uint160(rawMoveSlot)))
-                    .move(
+                if (rawMoveSlot & MOVE_RESOLVER_TAG != 0) {
+                    _executeResolvedMove(
+                        config,
+                        battle,
+                        rawMoveSlot,
+                        side,
+                        activeMon,
+                        targetBits,
+                        moveContext,
+                        uint16(moveExtra & EXTRA_DATA_PAYLOAD_MASK),
+                        actionRng
+                    );
+                } else {
+                    IMoveSet(address(uint160(rawMoveSlot))).move(
                         IEngine(address(this)),
                         battleKey,
                         side,
@@ -4627,6 +4823,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                         uint16(moveExtra & EXTRA_DATA_PAYLOAD_MASK),
                         actionRng
                     );
+                }
             }
         }
 

@@ -11,7 +11,9 @@ import {console} from "forge-std/console.sol";
 import {SetupMons} from "../script/SetupMons.s.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
+import {IAbility} from "../src/abilities/IAbility.sol";
 import {IEffect} from "../src/effects/IEffect.sol";
+import {IEffectResolver} from "../src/effects/IEffectResolver.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
 import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 
@@ -30,6 +32,8 @@ import {SignedCommitManager} from "../src/commit-manager/SignedCommitManager.sol
 import {BattleOfferLib} from "../src/matchmaker/BattleOfferLib.sol";
 import {SignedMatchmaker} from "../src/matchmaker/SignedMatchmaker.sol";
 import {IRandomnessOracle} from "../src/rng/IRandomnessOracle.sol";
+import {IMoveResolver} from "../src/moves/IMoveResolver.sol";
+import {IMoveSet} from "../src/moves/IMoveSet.sol";
 
 import {GasMeasure} from "./abstract/GasMeasure.sol";
 import {sideWord} from "./abstract/SlotWire.sol";
@@ -59,6 +63,12 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
 
     struct ReplayCensus {
         EffectStorageTally effectStorage;
+        StorageWorkingSet engineWorkingSet;
+        CallBoundaryStorageTally callBoundaryStorage;
+        EngineStorageCategoryTally storageCategories;
+        MonStateStorageTally monStateStorage;
+        MonStateFrameModel monStateFrame;
+        PackedHeaderFrameModel packedHeaderFrame;
         uint256 roundStartCalls;
         uint256 roundEndCalls;
         uint256 afterMoveCalls;
@@ -69,6 +79,13 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
         uint256 statusClassCallbacks;
         uint256 lifecycleCalls;
         uint256 nonHookHeaderReadUpperBound;
+        uint256 moveResolverCalls;
+        uint256 moveResolverContinuations;
+        uint256 effectResolverCalls;
+        uint256 legacyMoveBoundaries;
+        uint256 legacyAbilityBoundaries;
+        uint256 legacyEffectBoundaries;
+        uint256 legacyBoundaryUpperBound;
     }
 
     // Real rosters from the mainnet config (getBattle). p1 is the CPU side.
@@ -275,14 +292,39 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
 
     function _recordReplayCensus(
         string memory name,
+        bytes32 battleKey,
         Vm.AccountAccess[] memory accesses,
         bytes32 storageKey,
         uint256 reusedGas
     ) internal returns (ReplayCensus memory c) {
         c.effectStorage = _effectStorageTally(accesses, address(engine), storageKey);
+        c.engineWorkingSet = _storageWorkingSet(accesses, address(engine));
+        c.callBoundaryStorage = _callBoundaryStorageTally(accesses, address(engine), address(mgr));
+        c.storageCategories = _engineStorageCategoryTally(accesses, address(engine), battleKey, storageKey);
+        c.monStateStorage = _monStateStorageTally(accesses, address(engine), storageKey);
+        c.monStateFrame =
+            _monStateFrameModel(accesses, address(engine), storageKey, _legacyBoundarySelectors());
+        c.packedHeaderFrame = _packedHeaderFrameModel(
+            accesses,
+            address(engine),
+            address(mgr),
+            battleKey,
+            storageKey,
+            _legacyBoundarySelectors()
+        );
+        uint256 classifiedHeaderOps = c.storageCategories.reads[STORAGE_BATTLE_DATA]
+            + c.storageCategories.writes[STORAGE_BATTLE_DATA]
+            + c.storageCategories.reads[STORAGE_CONFIG_HEADER]
+            + c.storageCategories.writes[STORAGE_CONFIG_HEADER];
+        require(c.packedHeaderFrame.currentStorageOps == classifiedHeaderOps, "header frame census mismatch");
+        require(
+            c.storageCategories.reads[STORAGE_OTHER] + c.storageCategories.writes[STORAGE_OTHER] == 0,
+            "unclassified Engine storage"
+        );
         c.roundStartCalls = _countCalls(accesses, address(engine), address(0), IEffect.onRoundStart.selector);
         c.roundEndCalls = _countCalls(accesses, address(engine), address(0), IEffect.onRoundEnd.selector);
-        c.afterMoveCalls = _countCalls(accesses, address(engine), address(0), IEffect.onAfterMove.selector);
+        c.afterMoveCalls = _countCalls(accesses, address(engine), address(0), IEffect.onAfterMove.selector)
+            + _countCalls(accesses, address(engine), address(0), IEffectResolver.resolveEffect.selector);
         c.preDamageCalls = _countCalls(accesses, address(engine), address(0), IEffect.onPreDamage.selector);
         c.afterDamageCalls = _countCalls(accesses, address(engine), address(0), IEffect.onAfterDamage.selector);
         c.updateStateCalls = _countCalls(accesses, address(engine), address(0), IEffect.onUpdateMonState.selector);
@@ -293,12 +335,60 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
             + c.afterDamageCalls + c.updateStateCalls;
         c.nonHookHeaderReadUpperBound =
             c.effectStorage.headerReads > c.lifecycleCalls ? c.effectStorage.headerReads - c.lifecycleCalls : 0;
+        c.moveResolverCalls = _countCalls(accesses, address(engine), address(0), IMoveResolver.resolveMove.selector);
+        c.moveResolverContinuations = _countCallsWithNonzeroFirstArg(
+            accesses, address(engine), address(0), IMoveResolver.resolveMove.selector
+        );
+        c.effectResolverCalls =
+            _countCalls(accesses, address(engine), address(0), IEffectResolver.resolveEffect.selector);
+        c.legacyMoveBoundaries = _countCalls(accesses, address(engine), address(0), IMoveSet.move.selector);
+        c.legacyAbilityBoundaries =
+            _countCalls(accesses, address(engine), address(0), IAbility.activateOnSwitch.selector);
+        c.legacyEffectBoundaries = _legacyEffectBoundaryCount(accesses);
+        c.legacyBoundaryUpperBound =
+            c.legacyMoveBoundaries + c.legacyAbilityBoundaries + c.legacyEffectBoundaries;
 
         vm.snapshotValue(string.concat(name, "_execGas"), reusedGas);
         vm.snapshotValue(string.concat(name, "_effectHeaderReads"), c.effectStorage.headerReads);
         vm.snapshotValue(string.concat(name, "_effectDataReads"), c.effectStorage.dataReads);
         vm.snapshotValue(string.concat(name, "_effectHeaderWrites"), c.effectStorage.headerWrites);
         vm.snapshotValue(string.concat(name, "_effectDataWrites"), c.effectStorage.dataWrites);
+        vm.snapshotValue(string.concat(name, "_engineStorageReads"), c.engineWorkingSet.reads);
+        vm.snapshotValue(string.concat(name, "_engineStorageWrites"), c.engineWorkingSet.writes);
+        vm.snapshotValue(
+            string.concat(name, "_engineStorageUniqueTouchedSlots"), c.engineWorkingSet.uniqueTouchedSlots
+        );
+        vm.snapshotValue(
+            string.concat(name, "_engineStorageUniqueWrittenSlots"), c.engineWorkingSet.uniqueWrittenSlots
+        );
+        vm.snapshotValue(
+            string.concat(name, "_engineStorageLoadCommitFloorOps"), c.engineWorkingSet.loadCommitFloorOps
+        );
+        vm.snapshotValue(string.concat(name, "_engineStorageRemovableOps"), c.engineWorkingSet.removableOps);
+        vm.snapshotValue(
+            string.concat(name, "_engineRootStorageReads"), c.callBoundaryStorage.engineRootReads
+        );
+        vm.snapshotValue(
+            string.concat(name, "_engineRootStorageWrites"), c.callBoundaryStorage.engineRootWrites
+        );
+        vm.snapshotValue(
+            string.concat(name, "_engineCallbackStorageReads"), c.callBoundaryStorage.engineCallbackReads
+        );
+        vm.snapshotValue(
+            string.concat(name, "_engineCallbackStorageWrites"), c.callBoundaryStorage.engineCallbackWrites
+        );
+        vm.snapshotValue(string.concat(name, "_externalStorageReads"), c.callBoundaryStorage.externalReads);
+        vm.snapshotValue(string.concat(name, "_externalStorageWrites"), c.callBoundaryStorage.externalWrites);
+        for (uint256 category; category < STORAGE_CATEGORY_COUNT; category++) {
+            string memory prefix = string.concat(name, "_storage_", _storageCategoryName(category));
+            vm.snapshotValue(string.concat(prefix, "Reads"), c.storageCategories.reads[category]);
+            vm.snapshotValue(string.concat(prefix, "Writes"), c.storageCategories.writes[category]);
+            vm.snapshotValue(string.concat(prefix, "UniqueTouched"), c.storageCategories.uniqueTouched[category]);
+            vm.snapshotValue(string.concat(prefix, "UniqueWritten"), c.storageCategories.uniqueWritten[category]);
+        }
+        vm.snapshotValue(
+            string.concat(name, "_storage_firstOtherSlot"), uint256(c.storageCategories.firstOtherSlot)
+        );
         vm.snapshotValue(string.concat(name, "_roundStartCalls"), c.roundStartCalls);
         vm.snapshotValue(string.concat(name, "_roundEndCalls"), c.roundEndCalls);
         vm.snapshotValue(string.concat(name, "_afterMoveCalls"), c.afterMoveCalls);
@@ -309,10 +399,223 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
         vm.snapshotValue(string.concat(name, "_statusClassCallbacks"), c.statusClassCallbacks);
         vm.snapshotValue(string.concat(name, "_lifecycleCalls"), c.lifecycleCalls);
         vm.snapshotValue(string.concat(name, "_nonHookHeaderReadUpperBound"), c.nonHookHeaderReadUpperBound);
+        vm.snapshotValue(string.concat(name, "_monStateReads"), c.monStateStorage.reads);
+        vm.snapshotValue(string.concat(name, "_monStateWrites"), c.monStateStorage.writes);
+        vm.snapshotValue(string.concat(name, "_monStateUniqueTouchedLanes"), c.monStateStorage.uniqueTouchedLanes);
+        vm.snapshotValue(string.concat(name, "_monStateUniqueWrittenLanes"), c.monStateStorage.uniqueWrittenLanes);
+        vm.snapshotValue(string.concat(name, "_monStateFrameStorageOps"), c.monStateStorage.frameStorageOps);
+        vm.snapshotValue(string.concat(name, "_monStateRemovableStorageOps"), c.monStateStorage.removableStorageOps);
+        vm.snapshotValue(string.concat(name, "_monStateFrameLoadsWithLegacy"), c.monStateFrame.loads);
+        vm.snapshotValue(string.concat(name, "_monStateFrameCommitsWithLegacy"), c.monStateFrame.commits);
+        vm.snapshotValue(string.concat(name, "_monStateFrameReloadedLanes"), c.monStateFrame.reloadedLanes);
+        vm.snapshotValue(string.concat(name, "_monStateDirtyFlushBoundaries"), c.monStateFrame.dirtyFlushBoundaries);
+        vm.snapshotValue(
+            string.concat(name, "_monStateCleanInvalidationBoundaries"), c.monStateFrame.cleanInvalidationBoundaries
+        );
+        vm.snapshotValue(
+            string.concat(name, "_monStateFrameStorageOpsWithLegacy"), c.monStateFrame.modeledStorageOps
+        );
+        vm.snapshotValue(
+            string.concat(name, "_monStateRemovableStorageOpsWithLegacy"), c.monStateFrame.removableStorageOps
+        );
+        vm.snapshotValue(string.concat(name, "_headerFrameLoadsWithLegacy"), c.packedHeaderFrame.loads);
+        vm.snapshotValue(string.concat(name, "_headerFrameCommitsWithLegacy"), c.packedHeaderFrame.commits);
+        vm.snapshotValue(
+            string.concat(name, "_headerFrameCallbackPassthroughOps"),
+            c.packedHeaderFrame.callbackPassthroughOps
+        );
+        vm.snapshotValue(string.concat(name, "_headerFrameReloadedWords"), c.packedHeaderFrame.reloadedWords);
+        vm.snapshotValue(
+            string.concat(name, "_headerFrameDirtyFlushBoundaries"),
+            c.packedHeaderFrame.dirtyFlushBoundaries
+        );
+        vm.snapshotValue(
+            string.concat(name, "_headerFrameCleanInvalidationBoundaries"),
+            c.packedHeaderFrame.cleanInvalidationBoundaries
+        );
+        vm.snapshotValue(
+            string.concat(name, "_headerFrameStorageOpsWithLegacy"), c.packedHeaderFrame.modeledStorageOps
+        );
+        vm.snapshotValue(
+            string.concat(name, "_headerFrameRemovableStorageOpsWithLegacy"),
+            c.packedHeaderFrame.removableStorageOps
+        );
+        vm.snapshotValue(string.concat(name, "_moveResolverCalls"), c.moveResolverCalls);
+        vm.snapshotValue(string.concat(name, "_moveResolverContinuations"), c.moveResolverContinuations);
+        vm.snapshotValue(string.concat(name, "_effectResolverCalls"), c.effectResolverCalls);
+        vm.snapshotValue(string.concat(name, "_legacyMoveBoundaries"), c.legacyMoveBoundaries);
+        vm.snapshotValue(string.concat(name, "_legacyAbilityBoundaries"), c.legacyAbilityBoundaries);
+        vm.snapshotValue(string.concat(name, "_legacyEffectBoundaries"), c.legacyEffectBoundaries);
+        vm.snapshotValue(string.concat(name, "_legacyBoundaryUpperBound"), c.legacyBoundaryUpperBound);
 
         assertGt(c.effectStorage.headerReads, 0, "effect header census must be live");
         assertGt(c.roundEndCalls, 0, "round-end census must be live");
         assertGt(c.afterMoveCalls, 0, "after-move census must be live");
+        assertGt(c.monStateStorage.reads, 0, "mon-state census must be live");
+    }
+
+    /// @dev Every mutating legacy effect hook is a conservative frame flush/invalidation boundary.
+    ///      This is an upper bound: consecutive calls with no intervening dirty lane need not flush.
+    function _legacyEffectBoundaryCount(Vm.AccountAccess[] memory accesses) private view returns (uint256 count) {
+        count = _countCalls(accesses, address(engine), address(0), IEffect.shouldApply.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onRoundStart.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onRoundEnd.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onMonSwitchIn.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onMonSwitchOut.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onAfterDamage.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onAfterMove.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onUpdateMonState.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onPreDamage.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onApply.selector);
+        count += _countCalls(accesses, address(engine), address(0), IEffect.onRemove.selector);
+    }
+
+    function _legacyBoundarySelectors() private pure returns (bytes4[] memory selectors) {
+        selectors = new bytes4[](13);
+        selectors[0] = IMoveSet.move.selector;
+        selectors[1] = IAbility.activateOnSwitch.selector;
+        selectors[2] = IEffect.shouldApply.selector;
+        selectors[3] = IEffect.onRoundStart.selector;
+        selectors[4] = IEffect.onRoundEnd.selector;
+        selectors[5] = IEffect.onMonSwitchIn.selector;
+        selectors[6] = IEffect.onMonSwitchOut.selector;
+        selectors[7] = IEffect.onAfterDamage.selector;
+        selectors[8] = IEffect.onAfterMove.selector;
+        selectors[9] = IEffect.onUpdateMonState.selector;
+        selectors[10] = IEffect.onPreDamage.selector;
+        selectors[11] = IEffect.onApply.selector;
+        selectors[12] = IEffect.onRemove.selector;
+    }
+
+    function _logFrameCensus(ReplayCensus memory census) private pure {
+        console.log(
+            "  Engine storage reads/writes                      :",
+            census.engineWorkingSet.reads,
+            census.engineWorkingSet.writes
+        );
+        console.log(
+            "  Engine unique touched/written slots              :",
+            census.engineWorkingSet.uniqueTouchedSlots,
+            census.engineWorkingSet.uniqueWrittenSlots
+        );
+        console.log(
+            "  Engine current/floor/removable storage ops        :",
+            census.engineWorkingSet.reads + census.engineWorkingSet.writes,
+            census.engineWorkingSet.loadCommitFloorOps,
+            census.engineWorkingSet.removableOps
+        );
+        console.log(
+            "  Engine root reads/writes                          :",
+            census.callBoundaryStorage.engineRootReads,
+            census.callBoundaryStorage.engineRootWrites
+        );
+        console.log(
+            "  Engine callback reads/writes                      :",
+            census.callBoundaryStorage.engineCallbackReads,
+            census.callBoundaryStorage.engineCallbackWrites
+        );
+        console.log(
+            "  mechanic-owned storage reads/writes               :",
+            census.callBoundaryStorage.externalReads,
+            census.callBoundaryStorage.externalWrites
+        );
+        console.log("  storage categories: reads / writes / unique / unique-written");
+        _logStorageCategory("    other/unclassified", census.storageCategories, STORAGE_OTHER);
+        _logStorageCategory("    shell/allocator", census.storageCategories, STORAGE_SHELL);
+        _logStorageCategory("    BattleData", census.storageCategories, STORAGE_BATTLE_DATA);
+        _logStorageCategory("    config header", census.storageCategories, STORAGE_CONFIG_HEADER);
+        _logStorageCategory("    static catalog/team", census.storageCategories, STORAGE_STATIC_CATALOG);
+        _logStorageCategory("    MonState", census.storageCategories, STORAGE_MON_STATE);
+        _logStorageCategory("    effects/hooks", census.storageCategories, STORAGE_EFFECTS);
+        _logStorageCategory("    stat boosts", census.storageCategories, STORAGE_BOOSTS);
+        _logStorageCategory("    global KV", census.storageCategories, STORAGE_GLOBAL_KV);
+        if (census.storageCategories.firstOtherSlot != bytes32(0)) {
+            console.log("    first unclassified slot");
+            console.logBytes32(census.storageCategories.firstOtherSlot);
+        }
+        console.log(
+            "  packed-header current/modeled/removable ops       :",
+            census.packedHeaderFrame.currentStorageOps,
+            census.packedHeaderFrame.modeledStorageOps,
+            census.packedHeaderFrame.removableStorageOps
+        );
+        console.log(
+            "  packed-header loads/commits/callback passthrough  :",
+            census.packedHeaderFrame.loads,
+            census.packedHeaderFrame.commits,
+            census.packedHeaderFrame.callbackPassthroughOps
+        );
+        console.log(
+            "  packed-header reloads / dirty flushes / clean bars:",
+            census.packedHeaderFrame.reloadedWords,
+            census.packedHeaderFrame.dirtyFlushBoundaries,
+            census.packedHeaderFrame.cleanInvalidationBoundaries
+        );
+        console.log(
+            "  MonState reads/writes                            :",
+            census.monStateStorage.reads,
+            census.monStateStorage.writes
+        );
+        console.log(
+            "  MonState unique touched/written lanes            :",
+            census.monStateStorage.uniqueTouchedLanes,
+            census.monStateStorage.uniqueWrittenLanes
+        );
+        console.log(
+            "  MonState current/frame/removable storage ops      :",
+            census.monStateStorage.currentStorageOps,
+            census.monStateStorage.frameStorageOps,
+            census.monStateStorage.removableStorageOps
+        );
+        console.log(
+            "  frame loads/commits with legacy boundaries       :",
+            census.monStateFrame.loads,
+            census.monStateFrame.commits
+        );
+        console.log(
+            "  frame reloaded lanes / dirty flushes / clean bars :",
+            census.monStateFrame.reloadedLanes,
+            census.monStateFrame.dirtyFlushBoundaries,
+            census.monStateFrame.cleanInvalidationBoundaries
+        );
+        console.log(
+            "  with-legacy frame/removable storage ops           :",
+            census.monStateFrame.modeledStorageOps,
+            census.monStateFrame.removableStorageOps
+        );
+        console.log(
+            "  resolver move/continuation/effect calls           :",
+            census.moveResolverCalls,
+            census.moveResolverContinuations,
+            census.effectResolverCalls
+        );
+        console.log(
+            "  legacy move/ability/effect boundary upper bound   :",
+            census.legacyMoveBoundaries,
+            census.legacyAbilityBoundaries,
+            census.legacyEffectBoundaries
+        );
+        console.log("  total legacy boundary upper bound                 :", census.legacyBoundaryUpperBound);
+    }
+
+    function _logStorageCategory(string memory label, EngineStorageCategoryTally memory t, uint256 category)
+        private
+        pure
+    {
+        console.log(label, t.reads[category], t.writes[category]);
+        console.log("      unique touched/written", t.uniqueTouched[category], t.uniqueWritten[category]);
+    }
+
+    function _storageCategoryName(uint256 category) private pure returns (string memory) {
+        if (category == STORAGE_SHELL) return "shell";
+        if (category == STORAGE_BATTLE_DATA) return "battleData";
+        if (category == STORAGE_CONFIG_HEADER) return "configHeader";
+        if (category == STORAGE_STATIC_CATALOG) return "staticCatalog";
+        if (category == STORAGE_MON_STATE) return "monState";
+        if (category == STORAGE_EFFECTS) return "effects";
+        if (category == STORAGE_BOOSTS) return "boosts";
+        if (category == STORAGE_GLOBAL_KV) return "globalKV";
+        return "other";
     }
 
     function _setFirstDoublesReplayTeams() private {
@@ -564,7 +867,7 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
         Vm.AccountAccess[] memory accesses = _replayOneTxRecorded(key3);
         require(engine.getWinner(key3) != address(0), "census replay must also reach game over");
         ReplayCensus memory census =
-            _recordReplayCensus("MainnetReplay_Reused", accesses, recycledStorageKey, reusedGas);
+            _recordReplayCensus("MainnetReplay_Reused", key3, accesses, recycledStorageKey, reusedGas);
 
         console.log("");
         console.log("=== MAINNET replay (27 batched turns), prod config (inline regen) ===");
@@ -594,6 +897,7 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
             census.statusClassCallbacks
         );
         console.log("  non-hook effect header read upper bound          :", census.nonHookHeaderReadUpperBound);
+        _logFrameCensus(census);
     }
 
     /// @dev Real submitted move/target/salt sequence from `replays.txt`. The historical deployed
@@ -627,7 +931,7 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
         assertEq(engine.getTurnIdForBattleState(key3), 10, "all census doubles turns execute");
         _assertExactEffectStepLanes(key3);
         ReplayCensus memory census =
-            _recordReplayCensus("MainnetDoublesReplay1_Reused", accesses, recycledStorageKey, reusedGas);
+            _recordReplayCensus("MainnetDoublesReplay1_Reused", key3, accesses, recycledStorageKey, reusedGas);
         _finishIncompleteReplay(key3);
 
         console.log("");
@@ -650,5 +954,6 @@ contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
             census.statusClassCallbacks
         );
         console.log("  non-hook effect header read upper bound            :", census.nonHookHeaderReadUpperBound);
+        _logFrameCensus(census);
     }
 }
