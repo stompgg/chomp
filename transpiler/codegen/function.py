@@ -5,6 +5,7 @@ This module handles the generation of TypeScript code from Solidity function
 definitions, including constructors, methods, and overloaded functions.
 """
 
+import re
 from typing import List, Optional, Set, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -178,7 +179,8 @@ class FunctionGenerator(BaseGenerator):
         if static_prefix and method_name in RESERVED_JS_METHODS:
             method_name = RESERVED_JS_METHODS[method_name]
 
-        lines.append(f'{self.indent()}{visibility}{static_prefix}{override_prefix}{method_name}({params}): {return_type} {{')
+        sig_indent = self.indent()
+        lines.append(f'{sig_indent}{visibility}{static_prefix}{override_prefix}{method_name}({params}): {return_type} {{')
         self.indent_level += 1
 
         # Everything appended from here is the function body; if the body turns out
@@ -244,6 +246,17 @@ class FunctionGenerator(BaseGenerator):
                 f'{self.indent()}throw new Error('
                 f'"{method_name}: inline assembly with raw calldata/memory-buffer '
                 f'access is not modeled in the simulation runtime.");'
+            )
+
+        # Rename `_argN` params to the declaring interface's canonical names, now
+        # that the body text exists for the collision guard (__argNames metadata is
+        # canonicalized unconditionally in ContractGenerator; the signature only
+        # follows where no body identifier would collide).
+        filled_params = self._interface_filled_params(func, '\n'.join(lines[body_start:]))
+        if filled_params is not None:
+            lines[body_start - 1] = (
+                f'{sig_indent}{visibility}{static_prefix}{override_prefix}'
+                f'{method_name}({filled_params}): {return_type} {{'
             )
 
         self.indent_level -= 1
@@ -422,6 +435,42 @@ class FunctionGenerator(BaseGenerator):
         if param.name:
             return param.name
         return f'_arg{index}'
+
+    def _interface_filled_params(self, func: FunctionDefinition, body_text: str) -> Optional[str]:
+        """Params string with unnamed params renamed to the declaring interface's
+        canonical names, or None when nothing changes. Source-named params always
+        keep their name (the body references them); a canonical candidate is
+        skipped when the word already appears in the body — an unnamed param's
+        name is free to choose ONLY if nothing in the body could collide with or
+        shadow it (locals, named returns, `this.x` state reads, call targets)."""
+        registry = self._ctx._registry
+        if registry is None or all(p.name for p in func.parameters):
+            return None
+        canonical = registry.get_canonical_param_names(
+            self._ctx.current_class_name, func.name, len(func.parameters)
+        )
+        if not canonical:
+            return None
+        taken = {p.name for p in func.parameters if p.name}
+        names: List[str] = []
+        changed = False
+        for i, p in enumerate(func.parameters):
+            if p.name:
+                names.append(p.name)
+                continue
+            candidate = canonical[i]
+            if candidate in taken or re.search(rf'\b{re.escape(candidate)}\b', body_text):
+                names.append(f'_arg{i}')
+            else:
+                names.append(candidate)
+                taken.add(candidate)
+                changed = True
+        if not changed:
+            return None
+        return ', '.join(
+            f'{n}: {self._type_converter.solidity_type_to_ts(p.type_name)}'
+            for n, p in zip(names, func.parameters)
+        )
 
     def _generate_return_type(self, params: List[VariableDeclaration]) -> str:
         """Generate return type from return parameters."""

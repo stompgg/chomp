@@ -305,6 +305,37 @@ class TypeRegistry:
             inherited.update(self.get_all_inherited_methods(base, exclude_interfaces))
         return inherited
 
+    def get_canonical_param_names(
+        self,
+        contract_name: str,
+        method_name: str,
+        arity: int,
+    ) -> Optional[List[str]]:
+        """
+        Canonical parameter names for `method_name`, from the interface that
+        declares it — searched breadth-first through `contract_name`'s transitive
+        base chain, so every override of a hook resolves to identical names.
+
+        Returns None unless a declaring interface names every parameter of a
+        matching-arity overload (partially-named declarations would produce
+        misleading metadata).
+        """
+        seen: Set[str] = set()
+        queue = list(self.contract_bases.get(contract_name, []))
+        while queue:
+            base = queue.pop(0)
+            if base in seen:
+                continue
+            seen.add(base)
+            for method in self.interface_methods.get(base, []):
+                if method['name'] != method_name or len(method['params']) != arity:
+                    continue
+                names = [n for n, _t in method['params']]
+                if all(n and not n.startswith('_arg') for n in names):
+                    return names
+            queue.extend(self.contract_bases.get(base, []))
+        return None
+
     def get_interface_property_names(self, interface_name: str) -> Set[str]:
         """
         Auto-detect which parameterless interface methods are state variable getters.

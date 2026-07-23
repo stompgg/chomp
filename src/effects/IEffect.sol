@@ -113,7 +113,7 @@ interface IEffect {
         bytes32 battleKey,
         uint256 rng,
         bytes32 extraData,
-        uint256 playerIndex,
+        uint256 targetIndex,
         uint256 monIndex,
         uint256 activesPacked,
         MonStateIndexName stateVarIndex,
