@@ -43,12 +43,10 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         uint16,
         uint256
     ) external {
-        // Check if the ability is already applied globally
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 2, 2);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(this)) {
-                return;
-            }
+        // Skip if the ability is already applied globally (single instance by address)
+        (bool exists,,) = engine.getEffectData(battleKey, 2, 2, address(this));
+        if (exists) {
+            return;
         }
         // Otherwise, add this effect globally
         engine.addEffect(2, attackerPlayerIndex, this, _encodeState(CHARGES, uint128(attackerPlayerIndex)));
@@ -74,7 +72,7 @@ contract ChainExpansion is IMoveSet, BasicEffect {
      *  Effect implementation
      */
     // Steps: OnMonSwitchIn
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8010;
     }
 
@@ -99,9 +97,8 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         (uint256 chargesLeft, uint256 ownerIndex) = _decodeState(extraData);
         // If it's a friendly mon, then we heal (flat 1/8 of max HP)
         if (targetIndex == ownerIndex) {
-            int32 amtToHeal =
-                int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp)) / HEAL_DENOM;
-            int32 damageReceived = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
+            (uint32 maxHp, int32 damageReceived) = engine.getMonHpState(battleKey, targetIndex, monIndex);
+            int32 amtToHeal = int32(maxHp) / HEAL_DENOM;
             // Prevent overhealing
             if (amtToHeal > (-1 * damageReceived)) {
                 amtToHeal = -1 * damageReceived;

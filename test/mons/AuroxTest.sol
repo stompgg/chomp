@@ -809,10 +809,11 @@ contract AuroxTest is Test, BattleHelper {
         // Alice uses volatile punch, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Verify that Bob's mon index 0 has frostbite (first effect is stat boost)
+        // Verify that Bob's mon index 0 has frostbite (its debuff lives in the boost store,
+        // so the status is the only effect entry)
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 1, 0);
 
-        assertEq(address(effects[1].effect), address(frostbiteStatus), "Bob's mon should have frostbite");
+        assertEq(address(effects[0].effect), address(frostbiteStatus), "Bob's mon should have frostbite");
 
         // Precomputed seed triggers burn for Bob (player 1)
         mockOracle.setRNG(1);
@@ -820,8 +821,8 @@ contract AuroxTest is Test, BattleHelper {
         // Alice does nothing, Bob uses volatile punch
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
 
-        // Verify that Alice's mon index 0 has burn (first effect is stat boost)
+        // Verify that Alice's mon index 0 has burn
         (effects,) = engine.getEffects(battleKey, 0, 0);
-        assertEq(address(effects[1].effect), address(burnStatus), "Alice's mon should have burn");
+        assertEq(address(effects[0].effect), address(burnStatus), "Alice's mon should have burn");
     }
 }

@@ -11,8 +11,6 @@ import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
-
 contract PostWorkout is IAbility, BasicEffect {
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
         return "Post-Workout";
@@ -30,39 +28,21 @@ contract PostWorkout is IAbility, BasicEffect {
     }
 
     // Steps: OnMonSwitchOut
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8020;
     }
 
     function onMonSwitchOut(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-        uint192 statusAddress = engine.getGlobalKV(battleKey, keyForMon);
-
-        // Check if a status exists
-        if (statusAddress != 0) {
-            IEffect statusEffect = IEffect(address(uint160(statusAddress)));
-
-            // Get the index of the effect and remove it
-            uint256 effectIndex;
-            (EffectInstance[] memory effects, uint256[] memory indices) =
-                engine.getEffects(battleKey, targetIndex, monIndex);
-            for (uint256 i; i < effects.length; i++) {
-                if (address(effects[i].effect) == address(statusEffect)) {
-                    effectIndex = indices[i];
-                    break;
-                }
-            }
-            engine.removeEffect(targetIndex, monIndex, effectIndex);
-
-            // Boost stamina by 1
+        // Clear any status (one per mon); on success boost stamina by 1
+        if (engine.clearMonStatus(targetIndex, monIndex, 0)) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
         }
         return (bytes32(0), false);

@@ -20,9 +20,21 @@
 ```bash
 forge install        # Install dependencies (forge-std)
 forge build          # Compile contracts
-forge test           # Run all tests
-forge test -vvv      # Run tests with verbose output
+FOUNDRY_PROFILE=fast forge test           # Run all tests
+FOUNDRY_PROFILE=fast forge test -vvv      # Run tests with verbose output
 ```
+
+Engine edits invalidate most of the production-profile dependency graph. For correctness-only
+iteration, use the separate fast profile and a narrow path; it keeps via-IR (required by Engine)
+but disables optimization/build-info, enables sparse compilation, and uses a separate cache:
+
+```bash
+FOUNDRY_PROFILE=fast forge test --match-path test/EngineTest.sol
+```
+
+Always use `profile.fast` for correctness, regression, and full-suite test gates. Use the default
+profile only for explicit gas comparisons and snapshots; the fast profile disables snapshot
+emission so an accidental gas-test run cannot overwrite production-profile numbers.
 
 ## Repository Structure
 
@@ -52,7 +64,7 @@ chomp/
 │   │   ├── IEffect.sol     # Effect interface with lifecycle hooks
 │   │   ├── BasicEffect.sol
 │   │   ├── StaminaRegen.sol
-│   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect(Lib)
+│   │   ├── status/         # Status effects (Blessed, Burn, Frostbite, Panic, Sleep, Zap) + StatusEffect marker base + IStatusEffect (onReapply)
 │   │   ├── battlefield/    # Battlefield effects (Overclock)
 │   ├── game-layer/         # Team / mon registry, gacha, exp, facets, quests, gifts
 │   │   ├── GachaTeamRegistry.sol   # Concrete leaf: composes the abstracts below
@@ -110,6 +122,7 @@ chomp/
 │   ├── generateSolidity.py          # Generate SetupMons.s.sol from CSV data
 │   ├── generateSetupCPU.py          # Generate SetupCPU.s.sol team config from cpu-teams.json
 │   ├── validateMoves.py             # Validate move contracts match CSV data
+│   ├── validateEffectBitmaps.py     # Validate IEffect contracts set ALWAYS_APPLIES_BIT correctly
 │   ├── deploy.py                    # Full deployment pipeline orchestrator
 │   ├── deploy_addresses.py          # Inline ability/move address packing for the deploy pipeline
 │   ├── buildTypeChart.py            # Build type effectiveness chart
@@ -123,15 +136,18 @@ chomp/
 │   ├── packMoves.py                 # Pack move data for distribution
 │   ├── inputToEnv.py                # Parse forge output to .env
 │   └── removeUnusedImports.py       # Clean up unused Solidity imports
-├── transpiler/             # Solidity-to-TypeScript/Rust transpiler (Python)
-│   ├── sol2ts.py           # Main entry point
+├── transpiler/             # Solidity-to-TypeScript/Rust transpiler (Python; run via `python3 -m transpiler`)
+│   ├── sol2ts.py           # TypeScript backend driver (not directly runnable — use `-m transpiler`)
+│   ├── sol2rs.py           # Rust backend driver (`--target rust`)
 │   ├── lexer/              # Tokenizer
 │   ├── parser/             # AST construction
 │   ├── type_system/        # Type registry
 │   ├── codegen/            # TypeScript code generation
+│   ├── codegen_rs/         # Rust code generation
 │   ├── runtime/            # TypeScript runtime library
+│   ├── runtime-rs/, strategies-rs/  # Hand-written Rust crates (rsynced into rs-output/)
 │   ├── dependency_resolver/ # Dependency resolution
-│   └── test/               # TypeScript integration tests (vitest)
+│   └── test_transpiler.py  # Transpiler unit tests (the TS integration tests live in munch)
 ├── drool/                  # Game data (CSV) and frontend assets
 │   ├── mons.csv            # Mon stats (HP, attack, speed, types, etc.)
 │   ├── moves.csv           # Move definitions (power, stamina, accuracy, etc.)
@@ -289,6 +305,48 @@ into the Engine.
 Effects can be per-mon (local; `targetIndex` = the owning player index) or global (battlefield-wide;
 side index `2`). The `StaminaRegen` effect is a global default that regenerates 1 stamina per turn.
 
+#### Opt-in fresh hook context (gas path)
+
+Before adding an Engine getter inside a lifecycle hook, check whether the value is already available
+in that hook's packed context. `getStepsBitmap()` returns `uint32`: the low 16 bits are lifecycle
+subscriptions and the corresponding high 16 bits request fresh context. For example, an
+`AfterMove` listener (`0x80`) requests context with `0x0080_0000`, so a typical bitmap is
+`0x0080_8080` (`AfterMove` context + `ALWAYS_APPLIES_BIT` + `AfterMove`). Legacy effects that only
+return low bits remain compatible.
+
+Supported layouts, decoded through `TargetLib`:
+
+- `OnApply`: the target mon's max HP via `hookMonMaxHp(context)`. This request is consumed before
+  installation and is not persisted as a recurring context capability.
+- `AfterMove`: current 24-bit move words via `hookMoveWordAt(context, absSlot)` and acted bits via
+  `hookSlotActed(context, absSlot)`.
+- `AfterDamage`: the damaged mon's finalized KO state via `hookMonIsKnockedOut(context)`.
+- `PreDamage`: current signed in-flight damage via `hookPreDamage(context)`.
+- `RoundEnd`: current status classes via `hookStatusClass(context, side, monIndex)`.
+- `OnUpdateMonState`: the changed mon's max HP and normalized signed HP delta via
+  `hookMonMaxHp(context)` / `hookMonHpDelta(context)`.
+
+Snapshots are built immediately before each requesting callback, after earlier effects in the same
+pass, so hooks must not cache them across calls. Context replaces read-only callbacks; mutations
+still go through Engine functions. Prefer it when a hook would otherwise call an Engine getter, and
+add a mutation-order regression when an earlier hook can change the observed value.
+
+The stored effect header currently collapses any nonzero high-half request to one capability bit.
+Consequently, a multi-hook effect receives every context supported for each hook it subscribes to,
+even if it requested only one step. Benchmark multi-hook migrations: an unused builder at a frequent
+hook can outweigh the removed callback. Ordinary `IMoveSet.move()` execution does not yet receive
+these lifecycle layouts; only moves/abilities that also register as effects can use them in their
+effect hooks. Ordinary tagged deployed moves may separately opt into supported move context through
+metadata capabilities: `@move-context: status-lanes` makes the deployment generator set
+`MOVE_CONTEXT_STATUS_LANES`, and `move()` can then use `TargetLib.hookStatusClass`. Keep these
+capabilities generic; do not add address-specific Engine dispatch.
+
+For ordinary moves/effects outside a supported packed hook context, use the narrowest typed bundled
+getter matching the data shape. In particular, overheal clamps should call
+`getMonHpState(battleKey, player, mon)` for `(maxHp, hpDelta)` rather than making separate
+`getMonValueForBattle(Hp)` and `getMonStateForBattle(Hp)` external calls. Do not add raw-slot or
+large generic snapshot APIs; add a new bundle only when multiple mechanics share the exact shape.
+
 ### Stat Boosts (inlined into the Engine)
 
 Stat modifiers are **not** a separate effect contract — they are native Engine functions:
@@ -300,11 +358,13 @@ The packing/aggregation math lives in `src/lib/StatBoostLib.sol`. (Historically 
 round-trips.)
 
 How it works:
-- Each boost **source** is one packed entry stored in the mon's normal effect mapping under the
-  `STAT_BOOST_ADDRESS` sentinel (steps bitmap `STAT_BOOST_STEPS` = `OnMonSwitchOut | ALWAYS_APPLIES`).
+- Each boost **source** is one packed word in a dedicated per-mon boost store
+  (`p0BoostWords`/`p1BoostWords`; 4-bit counts in `p0/p1BoostCounts`, aggregation cache in
+  `statBoostAcc`) — NOT an effect-list entry, so effect passes never iterate boost sources.
   Sources are keyed by `msg.sender`, so each move/ability/effect
   stacks independently and can remove its own boost. Boosts are **multiplicative** per source; `Temp`
-  boosts are dropped automatically on switch-out (`_inlineStatBoostSwitchOut`), `Perm` ones persist.
+  boosts are dropped on switch-out by a direct `_inlineStatBoostSwitchOut` call in `_handleSwitch`,
+  `Perm` ones persist.
 - Boosts apply only to the 5 stat deltas: `Speed`, `Attack`, `Defense`, `SpecialAttack`,
   `SpecialDefense`. There is **no globalKV snapshot** — the Engine telescopes off the live `monState`
   delta (`new boosted − base − currentDelta`) and fires `OnUpdateMonState` like any other delta write.
@@ -335,7 +395,7 @@ The leaf adds: the `onBattleEnd` orchestration (streak / quest / points / exp lo
 
 **Rolling.** Mon ids are sequential starting at 0 (`createMon` enforces `monId == monIds.length()`). Ids `[0, NUM_STARTERS)` (= 3) are *starter* mons.
 
-- `firstRoll(uint256 starterId)` — one-shot per player. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free.
+- `firstRoll(uint256 starterId)` — one-shot per player, onboarding in a single tx. Caller picks `starterId ∈ {0,1,2}`; the contract guarantees that mon at slot 0 of the result and rolls `INITIAL_ROLLS - 1` (= 3) more uniformly from `[NUM_STARTERS, numMons)`. Free. Also creates the player's first team (slot 0) from the first `MONS_PER_TEAM` rolled ids, via the same internal path `createTeam` uses (`_createTeamForUser`) — skipping the redundant ownership check since those ids were just written. The constructor reverts `MonsPerTeamExceedsInitialRolls` if `MONS_PER_TEAM > INITIAL_ROLLS`, since a deployment configured that way could never satisfy this.
 - `roll(uint256 numRolls)` — paid (`ROLL_COST` per roll, default 16 points). Uniform across the entire pool. Reverts `NoMoreStock` once the caller owns every mon.
 - Linear-probing dedup keeps draws inside their window so `firstRoll`'s 3 random picks never land on a starter.
 
@@ -394,7 +454,7 @@ Both per-mon mappings share the same 16-mon bucketing so `_applyExpAndFacetDraws
 
 - `BattleData` and `BattleConfig` are stored per battle key (derived from player addresses)
 - `MonState` tracks deltas from base stats (hpDelta, staminaDelta, etc.). The 5 stat deltas are written only by the inlined stat-boost path (see "Stat Boosts"); other deltas via `updateMonState`.
-- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources reuse these same mappings under the `STAT_BOOST_ADDRESS` sentinel.
+- Effects stored in per-mon mappings with stride-based indexing (64 slots per mon). Stat-boost sources live in dedicated per-mon boost-word mappings (`p0/p1BoostWords` + packed counts), not the effect mappings.
 - Heavy use of bit packing for gas efficiency (KO bitmaps, effect counts, active mon indices)
 - Battle mode is a `uint8` in `BattleConfig.battleMode` (mirrored to `BattleData.isTwoSlotMode`/`isMultiMode`). Slot-0 active lanes pack into `BattleData.activeMonIndex` (side 0 = low byte, side 1 = high byte); 2-slot modes add slot-1 lanes in `activeMonExt`. Multi's extra seats (p2/p3) live in `multiSeats[battleKey]` (`MultiSeatData`), written only when `battleMode == MULTI`.
 - Transient storage used for per-transaction state (`battleKeyForWrite`, `tempRNG`, in-flight `PreDamage`)
@@ -519,7 +579,7 @@ For once-per-battle abilities (e.g., `RiseFromTheGrave`), use a `globalKV` flag 
 
 Effects fall into several categories depending on scope:
 
-- **Status effects** (`src/effects/status/`): Extend `StatusEffect` which enforces one-status-per-mon via a KV flag. Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
+- **Status effects** (`src/effects/status/`): Extend the `StatusEffect` marker base. One-status-per-mon is **Engine-native**: each status folds a unique class id into `getStepsBitmap()` bits 10-13 (an internal `STATUS_CLASS` constant; deployable ids 1-14, 15 reserved for test mocks), and the Engine tracks it in a per-mon lane (`BattleConfig.monStatusLanes`, slot 3) — gating adds before any external call, setting the lane on apply, clearing it on removal. Readers use `engine.getMonStatusClass` (identity/existence) and `engine.clearMonStatus(player, mon, expectedClass)` (remove; 0 = any class); reader contracts cache the class id as a constructor `immutable` derived from the injected status's `getStepsBitmap()`. Escalating statuses (Burn) set `HAS_REAPPLY_BIT` (bit 14) and implement `IStatusEffect.onReapply`, which the Engine calls on a same-class re-apply; without the bit a re-apply is a zero-call no-op. Extra apply conditions beyond exclusivity (Sleep's single-sleeper rule) live in a `shouldApply` override (no `ALWAYS_APPLIES_BIT`). Shared across mons — deployed once, injected into moves via constructor parameters. (e.g., `BurnStatus`, `FrostbiteStatus`, `SleepStatus`)
 - **Battlefield effects** (`src/effects/battlefield/`): Extend `BasicEffect`, use `targetIndex=2` for global scope. (e.g., `Overclock`)
 - **Shared utility effects** (`src/effects/`): Deployed once, used by many contracts. (e.g., `StaminaRegen` for per-turn recovery). NOTE: stat modifiers are **not** an effect — they are inlined Engine functions (`addStatBoost`/`removeStatBoost`/…); see "Stat Boosts" above.
 - **Mon-local effects** (`src/mons/<monname>/`): Abilities or move-effect hybrids that only apply to one mon. These live in the mon's directory, not in `src/effects/`.
@@ -527,7 +587,7 @@ Effects fall into several categories depending on scope:
 To implement a new effect:
 1. Extend `BasicEffect` (or `StatusEffect` for status conditions)
 2. Override the relevant lifecycle hooks (`onRoundEnd`, `onAfterDamage`, `onPreDamage`, …) — each receives `activesPacked` for local slot resolution via `TargetLib`
-3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call
+3. Return a bitmap from `getStepsBitmap()` indicating which hooks to call. Before adding callback getters, opt into a supported fresh context by mirroring the applicable low lifecycle bit into bits 16-31 as described above. If the effect doesn't override `shouldApply()` (i.e. it relies on `BasicEffect`'s default, which always returns `true`), OR the low bitmap with `ALWAYS_APPLIES_BIT` (`src/Constants.sol`) so the Engine skips the external `shouldApply()` call on `addEffect`. Effects that override `shouldApply()` with real gating logic (e.g. `SleepStatus`'s single-sleeper rule) must NOT set this bit. Statuses additionally carry their class id in bits 10-13 and `HAS_REAPPLY_BIT` (bit 14) iff they implement `onReapply`. `python processing/validateEffectBitmaps.py` checks all of these invariants (bit pairing, class range 1-14, cross-src uniqueness) and is run as part of `deploy.py`.
 4. Return `(updatedExtraData, removeAfterRun)` from hooks — use `extraData` (bytes32) to carry state between turns (counters, degrees, flags)
 5. Shared effects are injected into moves/abilities via constructor parameters at deploy time — there is no runtime effect registry
 
@@ -537,6 +597,7 @@ To implement a new effect:
 
 ```bash
 python processing/validateMoves.py          # Validate contracts vs CSV
+python processing/validateEffectBitmaps.py  # Validate ALWAYS_APPLIES_BIT usage on IEffect contracts
 python processing/generateSolidity.py       # Generate SetupMons.s.sol
 python processing/generateSetupCPU.py       # Generate SetupCPU.s.sol from cpu-teams.json
 python processing/deploy.py --testnet       # Full deployment (forge scripts + codegen)
@@ -551,10 +612,10 @@ Converts Solidity contracts to TypeScript for local battle simulation:
 
 ```bash
 # Transpile all contracts
-python3 transpiler/sol2ts.py src/ -o transpiler/ts-output -d src --emit-metadata
+python3 -m transpiler src/ -o transpiler/ts-output -d src --emit-metadata
 
-# Run transpiler tests
-cd transpiler && npm install && npx vitest run
+# Run transpiler unit tests (the TS runtime/integration tests moved to munch with the codegen sync)
+python3 transpiler/test_transpiler.py
 ```
 
 **Rust target (sim performance).** The same front-end also drives a Rust

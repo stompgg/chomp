@@ -145,11 +145,12 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks, both of them are move index 0 (do frostbite damage)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons have an effect length of 2 (including stat boost)
+        // Both mons carry the frostbite status; its SpAtk debuff lives in the boost store, not
+        // the effect list (boost sources are no longer effect entries).
         (EffectInstance[] memory effects0,) = engine.getEffects(battleKey, 0, 0);
         (EffectInstance[] memory effects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects0.length, 2);
-        assertEq(effects1.length, 2);
+        assertEq(effects0.length, 1);
+        assertEq(effects1.length, 1);
 
         // Check that both mons took 1 damage (we should round down)
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -1);
@@ -162,11 +163,11 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks, both of them are move index 0 (do frostbite damage)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons still have an effect length of 2 (including stat boost)
+        // Check that both mons still carry exactly the status entry
         (effects0,) = engine.getEffects(battleKey, 0, 0);
         (effects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects0.length, 2);
-        assertEq(effects1.length, 2);
+        assertEq(effects0.length, 1);
+        assertEq(effects1.length, 1);
 
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -2);
         assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2);
@@ -306,7 +307,7 @@ contract EffectTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, NO_OP_MOVE_INDEX, uint16(1), 0
         );
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
     }
 
     /**
@@ -472,11 +473,12 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks, both of them are move index 0 (apply burn status)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons have an effect length of 2 (including stat boost)
+        // Both mons carry the burn status; its attack debuff lives in the boost store, not the
+        // effect list (boost sources are no longer effect entries).
         (EffectInstance[] memory burnEffects0,) = engine.getEffects(battleKey, 0, 0);
         (EffectInstance[] memory burnEffects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(burnEffects0.length, 2);
-        assertEq(burnEffects1.length, 2);
+        assertEq(burnEffects0.length, 1);
+        assertEq(burnEffects1.length, 1);
 
         // Check that the attack of both mons was reduced by 50% (32/2 = 16)
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack), -16);
@@ -489,11 +491,11 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks again to increase burn degree
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons still have an effect length of 2 (including stat boost)
+        // Check that both mons still carry exactly the status entry (debuff is store-side)
         (EffectInstance[] memory effects0,) = engine.getEffects(battleKey, 0, 0);
         (EffectInstance[] memory effects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects0.length, 2);
-        assertEq(effects1.length, 2);
+        assertEq(effects0.length, 1);
+        assertEq(effects1.length, 1);
 
         // Check that both mons took additional 1/8 damage (256/8 = 32)
         // Total damage should be 16 (first round) + 32 (second round) = 48
@@ -503,11 +505,11 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks again to increase burn degree to maximum
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons still have an effect length of 2
+        // Check that both mons still carry exactly the status entry
         (effects0,) = engine.getEffects(battleKey, 0, 0);
         (effects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects0.length, 2);
-        assertEq(effects1.length, 2);
+        assertEq(effects0.length, 1);
+        assertEq(effects1.length, 1);
 
         // Check that both mons took additional 1/4 damage (256/4 = 64)
         // Total damage should be 16 (first round) + 32 (second round) + 64 (third round) = 112
@@ -517,11 +519,11 @@ contract EffectTest is Test, BattleHelper {
         // Alice and Bob both select attacks again to increase burn degree to maximum
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
-        // Check that both mons still have an effect length of 2
+        // Check that both mons still carry exactly the status entry
         (effects0,) = engine.getEffects(battleKey, 0, 0);
         (effects1,) = engine.getEffects(battleKey, 1, 0);
-        assertEq(effects0.length, 2);
-        assertEq(effects1.length, 2);
+        assertEq(effects0.length, 1);
+        assertEq(effects1.length, 1);
 
         // Check that both mons took another 1/4 damage (max burn degree)
         // Total damage should be 16 (first round) + 32 (second round) + 64 (third round) + 64 (fourth round) = 176
@@ -629,13 +631,13 @@ contract EffectTest is Test, BattleHelper {
 
         // The move should outspeed the swap, so the swap doesn't happen
         // So Bob's active mon index should still be 0
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
 
         // Alice uses slower Zap, Bob switches to mon index 1
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 1, SWITCH_MOVE_INDEX, 0, uint16(1));
 
         // Bob's active mon index should be 1 (swap goes before getting Zapped)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 1);
 
         // Bob's active mon should have the Zap effect
         (EffectInstance[] memory zapEffects,) = engine.getEffects(battleKey, 1, 1);
@@ -647,7 +649,7 @@ contract EffectTest is Test, BattleHelper {
         );
 
         // Check that Bob's active mon index is now 0, and the effect is still there
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
         (EffectInstance[] memory zapEffectsAfter,) = engine.getEffects(battleKey, 1, 1);
         assertEq(zapEffectsAfter.length, 1);
 

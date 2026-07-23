@@ -486,7 +486,7 @@ contract IblivionTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // At Baselight 1 (seed), Loop should give a 15% boost.
+        // At Baselight 1 (seed), Loop should give a % boost.
         assertEq(baselight.getBaselightLevel(engine, battleKey, 0, 0), 1, "Should have 1 stack");
 
         // Get stats before Loop
@@ -495,9 +495,9 @@ contract IblivionTest is Test, BattleHelper {
         // Alice uses Loop
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 2, NO_OP_MOVE_INDEX, 0, 0);
 
-        // Check stats are boosted (15% of 100 = 15)
+        // Check stats are boosted
         int32 attackAfter = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Attack);
-        assertEq(attackAfter - attackBefore, 15, "Attack should be boosted by 15%");
+        assertEq(attackAfter - attackBefore, int32(int8(loop.BOOST_PERCENT_LEVEL_1())), "Attack should be boosted by %");
 
         // Loop should be marked as active
         assertTrue(loop.isLoopActive(engine, battleKey, 0, 0), "Loop should be active");

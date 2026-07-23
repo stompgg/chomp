@@ -29,6 +29,7 @@ import {GlobalEffectAttack} from "./mocks/GlobalEffectAttack.sol";
 import {InstantDeathEffect} from "./mocks/InstantDeathEffect.sol";
 import {InstantDeathOnSwitchInEffect} from "./mocks/InstantDeathOnSwitchInEffect.sol";
 import {MockRandomnessOracle} from "./mocks/MockRandomnessOracle.sol";
+import {RawDamageMove} from "./mocks/RawDamageMove.sol";
 import {SelfSwitchAndDamageMove} from "./mocks/SelfSwitchAndDamageMove.sol";
 
 import {IEngineHook} from "../src/IEngineHook.sol";
@@ -36,6 +37,7 @@ import {IEngineHook} from "../src/IEngineHook.sol";
 import {OneTurnStatBoost} from "./mocks/OneTurnStatBoost.sol";
 import {SingleInstanceEffect} from "./mocks/SingleInstanceEffect.sol";
 import {SkipTurnMove} from "./mocks/SkipTurnMove.sol";
+import {StaminaGainKOEffect} from "./mocks/StaminaGainKOEffect.sol";
 import {TempStatBoostEffect} from "./mocks/TempStatBoostEffect.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
@@ -43,7 +45,14 @@ import {DefaultMatchmaker} from "../src/matchmaker/DefaultMatchmaker.sol";
 import {BattleHelper} from "./abstract/BattleHelper.sol";
 import {DummyStatus} from "./mocks/DummyStatus.sol";
 import {EditEffectAttack} from "./mocks/EditEffectAttack.sol";
+import {SetEffectDataAttack} from "./mocks/SetEffectDataAttack.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
+import {WideDataEffect} from "./mocks/WideDataEffect.sol";
+import {
+    FreshMoveContextAbility,
+    FreshStatusContextAbility,
+    TEST_CONTEXT_STATUS_CLASS
+} from "./mocks/FreshMoveContextAbility.sol";
 
 contract EngineTest is Test, BattleHelper {
     DefaultCommitManager commitManager;
@@ -125,6 +134,55 @@ contract EngineTest is Test, BattleHelper {
         // Turn ID should now be 2
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.turnId, 2);
+    }
+
+    function test_afterMoveContextIsFreshAfterEarlierEffectRewrite() public {
+        FreshMoveContextAbility observer = new FreshMoveContextAbility();
+        Mon memory aliceMon = dummyMon;
+        aliceMon.ability = uint256(uint160(address(observer)));
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        Mon[] memory bobTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        bobTeam[0] = dummyMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Alice authors move 0. The first AfterMove effect rewrites it to rest; the context-aware
+        // observer runs second and must see the rewritten lane, not a pass-level snapshot.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        assertEq(observer.observedMoveIndex(), NO_OP_MOVE_INDEX, "context must reflect prior hook rewrite");
+    }
+
+    function test_roundEndContextIsFreshAfterEarlierEffectAddsStatus() public {
+        FreshStatusContextAbility observer = new FreshStatusContextAbility();
+        Mon memory aliceMon = dummyMon;
+        aliceMon.ability = uint256(uint160(address(observer)));
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        Mon[] memory bobTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        bobTeam[0] = dummyMon;
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(
+            engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
+        );
+
+        // Ability registration installs a writer before the observer. During RoundEnd the writer
+        // adds a status, and the following opted-in hook must receive the new lane value.
+        assertEq(
+            observer.observedStatusClass(),
+            TEST_CONTEXT_STATUS_CLASS,
+            "context must reflect prior hook status mutation"
+        );
     }
 
     function test_fasterSpeedKOsGameOver() public {
@@ -572,7 +630,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the switched in mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -5);
     }
 
@@ -621,7 +679,7 @@ contract EngineTest is Test, BattleHelper {
 
         // Assert that mon index for Alice is 1
         // Assert that the mon state for Alice has -5 applied to the previous mon
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -5);
     }
 
@@ -1379,7 +1437,7 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(1, 1), 0);
 
         // Verify that Bob's mon is now index 1
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 1);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 1);
 
         // Verify that Alice's mon took damage
         assertEq(engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp), -5);
@@ -1453,7 +1511,7 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, _packForceSwitch(0, 1), 0);
 
         // Assert that Alice's mon is now index 1
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 1);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 1);
 
         // Assert that Alice's new mon took damage
         assertEq(engine.getMonStateForBattle(battleKey, 0, 1, MonStateIndexName.Hp), -5);
@@ -1543,7 +1601,7 @@ contract EngineTest is Test, BattleHelper {
         engine.execute(battleKey);
 
         // Check that the active mon index for Alice is still 0 (no switch happened)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 0);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 0);
     }
 
     function test_forceSwitchMoveIgnoresInvalidSwitchTargetNonPriorityPlayerAfterAttacking() public {
@@ -1629,7 +1687,7 @@ contract EngineTest is Test, BattleHelper {
         engine.execute(battleKey);
 
         // Check that the active mon index for Alice is still 0 (no switch happened)
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[0], 0);
+        assertEq(engine.getBattleContext(battleKey).p0ActiveMonIndex, 0);
     }
 
     // environmental effect kills mon after switch in from player move and forces switch
@@ -2701,7 +2759,38 @@ contract EngineTest is Test, BattleHelper {
         // Switch for turn flag should be 0, Bob's active mon index should now be 0
         (, BattleData memory state) = engine.getBattle(battleKey);
         assertEq(state.playerSwitchForTurnFlag, 0);
-        assertEq(engine.getActiveMonIndexForBattleState(battleKey)[1], 0);
+        assertEq(engine.getBattleContext(battleKey).p1ActiveMonIndex, 0);
+    }
+
+    // `AttackCalculator._calculateDamageCore` clamps a huge rawDamage to `type(int32).max` and hands
+    // it back as a legitimate damage value, so `_dealDamageInternal` must absorb it. Subtracting it
+    // from an already-negative hpDelta underflows int32 — which in 0.8 reverts, wedging the battle.
+    function test_dealDamageAbsorbsClampedMaxWithoutUnderflow() public {
+        uint256[] memory moves = new uint256[](2);
+        moves[0] = uint256(uint160(address(new RawDamageMove(2))));
+        moves[1] = uint256(uint160(address(new RawDamageMove(type(int32).max))));
+        Mon memory mon = _createMon();
+        mon.moves = moves;
+        mon.stats.hp = 100;
+        Mon[] memory team = new Mon[](2);
+        team[0] = mon;
+        team[1] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+
+        // Chip both actives so neither hpDelta is the cleared sentinel any more.
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, 0, uint16(0), uint16(0));
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -2);
+
+        // The clamped max lands on a mon already sitting at a negative hpDelta.
+        _commitRevealExecuteForAliceAndBob(battleKey, 1, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
+
+        // It should read as a KO, not revert and not wrap to a positive hpDelta.
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut), 1);
+        // Floored at exactly -baseHp: fully dead, and still a value int32 can hold.
+        assertEq(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), -int32(uint32(mon.stats.hp)));
     }
 
     function test_editEffect() public {
@@ -2731,6 +2820,121 @@ contract EngineTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
         (effects,) = engine.getEffects(battleKey, 1, 0);
         assertEq(effects[0].data, bytes32(uint256(69)));
+    }
+
+    function test_effectDataCompactAndWideFallbackTransitions() public {
+        WideDataEffect wideEffect = new WideDataEffect();
+        // Exact representation boundary: max-1 is offset-tagged; max falls back to slot 1.
+        uint256 compactMarkerMax = (uint256(1) << 78) - 1;
+        bytes32 compactData = bytes32(compactMarkerMax - 1);
+        bytes32 secondWideData = bytes32(compactMarkerMax);
+        SetEffectDataAttack setCompact = new SetEffectDataAttack(compactData);
+        SetEffectDataAttack setWide = new SetEffectDataAttack(secondWideData);
+
+        Mon memory mon = _createMon();
+        mon.ability = uint160(address(new EffectAbility(wideEffect)));
+        mon.moves = new uint256[](2);
+        mon.moves[0] = uint256(uint160(address(setCompact)));
+        mon.moves[1] = uint256(uint160(address(setWide)));
+        Mon[] memory team = new Mon[](1);
+        team[0] = mon;
+        defaultRegistry.setTeam(ALICE, team);
+        defaultRegistry.setTeam(BOB, team);
+        bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, 0, 0);
+        (EffectInstance[] memory effects, uint256[] memory indices) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, wideEffect.INITIAL_DATA());
+        (bool exists,, bytes32 targetedData) = engine.getEffectData(battleKey, 1, 0, address(wideEffect));
+        assertTrue(exists);
+        assertEq(targetedData, wideEffect.INITIAL_DATA());
+
+        uint16 editExtraData = uint16(uint256(1) | (indices[0] << 2));
+        _commitRevealExecuteForAliceAndBob(battleKey, 0, NO_OP_MOVE_INDEX, editExtraData, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, compactData);
+        (BattleConfigView memory battleView,) = engine.getBattle(battleKey);
+        assertEq(battleView.p1Effects[0][0].data, compactData);
+
+        _commitRevealExecuteForAliceAndBob(battleKey, 1, NO_OP_MOVE_INDEX, editExtraData, 0);
+        (effects,) = engine.getEffects(battleKey, 1, 0);
+        assertEq(effects[0].data, secondWideData);
+        (exists,, targetedData) = engine.getEffectData(battleKey, 1, 0, address(wideEffect));
+        assertTrue(exists);
+        assertEq(targetedData, secondWideData);
+    }
+
+    // Regression: a KO delivered by an effect's OnUpdateMonState -> dealDamage hook, fired off the
+    // inline round-end stamina regen (INLINE_STAMINA_REGEN_RULESET is production's default path), must
+    // still set playerSwitchForTurnFlag for the next turn. _handleMove / _handleEffects recompute the
+    // flag via _checkForGameOverOrKO whenever koOccurredFlag is set; _inlineStaminaRegen must do the
+    // same, because a regen tick's OnUpdateMonState listener can reach dealDamage. When the killing
+    // tick is the round-end regen -- the last thing in the turn -- nothing downstream observes the KO,
+    // so pre-fix the flag stayed at 2 and the engine wrongly ran the next turn as a normal two-sided turn.
+    function test_inlineRegenKOSetsForcedSwitchFlag() public {
+        // Bob's mon carries a KO-on-stamina-gain effect via its ability; the effect's OnUpdateMonState
+        // hook deals lethal damage on any positive stamina gain -- a mon-agnostic stand-in for an
+        // effect (e.g. a nightmare tick) that reaches dealDamage from a regen.
+        StaminaGainKOEffect koOnStaminaGain = new StaminaGainKOEffect();
+        IAbility koAbility = new EffectAbility(koOnStaminaGain);
+
+        // Non-resting stamina burn: costs stamina (so a round-end regen has something to top up) but
+        // deals no damage, so the killing blow is unambiguously the regen-triggered effect.
+        IMoveSet staminaBurn = new CustomAttack(
+            typeCalc, CustomAttack.Args({TYPE: Type.Liquid, BASE_POWER: 0, ACCURACY: 100, STAMINA_COST: 2, PRIORITY: 0})
+        );
+        uint256[] memory burnMoves = new uint256[](1);
+        burnMoves[0] = uint256(uint160(address(staminaBurn)));
+
+        Mon memory aliceMon = _createMon();
+        aliceMon.moves = burnMoves;
+        aliceMon.stats.hp = 100;
+        aliceMon.stats.speed = 2; // faster, so move order is deterministic
+
+        Mon memory bobMon = _createMon();
+        bobMon.moves = burnMoves;
+        bobMon.ability = uint160(address(koAbility));
+        bobMon.stats.hp = 100;
+        bobMon.stats.speed = 1;
+
+        Mon[] memory aliceTeam = new Mon[](1);
+        aliceTeam[0] = aliceMon;
+        // Bob gets a second mon so the KO forces a switch rather than ending the game.
+        Mon[] memory bobTeam = new Mon[](2);
+        bobTeam[0] = bobMon;
+        bobTeam[1] = bobMon;
+
+        defaultRegistry.setTeam(ALICE, aliceTeam);
+        defaultRegistry.setTeam(BOB, bobTeam);
+
+        bytes32 battleKey = _startBattle(
+            engine,
+            defaultOracle,
+            defaultRegistry,
+            matchmaker,
+            new IEngineHook[](0),
+            IRuleset(INLINE_STAMINA_REGEN_RULESET),
+            address(commitManager)
+        );
+
+        // Both select mon 0; Bob's ability registers the KO-on-stamina-gain effect on switch-in.
+        _commitRevealExecuteForAliceAndBob(battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0));
+
+        // Alice rests; Bob burns stamina (does NOT rest, so its only regen is the round-end top-up --
+        // the LAST inline-regen call in the turn). That regen fires the KO effect, the killing blow: a
+        // KO that originates inside _inlineStaminaRegen with nothing running afterwards to notice it.
+        _commitRevealExecuteForAliceAndBob(battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.IsKnockedOut),
+            1,
+            "Bob's active mon should be KOed by the regen-triggered effect"
+        );
+
+        // Bob's active mon just died inside _inlineStaminaRegen, so the next turn must be a one-sided
+        // forced switch for Bob (playerSwitchForTurnFlag == 1). Pre-fix the flag was left at 2.
+        (, BattleData memory state) = engine.getBattle(battleKey);
+        assertEq(state.playerSwitchForTurnFlag, 1, "Bob should be forced to switch after the regen KO");
     }
 
     function test_maxBattleDuration() public {

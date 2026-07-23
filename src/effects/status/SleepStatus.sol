@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
+import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, STATUS_CLASS_SHIFT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
 import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {MoveDecision} from "../../Structs.sol";
@@ -10,6 +10,8 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 import {StatusEffect} from "./StatusEffect.sol";
 
 contract SleepStatus is StatusEffect {
+    uint256 constant STATUS_CLASS = 3;
+
     uint256 constant DURATION = 3;
 
     function name() public pure override returns (string memory) {
@@ -17,26 +19,24 @@ contract SleepStatus is StatusEffect {
     }
 
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0F;
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT);
     }
 
     function _globalSleepKey(uint256 targetIndex) internal pure returns (uint64) {
         return uint64(uint256(keccak256(abi.encodePacked(name(), targetIndex))));
     }
 
-    // Whether or not to add the effect if the step condition is met.
+    // Extra apply condition beyond the Engine's lane gate (which already guarantees the mon is
+    // status-free before this is called — hence no ALWAYS_APPLIES_BIT on this status).
     // Enforces one sleeper per player: the global sleep key stores
     // [monIndex+1 (bits 160+) | status address (lower 160 bits)] for the player's current sleeper.
-    function shouldApply(IEngine engine, bytes32 battleKey, bytes32 data, uint256 targetIndex, uint256 monIndex)
+    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256)
         public
         view
         override
         returns (bool)
     {
-        if (!super.shouldApply(engine, battleKey, data, targetIndex, monIndex)) {
-            return false;
-        }
         uint192 sleeperFlag = engine.getGlobalKV(battleKey, _globalSleepKey(targetIndex));
         if (sleeperFlag == 0) {
             return true;
@@ -95,7 +95,6 @@ contract SleepStatus is StatusEffect {
         uint256 monIndex,
         uint256 activesPacked
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        super.onApply(engine, battleKey, rng, data, targetIndex, monIndex, activesPacked);
         // Register this mon as the player's single sleeper (read by the shouldApply gate).
         engine.setGlobalKV(
             _globalSleepKey(targetIndex), uint192(uint160(address(this))) | (uint192(monIndex + 1) << 160)
@@ -122,15 +121,10 @@ contract SleepStatus is StatusEffect {
         }
     }
 
-    function onRemove(
-        IEngine engine,
-        bytes32 battleKey,
-        bytes32 extraData,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 activesPacked
-    ) public override {
-        super.onRemove(engine, battleKey, extraData, targetIndex, monIndex, activesPacked);
+    function onRemove(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
+        public
+        override
+    {
         // Clear the sleeper flag only if it still points at this mon: after a KO'd sleeper
         // releases the gate, a successor sleeper owns the flag and must keep it.
         uint192 sleeperFlag = engine.getGlobalKV(battleKey, _globalSleepKey(targetIndex));

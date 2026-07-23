@@ -36,7 +36,8 @@ executeTurn(ctx, battleKey, { p0MoveIndex: SWITCH, p1MoveIndex: SWITCH, p0ExtraD
 const NO_OP = Number(Constants.NO_OP_MOVE_INDEX);
 const firstBench = (side: 0 | 1): bigint => {
   const ko = Number(engine.getKOBitmap(battleKey, BigInt(side)));
-  const active = Number(engine.getActiveMonIndexForBattleState(battleKey)[side]);
+  const ctx = engine.getBattleContext(battleKey);
+  const active = Number(side === 0 ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex);
   for (let i = 0; i < 4; i++) if (i !== active && (ko & (1 << i)) === 0) return BigInt(i);
   return 0n;
 };

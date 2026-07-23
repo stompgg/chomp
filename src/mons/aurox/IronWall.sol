@@ -8,6 +8,7 @@ import {IEngine} from "../../IEngine.sol";
 import {MoveMeta} from "../../Structs.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 import {IMoveSet} from "../../moves/IMoveSet.sol";
 
 contract IronWall is IMoveSet, BasicEffect {
@@ -38,12 +39,10 @@ contract IronWall is IMoveSet, BasicEffect {
         engine.addEffect(attackerPlayerIndex, attackerMonIndex, IEffect(address(this)), bytes32(0));
 
         // Also, heal for INITIAL_HEAL_PERCENT
-        int32 maxHp =
-            int32(engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp));
+        (uint32 maxHpRaw, int32 currentHpDelta) = engine.getMonHpState(battleKey, attackerPlayerIndex, attackerMonIndex);
+        int32 maxHp = int32(maxHpRaw);
         int32 healAmount = (maxHp * INITIAL_HEAL_PERCENT) / 100;
         // Prevent overhealing
-        int32 currentHpDelta =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentHpDelta + healAmount > 0) {
             healAmount = -currentHpDelta;
         }
@@ -82,18 +81,18 @@ contract IronWall is IMoveSet, BasicEffect {
 
     // IEffect implementation
     // Steps: OnMonSwitchOut, AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8060;
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x00408060; // AfterDamage context | ALWAYS_APPLIES | lifecycle steps
     }
 
     function onAfterDamage(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
+        uint256 context,
         int32 damageDealt,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
@@ -103,10 +102,7 @@ contract IronWall is IMoveSet, BasicEffect {
         // <= damageDealt/2 <= int32.max, so the cast back is safe.
         int32 healAmount = int32((int256(damageDealt) * HEAL_PERCENT) / 100);
         // Heal only if not KO'ed
-        if (
-            healAmount > 0
-                && engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 0
-        ) {
+        if (healAmount > 0 && !TargetLib.hookMonIsKnockedOut(context)) {
             engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Hp, healAmount);
         }
         return (extraData, false);

@@ -10,7 +10,7 @@ import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract AfterDamageReboundEffect is BasicEffect {
     // Steps: AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x40;
     }
 

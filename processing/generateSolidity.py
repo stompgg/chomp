@@ -289,6 +289,8 @@ def load_json_move(mon_name: str, move_name: str, base_path: str) -> Optional[di
 
 
 MOVE_META_TAG = 1 << 160
+MOVE_CONTEXT_STATUS_LANES = 1 << 161
+MOVE_RESOLVER_TAG = 1 << 162
 MOVE_META_DYNAMIC = 0xF
 DEFAULT_PRIORITY = 3
 
@@ -326,16 +328,21 @@ def deployed_move_meta(mon_name: str, move_name: str, base_path: str) -> int:
     contract_name = contract_name_from_move_or_ability(move_name)
     sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
     stamina_val = priority_val = None
+    context_bits = 0
     if os.path.exists(sol_path):
         with open(sol_path, "r", encoding="utf-8") as f:
             content = f.read()
+        if re.search(r"@move-context:\s*status-lanes\b", content):
+            context_bits |= MOVE_CONTEXT_STATUS_LANES
+        if re.search(r"@move-resolver\b", content):
+            context_bits |= MOVE_RESOLVER_TAG
         stamina_val = _extract_static_int(content, "stamina", "STAMINA_COST")
         priority_val = _extract_static_int(content, "priority", "PRIORITY")
     if stamina_val is None or not 0 <= stamina_val < MOVE_META_DYNAMIC:
         stamina_val = MOVE_META_DYNAMIC
     if priority_val is None or not 0 <= priority_val < MOVE_META_DYNAMIC:
         priority_val = MOVE_META_DYNAMIC
-    return MOVE_META_TAG | (stamina_val << 236) | (priority_val << 244)
+    return MOVE_META_TAG | context_bits | (stamina_val << 236) | (priority_val << 244)
 
 
 def effect_name_to_env_var(effect_name: str) -> str:

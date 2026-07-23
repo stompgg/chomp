@@ -14,7 +14,7 @@ contract InstantDeathEffect is BasicEffect {
     }
 
     // Steps: RoundEnd
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x04;
     }
 

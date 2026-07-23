@@ -173,6 +173,9 @@ struct BattleConfig {
     uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
     bool hasInlineStaminaRegen; //   8
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
+    // Per-mon stat-boost source counts, 4 bits per mon (max 15 sources/mon — distinct callers).
+    // MUST reset every startBattle (recycled keys); rides the slot-2 consolidated write.
+    uint32 p0BoostCounts; //  32
     uint104 p0Salt;
     uint104 p1Salt;
     // OR of every player (per-mon) effect's stepsBitmap added this battle. Lets the hot step
@@ -192,6 +195,12 @@ struct BattleConfig {
     // piggybacks on the engineHookStepsUnion SLOAD; rewritten every startBattle (recycled
     // storage must never leak a previous battle's mode).
     uint8 battleMode; //   8
+    // Per-mon exclusive-status lanes: one 4-bit class nibble per mon, laneIndex = side*8 +
+    // monIndex (stride 8 = the Engine's hard team-size cap, NOT MONS_PER_TEAM). 0 = no status.
+    // Engine-owned: set in _addEffectInternal, cleared in _removeEffectAtSlot / startBattle's
+    // consolidated reset. Rides slot 3 so both writes coalesce with SSTOREs already paid.
+    uint64 monStatusLanes; //  64
+    uint32 p1BoostCounts; //  32 — see p0BoostCounts; rides slot 3
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.
@@ -204,12 +213,26 @@ struct BattleConfig {
     mapping(uint256 => EffectInstance) p0Effects;
     mapping(uint256 => EffectInstance) p1Effects;
     mapping(uint256 => EngineHookInstance) engineHooks;
+    // Stat-boost sources: ONE packed word per source (StatBoostLib layout — key/perm/5 lanes),
+    // slot = monIndex * 16 + i, valid for i < that mon's 4-bit count in p{0,1}BoostCounts.
+    // No reset needed on recycled keys: words are only read below the (reset) count.
+    mapping(uint256 => bytes32) p0BoostWords;
+    mapping(uint256 => bytes32) p1BoostWords;
+    // Per-mon aggregation cache, laneIndex = side*8 + monIndex: 5 stat lanes of
+    // [numerator:48 | count:3] (bits k*51..) + bit 255 = disabled (overflow fallback).
+    // Never read when the mon's source count is 0 (initialize-on-first-add), so recycled-key
+    // staleness is unobservable; count > 0 implies this battle wrote it.
+    mapping(uint256 => uint256) statBoostAcc;
+    // Exact OR of live EffectInstance.stepsBitmap values for each player mon.
+    // Lane index = side*8 + monIndex; one uint16 lane per mon fills one word exactly.
+    // Appended after mappings so existing BattleConfig mapping roots remain stable.
+    uint256 playerEffectStepsByMon;
 }
 
 struct EffectInstance {
     IEffect effect; // 160 bits
     uint16 stepsBitmap; // 16 bits - packs with effect in slot 0 (bit i = runs at EffectStep(i))
-    // 80 bits unused in slot 0
+    // High 80 bits carry Engine's offset-tagged compact data, or zero for slot-1 fallback.
     bytes32 data; // 256 bits in slot 1
 }
 
@@ -232,9 +255,13 @@ struct BattleConfigView {
     uint104 p1Salt;
     uint16 p0TeamIndex;
     uint16 p1TeamIndex;
+    uint64 monStatusLanes; // Per-mon exclusive-status class nibbles (see BattleConfig)
+    uint256 playerEffectStepsByMon; // Exact uint16 lifecycle-step union per mon
     MoveDecision p0Move;
     MoveDecision p1Move;
     EffectInstance[] globalEffects;
+    bytes32[][] p0StatBoosts; // Per-mon packed stat-boost source words (StatBoostLib layout)
+    bytes32[][] p1StatBoosts;
     EffectInstance[][] p0Effects; // Returns effects per mon in team
     EffectInstance[][] p1Effects;
     Mon[][] teams;

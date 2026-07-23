@@ -9,7 +9,8 @@
 
 use std::collections::HashMap;
 
-use crate::arena::{build_specs, build_specs_with};
+use crate::arena::{build_doubles_specs, build_specs, build_specs_full, build_specs_with, STRAT_PAIRS};
+use crate::doubles::run_doubles_games_instrumented;
 use crate::game::{run_games_instrumented, InstrRecord, StrategyKind};
 use crate::roster::{self, Roster};
 
@@ -55,6 +56,10 @@ pub struct MonAnalysis {
     pub decided: u32,
     pub draws: u32,
     pub errors: u32,
+    /// Doubles only: KOs both opposing slots aimed at, so no single attacker earns matrix credit.
+    pub ko_shared: u32,
+    /// Doubles only: KOs no opposing move aimed at (status, recoil, ally damage).
+    pub ko_incidental: u32,
 }
 
 /// Draw the same 4v4 field as the plain arena, run it instrumented, fold per-mon.
@@ -78,6 +83,102 @@ pub fn run_mon_analysis_with(
     let (specs, _pair_of) = build_specs_with(roster, games, wseed, seed_base, pairs);
     let records = run_games_instrumented(&specs, &book, threads);
     fold(&records)
+}
+
+/// Singles analysis over the standard pilot basket with loadout rotation — each drafted slot equips
+/// a uniform 4-subset of that mon's catalog instead of always lanes 0-3.
+pub fn run_mon_analysis_rotated(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    pairs: Option<&[(StrategyKind, StrategyKind)]>,
+) -> MonAnalysis {
+    let book = roster::address_book();
+    let default_pairs: Vec<(StrategyKind, StrategyKind)> = STRAT_PAIRS
+        .iter()
+        .map(|&(p1, p0)| (StrategyKind::parse(p1).unwrap(), StrategyKind::parse(p0).unwrap()))
+        .collect();
+    let pairs = pairs.unwrap_or(&default_pairs);
+    let (specs, _) = build_specs_full(roster, games, wseed, seed_base, pairs, true);
+    let records = run_games_instrumented(&specs, &book, threads);
+    fold(&records)
+}
+
+/// Doubles per-mon attribution over the DIFF_PAIRS field. KOs are credited from the killer side's
+/// target nibble; `shared` (both slots aimed at the victim) and `incidental` (nothing aimed at it)
+/// are counted but left out of the matrix rather than guessed at.
+pub fn run_doubles_mon_analysis(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    rotate: bool,
+    search_depth: u32,
+) -> MonAnalysis {
+    let book = roster::address_book();
+    let (specs, _) = build_doubles_specs(roster, games, wseed, seed_base, rotate, search_depth);
+    let records = run_doubles_games_instrumented(&specs, &book, threads);
+
+    let mut per_mon: HashMap<u32, MonStat> = HashMap::new();
+    let mut ko_matrix: HashMap<(u32, u32), u32> = HashMap::new();
+    let (mut n_games, mut decided, mut draws) = (0u32, 0u32, 0u32);
+    let (mut shared, mut incidental) = (0u32, 0u32);
+
+    for rec in &records {
+        n_games += 1;
+        let (p0_res, p1_res): (i8, i8) = match rec.winner_side {
+            Some(0) => { decided += 1; (1, -1) }
+            Some(1) => { decided += 1; (-1, 1) }
+            _ => { draws += 1; (0, 0) }
+        };
+        shared += rec.kos_shared;
+        incidental += rec.kos_incidental;
+
+        for (slot, &id) in rec.p0_ids.iter().enumerate() {
+            let st = per_mon.entry(id).or_default();
+            tally_game(st, p0_res);
+            add_active(st, p0_res, rec.active_turns_p0.get(slot).copied().unwrap_or(0) as u64);
+        }
+        for (slot, &id) in rec.p1_ids.iter().enumerate() {
+            let st = per_mon.entry(id).or_default();
+            tally_game(st, p1_res);
+            add_active(st, p1_res, rec.active_turns_p1.get(slot).copied().unwrap_or(0) as u64);
+        }
+
+        for ko in &rec.kos {
+            *ko_matrix.entry((ko.killer_id, ko.victim_id)).or_insert(0) += 1;
+            let killer_res = if ko.killer_seat == 0 { p0_res } else { p1_res };
+            {
+                let ks = per_mon.entry(ko.killer_id).or_default();
+                match killer_res {
+                    1 => ks.kos_dealt_won += 1,
+                    -1 => ks.kos_dealt_lost += 1,
+                    _ => {}
+                }
+            }
+            {
+                let vs = per_mon.entry(ko.victim_id).or_default();
+                match -killer_res {
+                    1 => vs.kos_taken_won += 1,
+                    -1 => vs.kos_taken_lost += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+    MonAnalysis {
+        per_mon,
+        ko_matrix,
+        games: n_games,
+        decided,
+        draws,
+        errors: 0,
+        ko_shared: shared,
+        ko_incidental: incidental,
+    }
 }
 
 pub fn fold(records: &[Result<InstrRecord, String>]) -> MonAnalysis {
@@ -137,7 +238,7 @@ pub fn fold(records: &[Result<InstrRecord, String>]) -> MonAnalysis {
         }
     }
 
-    MonAnalysis { per_mon, ko_matrix, games: n_games, decided, draws, errors }
+    MonAnalysis { per_mon, ko_matrix, games: n_games, decided, draws, errors, ko_shared: 0, ko_incidental: 0 }
 }
 
 fn tally_game(st: &mut MonStat, res: i8) {

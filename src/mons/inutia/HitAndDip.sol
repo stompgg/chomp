@@ -9,11 +9,14 @@ import {IEngine} from "../../IEngine.sol";
 
 import {IEffect} from "../../effects/IEffect.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
+import {IMoveResolver} from "../../moves/IMoveResolver.sol";
+import {MoveCommandLib} from "../../moves/MoveCommandLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
-contract HitAndDip is StandardAttack {
+// @move-resolver
+contract HitAndDip is StandardAttack, IMoveResolver {
     constructor(ITypeCalculator TYPE_CALCULATOR)
         StandardAttack(
             address(msg.sender),
@@ -33,6 +36,39 @@ contract HitAndDip is StandardAttack {
             })
         )
     {}
+
+    function resolveMove(
+        uint32 continuation,
+        int32 priorResult,
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256,
+        uint256 activesPacked,
+        uint16 extraData,
+        uint256
+    ) external view returns (uint256 command, uint32 nextContinuation) {
+        if (continuation == 0) {
+            return (
+                MoveCommandLib.attack(
+                    uint32(basePower(bytes32(0))),
+                    uint8(accuracy(bytes32(0))),
+                    uint8(volatility(bytes32(0))),
+                    moveType(IEngine(address(0)), bytes32(0)),
+                    moveClass(IEngine(address(0)), bytes32(0)),
+                    uint8(critRate(bytes32(0))),
+                    uint8(effectAccuracy(bytes32(0))),
+                    effect(bytes32(0))
+                ),
+                1
+            );
+        }
+        if (continuation == 1 && priorResult > 0) {
+            uint256 slot = TargetLib.slotOfMon(activesPacked, attackerPlayerIndex, attackerMonIndex);
+            if (slot != NO_SLOT) {
+                command = MoveCommandLib.switchMon(attackerPlayerIndex, slot & 1, uint256(extraData));
+            }
+        }
+    }
 
     function move(
         IEngine engine,

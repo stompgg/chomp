@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import {DEFAULT_PRIORITY, MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT} from "../../Constants.sol";
 import {MonStateIndexName, MoveClass, Type} from "../../Enums.sol";
-import {EffectInstance, MoveDecision, MoveMeta} from "../../Structs.sol";
+import {EffectInstance, MoveMeta} from "../../Structs.sol";
 
 import {IEngine} from "../../IEngine.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
@@ -82,9 +82,10 @@ contract HardReset is IMoveSet, BasicEffect {
         });
     }
 
-    // Steps: AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x80;
+    // Steps: AfterMove, ALWAYS_APPLIES (0x8000). Request fresh AfterMove context in the
+    // high 16-bit metadata lane so rest detection does not re-enter Engine.
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x00808080;
     }
 
     function onAfterMove(
@@ -100,8 +101,8 @@ contract HardReset is IMoveSet, BasicEffect {
         if (restSlot == NO_SLOT) {
             return (extraData, false);
         }
-        MoveDecision memory dec = engine.getMoveDecisionForSlot(battleKey, targetIndex, restSlot & 1);
-        if ((dec.packedMoveIndex & MOVE_INDEX_MASK) != NO_OP_MOVE_INDEX) {
+        uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(activesPacked, restSlot)) & MOVE_INDEX_MASK;
+        if (moveIndex != NO_OP_MOVE_INDEX) {
             return (extraData, false);
         }
 
@@ -117,9 +118,9 @@ contract HardReset is IMoveSet, BasicEffect {
             } else if (cur < 0) {
                 engine.updateMonState(targetIndex, monIndex, MonStateIndexName.Stamina, 1);
             }
-            int32 maxHp = int32(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+            (uint32 maxHpRaw, int32 curHp) = engine.getMonHpState(battleKey, targetIndex, monIndex);
+            int32 maxHp = int32(maxHpRaw);
             int32 healAmt = maxHp / HP_DENOM;
-            int32 curHp = engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp);
             if (curHp + healAmt > 0) {
                 healAmt = -curHp;
             }

@@ -152,6 +152,50 @@ contract GachaTest is Test, BattleHelper {
         assertTrue(found, "Roll event emitted");
     }
 
+    function test_firstRoll_createsStarterTeam() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(
+            GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0))
+        );
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
+                }),
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
+            );
+        }
+
+        vm.prank(ALICE);
+        uint256[] memory monIds = gachaRegistry.firstRoll(0);
+
+        assertEq(gachaRegistry.getTeamCount(ALICE), 1);
+        uint256[] memory teamMonIds = gachaRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
+        assertEq(teamMonIds.length, monIds.length);
+        for (uint256 i; i < monIds.length; i++) {
+            assertEq(teamMonIds[i], monIds[i]);
+        }
+    }
+
+    function test_firstRoll_revertsWhenMonsPerTeamExceedsInitialRolls() public {
+        GachaTeamRegistry probe = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        uint256 tooMany = probe.INITIAL_ROLLS() + 1;
+        vm.expectRevert(GachaTeamRegistry.MonsPerTeamExceedsInitialRolls.selector);
+        new GachaTeamRegistry(tooMany, GAME_MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
+    }
+
     function test_assignPoints() public {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 

@@ -17,25 +17,17 @@ contract DeepFreeze is IMoveSet {
     uint32 public constant BASE_POWER = 90;
 
     IEffect immutable FROSTBITE;
+    uint256 immutable FROSTBITE_CLASS;
     ITypeCalculator immutable TYPE_CALCULATOR;
 
     constructor(ITypeCalculator _TYPE_CALCULATOR, IEffect _FROSTBITE_STATUS) {
         FROSTBITE = _FROSTBITE_STATUS;
+        FROSTBITE_CLASS = (uint256(_FROSTBITE_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
     function name() public pure override returns (string memory) {
         return "Deep Freeze";
-    }
-
-    function _frostbiteExists(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
-        internal
-        view
-        returns (int32)
-    {
-        // Targeted lookup: engine scans for FROSTBITE internally, no full-array build.
-        (bool exists, uint256 idx,) = engine.getEffectData(battleKey, targetIndex, monIndex, address(FROSTBITE));
-        return exists ? int32(int256(idx)) : int32(-1);
     }
 
     function move(
@@ -55,10 +47,8 @@ contract DeepFreeze is IMoveSet {
         uint256 otherPlayerIndex = TargetLib.sideOf(targetSlot);
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         uint32 damageToDeal = BASE_POWER;
-        int32 frostbiteIndex = _frostbiteExists(engine, battleKey, otherPlayerIndex, defenderMonIndex);
         // Remove frostbite if it exists, and double the damage dealt
-        if (frostbiteIndex != -1) {
-            engine.removeEffect(otherPlayerIndex, defenderMonIndex, uint256(uint32(frostbiteIndex)));
+        if (engine.clearMonStatus(otherPlayerIndex, defenderMonIndex, FROSTBITE_CLASS)) {
             damageToDeal = damageToDeal * 2;
         }
         // Deal damage

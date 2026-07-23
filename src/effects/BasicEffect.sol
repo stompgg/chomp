@@ -6,11 +6,9 @@ import "../IEngine.sol";
 import "../Structs.sol";
 
 abstract contract BasicEffect is IEffect {
-    // Each subclass must override getStepsBitmap() to return a static constant
-    // Bit layout: OnApply=0x01, RoundStart=0x02, RoundEnd=0x04, OnRemove=0x08,
-    //             OnMonSwitchIn=0x10, OnMonSwitchOut=0x20, AfterDamage=0x40, AfterMove=0x80,
-    //             OnUpdateMonState=0x100, PreDamage=0x200
-    function getStepsBitmap() external pure virtual returns (uint16);
+    // Each subclass returns static metadata: lifecycle steps in the low uint16 and optional
+    // fresh-context step requests in the high uint16 (see IEffect).
+    function getStepsBitmap() external pure virtual returns (uint32);
 
     function name() external virtual returns (string memory) {
         return "";

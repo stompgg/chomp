@@ -59,7 +59,7 @@ library StaminaRegenLogic {
 
     /// @notice External AfterMove entry point — gated on the same NoOp check as the inline path.
     function onAfterMoveExternal(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
-        MoveDecision memory moveDecision = engine.getMoveDecisionForBattleState(battleKey, targetIndex);
+        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, 0);
         if (!_isRestingMove(moveDecision.packedMoveIndex)) {
             return;
         }

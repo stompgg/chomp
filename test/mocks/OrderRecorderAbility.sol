@@ -27,7 +27,7 @@ contract OrderRecorderAbility is IAbility, BasicEffect {
         }
     }
 
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return uint16(
             ALWAYS_APPLIES_BIT | (1 << uint8(EffectStep.RoundStart)) | (1 << uint8(EffectStep.RoundEnd))
                 | (1 << uint8(EffectStep.AfterMove))

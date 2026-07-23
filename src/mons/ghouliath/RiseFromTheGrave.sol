@@ -7,6 +7,7 @@ import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 contract RiseFromTheGrave is IAbility, BasicEffect {
     uint64 public constant REVIVAL_DELAY = 3;
@@ -36,18 +37,18 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
 
     // IEffect implementation
     // Steps: RoundEnd, AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8044;
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x00408044; // AfterDamage context | ALWAYS_APPLIES | lifecycle steps
     }
 
     function onAfterDamage(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
+        uint256 context,
         int32,
         uint256
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
@@ -56,7 +57,7 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
         and remove this effect (so we stop hooking into it on future applications)
         */
         // If the mon is KO'd, add this effect to the global effects list and remove the mon effect
-        if (engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) == 1) {
+        if (TargetLib.hookMonIsKnockedOut(context)) {
             uint64 v1 = REVIVAL_DELAY;
             uint64 v2 = uint64(targetIndex) & 0x3F; // player index (masked to 6 bits)
             uint64 v3 = uint64(monIndex) & 0x3F; // mon index (masked to 6 bits)

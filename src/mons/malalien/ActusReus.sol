@@ -33,7 +33,7 @@ contract ActusReus is IAbility, BasicEffect {
     }
 
     // Steps: AfterDamage, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x80C0;
     }
 

@@ -25,7 +25,7 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 
 // PreDamage that halves the running damage.
 contract PreDamageHalveEffect is BasicEffect {
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x200; // PreDamage
     }
 
@@ -41,7 +41,7 @@ contract PreDamageHalveEffect is BasicEffect {
 
 // PreDamage that fully absorbs damage (sets running to 0).
 contract PreDamageAbsorbEffect is BasicEffect {
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x200;
     }
 
@@ -57,7 +57,7 @@ contract PreDamageAbsorbEffect is BasicEffect {
 
 // PreDamage that doubles the running damage.
 contract PreDamageDoubleEffect is BasicEffect {
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x200;
     }
 
@@ -80,7 +80,7 @@ contract SourceCaptureEffect is BasicEffect {
     uint256 public preDamageCallCount;
     uint256 public afterDamageCallCount;
 
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x240; // PreDamage | AfterDamage
     }
 

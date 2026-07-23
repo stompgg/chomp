@@ -38,8 +38,9 @@ contract KOOpponentOnSwitchAbility is IAbility {
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256) external {
         uint256 opponentIndex = 1 - playerIndex;
-        uint256[] memory activeMons = engine.getActiveMonIndexForBattleState(battleKey);
-        engine.dealDamage(opponentIndex, activeMons[opponentIndex], 1000);
+        BattleContext memory ctx = engine.getBattleContext(battleKey);
+        uint256 oppActive = opponentIndex == 0 ? ctx.p0ActiveMonIndex : ctx.p1ActiveMonIndex;
+        engine.dealDamage(opponentIndex, oppActive, 1000);
     }
 }
 
@@ -392,8 +393,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
 
         _executeSinglePlayerMoveAndReset(testEngine, signedManager, battleKey, BOB, uint16(1));
 
-        uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(activeMons[1], 1, "P1 should switch to mon 1");
+        BattleContext memory activeMons = testEngine.getBattleContext(battleKey);
+        assertEq(activeMons.p1ActiveMonIndex, 1, "P1 should switch to mon 1");
         assertEq(
             uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             2,
@@ -452,8 +453,8 @@ contract EngineOptimizationTest is Test, BattleHelper {
         signedManager.revealMove(battleKey, SWITCH_MOVE_INDEX, uint104(0), uint16(1), true);
         testEngine.resetCallContext();
 
-        uint256[] memory activeMons = testEngine.getActiveMonIndexForBattleState(battleKey);
-        assertEq(activeMons[1], 1, "P1 should switch through normal reveal fallback");
+        BattleContext memory activeMons = testEngine.getBattleContext(battleKey);
+        assertEq(activeMons.p1ActiveMonIndex, 1, "P1 should switch through normal reveal fallback");
         assertEq(
             uint256(testEngine.getBattleContext(battleKey).playerSwitchForTurnFlag),
             2,

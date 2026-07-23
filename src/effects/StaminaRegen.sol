@@ -14,7 +14,7 @@ contract StaminaRegen is BasicEffect {
     }
 
     // Steps: RoundEnd, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8084;
     }
 

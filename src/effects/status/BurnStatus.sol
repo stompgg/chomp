@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {ALWAYS_APPLIES_BIT, HAS_REAPPLY_BIT, STATUS_CLASS_SHIFT} from "../../Constants.sol";
 import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, StatBoostToApply} from "../../Structs.sol";
+import {StatBoostToApply} from "../../Structs.sol";
 
+import {IStatusEffect} from "./IStatusEffect.sol";
 import {StatusEffect} from "./StatusEffect.sol";
-import {StatusEffectLib} from "./StatusEffectLib.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
-contract BurnStatus is StatusEffect {
+contract BurnStatus is StatusEffect, IStatusEffect {
+    uint256 constant STATUS_CLASS = 1;
+
     uint256 public constant MAX_BURN_DEGREE = 3;
 
     uint8 public constant ATTACK_PERCENT = 50;
@@ -22,99 +26,56 @@ contract BurnStatus is StatusEffect {
     }
 
     // Steps: OnApply, RoundEnd, OnRemove (no RoundStart behavior — the bit would only buy a
-    // no-op external call per burned turn)
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x0D;
+    // no-op external call per burned turn). HAS_REAPPLY routes same-class re-applies to the
+    // degree escalation in onReapply.
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x00010000 | 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | HAS_REAPPLY_BIT | ALWAYS_APPLIES_BIT;
     }
 
     // extraData layout: [burn degree: bits 0-7 | cached max HP: bits 32-63]. Base HP is fixed
     // for the battle, so caching it at apply saves the per-tick engine read.
 
-    function shouldApply(IEngine engine, bytes32 battleKey, bytes32, uint256 targetIndex, uint256 monIndex)
-        public
-        view
-        override
-        returns (bool)
-    {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-
-        // Get value from engine KV
-        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
-
-        // Check if a status already exists for the mon (or if it's already burned)
-        bool noStatus = monStatusFlag == 0;
-        bool hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
-        return (noStatus || hasBurnAlready);
-    }
-
     function onApply(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 context
     ) public override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        bool hasBurnAlready;
-        {
-            uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-            uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
-            hasBurnAlready = monStatusFlag == uint192(uint160(address(this)));
-            // Set the burn flag only when fresh — this single read replaces both super.onApply's
-            // guard re-read and its redundant same-value write on the escalation path.
-            if (!hasBurnAlready) {
-                engine.setGlobalKV(keyForMon, uint192(uint160(address(this))));
-            }
-        }
+        // Fresh apply only — the Engine routes same-class re-applies to onReapply instead.
+        // Reduce attack by 1/ATTACK_DENOM of base attack stat
+        StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
+        statBoosts[0] = StatBoostToApply({
+            stat: MonStateIndexName.Attack, boostPercent: ATTACK_PERCENT, boostType: StatBoostType.Divide
+        });
+        engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
 
-        // Set stat debuff or increase burn degree
-        if (!hasBurnAlready) {
-            // Reduce attack by 1/ATTACK_DENOM of base attack stat
-            StatBoostToApply[] memory statBoosts = new StatBoostToApply[](1);
-            statBoosts[0] = StatBoostToApply({
-                stat: MonStateIndexName.Attack, boostPercent: ATTACK_PERCENT, boostType: StatBoostType.Divide
-            });
-            engine.addStatBoost(targetIndex, monIndex, statBoosts, StatBoostFlag.Perm);
-        } else {
-            (EffectInstance[] memory effects, uint256[] memory indices) =
-                engine.getEffects(battleKey, targetIndex, monIndex);
-            uint256 indexOfBurnEffect;
-            uint256 burnDegree;
-            bytes32 newExtraData;
-            for (uint256 i = 0; i < effects.length; i++) {
-                if (address(effects[i].effect) == address(this)) {
-                    indexOfBurnEffect = indices[i];
-                    burnDegree = uint256(effects[i].data) & 0xFF;
-                    newExtraData = effects[i].data;
-                }
-            }
-            if (burnDegree < MAX_BURN_DEGREE) {
-                newExtraData = bytes32((uint256(newExtraData) & ~uint256(0xFF)) | (burnDegree + 1));
-            }
-            engine.editEffect(targetIndex, indexOfBurnEffect, newExtraData);
-            return (bytes32(0), true);
-        }
-
-        uint256 maxHp = uint256(engine.getMonValueForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.Hp));
+        uint256 maxHp = TargetLib.hookMonMaxHp(context);
         return (bytes32(uint256(1) | (maxHp << 32)), false);
     }
 
-    function onRemove(
-        IEngine engine,
-        bytes32 battleKey,
-        bytes32,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint256 activesPacked
-    ) public override {
-        // Remove the base status flag
-        super.onRemove(engine, battleKey, bytes32(0), targetIndex, monIndex, activesPacked);
+    // Same-class re-apply (IStatusEffect): escalate the degree in place, preserving the cached
+    // max HP in the upper bits.
+    function onReapply(IEngine, bytes32, uint256, bytes32 existingData, uint256, uint256, uint256)
+        external
+        pure
+        returns (bytes32 newData, bool removeAfterRun)
+    {
+        uint256 burnDegree = uint256(existingData) & 0xFF;
+        if (burnDegree < MAX_BURN_DEGREE) {
+            existingData = bytes32((uint256(existingData) & ~uint256(0xFF)) | (burnDegree + 1));
+        }
+        return (existingData, false);
+    }
 
-        // Reset the attack reduction
+    function onRemove(IEngine engine, bytes32, bytes32, uint256 targetIndex, uint256 monIndex, uint256)
+        public
+        override
+    {
+        // Lane clear is engine-owned (_removeEffectAtSlot); only the attack debuff is ours.
         engine.removeStatBoost(targetIndex, monIndex, StatBoostFlag.Perm);
-        // NOTE: no burn-degree KV reset — the degree lives in effect extraData (see onApply /
-        // onRoundEnd), and the old per-mon degree key was never written nor read anywhere.
     }
 
     // Deal damage over time

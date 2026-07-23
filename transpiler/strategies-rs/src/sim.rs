@@ -81,9 +81,8 @@ pub struct Sim {
     pub world: World,
     pub battle_key: B256,
     pub engine_addr: Address,
-    /// (p0, p1) team sizes, immutable after `startBattle` — cached because
-    /// the transpiled `getTeamSize` getter deep-clones the whole
-    /// BattleConfig per call, and view captures read sizes per fork.
+    /// (p0, p1) team sizes, immutable after `startBattle` — cached so a size
+    /// read doesn't deep-clone BattleConfig; view captures read sizes per fork.
     team_sizes: (usize, usize),
     /// (p0, p1) global mon-ids per team slot — carried from the drafted teams
     /// so the CPU can look up per-mon config by identity (the engine only
@@ -349,6 +348,7 @@ impl Sim {
             world.Engine._turnP1Packed = pack_turn(m.move_index, m.salt, m.extra_data);
         }
         world.Engine.storageKeyForWrite = fork;
+        world.Engine.battleKeyForWrite = fork; // write-gates (addEffect etc.) check this transient
         Engine::_executeInternal(world, fork, fork, false, false, false); // slotPacked=false (singles)
         world.reset_transient(); // fork tx over; capture reads boundary-clean
         fork
@@ -372,9 +372,17 @@ impl Sim {
         world.Engine._turnP0Packed = Engine::_packSideTurn(side0_packed);
         world.Engine._turnP1Packed = Engine::_packSideTurn(side1_packed);
         world.Engine.storageKeyForWrite = fork;
+        world.Engine.battleKeyForWrite = fork; // write-gates (addEffect etc.) check this transient
         Engine::_executeInternal(world, fork, fork, false, false, true); // slotPacked=true, silent
         world.reset_transient();
         fork
+    }
+
+    /// Clone `src`'s state under a fresh key WITHOUT running a turn — a rollback point for
+    /// counterfactuals that can only be posed after the real turn has already advanced the battle.
+    /// Dispose it like any other fork.
+    pub fn snapshot(&mut self, src: B256) -> B256 {
+        self.fork_battle_from(src)
     }
 
     /// Reclaim a fork's cloned state.

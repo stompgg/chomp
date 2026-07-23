@@ -121,7 +121,7 @@ contract Loop is IMoveSet, BasicEffect {
     }
 
     // ALWAYS_APPLIES | OnMonSwitchOut (bit 5): the marker only listens for switch-out to re-arm
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8020;
     }
 

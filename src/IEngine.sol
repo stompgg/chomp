@@ -23,6 +23,7 @@ interface IEngine {
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
+    function clearMonStatus(uint256 targetIndex, uint256 monIndex, uint256 expectedClass) external returns (bool);
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
     // Inlined stat boosts (formerly the StatBoosts effect contract). Keyed by msg.sender.
@@ -167,6 +168,11 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
+    // Focused overheal-clamp snapshot: both HP quantities in one external frame.
+    function getMonHpState(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        external
+        view
+        returns (uint32 maxHp, int32 hpDelta);
     // Current (base + delta, sentinel-aware) stat value in one call — the merged form of the
     // getMonValueForBattle + getMonStateForBattle pair.
     function getMonCurrentValue(
@@ -179,13 +185,7 @@ interface IEngine {
         external
         view
         returns (uint256);
-    function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MoveDecision memory);
-    function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
-    function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
@@ -198,6 +198,7 @@ interface IEngine {
         external
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
+    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) external view returns (uint256);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);

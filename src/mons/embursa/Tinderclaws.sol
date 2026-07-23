@@ -4,23 +4,33 @@ pragma solidity ^0.8.0;
 
 // @inline-ability: singleton-local
 
-import {MOVE_INDEX_MASK, NO_OP_MOVE_INDEX, NO_SLOT, SWITCH_MOVE_INDEX} from "../../Constants.sol";
-import {MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
+import {
+    MOVE_INDEX_MASK,
+    NO_OP_MOVE_INDEX,
+    NO_SLOT,
+    STATUS_CLASS_MASK,
+    STATUS_CLASS_SHIFT,
+    SWITCH_MOVE_INDEX
+} from "../../Constants.sol";
+import {EffectStep, MonStateIndexName, StatBoostFlag, StatBoostType} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
-import {EffectInstance, IEffect, MoveDecision, StatBoostToApply} from "../../Structs.sol";
+import {EffectInstance, IEffect, StatBoostToApply} from "../../Structs.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
-import {StatusEffectLib} from "../../effects/status/StatusEffectLib.sol";
+import {EffectCommandLib} from "../../effects/EffectCommandLib.sol";
+import {IEffectResolver} from "../../effects/IEffectResolver.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 
-contract Tinderclaws is IAbility, BasicEffect {
+contract Tinderclaws is IAbility, BasicEffect, IEffectResolver {
     uint256 constant BURN_CHANCE = 3; // 1 in 3 chance
     uint8 constant SP_ATTACK_BOOST_PERCENT = 50;
 
     IEffect immutable BURN_STATUS;
+    uint256 immutable BURN_CLASS;
 
     constructor(IEffect _BURN_STATUS) {
         BURN_STATUS = _BURN_STATUS;
+        BURN_CLASS = (uint256(_BURN_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
     }
 
     function name() public pure override(IAbility, BasicEffect) returns (string memory) {
@@ -39,14 +49,44 @@ contract Tinderclaws is IAbility, BasicEffect {
     }
 
     // Steps: RoundEnd, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8084;
+    function getStepsBitmap() external pure override returns (uint32) {
+        // Low 16 bits: lifecycle steps. High 16 bits: requested fresh-context steps.
+        // Bit 31 opts into the read-only command resolver; bits 18/23 request fresh hook context.
+        return 0x80848084; // resolver | RoundEnd+AfterMove context | ALWAYS_APPLIES | hooks
+    }
+
+    function resolveEffect(
+        EffectStep step,
+        uint256 rng,
+        bytes32 extraData,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 hookContext
+    ) external view returns (bytes32 updatedExtraData, bool removeAfterRun, uint256 command) {
+        if (step == EffectStep.AfterMove) {
+            uint256 ownSlot = TargetLib.slotOfMon(hookContext, targetIndex, monIndex);
+            if (ownSlot == NO_SLOT) {
+                return (extraData, false, 0);
+            }
+            uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(hookContext, ownSlot)) & MOVE_INDEX_MASK;
+            if (moveIndex == NO_OP_MOVE_INDEX) {
+                command = EffectCommandLib.clearStatus(targetIndex, monIndex, BURN_CLASS);
+            } else if (moveIndex != SWITCH_MOVE_INDEX) {
+                rng = uint256(keccak256(abi.encode(rng, targetIndex, monIndex, address(this))));
+                if (rng % BURN_CHANCE == BURN_CHANCE - 1) {
+                    command = EffectCommandLib.addEffect(targetIndex, monIndex, BURN_STATUS);
+                }
+            }
+            return (extraData, false, command);
+        }
+
+        return (extraData, false, 0);
     }
 
     // extraData: 0 = no SpATK boost applied, 1 = SpATK boost applied
     function onAfterMove(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256 rng,
         bytes32 extraData,
         uint256 targetIndex,
@@ -57,13 +97,14 @@ contract Tinderclaws is IAbility, BasicEffect {
         if (ownSlot == NO_SLOT) {
             return (updatedExtraData, removeAfterRun);
         }
-        MoveDecision memory moveDecision = engine.getMoveDecisionForSlot(battleKey, targetIndex, ownSlot & 1);
-        // Unpack the move index from packedMoveIndex
-        uint8 moveIndex = moveDecision.packedMoveIndex & MOVE_INDEX_MASK;
+        // Engine embeds a fresh current-move lane immediately before every AfterMove callback.
+        // Reading it here avoids a warm external round-trip while remaining correct when an
+        // earlier effect rewrites the move during the same pass.
+        uint8 moveIndex = uint8(TargetLib.hookMoveWordAt(activesPacked, ownSlot)) & MOVE_INDEX_MASK;
 
         // If resting, remove burn
         if (moveIndex == NO_OP_MOVE_INDEX) {
-            _removeBurnIfPresent(engine, battleKey, targetIndex, monIndex);
+            engine.clearMonStatus(targetIndex, monIndex, BURN_CLASS);
         }
         // If used a move (not switch), 1/3 chance to self-burn
         else if (moveIndex != SWITCH_MOVE_INDEX) {
@@ -82,14 +123,14 @@ contract Tinderclaws is IAbility, BasicEffect {
 
     function onRoundEnd(
         IEngine engine,
-        bytes32 battleKey,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256
+        uint256 hookContext
     ) external override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        bool isBurned = _isBurned(engine, battleKey, targetIndex, monIndex);
+        bool isBurned = TargetLib.hookStatusClass(hookContext, targetIndex, monIndex) == BURN_CLASS;
         bool hasBoost = uint256(extraData) == 1;
 
         if (isBurned && !hasBoost) {
@@ -109,26 +150,5 @@ contract Tinderclaws is IAbility, BasicEffect {
         }
 
         return (extraData, false);
-    }
-
-    function _isBurned(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex)
-        internal
-        view
-        returns (bool)
-    {
-        uint64 keyForMon = StatusEffectLib.getKeyForMonIndex(targetIndex, monIndex);
-        uint192 monStatusFlag = engine.getGlobalKV(battleKey, keyForMon);
-        return monStatusFlag == uint192(uint160(address(BURN_STATUS)));
-    }
-
-    function _removeBurnIfPresent(IEngine engine, bytes32 battleKey, uint256 targetIndex, uint256 monIndex) internal {
-        (EffectInstance[] memory effects, uint256[] memory indices) =
-            engine.getEffects(battleKey, targetIndex, monIndex);
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == address(BURN_STATUS)) {
-                engine.removeEffect(targetIndex, monIndex, indices[i]);
-                return;
-            }
-        }
     }
 }

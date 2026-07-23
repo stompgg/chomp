@@ -47,13 +47,10 @@ contract SnackBreak is IMoveSet {
         uint256
     ) external {
         uint256 snackLevel = _getSnackLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
-        uint32 maxHp =
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        (uint32 maxHp, int32 currentDamage) = engine.getMonHpState(battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Heal active mon by max HP / 2**snackLevel
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** snackLevel))));
-        int32 currentDamage =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }

@@ -378,12 +378,58 @@ class RustSymbols:
                     found[0] = True
             elif cls == 'FunctionCall':
                 fn = node.function
-                if type(fn).__name__ == 'Identifier':
+                fcls = type(fn).__name__
+                if fcls == 'Identifier':
                     if fn.name in getattr(self, 'noop_calls', set()):
                         return
                     sig = self.lookup_function(leaf, fn.name) or self.functions.get((None, fn.name))
                     if sig is not None and sig.needs_world:
                         found[0] = True
+                elif fcls == 'MemberAccess':
+                    # Mirrors compute_needs_world's member-call classification, but
+                    # consults final needs_world flags directly (this scan runs after
+                    # the phase-2 fixed point) instead of building call edges.
+                    base = fn.expression
+                    bcls = type(base).__name__
+                    if bcls == 'Identifier' and base.name == 'super':
+                        for b in self.linearize_bases(leaf):
+                            sig = self.functions.get((b, fn.member))
+                            if sig is not None and sig.needs_world:
+                                found[0] = True
+                                break
+                    elif bcls == 'Identifier' and (
+                        base.name in self.libraries or base.name in self.contracts
+                    ):
+                        sig = self.functions.get((base.name, fn.member))
+                        if sig is not None and sig.needs_world:
+                            found[0] = True
+                    else:
+                        # Interface-value method call: external/dispatch interfaces
+                        # always route via world; aliased dispatch inherits the
+                        # impl's neediness (a public-state-var getter through an
+                        # alias is a world field read).
+                        for iface in (self.external_interfaces
+                                      | getattr(self, 'dispatch_interfaces', set())):
+                            if (iface, fn.member) in self.functions:
+                                found[0] = True
+                                break
+                        else:
+                            for iface, alias in self.interface_aliases.items():
+                                if (iface, fn.member) in self.functions:
+                                    if fn.member in self.state_vars.get(alias, {}) \
+                                            and (alias, fn.member) not in self.functions:
+                                        found[0] = True
+                                    else:
+                                        sig = self.functions.get((alias, fn.member))
+                                        if sig is not None and sig.needs_world:
+                                            found[0] = True
+                                    break
+                            else:
+                                for cname in self.contracts:
+                                    sig = self.functions.get((cname, fn.member))
+                                    if sig is not None and sig.needs_world:
+                                        found[0] = True
+                                        break
 
         def walk(node):
             if node is None or found[0]:
