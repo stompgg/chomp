@@ -124,6 +124,13 @@ MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
         "oppKO": "gachachacha_bunnies",
         "selfKO": "gachachacha_skulls",
     },
+    # Modal Bolt picks by the chosen mode (extraData 0/1/2), not a runtime outcome.
+    # Art pending — the keys/wiring are live so the sprites drop in with no code change.
+    "Modal Bolt": {
+        "fire": "modal_bolt_fire",
+        "ice": "modal_bolt_ice",
+        "lightning": "modal_bolt_lightning",
+    },
 }
 
 # Maps move name → attack-overlay placement. Absent means the default 'target'
@@ -134,6 +141,7 @@ MOVE_OVERLAY_PLACEMENT: Dict[str, str] = {
     "Gachachacha": "canvas-center",
     "Loop": "self",
     "Triple Think": "self",
+    "Sanctify": "self",
 }
 
 
@@ -504,13 +512,13 @@ export type MoveTargetSpec = 'any-other-slot' | 'none' | 'self-only' | 'opponent
 
 export const MonMetadata = {json_str} as const;
 
-// Moves with runtime-branching outcomes (currently just Gachachacha) emit
-// this shape on `sprite` instead of a single SpriteAnimationConfig; the
-// renderer picks by branch.
+// Moves that fan out to more than one attack animation emit this open map on
+// `sprite` instead of a single SpriteAnimationConfig; the renderer picks the
+// key by branch (the move's MoveBranch). Each variant move owns its own keys —
+// Gachachacha uses runtime outcomes (normal/oppKO/selfKO), Modal Bolt uses the
+// cast-time mode (fire/ice/lightning) — so nothing central enumerates them.
 export type MoveSpriteVariants = {{
-  readonly normal: SpriteAnimationConfig;
-  readonly oppKO: SpriteAnimationConfig;
-  readonly selfKO: SpriteAnimationConfig;
+  readonly [variant: string]: SpriteAnimationConfig;
 }};
 
 // Where a move's attack overlay renders. Default 'target' overlays the sprite

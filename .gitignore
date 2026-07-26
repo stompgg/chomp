@@ -56,7 +56,12 @@ transpiler/ts-output/
 .vscode/
 .pytest_cache/
 .venv/
-.claude/
+
+# Ignore everything in .claude except shared skills
+.claude/*
+!.claude/skills
+!.claude/skills/**
+
 node_modules/
 
 .deploys/
