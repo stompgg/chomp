@@ -124,6 +124,13 @@ MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
         "oppKO": "gachachacha_bunnies",
         "selfKO": "gachachacha_skulls",
     },
+    # Keys match the branchClassifier in munch's contract-profiles.ts, which maps
+    # the submitted mode-select pick to fire / ice / lightning.
+    "Modal Bolt": {
+        "fire": "modal_bolt_fire",
+        "ice": "modal_bolt_ice",
+        "lightning": "modal_bolt_lightning",
+    },
 }
 
 # Maps move name → attack-overlay placement. Absent means the default 'target'
@@ -132,6 +139,20 @@ MOVE_SPRITE_VARIANTS: Dict[str, Dict[str, str]] = {
 # same kind of override as MOVE_SPRITE_VARIANTS, keyed by exact move name.
 MOVE_OVERLAY_PLACEMENT: Dict[str, str] = {
     "Gachachacha": "canvas-center",
+    # Self-buffs play on the caster, not the opposing mon.
+    "Sanctify": "self",
+    "Triple Think": "self",
+    "Loop": "self",
+    # Battlefield effect — the overlay spans the whole field, not one mon.
+    "Chain Expansion": "canvas-full",
+}
+
+# Maps move name → the spritesheet key holding its narrower mobile-aspect sheet.
+# Only full-field overlays need one: the desktop field is 2:1 (360x180 source) and
+# mobile is 4:3 (240x180), so a single sheet can't serve both. The renderer falls
+# back to `sprite` when a move has no entry here.
+MOVE_MOBILE_SPRITE: Dict[str, str] = {
+    "Chain Expansion": "chain_expansion_sm",
 }
 
 
@@ -366,6 +387,16 @@ def read_moves_data(
         )
         if sprite:
             move_data["sprite"] = sprite
+        mobile_key = MOVE_MOBILE_SPRITE.get(move_name)
+        if mobile_key:
+            mobile_sprite = _resolve_sprite_for_key(
+                mobile_key, attack_spritesheet_data, non_standard_spritesheet_data
+            )
+            if mobile_sprite is None:
+                print(f"⚠ {move_name}: mobile sheet '{mobile_key}' has no spritesheet entry")
+            else:
+                move_data["spriteMobile"] = mobile_sprite
+                matched_keys.add(mobile_key)
         # Variants consume keys other than to_spritesheet_key(move_name); mark
         # them matched so find_non_standard_sprites won't re-emit them.
         all_move_keys.update(matched_keys)
@@ -502,19 +533,20 @@ export type MoveTargetSpec = 'any-other-slot' | 'none' | 'self-only' | 'opponent
 
 export const MonMetadata = {json_str} as const;
 
-// Moves with runtime-branching outcomes (currently just Gachachacha) emit
-// this shape on `sprite` instead of a single SpriteAnimationConfig; the
-// renderer picks by branch.
+// Moves that fan out to more than one attack animation emit this open map on
+// `sprite` instead of a single SpriteAnimationConfig; the renderer picks the
+// key by branch (the move's MoveBranch). Each variant move owns its own keys —
+// Gachachacha uses runtime outcomes (normal/oppKO/selfKO), Modal Bolt uses the
+// cast-time mode (fire/ice/lightning) — so nothing central enumerates them.
 export type MoveSpriteVariants = {{
-  readonly normal: SpriteAnimationConfig;
-  readonly oppKO: SpriteAnimationConfig;
-  readonly selfKO: SpriteAnimationConfig;
+  readonly [variant: string]: SpriteAnimationConfig;
 }};
 
 // Where a move's attack overlay renders. Default 'target' overlays the sprite
 // on the opposing mon; 'canvas-center' lifts it to the middle of the battle
-// canvas (works across desktop/mobile/large without per-breakpoint coords).
-export type AttackOverlayPlacement = 'target' | 'canvas-center' | 'self';
+// canvas and 'canvas-full' spans the whole field (both work across
+// desktop/mobile/large without per-breakpoint coords).
+export type AttackOverlayPlacement = 'target' | 'canvas-center' | 'canvas-full' | 'self';
 
 export type Move = {{
   readonly address: LowercaseHex;
@@ -539,6 +571,9 @@ export type Move = {{
   // deployed moves (those resolve by `address`).
   readonly inlineKey?: string;
   readonly sprite?: SpriteAnimationConfig | MoveSpriteVariants;
+  // Narrower sheet for the mobile field (4:3), where `sprite` is drawn for desktop's 2:1.
+  // Only full-field overlays need one; everything else reads fine from a single sheet.
+  readonly spriteMobile?: SpriteAnimationConfig;
   readonly overlayPlacement?: AttackOverlayPlacement;
 }};
 

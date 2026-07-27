@@ -43,7 +43,7 @@ Volatile Punch,Aurox,40,3,100,0,Metal,Physical,Deals damage. 25% chance of Burn 
 Gilded Recovery,Aurox,0,2,100,0,Faith,Self,"Heals a target friendly mon (Aurox included) from a status condition. If successful, Aurox heals {HEAL_PERCENT} of max HP and the target gains +1 stamina (this can exceed the stamina maximum). If the target has no status, the cast does nothing but still costs stamina.",,,self-mon,0,HEAL_PERCENT=50,none
 Iron Wall,Aurox,0,3,100,0,Metal,Self,"Until Aurox switches out, regenerate {HEAL_PERCENT} of all damage taken, its own recoil included. When activated for the first time each switch-in, Aurox heals {INITIAL_HEAL_PERCENT} of max HP.",,,none,0,HEAL_PERCENT=50;INITIAL_HEAL_PERCENT=20,self-only
 Bull Rush,Aurox,140,2,100,0,Metal,Physical,Deals damage. Also deals {SELF_DAMAGE_PERCENT} of max HP to self.,,,none,0,SELF_DAMAGE_PERCENT=20,opponent-slot
-Big Bellow,Aurox,0,1,100,0,Metal,Other,Lowers the target's SpATK and Speed by 50%.,,,opponent-mon,6,,any-other-slot
+Big Bellow,Aurox,0,1,100,0,Metal,Other,Lowers the target's SpATK and Speed by 50%.,,,none,6,,any-other-slot
 Contagious Slumber,Xmon,0,2,100,0,Cosmic,Other,Inflicts Sleep on self and opponent.,,,none,0,,opponent-slot
 Vital Siphon,Xmon,40,2,90,0,Cosmic,Special,"Deals damage, {STAMINA_STEAL_PERCENT} chance to steal 1 stamina from opponent.",,,none,0,STAMINA_STEAL_PERCENT=50,opponent-slot
 Somniphobia,Xmon,0,1,100,0,Cosmic,Other,"For 4 rounds, any opposing mon that gains stamina takes {DAMAGE_DENOM:frac} of its max HP per stack as damage. Repeated casts while active increase the damage but do not reset the cooldown.",,,none,0,DAMAGE_DENOM=8,self-only

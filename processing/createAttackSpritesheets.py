@@ -13,11 +13,13 @@ DEFAULT_FRAME_SIZE = 96
 
 # Special case: files with non-standard frame sizes (width, height)
 # For most files, width == height (square frames)
-# For chain_expansion, frames are 360x180 (wide rectangles)
+# The chain_expansion pair is full-field: 360x180 for the desktop canvas (2:1),
+# 240x180 for mobile's (4:3) — the same field drawn at two aspects, not scaled.
 SPECIAL_FRAME_SIZES = {
     "stat_boost_player": (106, 106),
     "stat_debuff_player": (128, 128),  # Source 128x128, cropped to 106x106
-    "chain_expansion": (360, 180),  # Each frame is 360x180
+    "chain_expansion": (360, 180),
+    "chain_expansion_sm": (240, 180),
 }
 
 # Special case: files that need cropping (top, right, bottom, left) - applied before flip
