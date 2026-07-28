@@ -1,8 +1,7 @@
-//! Port of the TS-native shared helpers hard/greedy call
-//! (`sims/src/cpu/heuristic-native.ts`): band picks, anti-wall pivot, and
-//! the fork-based measurement/scoring kit. Fair-info pool analysis
-//! (maxPoolDamage / evaluateDefensiveSwitchFair / …) is not ported — the
-//! two shipped strategies never reach it.
+//! Shared helpers hard/greedy call: band picks, anti-wall pivot, and the
+//! fork-based measurement/scoring kit. Fair-info pool analysis
+//! (maxPoolDamage / evaluateDefensiveSwitchFair / …) is deliberately
+//! absent — the two shipped strategies never reach it.
 
 use chomp_engine::moves::MoveSlotLib;
 use chomp_engine::Structs::MoveMeta;

@@ -1,4 +1,4 @@
-//! Static position evaluation — port of `sims/src/cpu/evaluator.ts`.
+//! Static position evaluation.
 //! The score is a linear function `φ(state)·w`: [`features`] reads the raw
 //! feature vector, [`dot`] weights it. [`DEFAULT_WEIGHTS`] reproduces the
 //! original hardcoded weights, so the default path is byte-identical.

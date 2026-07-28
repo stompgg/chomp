@@ -1,5 +1,6 @@
-//! Game loop + batch runner — port of `sims/src/arena/game.ts`'s
-//! `runGameLoop` seating/peek/salt semantics, driving [`Sim`] natively.
+//! Game loop + batch runner — the seating/peek/salt semantics munch's
+//! arena also implements (`sim-tests/arena/game.ts`), driving [`Sim`]
+//! natively.
 //!
 //! RNG stream discipline (must match TS turn-for-turn): the p0 seat
 //! decides first (its candidate enumeration + tie-breaks draw from the

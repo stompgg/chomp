@@ -1,6 +1,6 @@
 //! Standalone roster loader for the pure-Rust arena — replaces the TS team-builder the FFI arena
 //! fed in. Reads `drool/*.csv` + the per-move inline JSONs and resolves each mon's move catalog to
-//! the packed engine words, a faithful port of `sims/src/arena/team.ts` + `mon-builder.ts` +
+//! the packed engine words, mirroring `sims/src/util/mon-builder.ts` +
 //! `processing/packMoves.py`. Addresses are a deterministic name→address map (the arena only needs
 //! deploy_all and the move/ability words to agree; the specific values are irrelevant).
 

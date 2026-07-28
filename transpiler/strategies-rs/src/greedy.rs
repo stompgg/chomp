@@ -1,7 +1,6 @@
-//! GREEDY (eval) — port of `sims/src/cpu/strategies/greedy-eval.ts` in its
-//! registry configuration (salts=1, default weights): 1-ply best response
-//! on the forward model + evaluator. The risk-aware multi-salt mode is not
-//! ported — the arena's `greedy` never enables it, and with one sample the
+//! GREEDY (eval) — 1-ply best response on the forward model + evaluator
+//! (salts=1, default weights). The risk-aware multi-salt mode is absent:
+//! the arena's `greedy` never enables it, and with one sample the
 //! risk-adjusted score IS the sample (mean of one, exact in f64).
 
 use crate::evaluator::Weights;

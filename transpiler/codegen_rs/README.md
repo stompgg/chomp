@@ -119,5 +119,5 @@ substrate. What still runs:
   bins) that loads the roster from `drool/*.csv` + `src/mons/*.json` at
   runtime. The Rust side may diverge from TS freely (rng stream and CPU
   decisions included); port-backs to the game's CPU mode carry no
-  bit-identicality requirement. The TS arena driver
-  (`sims/src/arena/game.ts`) remains as the port-back reference.
+  bit-identicality requirement. Ports land in munch and are gated there
+  against `sim-tests/arena/cpu-reference.json`.

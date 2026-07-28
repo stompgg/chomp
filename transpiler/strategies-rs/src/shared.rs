@@ -1,10 +1,9 @@
-//! Port of the `HeuristicCPUBase.sol` helpers hard/greedy actually reach
-//! (`sims/src/cpu/heuristic-shared.ts`). TS helpers neither strategy calls
-//! (mode ladder, fair-info pool analysis, random-option pick, …) are
-//! deliberately not ported. Every branch/threshold/formula matches the TS
-//! source; integer math stays integral (i64), `Math.floor(int/int)` sites
-//! reproduce the JS f64 division + floor (identical results at these
-//! magnitudes, and bit-exact by construction).
+//! Shared scoring primitives hard/greedy actually reach: damage estimation,
+//! KO / best-damage move finders, lead and switch selection. Helpers neither
+//! strategy calls (the old mode ladder, fair-info pool analysis,
+//! random-option pick, …) are deliberately absent. Integer math stays
+//! integral (i64); `Math.floor(int/int)` sites reproduce the JS f64 division
+//! + floor (identical results at these magnitudes).
 
 use chomp_engine::moves::{AttackCalculator, MoveSlotLib};
 use chomp_engine::Enums::{MonStateIndexName, MoveClass, Type};

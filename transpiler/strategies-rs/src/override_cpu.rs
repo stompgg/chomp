@@ -1,4 +1,4 @@
-//! OVERRIDE CPU — port of `sims/src/cpu/strategies/override-cpu.ts`: a
+//! OVERRIDE CPU — a
 //! scripted-plan pilot wrapping the hard CPU. For the active mon it
 //! consults a per-mon script (ordered rules with `when` / max-uses
 //! gates); the first rule whose move is affordable this turn and whose

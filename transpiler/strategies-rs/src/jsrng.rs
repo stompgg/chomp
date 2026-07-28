@@ -1,6 +1,6 @@
-//! Seeded RNG + salt — port of `sims/src/arena/rng.ts` (mulberry32,
-//! verbatim from munch). Same seed => bit-identical float stream => the
-//! same team draws, tie-breaks and per-turn salts as the TS arena.
+//! Seeded RNG + salt — mulberry32, matching munch's `makeRng`
+//! (`src/app/services/cpu/engine-view.ts`). Same seed => bit-identical
+//! float stream => the same team draws, tie-breaks and per-turn salts.
 
 /// mulberry32. Mirrors the JS coercions exactly: all state math is u32
 /// wrapping (JS `>>> 0` / `Math.imul`), the output is `u32 / 2^32` — both

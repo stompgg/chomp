@@ -1,8 +1,7 @@
 //! Seat translation + engine-view readers + candidate enumeration.
 //!
-//! Port of `sims/src/cpu/engine-view.ts` and `sims/src/cpu/battle-view.ts`,
-//! with the seat transposition of `sims/src/arena/transpose.ts` folded into
-//! a [`Seat`] value instead of a JS Proxy.
+//! The seat transposition is folded into a [`Seat`] value rather than a
+//! proxy object wrapping the engine.
 //!
 //! Convention (inherited from the on-chain CPUs): strategy code sees the
 //! CPU as p1 and the opponent as p0 — VIRTUAL indices. `Seat` maps virtual

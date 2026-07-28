@@ -1,8 +1,7 @@
-//! HEURISTIC CPU — port of `sims/src/cpu/strategies/hard-cpu.ts`: best-response
-//! with foreknowledge (peeks the revealed move), sim-measured damage on
-//! both sides, guarded free-turn setup punishment, defensive switching,
-//! anti-wall pivot, and the eval-veto wrapper. Every phase, threshold and
-//! rng draw mirrors the TS source order.
+//! HEURISTIC CPU — best-response with foreknowledge (peeks the revealed
+//! move), sim-measured damage on both sides, guarded free-turn setup
+//! punishment, defensive switching, anti-wall pivot, and the eval-veto
+//! wrapper.
 
 use chomp_engine::Constants;
 use chomp_engine::Enums::MoveClass;
