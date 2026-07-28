@@ -20,6 +20,7 @@
 #![allow(non_snake_case)] // engine call sites keep Solidity spelling
 
 pub mod bot;
+pub mod example_bot;
 pub mod bots;
 pub mod roster;
 pub mod analysis;

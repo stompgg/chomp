@@ -3,9 +3,10 @@
 //!   cargo run --release -p chomp-strategies --bin bench -- --bot greedy
 //!   cargo run --release -p chomp-strategies --bin bench -- --bot mybot --mode doubles
 //!
-//! Every row plays each draft from both seats and sums, because the seats are
-//! not perfectly symmetric; and every row prints its own n and 95% interval,
-//! because a deep bot's row is necessarily thinner than a shallow one's.
+//! Every row draws independent drafts and alternates which seat the candidate
+//! pilots, because the seats are not perfectly symmetric; and every row prints
+//! its own draft count and 95% interval, because a deep bot's row is
+//! necessarily thinner than a shallow one's.
 //!
 //! Data (drool/*.csv, src/mons/*.json) is read relative to CHOMP_ROOT.
 
@@ -16,12 +17,18 @@ use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
 /// The published singles ladder, weakest first.
-const SINGLES_LADDER: &[&str] =
-    &[bots::RANDOM, bots::GREEDY, bots::HEURISTIC, bots::OVERRIDE, bots::NOPEEK];
+const SINGLES_LADDER: &[&str] = &[
+    bots::RANDOM,
+    bots::GREEDY,
+    bots::HEURISTIC,
+    bots::OVERRIDE,
+    bots::NOPEEK,
+    bots::SEARCH_D1,
+];
 
 /// The published doubles ladder, weakest first.
 const DOUBLES_LADDER: &[&str] =
-    &[bots::DOUBLES_EASY, bots::DOUBLES_MEDIUM, bots::DOUBLES_HARD];
+    &[bots::DOUBLES_EASY, bots::DOUBLES_MEDIUM, bots::DOUBLES_HARD, bots::DOUBLES_SEARCH_D1];
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
@@ -36,12 +43,12 @@ fn arg_u(args: &[String], flag: &str, def: u64) -> u64 {
 }
 
 fn print_rows(bot: &str, rows: &[BenchRow], elapsed: f64) {
-    println!("\n{:>14}  {:>6}  {:>8}  {:>13}  {:>12}", "opponent", "games", "win%", "95% CI", "w-l-draw");
+    println!("\n{:>18}  {:>7}  {:>8}  {:>13}  {:>12}", "opponent", "drafts", "win%", "95% CI", "w-l-draw");
     for r in rows {
         println!(
-            "{:>14}  {:>6}  {:>7.1}%  ±{:>11.1}%  {:>4}-{:>3}-{:<4}",
+            "{:>18}  {:>7}  {:>7.1}%  ±{:>11.1}%  {:>4}-{:>3}-{:<4}",
             r.opponent,
-            r.games,
+            r.drafts,
             r.win_rate() * 100.0,
             r.ci95() * 100.0,
             r.wins,

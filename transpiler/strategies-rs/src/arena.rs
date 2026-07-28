@@ -481,9 +481,13 @@ pub fn doubles_ab_winrate(
 ) -> DoublesAbResult {
     let book = roster::address_book();
     let mut rng = Wrand::new(wseed);
-    // Both seats search in an A/B (depth 0 would compare the un-evaluated greedy pilot instead).
-    let cand = DoublesSideCfg { depth: cand.depth.max(1), ..cand };
-    let base = DoublesSideCfg { depth: base.depth.max(1), ..base };
+    // Weight A/Bs compare two SEARCH configs, so depth 0 is bumped to 1 — otherwise the
+    // comparison silently falls back to the un-evaluated greedy pilot. A named bot opts out:
+    // its name selects the pilot and this would misreport what actually played.
+    let bump = |c: DoublesSideCfg| {
+        if c.bot.is_empty() { DoublesSideCfg { depth: c.depth.max(1), ..c } } else { c }
+    };
+    let (cand, base) = (bump(cand), bump(base));
     let pairs = (games / 2).max(1);
     let mut specs = Vec::with_capacity(pairs * 2);
     for i in 0..pairs {
@@ -598,6 +602,9 @@ mod tests {
 pub struct BenchRow {
     pub opponent: &'static str,
     pub games: u32,
+    /// Independent drafts behind `games`. Equal to `games` here; a matched-pair
+    /// construction would halve it, and the interval depends on THIS number.
+    pub drafts: u32,
     pub wins: u32,
     pub losses: u32,
     pub draws: u32,
@@ -647,11 +654,12 @@ pub fn bench_singles(
             let outcomes = run_games(&specs, &book, threads, false);
 
             let mut row =
-                BenchRow { opponent, games: 0, wins: 0, losses: 0, draws: 0 };
+                BenchRow { opponent, games: 0, drafts: 0, wins: 0, losses: 0, draws: 0 };
             for (i, outcome) in outcomes.iter().enumerate() {
                 // pair 0 seats the candidate at p1, pair 1 at p0.
                 let cand_seat = if pair_of[i] == 0 { 1u8 } else { 0u8 };
                 row.games += 1;
+                row.drafts += 1;
                 // An engine panic surfaces as Err; count it with the draws
                 // rather than silently crediting either side.
                 match outcome.as_ref().ok().and_then(|o| o.winner_seat) {
@@ -666,6 +674,12 @@ pub fn bench_singles(
 }
 
 /// Score `cand` against every opponent in `ladder` (doubles).
+///
+/// Independent drafts, one per game, with the candidate's seat alternating
+/// across games. Deliberately NOT the matched-pair construction used by
+/// `doubles_ab_winrate`: replaying each draft with the pilots swapped buys
+/// precision by halving the number of distinct battles, which is the right
+/// trade for "is this tweak better" and the wrong one for a ladder.
 pub fn bench_doubles(
     roster: &Roster,
     cand: &'static str,
@@ -675,19 +689,42 @@ pub fn bench_doubles(
     seed_base: u32,
     threads: usize,
 ) -> Vec<BenchRow> {
+    let book = roster::address_book();
     ladder
         .iter()
         .map(|&opponent| {
-            let c = DoublesSideCfg { bot: cand, ..Default::default() };
-            let b = DoublesSideCfg { bot: opponent, ..Default::default() };
-            let r = doubles_ab_winrate(roster, c, b, games, wseed, seed_base, threads);
-            BenchRow {
-                opponent,
-                games: r.cand_wins + r.base_wins + r.draws,
-                wins: r.cand_wins,
-                losses: r.base_wins,
-                draws: r.draws,
+            let mut rng = Wrand::new(wseed);
+            let mut specs = Vec::with_capacity(games);
+            for i in 0..games {
+                let (p0_team, p0_ids) = draw_built_team(roster, &mut rng);
+                let (p1_team, p1_ids) = draw_built_team(roster, &mut rng);
+                // Alternate which seat the candidate pilots, one fresh draft each.
+                let (c0, c1) = if i % 2 == 0 {
+                    (DoublesSideCfg { bot: opponent, ..Default::default() },
+                     DoublesSideCfg { bot: cand, ..Default::default() })
+                } else {
+                    (DoublesSideCfg { bot: cand, ..Default::default() },
+                     DoublesSideCfg { bot: opponent, ..Default::default() })
+                };
+                specs.push(doubles_spec(
+                    seed_base.wrapping_add(i as u32),
+                    p0_team, p0_ids, c0,
+                    p1_team, p1_ids, c1,
+                ));
             }
+            let outcomes = run_doubles_games(&specs, &book, threads);
+            let mut row = BenchRow { opponent, games: 0, drafts: 0, wins: 0, losses: 0, draws: 0 };
+            for (i, o) in outcomes.iter().enumerate() {
+                let cand_seat = if i % 2 == 0 { 1u8 } else { 0u8 };
+                row.games += 1;
+                row.drafts += 1;
+                match o.winner_side {
+                    Some(sd) if sd == cand_seat => row.wins += 1,
+                    Some(_) => row.losses += 1,
+                    None => row.draws += 1,
+                }
+            }
+            row
         })
         .collect()
 }

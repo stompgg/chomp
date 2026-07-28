@@ -21,17 +21,31 @@ pub const OVERRIDE: &str = "override";
 pub const NOPEEK: &str = "nopeek";
 pub const NOPEEK_WC: &str = "nopeek-wc";
 pub const SEARCH: &str = "search";
+pub const EXAMPLE: &str = "example";
+/// Search bots at a pinned depth. Depth is the single biggest lever a bot has,
+/// so the ladder names it rather than hiding it in config.
+pub const SEARCH_D1: &str = "search-d1";
+pub const SEARCH_D2: &str = "search-d2";
+pub const DOUBLES_SEARCH_D1: &str = "doubles-search-d1";
+pub const DOUBLES_SEARCH_D2: &str = "doubles-search-d2";
 pub const DOUBLES_EASY: &str = "doubles-easy";
 pub const DOUBLES_MEDIUM: &str = "doubles-medium";
 pub const DOUBLES_HARD: &str = "doubles-hard";
 pub const DOUBLES_SEARCH: &str = "doubles-search";
 
 /// Every registered bot, in ladder order (weakest first).
-pub const NAMES: &[&str] = &[RANDOM, GREEDY, HEURISTIC, OVERRIDE, NOPEEK, NOPEEK_WC, SEARCH];
+pub const NAMES: &[&str] =
+    &[RANDOM, EXAMPLE, GREEDY, HEURISTIC, OVERRIDE, NOPEEK, NOPEEK_WC, SEARCH, SEARCH_D1, SEARCH_D2];
 
 /// Registered doubles bots, weakest first.
-pub const DOUBLES_NAMES: &[&str] =
-    &[DOUBLES_EASY, DOUBLES_MEDIUM, DOUBLES_HARD, DOUBLES_SEARCH];
+pub const DOUBLES_NAMES: &[&str] = &[
+    DOUBLES_EASY,
+    DOUBLES_MEDIUM,
+    DOUBLES_HARD,
+    DOUBLES_SEARCH,
+    DOUBLES_SEARCH_D1,
+    DOUBLES_SEARCH_D2,
+];
 
 const DOUBLES_ONLY: &[BattleMode] = &[BattleMode::Doubles];
 
@@ -67,7 +81,11 @@ pub struct DoublesSearchBot {
 
 impl Bot for DoublesSearchBot {
     fn name(&self) -> &'static str {
-        DOUBLES_SEARCH
+        match self.depth {
+            1 => DOUBLES_SEARCH_D1,
+            2 => DOUBLES_SEARCH_D2,
+            _ => DOUBLES_SEARCH,
+        }
     }
     fn modes(&self) -> &'static [BattleMode] {
         DOUBLES_ONLY
@@ -208,7 +226,11 @@ pub struct SearchBot {
 
 impl Bot for SearchBot {
     fn name(&self) -> &'static str {
-        SEARCH
+        match self.depth {
+            1 => SEARCH_D1,
+            2 => SEARCH_D2,
+            _ => SEARCH,
+        }
     }
     fn decide(&mut self, ctx: &mut DecisionCtx<'_>) -> Action {
         let pm = ctx.peek.unwrap_or_else(|| Mv { move_index: 0, extra_data: 0 });
@@ -232,7 +254,8 @@ impl Bot for SearchBot {
 /// bot's evaluator instead of playing it. That is the pre-trait behaviour and
 /// the arena's weight/depth sweeps depend on it.
 pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
-    if cfg.search_depth >= 1 && name != RANDOM && !DOUBLES_NAMES.contains(&name) {
+    let pinned = matches!(name, SEARCH_D1 | SEARCH_D2 | DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2);
+    if cfg.search_depth >= 1 && name != RANDOM && !pinned && !DOUBLES_NAMES.contains(&name) {
         return Some(Box::new(SearchBot {
             weights: cfg.weights,
             depth: cfg.search_depth,
@@ -243,11 +266,22 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
     let w = cfg.weights;
     match name {
         RANDOM => Some(Box::new(RandomBot)),
+        EXAMPLE => Some(Box::new(crate::example_bot::ExampleBot::new(w))),
         GREEDY => Some(Box::new(GreedyBot { weights: w })),
         HEURISTIC => Some(Box::new(HeuristicBot { weights: w, state: HeuristicState::default() })),
         OVERRIDE => Some(Box::new(OverrideBot { weights: w, state: OverrideState::default() })),
         NOPEEK => Some(Box::new(NoPeekBot { weights: w, worst_case: false })),
         NOPEEK_WC => Some(Box::new(NoPeekBot { weights: w, worst_case: true })),
+        SEARCH_D1 | SEARCH_D2 => Some(Box::new(SearchBot {
+            weights: w,
+            depth: if name == SEARCH_D1 { 1 } else { 2 },
+            peek: cfg.search_peek,
+            mixed: cfg.search_mixed,
+        })),
+        DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2 => Some(Box::new(DoublesSearchBot {
+            depth: if name == DOUBLES_SEARCH_D1 { 1 } else { 2 },
+            eval: cfg.doubles_eval,
+        })),
         SEARCH => Some(Box::new(SearchBot {
             weights: w,
             depth: cfg.search_depth.max(1),

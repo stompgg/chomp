@@ -15,6 +15,9 @@ your own effects!
 
 your own hooks!
 
+your own CPU! — see **[BENCH.md](BENCH.md)**: write a bot, score it against a ladder of
+built-in opponents, with the real battle engine as your forward model.
+
 general flow of the game is: 
 - each turn, players simultaneously choose a move on their active mon.
 - moves can alter stats, do damage, or generally mutate game state in some way.
