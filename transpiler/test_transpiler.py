@@ -266,7 +266,7 @@ class TestYulTranspiler(unittest.TestCase):
             }
         '''
         result = self.transpiler.transpile(yul_code)
-        self.assertIn('_getStorageKey(myVar', result)
+        self.assertIn('_yulSlotKeyOf(myVar', result)
         self.assertIn('_storageRead(myVar', result)
         self.assertIn('_storageWrite(myVar', result)
 

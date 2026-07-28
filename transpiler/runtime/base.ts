@@ -862,4 +862,34 @@ export abstract class Contract {
   protected _storageWrite(key: any, value: bigint): void {
     this._storage.sstore(this._yulStorageKey(key), value);
   }
+
+  /**
+   * Stable synthetic slot key for a storage struct (Solidity `x.slot`).
+   *
+   * Solidity packs several struct fields into one word, so a slot-level read or
+   * write also touches bits that no modelled property owns; those live in raw
+   * storage under this key. Identity is stamped on the object with a symbol, which
+   * the state-tracking proxy passes straight through to the raw target — so the
+   * same struct keys identically whether or not a capture observer is attached.
+   *
+   * Named `_yul*` rather than the more natural `_getStorageKey` because contracts
+   * share this class namespace: Engine defines its own `_getStorageKey(bytes32)`,
+   * and the emitted call bound to that instead of erroring.
+   */
+  protected _yulSlotKeyOf(ref: any): string {
+    if (ref === null || ref === undefined || typeof ref !== 'object') {
+      return this._yulStorageKey(ref);
+    }
+    let id = (ref as any)[YUL_SLOT_ID];
+    if (id === undefined) {
+      id = `yulslot#${_nextYulSlotId++}`;
+      Object.defineProperty(ref, YUL_SLOT_ID, { value: id, enumerable: false });
+    }
+    return id;
+  }
 }
+
+/** Identity stamp for `_yulSlotKeyOf`. A symbol so it never collides with a
+ *  Solidity field name and is skipped by the proxy's state-change recording. */
+const YUL_SLOT_ID = Symbol('yulSlotId');
+let _nextYulSlotId = 0;

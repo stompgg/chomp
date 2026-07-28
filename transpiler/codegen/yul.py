@@ -693,7 +693,7 @@ class YulTranspiler:
             # Bits no member declares still need somewhere to live; the shadow
             # slot store keeps carrying exactly those.
             terms.append(
-                f'(this._storageRead(this._getStorageKey({name} as any)) '
+                f'(this._storageRead(this._yulSlotKeyOf({name} as any)) '
                 f'& {hex(layout.free_mask)}n)'
             )
         return '(' + ' | '.join(terms) + ')' if terms else '0n'
@@ -710,7 +710,7 @@ class YulTranspiler:
             lines.append(f'{prefix}{name}.{f.name} = {val};')
         if layout.has_free_bits:
             lines.append(
-                f'{prefix}this._storageWrite(this._getStorageKey({name} as any), '
+                f'{prefix}this._storageWrite(this._yulSlotKeyOf({name} as any), '
                 f'{tmp} & {hex(layout.free_mask)}n);'
             )
         return '\n'.join(lines)
@@ -849,7 +849,7 @@ class YulTranspiler:
         if isinstance(stmt.value, YulSlotAccess):
             storage_var = stmt.value.variable
             slot_vars[stmt.name] = storage_var
-            return f'{prefix}const {stmt.name} = this._getStorageKey({storage_var} as any);'
+            return f'{prefix}const {stmt.name} = this._yulSlotKeyOf({storage_var} as any);'
 
         ts_expr = self._generate_expression(stmt.value, slot_vars)
         return f'{prefix}let {stmt.name} = {ts_expr};'
@@ -867,7 +867,7 @@ class YulTranspiler:
         if isinstance(stmt.value, YulSlotAccess):
             storage_var = stmt.value.variable
             slot_vars[stmt.name] = storage_var
-            return f'{prefix}{stmt.name} = this._getStorageKey({storage_var} as any);'
+            return f'{prefix}{stmt.name} = this._yulSlotKeyOf({storage_var} as any);'
 
         ts_expr = self._generate_expression(stmt.value, slot_vars)
         return f'{prefix}{stmt.name} = {ts_expr};'
@@ -1055,7 +1055,7 @@ class YulTranspiler:
         elif isinstance(expr, YulFunctionCall):
             return self._generate_function_call(expr, slot_vars)
         elif isinstance(expr, YulSlotAccess):
-            return f'this._getStorageKey({expr.variable} as any)'
+            return f'this._yulSlotKeyOf({expr.variable} as any)'
         elif isinstance(expr, YulOffsetAccess):
             return '0n  // .offset'
         return '0n'
