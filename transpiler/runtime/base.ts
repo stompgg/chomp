@@ -39,6 +39,9 @@ export interface CallEntry {
   method: string;
   /** Method arguments (raw — may contain BigInt, contract references, etc.) */
   args: any[];
+  /** Positional names for `args`, resolved at record time from the target class's
+   *  __argNames static. Absent when the class carries no metadata for the method. */
+  argNames?: readonly string[];
   /** Return value (raw — carries semantic info like [damage, eventType]) */
   returnValue?: any;
   /** Call depth at time of call (1 = top-level external call into the system) */
@@ -654,6 +657,20 @@ export abstract class Contract {
     // The proxy also tracks call depth to auto-reset transient storage at transaction
     // boundaries (depth 0→1), matching Solidity's per-transaction semantics.
     const self = this;
+    // Mangle-stable identity for everything the observation layer records:
+    // __className survives production minification; constructor.name does not.
+    const className = (self.constructor as any).__className || self.constructor.name;
+    // Each class's __argNames static covers only its OWN declared methods (the
+    // override shadows the base's) — inherited methods resolve by walking up.
+    const argNamesOf = (method: string): readonly string[] | undefined => {
+      for (let c: any = self.constructor; c; c = Object.getPrototypeOf(c)) {
+        if (Object.prototype.hasOwnProperty.call(c, '__argNames')) {
+          const names = (c.__argNames as Readonly<Record<string, readonly string[]>>)[method];
+          if (names) return names;
+        }
+      }
+      return undefined;
+    };
     const proxy = new Proxy(this, {
       // Ensure property writes through the proxy go to the target (not the proxy object).
       // This is critical because external calls use `this = proxy` inside methods,
@@ -667,7 +684,7 @@ export abstract class Contract {
             const oldValue = Reflect.get(target, prop, target);
             if (oldValue !== value) {
               _recordStateChange({
-                contractName: self.constructor.name,
+                contractName: className,
                 field: prop as string,
                 oldValue,
                 newValue: value,
@@ -686,7 +703,7 @@ export abstract class Contract {
             && currentCall.observers.length > 0) {
           const stateVars = (self.constructor as any).__stateVars as Set<string> | undefined;
           if (stateVars?.has(prop as string)) {
-            return _wrapForStateTracking(value, self.constructor.name, prop as string);
+            return _wrapForStateTracking(value, className, prop as string);
           }
         }
         if (typeof value !== 'function') return value;
@@ -711,7 +728,7 @@ export abstract class Contract {
 
           const preDepth = call.callDepth;
           if (!isInternal) {
-            call.callerStack.push({ address: self._contractAddress, name: self.constructor.name });
+            call.callerStack.push({ address: self._contractAddress, name: className });
             if (++call.callDepth === 1) resetAllTransient();
           }
 
@@ -724,9 +741,10 @@ export abstract class Contract {
               caller: topFrame?.address ?? ADDRESS_ZERO,
               callerName: topFrame?.name ?? 'External',
               target: self._contractAddress,
-              targetName: self.constructor.name,
+              targetName: className,
               method: propStr,
               args: callArgs,
+              argNames: argNamesOf(propStr),
               depth: preDepth + (isInternal ? 0 : 1),
               internal: isInternal,
               children: [],

@@ -158,10 +158,7 @@ class ContractGenerator(BaseGenerator):
         for func in contract.functions:
             if not func.name:
                 continue
-            param_names = [
-                p.name if p.name else f'_arg{i}'
-                for i, p in enumerate(func.parameters)
-            ]
+            param_names = self._metadata_param_names(contract.name, func)
             existing = method_to_longest_params.get(func.name)
             if existing is None or len(param_names) > len(existing):
                 method_to_longest_params[func.name] = param_names
@@ -270,6 +267,22 @@ class ContractGenerator(BaseGenerator):
             lines.append('')
 
         return '\n'.join(lines)
+
+    def _metadata_param_names(self, contract_name: str, func: FunctionDefinition) -> List[str]:
+        """Metadata names for one method: the declaring interface's names for every
+        position when the base chain provides them (identical across all overrides,
+        regardless of what each implementation locally names or omits), else the
+        local declaration's names with the _argN fallback."""
+        if self._registry and func.name:
+            canonical = self._registry.get_canonical_param_names(
+                contract_name, func.name, len(func.parameters)
+            )
+            if canonical:
+                return canonical
+        return [
+            p.name if p.name else f'_arg{i}'
+            for i, p in enumerate(func.parameters)
+        ]
 
     # =========================================================================
     # CONTEXT SETUP
