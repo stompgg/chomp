@@ -82,6 +82,11 @@ class RustSymbols:
         self.structs: Dict[str, List[Tuple[str, SolType]]] = {}
         # struct name -> ordered raw TypeName list (for emission-time detail)
         self.struct_type_names: Dict[str, list] = {}
+        # struct name -> raw AST definition (slot-layout computation)
+        self.struct_defs: Dict[str, object] = {}
+        # struct name -> slot-0 SlotLayout, for structs whose raw slot is read
+        # or written by Yul.
+        self.slot_layouts: Dict[str, object] = {}
         # Keyed by (container, name): the same constant name can exist at file
         # scope AND inside contracts with different types (live example:
         # Constants.sol's uint256 SWITCH_PRIORITY vs FairCPU's uint32 one) —
@@ -211,6 +216,7 @@ class RustSymbols:
                     if existing is None or len(sig.param_types) > len(existing.param_types):
                         sym.functions[key] = sig
                         sym.function_defs[key] = func
+        sym._discover_slot_overlays(asts)
         return sym
 
     def lookup_overload(self, container: Optional[str], name: str, nargs: int):
@@ -659,13 +665,13 @@ class RustSymbols:
                     if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
                         if pt.kind == 'struct' and pt.name in roots:
                             entry = roots[pt.name]
-                        elif pt.kind == 'mapping':
-                            # No single key addresses a nested mapping; lower
-                            # to a SELECTOR closure that re-derives the place
-                            # from world per use (funnel: world::sel).
-                            entry = ('!selector', pt, None)
                         else:
-                            entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
+                            # No single key addresses this place — a nested
+                            # mapping, or a struct reached through one (an
+                            # array inside a mapped struct). Lower to a
+                            # SELECTOR closure that re-derives the place from
+                            # world per use (funnel: world::sel).
+                            entry = ('!selector', pt, None)
                     lowered.append(entry)
                 while len(lowered) < len(sig.param_types):
                     lowered.append(None)
@@ -694,6 +700,18 @@ class RustSymbols:
             tns.append((member.name, member.type_name))
         self.structs[struct.name] = fields
         self.struct_type_names[struct.name] = tns
+        self.struct_defs[struct.name] = struct
+
+    def _discover_slot_overlays(self, asts) -> None:
+        """Record slot-0 layouts for structs whose raw slot is touched by Yul."""
+        from ..type_system.slots import discover_slot_layouts
+
+        self.slot_layouts = discover_slot_layouts(
+            asts.values(),
+            enum_names=set(self.enums),
+            struct_names=set(self.structs),
+            struct_defs=self.struct_defs,
+        )
 
     def _record_constant(self, var, resolver, container) -> None:
         self.constants[(container, var.name)] = ConstSig(

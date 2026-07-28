@@ -6,7 +6,8 @@
 
 use chomp_strategies::arena::{build_team_mon, draw_team, Wrand};
 use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
-use chomp_strategies::game::{narrate_game, run_games_traced, GameSpec, StrategyKind};
+use chomp_strategies::bots;
+use chomp_strategies::game::{narrate_game, run_games_traced, GameSpec, BotName};
 use chomp_strategies::roster::{self, load_roster};
 use chomp_strategies::view::{NO_OP_INDEX, SWITCH_MOVE_INDEX};
 use std::path::PathBuf;
@@ -61,7 +62,7 @@ fn main() {
     let seed_base = arg_u(&args, "--seed-base", 10_000) as u32;
     let narrate_n = arg_u(&args, "--narrate", 0) as usize;
     let p0_name = arg(&args, "--p0").unwrap_or_else(|| "greedy".to_string());
-    let p0_strat = StrategyKind::parse(&p0_name).expect("--p0: greedy / heuristic / override / ...");
+    let p0_strat = bots::parse(&p0_name).expect("--p0: greedy / heuristic / override / ...");
     let peek = args.iter().any(|a| a == "--peek");
     let mixed = args.iter().any(|a| a == "--mixed");
     let weights = weights_arg(&args);
@@ -88,7 +89,8 @@ fn main() {
             p0_ids,
             p1_ids,
             p0_strategy: p0_strat,
-            p1_strategy: StrategyKind::Greedy, // ignored — p1_search_depth overrides to the search
+            p1_strategy: bots::GREEDY, // ignored — p1_search_depth overrides to the search
+            peek_seat: None,
             p0_weights: DEFAULT_WEIGHTS,
             p1_weights: weights,
             p0_search_depth: 0,

@@ -2797,10 +2797,6 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _dealDamageInternal(config, playerIndex, monIndex, damage, uint256(uint160(msg.sender)));
     }
 
-    function getPreDamage() external view returns (int32) {
-        return tempPreDamage;
-    }
-
     function setPreDamage(int32 value) external {
         if (battleKeyForWrite == bytes32(0)) {
             revert NoWriteAllowed();
@@ -3956,23 +3952,18 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return (actedSlotsThisTurnMask >> absSlot) & 1 != 0;
     }
 
-    /// @notice The roster range a slot may switch within (Multi: the seat's quarter).
-    function getRosterBoundsForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+    /// @notice The roster range a slot may switch within (Multi: the seat's quarter) plus the
+    ///         side's KO bitmap, so a switch-target search costs one call rather than one per
+    ///         candidate. `koBitmap` is bit-per-roster-index and is kept in lockstep with each
+    ///         mon's `isKnockedOut`.
+    function getSlotSwitchWindow(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
         external
         view
-        returns (uint256 lo, uint256 hi)
+        returns (uint256 lo, uint256 hi, uint256 koBitmap)
     {
         BattleConfig storage config = battleConfig[_resolveStorageKey(battleKey)];
-        return _slotRosterBounds(config, (playerIndex << 1) | (slotIndex & 1));
-    }
-
-    function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) public view returns (uint256) {
-        bytes32 storageKey = _resolveStorageKey(battleKey);
-        BattleConfig storage config = battleConfig[storageKey];
-        BattleData storage battle = battleData[battleKey];
-        return _computePriorityPlayerIndex(
-            config, battle, battleKey, rng, _getCurrentTurnMove(config, 0), _getCurrentTurnMove(config, 1)
-        );
+        (lo, hi) = _slotRosterBounds(config, (playerIndex << 1) | (slotIndex & 1));
+        koBitmap = _getKOBitmap(config, playerIndex);
     }
 
     /// @dev Internal priority computation that accepts already-resolved storage pointers and

@@ -14,6 +14,7 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
+import {MoveSlotLib} from "../../src/moves/MoveSlotLib.sol";
 import {StandardAttackFactory} from "../../src/moves/StandardAttackFactory.sol";
 import {ATTACK_PARAMS} from "../../src/moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -541,16 +542,22 @@ contract GhouliathTest is Test, BattleHelper {
         assertEq(spAttackDelta, -5, "Bob's mon's special attack should be debuffed");
     }
 
-    // Build two single-mon (well, duplicated) teams and start a battle. Alice carries
-    // [burnApplier, graveAffliction]; Bob carries two fillers. Returns the battle key after both
-    // mons are switched in.
-    function _startGraveAfflictionBattle(IMoveSet aliceMove0, IMoveSet aliceMove1)
+    // Grave Affliction reads the defender's status class out of its move context, so its slot
+    // needs the capability bit the deployment generator derives from its @move-context tag.
+    function _graveAfflictionSlot() internal view returns (uint256) {
+        return MoveSlotLib.packDeployed(address(graveAffliction), 0, MOVE_META_DYNAMIC) | MOVE_CONTEXT_STATUS_LANES;
+    }
+
+    // Build two single-mon (well, duplicated) teams and start a battle. Alice carries the two
+    // given packed move slots; Bob carries two fillers. Returns the battle key after both mons
+    // are switched in.
+    function _startGraveAfflictionBattle(uint256 aliceMove0, uint256 aliceMove1)
         internal
         returns (bytes32 battleKey)
     {
         uint256[] memory aliceMoves = new uint256[](2);
-        aliceMoves[0] = uint256(uint160(address(aliceMove0)));
-        aliceMoves[1] = uint256(uint160(address(aliceMove1)));
+        aliceMoves[0] = aliceMove0;
+        aliceMoves[1] = aliceMove1;
 
         uint256[] memory bobMoves = new uint256[](2);
         bobMoves[0] = uint256(uint160(address(osteoporosis)));
@@ -623,7 +630,7 @@ contract GhouliathTest is Test, BattleHelper {
             })
         );
 
-        bytes32 battleKey = _startGraveAfflictionBattle(burnApplier, IMoveSet(address(graveAffliction)));
+        bytes32 battleKey = _startGraveAfflictionBattle(uint256(uint160(address(burnApplier))), _graveAfflictionSlot());
 
         // Alice burns Bob (move 0); Bob no-ops.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
@@ -650,8 +657,7 @@ contract GhouliathTest is Test, BattleHelper {
 
     // With no status on the opponent, Grave Affliction is a no-op for both mons.
     function testGraveAffliction_noOpWhenOpponentHealthy() public {
-        bytes32 battleKey =
-            _startGraveAfflictionBattle(IMoveSet(address(graveAffliction)), IMoveSet(address(graveAffliction)));
+        bytes32 battleKey = _startGraveAfflictionBattle(_graveAfflictionSlot(), _graveAfflictionSlot());
 
         // Alice uses Grave Affliction (move 0) while Bob has no status; Bob no-ops.
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);

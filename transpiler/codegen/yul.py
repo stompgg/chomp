@@ -612,6 +612,9 @@ class YulTranspiler:
         self._known_constants = known_constants or set()
         self._warnings: List[str] = []
         self._unmodelable = False
+        # var name -> (SlotLayout, {member: TypeName}); set per block by the
+        # caller, which is the only layer that knows local variable types.
+        self._slot_resolver = None
 
     @property
     def warnings(self) -> List[str]:
@@ -624,7 +627,95 @@ class YulTranspiler:
         cannot be faithfully simulated — the caller should stub the function."""
         return self._unmodelable
 
-    def transpile(self, yul_code: str) -> str:
+    # =====================================================================
+    # Whole-slot access against the modelled fields
+    # =====================================================================
+
+    def _slot_target(self, expr, slot_vars: Dict[str, str]):
+        """(var name, layout, member types) for a slot expression, or None."""
+        if self._slot_resolver is None:
+            return None
+        name = None
+        if isinstance(expr, YulSlotAccess):
+            name = expr.variable
+        elif isinstance(expr, YulIdentifier) and expr.name in slot_vars:
+            name = slot_vars[expr.name]
+        if name is None:
+            return None
+        resolved = self._slot_resolver(name)
+        if resolved is None:
+            return None
+        layout, member_types = resolved
+        return name, layout, member_types
+
+    @staticmethod
+    def _member_pack(access: str, tn) -> Optional[str]:
+        """Widen a member to its slot bits as a bigint expression."""
+        t = (tn.name or '').strip() if tn is not None else ''
+        if not t or (tn is not None and (tn.is_array or tn.is_mapping)):
+            return None
+        if t == 'bool':
+            return f'({access} ? 1n : 0n)'
+        if t.startswith('uint') or t.startswith('bytes') or t == 'address':
+            return f'BigInt({access})'
+        if t.startswith('int'):
+            bits = t[3:] or '256'
+            return f'BigInt.asUintN({bits}, BigInt({access}))'
+        # enums are numbers; every other user-defined name is a contract ref
+        return f'BigInt({access}?._contractAddress ?? {access} ?? 0n)'
+
+    @staticmethod
+    def _member_unpack(word: str, tn, bits: int) -> Optional[str]:
+        """Narrow a slot-bit slice back to a member value."""
+        t = (tn.name or '').strip() if tn is not None else ''
+        mask = f'((1n << {bits}n) - 1n)'
+        if not t or (tn is not None and (tn.is_array or tn.is_mapping)):
+            return None
+        if t == 'bool':
+            return f'((({word}) & {mask}) !== 0n)'
+        if t.startswith('uint'):
+            return f'((({word}) & {mask}))'
+        if t.startswith('int'):
+            return f'BigInt.asIntN({t[3:] or "256"}, ({word}))'
+        if t == 'address' or not (t.startswith('bytes')):
+            return f'Contract.at((({word}) & {mask}))'
+        return None
+
+    def _emit_slot_read(self, target) -> Optional[str]:
+        name, layout, member_types = target
+        terms = []
+        for f in layout.fields:
+            packed = self._member_pack(f'{name}.{f.name}', member_types.get(f.name))
+            if packed is None:
+                return None
+            terms.append(packed if f.bit_offset == 0 else f'({packed} << {f.bit_offset}n)')
+        if layout.has_free_bits:
+            # Bits no member declares still need somewhere to live; the shadow
+            # slot store keeps carrying exactly those.
+            terms.append(
+                f'(this._storageRead(this._getStorageKey({name} as any)) '
+                f'& {hex(layout.free_mask)}n)'
+            )
+        return '(' + ' | '.join(terms) + ')' if terms else '0n'
+
+    def _emit_slot_write(self, target, value: str, prefix: str) -> Optional[str]:
+        name, layout, member_types = target
+        tmp = '__slotWord'
+        lines = [f'{prefix}const {tmp} = BigInt({value});']
+        for f in layout.fields:
+            src = tmp if f.bit_offset == 0 else f'({tmp} >> {f.bit_offset}n)'
+            val = self._member_unpack(src, member_types.get(f.name), f.bit_width)
+            if val is None:
+                return None
+            lines.append(f'{prefix}{name}.{f.name} = {val};')
+        if layout.has_free_bits:
+            lines.append(
+                f'{prefix}this._storageWrite(this._getStorageKey({name} as any), '
+                f'{tmp} & {hex(layout.free_mask)}n);'
+            )
+        return '\n'.join(lines)
+
+    def transpile(self, yul_code: str, slot_resolver=None) -> str:
         """
         Transpile a Yul assembly block to TypeScript.
 
@@ -636,6 +727,7 @@ class YulTranspiler:
         """
         self._warnings = []
         self._unmodelable = False
+        self._slot_resolver = slot_resolver
         slot_vars: Dict[str, str] = {}
 
         try:
@@ -897,6 +989,11 @@ class YulTranspiler:
         if func == 'sstore' and len(call.arguments) >= 2:
             slot_expr = call.arguments[0]
             value = self._generate_expression(call.arguments[1], slot_vars)
+            target = self._slot_target(slot_expr, slot_vars)
+            if target is not None:
+                emitted = self._emit_slot_write(target, value, prefix)
+                if emitted is not None:
+                    return emitted
             if isinstance(slot_expr, YulIdentifier) and slot_expr.name in slot_vars:
                 return f'{prefix}this._storageWrite({slot_vars[slot_expr.name]} as any, {value});'
             slot = self._generate_expression(slot_expr, slot_vars)
@@ -997,6 +1094,11 @@ class YulTranspiler:
         if func == 'sload':
             if args:
                 slot_expr = args[0]
+                target = self._slot_target(slot_expr, slot_vars)
+                if target is not None:
+                    emitted = self._emit_slot_read(target)
+                    if emitted is not None:
+                        return emitted
                 if isinstance(slot_expr, YulIdentifier) and slot_expr.name in slot_vars:
                     return f'this._storageRead({slot_vars[slot_expr.name]} as any)'
                 slot = self._generate_expression(slot_expr, slot_vars)

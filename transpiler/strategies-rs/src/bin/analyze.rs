@@ -8,7 +8,8 @@
 use chomp_strategies::analysis::{
     run_doubles_mon_analysis, run_mon_analysis, run_mon_analysis_rotated, run_mon_analysis_with,
 };
-use chomp_strategies::game::StrategyKind;
+use chomp_strategies::bots;
+use chomp_strategies::game::BotName;
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
@@ -67,8 +68,8 @@ fn main() {
         match (&p1, &p0) {
             (Some(p1s), Some(p0s)) => {
                 let pair = (
-                    StrategyKind::parse(p1s).expect("bad --p1 strategy"),
-                    StrategyKind::parse(p0s).expect("bad --p0 strategy"),
+                    bots::parse(p1s).expect("bad --p1 strategy"),
+                    bots::parse(p0s).expect("bad --p0 strategy"),
                 );
                 eprintln!("  pilots: p1={p1s} vs p0={p0s}");
                 if rotate {

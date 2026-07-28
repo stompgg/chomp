@@ -389,6 +389,9 @@ class SolidityToRustTranspiler:
             lines.append(f'        {f}: crate::Constants::CLEARED_MON_STATE_SENTINEL,')
         lines.append('        isKnockedOut: false,')
         lines.append('        shouldSkipTurn: false,')
+        # Structs whose raw slot is touched by Yul carry a generated
+        # undeclared-bit member; the sentinel leaves it zeroed.
+        lines.append('        ..Default::default()')
         lines.append('    }')
         lines.append('}')
         lines.append('')

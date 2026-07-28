@@ -16,6 +16,7 @@
 from typing import List, Optional, TYPE_CHECKING
 
 from ..parser.ast_nodes import EnumDefinition, StateVariableDeclaration, StructDefinition
+from ..type_system.slots import SLOT0_FREE_FIELD
 from .rust_types import rust_ident
 from .soltypes import SolType
 
@@ -94,11 +95,22 @@ class RustDefinitionGenerator:
         if not has_mapping:
             derives.append('PartialEq')
 
+        layout = self._symbols.slot_layouts.get(struct.name)
+        overlay = layout if layout is not None and layout.has_free_bits else None
+
         lines = []
         lines.append(f'#[derive({", ".join(derives)})]')
         lines.append(f'pub struct {name} {{')
         for fname, ftype in fields:
             lines.append(f'    pub {rust_ident(fname)}: {self._types.rust_type(ftype)},')
+        if overlay is not None:
+            lines.append(
+                '    /// Slot-0 bits no member declares. Yul reaches the raw slot, so this'
+            )
+            lines.append(
+                '    /// carries what the typed fields cannot represent.'
+            )
+            lines.append(f'    pub {SLOT0_FREE_FIELD}: U256,')
         lines.append('}')
         lines.append('')
         lines.append(f'impl Default for {name} {{')
@@ -106,6 +118,8 @@ class RustDefinitionGenerator:
         lines.append('        Self {')
         for fname, ftype in fields:
             lines.append(f'            {rust_ident(fname)}: {self._types.default_value(ftype)},')
+        if overlay is not None:
+            lines.append(f'            {SLOT0_FREE_FIELD}: U256::ZERO,')
         lines.append('        }')
         lines.append('    }')
         lines.append('}')

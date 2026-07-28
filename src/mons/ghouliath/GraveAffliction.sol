@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// @move-context: status-lanes
+
 import "../../Constants.sol";
 import "../../Enums.sol";
 import {MoveMeta} from "../../Structs.sol";
@@ -36,7 +38,7 @@ contract GraveAffliction is IMoveSet {
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
 
         // Only fires if the opposing mon currently has a status condition (any class).
-        if (engine.getMonStatusClass(battleKey, defenderPlayerIndex, defenderMonIndex) == 0) {
+        if (TargetLib.hookStatusClass(activesPacked, defenderPlayerIndex, defenderMonIndex) == 0) {
             return;
         }
 

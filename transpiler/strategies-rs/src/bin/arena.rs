@@ -10,7 +10,9 @@ use chomp_strategies::arena::{
 };
 use chomp_strategies::doubles::DoublesEvalW;
 use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
-use chomp_strategies::game::StrategyKind;
+use chomp_strategies::bot::InfoMode;
+use chomp_strategies::bots;
+use chomp_strategies::game::BotName;
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
@@ -46,13 +48,17 @@ fn main() {
     let threads = arg_u(&args, "--threads", default_threads as u64) as usize;
 
     let mode = arg(&args, "--mode").unwrap_or_else(|| "singles".to_string());
+    // Blind is the default: simultaneous moves, symmetric seats.
+    let info = arg(&args, "--info")
+        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate"))
+        .unwrap_or(InfoMode::Blind);
 
     let chomp_root = std::env::var("CHOMP_ROOT").map(PathBuf::from).unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
     });
 
     let roster = load_roster(&chomp_root);
-    eprintln!("arena[{mode}]: {} mons · {} games · {} threads · seed {:#x}", roster.mons.len(), games, threads, seed);
+    eprintln!("arena[{mode}/{}]: {} mons · {} games · {} threads · seed {:#x}", info.label(), roster.mons.len(), games, threads, seed);
 
     // A/B a candidate linear weight vector vs the frozen baseline. `--search-depth N` (≥1) makes p1
     // play no-peek maximin search at depth N over the weights; 0 = 1-ply greedy over them.
@@ -106,7 +112,7 @@ fn main() {
     if let Some((label, cand)) = cand {
         let started = std::time::Instant::now();
         let wr = eval_weights_winrate(
-            &roster, &cand, search_depth, peek, StrategyKind::Greedy, StrategyKind::Greedy, games, seed, seed_base, threads,
+            &roster, &cand, search_depth, peek, bots::GREEDY, bots::GREEDY, games, seed, seed_base, threads,
         );
         let elapsed = started.elapsed().as_secs_f64();
         let m = if search_depth >= 1 { format!("d{search_depth}-search") } else { "1-ply".to_string() };
@@ -125,7 +131,7 @@ fn main() {
             );
         }
     } else {
-        for s in &run_arena(&roster, games, seed, seed_base, threads) {
+        for s in &run_arena(&roster, games, seed, seed_base, threads, info) {
             println!(
                 "{:>9}  {:>9}  {:>6}  {:>6.1}%  {:>4}-{:>3}-{:<4}",
                 s.p1_strat, s.p0_strat, s.games, s.p1_rate() * 100.0, s.p1_wins, s.p0_wins, s.draws

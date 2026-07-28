@@ -20,7 +20,9 @@ use chomp_engine::Engine;
 use chomp_engine::Structs::{Mon, MoveMeta};
 use chomp_rt::{Address, B256, U256};
 
-use crate::jsrng::{random_salt, JsRng};
+use crate::bot::{Action, BattleMode, Bot, BotConfig, DecisionCtx};
+use crate::bots;
+use crate::jsrng::{derive, random_salt, JsRng, STREAM_P0, STREAM_P1, STREAM_SALT};
 use crate::roster::{input_type_of, target_spec_of, InputType, TargetSpec};
 use crate::shared::{build_damage_calc_context, estimate_damage_meta};
 use crate::sim::{pack_side, Sim};
@@ -722,6 +724,10 @@ pub struct DoublesSpec {
     pub p1_ids: Vec<u32>,
     pub p0_difficulty: Difficulty,
     pub p1_difficulty: Difficulty,
+    /// Registered bot per side. Empty falls back to the difficulty/search
+    /// fields above, which is how the existing sweeps configure a side.
+    pub p0_bot: &'static str,
+    pub p1_bot: &'static str,
     /// Per-side search depth: 0 = epsilon-greedy at the difficulty; ≥1 = joint maximin search.
     pub p0_search_depth: u32,
     pub p1_search_depth: u32,
@@ -736,10 +742,57 @@ pub struct DoublesOutcome {
     pub turns: u32,
 }
 
+/// The registered bot a side plays, or the one its difficulty/search config names.
+fn doubles_bot(spec: &DoublesSpec, side: usize) -> Box<dyn Bot> {
+    let (name, depth, diff, eval) = if side == 0 {
+        (spec.p0_bot, spec.p0_search_depth, spec.p0_difficulty, spec.p0_eval)
+    } else {
+        (spec.p1_bot, spec.p1_search_depth, spec.p1_difficulty, spec.p1_eval)
+    };
+    let name = if !name.is_empty() {
+        name
+    } else if depth > 0 {
+        bots::DOUBLES_SEARCH
+    } else {
+        match diff {
+            Difficulty::Easy => bots::DOUBLES_EASY,
+            Difficulty::Medium => bots::DOUBLES_MEDIUM,
+            Difficulty::Hard => bots::DOUBLES_HARD,
+        }
+    };
+    let cfg = BotConfig { search_depth: depth, doubles_eval: eval, ..BotConfig::default() };
+    bots::build(name, cfg).unwrap_or_else(|| panic!("unknown doubles bot {name:?}"))
+}
+
+/// One side's two slot moves for this turn.
+fn decide_side(sim: &mut Sim, bot: &mut dyn Bot, side: u8, rng: &mut JsRng) -> [SlotMove; 2] {
+    let mut ctx = DecisionCtx {
+        sim,
+        seat: Seat { cpu: side },
+        mode: BattleMode::Doubles,
+        view: None,
+        peek: None,
+        rng,
+    };
+    match bot.decide(&mut ctx) {
+        Action::Slots([a, b]) => [
+            SlotMove { move_index: a.move_index, extra_data: a.extra_data },
+            SlotMove { move_index: b.move_index, extra_data: b.extra_data },
+        ],
+        Action::Single(a) => {
+            [SlotMove { move_index: a.move_index, extra_data: a.extra_data }, NO_OP_MOVE]
+        }
+    }
+}
+
 /// Play one doubles game: each turn both sides pick their two slot moves (greedy CPU at the spec's
 /// difficulty), the moves are packed per side, and the turn executes via `execute_slot_turn`.
 pub fn play_doubles_game(spec: &DoublesSpec, book: &HashMap<String, Address>) -> DoublesOutcome {
-    let mut rng = JsRng::new(spec.seed);
+    let (mut rng0, mut rng1, mut salt_rng) = (
+        derive(spec.seed, STREAM_P0),
+        derive(spec.seed, STREAM_P1),
+        derive(spec.seed, STREAM_SALT),
+    );
     let mut sim = Sim::new_doubles(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -748,25 +801,17 @@ pub fn play_doubles_game(spec: &DoublesSpec, book: &HashMap<String, Address>) ->
         spec.p1_ids.clone(),
         book,
     );
+    let mut bots_pair = [doubles_bot(spec, 0), doubles_bot(spec, 1)];
 
     for t in 0..spec.max_turns {
         let w = sim.winner_index();
         if w != 2 {
             return DoublesOutcome { winner_side: Some(w), turns: t };
         }
-        let bk = sim.battle_key;
-        let (p0a, p0b) = if spec.p0_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval)
-        } else {
-            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
-        };
-        let (p1a, p1b) = if spec.p1_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval)
-        } else {
-            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
-        };
-        let salt0 = random_salt(&mut rng);
-        let salt1 = random_salt(&mut rng);
+        let [p0a, p0b] = decide_side(&mut sim, &mut *bots_pair[0], 0, &mut rng0);
+        let [p1a, p1b] = decide_side(&mut sim, &mut *bots_pair[1], 1, &mut rng1);
+        let salt0 = random_salt(&mut salt_rng);
+        let salt1 = random_salt(&mut salt_rng);
         let side0 = pack_side(p0a.move_index, p0a.extra_data, p0b.move_index, p0b.extra_data, salt0);
         let side1 = pack_side(p1a.move_index, p1a.extra_data, p1b.move_index, p1b.extra_data, salt1);
         sim.execute_slot_turn(side0, side1);
@@ -889,7 +934,11 @@ pub fn play_doubles_game_instrumented(
     book: &HashMap<String, Address>,
     track: Option<(u8, usize)>,
 ) -> DoublesInstr {
-    let mut rng = JsRng::new(spec.seed);
+    let (mut rng0, mut rng1, mut salt_rng) = (
+        derive(spec.seed, STREAM_P0),
+        derive(spec.seed, STREAM_P1),
+        derive(spec.seed, STREAM_SALT),
+    );
     let mut sim = Sim::new_doubles(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -923,12 +972,12 @@ pub fn play_doubles_game_instrumented(
         let (p0a, p0b) = if spec.p0_search_depth > 0 {
             search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval)
         } else {
-            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
+            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng0)
         };
         let (p1a, p1b) = if spec.p1_search_depth > 0 {
             search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval)
         } else {
-            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
+            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng1)
         };
 
         // Slot occupancy + KO state before the turn — the victim's slot must be read pre-execute,
@@ -973,8 +1022,8 @@ pub fn play_doubles_game_instrumented(
             });
         }
 
-        let salt0 = random_salt(&mut rng);
-        let salt1 = random_salt(&mut rng);
+        let salt0 = random_salt(&mut salt_rng);
+        let salt1 = random_salt(&mut salt_rng);
         let side0 = pack_side(p0a.move_index, p0a.extra_data, p0b.move_index, p0b.extra_data, salt0);
         let side1 = pack_side(p1a.move_index, p1a.extra_data, p1b.move_index, p1b.extra_data, salt1);
         // Rollback point for the co-kill counterfactuals below — the real turn is about to advance

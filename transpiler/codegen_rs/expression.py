@@ -43,6 +43,7 @@ from .soltypes import (
     ADDRESS, BOOL, BYTES, BYTES32, INTLIT, STRING, UINT256, UNKNOWN,
     SolType, TypeInferencer, common_type, parse_elementary, uint,
 )
+from ..type_system.slots import SLOT0_FREE_FIELD
 from .rust_types import RustTypeConverter, rust_ident
 
 if TYPE_CHECKING:
@@ -753,6 +754,11 @@ class RustExpressionGenerator:
         else:
             for (fname, ftype), arg in zip(fields, call.arguments):
                 parts.append(f'{rust_ident(fname)}: {field_value(arg, ftype)}')
+        # Structs whose raw slot is touched by Yul carry a generated
+        # undeclared-bit member, which no Solidity initializer names.
+        layout = self._symbols.slot_layouts.get(name)
+        if layout is not None and layout.has_free_bits:
+            parts.append(f'{SLOT0_FREE_FIELD}: U256::ZERO')
         return f'{rust_ident(name)} {{ {", ".join(parts)} }}', t
 
     def _value_of(self, arg: Expression, ptype: SolType) -> str:
@@ -870,6 +876,13 @@ class RustExpressionGenerator:
                     arg_names.append('unimplemented!("unlowerable storage param")')
                     continue
                 if low[0] == '!selector':
+                    # An argument that IS a selector already gets forwarded;
+                    # re-wrapping it would move the selector into the new
+                    # closure and poison every later use in this function.
+                    fwd = self._forwarded_selector(arg)
+                    if fwd is not None:
+                        arg_names.append(fwd)
+                        continue
                     place = self._selector_place_of(arg, lines)
                     tmp = self._ctx.fresh_temp('a')
                     lines.append(
@@ -926,6 +939,27 @@ class RustExpressionGenerator:
         finally:
             self._ctx.storage_locals = saved
         return f'{{ let {tmp} = &mut {base_place}; {fn_path}({args}) }}'
+
+    def _forwarded_selector(self, arg: Expression) -> Optional[str]:
+        """Pass an existing selector straight through, or None to build one.
+
+        A selector-lowered parameter is already a `&dyn Fn`; a deferred local
+        is a `Box<dyn Fn>` that only needs reborrowing.
+        """
+        if not isinstance(arg, Identifier):
+            return None
+        info = self._ctx.storage_locals.get(arg.name)
+        if info is None:
+            return None
+        root = info.get('root')
+        if not root:
+            return None
+        name = rust_ident(arg.name)
+        if root[0] == '!selector':
+            return f'{name}_sel'
+        if root[0] == '!deferred_sel':
+            return f'&*{name}_sel'
+        return None
 
     def _selector_place_of(self, arg: Expression, hoists: List[str]) -> str:
         """Place text for a selector-lowered storage argument, valid inside a

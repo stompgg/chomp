@@ -24,6 +24,8 @@ class TypeRegistry:
 
     def __init__(self):
         self.structs: Set[str] = set()
+        # struct name -> raw AST definition (storage slot-layout computation)
+        self.struct_defs: Dict[str, 'StructDefinition'] = {}
         self.enums: Set[str] = set()
         self.constants: Set[str] = set()
         # Literal numeric values of constants (e.g. MOVE_LANES_PER_MON -> 4), so codegen can
@@ -90,6 +92,7 @@ class TypeRegistry:
         # Top-level structs
         for struct in ast.structs:
             self.structs.add(struct.name)
+            self.struct_defs[struct.name] = struct
             if rel_path and rel_path != 'Structs':
                 self.struct_paths[struct.name] = rel_path
             self.struct_fields[struct.name] = {}
@@ -150,6 +153,7 @@ class TypeRegistry:
             contract_local_structs: Set[str] = set()
             for struct in contract.structs:
                 self.structs.add(struct.name)
+                self.struct_defs[struct.name] = struct
                 contract_local_structs.add(struct.name)
                 # Also record struct fields (same as top-level structs)
                 self.struct_fields[struct.name] = {}
@@ -198,6 +202,7 @@ class TypeRegistry:
     def merge(self, other: 'TypeRegistry') -> None:
         """Merge another registry into this one."""
         self.structs.update(other.structs)
+        self.struct_defs.update(other.struct_defs)
         self.enums.update(other.enums)
         self.constants.update(other.constants)
         self.interfaces.update(other.interfaces)

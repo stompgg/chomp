@@ -24,6 +24,28 @@ impl JsRng {
     }
 }
 
+/// Independent stream ids for one game's [`derive`]d generators.
+pub const STREAM_P0: u32 = 0;
+pub const STREAM_P1: u32 = 1;
+pub const STREAM_SALT: u32 = 2;
+
+/// An independent stream for `(seed, stream)`.
+///
+/// Each seat decides from its own generator and the engine draws salts from a
+/// third, so a bot's draw count can't perturb the battle or the other seat:
+/// same seed => same salts, whoever is piloting. That is what makes two bots
+/// comparable on one seed, and it is why the mixing step matters — mulberry32
+/// seeded with `seed`, `seed+1`, `seed+2` would correlate across streams.
+pub fn derive(seed: u32, stream: u32) -> JsRng {
+    let mut x = seed ^ stream.wrapping_mul(0x9e37_79b9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    JsRng::new(x)
+}
+
 /// 26 hex nibbles -> uint104 (`randomSalt`). Each nibble is
 /// `Math.floor(rng() * 16)` — exact in f64 (rng() = x / 2^32, so the
 /// product is a dyadic rational well inside f64 precision).

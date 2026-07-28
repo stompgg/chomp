@@ -12,8 +12,8 @@ interface IEngine {
     function battleKeyForWrite() external view returns (bytes32);
     function tempRNG() external view returns (uint256);
 
-    // PreDamage threading: hooks read the running damage and call setPreDamage to mutate it.
-    function getPreDamage() external view returns (int32);
+    // PreDamage threading: hooks read the running damage from their packed hook context
+    // (TargetLib.hookPreDamage) and call setPreDamage to mutate it.
     function setPreDamage(int32 value) external;
 
     // State mutating effects
@@ -141,15 +141,15 @@ interface IEngine {
         view
         returns (bytes32 battleKey, bytes32 partyHash);
     function getSeats(bytes32 battleKey) external view returns (address[4] memory seats);
-    function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     // Per-slot "has acted (or is acting) this turn" — the mode-agnostic primitive status effects
     // use to decide between an immediate move-cancel and waiting for next RoundStart.
     function hasSlotActedThisTurn(uint256 absSlot) external view returns (bool);
-    // The roster range a slot may switch within (Multi partitions each side by seat quarter).
-    function getRosterBoundsForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+    // The roster range a slot may switch within (Multi partitions each side by seat quarter),
+    // bundled with the side's KO bitmap so a switch-target search is a single call.
+    function getSlotSwitchWindow(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
         external
         view
-        returns (uint256 lo, uint256 hi);
+        returns (uint256 lo, uint256 hi, uint256 koBitmap);
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(

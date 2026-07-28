@@ -7,7 +7,8 @@
 use chomp_strategies::analysis::run_mon_analysis;
 use chomp_strategies::arena::build_team_mon;
 use chomp_strategies::evaluator::DEFAULT_WEIGHTS;
-use chomp_strategies::game::{play_game, GameSpec, StrategyKind};
+use chomp_strategies::bots;
+use chomp_strategies::game::{play_game, GameSpec, BotName};
 use chomp_strategies::matrix::compute_static_matrix;
 use chomp_strategies::roster::{self, load_roster};
 use std::path::PathBuf;
@@ -49,8 +50,9 @@ fn main() {
                     p1_team: vec![build_team_mon(&roster.mons[i])],
                     p0_ids: vec![m.ids[j]],
                     p1_ids: vec![m.ids[i]],
-                    p0_strategy: StrategyKind::Greedy,
-                    p1_strategy: StrategyKind::Greedy,
+                    p0_strategy: bots::GREEDY,
+                    p1_strategy: bots::GREEDY,
+                    peek_seat: None,
                     p0_weights: DEFAULT_WEIGHTS,
                     p1_weights: DEFAULT_WEIGHTS,
                     p0_search_depth: 0,

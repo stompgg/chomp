@@ -12,6 +12,7 @@ import {IEngine} from "../../src/IEngine.sol";
 import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManager.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
+import {TargetLib} from "../../src/lib/TargetLib.sol";
 import {DefaultMatchmaker} from "../../src/matchmaker/DefaultMatchmaker.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
@@ -26,15 +27,20 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 // PreDamage that halves the running damage.
 contract PreDamageHalveEffect is BasicEffect {
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x200; // PreDamage
+        return 0x02000200; // PreDamage + fresh PreDamage context
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
-        engine.setPreDamage(engine.getPreDamage() / 2);
+    function onPreDamage(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256 hookContext,
+        uint256
+    ) external override returns (bytes32, bool) {
+        engine.setPreDamage(TargetLib.hookPreDamage(hookContext) / 2);
         return (extraData, false);
     }
 }
@@ -58,15 +64,20 @@ contract PreDamageAbsorbEffect is BasicEffect {
 // PreDamage that doubles the running damage.
 contract PreDamageDoubleEffect is BasicEffect {
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x200;
+        return 0x02000200;
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256)
-        external
-        override
-        returns (bytes32, bool)
-    {
-        engine.setPreDamage(engine.getPreDamage() * 2);
+    function onPreDamage(
+        IEngine engine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256 hookContext,
+        uint256
+    ) external override returns (bytes32, bool) {
+        engine.setPreDamage(TargetLib.hookPreDamage(hookContext) * 2);
         return (extraData, false);
     }
 }
@@ -81,17 +92,22 @@ contract SourceCaptureEffect is BasicEffect {
     uint256 public afterDamageCallCount;
 
     function getStepsBitmap() external pure override returns (uint32) {
-        return 0x240; // PreDamage | AfterDamage
+        return 0x02000240; // PreDamage | AfterDamage + fresh context
     }
 
-    function onPreDamage(IEngine engine, bytes32, uint256, bytes32 extraData, uint256, uint256, uint256, uint256 source)
-        external
-        override
-        returns (bytes32, bool)
-    {
+    function onPreDamage(
+        IEngine,
+        bytes32,
+        uint256,
+        bytes32 extraData,
+        uint256,
+        uint256,
+        uint256 hookContext,
+        uint256 source
+    ) external override returns (bytes32, bool) {
         preDamageCallCount += 1;
         lastPreDamageSource = source;
-        lastPreDamageSeenDamage = engine.getPreDamage();
+        lastPreDamageSeenDamage = TargetLib.hookPreDamage(hookContext);
         return (extraData, false);
     }
 

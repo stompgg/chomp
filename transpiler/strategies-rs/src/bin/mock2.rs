@@ -1,7 +1,8 @@
 //! T2 mock-move A/B — loop-driven mock moves (conditional power from live state), no engine edits.
 //!   cargo run --release -p chomp-strategies --bin mock2 -- --games 10000
 
-use chomp_strategies::game::StrategyKind;
+use chomp_strategies::bots;
+use chomp_strategies::game::BotName;
 use chomp_strategies::mock2::{batch1, run_mock_ab, run_mock_ab_with};
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
@@ -47,7 +48,7 @@ fn main() {
         }
         let replaced = roster.move_name(roster.mons.iter().find(|x| x.name == m.mon).unwrap().id, m.lane as u8);
         let (base, mocked) = if ceiling {
-            run_mock_ab_with(&roster, m, games, seed, seed_base, threads, &[(StrategyKind::NoPeekExpect, StrategyKind::NoPeekExpect)])
+            run_mock_ab_with(&roster, m, games, seed, seed_base, threads, &[(bots::NOPEEK, bots::NOPEEK)])
         } else {
             run_mock_ab(&roster, m, games, seed, seed_base, threads)
         };

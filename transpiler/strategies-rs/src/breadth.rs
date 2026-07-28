@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 
 use crate::arena::build_specs_with;
-use crate::game::{run_games_breadth, StrategyKind};
+use crate::bots;
+use crate::game::{run_games_breadth, BotName};
 use crate::roster::{self, Roster};
 
 /// Top two within this many eval-score units = "within noise".
@@ -52,7 +53,7 @@ pub struct BreadthAnalysis {
 
 pub fn run_breadth_analysis(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> BreadthAnalysis {
     let book = roster::address_book();
-    let pairs = [(StrategyKind::Greedy, StrategyKind::Greedy)];
+    let pairs = [(bots::GREEDY, bots::GREEDY)];
     let (specs, _) = build_specs_with(roster, games, wseed, seed_base, &pairs);
     let results = run_games_breadth(&specs, &book, threads);
 

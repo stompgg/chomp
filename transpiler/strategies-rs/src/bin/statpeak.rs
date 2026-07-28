@@ -3,7 +3,8 @@
 //!   cargo run --release -p chomp-strategies --bin statpeak -- --games 20000
 
 use chomp_strategies::arena::{build_specs, build_specs_full, STRAT_PAIRS};
-use chomp_strategies::game::{run_games_instrumented, StrategyKind};
+use chomp_strategies::bots;
+use chomp_strategies::game::{run_games_instrumented, BotName};
 use chomp_strategies::roster::{self, load_roster};
 use std::path::PathBuf;
 
@@ -30,9 +31,9 @@ fn main() {
     });
     let roster = load_roster(&chomp_root);
     let book = roster::address_book();
-    let pairs: Vec<(StrategyKind, StrategyKind)> = STRAT_PAIRS
+    let pairs: Vec<(BotName, BotName)> = STRAT_PAIRS
         .iter()
-        .map(|&(p1, p0)| (StrategyKind::parse(p1).unwrap(), StrategyKind::parse(p0).unwrap()))
+        .map(|&(p1, p0)| (p1, p0))
         .collect();
     let (specs, _) = if rotate {
         build_specs_full(&roster, games, seed, seed_base, &pairs, true)

@@ -4,8 +4,9 @@
 
 use chomp_engine::Structs::Mon;
 use crate::doubles::{run_doubles_games, Difficulty, DoublesEvalW, DoublesSpec};
+use crate::bot::InfoMode;
 use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
-use crate::game::{run_games, GameSpec, StrategyKind};
+use crate::game::{run_games, GameSpec, BotName};
 use crate::roster::{self, Roster, RosterMon};
 
 const TEAM_SIZE: usize = 4;
@@ -54,6 +55,26 @@ pub fn build_team_mon(m: &RosterMon) -> Mon {
     Mon { stats: m.stats.clone(), ability: m.ability, moves }
 }
 
+/// Stamp the information mode across a batch of specs.
+///
+/// Rotation counts occurrences of each matchup rather than raw spec index:
+/// the pair cycle and a plain `i % 2` share a factor, which would pin every
+/// matchup to one peek seat forever instead of alternating.
+pub fn apply_info_mode(specs: &mut [GameSpec], pair_of: &[usize], mode: InfoMode) {
+    let mut seen: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (i, spec) in specs.iter_mut().enumerate() {
+        spec.peek_seat = match mode {
+            InfoMode::Blind => None,
+            InfoMode::RotatePeek => {
+                let pair = pair_of.get(i).copied().unwrap_or(0);
+                let n = seen.entry(pair).or_insert(0);
+                *n += 1;
+                Some(((*n - 1) % 2) as u8)
+            }
+        };
+    }
+}
+
 #[derive(Clone)]
 pub struct PairStats {
     pub p1_strat: &'static str,
@@ -74,9 +95,9 @@ impl PairStats {
 /// Build every game's spec (STRAT_PAIRS rotation, two random team draws each), returning the specs
 /// parallel to their pair index. Exposed so trace tooling can reconstruct the exact same games.
 pub fn build_specs(roster: &Roster, games: usize, wseed: u32, seed_base: u32) -> (Vec<GameSpec>, Vec<usize>) {
-    let pairs: Vec<(StrategyKind, StrategyKind)> = STRAT_PAIRS
+    let pairs: Vec<(BotName, BotName)> = STRAT_PAIRS
         .iter()
-        .map(|&(p1, p0)| (StrategyKind::parse(p1).unwrap(), StrategyKind::parse(p0).unwrap()))
+        .map(|&(p1, p0)| (p1, p0))
         .collect();
     build_specs_with(roster, games, wseed, seed_base, &pairs)
 }
@@ -110,7 +131,7 @@ pub fn build_specs_with(
     games: usize,
     wseed: u32,
     seed_base: u32,
-    pairs: &[(StrategyKind, StrategyKind)],
+    pairs: &[(BotName, BotName)],
 ) -> (Vec<GameSpec>, Vec<usize>) {
     build_specs_full(roster, games, wseed, seed_base, pairs, false)
 }
@@ -126,7 +147,7 @@ pub fn build_specs_full(
     games: usize,
     wseed: u32,
     seed_base: u32,
-    pairs: &[(StrategyKind, StrategyKind)],
+    pairs: &[(BotName, BotName)],
     rotate: bool,
 ) -> (Vec<GameSpec>, Vec<usize>) {
     // Build each mon's loadout set once (13 mons), then clone per draft — avoids an O(n) find
@@ -163,6 +184,7 @@ pub fn build_specs_full(
             p1_ids,
             p0_strategy: p0s,
             p1_strategy: p1s,
+            peek_seat: None,
             p0_weights: DEFAULT_WEIGHTS,
             p1_weights: DEFAULT_WEIGHTS,
             p0_search_depth: 0,
@@ -178,9 +200,17 @@ pub fn build_specs_full(
 }
 
 /// Play `games` matchups (STRAT_PAIRS rotation, two random team draws each) and tally per pair.
-pub fn run_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> Vec<PairStats> {
+pub fn run_arena(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    info: InfoMode,
+) -> Vec<PairStats> {
     let book = roster::address_book();
-    let (specs, pair_of) = build_specs(roster, games, wseed, seed_base);
+    let (mut specs, pair_of) = build_specs(roster, games, wseed, seed_base);
+    apply_info_mode(&mut specs, &pair_of, info);
     let outcomes = run_games(&specs, &book, threads, false);
 
     let mut stats: Vec<PairStats> = STRAT_PAIRS
@@ -213,8 +243,8 @@ pub fn eval_weights_winrate(
     cand: &Weights,
     p1_search_depth: u32,
     p1_search_peek: bool,
-    p1_strat: StrategyKind,
-    p0_strat: StrategyKind,
+    p1_strat: BotName,
+    p0_strat: BotName,
     games: usize,
     wseed: u32,
     seed_base: u32,
@@ -380,13 +410,15 @@ pub fn run_doubles_arena(roster: &Roster, games: usize, wseed: u32, seed_base: u
 /// One side's doubles driver config: pilot difficulty (used at depth 0), search depth, eval weights.
 #[derive(Clone, Copy)]
 pub struct DoublesSideCfg {
+    /// Registered doubles bot; empty falls back to `difficulty`/`depth`.
+    pub bot: &'static str,
     pub difficulty: Difficulty,
     pub depth: u32,
     pub eval: DoublesEvalW,
 }
 impl Default for DoublesSideCfg {
     fn default() -> Self {
-        Self { difficulty: Difficulty::Hard, depth: 0, eval: DoublesEvalW::default() }
+        Self { bot: "", difficulty: Difficulty::Hard, depth: 0, eval: DoublesEvalW::default() }
     }
 }
 
@@ -418,6 +450,8 @@ fn doubles_spec(
         p1_ids,
         p0_difficulty: p0.difficulty,
         p1_difficulty: p1.difficulty,
+        p0_bot: p0.bot,
+        p1_bot: p1.bot,
         p0_search_depth: p0.depth,
         p1_search_depth: p1.depth,
         p0_eval: p0.eval,
@@ -526,7 +560,7 @@ mod tests {
     #[test]
     fn rotation_preserves_drafts_and_varies_loadouts() {
         let roster = load_roster(&chomp_root());
-        let pairs = [(StrategyKind::Greedy, StrategyKind::Greedy)];
+        let pairs = [(crate::bots::GREEDY, crate::bots::GREEDY)];
         let (plain, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, false);
         let (rot, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, true);
 
@@ -549,4 +583,111 @@ mod tests {
         assert_eq!(variants(&plain), roster.mons.len(), "unrotated field should equip one loadout per mon");
         assert!(variants(&rot) > variants(&plain), "rotated field should equip more than one loadout per mon");
     }
+}
+
+
+// ---------------------------------------------------------------------------
+// Bench: score one bot against a ladder of opponents
+// ---------------------------------------------------------------------------
+
+/// One bot's record against one opponent, aggregated over BOTH seat orders.
+///
+/// Seats are not perfectly symmetric — mirror matchups sit a point or two off
+/// 50% — so every row plays each draft from both sides and sums. That cancels
+/// the seat term instead of leaving it in the reported number.
+pub struct BenchRow {
+    pub opponent: &'static str,
+    pub games: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub draws: u32,
+}
+
+impl BenchRow {
+    /// Win share over decisive games.
+    pub fn win_rate(&self) -> f64 {
+        let decisive = self.wins + self.losses;
+        if decisive == 0 {
+            0.0
+        } else {
+            self.wins as f64 / decisive as f64
+        }
+    }
+
+    /// Half-width of the 95% interval on `win_rate` (normal approximation).
+    pub fn ci95(&self) -> f64 {
+        let decisive = (self.wins + self.losses) as f64;
+        if decisive == 0.0 {
+            return 0.0;
+        }
+        let p = self.win_rate();
+        1.96 * (p * (1.0 - p) / decisive).sqrt()
+    }
+}
+
+/// Score `cand` against every opponent in `ladder` (singles).
+pub fn bench_singles(
+    roster: &Roster,
+    cand: &'static str,
+    ladder: &[&'static str],
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    info: InfoMode,
+) -> Vec<BenchRow> {
+    let book = roster::address_book();
+    ladder
+        .iter()
+        .map(|&opponent| {
+            // Alternating entries put the candidate in each seat for half the drafts.
+            let pairs = [(cand, opponent), (opponent, cand)];
+            let (mut specs, pair_of) = build_specs_with(roster, games, wseed, seed_base, &pairs);
+            apply_info_mode(&mut specs, &pair_of, info);
+            let outcomes = run_games(&specs, &book, threads, false);
+
+            let mut row =
+                BenchRow { opponent, games: 0, wins: 0, losses: 0, draws: 0 };
+            for (i, outcome) in outcomes.iter().enumerate() {
+                // pair 0 seats the candidate at p1, pair 1 at p0.
+                let cand_seat = if pair_of[i] == 0 { 1u8 } else { 0u8 };
+                row.games += 1;
+                // An engine panic surfaces as Err; count it with the draws
+                // rather than silently crediting either side.
+                match outcome.as_ref().ok().and_then(|o| o.winner_seat) {
+                    Some(s) if s == cand_seat => row.wins += 1,
+                    Some(_) => row.losses += 1,
+                    None => row.draws += 1,
+                }
+            }
+            row
+        })
+        .collect()
+}
+
+/// Score `cand` against every opponent in `ladder` (doubles).
+pub fn bench_doubles(
+    roster: &Roster,
+    cand: &'static str,
+    ladder: &[&'static str],
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+) -> Vec<BenchRow> {
+    ladder
+        .iter()
+        .map(|&opponent| {
+            let c = DoublesSideCfg { bot: cand, ..Default::default() };
+            let b = DoublesSideCfg { bot: opponent, ..Default::default() };
+            let r = doubles_ab_winrate(roster, c, b, games, wseed, seed_base, threads);
+            BenchRow {
+                opponent,
+                games: r.cand_wins + r.base_wins + r.draws,
+                wins: r.cand_wins,
+                losses: r.base_wins,
+                draws: r.draws,
+            }
+        })
+        .collect()
 }

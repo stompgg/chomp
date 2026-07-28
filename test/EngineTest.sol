@@ -2944,12 +2944,12 @@ contract EngineTest is Test, BattleHelper {
         team[0] = mon;
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
-        // Assert there are no free battle config slots
-        assertEq(engine.getFreeStorageKeys().length, 0);
         bytes32 battleKey = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
-        vm.warp(block.timestamp + MAX_BATTLE_DURATION + 1);
+        bytes32 storageKey = engine.getStorageKey(battleKey);
+        vm.warp(vm.getBlockTimestamp() + MAX_BATTLE_DURATION + 1);
         engine.end(battleKey);
-        // Assert that there is now 1 free battle config slot
-        assertEq(engine.getFreeStorageKeys().length, 1);
+        // The timed-out battle's config slot returns to the pool, so the next battle recycles it.
+        bytes32 battleKey2 = _startBattle(engine, defaultOracle, defaultRegistry, matchmaker, address(commitManager));
+        assertEq(engine.getStorageKey(battleKey2), storageKey, "expected recycled storage key");
     }
 }

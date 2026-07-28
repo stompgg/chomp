@@ -15,7 +15,7 @@ use chomp_rt::{B256, U256};
 
 use crate::analysis::{fold, MonStat};
 use crate::arena::{build_specs, build_specs_with};
-use crate::game::{run_games_instrumented, run_games_mock, GameSpec, StrategyKind};
+use crate::game::{run_games_instrumented, run_games_mock, GameSpec, BotName};
 use crate::roster::{self, Roster};
 use crate::sim::Sim;
 use crate::shared::{build_damage_calc_context, estimate_damage};
@@ -289,7 +289,7 @@ pub fn run_mock_ab(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, s
 /// Same A/B, but under an explicit pilot rotation — e.g. the no-peek pilots as a "ceiling", which
 /// actually play the reads/setups the greedy basket ignores, so a conditional/yomi move shows its
 /// upside rather than just its floor.
-pub fn run_mock_ab_with(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, seed_base: u32, threads: usize, pairs: &[(StrategyKind, StrategyKind)]) -> (MonStat, MonStat) {
+pub fn run_mock_ab_with(roster: &Roster, mock: &MockMove, games: usize, wseed: u32, seed_base: u32, threads: usize, pairs: &[(BotName, BotName)]) -> (MonStat, MonStat) {
     let (specs, _) = build_specs_with(roster, games, wseed, seed_base, pairs);
     run_mock_ab_on(roster, mock, specs, threads)
 }

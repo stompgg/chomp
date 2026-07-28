@@ -89,8 +89,8 @@ interface IEffect {
 
     // NOTE: CURRENTLY ONLY RUN LOCALLY ON MONS (global effects do not have this hook)
     // Runs before damage is applied; effects can mutate the in-flight damage by calling
-    // `engine.setPreDamage(int32)`. Opted-in effects read the fresh current running damage via
-    // `TargetLib.hookPreDamage(activesPacked)`; legacy effects may use `engine.getPreDamage()`.
+    // `engine.setPreDamage(int32)`. Effects read the fresh current running damage via
+    // `TargetLib.hookPreDamage(activesPacked)`, which requires opting into PreDamage context.
     // Multiple subscribed effects compose sequentially in effect-array order, each observing
     // the post-mutation value from prior effects.
     function onPreDamage(

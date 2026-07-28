@@ -63,12 +63,4 @@ abstract contract MappingAllocator {
         }
         delete battleKeyToStorageKey[battleKey];
     }
-
-    function getFreeStorageKeys() public view returns (bytes32[] memory keys) {
-        uint256 count = _freeKeyCount();
-        keys = new bytes32[](count);
-        for (uint256 i; i < count; i++) {
-            keys[i] = freeStorageKeys[i];
-        }
-    }
 }

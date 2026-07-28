@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::arena::{build_doubles_specs, build_specs, build_specs_full, build_specs_with, STRAT_PAIRS};
 use crate::doubles::run_doubles_games_instrumented;
-use crate::game::{run_games_instrumented, InstrRecord, StrategyKind};
+use crate::game::{run_games_instrumented, InstrRecord, BotName};
 use crate::roster::{self, Roster};
 
 /// Per-mon accumulators, split by the mon's own team result that game.
@@ -77,7 +77,7 @@ pub fn run_mon_analysis_with(
     wseed: u32,
     seed_base: u32,
     threads: usize,
-    pairs: &[(StrategyKind, StrategyKind)],
+    pairs: &[(BotName, BotName)],
 ) -> MonAnalysis {
     let book = roster::address_book();
     let (specs, _pair_of) = build_specs_with(roster, games, wseed, seed_base, pairs);
@@ -93,12 +93,12 @@ pub fn run_mon_analysis_rotated(
     wseed: u32,
     seed_base: u32,
     threads: usize,
-    pairs: Option<&[(StrategyKind, StrategyKind)]>,
+    pairs: Option<&[(BotName, BotName)]>,
 ) -> MonAnalysis {
     let book = roster::address_book();
-    let default_pairs: Vec<(StrategyKind, StrategyKind)> = STRAT_PAIRS
+    let default_pairs: Vec<(BotName, BotName)> = STRAT_PAIRS
         .iter()
-        .map(|&(p1, p0)| (StrategyKind::parse(p1).unwrap(), StrategyKind::parse(p0).unwrap()))
+        .map(|&(p1, p0)| (p1, p0))
         .collect();
     let pairs = pairs.unwrap_or(&default_pairs);
     let (specs, _) = build_specs_full(roster, games, wseed, seed_base, pairs, true);

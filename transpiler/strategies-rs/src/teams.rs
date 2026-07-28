@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::arena::{build_team_mon, draw_team, Wrand};
 use crate::evaluator::DEFAULT_WEIGHTS;
-use crate::game::{run_games, GameSpec, StrategyKind};
+use crate::bots;
+use crate::game::{run_games, GameSpec, BotName};
 use crate::roster::{self, Roster};
 
 /// All k-subsets of 0..n (lexicographic).
@@ -74,8 +75,9 @@ pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_
                 p1_team: team_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
                 p0_ids: opp,
                 p1_ids: team_ids.clone(),
-                p0_strategy: StrategyKind::Greedy,
-                p1_strategy: StrategyKind::Greedy,
+                p0_strategy: bots::GREEDY,
+                p1_strategy: bots::GREEDY,
+                peek_seat: None,
                 p0_weights: DEFAULT_WEIGHTS,
                 p1_weights: DEFAULT_WEIGHTS,
                 p0_search_depth: 0,
