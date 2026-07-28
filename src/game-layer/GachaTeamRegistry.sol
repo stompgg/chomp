@@ -98,6 +98,7 @@ contract GachaTeamRegistry is
     // ----- Errors -----
     error NotWhitelistedOpponent();
     error AlreadyFirstRolled();
+    error NotFirstRolled();
     error InvalidStarterId();
     error NoMoreStock();
     error NotEngine();
@@ -599,6 +600,12 @@ contract GachaTeamRegistry is
     }
 
     function roll(uint256 numRolls) external returns (uint256[] memory rolledIds) {
+        // Owning nothing means the account skipped onboarding entirely: rolling here would
+        // leave it with mons but no starter and no team, which nothing downstream repairs.
+        // Both entry points (`firstRoll`, `migrate`) seed ownership, so one check covers them.
+        if (monsOwned[msg.sender].length() == 0) {
+            revert NotFirstRolled();
+        }
         if (monsOwned[msg.sender].length() == monIds.length()) {
             revert NoMoreStock();
         }

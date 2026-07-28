@@ -191,6 +191,22 @@ contract GachaMigrationTest is Test {
         assertTrue(newReg.migrated(BOB), "bob now migrated");
     }
 
+    // roll()'s precondition keys off owned mons, which an import satisfies — a returning
+    // player must not be pushed back through firstRoll on the new registry.
+    function test_migratedPlayerCanRoll() public {
+        vm.startPrank(ALICE);
+        newReg.migrate();
+        uint256[] memory rolled = newReg.roll(1);
+        vm.stopPrank();
+        assertEq(rolled.length, 1, "migrated player can roll");
+    }
+
+    function test_roll_revertsBeforeImport() public {
+        vm.expectRevert(GachaTeamRegistry.NotFirstRolled.selector);
+        vm.prank(ALICE);
+        newReg.roll(1);
+    }
+
     // ----- helpers -----
 
     function _seedCatalog(GachaTeamRegistry reg) internal {

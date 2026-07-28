@@ -16,7 +16,7 @@
   "MainnetDoublesReplay1_Reused_engineStorageUniqueTouchedSlots": "55",
   "MainnetDoublesReplay1_Reused_engineStorageUniqueWrittenSlots": "28",
   "MainnetDoublesReplay1_Reused_engineStorageWrites": "161",
-  "MainnetDoublesReplay1_Reused_execGas": "1208482",
+  "MainnetDoublesReplay1_Reused_execGas": "1206172",
   "MainnetDoublesReplay1_Reused_externalStorageReads": "6",
   "MainnetDoublesReplay1_Reused_externalStorageWrites": "0",
   "MainnetDoublesReplay1_Reused_headerFrameCallbackPassthroughOps": "144",
@@ -108,7 +108,7 @@
   "MainnetReplay_Reused_engineStorageUniqueTouchedSlots": "84",
   "MainnetReplay_Reused_engineStorageUniqueWrittenSlots": "51",
   "MainnetReplay_Reused_engineStorageWrites": "411",
-  "MainnetReplay_Reused_execGas": "2107241",
+  "MainnetReplay_Reused_execGas": "2102467",
   "MainnetReplay_Reused_externalStorageReads": "18",
   "MainnetReplay_Reused_externalStorageWrites": "0",
   "MainnetReplay_Reused_headerFrameCallbackPassthroughOps": "535",
@@ -182,5 +182,11 @@
   "MainnetReplay_Reused_storage_staticCatalogUniqueTouched": "30",
   "MainnetReplay_Reused_storage_staticCatalogUniqueWritten": "0",
   "MainnetReplay_Reused_storage_staticCatalogWrites": "0",
-  "MainnetReplay_Reused_updateStateCalls": "0"
+  "MainnetReplay_Reused_updateStateCalls": "0",
+  "SinglesFloor_25Noops_rawGas": "529900",
+  "SinglesFloor_BatchFixed": "253",
+  "SinglesFloor_Noop_perTurn": "21196",
+  "SinglesFloor_OneNoop_rawGas": "21449",
+  "SinglesFloor_SendIn_rawGas": "164580",
+  "SinglesFloor_Whole27_rawGas": "668477"
 }
