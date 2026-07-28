@@ -36,6 +36,10 @@ class TypeRegistry:
         self.interfaces: Set[str] = set()
         self.contracts: Set[str] = set()
         self.libraries: Set[str] = set()
+        # Per-contract constant members. Library constants emit as `static readonly`, so a
+        # qualified reference must resolve against the class, not the module singleton that
+        # library *functions* use.
+        self.contract_constants: Dict[str, Set[str]] = {}
         self.contract_methods: Dict[str, Set[str]] = {}
         self.contract_vars: Dict[str, Set[str]] = {}
         self.known_public_state_vars: Set[str] = set()
@@ -186,10 +190,12 @@ class TypeRegistry:
 
             # State variables
             state_vars = set()
+            const_vars = set()
             for var in contract.state_variables:
                 state_vars.add(var.name)
                 if var.mutability == 'constant':
                     self.constants.add(var.name)
+                    const_vars.add(var.name)
                     self._record_constant_value(var)
                 if var.visibility == 'public' and var.mutability not in ('constant', 'immutable'):
                     self.known_public_state_vars.add(var.name)
@@ -198,6 +204,8 @@ class TypeRegistry:
                         self.known_public_mappings.add(var.name)
             if state_vars:
                 self.contract_vars[name] = state_vars
+            if const_vars:
+                self.contract_constants[name] = const_vars
 
     def merge(self, other: 'TypeRegistry') -> None:
         """Merge another registry into this one."""
@@ -220,6 +228,12 @@ class TypeRegistry:
                 self.contract_vars[name].update(vars)
             else:
                 self.contract_vars[name] = vars.copy()
+
+        for name, consts in other.contract_constants.items():
+            if name in self.contract_constants:
+                self.contract_constants[name].update(consts)
+            else:
+                self.contract_constants[name] = consts.copy()
 
         self.known_public_state_vars.update(other.known_public_state_vars)
         self.known_public_mappings.update(other.known_public_mappings)

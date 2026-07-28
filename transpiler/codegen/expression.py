@@ -643,8 +643,12 @@ class ExpressionGenerator(BaseGenerator):
                 self._ctx.libraries_referenced.add(access.expression.name)
             elif access.expression.name in self._ctx.known_libraries:
                 self._ctx.libraries_referenced.add(access.expression.name)
-                # Use the module-level singleton instance for library calls
                 lib_name = access.expression.name
+                # Constants emit as `static readonly`, so they resolve against the class;
+                # everything else goes through the module-level singleton instance.
+                if member in self._ctx.known_contract_constants.get(lib_name, ()):
+                    self._ctx.library_classes_referenced.add(lib_name)
+                    return f'{lib_name}.{member}'
                 singleton_name = lib_name[0].lower() + lib_name[1:]
                 return f'{singleton_name}.{member}'
 
