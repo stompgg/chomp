@@ -141,11 +141,12 @@ class ImportGenerator:
                 continue
             import_path = self._get_relative_import_path(library)
             singleton_name = library[0].lower() + library[1:]
-            names = [singleton_name]
             # A `static readonly` constant resolves against the class, so pull that in too.
             if library in self._ctx.library_classes_referenced:
-                names.append(library)
-            lines.append(f"import {{ {', '.join(sorted(names))} }} from '{import_path}';")
+                imported = f'{library}, {singleton_name}'
+            else:
+                imported = singleton_name
+            lines.append(f"import {{ {imported} }} from '{import_path}';")
         return lines
 
     def _generate_contract_type_imports(self, contract_name: str) -> List[str]:

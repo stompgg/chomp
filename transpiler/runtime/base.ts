@@ -863,10 +863,9 @@ export abstract class Contract {
     this._storage.sstore(this._yulStorageKey(key), value);
   }
 
-  /** Stable synthetic slot key for a storage struct (Solidity `x.slot`), holding the
-   *  packed bits no modelled property owns. Keyed by an identity symbol so the
-   *  state-tracking proxy and its raw target resolve alike. The `_yul` prefix keeps it
-   *  out of the namespace contracts' own methods share. */
+  /** Stable synthetic slot key for a storage struct (Solidity `x.slot`), holding the packed
+   *  bits no modelled property owns. Keyed by an identity symbol so a proxied struct and its
+   *  raw target agree. `_yul`-prefixed to stay clear of contract method names. */
   protected _yulSlotKeyOf(ref: any): string {
     if (ref === null || ref === undefined || typeof ref !== 'object') {
       return this._yulStorageKey(ref);
