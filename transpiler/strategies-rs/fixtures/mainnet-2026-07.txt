@@ -1,0 +1,135 @@
+Battle 0x3d975a5c8e58df60c746a2321537c0635a4c484a6c96122dedec671de5788a15  (mainnet)
+A 0xd749…5185 (0xd749a326d3a5ef91fe5fce4a4c37ba263e455185)  vs  B Hard CPU (0x1724f0b19685037be1dbcc499e37cf13a23620a1)
+Winner: 0xd749…5185 (0xd749a326d3a5ef91fe5fce4a4c37ba263e455185)   Turns: 26
+CPU difficulty: hard
+
+Team A:
+  Malalien  L8  facet0  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Xmon  L8  facet0  moves[Contagious Slumber, Vital Siphon, Somniphobia, Old Vengeance]
+  Volthare  L8  facet0  moves[Electrocute, Round Trip, Mega Star Blast, Dual Shock]
+  Ekineki  L8  facet0  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+Team B:
+  Inutia  L0  facet0  moves[Chain Expansion, Initialize, Big Bite, Hit And Dip]
+  Ekineki  L0  facet0  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+  Pengym  L0  facet0  moves[Chill Out, Deadlift, Deep Freeze, Pistol Squat]
+  Embursa  L0  facet0  moves[Honey Bribe, Set Ablaze, Heat Beacon, Q5]
+
+T1  A mon0 SWITCH→2 salt7642991204039085190839734102788   B mon0 SWITCH→3 salt0
+T2  A mon0 move2 x0 salt6523886991944769092997260894615   B mon0 move0 x0 salt0
+T3  A mon0 move2 x0 salt7173571679591124929013698586035   B mon0 SWITCH→2 salt0
+T4  A mon0 move3 x0 salt715973405151049693142183856130   B mon0 move1 x0 salt0
+T5  A mon0 SWITCH→3 salt10434400288200938430387780785640   B mon0 move3 x0 salt0
+T6  A mon0 move1 x0 salt16590288657525008761715849387279   B mon0 SWITCH→0 salt0
+T7  A mon0 move1 x0 salt6648290556624459692187665162988   B mon0 SWITCH→1 salt0
+T8  A mon0 SWITCH→3 salt11274310919296775172131196580187   B mon0 move0 x0 salt0
+T9  A mon0 SWITCH→2 salt16134457634591674276270373928776   B mon0 NO_OP salt0
+T10  A mon0 NO_OP salt2683191092725922261265135640441   B mon0 move3 x0 salt0
+T11  A mon0 move2 x0 salt11154374962366060505624650320091   B mon0 SWITCH→2 salt0
+T12  A mon0 NO_OP salt0   B mon0 SWITCH→3 salt0
+T13  A mon0 NO_OP salt2442172819432642288986362144799   B mon0 move1 x0 salt0
+T14  A mon0 SWITCH→0 salt13755720069283378538249966050958   B mon0 NO_OP salt0
+T15  A mon0 NO_OP salt6756780855722838315842010211924   B mon0 move0 x0 salt0
+T16  A mon0 move1 x0 salt7134362144532818851786463667953   B mon0 NO_OP salt0
+T17  A mon0 NO_OP salt18284396846231976760979538969039   B mon0 move0 x0 salt0
+T18  A mon0 move1 x0 salt1618181630032726973372722526491   B mon0 move1 x0 salt0
+T19  A mon0 SWITCH→1 salt4487693600846520293556172147971   B mon0 SWITCH→1 salt0
+T20  A mon0 move1 x0 salt9839922508345259735150333678320   B mon0 move1 x1 salt0
+T21  A mon0 move1 x0 salt3477810539310681962522516256065   B mon0 SWITCH→0 salt0
+T22  A mon0 move1 x0 salt10450567441627425515527389264062   B mon0 SWITCH→1 salt0
+T23  A mon0 move1 x0 salt3676355149806238644881809734477   B mon0 move1 x1 salt0
+T24  A mon0 NO_OP salt0   B mon0 SWITCH→0 salt0
+T25  A mon0 NO_OP salt882665223311632533854195206303   B mon0 move0 x0 salt0
+T26  A mon0 move1 x0 salt6717266306622880485132858893329   B mon0 move0 x0 salt0
+T27  A mon0 move1 x0 salt1998170498903120033041120388285   B mon0 move0 x0 salt0
+
+Battle 0x7529114a519de772c47a08d62c910cd1abcf13ed23b28f6d46fdc662d70a58cd  (mainnet)
+A 0xd749…5185 (0xd749a326d3a5ef91fe5fce4a4c37ba263e455185)  vs  B Hard CPU (0x1724f0b19685037be1dbcc499e37cf13a23620a1)
+Winner: 0xd749…5185 (0xd749a326d3a5ef91fe5fce4a4c37ba263e455185)   Turns: 24
+CPU difficulty: hard
+
+Team A:
+  Malalien  L8  facet0  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Xmon  L8  facet0  moves[Contagious Slumber, Vital Siphon, Somniphobia, Old Vengeance]
+  Volthare  L7  facet0  moves[Electrocute, Round Trip, Mega Star Blast, Dual Shock]
+  Ekineki  L8  facet0  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+Team B:
+  Inutia  L0  facet0  moves[Chain Expansion, Initialize, Big Bite, Hit And Dip]
+  Ekineki  L0  facet0  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+  Pengym  L0  facet0  moves[Chill Out, Deadlift, Deep Freeze, Pistol Squat]
+  Embursa  L0  facet0  moves[Honey Bribe, Set Ablaze, Heat Beacon, Q5]
+
+T1  A mon0 SWITCH→2 salt16278078627131487114132547704398   B mon0 SWITCH→3 salt0
+T2  A mon0 move2 x0 salt7783107712856898203443960860761   B mon0 move0 x0 salt0
+T3  A mon0 move2 x0 salt19887999801398167433714186522490   B mon0 move1 x0 salt0
+T4  A mon0 move1 x3 salt5027765037949021299786506045172   B mon0 SWITCH→1 salt0
+T5  A mon0 move1 x3 salt16885550753857402497828728004069   B mon0 move0 x0 salt0
+T6  A mon0 SWITCH→2 salt12823241624889775396764909896588   B mon0 NO_OP salt0
+T7  A mon0 move1 x1 salt11769922866231276628642544586802   B mon0 move1 x2 salt0
+T8  A mon0 SWITCH→0 salt13890169115124444928492980561828   B mon0 NO_OP salt0
+T9  A mon0 move0 x0 salt1967333149517071111268237089957   B mon0 move0 x0 salt0
+T10  A mon0 move1 x0 salt1087772717206985673591137063737   B mon0 SWITCH→2 salt0
+T11  A mon0 SWITCH→1 salt6064891294010572925388263446039   B mon0 move2 x0 salt0
+T12  A mon0 move1 x0 salt13970724489817994243868990999906   B mon0 SWITCH→1 salt0
+T13  A mon0 move1 x0 salt3664146897130979578418152456832   B mon0 move2 x0 salt0
+T14  A mon0 move1 x0 salt18892824784579841314989597992588   B mon0 move0 x0 salt0
+T15  A mon0 move1 x0 salt1376118833330709076722273176502   B mon0 move0 x0 salt0
+T16  A mon0 move1 x0 salt8244822615319294248991548387402   B mon0 SWITCH→0 salt0
+T17  A mon0 move1 x0 salt18344034292549560831899680922034   B mon0 move1 x0 salt0
+T18  A mon0 move1 x0 salt9096455331192103053941663375814   B mon0 move0 x0 salt0
+T19  A mon0 SWITCH→0 salt7853893379365566137156318043105   B mon0 NO_OP salt0
+T20  A mon0 SWITCH→3 salt3920529028209073602227420726182   B mon0 NO_OP salt0
+T21  A mon0 move1 x2 salt5944833039053403453796308587341   B mon0 move2 x0 salt0
+T22  A mon0 move0 x0 salt3969701329630262960307396414223   B mon0 move3 x1 salt0
+T23  A mon0 NO_OP salt0   B mon0 SWITCH→1 salt0
+T24  A mon0 SWITCH→1 salt10391795889289817909269995339622   B mon0 NO_OP salt0
+T25  A mon0 move1 x0 salt5256755908273271588468609386902   B mon0 NO_OP salt0
+
+Battle 0xc996696b718feaa03805730a31d25de9d995439a7e6a8082c73b91a43e9d0d08  (mainnet)
+A @tenkoghost1 (0x2c9623a2ac7336b09c91923183318099ac82b7e3)  vs  B Hard CPU (0x1724f0b19685037be1dbcc499e37cf13a23620a1)
+Winner: @tenkoghost1 (0x2c9623a2ac7336b09c91923183318099ac82b7e3)   Turns: 7
+CPU difficulty: hard
+
+Team A:
+  Gorillax  L12  facet6  moves[Rock Pull, Pound Ground, Blow, Throw Pebble]
+  Malalien  L12  facet6  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Sofabbi  L12  facet6  moves[Gachachacha, Guest Feature, Unexpected Carrot, Snack Break]
+  Ekineki  L12  facet6  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+Team B:
+  Malalien  L0  facet0  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Aurox  L0  facet0  moves[Volatile Punch, Gilded Recovery, Iron Wall, Bull Rush]
+  Gorillax  L0  facet0  moves[Rock Pull, Pound Ground, Blow, Throw Pebble]
+  Volthare  L0  facet0  moves[Electrocute, Round Trip, Mega Star Blast, Dual Shock]
+
+T1  A SWITCH→3 salt1145376790288196797197575 | SWITCH→0 salt1145376790288196797197575   B SWITCH→0 salt0 | SWITCH→1 salt0
+T2  A move0 x16384 salt202495186900453106763512 | move2 x16384 salt202495186900453106763512   B move2 x8192 salt0 | move3 x8192 salt0
+T3  A NO_OP salt845014879727075913631049 | SWITCH→1 salt845014879727075913631049   B SWITCH→3 salt0 | NO_OP salt0
+T4  A move0 x16384 salt303380633387863941492980 | move1 x16384 salt303380633387863941492980   B move2 x8192 salt0 | move0 x4096 salt0
+T5  A NO_OP salt0 | NO_OP salt0   B SWITCH→2 salt0 | NO_OP salt0
+T6  A NO_OP salt830580391542377377074416 | move1 x16384 salt830580391542377377074416   B move1 x8192 salt0 | NO_OP salt0
+T7  A move0 x16384 salt342698529802560752655528 | NO_OP salt342698529802560752655528   B move1 x8192 salt0 | move3 x4096 salt0
+T8  A NO_OP salt982712523374567969471956 | move1 x32768 salt982712523374567969471956   B move1 x8192 salt0 | move3 x4096 salt0
+
+Battle 0x6a87950b92eb969ce04a68109fcac3038d26f420234a68132c7bdc7f3e2ac0fc  (mainnet)
+A @tenkoghost1 (0x2c9623a2ac7336b09c91923183318099ac82b7e3)  vs  B Hard CPU (0x1724f0b19685037be1dbcc499e37cf13a23620a1)
+Winner: @tenkoghost1 (0x2c9623a2ac7336b09c91923183318099ac82b7e3)   Turns: 7
+CPU difficulty: hard
+
+Team A:
+  Gorillax  L12  facet6  moves[Rock Pull, Pound Ground, Blow, Throw Pebble]
+  Malalien  L12  facet6  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Sofabbi  L12  facet6  moves[Gachachacha, Guest Feature, Unexpected Carrot, Snack Break]
+  Ekineki  L12  facet6  moves[Bubble Bop, Sneak Attack, Nine Nine Nine, Overflow]
+Team B:
+  Malalien  L0  facet0  moves[Triple Think, Federal Investigation, Negative Thoughts, Infinite Love]
+  Aurox  L0  facet0  moves[Volatile Punch, Gilded Recovery, Iron Wall, Bull Rush]
+  Gorillax  L0  facet0  moves[Rock Pull, Pound Ground, Blow, Throw Pebble]
+  Volthare  L0  facet0  moves[Electrocute, Round Trip, Mega Star Blast, Dual Shock]
+
+T1  A SWITCH→0 salt706840469641094748672528 | SWITCH→3 salt706840469641094748672528   B SWITCH→0 salt0 | SWITCH→1 salt0
+T2  A move1 x16384 salt384554543562985196003319 | move0 x16384 salt384554543562985196003319   B move2 x4096 salt0 | move3 x4096 salt0
+T3  A SWITCH→1 salt1018655568522462328983640 | NO_OP salt1018655568522462328983640   B SWITCH→3 salt0 | NO_OP salt0
+T4  A move1 x16384 salt1152575408630275207959332 | move0 x16384 salt1152575408630275207959332   B move2 x4096 salt0 | move0 x8192 salt0
+T5  A NO_OP salt0 | NO_OP salt0   B SWITCH→2 salt0 | NO_OP salt0
+T6  A move1 x32768 salt542740429310367792741919 | NO_OP salt542740429310367792741919   B move2 x4096 salt0 | move3 x4096 salt0
+T7  A SWITCH→2 salt44291697099022681926235 | NO_OP salt44291697099022681926235   B NO_OP salt0 | NO_OP salt0
+T8  A move2 x16384 salt715639655745582546424049 | move0 x16384 salt715639655745582546424049   B move2 x4096 salt0 | move3 x8192 salt0

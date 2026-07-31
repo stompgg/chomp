@@ -61,6 +61,8 @@ fn main() {
                     p1_search_peek: false,
                     p0_search_mixed: false,
                     p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
                 };
                 let o = play_game(&spec, &book, false);
                 checked += 1;

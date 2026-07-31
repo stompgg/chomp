@@ -1,6 +1,8 @@
 //! Replay mainnet battle logs against the current Rust CPU policies.
 //!
-//!   cargo run --release -p chomp-strategies --bin replay -- [--log logs.txt] [--battle N]
+//!   cargo run --release -p chomp-strategies --bin replay -- [--log <file>] [--battle N]
+//!
+//! Defaults to the curated fixture corpus in `strategies-rs/fixtures/`.
 
 use chomp_strategies::replay::{parse_logs, replay_doubles, replay_singles};
 use chomp_strategies::roster::{self, load_roster};
@@ -15,9 +17,9 @@ fn main() {
     let chomp_root = std::env::var("CHOMP_ROOT").map(PathBuf::from).unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
     });
-    let log_path = arg(&args, "--log")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| chomp_root.join("logs.txt"));
+    let log_path = arg(&args, "--log").map(PathBuf::from).unwrap_or_else(|| {
+        chomp_root.join("transpiler/strategies-rs/fixtures/mainnet-2026-07.txt")
+    });
     let only: Option<usize> = arg(&args, "--battle").and_then(|v| v.parse().ok());
 
     let text = std::fs::read_to_string(&log_path)

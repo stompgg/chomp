@@ -193,6 +193,8 @@ pub fn build_specs_full(
             p1_search_peek: false,
             p0_search_mixed: false,
             p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
         });
         pair_of.push(pi);
     }
@@ -237,7 +239,6 @@ pub fn run_arena(
 /// [`DEFAULT_WEIGHTS`]) over `games` matched drafts. Draws excluded from the denominator. Passing
 /// `DEFAULT_WEIGHTS` at depth 0 reproduces the corresponding STRAT_PAIRS row exactly.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 pub fn eval_weights_winrate(
     roster: &Roster,
     cand: &Weights,
@@ -245,6 +246,8 @@ pub fn eval_weights_winrate(
     p1_search_peek: bool,
     p1_strat: BotName,
     p0_strat: BotName,
+    p0_search_depth: u32,
+    cand_opts: crate::search::SearchOpts,
     games: usize,
     wseed: u32,
     seed_base: u32,
@@ -256,22 +259,31 @@ pub fn eval_weights_winrate(
         s.p1_weights = *cand; // candidate under test
         s.p1_search_depth = p1_search_depth; // 0 = 1-ply greedy; ≥1 = maximin search
         s.p1_search_peek = p1_search_peek; // peek-at-root best-response
+        s.p1_search_opts = cand_opts;
         s.p0_weights = DEFAULT_WEIGHTS; // frozen baseline
+        s.p0_search_depth = p0_search_depth; // 0 = the named p0 strategy; ≥1 = same-depth baseline search
     }
-    let outcomes = run_games(&specs, &book, threads, false);
-
+    // Chunked so long runs stream a running tally to stderr (check-in friendly).
+    let chunk = (specs.len() / 8).max(50);
     let (mut p1_wins, mut decisive) = (0u32, 0u32);
-    for o in &outcomes {
-        if let Ok(g) = o {
-            match g.winner_seat {
-                Some(1) => {
-                    p1_wins += 1;
-                    decisive += 1;
+    let mut done = 0usize;
+    for block in specs.chunks(chunk) {
+        let outcomes = run_games(block, &book, threads, false);
+        for o in &outcomes {
+            if let Ok(g) = o {
+                match g.winner_seat {
+                    Some(1) => {
+                        p1_wins += 1;
+                        decisive += 1;
+                    }
+                    Some(0) => decisive += 1,
+                    _ => {}
                 }
-                Some(0) => decisive += 1,
-                _ => {}
             }
         }
+        done += block.len();
+        let running = if decisive == 0 { 0.0 } else { p1_wins as f64 * 100.0 / decisive as f64 };
+        eprintln!("[{done}/{}] win {running:.1}%", specs.len());
     }
     if decisive == 0 { 0.0 } else { p1_wins as f64 / decisive as f64 }
 }

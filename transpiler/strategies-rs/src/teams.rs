@@ -86,6 +86,8 @@ pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_
                 p1_search_peek: false,
                 p0_search_mixed: false,
                 p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
             });
             team_of.push(ti);
             counter = counter.wrapping_add(1);

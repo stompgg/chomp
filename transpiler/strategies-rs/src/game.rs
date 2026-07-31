@@ -68,6 +68,9 @@ pub struct GameSpec {
     /// pure maximin — mind-games at yomi points, seeded (deterministic per game seed).
     pub p0_search_mixed: bool,
     pub p1_search_mixed: bool,
+    /// Per-seat singles-search shaping (vetoes + settlement); default = shipped search.
+    pub p0_search_opts: crate::search::SearchOpts,
+    pub p1_search_opts: crate::search::SearchOpts,
 }
 
 /// One game's generators: one per seat plus the engine's salt stream.
@@ -137,6 +140,7 @@ fn init_seats(spec: &GameSpec) -> [SeatState; 2] {
                     search_depth: spec.p0_search_depth,
                     search_peek: spec.p0_search_peek,
                     search_mixed: spec.p0_search_mixed,
+                    search_opts: spec.p0_search_opts,
                 },
             ),
             last_own_move: Mv { move_index: 0, extra_data: 0 },
@@ -151,6 +155,7 @@ fn init_seats(spec: &GameSpec) -> [SeatState; 2] {
                     search_depth: spec.p1_search_depth,
                     search_peek: spec.p1_search_peek,
                     search_mixed: spec.p1_search_mixed,
+                    search_opts: spec.p1_search_opts,
                 },
             ),
             last_own_move: Mv { move_index: 0, extra_data: 0 },

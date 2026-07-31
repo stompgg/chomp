@@ -307,6 +307,7 @@ pub fn replay_singles(
         ("heuristic", bots::build(bots::HEURISTIC, singles_cfg(0, false)).unwrap()),
         ("search-d1", bots::build(bots::SEARCH_D1, singles_cfg(1, true)).unwrap()),
         ("search-d2", bots::build(bots::SEARCH_D2, singles_cfg(2, true)).unwrap()),
+        ("search-d3", bots::build(bots::SEARCH, singles_cfg(3, true)).unwrap()),
     ];
     let mut rngs: Vec<_> = (0..policies.len() as u32).map(|i| derive(0xbeef, 100 + i)).collect();
     let mut compared = vec![(0u32, 0u32); policies.len()];
@@ -426,7 +427,29 @@ fn singles_cfg(depth: u32, peek: bool) -> BotConfig {
         search_depth: depth,
         search_peek: peek,
         search_mixed: false,
+        search_opts: env_opts(),
     }
+}
+
+/// REPLAY_OPTS="veto-rest,settle=N" applies search shaping to every queried search policy.
+fn env_opts() -> crate::search::SearchOpts {
+    let mut opts = crate::search::SearchOpts::default();
+    let Ok(s) = std::env::var("REPLAY_OPTS") else { return opts };
+    for tok in s.split(',') {
+        let tok = tok.trim();
+        if tok == "veto-rest" {
+            opts.vetoes |= crate::search::VETO_DRAIN_LOCK_REST;
+        } else if let Some(n) = tok.strip_prefix("settle=") {
+            opts.settle_rounds = n.parse().unwrap_or(0);
+        } else if let Some(n) = tok.strip_prefix("beam=") {
+            opts.beam_k = n.parse().unwrap_or(0);
+        } else if let Some(n) = tok.strip_prefix("int=") {
+            opts.int_actions = n.parse().unwrap_or(0);
+        } else if let Some(n) = tok.strip_prefix("intdeep=") {
+            opts.int_actions_deep = n.parse().unwrap_or(0);
+        }
+    }
+    opts
 }
 
 /// REPLAY_WEIGHTS="1,150,..." swaps candidate eval weights into every queried

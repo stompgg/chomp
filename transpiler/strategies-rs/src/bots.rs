@@ -259,6 +259,9 @@ pub struct SearchBot {
     depth: u32,
     peek: bool,
     mixed: bool,
+    opts: crate::search::SearchOpts,
+    window: [Option<Mv>; 6],
+    window_at: usize,
 }
 
 impl Bot for SearchBot {
@@ -269,9 +272,27 @@ impl Bot for SearchBot {
             _ => SEARCH,
         }
     }
+    fn reset(&mut self) {
+        self.window = [None; 6];
+        self.window_at = 0;
+    }
     fn decide(&mut self, ctx: &mut DecisionCtx<'_>) -> Action {
+        if let Some(pm) = ctx.peek {
+            self.window[self.window_at % 6] = Some(pm);
+            self.window_at += 1;
+        }
+        // Modal count of the revealed move over the last 6 turns — repetition with
+        // interruptions (pivot resets, Sneak Attack recycling) still registers.
+        let streak = self
+            .window
+            .iter()
+            .flatten()
+            .map(|m| self.window.iter().flatten().filter(|x| x == &m).count())
+            .max()
+            .unwrap_or(0) as u32;
         let pm = ctx.peek.unwrap_or_else(|| Mv { move_index: 0, extra_data: 0 });
-        Action::Single(search::decide(
+        let opts = crate::search::SearchOpts { opp_streak: streak, ..self.opts };
+        Action::Single(search::decide_with(
             ctx.sim,
             ctx.seat,
             ctx.singles_view(),
@@ -281,6 +302,7 @@ impl Bot for SearchBot {
             self.peek,
             self.mixed,
             ctx.rng,
+            &opts,
         ))
     }
 }
@@ -298,6 +320,9 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
             depth: cfg.search_depth,
             peek: cfg.search_peek,
             mixed: cfg.search_mixed,
+            opts: cfg.search_opts,
+            window: [None; 6],
+            window_at: 0,
         }));
     }
     let w = cfg.weights;
@@ -314,6 +339,9 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
             depth: if name == SEARCH_D1 { 1 } else { 2 },
             peek: cfg.search_peek,
             mixed: cfg.search_mixed,
+            opts: cfg.search_opts,
+            window: [None; 6],
+            window_at: 0,
         })),
         DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2 => Some(Box::new(DoublesSearchBot {
             depth: if name == DOUBLES_SEARCH_D1 { 1 } else { 2 },
@@ -325,6 +353,9 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
             depth: cfg.search_depth.max(1),
             peek: cfg.search_peek,
             mixed: cfg.search_mixed,
+            opts: cfg.search_opts,
+            window: [None; 6],
+            window_at: 0,
         })),
         DOUBLES_EASY => Some(Box::new(DoublesGreedyBot { name: DOUBLES_EASY, difficulty: Difficulty::Easy })),
         DOUBLES_MEDIUM => {
@@ -391,6 +422,8 @@ mod tests {
                 p1_search_peek: false,
                 p0_search_mixed: false,
                 p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
             };
             let out = play_game(&spec, &book, false);
             assert!(out.turns > 0, "{name} produced no turns");

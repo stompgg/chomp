@@ -99,6 +99,8 @@ fn main() {
             p1_search_peek: peek,
             p0_search_mixed: false,
             p1_search_mixed: mixed,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
         });
     }
 

@@ -47,8 +47,6 @@ pub const DEFAULT_WEIGHTS: Weights = [
     0.0,   // F_STARVED
 ];
 
-/// Hell-tier candidate: the baseline with the extension lanes turned on.
-pub const HELL_WEIGHTS: Weights = [1.0, 150.0, 0.5, 2.0, 40.0, 30.0, 25.0, 40.0];
 
 /// hp% (0..100) for a slot — pure-view.
 fn hp_percent(mon: &MonSnap) -> f64 {

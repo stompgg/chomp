@@ -100,6 +100,8 @@ pub struct BotConfig {
     pub search_depth: u32,
     pub search_peek: bool,
     pub search_mixed: bool,
+    /// Root vetoes + leaf settlement for the singles search tier; ignored elsewhere.
+    pub search_opts: crate::search::SearchOpts,
 }
 
 impl Default for BotConfig {
@@ -110,6 +112,7 @@ impl Default for BotConfig {
             search_depth: 0,
             search_peek: false,
             search_mixed: false,
+            search_opts: crate::search::SearchOpts::default(),
         }
     }
 }

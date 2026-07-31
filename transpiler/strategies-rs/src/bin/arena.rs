@@ -110,13 +110,28 @@ fn main() {
         None
     };
     if let Some((label, cand)) = cand {
+        let base_depth = arg_u(&args, "--base-depth", 0) as u32;
+        let cand_opts = chomp_strategies::search::SearchOpts {
+            vetoes: if args.iter().any(|a| a == "--veto-rest") {
+                chomp_strategies::search::VETO_DRAIN_LOCK_REST
+            } else {
+                0
+            },
+            settle_rounds: arg_u(&args, "--settle", 0) as u32,
+            opp_streak: 0,
+            beam_k: arg_u(&args, "--beam", 0) as usize,
+            int_actions: arg_u(&args, "--int-actions", 0) as usize,
+            int_actions_deep: arg_u(&args, "--int-deep", 0) as usize,
+        };
         let started = std::time::Instant::now();
         let wr = eval_weights_winrate(
-            &roster, &cand, search_depth, peek, bots::GREEDY, bots::GREEDY, games, seed, seed_base, threads,
+            &roster, &cand, search_depth, peek, bots::GREEDY, bots::GREEDY, base_depth, cand_opts, games, seed,
+            seed_base, threads,
         );
         let elapsed = started.elapsed().as_secs_f64();
         let m = if search_depth >= 1 { format!("d{search_depth}-search") } else { "1-ply".to_string() };
-        println!("{label} ({m}) p1  vs  greedy(default) p0  ·  {games} games  ·  win {:.1}%", wr * 100.0);
+        let b = if base_depth >= 1 { format!("d{base_depth}-search(default)") } else { "greedy(default)".to_string() };
+        println!("{label} ({m}) p1  vs  {b} p0  ·  {games} games  ·  win {:.1}%", wr * 100.0);
         eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
         return;
     }
