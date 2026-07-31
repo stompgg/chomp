@@ -35,7 +35,7 @@ const SWITCH_PRIORITY: i64 = Constants::SWITCH_PRIORITY.as_limbs()[0] as i64;
 /// Per-mon setup-move config (`BETTER_CPU_MON_CONFIG`): values stored as
 /// moveIndex+1, 0 = unset. Only CONFIG_SETUP_MOVE is populated — the
 /// switch-in / preferred lanes stay inert, like the TS table.
-fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
+pub(crate) fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
     if config_key != CONFIG_SETUP_MOVE {
         return 0;
     }

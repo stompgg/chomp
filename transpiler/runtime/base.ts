@@ -877,6 +877,20 @@ export abstract class Contract {
     }
     return id;
   }
+
+  /**
+   * Fork support: `dst` is a structural clone of `src`, but the identity stamp is
+   * non-enumerable so the clone can't inherit it — without this, a fork's struct reads a
+   * ZERO packed word (lost effect compact data / monState top bits). Give the clone its
+   * own key and copy the word: reads agree, writes stay isolated from the live battle.
+   */
+  cloneYulSlotWord(src: any, dst: any): void {
+    if (src === null || typeof src !== 'object' || dst === null || typeof dst !== 'object') return;
+    const id = (src as any)[YUL_SLOT_ID];
+    if (id === undefined) return;
+    const w = this._storage.sload(this._yulStorageKey(id));
+    if (w !== 0n) this._storage.sstore(this._yulStorageKey(this._yulSlotKeyOf(dst)), w);
+  }
 }
 
 /** Identity stamp for `_yulSlotKeyOf` — a symbol, so it can't collide with a field name. */

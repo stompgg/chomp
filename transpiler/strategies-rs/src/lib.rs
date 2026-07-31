@@ -38,6 +38,7 @@ pub mod mock2;
 pub mod native;
 pub mod nopeek;
 pub mod override_cpu;
+pub mod replay;
 pub mod search;
 pub mod shared;
 pub mod sim;

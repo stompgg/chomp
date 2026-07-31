@@ -32,6 +32,8 @@ pub const DOUBLES_EASY: &str = "doubles-easy";
 pub const DOUBLES_MEDIUM: &str = "doubles-medium";
 pub const DOUBLES_HARD: &str = "doubles-hard";
 pub const DOUBLES_SEARCH: &str = "doubles-search";
+pub const DOUBLES_SPARSE: &str = "doubles-sparse";
+pub const DOUBLES_SPARSE_LEAN: &str = "doubles-sparse-lean";
 
 /// Every registered bot, in ladder order (weakest first).
 pub const NAMES: &[&str] =
@@ -45,6 +47,8 @@ pub const DOUBLES_NAMES: &[&str] = &[
     DOUBLES_SEARCH,
     DOUBLES_SEARCH_D1,
     DOUBLES_SEARCH_D2,
+    DOUBLES_SPARSE,
+    DOUBLES_SPARSE_LEAN,
 ];
 
 const DOUBLES_ONLY: &[BattleMode] = &[BattleMode::Doubles];
@@ -77,6 +81,34 @@ impl Bot for DoublesGreedyBot {
 pub struct DoublesSearchBot {
     depth: u32,
     eval: DoublesEvalW,
+    move_used_bitmap: u32,
+}
+
+/// Sparse depth-2: d1 guidance matrix, then a top-K beam deepened to d2.
+pub struct DoublesSparseBot {
+    lean: bool,
+    eval: DoublesEvalW,
+    move_used_bitmap: u32,
+}
+
+impl Bot for DoublesSparseBot {
+    fn name(&self) -> &'static str {
+        if self.lean { DOUBLES_SPARSE_LEAN } else { DOUBLES_SPARSE }
+    }
+    fn modes(&self) -> &'static [BattleMode] {
+        DOUBLES_ONLY
+    }
+    fn reset(&mut self) {
+        self.move_used_bitmap = 0;
+    }
+    fn decide(&mut self, ctx: &mut DecisionCtx<'_>) -> Action {
+        let bk = ctx.sim.battle_key;
+        let cfg = if self.lean { doubles::SPARSE_LEAN } else { doubles::SPARSE_DEFAULT };
+        let (a, b) = doubles::search_side_moves_sparse(
+            ctx.sim, bk, ctx.seat.cpu, &self.eval, cfg, &mut self.move_used_bitmap,
+        );
+        Action::Slots([slot_to_mv(a), slot_to_mv(b)])
+    }
 }
 
 impl Bot for DoublesSearchBot {
@@ -90,9 +122,14 @@ impl Bot for DoublesSearchBot {
     fn modes(&self) -> &'static [BattleMode] {
         DOUBLES_ONLY
     }
+    fn reset(&mut self) {
+        self.move_used_bitmap = 0;
+    }
     fn decide(&mut self, ctx: &mut DecisionCtx<'_>) -> Action {
         let bk = ctx.sim.battle_key;
-        let (a, b) = doubles::search_side_moves(ctx.sim, bk, ctx.seat.cpu, self.depth, &self.eval);
+        let (a, b) = doubles::search_side_moves(
+            ctx.sim, bk, ctx.seat.cpu, self.depth, &self.eval, &mut self.move_used_bitmap,
+        );
         Action::Slots([slot_to_mv(a), slot_to_mv(b)])
     }
 }
@@ -281,6 +318,7 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
         DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2 => Some(Box::new(DoublesSearchBot {
             depth: if name == DOUBLES_SEARCH_D1 { 1 } else { 2 },
             eval: cfg.doubles_eval,
+            move_used_bitmap: 0,
         })),
         SEARCH => Some(Box::new(SearchBot {
             weights: w,
@@ -296,7 +334,14 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
         DOUBLES_SEARCH => Some(Box::new(DoublesSearchBot {
             depth: cfg.search_depth.max(1),
             eval: cfg.doubles_eval,
+            move_used_bitmap: 0,
         })),
+        DOUBLES_SPARSE => {
+            Some(Box::new(DoublesSparseBot { lean: false, eval: cfg.doubles_eval, move_used_bitmap: 0 }))
+        }
+        DOUBLES_SPARSE_LEAN => {
+            Some(Box::new(DoublesSparseBot { lean: true, eval: cfg.doubles_eval, move_used_bitmap: 0 }))
+        }
         _ => None,
     }
 }

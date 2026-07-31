@@ -23,8 +23,9 @@ use chomp_rt::{Address, B256, U256};
 use crate::bot::{Action, BattleMode, Bot, BotConfig, DecisionCtx};
 use crate::bots;
 use crate::jsrng::{derive, random_salt, JsRng, STREAM_P0, STREAM_P1, STREAM_SALT};
+use crate::heuristic::better_cpu_config;
 use crate::roster::{input_type_of, target_spec_of, InputType, TargetSpec};
-use crate::shared::{build_damage_calc_context, estimate_damage_meta};
+use crate::shared::{build_damage_calc_context, estimate_damage_meta, CONFIG_SETUP_MOVE};
 use crate::sim::{pack_side, Sim};
 use crate::view::{
     decode_meta, mon_current_stamina, mon_max_hp, mon_skip_turn, mon_state, move_slot, stat_delta_score, turn_id, Seat,
@@ -329,7 +330,16 @@ pub struct DoublesEvalW {
 }
 
 impl Default for DoublesEvalW {
+    /// Mirrors the shipped munch `slot-search` eval: boosts at 0.4/pct (≡ 40 per
+    /// delta/base unit here) and corpse-gated active terms.
     fn default() -> Self {
+        Self { w_boost: 40.0, gate_ko: true, ..Self::legacy() }
+    }
+}
+
+impl DoublesEvalW {
+    /// The old hp/ko/stamina-only baseline (corpses counted).
+    pub fn legacy() -> Self {
         Self {
             w_hp: D_W_HP,
             w_ko: D_W_KO,
@@ -431,16 +441,55 @@ fn legal_benches(team_size: usize, ko: u32, slots: &[u32; 4], abs_slot: usize) -
         .collect()
 }
 
+/// TS `clearMoveUsedBitsOnSwitchIn` with the doubles `side` param: clear the incoming mon's
+/// config lane bit; its setup lane bit only clears when it re-enters above half HP.
+fn clear_used_bits_on_switch_in(sim: &mut Sim, bk: B256, side: u8, used_bitmap: u32, mon: usize) -> u32 {
+    let setup_bit = 1u32 << (mon + SETUP_LANE_BIT_OFFSET);
+    let mut b = used_bitmap & !(1u32 << mon);
+    if used_bitmap & setup_bit != 0 {
+        let mhp = mon_max_hp(sim, OBS, bk, side, mon);
+        let hp = mhp + mon_state(sim, OBS, bk, side, mon, MonStateIndexName::Hp);
+        if hp * 2 > mhp {
+            b &= !setup_bit;
+        }
+    }
+    b
+}
+
+const SETUP_LANE_BIT_OFFSET: usize = 8;
+
 /// Candidate actions for one active slot on a normal turn: the TOP-damage (move,target) options
 /// (with per-target diversity — the best option against EACH live enemy slot is always included,
 /// so focus-fire vs spread are both searchable), non-damaging status/setup moves whose targeting
 /// needs no nibble (self-only / none), a pivot switch, and rest. Bench and rest are always kept
 /// (never truncated behind damaging options — the singles rest-bug lesson). Empty lane → rest only.
-fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[u32; 4], team_size: usize) -> Vec<SlotMove> {
+/// `move_used_bitmap` excludes a one-shot setup whose lane bit is set (the engine blocks re-use
+/// until the mon switches out, so it would search as a guaranteed no-op).
+fn slot_candidates(
+    sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[u32; 4], team_size: usize, move_used_bitmap: u32,
+) -> Vec<SlotMove> {
+    slot_candidates_capped(sim, bk, side, abs_slot, slots, team_size, MAX_DAMAGING, MAX_STATUS, move_used_bitmap)
+}
+
+/// `slot_candidates` with explicit caps — the sparse search's interior nodes run leaner.
+#[allow(clippy::too_many_arguments)]
+fn slot_candidates_capped(
+    sim: &mut Sim,
+    bk: B256,
+    side: u8,
+    abs_slot: usize,
+    slots: &[u32; 4],
+    team_size: usize,
+    max_dmg: usize,
+    max_status: usize,
+    move_used_bitmap: u32,
+) -> Vec<SlotMove> {
     let my_mon = slots[abs_slot];
     if my_mon == EMPTY_LANE {
         return vec![NO_OP_MOVE];
     }
+    let setup_locked = move_used_bitmap & (1u32 << (my_mon as usize + SETUP_LANE_BIT_OFFSET)) != 0;
+    let mon_id = sim.mon_id_phys(U256::from(side), my_mon as usize) as usize;
     let mut dmg = damaging_options(sim, bk, side, my_mon);
     dmg.sort_by_key(|&(_, d)| -d); // best damage first
     // Best option per distinct target first (≤2 live slots), then next-best overall.
@@ -453,20 +502,20 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
         }
     }
     for &(sm, _) in &dmg {
-        if out.len() >= MAX_DAMAGING {
+        if out.len() >= max_dmg {
             break;
         }
         if !out.contains(&sm) {
             out.push(sm);
         }
     }
-    out.truncate(MAX_DAMAGING);
+    out.truncate(max_dmg);
 
     // Status/setup moves (non-damaging class, affordable, nibble-free targeting): extraData 0.
     let stamina = mon_current_stamina(sim, OBS, bk, side, my_mon as usize);
     let mut n_status = 0usize;
     for mi in 0..4usize {
-        if n_status >= MAX_STATUS {
+        if n_status >= max_status {
             break;
         }
         let Some(slot_w) = move_slot(sim, OBS, bk, side, my_mon as usize, mi) else { break };
@@ -478,6 +527,9 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
             continue;
         }
         if meta.stamina as i64 > stamina {
+            continue;
+        }
+        if setup_locked && better_cpu_config(mon_id, CONFIG_SETUP_MOVE) as usize == mi + 1 {
             continue;
         }
         let addr = MoveSlotLib::toIMoveSet(slot_w);
@@ -497,19 +549,27 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
 }
 
 /// Joint (slot0, slot1) actions for a side on a normal turn, capped at MAX_JOINTS.
-fn side_joint(sim: &mut Sim, bk: B256, side: u8) -> Vec<(SlotMove, SlotMove)> {
+/// `move_used_bitmap` gates the side's OWN configured setups (0 for opponent/interior models).
+fn side_joint(sim: &mut Sim, bk: B256, side: u8, move_used_bitmap: u32) -> Vec<(SlotMove, SlotMove)> {
+    side_joint_capped(sim, bk, side, MAX_DAMAGING, MAX_STATUS, move_used_bitmap)
+}
+
+fn side_joint_capped(
+    sim: &mut Sim, bk: B256, side: u8, max_dmg: usize, max_status: usize, move_used_bitmap: u32,
+) -> Vec<(SlotMove, SlotMove)> {
     let [a0, a1] = side_slots(side);
     let slots = active_slots(sim, bk);
     let ts = team_size_of(sim, bk, side);
-    let c0 = slot_candidates(sim, bk, side, a0, &slots, ts);
-    let c1 = slot_candidates(sim, bk, side, a1, &slots, ts);
+    let c0 = slot_candidates_capped(sim, bk, side, a0, &slots, ts, max_dmg, max_status, move_used_bitmap);
+    let c1 = slot_candidates_capped(sim, bk, side, a1, &slots, ts, max_dmg, max_status, move_used_bitmap);
+    let cap = (max_dmg + max_status + 2).pow(2);
     let mut out = Vec::with_capacity(c0.len() * c1.len());
     for &m0 in &c0 {
         for &m1 in &c1 {
             out.push((m0, m1));
         }
     }
-    out.truncate(MAX_JOINTS);
+    out.truncate(cap.min(MAX_JOINTS));
     out
 }
 
@@ -541,6 +601,18 @@ fn forced_joint_model(sim: &mut Sim, bk: B256, side: u8, mask: u32, slots: &[u32
 /// deterministically and recursed WITHOUT consuming depth (they don't burn horizon; the chain is
 /// bounded by roster size / the terminal check).
 fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> f64 {
+    search_value_capped(sim, bk, cpu_side, depth, w, MAX_DAMAGING, MAX_STATUS)
+}
+
+fn search_value_capped(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    depth: u32,
+    w: &DoublesEvalW,
+    max_dmg: usize,
+    max_status: usize,
+) -> f64 {
     if let Some(v) = terminal(sim, bk, cpu_side, depth) {
         return v;
     }
@@ -557,19 +629,19 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEv
             return doubles_eval(sim, bk, cpu_side, w); // no legal resolution — don't loop
         }
         let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-        let v = search_value(sim, child, cpu_side, depth, w);
+        let v = search_value_capped(sim, child, cpu_side, depth, w, max_dmg, max_status);
         sim.dispose_fork(child);
         return v;
     }
     let opp_side = 1 - cpu_side;
-    let my = side_joint(sim, bk, cpu_side);
-    let opp = side_joint(sim, bk, opp_side);
+    let my = side_joint_capped(sim, bk, cpu_side, max_dmg, max_status, 0);
+    let opp = side_joint_capped(sim, bk, opp_side, max_dmg, max_status, 0);
     let mut best = f64::NEG_INFINITY;
     for &mine in &my {
         let mut worst = f64::INFINITY;
         for &theirs in &opp {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth - 1, w);
+            let v = search_value_capped(sim, child, cpu_side, depth - 1, w, max_dmg, max_status);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -588,10 +660,16 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEv
 /// Pick `cpu_side`'s two slot moves by depth-`depth` joint maximin (turn 0 → leads; forced-switch →
 /// first-legal bench; normal turn → search). A reverting hypothetical mid-search is contained to
 /// this decision (fall back to resting both slots) rather than aborting the game.
-pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> (SlotMove, SlotMove) {
+pub fn search_side_moves(
+    sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW, bitmap: &mut u32,
+) -> (SlotMove, SlotMove) {
     let saved_fc = sim.fork_counter();
-    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth, w))) {
-        Ok(m) => m,
+    let bm = *bitmap;
+    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth, w, bm))) {
+        Ok(m) => {
+            *bitmap = update_used_bitmap(sim, bk, cpu_side, bm, m);
+            m
+        }
         Err(_) => {
             sim.set_fork_counter(saved_fc);
             (NO_OP_MOVE, NO_OP_MOVE)
@@ -599,7 +677,34 @@ pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &
     }
 }
 
-fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> (SlotMove, SlotMove) {
+/// TS `finishPick`/`decideSlots` bitmap bookkeeping: a switch clears the incoming mon's
+/// bits; playing the configured setup sets its lane bit.
+fn update_used_bitmap(sim: &mut Sim, bk: B256, cpu_side: u8, mut bitmap: u32, picked: (SlotMove, SlotMove)) -> u32 {
+    if turn_id(sim, bk) == 0 {
+        bitmap = 0;
+    }
+    let slots = active_slots(sim, bk);
+    let [a0, a1] = side_slots(cpu_side);
+    for (abs, m) in [(a0, picked.0), (a1, picked.1)] {
+        if m.move_index == SWITCH {
+            bitmap = clear_used_bits_on_switch_in(sim, bk, cpu_side, bitmap, m.extra_data as usize);
+        } else if m.move_index < 4 {
+            let mon = slots[abs];
+            if mon == EMPTY_LANE {
+                continue;
+            }
+            let mon_id = sim.mon_id_phys(U256::from(cpu_side), mon as usize) as usize;
+            if better_cpu_config(mon_id, CONFIG_SETUP_MOVE) as usize == m.move_index as usize + 1 {
+                bitmap |= 1u32 << (mon as usize + SETUP_LANE_BIT_OFFSET);
+            }
+        }
+    }
+    bitmap
+}
+
+fn search_side_moves_inner(
+    sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW, move_used_bitmap: u32,
+) -> (SlotMove, SlotMove) {
     let [a0, a1] = side_slots(cpu_side);
     let sw = |i: u16| SlotMove { move_index: SWITCH, extra_data: i };
 
@@ -687,8 +792,8 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w:
     // Normal turn: depth-`depth` joint maximin (with the argmax-invariant row prune).
     let depth = depth.max(1);
     let opp_side = 1 - cpu_side;
-    let my = side_joint(sim, bk, cpu_side);
-    let opp = side_joint(sim, bk, opp_side);
+    let my = side_joint(sim, bk, cpu_side, move_used_bitmap);
+    let opp = side_joint(sim, bk, opp_side, 0);
     let mut best = my.first().copied().unwrap_or((NO_OP_MOVE, NO_OP_MOVE));
     let mut best_val = f64::NEG_INFINITY;
     for &mine in &my {
@@ -707,6 +812,128 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w:
         if worst > best_val {
             best_val = worst;
             best = mine;
+        }
+    }
+    best
+}
+
+// ── Sparse depth-2 search (guided beam over the joint matrix) ────────────────
+//
+// Full d2 squares the joint matrix and is unaffordable in the TS client. The sparse variant
+// spends d1's budget on a guidance matrix, then deepens only the top `k_my` joints against
+// each one's `k_opp` most threatening d1 replies, with leaner candidate caps inside interior
+// nodes. Ordering worst-reply-first keeps the argmax row prune effective.
+
+/// Beam widths + interior-node candidate caps for [`search_side_moves_sparse`].
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct SparseCfg {
+    pub k_my: usize,
+    pub k_opp: usize,
+    pub int_dmg: usize,
+    pub int_status: usize,
+}
+
+/// Full-width interiors — maximum fidelity to true d2 within the beam.
+pub const SPARSE_DEFAULT: SparseCfg =
+    SparseCfg { k_my: 6, k_opp: 6, int_dmg: MAX_DAMAGING, int_status: MAX_STATUS };
+/// Lean interiors + trimmed reply set — the client-budget shape (the TS twin's config).
+pub const SPARSE_LEAN: SparseCfg = SparseCfg { k_my: 6, k_opp: 4, int_dmg: 2, int_status: 0 };
+
+pub fn search_side_moves_sparse(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    w: &DoublesEvalW,
+    cfg: SparseCfg,
+    bitmap: &mut u32,
+) -> (SlotMove, SlotMove) {
+    let saved_fc = sim.fork_counter();
+    let bm = *bitmap;
+    match catch_unwind(AssertUnwindSafe(|| sparse_inner(sim, bk, cpu_side, w, cfg, bm))) {
+        Ok(m) => {
+            *bitmap = update_used_bitmap(sim, bk, cpu_side, bm, m);
+            m
+        }
+        Err(_) => {
+            sim.set_fork_counter(saved_fc);
+            (NO_OP_MOVE, NO_OP_MOVE)
+        }
+    }
+}
+
+fn sparse_inner(
+    sim: &mut Sim, bk: B256, cpu_side: u8, w: &DoublesEvalW, cfg: SparseCfg, move_used_bitmap: u32,
+) -> (SlotMove, SlotMove) {
+    // Leads and forced switches keep the shipped depth-1 paths — d2's edge is in normal turns.
+    let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag as u32;
+    if turn_id(sim, bk) == 0 || flag != 2 {
+        return search_side_moves_inner(sim, bk, cpu_side, 1, w, move_used_bitmap);
+    }
+
+    // Phase 1: the d1 guidance matrix, with two beam prunes that keep selection EXACT: a row
+    // whose running minimum drops to/below the k-th best completed row value can never enter
+    // the beam, and columns scan in the first row's threat order so minima are hit early.
+    let opp_side = 1 - cpu_side;
+    let my = side_joint(sim, bk, cpu_side, move_used_bitmap);
+    let opp = side_joint(sim, bk, opp_side, 0);
+    let mut cells = vec![vec![f64::INFINITY; opp.len()]; my.len()];
+    let mut row_val = vec![f64::INFINITY; my.len()];
+    let mut full = vec![false; my.len()];
+    let mut col_order: Vec<usize> = (0..opp.len()).collect();
+    let mut top_vals: Vec<f64> = Vec::new();
+    for (i, &mine) in my.iter().enumerate() {
+        let bound = if top_vals.len() >= cfg.k_my { top_vals[cfg.k_my - 1] } else { f64::NEG_INFINITY };
+        let mut abandoned = false;
+        for &j in &col_order {
+            let child = fork_joint(sim, bk, cpu_side, mine, opp[j]);
+            let v = search_value(sim, child, cpu_side, 0, w);
+            sim.dispose_fork(child);
+            cells[i][j] = v;
+            if v < row_val[i] {
+                row_val[i] = v;
+            }
+            if row_val[i] <= bound {
+                abandoned = true;
+                break;
+            }
+        }
+        if abandoned {
+            continue;
+        }
+        full[i] = true;
+        top_vals.push(row_val[i]);
+        top_vals.sort_by(|a, b| b.total_cmp(a));
+        top_vals.truncate(cfg.k_my);
+        if i == 0 {
+            col_order.sort_by(|&a, &b| cells[0][a].total_cmp(&cells[0][b]));
+        }
+    }
+
+    // Phase 2: deepen the top rows, each against its own worst d1 replies first.
+    let mut order: Vec<usize> = (0..my.len()).filter(|&i| full[i]).collect();
+    order.sort_by(|&a, &b| row_val[b].total_cmp(&row_val[a]));
+    order.truncate(cfg.k_my.max(1));
+    let mut best = my[order[0]]; // the d1 argmax survives as the floor
+    let mut best_val = f64::NEG_INFINITY;
+    for &i in &order {
+        let mut cols: Vec<usize> = (0..opp.len()).collect();
+        cols.sort_by(|&a, &b| cells[i][a].total_cmp(&cells[i][b]));
+        cols.truncate(cfg.k_opp.max(1));
+        let mut worst = f64::INFINITY;
+        for &j in &cols {
+            let child = fork_joint(sim, bk, cpu_side, my[i], opp[j]);
+            let v = search_value_capped(sim, child, cpu_side, 1, w, cfg.int_dmg, cfg.int_status);
+            sim.dispose_fork(child);
+            if v < worst {
+                worst = v;
+            }
+            if worst <= best_val {
+                break; // argmax-invariant row prune
+            }
+        }
+        if worst > best_val {
+            best_val = worst;
+            best = my[i];
         }
     }
     best
@@ -961,6 +1188,7 @@ pub fn play_doubles_game_instrumented(
         tracked_active_turns: 0,
     };
 
+    let (mut bm0, mut bm1) = (0u32, 0u32);
     for t in 0..spec.max_turns {
         let w = sim.winner_index();
         if w != 2 {
@@ -970,12 +1198,12 @@ pub fn play_doubles_game_instrumented(
         }
         let bk = sim.battle_key;
         let (p0a, p0b) = if spec.p0_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval)
+            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval, &mut bm0)
         } else {
             pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng0)
         };
         let (p1a, p1b) = if spec.p1_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval)
+            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval, &mut bm1)
         } else {
             pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng1)
         };

@@ -315,6 +315,43 @@ contract SimplePMTest is Test {
         assertEq(p0Shares, 0.7 ether);
     }
 
+    function test_T2_7_RevertOnceWinnerIsSet() public {
+        mockEngine.setWinner(BATTLE_KEY, P0);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(SimplePM.GameOver.selector, BATTLE_KEY));
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, true);
+    }
+
+    function test_T2_8_RevertOnceWinnerIsSetWhenP1Won() public {
+        // winnerIndex 1 — a guard written against index 0 alone would let this one through.
+        mockEngine.setWinner(BATTLE_KEY, P1);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(SimplePM.GameOver.selector, BATTLE_KEY));
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+    }
+
+    // The exploit the settle guard closes: a battle that ends INSIDE the betting window leaves the
+    // turn cutoff satisfied, so betting the now-known winner would redeem the losers' pool risk-free.
+    function test_T2_9_NoRiskFreeBetAfterSettleInsideWindow() public {
+        mockEngine.setTurnId(BATTLE_KEY, 3);
+        vm.prank(ALICE);
+        pm.buyShares{value: 1 ether}(BATTLE_KEY, false);
+
+        mockEngine.setWinner(BATTLE_KEY, P0);
+
+        vm.prank(BOB);
+        vm.expectRevert(abi.encodeWithSelector(SimplePM.GameOver.selector, BATTLE_KEY));
+        pm.buyShares{value: 10 ether}(BATTLE_KEY, true);
+
+        (uint96 p0Shares, uint96 p1Shares, uint96 totalDeposits) = pm.marketForBattle(BATTLE_KEY);
+        assertEq(p0Shares, 0, "no winner-side shares minted after settle");
+        assertEq(p1Shares, 0.94 ether, "turn-3 fee on the pre-settle bet only");
+        assertEq(totalDeposits, 1 ether, "pool untouched by the post-settle bet");
+
+        (uint128 bobP0,) = pm.sharesPerUserForBattle(BATTLE_KEY, BOB);
+        assertEq(bobP0, 0);
+    }
+
     // =========================================================================
     // Group 3: claimShares — Happy Path
     // =========================================================================
@@ -663,21 +700,24 @@ contract SimplePMTest is Test {
         assertEq(payout, 2 ether);
     }
 
-    function test_T6_2_ReentrantBuySharesDuringClaim() public {
+    function test_T6_2_ReentrantBuySharesDuringClaimIsRejected() public {
         ReentrantBuyer attacker = new ReentrantBuyer(pm);
         vm.deal(address(attacker), 100 ether);
 
-        // Attacker buys shares
         attacker.buySharesOnBehalf{value: 1 ether}(BATTLE_KEY, true);
 
         mockEngine.setWinner(BATTLE_KEY, P0);
 
-        // Setup: on receiving ETH from claim, buy more shares
+        // The receive hook buys back in, which the settle guard now rejects — so the payout
+        // transfer fails and the claim takes the restore path rather than half-applying.
         attacker.setup(BATTLE_KEY, true);
-
-        // This should not revert — the reentrant buy during claim is benign
-        // (though buying shares after game is over is a bit silly, it doesn't break accounting)
+        uint256 balanceBefore = address(attacker).balance;
         attacker.claim();
+
+        assertEq(address(attacker).balance, balanceBefore, "no payout to a reverting receive");
+        (uint128 p0Balance,) = pm.sharesPerUserForBattle(BATTLE_KEY, address(attacker));
+        assertEq(p0Balance, 1 ether, "position restored for a retry");
+        assertEq(address(pm).balance, 1 ether, "pool intact");
     }
 
     // =========================================================================
