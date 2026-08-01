@@ -1078,8 +1078,10 @@ class TestTypeCastGeneration(unittest.TestCase):
         generator = TypeScriptCodeGenerator()
         output = generator.generate(ast)
 
-        # Should have BigInt wrapping for numeric type casts
-        self.assertIn('BigInt', output)
+        # A statically-bigint operand needs no BigInt() wrap — the cast elides to the
+        # operand itself (int256 params are already bigint in TS).
+        self.assertIn('return x;', output)
+        self.assertNotIn('BigInt(x)', output)
 
     def test_address_cast(self):
         """Test address type cast."""

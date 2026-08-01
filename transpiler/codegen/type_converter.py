@@ -361,7 +361,7 @@ class TypeConverter(BaseGenerator):
         # Solidity truncates on cast; BigInt does not, so we must mask explicitly.
         if type_name.startswith('uint') or type_name.startswith('int'):
             expr = generate_expression_fn(inner_expr)
-            bigint_expr = self._ensure_bigint(expr)
+            bigint_expr = self._ensure_bigint(expr, inner_expr)
             # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
             width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
             if width_str.isdigit():
@@ -379,8 +379,7 @@ class TypeConverter(BaseGenerator):
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
 
-    @staticmethod
-    def _ensure_bigint(expr: str) -> str:
+    def _ensure_bigint(self, expr: str, node: 'Expression | None' = None) -> str:
         """Wrap expression in BigInt() only if it's not already a bigint expression.
 
         Avoids redundant BigInt(BigInt(x)) patterns in generated code.
@@ -394,6 +393,16 @@ class TypeConverter(BaseGenerator):
         # Already a bigint expression (mask, shift, or other bitwise op)
         if expr.startswith('(') and ('n)' in expr or '1n' in expr):
             return expr
+        # Statically bigint by type: a uint/int identifier, or a member access that
+        # resolves to a numeric field (both transpile to bigint).
+        if node is not None:
+            if isinstance(node, Identifier) and self.is_bigint_typed_identifier(node):
+                return expr
+            if isinstance(node, MemberAccess):
+                resolved = self.resolve_access_type(node)
+                if (resolved and not resolved.is_array
+                        and (resolved.name.startswith('uint') or resolved.name.startswith('int'))):
+                    return expr
         return f'BigInt({expr})'
 
     def _is_already_address_type(self, expr: Expression) -> bool:
@@ -710,10 +719,10 @@ class TypeConverter(BaseGenerator):
         """Convert an index expression to match the container key type.
 
         Mappings transpile to ``Record<string, V>`` and preserve bigint
-        precision via ``String(idx)``. Arrays use ``Number(idx)`` because TS
-        array indices are numeric.
+        precision via ``__ik(idx)`` (interned small-index String). Arrays use
+        ``Number(idx)`` because TS array indices are numeric.
         """
-        wrap = 'String' if mapping_access else 'Number'
+        wrap = '__ik' if mapping_access else 'Number'
 
         if index.startswith('BigInt('):
             inner = index[7:-1]

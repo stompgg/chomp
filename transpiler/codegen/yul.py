@@ -8,8 +8,12 @@ Uses a proper recursive descent parser instead of regex for reliable handling
 of nested constructs (if blocks, for loops, switch/case, nested function calls).
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+
+# Bigint literals (decimal or hex) — statically bigint, never need a BigInt() wrap.
+_BIGINT_LITERAL_RE = re.compile(r'(?:0x[0-9a-fA-F]+|\d+)n')
 
 
 # =============================================================================
@@ -1081,6 +1085,23 @@ class YulTranspiler:
             return f'Constants.{name}'
         return name
 
+    def _bi(self, expr: str) -> str:
+        """Wrap `expr` in BigInt() unless it is statically bigint-typed.
+
+        Provably-bigint shapes from this generator: bigint literals, the parenthesized
+        outputs of the yul op emitters, BigInt(...) conversions, and _storageRead loads.
+        Bare identifiers and Constants.* stay wrapped — a constant may be a string.
+        """
+        if _BIGINT_LITERAL_RE.fullmatch(expr) is not None:
+            return expr
+        if expr.startswith('BigInt'):
+            return expr
+        if expr.startswith('this._storageRead('):
+            return expr
+        if expr.startswith('(') and expr.endswith(')') and ' as any' not in expr:
+            return expr
+        return f'BigInt({expr})'
+
     def _generate_function_call(
         self,
         call: YulFunctionCall,
@@ -1107,50 +1128,50 @@ class YulTranspiler:
 
         # Binary: (BigInt(left) op BigInt(right))
         if func in _BINARY_OPS and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) {_BINARY_OPS[func]} BigInt({right}))'
+            left = self._bi(self._generate_expression(args[0], slot_vars))
+            right = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({left} {_BINARY_OPS[func]} {right})'
 
         # Ternary mod: ((BigInt(a) op BigInt(b)) % BigInt(m))
         if func in _TERNARY_MOD_OPS and len(args) == 3:
-            a = self._generate_expression(args[0], slot_vars)
-            b = self._generate_expression(args[1], slot_vars)
-            m = self._generate_expression(args[2], slot_vars)
-            return f'((BigInt({a}) {_TERNARY_MOD_OPS[func]} BigInt({b})) % BigInt({m}))'
+            a = self._bi(self._generate_expression(args[0], slot_vars))
+            b = self._bi(self._generate_expression(args[1], slot_vars))
+            m = self._bi(self._generate_expression(args[2], slot_vars))
+            return f'(({a} {_TERNARY_MOD_OPS[func]} {b}) % {m})'
 
         # Unary not
         if func == 'not' and len(args) >= 1:
-            operand = self._generate_expression(args[0], slot_vars)
-            return f'(~BigInt({operand}))'
+            operand = self._bi(self._generate_expression(args[0], slot_vars))
+            return f'(~{operand})'
 
         # Shift: args are (shift_amount, value)
         if func in _SHIFT_OPS and len(args) == 2:
-            shift = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({val}) {_SHIFT_OPS[func]} BigInt({shift}))'
+            shift = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({val} {_SHIFT_OPS[func]} {shift})'
 
         # byte extraction
         if func == 'byte' and len(args) == 2:
-            pos = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'((BigInt({val}) >> (BigInt(248) - BigInt({pos}) * 8n)) & 0xFFn)'
+            pos = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'(({val} >> (248n - {pos} * 8n)) & 0xFFn)'
 
         # signextend
         if func == 'signextend' and len(args) == 2:
-            b = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'BigInt.asIntN(Number(BigInt({b}) + 1n) * 8, BigInt({val}))'
+            b = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'BigInt.asIntN(Number({b} + 1n) * 8, {val})'
 
         # Comparison: (BigInt(left) op BigInt(right) ? 1n : 0n)
         if func in _COMPARISON_OPS and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) {_COMPARISON_OPS[func]} BigInt({right}) ? 1n : 0n)'
+            left = self._bi(self._generate_expression(args[0], slot_vars))
+            right = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({left} {_COMPARISON_OPS[func]} {right} ? 1n : 0n)'
 
         # iszero
         if func == 'iszero' and len(args) >= 1:
-            operand = self._generate_expression(args[0], slot_vars)
-            return f'(BigInt({operand}) === 0n ? 1n : 0n)'
+            operand = self._bi(self._generate_expression(args[0], slot_vars))
+            return f'({operand} === 0n ? 1n : 0n)'
 
         # Memory/calldata zero placeholders
         if func in _ZERO_OPS:

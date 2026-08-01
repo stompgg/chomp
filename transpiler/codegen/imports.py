@@ -11,6 +11,11 @@ from typing import Dict, List, Set, TYPE_CHECKING
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
 
+# viem names the runtime re-exports with memoized / fast-path wrappers (byte-identical
+# outputs); generated files import these from the runtime, not from viem. '__ik' (the
+# interned mapping-key helper) is runtime-only but routed through the same mechanism.
+RUNTIME_WRAPPED_VIEM = frozenset({'keccak256', 'encodePacked', 'encodeAbiParameters', '__ik'})
+
 
 class ImportGenerator:
     """
@@ -47,12 +52,15 @@ class ImportGenerator:
 
         lines = []
 
-        # viem imports (only what's actually used)
+        # viem imports (only what's actually used). Names in RUNTIME_WRAPPED_VIEM are
+        # emitted from the runtime instead — it wraps them with memoized / fast-path
+        # equivalents (byte-identical outputs).
         if self._ctx.viem_imports_used:
-            viem_imports = sorted(self._ctx.viem_imports_used)
-            lines.append(
-                f"import {{ {', '.join(viem_imports)} }} from 'viem';"
-            )
+            viem_imports = sorted(self._ctx.viem_imports_used - RUNTIME_WRAPPED_VIEM)
+            if viem_imports:
+                lines.append(
+                    f"import {{ {', '.join(viem_imports)} }} from 'viem';"
+                )
 
         # Runtime imports
         runtime_imports = self._build_runtime_imports()
@@ -92,6 +100,9 @@ class ImportGenerator:
             'sha256', 'sha256String', 'addressToUint', 'blockhash',
             'ecrecover', 'selfdestruct',
         ]
+
+        # Wrapped viem names route through the runtime (memoized keccak256, fast ABI encoders)
+        imports.extend(sorted(self._ctx.viem_imports_used & RUNTIME_WRAPPED_VIEM))
 
         # Add set types if used
         if self._ctx.set_types_used:

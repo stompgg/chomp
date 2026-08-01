@@ -8,7 +8,95 @@
  * index.ts re-exports it; it does NOT define a second Contract class.
  */
 
-import { keccak256, encodePacked, toHex, hexToBigInt } from 'viem';
+import {
+  keccak256 as viemKeccak256,
+  encodePacked as viemEncodePacked,
+  encodeAbiParameters as viemEncodeAbiParameters,
+  toHex,
+  hexToBigInt,
+} from 'viem';
+
+/** Memoized keccak256 for hex inputs — sim keys (effect ids, mapping slots) repeat massively. */
+const KECCAK_CACHE = new Map<string, `0x${string}`>();
+export function keccak256(value: `0x${string}` | Uint8Array): `0x${string}` {
+  if (typeof value !== 'string') return viemKeccak256(value);
+  let h = KECCAK_CACHE.get(value);
+  if (h === undefined) {
+    if (KECCAK_CACHE.size > 50_000) KECCAK_CACHE.clear();
+    h = viemKeccak256(value);
+    KECCAK_CACHE.set(value, h);
+  }
+  return h;
+}
+
+// =============================================================================
+// INTERNED MAPPING KEYS
+// =============================================================================
+// Mapping keys transpile to `String(bigintIdx)` — an allocation per access. Indices are
+// tiny (mon/slot/effect ids), so a 256-entry table returns the same string alloc-free.
+
+const IK_TABLE: string[] = Array.from({ length: 256 }, (_, i) => String(i));
+
+export function __ik(v: bigint | number): string {
+  const n = Number(v);
+  return n >= 0 && n < 256 ? IK_TABLE[n] : String(v);
+}
+
+// =============================================================================
+// FAST ABI ENCODERS
+// =============================================================================
+// Byte-identical fast paths for the static shapes the generated code hot loops emit
+// (uintN / intN / bool / already-lowercase bytes32 & address). Anything else — dynamic
+// types, mixed-case hex, unexpected value kinds — falls back to viem wholesale.
+
+const UINT_RE = /^u?int(\d*)$/;
+const HEX32_RE = /^0x[0-9a-f]{64}$/;
+const ADDR_RE = /^0x[0-9a-f]{40}$/;
+
+export function encodePacked(types: readonly string[], values: readonly unknown[]): `0x${string}` {
+  let out = '0x';
+  for (let i = 0; i < types.length; i++) {
+    const t = types[i];
+    const v = values[i];
+    const m = UINT_RE.exec(t);
+    if (m !== null && (typeof v === 'bigint' || typeof v === 'number')) {
+      const bits = m[1] === '' ? 256 : Number(m[1]);
+      out += BigInt.asUintN(bits, BigInt(v)).toString(16).padStart(bits >> 2, '0');
+    } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
+      out += v.slice(2);
+    } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
+      out += v.slice(2);
+    } else if (t === 'bool') {
+      out += v ? '01' : '00';
+    } else {
+      return viemEncodePacked(types as never, values as never);
+    }
+  }
+  return out as `0x${string}`;
+}
+
+export function encodeAbiParameters(params: unknown, values: readonly unknown[]): `0x${string}` {
+  if (Array.isArray(params)) {
+    let out = '0x';
+    for (let i = 0; i < params.length; i++) {
+      const t = (params[i] as { type?: string })?.type ?? '';
+      const v = values[i];
+      if (UINT_RE.test(t) && (typeof v === 'bigint' || typeof v === 'number')) {
+        out += BigInt.asUintN(256, BigInt(v)).toString(16).padStart(64, '0');
+      } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
+        out += v.slice(2);
+      } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
+        out += v.slice(2).padStart(64, '0');
+      } else if (t === 'bool') {
+        out += (v ? '1' : '0').padStart(64, '0');
+      } else {
+        return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
+      }
+    }
+    return out as `0x${string}`;
+  }
+  return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
+}
 
 // =============================================================================
 // CONSTANTS
@@ -856,43 +944,44 @@ export abstract class Contract {
   }
 
   protected _storageRead(key: any): bigint {
+    if (key !== null && typeof key === 'object') return (key as any)[YUL_SLOT_WORD] ?? 0n;
     return this._storage.sload(this._yulStorageKey(key));
   }
 
   protected _storageWrite(key: any, value: bigint): void {
+    if (key !== null && typeof key === 'object') {
+      (key as any)[YUL_SLOT_WORD] = value;
+      return;
+    }
     this._storage.sstore(this._yulStorageKey(key), value);
   }
 
-  /** Stable synthetic slot key for a storage struct (Solidity `x.slot`), holding the packed
-   *  bits no modelled property owns. Keyed by an identity symbol so a proxied struct and its
-   *  raw target agree. `_yul`-prefixed to stay clear of contract method names. */
-  protected _yulSlotKeyOf(ref: any): string {
+  /** Synthetic slot for a storage struct (Solidity `x.slot`), holding the packed bits no
+   *  modelled property owns. The word lives ON the struct under a symbol (both proxy layers
+   *  pass symbols through to the target, so a proxied struct and its raw target agree), and
+   *  dies with it — search forks can't accumulate orphaned words in `_storage`. */
+  protected _yulSlotKeyOf(ref: any): any {
     if (ref === null || ref === undefined || typeof ref !== 'object') {
       return this._yulStorageKey(ref);
     }
-    let id = (ref as any)[YUL_SLOT_ID];
-    if (id === undefined) {
-      id = `yulslot#${_nextYulSlotId++}`;
-      Object.defineProperty(ref, YUL_SLOT_ID, { value: id, enumerable: false });
-    }
-    return id;
+    return ref;
   }
 
   /**
-   * Fork support: `dst` is a structural clone of `src`, but the identity stamp is
-   * non-enumerable so the clone can't inherit it — without this, a fork's struct reads a
-   * ZERO packed word (lost effect compact data / monState top bits). Give the clone its
-   * own key and copy the word: reads agree, writes stay isolated from the live battle.
+   * Fork support: `dst` is a structural clone of `src`, but the word is symbol-keyed so
+   * `Object.keys` cloning drops it — without this, a fork's struct reads a ZERO packed word
+   * (lost effect compact data / monState top bits). Copy it onto the clone: reads agree,
+   * writes stay isolated from the live battle.
    */
   cloneYulSlotWord(src: any, dst: any): void {
     if (src === null || typeof src !== 'object' || dst === null || typeof dst !== 'object') return;
-    const id = (src as any)[YUL_SLOT_ID];
-    if (id === undefined) return;
-    const w = this._storage.sload(this._yulStorageKey(id));
-    if (w !== 0n) this._storage.sstore(this._yulStorageKey(this._yulSlotKeyOf(dst)), w);
+    const w = (src as any)[YUL_SLOT_WORD];
+    if (w !== undefined && w !== 0n) (dst as any)[YUL_SLOT_WORD] = w;
+    // A pooled/reused dst may carry a stale word from its previous life — reads treat 0n as
+    // absent, so zeroing (not deleting) keeps the clone faithful without a shape change.
+    else if ((dst as any)[YUL_SLOT_WORD] !== undefined) (dst as any)[YUL_SLOT_WORD] = 0n;
   }
 }
 
-/** Identity stamp for `_yulSlotKeyOf` — a symbol, so it can't collide with a field name. */
-const YUL_SLOT_ID = Symbol('yulSlotId');
-let _nextYulSlotId = 0;
+/** Key for the yul slot word — a symbol, so it can't collide with a field name. */
+const YUL_SLOT_WORD = Symbol('yulSlotWord');
