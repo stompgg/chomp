@@ -379,7 +379,7 @@ class TypeConverter(BaseGenerator):
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
 
-    def _ensure_bigint(self, expr: str, node: 'Expression | None' = None) -> str:
+    def _ensure_bigint(self, expr: str, node: 'Expression') -> str:
         """Wrap expression in BigInt() only if it's not already a bigint expression.
 
         Avoids redundant BigInt(BigInt(x)) patterns in generated code.
@@ -395,14 +395,13 @@ class TypeConverter(BaseGenerator):
             return expr
         # Statically bigint by type: a uint/int identifier, or a member access that
         # resolves to a numeric field (both transpile to bigint).
-        if node is not None:
-            if isinstance(node, Identifier) and self.is_bigint_typed_identifier(node):
+        if isinstance(node, Identifier) and self.is_bigint_typed_identifier(node):
+            return expr
+        if isinstance(node, MemberAccess):
+            resolved = self.resolve_access_type(node)
+            if (resolved and not resolved.is_array
+                    and (resolved.name.startswith('uint') or resolved.name.startswith('int'))):
                 return expr
-            if isinstance(node, MemberAccess):
-                resolved = self.resolve_access_type(node)
-                if (resolved and not resolved.is_array
-                        and (resolved.name.startswith('uint') or resolved.name.startswith('int'))):
-                    return expr
         return f'BigInt({expr})'
 
     def _is_already_address_type(self, expr: Expression) -> bool:

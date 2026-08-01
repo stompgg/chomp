@@ -266,9 +266,11 @@ class TestYulTranspiler(unittest.TestCase):
             }
         '''
         result = self.transpiler.transpile(yul_code)
-        self.assertIn('_yulSlotKeyOf(myVar', result)
-        self.assertIn('_storageRead(myVar', result)
-        self.assertIn('_storageWrite(myVar', result)
+        # `.slot` of a storage struct passes the struct ref straight through — the runtime
+        # accessors key object refs by their symbol-stored word.
+        self.assertIn('const slot = myVar as any;', result)
+        self.assertIn('_storageRead(myVar as any)', result)
+        self.assertIn('_storageWrite(myVar as any', result)
 
     def test_unmodelable_calldata_assembly_flagged(self):
         """Raw calldata reads / calldata .offset have no faithful simulation, so

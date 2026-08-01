@@ -139,9 +139,8 @@ class TypeScriptCodeGenerator:
         for contract in ast.contracts:
             output.append(self._contract_generator.generate_contract(contract))
 
-        # Scan generated content to determine which viem imports are actually used.
-        # '__ik' rides this scan too: it's not a viem name, but the RUNTIME_WRAPPED_VIEM
-        # routing in imports.py already moves scanned names onto the runtime import line.
+        # Scan generated content for used viem / runtime-provided names (imports.py
+        # routes RUNTIME_PROVIDED members onto the runtime import line).
         content = '\n'.join(output)
         for viem_fn in ('keccak256', 'encodePacked', 'encodeAbiParameters',
                         'decodeAbiParameters', 'parseAbiParameters', 'stringToHex',

@@ -22,7 +22,7 @@ export function keccak256(value: `0x${string}` | Uint8Array): `0x${string}` {
   if (typeof value !== 'string') return viemKeccak256(value);
   let h = KECCAK_CACHE.get(value);
   if (h === undefined) {
-    if (KECCAK_CACHE.size > 50_000) KECCAK_CACHE.clear();
+    if (KECCAK_CACHE.size > 10_000) KECCAK_CACHE.clear();
     h = viemKeccak256(value);
     KECCAK_CACHE.set(value, h);
   }
@@ -53,15 +53,32 @@ const UINT_RE = /^u?int(\d*)$/;
 const HEX32_RE = /^0x[0-9a-f]{64}$/;
 const ADDR_RE = /^0x[0-9a-f]{40}$/;
 
+// Type string → uint/int bit width, or -1 for non-numeric types. The type vocabulary the
+// transpiler emits is a tiny fixed set, so this replaces a regex exec per element.
+const UINT_WIDTH = new Map<string, number>();
+function uintWidth(t: string): number {
+  let w = UINT_WIDTH.get(t);
+  if (w === undefined) {
+    const m = UINT_RE.exec(t);
+    w = m === null ? -1 : m[1] === '' ? 256 : Number(m[1]);
+    UINT_WIDTH.set(t, w);
+  }
+  return w;
+}
+
+/** `v` as a two's-complement `bits`-wide unpadded hex string. */
+function padUint(v: bigint | number, bits: number): string {
+  return BigInt.asUintN(bits, BigInt(v)).toString(16).padStart(bits >> 2, '0');
+}
+
 export function encodePacked(types: readonly string[], values: readonly unknown[]): `0x${string}` {
   let out = '0x';
   for (let i = 0; i < types.length; i++) {
     const t = types[i];
     const v = values[i];
-    const m = UINT_RE.exec(t);
-    if (m !== null && (typeof v === 'bigint' || typeof v === 'number')) {
-      const bits = m[1] === '' ? 256 : Number(m[1]);
-      out += BigInt.asUintN(bits, BigInt(v)).toString(16).padStart(bits >> 2, '0');
+    const bits = uintWidth(t);
+    if (bits > 0 && (typeof v === 'bigint' || typeof v === 'number')) {
+      out += padUint(v, bits);
     } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
       out += v.slice(2);
     } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
@@ -76,26 +93,24 @@ export function encodePacked(types: readonly string[], values: readonly unknown[
 }
 
 export function encodeAbiParameters(params: unknown, values: readonly unknown[]): `0x${string}` {
-  if (Array.isArray(params)) {
-    let out = '0x';
-    for (let i = 0; i < params.length; i++) {
-      const t = (params[i] as { type?: string })?.type ?? '';
-      const v = values[i];
-      if (UINT_RE.test(t) && (typeof v === 'bigint' || typeof v === 'number')) {
-        out += BigInt.asUintN(256, BigInt(v)).toString(16).padStart(64, '0');
-      } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
-        out += v.slice(2);
-      } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
-        out += v.slice(2).padStart(64, '0');
-      } else if (t === 'bool') {
-        out += (v ? '1' : '0').padStart(64, '0');
-      } else {
-        return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
-      }
+  if (!Array.isArray(params)) return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
+  let out = '0x';
+  for (let i = 0; i < params.length; i++) {
+    const t = (params[i] as { type?: string })?.type ?? '';
+    const v = values[i];
+    if (uintWidth(t) > 0 && (typeof v === 'bigint' || typeof v === 'number')) {
+      out += padUint(v, 256);
+    } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
+      out += v.slice(2);
+    } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
+      out += v.slice(2).padStart(64, '0');
+    } else if (t === 'bool') {
+      out += (v ? '1' : '0').padStart(64, '0');
+    } else {
+      return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
     }
-    return out as `0x${string}`;
   }
-  return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
+  return out as `0x${string}`;
 }
 
 // =============================================================================
@@ -954,17 +969,6 @@ export abstract class Contract {
       return;
     }
     this._storage.sstore(this._yulStorageKey(key), value);
-  }
-
-  /** Synthetic slot for a storage struct (Solidity `x.slot`), holding the packed bits no
-   *  modelled property owns. The word lives ON the struct under a symbol (both proxy layers
-   *  pass symbols through to the target, so a proxied struct and its raw target agree), and
-   *  dies with it — search forks can't accumulate orphaned words in `_storage`. */
-  protected _yulSlotKeyOf(ref: any): any {
-    if (ref === null || ref === undefined || typeof ref !== 'object') {
-      return this._yulStorageKey(ref);
-    }
-    return ref;
   }
 
   /**

@@ -34,6 +34,6 @@ contract ChosenOne is IAbility {
     }
 
     function _getChosenOneKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64 scaledKey) {
-        uint64 scaledKey = (uint64(playerIndex) * MAX_MON_INDEX) + monIndex;
+        scaledKey = uint64(playerIndex * MAX_MON_INDEX + monIndex);
     }
 }
