@@ -25,10 +25,6 @@ contract SneakAttack is IMoveSet, BasicEffect {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Sneak Attack";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

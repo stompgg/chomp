@@ -23,10 +23,6 @@ contract HeatBeacon is IMoveSet {
         BURN_CLASS = (uint256(_BURN_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Heat Beacon";
-    }
-
     function move(
         IEngine engine,
         bytes32,

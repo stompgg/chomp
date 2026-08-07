@@ -16,10 +16,6 @@ contract Overclock is BasicEffect {
     uint8 public constant SPEED_PERCENT = 25;
     uint8 public constant SP_DEF_PERCENT = 25;
 
-    function name() public pure override returns (string memory) {
-        return "Overclock";
-    }
-
     // Steps: OnApply, RoundEnd, OnRemove, OnMonSwitchIn
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x801D;

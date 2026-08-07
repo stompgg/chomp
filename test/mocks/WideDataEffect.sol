@@ -8,10 +8,6 @@ import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 contract WideDataEffect is BasicEffect {
     bytes32 public constant INITIAL_DATA = bytes32((uint256(1) << 200) | 123);
 
-    function name() external pure override returns (string memory) {
-        return "Wide Data";
-    }
-
     function getStepsBitmap() external pure override returns (uint32) {
         return uint16(1) | ALWAYS_APPLIES_BIT;
     }

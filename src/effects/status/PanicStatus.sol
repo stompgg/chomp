@@ -12,10 +12,6 @@ contract PanicStatus is StatusEffect {
 
     uint256 constant DURATION = 3;
 
-    function name() public pure override returns (string memory) {
-        return "Panic";
-    }
-
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;

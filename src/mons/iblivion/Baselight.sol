@@ -18,10 +18,6 @@ contract Baselight is IAbility, BasicEffect {
     uint256 public constant MAX_BASELIGHT_LEVEL = 3;
     uint256 public constant INITIAL_BASELIGHT_LEVEL = 1;
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Baselight";
-    }
-
     /// @dev Finds the Baselight effect on a mon and returns its state
     /// @return exists Whether the effect exists on this mon
     /// @return effectIndex The index to use with editEffect (only valid if exists)

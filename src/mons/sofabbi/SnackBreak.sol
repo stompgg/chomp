@@ -13,12 +13,8 @@ contract SnackBreak is IMoveSet {
     uint256 public constant DEFAULT_HEAL_DENOM = 2;
     uint256 public constant MAX_DIVISOR = 3;
 
-    function name() public pure override returns (string memory) {
-        return "Snack Break";
-    }
-
-    function _snackKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _snackKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
     }
 
     function _getSnackLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)

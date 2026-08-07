@@ -14,10 +14,6 @@ contract SpAtkDebuffEffect is StatusEffect {
 
     uint8 constant SP_ATTACK_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "SpAtk Debuff";
-    }
-
     // Steps: OnApply, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x09 | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;

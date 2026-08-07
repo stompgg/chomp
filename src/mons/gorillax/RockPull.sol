@@ -31,10 +31,6 @@ contract RockPull is IMoveSet {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Rock Pull";
-    }
-
     function _didTargetChooseSwitch(IEngine engine, bytes32 battleKey, uint256 targetSlot)
         internal
         view

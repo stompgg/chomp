@@ -15,10 +15,6 @@ contract IronWall is IMoveSet, BasicEffect {
     int32 public constant HEAL_PERCENT = 50;
     int32 public constant INITIAL_HEAL_PERCENT = 20;
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Iron Wall";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

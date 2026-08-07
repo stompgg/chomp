@@ -24,10 +24,6 @@ contract Somniphobia is IMoveSet, BasicEffect {
         return (uint256(data) >> (casterSide << 4)) & 0xFFFF;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Somniphobia";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

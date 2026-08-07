@@ -13,10 +13,6 @@ import {NineNineNineLib} from "./NineNineNineLib.sol";
 contract NineNineNine is IMoveSet {
     constructor() {}
 
-    function name() external pure returns (string memory) {
-        return "Nine Nine Nine";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

@@ -33,10 +33,6 @@ contract Tinderclaws is IAbility, BasicEffect, IEffectResolver {
         BURN_CLASS = (uint256(_BURN_STATUS.getStepsBitmap()) >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
     }
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Tinderclaws";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);

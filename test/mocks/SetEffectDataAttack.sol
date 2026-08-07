@@ -13,10 +13,6 @@ contract SetEffectDataAttack is IMoveSet {
         DATA = data;
     }
 
-    function name() external pure returns (string memory) {
-        return "Set Effect Data";
-    }
-
     function move(IEngine engine, bytes32, uint256, uint256, uint256, uint256, uint16 extraData, uint256) external {
         uint256 targetIndex = uint256(extraData) & 0x3;
         uint256 effectIndex = uint256(extraData) >> 2;

@@ -35,10 +35,6 @@ contract UnboundedStrike is IMoveSet {
         BASELIGHT = _BASELIGHT;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Unbounded Strike";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

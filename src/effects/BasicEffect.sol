@@ -10,10 +10,6 @@ abstract contract BasicEffect is IEffect {
     // fresh-context step requests in the high uint16 (see IEffect).
     function getStepsBitmap() external pure virtual returns (uint32);
 
-    function name() external virtual returns (string memory) {
-        return "";
-    }
-
     // Whether or not to add the effect if the step condition is met
     function shouldApply(IEngine, bytes32, bytes32, uint256, uint256) external virtual returns (bool) {
         return true;

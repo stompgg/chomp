@@ -57,3 +57,11 @@ Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the res
 Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,"Deals damage, {EFFECT_ACCURACY} chance to inflict Panic.",,,none,0,EFFECT_ACCURACY=20,opponent-slot
 Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"First use boosts defenses. Second use deals damage based on how much time has passed, and then resets.",,,none,0,,opponent-slot
 Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at {EFFECT_ACCURACY} chance.",,,mode-select,0,EFFECT_ACCURACY=50,opponent-slot
+Holy Molt,Glob,0,?,100,1,Faith,Self,"Loses half of current HP and applies Blessed to self. Free on the first cast; each later cast costs 1 more stamina, up to {MAX_STAMINA_COST}.",,,none,0,HP_DENOM=2;MAX_STAMINA_COST=3,self-only
+Water Claw,Glob,80,2,100,0,Liquid,Physical,Deals damage.,,,none,0,,opponent-slot
+Holy Water Claw,Glob,90,3,100,0,Faith,Physical,Deals damage.,,,none,0,,opponent-slot
+Get Slippery,Glob,0,2,100,0,Liquid,Self,Boosts ATK and Speed by {ATTACK_BUFF_PERCENT}.,,,none,0,ATTACK_BUFF_PERCENT=50;SPEED_BUFF_PERCENT=50,self-only
+Summon Storm,Mulong,0,0,100,0,Lightning,Other,"Summons a Storm for 7 rounds that damages every active mon at end of round with Lightning damage scaled off the summoner's stats. Recasting re-latches the Storm to the new caster and resets its timer.",,,none,0,,none
+King's Respite,Mulong,120,2,100,0,Air,Special,"Marks the chosen slot. The next time Mulong rests, it deals heavy Air damage to that slot; the rest still restores stamina as normal.",,,none,0,BASE_POWER=120,opponent-slot
+Thunderclap,Mulong,120,3,100,0,Lightning,Special,"Deals damage, 20% chance to inflict Zap.",,,none,0,,opponent-slot
+Cloud Strike,Mulong,?,2,100,0,Ice,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Frostbite. While a Storm is active, power rises to {STORM_BASE_POWER} and the chance to {STORM_EFFECT_ACCURACY}.",,,none,0,BASE_POWER=70;STORM_BASE_POWER=100;EFFECT_ACCURACY=10;STORM_EFFECT_ACCURACY=30,opponent-slot

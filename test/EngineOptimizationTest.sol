@@ -32,10 +32,6 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 
 contract KOOpponentOnSwitchAbility is IAbility {
-    function name() external pure returns (string memory) {
-        return "KO Opponent On Switch";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256) external {
         uint256 opponentIndex = 1 - playerIndex;
         BattleContext memory ctx = engine.getBattleContext(battleKey);

@@ -10,10 +10,6 @@ import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 /// @notice Effect whose shouldApply() returns false and does NOT have ALWAYS_APPLIES_BIT.
 /// Used to verify that normal shouldApply() rejection still works.
 contract NeverAppliesEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "NeverApplies";
-    }
-
     // RoundEnd (0x04), NO ALWAYS_APPLIES_BIT
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x04;

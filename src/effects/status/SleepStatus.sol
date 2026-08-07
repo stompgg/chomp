@@ -14,17 +14,13 @@ contract SleepStatus is StatusEffect {
 
     uint256 constant DURATION = 3;
 
-    function name() public pure override returns (string memory) {
-        return "Sleep";
-    }
-
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT);
     }
 
-    function _globalSleepKey(uint256 targetIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encodePacked(name(), targetIndex))));
+    function _globalSleepKey(uint256 targetIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encodePacked(address(this), targetIndex))));
     }
 
     // Extra apply condition beyond the Engine's lane gate (which already guarantees the mon is

@@ -16,10 +16,6 @@ contract ZapStatus is StatusEffect {
 
     uint8 private constant ALREADY_SKIPPED = 1;
 
-    function name() public pure override returns (string memory) {
-        return "Zap";
-    }
-
     // Steps: OnApply, RoundStart, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x0F | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;

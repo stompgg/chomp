@@ -12,12 +12,8 @@ contract SaviorComplex is IAbility {
     uint8 public constant STAGE_2_BOOST = 25; // 2 KO'd
     uint8 public constant STAGE_3_BOOST = 30; // 3+ KO'd
 
-    function name() external pure returns (string memory) {
-        return "Savior Complex";
-    }
-
-    function _getSaviorComplexKey(uint256 playerIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, "SAVIOR_COMPLEX"))));
+    function _getSaviorComplexKey(uint256 playerIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, address(this)))));
     }
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {

@@ -45,10 +45,6 @@ contract CustomAttack is IMoveSet {
         );
     }
 
-    function name() external pure returns (string memory) {
-        return "CustomAttack";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

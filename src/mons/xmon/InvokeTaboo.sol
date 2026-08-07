@@ -19,10 +19,6 @@ contract InvokeTaboo is IMoveSet, BasicEffect {
         SLEEP_STATUS = _SLEEP_STATUS;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Invoke Taboo";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

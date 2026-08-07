@@ -17,10 +17,6 @@ contract SelfSwitchAndDamageMove is IMoveSet {
         DAMAGE = power;
     }
 
-    function name() external pure returns (string memory) {
-        return "Self Switch And Damage Move";
-    }
-
     function move(
         IEngine engine,
         bytes32,

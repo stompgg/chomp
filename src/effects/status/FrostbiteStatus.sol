@@ -15,10 +15,6 @@ contract FrostbiteStatus is StatusEffect {
     int32 constant DAMAGE_DENOM = 16;
     uint8 constant SP_ATTACK_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Frostbite";
-    }
-
     // Steps: OnApply, RoundEnd, OnRemove
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x00010000 | 0x0D | uint16(STATUS_CLASS << STATUS_CLASS_SHIFT) | ALWAYS_APPLIES_BIT;

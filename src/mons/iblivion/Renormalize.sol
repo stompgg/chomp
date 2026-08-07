@@ -22,10 +22,6 @@ contract Renormalize is IMoveSet {
         LOOP = _LOOP;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Renormalize";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

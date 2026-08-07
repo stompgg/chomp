@@ -585,8 +585,9 @@ contract EmbursaTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Bob uses burn attack on Alice (Bob is faster)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        // Bob (faster) burns Alice. Alice attacks rather than rests so the burn survives the turn —
+        // a rest here would resolve after the burn and cleanse it on the spot.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Verify Alice is burned and has SpATK boost
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);

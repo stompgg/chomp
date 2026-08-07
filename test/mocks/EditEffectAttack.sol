@@ -8,10 +8,6 @@ import {MoveMeta} from "../../src/Structs.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract EditEffectAttack is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Edit Effect Attack";
-    }
-
     function move(
         IEngine engine,
         bytes32,

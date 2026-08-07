@@ -14,10 +14,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 ///      without encoding a non-zero value every time. Tests that need wider key/value ranges
 ///      should use a different mock.
 contract MockKVWriterMove is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "MockKVWriter";
-    }
-
     function move(
         IEngine engine,
         bytes32,

@@ -31,10 +31,6 @@ contract Loop is IMoveSet, BasicEffect {
         BASELIGHT = _BASELIGHT;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Loop";
-    }
-
     // The marker effect is planted once (first Loop of the battle) and never removed; its extraData
     // is the armed/used flag (1 = used this switch-in, 0 = armed). onMonSwitchOut resets it to 0,
     // so the slot count stays at 1 for the whole battle instead of churning tombstones every cycle.

@@ -14,10 +14,6 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 contract Interweaving is IAbility, BasicEffect {
     uint8 public constant DECREASE_PERCENTAGE = 15;
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Interweaving";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Lower opposing mon Attack stat (mirror-slot ruling; slot 0 in singles)
         uint256[4] memory lanes = engine.getActiveSlots(battleKey);

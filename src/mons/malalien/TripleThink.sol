@@ -12,10 +12,6 @@ import {IMoveSet} from "../../moves/IMoveSet.sol";
 contract TripleThink is IMoveSet {
     uint8 public constant SP_ATTACK_BUFF_PERCENT = 75;
 
-    function name() public pure override returns (string memory) {
-        return "Triple Think";
-    }
-
     function move(
         IEngine engine,
         bytes32,

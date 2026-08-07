@@ -14,10 +14,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  * The effect's slot index is passed as extraData. Targets the opponent's active mon.
  */
 contract MockEffectRemover is IMoveSet {
-    function name() public pure override returns (string memory) {
-        return "Mock Effect Remover";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

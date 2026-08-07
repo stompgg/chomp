@@ -19,10 +19,6 @@ contract RawDamageMove is IMoveSet {
         DAMAGE = damage;
     }
 
-    function name() external pure returns (string memory) {
-        return "Raw Damage Move";
-    }
-
     function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256 targetBits, uint256 activesPacked, uint16, uint256)
         external
     {

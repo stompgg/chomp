@@ -12,10 +12,6 @@ import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 /// mon-agnostic stand-in for effects whose OnUpdateMonState hook reaches dealDamage and can therefore
 /// KO a mon off an inline stamina-regen tick.
 contract StaminaGainKOEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "Stamina Gain KO";
-    }
-
     // Steps: OnUpdateMonState
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x100;

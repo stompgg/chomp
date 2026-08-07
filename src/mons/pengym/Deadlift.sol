@@ -13,10 +13,6 @@ contract Deadlift is IMoveSet {
     uint8 public constant ATTACK_BUFF_PERCENT = 50;
     uint8 public constant DEF_BUFF_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Deadlift";
-    }
-
     function move(
         IEngine engine,
         bytes32,

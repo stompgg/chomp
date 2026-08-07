@@ -16,10 +16,6 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 contract Dreamcatcher is IAbility, BasicEffect {
     int32 public constant HEAL_DENOM = 16;
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Dreamcatcher";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);

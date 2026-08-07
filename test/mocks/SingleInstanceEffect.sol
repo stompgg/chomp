@@ -9,10 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract SingleInstanceEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "Instant Death";
-    }
-
     // Steps: OnApply
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x01;

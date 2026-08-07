@@ -6,7 +6,6 @@ import "../IEngine.sol";
 import "../Structs.sol";
 
 interface IMoveSet {
-    function name() external view returns (string memory);
     /// @param targetBits Absolute-slot bitmask chosen by the player (top nibble of the wire
     ///        extraData). In singles the engine passes the implied target (the opposing slot).
     /// @param activesPacked Every slot's active roster index (one 8-bit lane per absolute slot,

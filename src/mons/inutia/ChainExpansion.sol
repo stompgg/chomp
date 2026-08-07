@@ -25,12 +25,8 @@ contract ChainExpansion is IMoveSet, BasicEffect {
         TYPE_CALC = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Chain Expansion";
-    }
-
-    function _key(uint256 playerIndex, uint256 monIndex) internal pure returns (bytes32) {
-        return keccak256(abi.encode(playerIndex, monIndex, name()));
+    function _key(uint256 playerIndex, uint256 monIndex) internal view returns (bytes32) {
+        return keccak256(abi.encode(playerIndex, monIndex, address(this)));
     }
 
     function move(

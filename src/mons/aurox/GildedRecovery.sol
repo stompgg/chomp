@@ -13,10 +13,6 @@ contract GildedRecovery is IMoveSet {
     int32 public constant HEAL_PERCENT = 50;
     int32 public constant STAMINA_BONUS = 1;
 
-    function name() public pure override returns (string memory) {
-        return "Gilded Recovery";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

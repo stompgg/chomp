@@ -14,10 +14,6 @@ contract BlessedStatus is StatusEffect {
     // Healed on removal, as a fraction of max HP.
     int32 public constant HEAL_DENOM = 16;
 
-    function name() public pure override returns (string memory) {
-        return "Blessed";
-    }
-
     // Steps: OnApply (0x01), OnRemove (0x08), PreDamage (0x200); fresh PreDamage context (0x0200_0000)
     function getStepsBitmap() external pure override returns (uint32) {
         return uint32(0x02000209) | uint32(uint16(STATUS_CLASS << STATUS_CLASS_SHIFT)) | uint32(ALWAYS_APPLIES_BIT);

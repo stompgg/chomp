@@ -20,10 +20,6 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 contract Adaptor is IAbility, BasicEffect {
     int32 public constant DAMAGE_DENOM = 2;
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Adaptor";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i = 0; i < effects.length; i++) {

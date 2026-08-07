@@ -28,12 +28,8 @@ contract ModalBolt is IMoveSet {
         ZAP_STATUS = _ZAP_STATUS;
     }
 
-    function name() public pure returns (string memory) {
-        return "Modal Bolt";
-    }
-
-    function _modalKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode("ModalBolt", playerIndex, monIndex))));
+    function _modalKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(address(this), playerIndex, monIndex))));
     }
 
     function getUsedModes(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)

@@ -12,10 +12,6 @@ import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
 
 contract PostWorkout is IAbility, BasicEffect {
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Post-Workout";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);

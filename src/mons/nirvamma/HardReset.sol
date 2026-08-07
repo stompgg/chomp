@@ -24,10 +24,6 @@ contract HardReset is IMoveSet, BasicEffect {
     uint256 private constant OWN_FIRED_BIT = 0x2;
     uint256 private constant OPP_FIRED_BIT = 0x4;
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Hard Reset";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

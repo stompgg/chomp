@@ -18,10 +18,6 @@ contract ContagiousSlumber is IMoveSet {
         SLEEP_STATUS = _SLEEP_STATUS;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Contagious Slumber";
-    }
-
     function move(
         IEngine engine,
         bytes32,

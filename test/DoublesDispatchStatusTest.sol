@@ -37,10 +37,6 @@ contract OverclockCastMove is IMoveSet {
         OC = oc;
     }
 
-    function name() external pure returns (string memory) {
-        return "Overclock Cast";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,
@@ -88,10 +84,6 @@ contract OverclockCastMove is IMoveSet {
 /// @dev Metadata getters revert: a battle only executes with this move if the engine reads
 ///      the word's packed stamina/priority instead of staticcalling.
 contract RevertingMetaAttack is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Reverting Meta";
-    }
-
     function move(
         IEngine engine,
         bytes32,

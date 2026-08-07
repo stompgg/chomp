@@ -16,10 +16,6 @@ contract GraveAffliction is IMoveSet {
     // Both mons lose 1/FRACTION_DENOM of their current HP.
     int32 public constant FRACTION_DENOM = 2;
 
-    function name() public pure override returns (string memory) {
-        return "Grave Affliction";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

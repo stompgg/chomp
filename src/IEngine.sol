@@ -62,6 +62,19 @@ interface IEngine {
         uint256 rng,
         uint256 critRate
     ) external returns (int32 damage, bytes32 eventType);
+    /// @notice Spread variant of dispatchCustomAttack: targetBits is a full slot mask.
+    function dispatchCustomAttackMulti(
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint32 basePower,
+        uint32 accuracy,
+        uint256 volatility,
+        Type moveType,
+        MoveClass moveClass,
+        uint256 rng,
+        uint256 critRate
+    ) external returns (int32 totalDamage);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
     function execute(bytes32 battleKey) external returns (address winner);

@@ -26,10 +26,6 @@ contract ForceSwitchMove is IMoveSet {
         PRIORITY = args.PRIORITY;
     }
 
-    function name() external pure returns (string memory) {
-        return "Force Switch";
-    }
-
     function move(
         IEngine engine,
         bytes32,

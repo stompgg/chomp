@@ -40,10 +40,6 @@ contract FreshMoveContextAbility is IAbility, BasicEffect {
         REWRITER = IEffect(address(new RewriteMoveAfterMove()));
     }
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Fresh Move Context";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external override {
         // Stable effect-array order: the rewriter runs before this observer.
         engine.addEffect(playerIndex, monIndex, REWRITER, bytes32(0));
@@ -99,10 +95,6 @@ contract FreshStatusContextAbility is IAbility, BasicEffect {
     constructor() {
         IEffect status = IEffect(address(new ContextTestStatus()));
         WRITER = IEffect(address(new AddStatusAtRoundEnd(status)));
-    }
-
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Fresh Status Context";
     }
 
     function activateOnSwitch(IEngine engine, bytes32, uint256 playerIndex, uint256 monIndex) external override {

@@ -16,6 +16,7 @@ import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 
 // Shared effects
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
+import {Storm} from "../src/effects/battlefield/Storm.sol";
 import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
@@ -87,6 +88,9 @@ contract EngineAndPeriphery is Script {
     function deployGameFundamentals() public {
         Overclock overclock = new Overclock();
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
+
+        Storm storm = new Storm();
+        deployedContracts.push(DeployData({name: "STORM", contractAddress: address(storm)}));
 
         SleepStatus sleepStatus = new SleepStatus();
         deployedContracts.push(DeployData({name: "SLEEP STATUS", contractAddress: address(sleepStatus)}));

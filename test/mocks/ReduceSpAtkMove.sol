@@ -16,10 +16,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  * @dev Used to test the OnUpdateMonState lifecycle hook
  */
 contract ReduceSpAtkMove is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Reduce SpAtk";
-    }
-
     function move(
         IEngine engine,
         bytes32,

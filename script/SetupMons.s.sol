@@ -9,6 +9,7 @@ import {Type} from "../src/Enums.sol";
 
 import {IEffect} from "../src/effects/IEffect.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
+import {Storm} from "../src/effects/battlefield/Storm.sol";
 import {BigBellow} from "../src/mons/aurox/BigBellow.sol";
 import {BullRush} from "../src/mons/aurox/BullRush.sol";
 import {GildedRecovery} from "../src/mons/aurox/GildedRecovery.sol";
@@ -30,6 +31,9 @@ import {GraveAffliction} from "../src/mons/ghouliath/GraveAffliction.sol";
 import {InfernalFlame} from "../src/mons/ghouliath/InfernalFlame.sol";
 import {RiseFromTheGrave} from "../src/mons/ghouliath/RiseFromTheGrave.sol";
 import {WitherAway} from "../src/mons/ghouliath/WitherAway.sol";
+import {ChosenOne} from "../src/mons/glob/ChosenOne.sol";
+import {GetSlippery} from "../src/mons/glob/GetSlippery.sol";
+import {HolyMolt} from "../src/mons/glob/HolyMolt.sol";
 import {Angery} from "../src/mons/gorillax/Angery.sol";
 import {RockPull} from "../src/mons/gorillax/RockPull.sol";
 import {Baselight} from "../src/mons/iblivion/Baselight.sol";
@@ -45,6 +49,10 @@ import {Sanctify} from "../src/mons/inutia/Sanctify.sol";
 import {ActusReus} from "../src/mons/malalien/ActusReus.sol";
 import {FoulLanguage} from "../src/mons/malalien/FoulLanguage.sol";
 import {TripleThink} from "../src/mons/malalien/TripleThink.sol";
+import {CloudStrike} from "../src/mons/mulong/CloudStrike.sol";
+import {KingsLeisure} from "../src/mons/mulong/KingsLeisure.sol";
+import {KingsRespite} from "../src/mons/mulong/KingsRespite.sol";
+import {SummonStorm} from "../src/mons/mulong/SummonStorm.sol";
 import {Adaptor} from "../src/mons/nirvamma/Adaptor.sol";
 import {Chronoffense} from "../src/mons/nirvamma/Chronoffense.sol";
 import {HardReset} from "../src/mons/nirvamma/HardReset.sol";
@@ -82,7 +90,7 @@ contract SetupMons is Script {
         GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress("GACHA_TEAM_REGISTRY"));
 
         // Deploy all mons and collect deployment data
-        DeployData[][] memory allDeployData = new DeployData[][](13);
+        DeployData[][] memory allDeployData = new DeployData[][](15);
 
         allDeployData[0] = deployGhouliath(registry);
         allDeployData[1] = deployInutia(registry);
@@ -97,6 +105,8 @@ contract SetupMons is Script {
         allDeployData[10] = deployXmon(registry);
         allDeployData[11] = deployEkineki(registry);
         allDeployData[12] = deployNirvamma(registry);
+        allDeployData[13] = deployGlob(registry);
+        allDeployData[14] = deployMulong(registry);
 
         // Calculate total length for flattened array
         uint256 totalLength = 0;
@@ -847,6 +857,110 @@ contract SetupMons is Script {
         bytes32[] memory keys = new bytes32[](0);
         bytes32[] memory values = new bytes32[](0);
         registry.createMon(12, stats, moves, abilities, keys, values);
+    }
+
+    function deployGlob(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
+        DeployData[] memory deployedContracts = new DeployData[](3);
+
+        // Cache commonly used addresses
+        address blessedstatus = vm.envAddress("BLESSED_STATUS");
+
+        address[3] memory addrs;
+
+        {
+            addrs[0] = address(new HolyMolt(IEffect(blessedstatus)));
+            deployedContracts[0] = DeployData({name: "Holy Molt", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new GetSlippery());
+            deployedContracts[1] = DeployData({name: "Get Slippery", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new ChosenOne(IEffect(blessedstatus)));
+            deployedContracts[2] = DeployData({name: "Chosen One", contractAddress: addrs[2]});
+        }
+
+        _registerGlob(registry, addrs);
+
+        return deployedContracts;
+    }
+
+    function _registerGlob(GachaTeamRegistry registry, address[3] memory addrs) internal {
+        MonStats memory stats = MonStats({
+            hp: 280,
+            stamina: 5,
+            speed: 140,
+            attack: 300,
+            defense: 205,
+            specialAttack: 115,
+            specialDefense: 185,
+            type1: Type.Liquid,
+            type2: Type.Faith
+        });
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = 0x0040f00000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x5003200000000000000000000000000000000000000000000000000000000000;
+        moves[2] = 0x5a09300000000000000000000000000000000000000000000000000000000000;
+        moves[3] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = uint256(uint160(addrs[2]));
+        bytes32[] memory keys = new bytes32[](0);
+        bytes32[] memory values = new bytes32[](0);
+        registry.createMon(13, stats, moves, abilities, keys, values);
+    }
+
+    function deployMulong(GachaTeamRegistry registry) internal returns (DeployData[] memory) {
+        DeployData[] memory deployedContracts = new DeployData[](4);
+
+        // Cache commonly used addresses
+        address storm = vm.envAddress("STORM");
+
+        address[4] memory addrs;
+
+        {
+            addrs[0] = address(new SummonStorm(Storm(storm)));
+            deployedContracts[0] = DeployData({name: "Summon Storm", contractAddress: addrs[0]});
+        }
+        {
+            addrs[1] = address(new KingsRespite(ITypeCalculator(vm.envAddress("TYPE_CALCULATOR"))));
+            deployedContracts[1] = DeployData({name: "King's Respite", contractAddress: addrs[1]});
+        }
+        {
+            addrs[2] = address(new CloudStrike(Storm(storm), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
+            deployedContracts[2] = DeployData({name: "Cloud Strike", contractAddress: addrs[2]});
+        }
+        {
+            addrs[3] = address(new KingsLeisure());
+            deployedContracts[3] = DeployData({name: "King's Leisure", contractAddress: addrs[3]});
+        }
+
+        _registerMulong(registry, addrs);
+
+        return deployedContracts;
+    }
+
+    function _registerMulong(GachaTeamRegistry registry, address[4] memory addrs) internal {
+        MonStats memory stats = MonStats({
+            hp: 320,
+            stamina: 5,
+            speed: 300,
+            attack: 115,
+            defense: 135,
+            specialAttack: 290,
+            specialDefense: 145,
+            type1: Type.Air,
+            type2: Type.Lightning
+        });
+        uint256[] memory moves = new uint256[](4);
+        moves[0] = 0x0030000000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
+        moves[2] = 0x7848314000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("ZAP_STATUS")));
+        moves[3] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));
+        uint256[] memory abilities = new uint256[](1);
+        abilities[0] = uint256(uint160(addrs[3]));
+        bytes32[] memory keys = new bytes32[](0);
+        bytes32[] memory values = new bytes32[](0);
+        registry.createMon(14, stats, moves, abilities, keys, values);
     }
 
 }

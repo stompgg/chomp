@@ -16,12 +16,8 @@ contract HoneyBribe is IMoveSet {
     uint256 public constant MAX_DIVISOR = 3;
     uint8 public constant SP_DEF_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Honey Bribe";
-    }
-
-    function _bribeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _bribeKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
     }
 
     function _getBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)

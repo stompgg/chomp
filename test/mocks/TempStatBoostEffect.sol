@@ -9,10 +9,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract TempStatBoostEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "";
-    }
-
     // Steps: OnApply
     function getStepsBitmap() external pure override returns (uint32) {
         return 0x01;

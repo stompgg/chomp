@@ -26,10 +26,6 @@ contract Brightback is IMoveSet {
         BASELIGHT = _BASELIGHT;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Brightback";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

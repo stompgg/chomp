@@ -26,10 +26,6 @@ import {TestTypeCalculator} from "./mocks/TestTypeCalculator.sol";
 /// @dev Priority +2 ally-speed boost (+127% Temp on own side's mon from the payload low 2 bits):
 ///      resolves before default-priority attacks so the dynamic scheduler's re-pick is visible.
 contract FastAllySpeedBoost is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Fast Ally Speed Boost";
-    }
-
     function move(
         IEngine engine,
         bytes32,

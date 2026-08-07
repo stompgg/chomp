@@ -384,14 +384,14 @@ contract GhouliathTest is Test, BattleHelper {
         bool bobHasPanic = false;
 
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (keccak256(abi.encodePacked(aliceEffects[i].effect.name())) == keccak256(abi.encodePacked("Panic"))) {
+            if (address(aliceEffects[i].effect) == address(panicStatus)) {
                 aliceHasPanic = true;
                 break;
             }
         }
 
         for (uint256 i = 0; i < bobEffects.length; i++) {
-            if (keccak256(abi.encodePacked(bobEffects[i].effect.name())) == keccak256(abi.encodePacked("Panic"))) {
+            if (address(bobEffects[i].effect) == address(panicStatus)) {
                 bobHasPanic = true;
                 break;
             }

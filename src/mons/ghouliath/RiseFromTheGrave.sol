@@ -14,13 +14,9 @@ contract RiseFromTheGrave is IAbility, BasicEffect {
     uint64 constant MON_EFFECT_IDENTIFIER = 17;
 
     // IAbility implementation
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Rise From The Grave";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon (can only be set once)
-        uint64 monEffectId = uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+        uint64 monEffectId = uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
         if (engine.getGlobalKV(battleKey, monEffectId) != 0) {
             return;
         }

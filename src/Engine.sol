@@ -3091,6 +3091,81 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @notice Spread variant: honors `targetBits` as a full slot mask instead of collapsing it to the
+    ///         lowest set bit, resolving the attacker's stats once for the whole sweep.
+    /// @dev Purely additive — dispatchCustomAttack is untouched, so single-target callers are byte
+    ///      identical. Every target rolls its own accuracy and damage variance. Empty lanes and KO'd
+    ///      mons are skipped, and the sweep stops the moment a KO ends the battle. Returns summed
+    ///      damage only: a single eventType is meaningless across several targets.
+    function dispatchCustomAttackMulti(
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint32 basePower,
+        uint32 accuracy,
+        uint256 volatility,
+        Type moveType,
+        MoveClass moveClass,
+        uint256 rng,
+        uint256 critRate
+    ) external returns (int32 totalDamage) {
+        if (battleKeyForWrite == bytes32(0)) {
+            revert NoWriteAllowed();
+        }
+        BattleConfig storage config = battleConfig[storageKeyForWrite];
+        BattleData storage battle = battleData[battleKeyForWrite];
+
+        uint256 baseHash = AttackCalculator.mixRngForAttacker(rng, attackerPlayerIndex);
+        uint256 source = uint256(uint160(msg.sender));
+        DamageCalcContext memory ctx;
+        bool ctxSeeded;
+
+        for (uint256 s; s < 4;) {
+            if (targetBits & (1 << s) != 0) {
+                uint256 defenderPlayerIndex = s >> 1;
+                uint256 defenderMonIndex = _slotActive(battle, s);
+                if (
+                    defenderMonIndex != EMPTY_ACTIVE_LANE
+                        && !_getMonState(config, defenderPlayerIndex, defenderMonIndex).isKnockedOut
+                ) {
+                    // Per-slot hash, not a per-slot slice: _calculateDamageCore already consumes bits
+                    // 64+ for volatility and crit, so slices would collide.
+                    uint256 h = uint256(keccak256(abi.encode(baseHash, s)));
+                    if ((uint64(h) % 100) < accuracy) {
+                        if (ctxSeeded) {
+                            _fillDefenderContext(ctx, config, defenderPlayerIndex, defenderMonIndex);
+                        } else {
+                            ctx = _getDamageCalcContextInternal(
+                                config, attackerPlayerIndex, attackerMonIndex, defenderPlayerIndex, defenderMonIndex
+                            );
+                            ctxSeeded = true;
+                        }
+
+                        uint32 scaledBasePower =
+                            TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType1, basePower);
+                        if (ctx.defenderType2 != Type.None) {
+                            scaledBasePower =
+                                TypeCalcLib.getTypeEffectiveness(moveType, ctx.defenderType2, scaledBasePower);
+                        }
+                        (int32 damage,) = AttackCalculator._calculateDamageCore(
+                            ctx, scaledBasePower, moveClass, volatility, h, critRate
+                        );
+                        if (damage != 0) {
+                            _dealDamageInternal(config, defenderPlayerIndex, defenderMonIndex, damage, source);
+                            totalDamage += damage;
+                            if (battle.winnerIndex != 2) {
+                                return totalDamage;
+                            }
+                        }
+                    }
+                }
+            }
+            unchecked {
+                ++s;
+            }
+        }
+    }
+
     /// @notice Slot-addressed pivot for 2-slot battles (self-switch and force-out moves resolve
     ///         their slot via TargetLib.slotOfMon). Applies the same silent-no-op legality gates
     ///         as the scheduler's switch action; the end-of-turn flag recompute covers the rest.
@@ -4025,18 +4100,22 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 moveIndex,
         uint256 activeMonIndex
     ) private view returns (uint256) {
-        if (moveIndex == SWITCH_MOVE_INDEX || moveIndex == NO_OP_MOVE_INDEX) {
+        if (moveIndex == SWITCH_MOVE_INDEX) {
             return SWITCH_PRIORITY;
+        }
+        // Resting orders on speed like any ordinary move.
+        if (moveIndex == NO_OP_MOVE_INDEX) {
+            return DEFAULT_PRIORITY;
         }
         // Out-of-lane moveIndex / zero lane = "no move here"; treat as the same priority as a
         // no-op so _handleMove can silently skip it later.
         StoredMon storage attackerMon = _getTeamMon(config, playerIndex, activeMonIndex);
         if (moveIndex >= MOVE_LANES_PER_MON) {
-            return SWITCH_PRIORITY;
+            return DEFAULT_PRIORITY;
         }
         uint256 raw = attackerMon.moves[moveIndex];
         if (raw == 0) {
-            return SWITCH_PRIORITY;
+            return DEFAULT_PRIORITY;
         }
         if (raw & MOVE_META_TAG != 0) {
             // Deployed move with packed metadata: absolute priority, 0xF = dynamic (call live).
@@ -5889,6 +5968,30 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Get defender stats and types
         StoredMon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
         MonState storage defenderState = _getMonState(config, defenderPlayerIndex, defenderMonIndex);
+        ctx.defenderDef = defenderMon.stats.defense;
+        ctx.defenderDefDelta =
+            defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.defenceDelta;
+        ctx.defenderSpDef = defenderMon.stats.specialDefense;
+        ctx.defenderSpDefDelta = defenderState.specialDefenceDelta == CLEARED_MON_STATE_SENTINEL
+            ? int32(0)
+            : defenderState.specialDefenceDelta;
+        ctx.defenderType1 = defenderMon.stats.type1;
+        ctx.defenderType2 = defenderMon.stats.type2;
+    }
+
+    /// @dev Re-points an existing ctx's defender half at another slot, so a spread sweep resolves the
+    ///      attacker's stats once. Deliberately duplicates the block above rather than both calling a
+    ///      shared helper: factoring it out costs every single-target caller ~18-33 gas per turn
+    ///      (measured; the helper does not fully inline and the memory struct gets passed by pointer).
+    function _fillDefenderContext(
+        DamageCalcContext memory ctx,
+        BattleConfig storage config,
+        uint256 defenderPlayerIndex,
+        uint256 defenderMonIndex
+    ) private view {
+        StoredMon storage defenderMon = _getTeamMon(config, defenderPlayerIndex, defenderMonIndex);
+        MonState storage defenderState = _getMonState(config, defenderPlayerIndex, defenderMonIndex);
+        ctx.defenderMonIndex = uint8(defenderMonIndex);
         ctx.defenderDef = defenderMon.stats.defense;
         ctx.defenderDefDelta =
             defenderState.defenceDelta == CLEARED_MON_STATE_SENTINEL ? int32(0) : defenderState.defenceDelta;

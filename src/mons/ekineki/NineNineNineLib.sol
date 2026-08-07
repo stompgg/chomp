@@ -9,8 +9,12 @@ import {IEngine} from "../../IEngine.sol";
 library NineNineNineLib {
     uint32 constant NINE_NINE_NINE_CRIT_RATE = 90;
 
+    // Explicit tag rather than address(this): these are internal functions, so address(this) would
+    // resolve to whichever Ekineki move inlined them and each would address a different slot.
+    bytes32 private constant KEY_TAG = "NINE_NINE_NINE";
+
     function _getKey(uint256 playerIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, "NINE_NINE_NINE"))));
+        return uint64(uint256(keccak256(abi.encode(playerIndex, KEY_TAG))));
     }
 
     function _getEffectiveCritRate(IEngine engine, bytes32 battleKey, uint256 playerIndex)

@@ -8,6 +8,7 @@ import {IAbility} from "../../abilities/IAbility.sol";
 import {TargetLib} from "../../lib/TargetLib.sol";
 import {AttackCalculator} from "../../moves/AttackCalculator.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {QuickstormLib} from "./QuickstormLib.sol";
 
 contract PreemptiveShock is IAbility {
     ITypeCalculator immutable TYPE_CALCULATOR;
@@ -17,10 +18,6 @@ contract PreemptiveShock is IAbility {
 
     constructor(ITypeCalculator _TYPE_CALCULATOR) {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
-    }
-
-    function name() public pure override returns (string memory) {
-        return "Preemptive Shock";
     }
 
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
@@ -50,11 +47,6 @@ contract PreemptiveShock is IAbility {
         // to switches), so a mon that enters on turn T first *acts* on turn T+1 for every entry path
         // (lead or mid-battle switch). Store firstActTurn+1 = T+2 so 0 stays "unset".
         uint256 t = engine.getTurnIdForBattleState(battleKey);
-        engine.setGlobalKV(_windowKey(playerIndex, monIndex), uint192(t + 2));
-    }
-
-    // Shared with Quickstorm: keyed per (side, mon) so it re-arms cleanly on every switch-in.
-    function _windowKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, "QUICKSTORM"))));
+        engine.setGlobalKV(QuickstormLib._windowKey(playerIndex, monIndex), uint192(t + 2));
     }
 }

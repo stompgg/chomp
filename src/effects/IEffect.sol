@@ -6,8 +6,6 @@ import "../IEngine.sol";
 import "../Structs.sol";
 
 interface IEffect {
-    function name() external returns (string memory);
-
     // Returns static metadata: lifecycle steps in bits 0-15 and requested fresh-context steps in
     // bits 16-31. Storage collapses any nonzero context half to one capability bit; opted-in effects
     // receive all context types supported for the hook currently running. Lifecycle layout:

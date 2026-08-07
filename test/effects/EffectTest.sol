@@ -108,9 +108,6 @@ contract EffectTest is Test, BattleHelper {
             })
         );
 
-        // Verify the name matches
-        assertEq(frostbiteAttack.name(), "FrostbiteHit");
-
         uint256[] memory moves = new uint256[](1);
         moves[0] = uint256(uint160(address(frostbiteAttack)));
         Mon memory mon = Mon({
@@ -877,9 +874,9 @@ contract EffectTest is Test, BattleHelper {
     // One-sleeper-per-player gate (SleepStatus global sleep key)
     // ------------------------------------------------------------------
 
-    /// @dev Mirrors SleepStatus._globalSleepKey.
-    function _sleepGlobalKey(uint256 targetIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encodePacked("Sleep", targetIndex))));
+    /// @dev Mirrors SleepStatus._globalSleepKey, which scopes the gate to the status contract.
+    function _sleepGlobalKey(uint256 targetIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encodePacked(address(sleepStatus), targetIndex))));
     }
 
     /// @dev Finds an oracle rng value whose SleepStatus.onRoundStart wake roll for

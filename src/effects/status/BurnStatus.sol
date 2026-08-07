@@ -21,10 +21,6 @@ contract BurnStatus is StatusEffect, IStatusEffect {
     int32 public constant DEG2_DAMAGE_DENOM = 8;
     int32 public constant DEG3_DAMAGE_DENOM = 4;
 
-    function name() public pure override returns (string memory) {
-        return "Burn";
-    }
-
     // Steps: OnApply, RoundEnd, OnRemove (no RoundStart behavior — the bit would only buy a
     // no-op external call per burned turn). HAS_REAPPLY routes same-class re-applies to the
     // degree escalation in onReapply.

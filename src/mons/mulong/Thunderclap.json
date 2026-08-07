@@ -1,0 +1,9 @@
+{
+  "name": "Thunderclap",
+  "basePower": 120,
+  "staminaCost": 3,
+  "moveType": "Lightning",
+  "moveClass": "Special",
+  "effectAccuracy": 20,
+  "effect": "ZapStatus"
+}

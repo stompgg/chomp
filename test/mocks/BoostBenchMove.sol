@@ -41,10 +41,6 @@ contract BoostBenchMove is IMoveSet {
         }
     }
 
-    function name() external pure returns (string memory) {
-        return "Boost Bench";
-    }
-
     function move(IEngine engine, bytes32, uint256 attackerPlayerIndex, uint256, uint256, uint256, uint16 extraData, uint256)
         external
     {
