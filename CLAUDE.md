@@ -127,6 +127,7 @@ chomp/
 │   ├── deploy_addresses.py          # Inline ability/move address packing for the deploy pipeline
 │   ├── buildTypeChart.py            # Build type effectiveness chart
 │   ├── buildDamageGifs.py           # Render damage-preview GIFs
+│   ├── buildMonGifs.py              # Slice horizontal sprite sheets back into GIFs
 │   ├── createAddressAndABIs.py      # Extract deployed addresses + ABIs
 │   ├── generateMonsTypeScript.py    # Generate TypeScript mon data
 │   ├── generateEventLayouts.py      # Generate generated/eventLayouts.ts (GachaEvent bit layout)
