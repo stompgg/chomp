@@ -192,7 +192,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
-        "-g", "105",
+        "-g", "100",
         "--slow",
     ]
     # password is None on dry runs (never prompted); only pass it when present.

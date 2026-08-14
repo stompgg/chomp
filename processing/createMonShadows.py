@@ -98,6 +98,17 @@ def create_shadows(imgs_dir: Path) -> None:
     sheet, positions = build_spritesheet(all_frames, frame_size=FRAME_SIZE)
     save_and_compress_png(sheet, imgs_dir / "mon_shadow.png", "Shadow spritesheet")
 
+    # Ship the packed sheet alongside the other mon spritesheets.
+    munch_assets_dir = (
+        Path(__file__).parent.parent.parent / "munch" / "src" / "assets" / "mons" / "all"
+    )
+    if munch_assets_dir.exists():
+        save_and_compress_png(
+            sheet, munch_assets_dir / "mon_shadow.png", "Munch shadow spritesheet"
+        )
+    else:
+        print(f"⚠ Munch directory not found, skipping copy: {munch_assets_dir}")
+
     for name, start, count, ms, cx in entries:
         metadata[name] = {
             "msPerFrame": ms,

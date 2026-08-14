@@ -12,16 +12,18 @@ from typing import Dict, List, Any
 
 from types_enum import REAL_TYPE_NAMES
 from packMoves import find_json_moves, inline_params_from_csv, pack_move, parse_constants
+from createAddressAndABIs import to_screaming_snake_case
 
 
 def to_address_key(name: str) -> str:
-    """Convert name to UPPER_SNAKE_CASE for address key."""
-    return re.sub(r"_+", "_", re.sub(r"[^a-zA-Z0-9]", "_", name)).strip("_").upper()
+    """Address-registry key for a move/ability display name. Shares the slugifier with
+    createAddressAndABIs so `Address.X` here always names a key that exists there."""
+    return to_screaming_snake_case(name)
 
 
 def to_spritesheet_key(name: str) -> str:
-    """Convert name to lowercase_snake_case for spritesheet key."""
-    return re.sub(r"_+", "_", re.sub(r"[^a-zA-Z0-9]", "_", name)).strip("_").lower()
+    """Spritesheet key for a move name — same slug as the address key, lowercased."""
+    return to_screaming_snake_case(name).lower()
 
 
 def _format_percent(value: float) -> str:

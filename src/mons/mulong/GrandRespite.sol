@@ -16,7 +16,7 @@ import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
 
 /// @notice Arms a delayed strike at the chosen slot that fires the next time Mulong rests. The
 ///         rest itself is untouched, so it still regenerates stamina as normal.
-contract KingsRespite is IMoveSet, BasicEffect {
+contract GrandRespite is IMoveSet, BasicEffect {
     uint32 public constant BASE_POWER = 120;
 
     ITypeCalculator immutable TYPE_CALCULATOR;

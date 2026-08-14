@@ -62,6 +62,6 @@ Water Claw,Glob,80,2,100,0,Liquid,Physical,Deals damage.,,,none,0,,opponent-slot
 Holy Water Claw,Glob,90,3,100,0,Faith,Physical,Deals damage.,,,none,0,,opponent-slot
 Get Slippery,Glob,0,2,100,0,Liquid,Self,Boosts ATK and Speed by {ATTACK_BUFF_PERCENT}.,,,none,0,ATTACK_BUFF_PERCENT=50;SPEED_BUFF_PERCENT=50,self-only
 Summon Storm,Mulong,0,0,100,0,Lightning,Other,"Summons a Storm for 7 turns that damages all active mons.",,,none,0,,none
-King's Respite,Mulong,120,2,100,0,Air,Special,"The next time Mulong rests, it deals damage to the target.",,,none,0,BASE_POWER=120,opponent-slot
+Grand Respite,Mulong,120,2,100,0,Air,Special,"The next time Mulong rests, it deals damage to the target.",,,none,0,BASE_POWER=120,opponent-slot
 Thunderclap,Mulong,120,3,100,0,Lightning,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Zap.",,,none,0,EFFECT_ACCURACY=20,opponent-slot
 Cloud Strike,Mulong,?,2,100,0,Ice,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Frostbite. While Storm is active, power rises to {STORM_BASE_POWER} and the chance to {STORM_EFFECT_ACCURACY}.",,,none,0,BASE_POWER=70;STORM_BASE_POWER=100;EFFECT_ACCURACY=10;STORM_EFFECT_ACCURACY=30,opponent-slot

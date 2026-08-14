@@ -190,6 +190,46 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _startBattle(battle, battleMode);
     }
 
+    /// @dev Sentinel-clears one side's recycled mon states.
+    function _clearMonStates(mapping(uint256 => MonState) storage states, uint256 count) private {
+        for (uint256 j = 0; j < count;) {
+            MonState storage monState = states[j];
+            assembly ("memory-safe") {
+                let slot := monState.slot
+                let v := sload(slot)
+                // Clear only when dirty AND not already the sentinel (skip the same-value SSTORE).
+                if iszero(or(iszero(v), eq(v, PACKED_CLEARED_MON_STATE))) {
+                    sstore(slot, PACKED_CLEARED_MON_STATE)
+                }
+            }
+            unchecked {
+                ++j;
+            }
+        }
+    }
+
+    /// @dev Writes one side's roster into its fixed lanes, zero-filling unused move lanes.
+    function _storeTeam(mapping(uint256 => StoredMon) storage lanes, Mon[] memory team, uint256 len) private {
+        for (uint256 j = 0; j < len;) {
+            StoredMon storage dst = lanes[j];
+            Mon memory src = team[j];
+            dst.stats = src.stats;
+            dst.ability = src.ability;
+            // Unrolled on purpose — do NOT rewrite as a loop: a dynamic-index store into a
+            // struct-nested fixed array makes via-IR emit an indexed-store helper that costs one
+            // extra SLOAD per lane write (+32 per battle, measured); constant indices compile to
+            // direct slot stores. Lane count is pinned to MOVE_LANES_PER_MON (= 4, test-asserted).
+            uint256 n = src.moves.length;
+            dst.moves[0] = n > 0 ? src.moves[0] : 0;
+            dst.moves[1] = n > 1 ? src.moves[1] : 0;
+            dst.moves[2] = n > 2 ? src.moves[2] : 0;
+            dst.moves[3] = n > 3 ? src.moves[3] : 0;
+            unchecked {
+                ++j;
+            }
+        }
+    }
+
     function _startBattle(Battle memory battle, uint8 battleMode) internal {
         // The matchmaker authorization gate is the ONLY matchmaker check: each player approving
         // the matchmaker is the trust grant. (The old validateMatch callback added no security —
@@ -231,34 +271,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Clear previous battle's mon states by setting non-zero values to sentinel
         // MonState packs into a single 256-bit slot (7 x int32 + 2 x bool = 240 bits)
         // We use assembly to read/write the entire slot in one operation
-        for (uint256 j = 0; j < prevP0Size;) {
-            MonState storage monState = config.p0States[j];
-            assembly ("memory-safe") {
-                let slot := monState.slot
-                let v := sload(slot)
-                // Clear only when dirty AND not already the sentinel (skip the same-value SSTORE).
-                if iszero(or(iszero(v), eq(v, PACKED_CLEARED_MON_STATE))) {
-                    sstore(slot, PACKED_CLEARED_MON_STATE)
-                }
-            }
-            unchecked {
-                ++j;
-            }
-        }
-        for (uint256 j = 0; j < prevP1Size;) {
-            MonState storage monState = config.p1States[j];
-            assembly ("memory-safe") {
-                let slot := monState.slot
-                let v := sload(slot)
-                // Clear only when dirty AND not already the sentinel (skip the same-value SSTORE).
-                if iszero(or(iszero(v), eq(v, PACKED_CLEARED_MON_STATE))) {
-                    sstore(slot, PACKED_CLEARED_MON_STATE)
-                }
-            }
-            unchecked {
-                ++j;
-            }
-        }
+        _clearMonStates(config.p0States, prevP0Size);
+        _clearMonStates(config.p1States, prevP1Size);
 
         // Store the battle config (update fields individually to preserve effects mapping slots).
         // Writes are grouped by storage slot with no calls in between so via-IR coalesces each
@@ -342,42 +356,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // this storage is recycled across battles, so without the fill a shorter-moveset mon would
         // inherit the previous battle's move words as playable moves. (Moves past
         // MOVE_LANES_PER_MON are truncated — the lane count matches GAME_MOVES_PER_MON.)
-        for (uint256 j = 0; j < p0Len;) {
-            StoredMon storage dst = config.p0Team[j];
-            Mon memory src = p0Team[j];
-            dst.stats = src.stats;
-            dst.ability = src.ability;
-            // Unrolled on purpose — do NOT rewrite as a loop: a dynamic-index store into a
-            // struct-nested fixed array makes via-IR emit an indexed-store helper that costs one
-            // extra SLOAD per lane write (+32 per battle, measured); constant indices compile to
-            // direct slot stores. Lane count is pinned to MOVE_LANES_PER_MON (= 4, test-asserted).
-            uint256 n = src.moves.length;
-            dst.moves[0] = n > 0 ? src.moves[0] : 0;
-            dst.moves[1] = n > 1 ? src.moves[1] : 0;
-            dst.moves[2] = n > 2 ? src.moves[2] : 0;
-            dst.moves[3] = n > 3 ? src.moves[3] : 0;
-            unchecked {
-                ++j;
-            }
-        }
-        for (uint256 j = 0; j < p1Len;) {
-            StoredMon storage dst = config.p1Team[j];
-            Mon memory src = p1Team[j];
-            dst.stats = src.stats;
-            dst.ability = src.ability;
-            // Unrolled on purpose — do NOT rewrite as a loop: a dynamic-index store into a
-            // struct-nested fixed array makes via-IR emit an indexed-store helper that costs one
-            // extra SLOAD per lane write (+32 per battle, measured); constant indices compile to
-            // direct slot stores. Lane count is pinned to MOVE_LANES_PER_MON (= 4, test-asserted).
-            uint256 n = src.moves.length;
-            dst.moves[0] = n > 0 ? src.moves[0] : 0;
-            dst.moves[1] = n > 1 ? src.moves[1] : 0;
-            dst.moves[2] = n > 2 ? src.moves[2] : 0;
-            dst.moves[3] = n > 3 ? src.moves[3] : 0;
-            unchecked {
-                ++j;
-            }
-        }
+        _storeTeam(config.p0Team, p0Team, p0Len);
+        _storeTeam(config.p1Team, p1Team, p1Len);
 
         // Set the global effects and data to start the game if any.
         // NOTE: hasInlineStaminaRegen AND globalEffectsLength must be (re)written on EVERY branch —

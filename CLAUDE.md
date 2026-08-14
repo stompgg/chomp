@@ -421,7 +421,7 @@ How it works:
 - AGPL-3.0 license header on all files
 - Pragma: `^0.8.0`
 - Imports: Use named imports (`import {Foo} from "path"`) - `sort_imports = true` in formatter
-- Optimizer: max runs (4294967295) with via-IR enabled
+- Optimizer: 10000 runs with via-IR enabled (bounded to cap deployed bytecode size; runs above ~1e6 saturate)
 - Constants: `SCREAMING_SNAKE_CASE` (though lint excludes this check)
 - Move indices: 0-3 for regular moves (stored +1 to avoid zero ambiguity), 125 = switch, 126 = no-op
 - State sentinel: `CLEARED_MON_STATE_SENTINEL = type(int32).max - 1`
@@ -496,4 +496,4 @@ CSV-to-code mapping notes:
 - Effect step bitmaps avoid calling effects at steps they don't use
 - `MappingAllocator` for efficient storage slot management
 - Transient storage for per-call state to avoid unnecessary SLOADs/SSTOREs
-- Optimizer runs set to max (4294967295) with via-IR for aggressive optimization
+- Optimizer runs set to 10000 with via-IR; deploy gas, not EIP-170, is the binding size constraint
