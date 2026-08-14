@@ -7,6 +7,7 @@
 
 use chomp_strategies::analysis::{
     run_doubles_mon_analysis, run_mon_analysis, run_mon_analysis_rotated, run_mon_analysis_with,
+    MonAnalysis,
 };
 use chomp_strategies::bots;
 use chomp_strategies::game::BotName;
@@ -61,9 +62,24 @@ fn main() {
         eprintln!("  loadouts: rotated (uniform 4-subset per drafted slot)");
     }
 
+    // --progress streams the ranked table to stderr as slices land, so a long run is watchable
+    // without waiting for the final fold. stdout stays the single clean result table.
+    let stream = args.iter().any(|a| a == "--progress");
+    let reporter = |a: &MonAnalysis, done: usize, total: usize| {
+        let mut ids: Vec<u32> = a.per_mon.keys().copied().collect();
+        ids.sort_by(|&x, &y| a.per_mon[&y].win_rate().partial_cmp(&a.per_mon[&x].win_rate()).unwrap());
+        let line = ids
+            .iter()
+            .map(|id| format!("{} {:.1}", roster.mon_name(*id), a.per_mon[id].win_rate() * 100.0))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        eprintln!("[{:>3}% {}/{}] {}", done * 100 / total.max(1), done, total, line);
+    };
+    let progress: Option<&dyn Fn(&MonAnalysis, usize, usize)> = if stream { Some(&reporter) } else { None };
+
     let started = std::time::Instant::now();
     let a = if mode == "doubles" {
-        run_doubles_mon_analysis(&roster, games, seed, seed_base, threads, rotate, search_depth)
+        run_doubles_mon_analysis(&roster, games, seed, seed_base, threads, rotate, search_depth, progress)
     } else {
         match (&p1, &p0) {
             (Some(p1s), Some(p0s)) => {
@@ -73,13 +89,13 @@ fn main() {
                 );
                 eprintln!("  pilots: p1={p1s} vs p0={p0s}");
                 if rotate {
-                    run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, Some(&[pair]))
+                    run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, Some(&[pair]), progress)
                 } else {
-                    run_mon_analysis_with(&roster, games, seed, seed_base, threads, &[pair])
+                    run_mon_analysis_with(&roster, games, seed, seed_base, threads, &[pair], progress)
                 }
             }
-            _ if rotate => run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, None),
-            _ => run_mon_analysis(&roster, games, seed, seed_base, threads),
+            _ if rotate => run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, None, progress),
+            _ => run_mon_analysis(&roster, games, seed, seed_base, threads, progress),
         }
     };
     let elapsed = started.elapsed().as_secs_f64();

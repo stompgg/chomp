@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Pack JSON move definitions into uint256 inline slot values.
+Pack inline move definitions into uint256 inline slot values.
+
+Every packed value is sourced from the move's drool/moves.csv row; the per-move .json file
+only marks the move as inline and names its effect contract.
 
 Packed format (256 bits total):
 [basePower:8 | moveClass:2 | priority:2 | moveType:4 | stamina:4 | effectAccuracy:8 | unused:68 | effect:160]
@@ -10,9 +13,11 @@ Fields omitted from packing (always use defaults at runtime):
   accuracy=100, critRate=5, volatility=10
 """
 
+import csv
 import json
 import os
-from typing import Dict, Optional, Tuple
+import re
+from typing import Dict, Optional
 
 
 from types_enum import TYPE_INDEX as TYPE_MAP  # name -> enum index, from src/Enums.sol
@@ -20,23 +25,58 @@ from types_enum import TYPE_INDEX as TYPE_MAP  # name -> enum index, from src/En
 CLASS_MAP = {"Physical": 0, "Special": 1, "Self": 2, "Other": 3}
 
 
-def pack_move(move_json: dict, effect_address: int = 0) -> int:
-    """Pack a JSON move definition into a uint256 value.
+def parse_constants(raw: str) -> Dict[str, int]:
+    """Parse the Constants column ('NAME=VAL;NAME=VAL') into a {NAME: int} dict."""
+    consts: Dict[str, int] = {}
+    for part in (raw or "").split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, val = part.partition("=")
+        consts[name.strip()] = int(val.strip())
+    return consts
+
+
+def contract_name_from_move(move_name: str) -> str:
+    """Move display name -> its contract/file base name ('Pound Ground' -> 'PoundGround')."""
+    return re.sub(r"\W+", "", move_name.replace(" ", ""))
+
+
+def inline_params_from_csv(row: dict) -> dict:
+    """Build an inline move's packing params from its moves.csv row.
+
+    moves.csv is the source of truth for every packed field; the .json file supplies only
+    `effect`. CSV Priority is already the offset from DEFAULT_PRIORITY that the inline word
+    stores, so it maps across unchanged (unlike deployed words, which store absolute priority).
+    """
+    consts = parse_constants(row.get("Constants", ""))
+    return {
+        "basePower": int(row["Power"]),
+        "staminaCost": int(row["Stamina"]),
+        "moveType": row["Type"].strip(),
+        "moveClass": row["Class"].strip(),
+        "priority": int((row.get("Priority") or "0").strip() or "0"),
+        "effectAccuracy": consts.get("EFFECT_ACCURACY", 0),
+    }
+
+
+def pack_move(move_params: dict, effect_address: int = 0) -> int:
+    """Pack an inline move definition into a uint256 value.
 
     Args:
-        move_json: Parsed JSON move data with keys: basePower, staminaCost, moveType,
-                   moveClass, effectAccuracy, and optionally priority (offset from default).
+        move_params: Params from inline_params_from_csv: basePower, staminaCost, moveType,
+                     moveClass, effectAccuracy, and priority (offset from default).
         effect_address: Deployed address of the IEffect contract (0 for no effect).
 
     Returns:
         Packed uint256 value with inline move data.
     """
-    base_power = move_json["basePower"]
-    move_class = CLASS_MAP[move_json["moveClass"]]
-    priority_offset = move_json.get("priority", 0)  # offset from DEFAULT_PRIORITY
-    move_type = TYPE_MAP[move_json["moveType"]]
-    stamina = move_json["staminaCost"]
-    effect_accuracy = move_json["effectAccuracy"]
+    base_power = move_params["basePower"]
+    move_class = CLASS_MAP[move_params["moveClass"]]
+    priority_offset = move_params.get("priority", 0)  # offset from DEFAULT_PRIORITY
+    move_type = TYPE_MAP[move_params["moveType"]]
+    stamina = move_params["staminaCost"]
+    effect_accuracy = move_params["effectAccuracy"]
 
     # Validate ranges
     assert 0 <= base_power <= 255, f"basePower {base_power} out of range [0, 255]"
@@ -60,7 +100,7 @@ def pack_move(move_json: dict, effect_address: int = 0) -> int:
 
 
 def find_json_moves(src_path: str) -> Dict[str, Dict[str, dict]]:
-    """Find all JSON move files under src/mons/*/.
+    """Find all JSON move files under src/mons/*/. A file's presence marks its move as inline.
 
     Returns:
         Dict of {mon_dir_name: {move_name: parsed_json}}.
@@ -94,40 +134,10 @@ def find_json_moves(src_path: str) -> Dict[str, Dict[str, dict]]:
     return result
 
 
-def pack_all_moves(src_path: str, effect_addresses: Optional[Dict[str, int]] = None) -> Dict[str, Dict[str, Tuple[int, dict]]]:
-    """Find and pack all JSON moves.
-
-    Args:
-        src_path: Path to the src/ directory.
-        effect_addresses: Optional mapping of effect name -> deployed address.
-                         e.g. {"ZapStatus": 0x1234...}
-
-    Returns:
-        Dict of {mon_dir_name: {move_name: (packed_uint256, json_data)}}.
-    """
-    if effect_addresses is None:
-        effect_addresses = {}
-
-    json_moves = find_json_moves(src_path)
-    result = {}
-
-    for mon_dir, moves in json_moves.items():
-        result[mon_dir] = {}
-        for move_name, move_data in moves.items():
-            effect_name = move_data.get("effect")
-            effect_addr = 0
-            if effect_name is not None:
-                if effect_name not in effect_addresses:
-                    raise ValueError(
-                        f"Effect '{effect_name}' required by {mon_dir}/{move_name} "
-                        f"not found in effect_addresses. Available: {list(effect_addresses.keys())}"
-                    )
-                effect_addr = effect_addresses[effect_name]
-
-            packed = pack_move(move_data, effect_addr)
-            result[mon_dir][move_name] = (packed, move_data)
-
-    return result
+def load_moves_csv(moves_csv_path: str) -> Dict[str, dict]:
+    """Load moves.csv keyed by contract name ('PoundGround' -> row)."""
+    with open(moves_csv_path, "r", newline="", encoding="utf-8") as f:
+        return {contract_name_from_move(row["Name"].strip()): row for row in csv.DictReader(f)}
 
 
 ABILITY_TYPE_MAP = {
@@ -178,21 +188,21 @@ def pack_ability(ability_type_id: int, effect_address: int) -> int:
 
 
 def main():
-    """CLI: pack all JSON moves and print results."""
+    """CLI: pack all inline moves and print results."""
     import sys
 
-    src_path = "src"
-    if len(sys.argv) > 1:
-        src_path = sys.argv[1]
+    src_path = sys.argv[1] if len(sys.argv) > 1 else "src"
+    moves_csv_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join("drool", "moves.csv")
 
     json_moves = find_json_moves(src_path)
+    csv_rows = load_moves_csv(moves_csv_path)
 
     print(f"Found JSON moves in {len(json_moves)} mon directories:\n")
 
     for mon_dir, moves in sorted(json_moves.items()):
         for move_name, move_data in sorted(moves.items()):
             # Pack with effect_address=0 for display (real addresses come at deploy time)
-            packed = pack_move(move_data, effect_address=0)
+            packed = pack_move(inline_params_from_csv(csv_rows[move_name]), effect_address=0)
             effect_info = f" (effect: {move_data['effect']})" if move_data.get("effect") else ""
             print(f"  {mon_dir}/{move_name}: 0x{packed:064x}{effect_info}")
             # Verify detection: upper 96 bits must be non-zero

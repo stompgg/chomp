@@ -34,20 +34,10 @@ drool/*
 
 # Keep main data
 !drool/abilities.csv
-!drool/index.html
-!drool/mon-analysis.js
-!drool/mon-full.js
-!drool/mon-moves.js
-!drool/mon-stats.js
 !drool/mons.csv
 !drool/moves.csv
-!drool/style.css
 !drool/types.csv
-!drool/type-data.js
-!drool/utils.js
-!drool/combine.py
-!drool/switch-animation.py
-!drool/docs
+!drool/type-metadata.csv
 
 # Transpiler output
 ts-output/

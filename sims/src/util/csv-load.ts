@@ -33,6 +33,17 @@ export interface MoveRow {
   inputType: string;
   /** Client-facing target domain (kebab-case; blank = any-other-slot per the data contract). */
   targetSpec: string;
+  /** Named constants from the Constants column; EFFECT_ACCURACY feeds the inline move word. */
+  constants: Record<string, number>;
+}
+
+function parseConstants(raw: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const part of (raw ?? '').split(';')) {
+    const [name, val] = part.split('=');
+    if (name?.trim() && val !== undefined) out[name.trim()] = Number(val.trim());
+  }
+  return out;
 }
 
 function parseNumOrNull(s: string): number | null {
@@ -120,8 +131,9 @@ export function loadMoves(): MoveRow[] {
     type: r[6],
     cls: r[7] as MoveClass,
     description: r[8],
-    inputType: r[10] ?? 'none',
-    targetSpec: r[13] || 'any-other-slot',
+    inputType: r[11] ?? 'none',
+    constants: parseConstants(r[13]),
+    targetSpec: r[14] || 'any-other-slot',
   }));
 }
 

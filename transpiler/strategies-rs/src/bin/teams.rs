@@ -2,7 +2,7 @@
 //!   cargo run --release -p chomp-strategies --bin teams -- --games-per-team 300
 
 use chomp_strategies::roster::load_roster;
-use chomp_strategies::teams::{run_team_search, synergy};
+use chomp_strategies::teams::{run_team_search, synergy, TeamResult};
 use std::path::PathBuf;
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
@@ -30,8 +30,24 @@ fn main() {
     let roster = load_roster(&chomp_root);
     let team_str = |t: &[u32]| t.iter().map(|&id| roster.mon_name(id)).collect::<Vec<_>>().join(", ");
 
+    // --progress streams the per-mon main effect to stderr as slices land; it's the number that
+    // matters here and it stabilises long before the full search finishes.
+    let stream = args.iter().any(|a| a == "--progress");
+    let reporter = |partial: &[TeamResult], done: usize, total: usize| {
+        let syn = synergy(partial);
+        let mut m: Vec<(u32, f64)> = syn.main.iter().map(|(&k, &v)| (k, v)).collect();
+        m.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        let line = m
+            .iter()
+            .map(|(id, v)| format!("{} {:+.1}", roster.mon_name(*id), v * 100.0))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        eprintln!("[{:>3}% {}/{}] {}", done * 100 / total.max(1), done, total, line);
+    };
+    let progress: Option<&dyn Fn(&[TeamResult], usize, usize)> = if stream { Some(&reporter) } else { None };
+
     let started = std::time::Instant::now();
-    let mut results = run_team_search(&roster, gpt, seed, seed_base, threads);
+    let mut results = run_team_search(&roster, gpt, seed, seed_base, threads, progress);
     let syn = synergy(&results);
     let elapsed = started.elapsed().as_secs_f64();
 

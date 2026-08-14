@@ -76,10 +76,6 @@ contract CloudStrike is IMoveSet {
         return MoveClass.Special;
     }
 
-    function basePower(IEngine engine, bytes32 battleKey) public view returns (uint32) {
-        return _stormIsUp(engine, battleKey) ? STORM_BASE_POWER : BASE_POWER;
-    }
-
     function getMeta(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex, uint256 attackerMonIndex)
         external
         view
@@ -90,7 +86,7 @@ contract CloudStrike is IMoveSet {
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
-            basePower: basePower(engine, battleKey)
+            basePower: _stormIsUp(engine, battleKey) ? STORM_BASE_POWER : BASE_POWER
         });
     }
 }

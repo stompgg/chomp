@@ -1,9 +1,3 @@
 {
-  "name": "Holy Water Claw",
-  "basePower": 90,
-  "staminaCost": 3,
-  "moveType": "Faith",
-  "moveClass": "Physical",
-  "effectAccuracy": 0,
   "effect": null
 }

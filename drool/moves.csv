@@ -22,7 +22,7 @@ Federal Investigation,Malalien,100,3,100,0,Cyber,Special,Deals damage.,,,none,0,
 Negative Thoughts,Malalien,80,3,100,0,Math,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Panic.",,,none,0,EFFECT_ACCURACY=10,opponent-slot
 Infinite Love,Malalien,90,3,100,0,Cosmic,Special,"Deals damage, {EFFECT_ACCURACY} chance to cause Sleep.",,,none,0,EFFECT_ACCURACY=10,opponent-slot
 Foul Language,Malalien,60,2,100,0,Cyber,Special,Deals damage. Half of the damage done is taken as recoil.,,,none,6,,opponent-slot
-Chill Out,Pengym,0,0,100,0,Ice,Other,Inflicts Frostbite on the opponent.,,,none,0,,opponent-slot
+Chill Out,Pengym,0,0,100,0,Ice,Other,Inflicts Frostbite on the opponent.,,,none,0,EFFECT_ACCURACY=100,opponent-slot
 Deadlift,Pengym,0,2,100,0,Metal,Self,Increases ATK and DEF by {ATTACK_BUFF_PERCENT}.,,,none,0,ATTACK_BUFF_PERCENT=50;DEF_BUFF_PERCENT=50,self-only
 Deep Freeze,Pengym,90,3,100,0,Ice,Physical,"If the target has Frostbite, consumes Frostbite and does double damage (the target's SpATK returns to normal).",,,none,0,,opponent-slot
 Pistol Squat,Pengym,80,2,100,-1,Metal,Physical,"Deals damage, then forces the enemy mon to switch to a random living teammate.",,,none,0,,opponent-slot
@@ -57,11 +57,11 @@ Hard Reset,Nirvamma,0,2,100,0,Math,Other,"The next time your team rests, the res
 Scary Numbers,Nirvamma,80,3,100,0,Math,Physical,"Deals damage, {EFFECT_ACCURACY} chance to inflict Panic.",,,none,0,EFFECT_ACCURACY=20,opponent-slot
 Chronoffense,Nirvamma,?,2,100,0,Math,Physical,"First use boosts defenses. Second use deals damage based on how much time has passed, and then resets.",,,none,0,,opponent-slot
 Modal Bolt,Nirvamma,90,3,100,0,Math,Physical,"Choose between Fire, Ice, or Lightning each use. Each mode is usable once, and applies its corresponding status (Burn / Frostbite / Zap) at {EFFECT_ACCURACY} chance.",,,mode-select,0,EFFECT_ACCURACY=50,opponent-slot
-Holy Molt,Glob,0,?,100,1,Faith,Self,"Loses half of current HP and applies Blessed to self. Free on the first cast; each later cast costs 1 more stamina, up to {MAX_STAMINA_COST}.",,,none,0,HP_DENOM=2;MAX_STAMINA_COST=3,self-only
+Holy Molt,Glob,0,?,100,1,Faith,Self,"Spend half of current health to apply Bless to self. Stamina cost goes up per use, to a max of {MAX_STAMINA_COST}.",,,none,0,HP_DENOM=2;MAX_STAMINA_COST=3,self-only
 Water Claw,Glob,80,2,100,0,Liquid,Physical,Deals damage.,,,none,0,,opponent-slot
 Holy Water Claw,Glob,90,3,100,0,Faith,Physical,Deals damage.,,,none,0,,opponent-slot
 Get Slippery,Glob,0,2,100,0,Liquid,Self,Boosts ATK and Speed by {ATTACK_BUFF_PERCENT}.,,,none,0,ATTACK_BUFF_PERCENT=50;SPEED_BUFF_PERCENT=50,self-only
-Summon Storm,Mulong,0,0,100,0,Lightning,Other,"Summons a Storm for 7 rounds that damages every active mon at end of round with Lightning damage scaled off the summoner's stats. Recasting re-latches the Storm to the new caster and resets its timer.",,,none,0,,none
-King's Respite,Mulong,120,2,100,0,Air,Special,"Marks the chosen slot. The next time Mulong rests, it deals heavy Air damage to that slot; the rest still restores stamina as normal.",,,none,0,BASE_POWER=120,opponent-slot
-Thunderclap,Mulong,120,3,100,0,Lightning,Special,"Deals damage, 20% chance to inflict Zap.",,,none,0,,opponent-slot
-Cloud Strike,Mulong,?,2,100,0,Ice,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Frostbite. While a Storm is active, power rises to {STORM_BASE_POWER} and the chance to {STORM_EFFECT_ACCURACY}.",,,none,0,BASE_POWER=70;STORM_BASE_POWER=100;EFFECT_ACCURACY=10;STORM_EFFECT_ACCURACY=30,opponent-slot
+Summon Storm,Mulong,0,0,100,0,Lightning,Other,"Summons a Storm for 7 turns that damages all active mons.",,,none,0,,none
+King's Respite,Mulong,120,2,100,0,Air,Special,"The next time Mulong rests, it deals damage to the target.",,,none,0,BASE_POWER=120,opponent-slot
+Thunderclap,Mulong,120,3,100,0,Lightning,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Zap.",,,none,0,EFFECT_ACCURACY=20,opponent-slot
+Cloud Strike,Mulong,?,2,100,0,Ice,Special,"Deals damage, {EFFECT_ACCURACY} chance to inflict Frostbite. While Storm is active, power rises to {STORM_BASE_POWER} and the chance to {STORM_EFFECT_ACCURACY}.",,,none,0,BASE_POWER=70;STORM_BASE_POWER=100;EFFECT_ACCURACY=10;STORM_EFFECT_ACCURACY=30,opponent-slot

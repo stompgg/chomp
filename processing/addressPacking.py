@@ -11,7 +11,7 @@ import json
 import re
 from pathlib import Path
 
-from packMoves import detect_inline_ability, pack_ability, pack_move
+from packMoves import detect_inline_ability, inline_params_from_csv, pack_ability, pack_move
 from generateSolidity import contract_name_from_move_or_ability, get_mon_directory_name
 
 
@@ -22,7 +22,8 @@ def collect_inline_move_addresses(
     """Find all JSON inline moves, pack them, and return as (move_display_name, hex_value) tuples.
 
     Uses CSV move names (e.g. "Pound Ground") so the Address keys match what
-    generateMonsTypeScript.py expects.
+    generateMonsTypeScript.py expects. Packed values come from the CSV row; the .json
+    supplies only the effect name.
 
     Resolves effect contract addresses from deployed_addresses so the packed
     values match on-chain (where SetupMons.s.sol OR's the effect address in).
@@ -58,7 +59,7 @@ def collect_inline_move_addresses(
                 if addr_str:
                     effect_address = int(addr_str, 16)
 
-            packed = pack_move(move_data, effect_address=effect_address)
+            packed = pack_move(inline_params_from_csv(row), effect_address=effect_address)
             results.append((move_name, f"0x{packed:064x}"))
 
     return results

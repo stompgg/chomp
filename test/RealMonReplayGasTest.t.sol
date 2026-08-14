@@ -7,7 +7,17 @@ import "../src/Structs.sol";
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 
-import {SetupMons} from "../script/SetupMons.s.sol";
+import {AuroxDeploy} from "../script/mons/SetupAurox.s.sol";
+import {EmbursaDeploy} from "../script/mons/SetupEmbursa.s.sol";
+import {GhouliathDeploy} from "../script/mons/SetupGhouliath.s.sol";
+import {GorillaxDeploy} from "../script/mons/SetupGorillax.s.sol";
+import {IblivionDeploy} from "../script/mons/SetupIblivion.s.sol";
+import {InutiaDeploy} from "../script/mons/SetupInutia.s.sol";
+import {MalalienDeploy} from "../script/mons/SetupMalalien.s.sol";
+import {PengymDeploy} from "../script/mons/SetupPengym.s.sol";
+import {SofabbiDeploy} from "../script/mons/SetupSofabbi.s.sol";
+import {VolthareDeploy} from "../script/mons/SetupVolthare.s.sol";
+import {XmonDeploy} from "../script/mons/SetupXmon.s.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {GachaTeamRegistry} from "../src/game-layer/GachaTeamRegistry.sol";
@@ -33,7 +43,7 @@ import {BatchHelper} from "./abstract/BatchHelper.sol";
 import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 
 /// @notice Faithful replay of a REAL prod battle (26 turns, switch/no-op heavy): real mon loadouts
-///         via SetupMons' canonical deployX() recipes + the log's per-turn moveIndex/salt/extraData,
+///         via the generated per-mon deployX() recipes + the log's per-turn moveIndex/salt/extraData,
 ///         run through LEGACY (per-turn execute), BUILT-IN (turn-by-turn submits + drain), and ONE-TX
 ///         (CPU batch). Asserts byte-equal end state (equivalence) across all three.
 ///         Gas accounting is production-faithful per tx: TX_BASE (21000 intrinsic) + the EIP-2028
@@ -41,7 +51,21 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 ///         measured bracket and the call is dispatched low-level (see _measuredCall) because in prod the
 ///         relayer/wallet encodes off-chain — measuring it would over-count paths with larger structs.
 ///         Every path is measured on COLD slots (fresh storageKey) and again on REUSED slots.
-contract RealMonReplayGasTest is Test, SetupMons, BatchHelper {
+contract RealMonReplayGasTest is
+    Test,
+    GhouliathDeploy,
+    InutiaDeploy,
+    MalalienDeploy,
+    IblivionDeploy,
+    GorillaxDeploy,
+    SofabbiDeploy,
+    PengymDeploy,
+    EmbursaDeploy,
+    VolthareDeploy,
+    AuroxDeploy,
+    XmonDeploy,
+    BatchHelper
+{
     uint256 constant P0_PK = 0xA11CE;
     uint256 constant P1_PK = 0xB0B;
     uint256 constant TX_BASE = 21000;

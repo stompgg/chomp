@@ -210,13 +210,6 @@ pub fn slot_priority(sim: &mut Sim, bk: B256, vp: u8, slot: U256) -> u32 {
     MoveSlotLib::priority(&mut sim.world, slot, sim.engine_addr, bk, U256::from(vp as u64))
 }
 
-/// External move's `basePower(battleKey)` — duck-typed probe, 0 for moves
-/// that don't expose it (the TS try/`typeof`-guard path).
-pub fn slot_external_base_power(sim: &mut Sim, bk: B256, slot: U256) -> u32 {
-    let target = MoveSlotLib::toIMoveSet(slot);
-    chomp_engine::dispatch::try_basePower(&mut sim.world, target, bk).unwrap_or(0)
-}
-
 /// External move's `accuracy(battleKey)` — duck-typed probe, None when absent.
 pub fn slot_external_accuracy(sim: &mut Sim, bk: B256, slot: U256) -> Option<u32> {
     let target = MoveSlotLib::toIMoveSet(slot);

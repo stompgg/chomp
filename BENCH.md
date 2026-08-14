@@ -110,6 +110,40 @@ Two active mons per side; your bot returns `Action::Slots([move, move])` and dec
 `modes()` as `Doubles`. Doubles is the mode the shipped CPU actually plays, so improvements
 there transfer most directly.
 
+## Measuring mons, not just bots
+
+The same harness answers balance questions. These read `drool/*.csv` and `src/mons/*.json` at
+run time from `$CHOMP_ROOT`, so a stat or move edit takes effect on the next run with no rebuild
+— point `CHOMP_ROOT` at a scratch copy of the repo to run ablations without touching your tree.
+
+```bash
+cd transpiler/rs-output
+CHOMP_ROOT=../.. ./target/release/analyze  --games 6000 [--mode doubles] [--p0 greedy --p1 greedy]
+CHOMP_ROOT=../.. ./target/release/montrace --mon Mulong --games 800
+CHOMP_ROOT=../.. ./target/release/teams    --games-per-team 150
+```
+
+- **`analyze`** — per-mon win%, active turns, KOs dealt/taken, and the mon-vs-mon KO matrix.
+  `--p0`/`--p1` pin the pilots; results shift a lot with bot strength, so state which you used.
+- **`montrace`** — one mon's doubles diagnostic: move usage, survival, and KOs per 100 active
+  turns for its *teammates* and *opponents* against a no-target control. That last one separates
+  "this mon kills things" from "this mon makes its partner's kills happen".
+- **`teams`** — the exhaustive team search and main effect described above.
+
+### Watching a long run
+
+`analyze` and `teams` accept `--progress`, which streams the ranked table to **stderr** every 5%
+while stdout stays a single clean result table:
+
+```
+[ 10% 300/3000] Mulong 61.9 · Volthare 56.2 · Malalien 55.4 · Ekineki 54.7 · …
+```
+
+Slicing only moves scheduling boundaries — every game is independently seeded, so output is
+byte-identical with and without the flag. `teams` walks a strided permutation when streaming,
+because its specs are team-major and consecutive slices would otherwise give a badly biased
+partial main effect rather than a merely noisy one.
+
 ## Research directions
 
 Some ideas for you to try out:
@@ -130,9 +164,16 @@ switch-in move, setup move) with a heuristic fallback.
 
 ### Synergy-aware play
 
-`./bench.sh` aside, the tree has an exhaustive team analyser: all C(13,4) = 715 teams
+`./bench.sh` aside, the tree has an exhaustive team analyser: all C(15,4) = 1365 teams
 evaluated against the random-draft field, with synergy read as the *interaction* beyond each
 mon's main effect (`src/bin/teams.rs`). Overclock lifting slower attackers shows up there.
+
+Read the main effect with its harness in mind: `teams.rs` pilots **both sides with `greedy` at
+depth 0**, so it measures how much a mon lifts a team *against unsophisticated play*, which is
+not the same question as `analyze`'s win rate. A mon can be ordinary in one and dominant in the
+other — Glob's free once-per-battle damage absorb is worth +25 main-effect points against
+`greedy` and ~3 win-rate points against `heuristic`, because only the smarter bot plays around
+it.
 
 No bot currently reads its own roster and plays to it. A bot that recognises it drafted a
 speed-control core, or a specific two-mon combo, and sequences toward it, is open ground.

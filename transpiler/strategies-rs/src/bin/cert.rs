@@ -24,7 +24,7 @@ fn main() {
 
     // Check 1 — globalKV-class regression: fixed-model pilots draw ~never and never error. The
     // globalKV forward-model bug manifested as stall-loop draws (50–167 per 2000 pre-fix).
-    let a = run_mon_analysis(&roster, 4000, 0xbeefcafe, 10_000, default_threads);
+    let a = run_mon_analysis(&roster, 4000, 0xbeefcafe, 10_000, default_threads, None);
     let draw_rate = a.draws as f64 / a.games.max(1) as f64;
     let ok1 = draw_rate < 0.01 && a.errors == 0;
     println!("[1] draw rate {:.3}% (<1%), errors {} (0): {}", draw_rate * 100.0, a.errors, if ok1 { "PASS" } else { "FAIL" });

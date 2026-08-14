@@ -21,7 +21,7 @@ use crate::sim::Sim;
 use crate::shared::{build_damage_calc_context, estimate_damage};
 use crate::view::{
     active_mon_indices, ko_bitmap, mon_max_hp, mon_skip_turn, mon_state, mon_value, move_slot,
-    slot_move_class, slot_move_type, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    slot_move_type, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 /// Pack an inline move word from its fields.
@@ -208,8 +208,7 @@ fn opp_action_power(sim: &mut Sim, bk: B256, obs: Seat, rule: PowerRule, opp_mov
                 Some(m) if m.move_index < 4 => match move_slot(sim, obs, bk, opp_vp, opp_active, m.move_index as usize) {
                     Some(word) => {
                         let mut ctx = build_damage_calc_context(sim, obs, bk, opp_vp, opp_active, self_vp, self_active);
-                        let mc = slot_move_class(sim, bk, word);
-                        estimate_damage(sim, bk, &mut ctx, word, mc)
+                        estimate_damage(sim, bk, &mut ctx, opp_vp, opp_active, word)
                     }
                     None => 0,
                 },

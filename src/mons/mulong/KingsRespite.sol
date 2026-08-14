@@ -75,7 +75,8 @@ contract KingsRespite is IMoveSet, BasicEffect {
             moveClass: moveClass(engine, battleKey),
             priority: priority(engine, battleKey, attackerPlayerIndex),
             stamina: stamina(engine, battleKey, attackerPlayerIndex, attackerMonIndex),
-            basePower: BASE_POWER
+            // The strike is deferred to the next rest, so this turn's damage is 0.
+            basePower: 0
         });
     }
 

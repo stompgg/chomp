@@ -5,12 +5,13 @@ Checks that contract implementations match the expected values from moves.csv.
 """
 
 import csv
-import json
 import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
+
+from packMoves import CLASS_MAP, TYPE_MAP, parse_constants
 
 @dataclass
 class MoveData:
@@ -28,8 +29,8 @@ class MoveData:
     # CSV TargetSpec (kebab-case): the move's slot-target domain, checked behaviorally against the
     # .sol (does move() resolve a defender from targetBits?). Blank in CSV = any-other-slot.
     target_spec: str = 'any-other-slot'
-    # Named %/denominator constants the move's .sol must match: [(NAME, VALUE), ...]
-    constants: List[Tuple[str, int]] = field(default_factory=list)
+    # Named %/denominator constants the move's .sol must match: {NAME: VALUE}
+    constants: Dict[str, int] = field(default_factory=dict)
 
 @dataclass
 class ContractData:
@@ -76,11 +77,21 @@ class MoveValidator:
     VALID_TARGET_SPECS = {'any-other-slot', 'none', 'self-only', 'opponent-slot', 'ally-slot', 'any-subset'}
     SLOT_TARGETING_SPECS = {'any-other-slot', 'opponent-slot', 'ally-slot', 'any-subset'}
 
+    # Field widths of the inline move word (see MoveSlotLib.sol / packMoves.pack_move). Inline
+    # moves are packed straight from moves.csv, so a row that overflows one has no representation.
+    INLINE_MAX_POWER = 255
+    INLINE_MAX_STAMINA = 15
+    INLINE_MAX_PRIORITY = 3
+    INLINE_MAX_EFFECT_ACCURACY = 255
+    INLINE_ACCURACY = 100
+
     def __init__(self, csv_path: str, src_path: str):
         self.csv_path = csv_path
         self.src_path = src_path
         self.moves_data: Dict[str, MoveData] = {}
         self.validation_results: List[Dict[str, Any]] = []
+        self.inline_count = 0
+        self.inline_errors: List[Tuple[str, str]] = []  # (move name, error)
 
         # Initialize mon-specific parsing rules
         self.mon_specific_rules = self._init_mon_specific_rules()
@@ -120,17 +131,6 @@ class MoveValidator:
             return '?'
         return int(value)
 
-    def _parse_constants(self, raw: str) -> List[Tuple[str, int]]:
-        """Parse the Constants column: 'NAME=VAL;NAME=VAL' -> [(NAME, VAL), ...]"""
-        pairs: List[Tuple[str, int]] = []
-        for part in (raw or '').split(';'):
-            part = part.strip()
-            if not part:
-                continue
-            name, _, val = part.partition('=')
-            pairs.append((name.strip(), int(val.strip())))
-        return pairs
-
     def _extract_all_constants(self, content: str) -> Dict[str, int]:
         """Collect every plain-integer `constant NAME = <int>;` declaration (hex/expr forms ignored)"""
         return {m.group(1): int(m.group(2))
@@ -156,7 +156,7 @@ class MoveValidator:
                     description=row['DevDescription'], # Change to UserDescription later
                     unlock_level=int((row.get('UnlockLevel') or '0').strip() or '0'),
                     target_spec=raw_target,
-                    constants=self._parse_constants(row.get('Constants', '')),
+                    constants=parse_constants(row.get('Constants', '')),
                 )
                 normalized_name = self.normalize_move_name(move_data.name)
                 self.moves_data[normalized_name] = move_data
@@ -176,31 +176,50 @@ class MoveValidator:
 
         return None
 
-    def parse_json_move(self, file_path: str) -> ContractData:
-        """Parse a JSON inline move definition"""
-        contract_data = ContractData(file_path=file_path)
-        contract_data.is_standard_attack = True  # JSON moves are inline StandardAttacks
+    def check_inline_move(self, move_data: MoveData) -> List[str]:
+        """Check that a moves.csv row can be expressed as an inline move word.
 
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        Inline (JSON) moves have no contract to compare against — the CSV row is packed
+        directly by packMoves — so the only failure mode is a row the word can't represent.
+        """
+        errors: List[str] = []
 
-        contract_data.power = data.get('basePower')
-        contract_data.stamina = data.get('staminaCost')
-        contract_data.accuracy = 100  # JSON moves always use DEFAULT_ACCURACY
-        contract_data.move_type = data.get('moveType')
-        contract_data.move_class = data.get('moveClass')
-        contract_data.consumes_target = True  # inline StandardAttacks dispatch damage to targetBits
+        if '?' in (move_data.power, move_data.stamina, move_data.priority):
+            errors.append("dynamic '?' Power/Stamina/Priority needs a .sol move, not an inline word")
+        else:
+            if not 0 <= move_data.power <= self.INLINE_MAX_POWER:
+                errors.append(f"Power {move_data.power} outside inline range [0, {self.INLINE_MAX_POWER}]")
+            if not 0 <= move_data.stamina <= self.INLINE_MAX_STAMINA:
+                errors.append(f"Stamina {move_data.stamina} outside inline range [0, {self.INLINE_MAX_STAMINA}]")
+            if not 0 <= move_data.priority <= self.INLINE_MAX_PRIORITY:
+                errors.append(
+                    f"Priority {move_data.priority} outside inline range [0, {self.INLINE_MAX_PRIORITY}] "
+                    f"(the packed offset from DEFAULT_PRIORITY is 2 bits, unsigned)")
 
-        # Priority: JSON stores offset from DEFAULT_PRIORITY, convert to absolute
-        # (JSON has no priority field = offset 0 = DEFAULT_PRIORITY)
-        contract_data.priority = self.DEFAULT_PRIORITY
+        if move_data.accuracy != self.INLINE_ACCURACY:
+            errors.append(
+                f"Accuracy {move_data.accuracy}: inline words have no accuracy field "
+                f"(always {self.INLINE_ACCURACY}) — use a .sol move")
 
-        # Effect trigger chance lives in the effectAccuracy field; expose under EFFECT_ACCURACY.
-        effect_accuracy = data.get('effectAccuracy')
-        if effect_accuracy is not None:
-            contract_data.constants['EFFECT_ACCURACY'] = effect_accuracy
+        if move_data.move_type not in TYPE_MAP:
+            errors.append(f"Unknown Type {move_data.move_type}")
+        if move_data.move_class not in CLASS_MAP:
+            errors.append(f"Unknown Class {move_data.move_class}")
 
-        return contract_data
+        if move_data.target_spec not in self.SLOT_TARGETING_SPECS:
+            errors.append(f"TargetSpec {move_data.target_spec}: inline moves always dispatch to targetBits")
+
+        for cname, cval in move_data.constants.items():
+            if cname != 'EFFECT_ACCURACY':
+                errors.append(f"Constant {cname} is not expressible inline (only EFFECT_ACCURACY is packed)")
+            elif not 0 <= cval <= self.INLINE_MAX_EFFECT_ACCURACY:
+                errors.append(f"EFFECT_ACCURACY {cval} outside inline range [0, {self.INLINE_MAX_EFFECT_ACCURACY}]")
+
+        for token in re.findall(r'\{(\w+)(?::\w+)?\}', move_data.description or ''):
+            if token not in move_data.constants:
+                errors.append(f"Description token {{{token}}} has no matching Constants entry")
+
+        return errors
 
     def parse_contract_file(self, file_path: str, mon_name: str = None) -> ContractData:
         """Parse a Solidity contract file to extract move data"""
@@ -510,7 +529,7 @@ class MoveValidator:
                 f"{move_data.target_spec} expects it to {want} the target nibble")
 
         # Validate declared %/denominator constants against the contract source
-        for cname, cval in move_data.constants:
+        for cname, cval in move_data.constants.items():
             actual = contract_data.constants.get(cname)
             if actual is None:
                 result['errors'].append(f"Constant {cname} not found in contract (expected: {cval})")
@@ -518,9 +537,8 @@ class MoveValidator:
                 result['errors'].append(f"Constant {cname} mismatch: contract={actual}, csv={cval}")
 
         # Every {NAME} token in the description must resolve to a declared constant
-        declared = {name for name, _ in move_data.constants}
         for token in re.findall(r'\{(\w+)(?::\w+)?\}', move_data.description or ''):
-            if token not in declared:
+            if token not in move_data.constants:
                 result['errors'].append(f"Description token {{{token}}} has no matching Constants entry")
 
         return result
@@ -588,11 +606,14 @@ class MoveValidator:
 
             found_contracts += 1
 
-            # Parse and validate the move (JSON or Solidity)
+            # Inline moves are packed from the CSV row itself, so there is nothing to compare
+            # against — only whether the row fits the inline word.
             if move_file.endswith('.json'):
-                contract_data = self.parse_json_move(move_file)
-            else:
-                contract_data = self.parse_contract_file(move_file, move_data.mon)
+                self.inline_count += 1
+                self.inline_errors.extend((move_data.name, e) for e in self.check_inline_move(move_data))
+                continue
+
+            contract_data = self.parse_contract_file(move_file, move_data.mon)
             validation_result = self.validate_move(move_name, move_data, contract_data)
             self.validation_results.append(validation_result)
 
@@ -604,6 +625,16 @@ class MoveValidator:
 
         if missing_contracts:
             self.print_missing_contracts(missing_contracts)
+
+        # Inline moves are packed straight from the CSV, so a bad row is an authoring mistake the
+        # contract updater can't fix — fail fast, like the unlock curve.
+        if self.inline_errors:
+            print("\n" + "=" * 80)
+            print("INLINE MOVE ERRORS")
+            print("=" * 80)
+            for name, err in self.inline_errors:
+                print(f"  • {name}: {err}")
+            return (False, False)
 
         # Prompt user to update contracts if there are errors
         moves_with_errors = sum(1 for result in self.validation_results if result['errors'])
@@ -632,16 +663,19 @@ class MoveValidator:
         standard_attack_count = sum(1 for result in self.validation_results if result['is_standard_attack'])
         custom_implementation_count = sum(1 for result in self.validation_results if result['is_custom_implementation'])
 
-        print(f"Total moves validated: {total_moves}")
-        print(f"Moves with errors: {moves_with_errors}")
+        inline_moves_with_errors = len({name for name, _ in self.inline_errors})
+
+        print(f"Total moves validated: {total_moves + self.inline_count}")
+        print(f"Moves with errors: {moves_with_errors + inline_moves_with_errors}")
         print(f"Moves with warnings: {moves_with_warnings}")
         print(f"StandardAttack implementations: {standard_attack_count}")
         print(f"Custom IMoveSet implementations: {custom_implementation_count}")
+        print(f"Inline moves (packed from CSV): {self.inline_count}")
 
-        if moves_with_errors == 0:
+        if moves_with_errors == 0 and not self.inline_errors:
             print("\n✅ All validations passed!")
         else:
-            print(f"\n❌ {moves_with_errors} moves have validation errors")
+            print(f"\n❌ {moves_with_errors + inline_moves_with_errors} moves have validation errors")
 
     def print_detailed_errors(self) -> None:
         """Print detailed error information"""
@@ -698,10 +732,6 @@ class MoveValidator:
         move_name = result['normalized_name']
         move_data = self.moves_data[move_name]
 
-        # JSON inline moves use a different update path
-        if file_path.endswith('.json'):
-            return self._update_json_move(file_path, move_data)
-
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
 
@@ -742,7 +772,7 @@ class MoveValidator:
                     modified = True
 
             # Update EFFECT_ACCURACY (effect trigger chance) if declared in the Constants column
-            consts = dict(move_data.constants)
+            consts = move_data.constants
             if 'EFFECT_ACCURACY' in consts:
                 ea_pattern = r'(EFFECT_ACCURACY:\s*)(\d+)'
                 if re.search(ea_pattern, updated_params):
@@ -859,7 +889,7 @@ class MoveValidator:
 
         # Fix declared constant drift (name already present, value wrong). A missing constant
         # can't be auto-added — it's reported and left for manual placement.
-        for cname, cval in move_data.constants:
+        for cname, cval in move_data.constants.items():
             pattern = rf'(constant\s+{re.escape(cname)}\s*=\s*)\d+'
             new_content, n = re.subn(pattern, rf'\g<1>{cval}', content)
             if n and new_content != content:
@@ -870,51 +900,6 @@ class MoveValidator:
         if modified and content != original_content:
             with open(file_path, 'w', encoding='utf-8') as file:
                 file.write(content)
-            return True
-
-        return False
-
-    def _update_json_move(self, file_path: str, move_data: MoveData) -> bool:
-        """Update a JSON inline move definition with CSV values. Returns True if file was modified."""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        modified = False
-
-        if move_data.power != '?' and isinstance(move_data.power, int):
-            if data.get('basePower') != move_data.power:
-                data['basePower'] = move_data.power
-                modified = True
-
-        if move_data.stamina != '?' and isinstance(move_data.stamina, int):
-            if data.get('staminaCost') != move_data.stamina:
-                data['staminaCost'] = move_data.stamina
-                modified = True
-
-        if move_data.move_type and data.get('moveType') != move_data.move_type:
-            data['moveType'] = move_data.move_type
-            modified = True
-
-        if move_data.move_class and data.get('moveClass') != move_data.move_class:
-            data['moveClass'] = move_data.move_class
-            modified = True
-
-        # Update effectAccuracy (effect trigger chance) if declared in the Constants column
-        consts = dict(move_data.constants)
-        if 'EFFECT_ACCURACY' in consts and data.get('effectAccuracy') != consts['EFFECT_ACCURACY']:
-            data['effectAccuracy'] = consts['EFFECT_ACCURACY']
-            modified = True
-
-        # JSON inline moves can't represent non-default accuracy or priority
-        if move_data.accuracy != '?' and isinstance(move_data.accuracy, int) and move_data.accuracy != 100:
-            print(f"  ⚠️  JSON inline moves only support DEFAULT_ACCURACY (100); CSV wants {move_data.accuracy}. Convert to .sol to express this.")
-        if move_data.priority != '?' and isinstance(move_data.priority, int) and move_data.priority != 0:
-            print(f"  ⚠️  JSON inline moves only support DEFAULT_PRIORITY; CSV priority offset is {move_data.priority}. Convert to .sol to express this.")
-
-        if modified:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-                f.write('\n')
             return True
 
         return False
@@ -930,12 +915,7 @@ class MoveValidator:
             if not result['errors']:
                 continue
 
-            if result['contract_file'].endswith('.json'):
-                impl_type = "JSON inline"
-            elif result['is_standard_attack']:
-                impl_type = "StandardAttack"
-            else:
-                impl_type = "Custom IMoveSet"
+            impl_type = "StandardAttack" if result['is_standard_attack'] else "Custom IMoveSet"
             print(f"\n  Updating ({impl_type}): {result['contract_file']}")
 
             if self.update_contract_file(result):

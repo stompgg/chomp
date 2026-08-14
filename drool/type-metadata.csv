@@ -1,0 +1,15 @@
+Type,Name,Character,BgColor,TextColor,Abbreviation
+Yin,Yin,陰,#111,#eee,YIN
+Yang,Yang,陽,#eee,#111,YAN
+Earth,Earth,土,#8B4513,#eee,ETH
+Liquid,Liquid,水,#1E90FF,#111,LIQ
+Fire,Fire,火,#d2400a,#eee,FIR
+Metal,Metal,金,#60676b,#eee,MTL
+Ice,Ice,氷,#4682B4,#eee,ICE
+Nature,Nature,木,#228B22,#eee,NTR
+Lightning,Lightning,雷,var(--text-warm),#111,LTG
+Faith,Faith,信,#e39eab,#111,FAI
+Air,Air,氣,#7278b5,#eee,AIR
+Math,Math,數,#aa2e70ff,#eee,MTH
+Cyber,Cyber,量,#00CED1,#111,CYB
+Cosmic,Cosmic,混,#4B0082,#eee,CMC

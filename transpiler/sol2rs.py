@@ -25,7 +25,7 @@ Usage:
 import json
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from .lexer import Lexer
 from .parser import Parser, SourceUnit
@@ -221,7 +221,7 @@ class SolidityToRustTranspiler:
             print(f'Written: {out_path}')
 
         self._write_world_rs(engine_src, symbols)
-        self._write_dispatch_rs(engine_src, symbols)
+        all_notes.extend(self._write_dispatch_rs(engine_src, symbols))
         self._write_lib_rs(engine_src, emitted)
         self._write_workspace_files()
         self._sync_crates()
@@ -480,10 +480,13 @@ class SolidityToRustTranspiler:
         out.append('')
         return out
 
-    def _write_dispatch_rs(self, engine_src: Path, symbols) -> None:
+    def _write_dispatch_rs(self, engine_src: Path, symbols) -> List[Tuple[str, str]]:
         """Generated dispatch tables: one fn per dispatch-interface method,
         matching the target address's ContractId to the implementor's
-        module (with the msg.sender frame push around the call)."""
+        module (with the msg.sender frame push around the call).
+
+        Returns the diagnostics raised while building the tables."""
+        dispatch_notes: List[Tuple[str, str]] = []
         from .codegen_rs.rust_types import RustTypeConverter, rust_ident
         from .codegen_rs.context import RustCodeGenerationContext
 
@@ -569,6 +572,33 @@ class SolidityToRustTranspiler:
             impls = [(c, s) for c, s in impls if s is not None]
             if not impls:
                 continue
+
+            # A duck-typed probe resolves by selector, so an implementor whose signature differs
+            # from the probe's is simply not reachable through it. Emit the majority signature and
+            # drop the rest to None, mirroring the on-chain selector miss.
+            def sig_key(s):
+                return (
+                    tuple(types.rust_type(t) for t in s.param_types),
+                    tuple(types.rust_type(t) for t in s.return_types),
+                )
+
+            def fmt_sig(key):
+                return f'{method}({", ".join(key[0])}) -> {", ".join(key[1]) or "()"}'
+
+            by_sig: dict = {}
+            for c, s in impls:
+                by_sig.setdefault(sig_key(s), []).append((c, s))
+            probe_key, impls = max(by_sig.items(), key=lambda kv: (len(kv[1]), kv[0]))
+            for other_key, others in sorted(by_sig.items()):
+                if other_key == probe_key:
+                    continue
+                names = ', '.join(c for c, _ in others)
+                dispatch_notes.append((
+                    'warning',
+                    f'try_{method}: {names} {"declares" if len(others) == 1 else "declare"} '
+                    f'{fmt_sig(other_key)}, not the probe\'s {fmt_sig(probe_key)} — unreachable '
+                    f'by selector, dispatching to None',
+                ))
             sig = impls[0][1]
             params = ['world: &mut World', 'target: Address']
             arg_names = []
@@ -602,6 +632,7 @@ class SolidityToRustTranspiler:
 
         (engine_src / 'dispatch.rs').write_text('\n'.join(lines))
         print(f'Written: {engine_src / "dispatch.rs"}')
+        return dispatch_notes
 
     def _write_lib_rs(self, engine_src: Path, emitted: List[str]) -> None:
         # Build the nested module tree from emitted file paths.

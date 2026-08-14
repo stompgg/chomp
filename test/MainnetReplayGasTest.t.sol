@@ -8,7 +8,17 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
 
-import {SetupMons} from "../script/SetupMons.s.sol";
+import {AuroxDeploy} from "../script/mons/SetupAurox.s.sol";
+import {EmbursaDeploy} from "../script/mons/SetupEmbursa.s.sol";
+import {GhouliathDeploy} from "../script/mons/SetupGhouliath.s.sol";
+import {GorillaxDeploy} from "../script/mons/SetupGorillax.s.sol";
+import {IblivionDeploy} from "../script/mons/SetupIblivion.s.sol";
+import {InutiaDeploy} from "../script/mons/SetupInutia.s.sol";
+import {MalalienDeploy} from "../script/mons/SetupMalalien.s.sol";
+import {PengymDeploy} from "../script/mons/SetupPengym.s.sol";
+import {SofabbiDeploy} from "../script/mons/SetupSofabbi.s.sol";
+import {VolthareDeploy} from "../script/mons/SetupVolthare.s.sol";
+import {XmonDeploy} from "../script/mons/SetupXmon.s.sol";
 import {Engine} from "../src/Engine.sol";
 import {IEngine} from "../src/IEngine.sol";
 import {IAbility} from "../src/abilities/IAbility.sol";
@@ -48,7 +58,21 @@ import {TestTeamRegistry} from "./mocks/TestTeamRegistry.sol";
 ///         p1Salt) with NO battleKey dependency, so replaying the same salts reproduces the exact
 ///         battle here. Measured through engine.executeBatchedTurns (the same path the tx took) on
 ///         a VIRGIN storageKey and again on a REUSED (steady-state) one.
-contract MainnetReplayGasTest is Test, SetupMons, GasMeasure {
+contract MainnetReplayGasTest is
+    Test,
+    GhouliathDeploy,
+    InutiaDeploy,
+    MalalienDeploy,
+    IblivionDeploy,
+    GorillaxDeploy,
+    SofabbiDeploy,
+    PengymDeploy,
+    EmbursaDeploy,
+    VolthareDeploy,
+    AuroxDeploy,
+    XmonDeploy,
+    GasMeasure
+{
     uint256 constant P0_PK = 0xA11CE;
     uint256 constant P1_PK = 0xB0B;
     uint256 constant TX_BASE = 21000;

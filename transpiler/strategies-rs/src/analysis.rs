@@ -10,9 +10,38 @@
 use std::collections::HashMap;
 
 use crate::arena::{build_doubles_specs, build_specs, build_specs_full, build_specs_with, STRAT_PAIRS};
-use crate::doubles::run_doubles_games_instrumented;
+use crate::doubles::{run_doubles_games_instrumented, DoublesInstr};
 use crate::game::{run_games_instrumented, InstrRecord, BotName};
 use crate::roster::{self, Roster};
+
+/// Work-in-progress reporter: (aggregate so far, games run, games total).
+pub type MonProgress<'a> = &'a dyn Fn(&MonAnalysis, usize, usize);
+
+/// How many slices a progress-reporting run is cut into.
+const PROGRESS_CHUNKS: usize = 20;
+
+/// Run in slices and re-fold after each so a long batch can show a partial table. Slicing only
+/// moves scheduling boundaries — every game is independently seeded, so the final fold is the
+/// same as running the batch whole.
+fn run_folded<S, R>(
+    specs: &[S],
+    progress: Option<MonProgress>,
+    run: impl Fn(&[S]) -> Vec<R>,
+    fold_all: impl Fn(&[R]) -> MonAnalysis,
+) -> MonAnalysis {
+    let Some(report) = progress else {
+        return fold_all(&run(specs));
+    };
+    let size = specs.len().div_ceil(PROGRESS_CHUNKS).max(1);
+    let mut records: Vec<R> = Vec::with_capacity(specs.len());
+    let mut agg = fold_all(&records);
+    for chunk in specs.chunks(size) {
+        records.extend(run(chunk));
+        agg = fold_all(&records);
+        report(&agg, records.len(), specs.len());
+    }
+    agg
+}
 
 /// Per-mon accumulators, split by the mon's own team result that game.
 #[derive(Default, Clone)]
@@ -63,11 +92,17 @@ pub struct MonAnalysis {
 }
 
 /// Draw the same 4v4 field as the plain arena, run it instrumented, fold per-mon.
-pub fn run_mon_analysis(roster: &Roster, games: usize, wseed: u32, seed_base: u32, threads: usize) -> MonAnalysis {
+pub fn run_mon_analysis(
+    roster: &Roster,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    progress: Option<MonProgress>,
+) -> MonAnalysis {
     let book = roster::address_book();
     let (specs, _pair_of) = build_specs(roster, games, wseed, seed_base);
-    let records = run_games_instrumented(&specs, &book, threads);
-    fold(&records)
+    run_folded(&specs, progress, |c| run_games_instrumented(c, &book, threads), fold)
 }
 
 /// Same, with an explicit [p1, p0] pilot rotation (e.g. a no-peek-vs-peek matched-draft split).
@@ -78,11 +113,11 @@ pub fn run_mon_analysis_with(
     seed_base: u32,
     threads: usize,
     pairs: &[(BotName, BotName)],
+    progress: Option<MonProgress>,
 ) -> MonAnalysis {
     let book = roster::address_book();
     let (specs, _pair_of) = build_specs_with(roster, games, wseed, seed_base, pairs);
-    let records = run_games_instrumented(&specs, &book, threads);
-    fold(&records)
+    run_folded(&specs, progress, |c| run_games_instrumented(c, &book, threads), fold)
 }
 
 /// Singles analysis over the standard pilot basket with loadout rotation — each drafted slot equips
@@ -94,6 +129,7 @@ pub fn run_mon_analysis_rotated(
     seed_base: u32,
     threads: usize,
     pairs: Option<&[(BotName, BotName)]>,
+    progress: Option<MonProgress>,
 ) -> MonAnalysis {
     let book = roster::address_book();
     let default_pairs: Vec<(BotName, BotName)> = STRAT_PAIRS
@@ -102,8 +138,7 @@ pub fn run_mon_analysis_rotated(
         .collect();
     let pairs = pairs.unwrap_or(&default_pairs);
     let (specs, _) = build_specs_full(roster, games, wseed, seed_base, pairs, true);
-    let records = run_games_instrumented(&specs, &book, threads);
-    fold(&records)
+    run_folded(&specs, progress, |c| run_games_instrumented(c, &book, threads), fold)
 }
 
 /// Doubles per-mon attribution over the DIFF_PAIRS field. KOs are credited from the killer side's
@@ -117,17 +152,21 @@ pub fn run_doubles_mon_analysis(
     threads: usize,
     rotate: bool,
     search_depth: u32,
+    progress: Option<MonProgress>,
 ) -> MonAnalysis {
     let book = roster::address_book();
     let (specs, _) = build_doubles_specs(roster, games, wseed, seed_base, rotate, search_depth);
-    let records = run_doubles_games_instrumented(&specs, &book, threads);
+    run_folded(&specs, progress, |c| run_doubles_games_instrumented(c, &book, threads), fold_doubles)
+}
 
+/// Fold instrumented doubles games into the same per-mon shape `fold` produces for singles.
+pub fn fold_doubles(records: &[DoublesInstr]) -> MonAnalysis {
     let mut per_mon: HashMap<u32, MonStat> = HashMap::new();
     let mut ko_matrix: HashMap<(u32, u32), u32> = HashMap::new();
     let (mut n_games, mut decided, mut draws) = (0u32, 0u32, 0u32);
     let (mut shared, mut incidental) = (0u32, 0u32);
 
-    for rec in &records {
+    for rec in records {
         n_games += 1;
         let (p0_res, p1_res): (i8, i8) = match rec.winner_side {
             Some(0) => { decided += 1; (1, -1) }

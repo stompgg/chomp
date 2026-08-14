@@ -1,9 +1,3 @@
 {
-  "name": "Electrocute",
-  "basePower": 90,
-  "staminaCost": 2,
-  "moveType": "Lightning",
-  "moveClass": "Special",
-  "effectAccuracy": 10,
   "effect": "ZapStatus"
 }

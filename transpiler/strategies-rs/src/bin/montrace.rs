@@ -83,6 +83,68 @@ fn main() {
     println!("  min HP reached     {:.1}%  (mean over appearances)", sum_min_hp / nf);
     println!("  setup ever landed  {:.1}% of appearances (Attack delta > 0 at any point)", ever_boosted as f64 / nf * 100.0);
 
+    // Teammate / opponent uplift: does the target's presence change what everyone ELSE does?
+    // Every bucket excludes the target itself and normalises by active turns, so it isolates the
+    // effect on other mons rather than re-counting the target's own output.
+    let (mut mate_kos, mut mate_turns) = (0u64, 0u64);
+    let (mut opp_kos, mut opp_turns) = (0u64, 0u64);
+    let (mut ctl_kos, mut ctl_turns) = (0u64, 0u64);
+    let (mut with_len, mut with_n, mut ctl_len, mut ctl_n) = (0u64, 0u64, 0u64, 0u64);
+    for spec in &specs {
+        let tr = play_doubles_game_instrumented(spec, &book, None);
+        let sides = [(0u8, &tr.p0_ids, &tr.active_turns_p0), (1u8, &tr.p1_ids, &tr.active_turns_p1)];
+        let target_side = sides.iter().find(|(_, ids, _)| ids.contains(&tid)).map(|(s, _, _)| *s);
+        if target_side.is_some() {
+            with_len += tr.turns as u64;
+            with_n += 1;
+        } else {
+            ctl_len += tr.turns as u64;
+            ctl_n += 1;
+        }
+        for (s, ids, turns) in sides.iter() {
+            let kos = tr.kos.iter().filter(|k| k.killer_seat == *s && k.killer_id != tid).count() as u64;
+            let act: u64 = ids
+                .iter()
+                .zip(turns.iter())
+                .filter(|(id, _)| **id != tid)
+                .map(|(_, t)| *t as u64)
+                .sum();
+            match target_side {
+                Some(ts) if ts == *s => {
+                    mate_kos += kos;
+                    mate_turns += act;
+                }
+                Some(_) => {
+                    opp_kos += kos;
+                    opp_turns += act;
+                }
+                None => {
+                    ctl_kos += kos;
+                    ctl_turns += act;
+                }
+            }
+        }
+    }
+    let per100 = |k: u64, t: u64| k as f64 / t.max(1) as f64 * 100.0;
+    let base = per100(ctl_kos, ctl_turns);
+    println!("\n  KOs per 100 active turns (excluding {target} itself):");
+    println!(
+        "    {target}'s teammates   {:>6.2}   ({:+.1}% vs control)",
+        per100(mate_kos, mate_turns),
+        (per100(mate_kos, mate_turns) / base - 1.0) * 100.0
+    );
+    println!(
+        "    {target}'s opponents   {:>6.2}   ({:+.1}% vs control)",
+        per100(opp_kos, opp_turns),
+        (per100(opp_kos, opp_turns) / base - 1.0) * 100.0
+    );
+    println!("    control (no {target}) {:>6.2}", base);
+    println!(
+        "  game length          {:.2} turns with {target} vs {:.2} without",
+        with_len as f64 / with_n.max(1) as f64,
+        ctl_len as f64 / ctl_n.max(1) as f64
+    );
+
     let total: u64 = usage.iter().sum();
     println!("\n  move usage over {total} acting turns:");
     for (mi, &c) in usage.iter().enumerate() {

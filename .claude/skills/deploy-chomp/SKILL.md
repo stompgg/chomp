@@ -8,8 +8,9 @@ description: Build and deploy pipeline for chomp — processing scripts, the Sol
 ```bash
 python processing/validateMoves.py          # Validate contracts vs CSV
 python processing/validateEffectBitmaps.py  # Validate ALWAYS_APPLIES_BIT usage on IEffect contracts
-python processing/generateSolidity.py       # Generate SetupMons.s.sol
+python processing/generateSolidity.py       # Generate script/mons/Setup<Mon>.s.sol (one per mon)
 python processing/generateSetupCPU.py       # Generate SetupCPU.s.sol from cpu-teams.json
+python processing/editData.py               # Visual editor: mon stats / move rows / CPU teams (saves + reruns the above)
 python processing/deploy.py --testnet       # Full deployment (forge scripts + codegen)
 python processing/deploy.py --mainnet       # Production deployment
 ```
@@ -63,7 +64,10 @@ it; strategies that ship are hand-ported into munch and gated there against
 ### Deployment Order
 
 1. `EngineAndPeriphery.s.sol` - Engine, type calculator, `SignedCommitManager`, `GachaTeamRegistry`, `SignedMatchmaker`, CPU host, `SimplePM`, shared effects
-2. `SetupMons.s.sol` - All mon contracts (moves, abilities)
+2. `script/mons/Setup<Mon>.s.sol` - one script per mon (moves, abilities, `createMon`), broadcast in
+   ascending mon-id order because `createMon` rejects non-sequential ids. `deploy.py` derives the
+   list from `mons.csv`, so a failed deploy resumes by rerunning from the mon that failed rather
+   than redeploying the whole roster.
 3. `SetupCPU.s.sol` - CPU players
 
 ### CI/CD

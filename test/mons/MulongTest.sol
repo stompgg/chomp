@@ -356,6 +356,7 @@ contract MulongTest is Test {
 
     function test_cloudStrike_basePowerReflectsStorm() public {
         _field(IMoveSet(address(cloudStrike)), address(0));
-        assertEq(cloudStrike.basePower(IEngine(address(engine)), battleKey), cloudStrike.BASE_POWER(), "no storm");
+        MoveMeta memory meta = cloudStrike.getMeta(IEngine(address(engine)), battleKey, 0, 0);
+        assertEq(meta.basePower, cloudStrike.BASE_POWER(), "no storm");
     }
 }
