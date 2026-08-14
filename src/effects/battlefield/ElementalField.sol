@@ -19,12 +19,18 @@ contract ElementalField is BasicEffect {
     IEffect private immutable PANIC;
     IEffect private immutable ZAP;
 
-    constructor(IEffect burn, IEffect frostbite, IEffect sleep, IEffect panic, IEffect zap) {
-        BURN = burn;
-        FROSTBITE = frostbite;
-        SLEEP = sleep;
-        PANIC = panic;
-        ZAP = zap;
+    constructor(
+        IEffect _BURN_STATUS,
+        IEffect _FROSTBITE_STATUS,
+        IEffect _SLEEP_STATUS,
+        IEffect _PANIC_STATUS,
+        IEffect _ZAP_STATUS
+    ) {
+        BURN = _BURN_STATUS;
+        FROSTBITE = _FROSTBITE_STATUS;
+        SLEEP = _SLEEP_STATUS;
+        PANIC = _PANIC_STATUS;
+        ZAP = _ZAP_STATUS;
     }
 
     // Steps: RoundEnd + fresh RoundEnd context (status lanes) + ALWAYS_APPLIES.
