@@ -44,7 +44,7 @@ abstract contract GlobDeploy is Script {
             hp: 301,
             stamina: 5,
             speed: 151,
-            attack: 200,
+            attack: 180,
             defense: 201,
             specialAttack: 115,
             specialDefense: 191,

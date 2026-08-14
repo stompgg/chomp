@@ -48,9 +48,9 @@ abstract contract MulongDeploy is Script {
 
     function _registerMulong(GachaTeamRegistry registry, address[4] memory addrs) internal {
         MonStats memory stats = MonStats({
-            hp: 368,
+            hp: 388,
             stamina: 5,
-            speed: 290,
+            speed: 212,
             attack: 115,
             defense: 188,
             specialAttack: 288,
