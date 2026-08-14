@@ -31,8 +31,6 @@ contract KingsLeisure is IAbility, BasicEffect {
         }
         engine.setGlobalKV(armedKey, 1);
 
-        // Perm, not Temp: the debuff has to survive bench cycles, so it is applied once here and
-        // cleared once in onRemove.
         StatBoostToApply[] memory statBoosts = new StatBoostToApply[](2);
         statBoosts[0] = StatBoostToApply({
             stat: MonStateIndexName.Attack, boostPercent: ATTACK_DEBUFF_PERCENT, boostType: StatBoostType.Divide

@@ -93,7 +93,8 @@ def update_env_file(matches: list[tuple[str, str]], env_path: Path):
 
     # Add new addresses
     for name, address in matches:
-        key = name.upper().replace(" ", "_").replace("-", "_")
+        # Drop characters that are invalid in an env var name (e.g. "King's Leisure").
+        key = re.sub(r'[^A-Z0-9_]', '', name.upper().replace(" ", "_").replace("-", "_"))
         existing[key] = address
 
     # Write back sorted

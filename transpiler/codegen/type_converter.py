@@ -675,7 +675,7 @@ class TypeConverter(BaseGenerator):
         initial_value: Expression,
         init_expr: str,
     ) -> str:
-        """Convert string literals assigned to bytesN into right-padded hex."""
+        """Convert string literals assigned to bytesN into right-padded hex, as Solidity does."""
         if not (
             type_name
             and getattr(type_name, 'name', '')
@@ -686,11 +686,15 @@ class TypeConverter(BaseGenerator):
             return init_expr
 
         string_val = initial_value.value.strip('"\'')
-        hex_bytes = string_val.encode('utf-8').hex()
+        encoded = string_val.encode('utf-8')
         size_str = type_name.name[5:]
         byte_size = int(size_str) if size_str.isdigit() else 32
-        hex_bytes = hex_bytes[:byte_size * 2].ljust(byte_size * 2, '0')
-        return f'"0x{hex_bytes}"'
+        # Truncating here would silently ship a different value than the chain computes.
+        if len(encoded) > byte_size:
+            raise ValueError(
+                f'string literal "{string_val}" is {len(encoded)} bytes, too wide for {type_name.name}'
+            )
+        return f'"0x{encoded.hex().ljust(byte_size * 2, "0")}"'
 
     # =========================================================================
     # INDEX CONVERSION

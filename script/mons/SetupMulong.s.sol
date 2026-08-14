@@ -10,8 +10,8 @@ import {GachaTeamRegistry} from "../../src/game-layer/GachaTeamRegistry.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {Storm} from "../../src/effects/battlefield/Storm.sol";
 import {CloudStrike} from "../../src/mons/mulong/CloudStrike.sol";
+import {GrandRespite} from "../../src/mons/mulong/GrandRespite.sol";
 import {KingsLeisure} from "../../src/mons/mulong/KingsLeisure.sol";
-import {KingsRespite} from "../../src/mons/mulong/KingsRespite.sol";
 import {SummonStorm} from "../../src/mons/mulong/SummonStorm.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
@@ -29,8 +29,8 @@ abstract contract MulongDeploy is Script {
             deployedContracts[0] = DeployData({name: "Summon Storm", contractAddress: addrs[0]});
         }
         {
-            addrs[1] = address(new KingsRespite(ITypeCalculator(vm.envAddress("TYPE_CALCULATOR"))));
-            deployedContracts[1] = DeployData({name: "King's Respite", contractAddress: addrs[1]});
+            addrs[1] = address(new GrandRespite(ITypeCalculator(vm.envAddress("TYPE_CALCULATOR"))));
+            deployedContracts[1] = DeployData({name: "Grand Respite", contractAddress: addrs[1]});
         }
         {
             addrs[2] = address(new CloudStrike(Storm(storm), IEffect(vm.envAddress("FROSTBITE_STATUS"))));
@@ -59,7 +59,7 @@ abstract contract MulongDeploy is Script {
             type2: Type.Lightning
         });
         uint256[] memory moves = new uint256[](4);
-        moves[0] = 0x0030000000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
+        moves[0] = 0x0030400000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[0]));
         moves[1] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[1]));
         moves[2] = 0x7848314000000000000000000000000000000000000000000000000000000000 | uint256(uint160(vm.envAddress("ZAP_STATUS")));
         moves[3] = 0x0030200000000000000000010000000000000000000000000000000000000000 | uint256(uint160(addrs[2]));

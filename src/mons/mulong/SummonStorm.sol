@@ -31,7 +31,7 @@ contract SummonStorm is IMoveSet {
     }
 
     function stamina(IEngine, bytes32, uint256, uint256) public pure returns (uint32) {
-        return 0;
+        return 4;
     }
 
     function priority(IEngine, bytes32, uint256) public pure returns (uint32) {

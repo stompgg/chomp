@@ -529,6 +529,10 @@ class ContractGenerator(BaseGenerator):
             if var.initial_value
             else self._type_converter.default_value(ts_type, var.type_name)
         )
+        if var.initial_value:
+            default_val = self._type_converter.convert_bytes_string_literal(
+                var.type_name, var.initial_value, default_val
+            )
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
 
     def _generate_mapping_variable(

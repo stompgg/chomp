@@ -19,7 +19,7 @@ from createMonSpritesheets import (
     compact_json,
     extract_frames,
     find_96x96_gifs,
-    save_and_compress_png,
+    save_packed_sheet,
 )
 
 ASPECT = 0.22        # max half-height as a fraction of the footprint half-width
@@ -96,18 +96,7 @@ def create_shadows(imgs_dir: Path) -> None:
         print(f"{name}: {len(shadows)} shadow frames, footprint ~{w0}px wide")
 
     sheet, positions = build_spritesheet(all_frames, frame_size=FRAME_SIZE)
-    save_and_compress_png(sheet, imgs_dir / "mon_shadow.png", "Shadow spritesheet")
-
-    # Ship the packed sheet alongside the other mon spritesheets.
-    munch_assets_dir = (
-        Path(__file__).parent.parent.parent / "munch" / "src" / "assets" / "mons" / "all"
-    )
-    if munch_assets_dir.exists():
-        save_and_compress_png(
-            sheet, munch_assets_dir / "mon_shadow.png", "Munch shadow spritesheet"
-        )
-    else:
-        print(f"⚠ Munch directory not found, skipping copy: {munch_assets_dir}")
+    save_packed_sheet(sheet, imgs_dir, "mon_shadow.png", "Shadow spritesheet")
 
     for name, start, count, ms, cx in entries:
         metadata[name] = {

@@ -3100,10 +3100,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         DamageCalcContext memory ctx;
         bool ctxSeeded;
 
+        // Mode-gated lanes, not raw _slotActive: singles leaves activeMonExt at 0, so odd slots
+        // would resolve to "mon 0" and let a full mask hit a benched mon (or the active twice).
+        uint256 actives = _hookActivesWord(battle);
+
         for (uint256 s; s < 4;) {
             if (targetBits & (1 << s) != 0) {
                 uint256 defenderPlayerIndex = s >> 1;
-                uint256 defenderMonIndex = _slotActive(battle, s);
+                uint256 defenderMonIndex = TargetLib.activeAt(actives, s);
                 if (
                     defenderMonIndex != EMPTY_ACTIVE_LANE
                         && !_getMonState(config, defenderPlayerIndex, defenderMonIndex).isKnockedOut

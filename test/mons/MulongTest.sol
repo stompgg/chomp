@@ -17,7 +17,7 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 import {CloudStrike} from "../../src/mons/mulong/CloudStrike.sol";
 import {KingsLeisure} from "../../src/mons/mulong/KingsLeisure.sol";
-import {KingsRespite} from "../../src/mons/mulong/KingsRespite.sol";
+import {GrandRespite} from "../../src/mons/mulong/GrandRespite.sol";
 import {SummonStorm} from "../../src/mons/mulong/SummonStorm.sol";
 
 import {defaultBattle, sideWord, targetBits} from "../abstract/SlotWire.sol";
@@ -40,7 +40,7 @@ contract MulongTest is Test {
     Storm storm;
     FrostbiteStatus frostbite;
     SummonStorm summonStorm;
-    KingsRespite kingsRespite;
+    GrandRespite grandRespite;
     CloudStrike cloudStrike;
     KingsLeisure kingsLeisure;
     IMoveSet filler; // BP 40 Fire physical
@@ -53,7 +53,7 @@ contract MulongTest is Test {
         storm = new Storm();
         frostbite = new FrostbiteStatus();
         summonStorm = new SummonStorm(storm);
-        kingsRespite = new KingsRespite(typeCalc);
+        grandRespite = new GrandRespite(typeCalc);
         cloudStrike = new CloudStrike(storm, frostbite);
         kingsLeisure = new KingsLeisure();
         filler = new CustomAttack(
@@ -97,11 +97,15 @@ contract MulongTest is Test {
     }
 
     function _start(Mon[] memory aTeam, Mon[] memory bTeam) internal {
+        _startWithMode(aTeam, bTeam, BATTLE_MODE_DOUBLES);
+    }
+
+    function _startWithMode(Mon[] memory aTeam, Mon[] memory bTeam, uint8 battleMode) internal {
         registry.setTeam(ALICE, aTeam);
         registry.setTeam(BOB, bTeam);
         Battle memory battle = defaultBattle(ALICE, BOB, registry, address(this), IMatchmaker(address(this)));
         (battleKey,) = engine.computeBattleKey(ALICE, BOB);
-        engine.startBattleWithMode(battle, BATTLE_MODE_DOUBLES);
+        engine.startBattleWithMode(battle, battleMode);
         vm.warp(vm.getBlockTimestamp() + 1);
     }
 
@@ -281,13 +285,41 @@ contract MulongTest is Test {
         assertTrue(debuffedTick > undebuffedTick, "halved SpATK weakens the storm");
     }
 
+    /// @dev Singles has no slot-1 lanes, so the storm reaches exactly the two actives. Roster mon 0 is
+    ///      the mon an unwritten activeMonExt would alias into those lanes: benched on side 0, active
+    ///      on side 1, so one run covers both ways the alias leaks.
+    function test_storm_singles_hitsOnlyTheTwoActives() public {
+        Mon[] memory aTeam = new Mon[](3);
+        aTeam[0] = _mkMon(2000, 50, filler, address(0));
+        aTeam[1] = _mkMon(2000, 100, IMoveSet(address(summonStorm)), address(0));
+        aTeam[2] = _mkMon(2000, 40, filler, address(0));
+        Mon[] memory bTeam = new Mon[](3);
+        bTeam[0] = _mkMon(2000, 10, filler, address(0));
+        bTeam[1] = _mkMon(2000, 8, filler, address(0));
+        bTeam[2] = _mkMon(2000, 5, filler, address(0));
+        _startWithMode(aTeam, bTeam, BATTLE_MODE_SINGLES);
+
+        // Leads: A sends in mon 1, B keeps mon 0 on the field. Then A summons.
+        engine.executeWithMoves(battleKey, SWITCH_MOVE_INDEX, 0, 1, SWITCH_MOVE_INDEX, 0, 0);
+        engine.executeWithMoves(battleKey, 0, 0, 0, NO_OP_MOVE_INDEX, 0, 0);
+
+        assertTrue(_stormIsUp(), "storm summoned");
+        assertEq(_hp(0, 0), 0, "benched mon 0 is outside the storm");
+        assertTrue(_hp(0, 1) < 0, "caster takes its own storm");
+        assertTrue(_hp(1, 0) < 0, "opposing active hit");
+
+        // Both are single ticks on identical mons, so only DEFAULT_VOL's +/-10% separates them —
+        // a second tick from an aliased lane cannot hide inside this bound.
+        assertLt(-_hp(1, 0), (-_hp(0, 1) * 3) / 2, "the active is hit once, not once per lane");
+    }
+
     // ---------------------------------------------------------------------
-    // King's Respite
+    // Grand Respite
     // ---------------------------------------------------------------------
 
     /// @dev Arms silently, then detonates on the next rest — and the rest still regenerates stamina.
-    function test_kingsRespite_firesOnNextRest() public {
-        _field(IMoveSet(address(kingsRespite)), address(0));
+    function test_grandRespite_firesOnNextRest() public {
+        _field(IMoveSet(address(grandRespite)), address(0));
 
         engine.executeWithSlotMoves(battleKey, _side(0, targetBits(B0), NO_OP_MOVE_INDEX, 0), _rest());
         assertEq(_hp(1, 0), 0, "arming does no damage");
@@ -297,15 +329,15 @@ contract MulongTest is Test {
         assertTrue(_hp(1, 0) < 0, "the rest detonated the strike");
         assertEq(_stamina(0, 0), -2, "the strike rides the rest for free");
 
-        (bool exists,,) = engine.getEffectData(battleKey, 0, 0, address(kingsRespite));
+        (bool exists,,) = engine.getEffectData(battleKey, 0, 0, address(grandRespite));
         assertFalse(exists, "one-shot");
     }
 
     /// @dev Slot-bound: a replacement occupying the marked slot eats the strike. B0 outspeeds Mulong
     ///      so its switch resolves first — rest and switch share SWITCH_PRIORITY, so speed decides.
-    function test_kingsRespite_followsTheLatchedSlot() public {
+    function test_grandRespite_followsTheLatchedSlot() public {
         Mon[] memory aTeam = new Mon[](3);
-        aTeam[0] = _mkMon(2000, 100, IMoveSet(address(kingsRespite)), address(0));
+        aTeam[0] = _mkMon(2000, 100, IMoveSet(address(grandRespite)), address(0));
         aTeam[1] = _mkMon(2000, 50, filler, address(0));
         aTeam[2] = _mkMon(2000, 40, filler, address(0));
         Mon[] memory bTeam = new Mon[](3);

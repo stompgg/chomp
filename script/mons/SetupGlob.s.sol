@@ -41,7 +41,7 @@ abstract contract GlobDeploy is Script {
 
     function _registerGlob(GachaTeamRegistry registry, address[3] memory addrs) internal {
         MonStats memory stats = MonStats({
-            hp: 301,
+            hp: 256,
             stamina: 5,
             speed: 151,
             attack: 180,

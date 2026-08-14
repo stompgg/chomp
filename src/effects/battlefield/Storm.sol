@@ -13,10 +13,11 @@ import {IEffect} from "../IEffect.sol";
 ///         Damage runs the normal formula off the summoner's stats, so it tracks their buffs and
 ///         debuffs and keeps resolving after they leave the field.
 contract Storm is BasicEffect {
-    uint256 public constant DEFAULT_DURATION = 7;
+    uint256 public constant DEFAULT_DURATION = 5;
     uint32 public constant BASE_POWER = 50;
 
-    // Every absolute slot; the engine skips empty lanes and KO'd mons.
+    // Every absolute slot; the engine skips vacant lanes and KO'd mons, so this resolves to the two
+    // actives in singles and all four slots in 2-slot modes.
     uint256 private constant ALL_SLOTS = 0xF;
 
     // extraData: [duration 0-7 | casterPlayerIndex 8-15 | casterMonIndex 16-23]
