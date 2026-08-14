@@ -171,7 +171,7 @@ struct BattleConfig {
     uint8 engineHooksLength; //   8
     uint16 koBitmaps; //  16 — Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap
     uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
-    bool hasInlineStaminaRegen; //   8
+    uint8 inlineRegenFlags; //   8 — INLINE_REGEN_* bits (rest / round-end halves)
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
     // Per-mon stat-boost source counts, 4 bits per mon (max 15 sources/mon — distinct callers).
     // MUST reset every startBattle (recycled keys); rides the slot-2 consolidated write.

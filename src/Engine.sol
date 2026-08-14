@@ -360,28 +360,45 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _storeTeam(config.p1Team, p1Team, p1Len);
 
         // Set the global effects and data to start the game if any.
-        // NOTE: hasInlineStaminaRegen AND globalEffectsLength must be (re)written on EVERY branch —
+        // NOTE: inlineRegenFlags AND globalEffectsLength must be (re)written on EVERY branch —
         // config storage is recycled across battles, so a stale value from the previous occupant
         // would otherwise leak into this battle (e.g. inline regen running on top of an external
         // ruleset, or a previous battle's global effect staying live when the new ruleset is empty).
-        bool hasInlineRegen;
+        // A ruleset opts into either half of inline regen by listing a marker address in its effects
+        // array; markers are folded into the flags here and never stored or called.
+        uint8 newRegenFlags;
         uint8 newGlobalEffectsLength;
         if (address(battle.ruleset) == INLINE_STAMINA_REGEN_RULESET) {
-            hasInlineRegen = true;
+            newRegenFlags = INLINE_REGEN_ALL;
         } else if (address(battle.ruleset) != address(0)) {
             (IEffect[] memory effects, bytes32[] memory data) = battle.ruleset.getInitialGlobalEffects();
             uint256 numEffects = effects.length;
+            uint256 stored;
             for (uint256 i = 0; i < numEffects;) {
                 IEffect effect = effects[i];
-                uint32 metadata = effect.getStepsBitmap();
-                _writeEffectInstance(
-                    config.globalEffects[i], effect, uint16(metadata), data[i], uint16(metadata >> EFFECT_CONTEXT_SHIFT)
-                );
+                address effectAddr = address(effect);
+                if (effectAddr == INLINE_STAMINA_REGEN_RULESET) {
+                    newRegenFlags |= INLINE_REGEN_ALL;
+                } else if (effectAddr == INLINE_REST_REGEN_MARKER) {
+                    newRegenFlags |= INLINE_REGEN_REST;
+                } else {
+                    uint32 metadata = effect.getStepsBitmap();
+                    _writeEffectInstance(
+                        config.globalEffects[stored],
+                        effect,
+                        uint16(metadata),
+                        data[i],
+                        uint16(metadata >> EFFECT_CONTEXT_SHIFT)
+                    );
+                    unchecked {
+                        ++stored;
+                    }
+                }
                 unchecked {
                     ++i;
                 }
             }
-            newGlobalEffectsLength = uint8(numEffects);
+            newGlobalEffectsLength = uint8(stored);
         }
 
         // Set the engine hooks to start the game if any, folding their bitmaps into the union
@@ -413,7 +430,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.globalKVCount = 0;
         config.p0BoostCounts = 0;
         config.teamSizes = newTeamSizes;
-        config.hasInlineStaminaRegen = hasInlineRegen;
+        config.inlineRegenFlags = newRegenFlags;
         config.globalEffectsLength = newGlobalEffectsLength;
         config.engineHooksLength = uint8(numHooks);
         config.startTimestamp = uint40(block.timestamp);
@@ -1283,8 +1300,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
             tempRNG = rng;
 
-            // Cache `hasInlineStaminaRegen` once instead of re-reading config slot 2 three times below.
-            bool inlineStaminaRegen = config.hasInlineStaminaRegen;
+            // Cache `inlineRegenFlags` once instead of re-reading config slot 2 three times below.
+            uint8 inlineRegenFlags = config.inlineRegenFlags;
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
@@ -1373,7 +1390,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Stamina regen decision is encapsulated in _inlineStaminaRegen, which reads the move FRESH
             // — required because effects (SleepStatus) can rewrite the move to a resting NO_OP mid-turn.
-            if (inlineStaminaRegen) {
+            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
                 playerSwitchForTurnFlag = _inlineStaminaRegen(
                     config,
                     EffectStep.AfterMove,
@@ -1441,7 +1458,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            if (inlineStaminaRegen) {
+            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
                 playerSwitchForTurnFlag = _inlineStaminaRegen(
                     config,
                     EffectStep.AfterMove,
@@ -1498,7 +1515,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            if (inlineStaminaRegen) {
+            if (inlineRegenFlags & INLINE_REGEN_ROUND_END != 0) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
                 playerSwitchForTurnFlag =
@@ -4417,7 +4434,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         bool turnZero = battle.turnId == 0;
         uint256 lockedPriorities = _lockSlotPriorities(battleKey, config, battle);
-        bool inlineRegen = config.hasInlineStaminaRegen;
+        uint8 inlineRegenFlags = config.inlineRegenFlags;
 
         // RoundStart: global pass, then per-slot lists in current speed order (D29).
         uint256 gLen = config.globalEffectsLength;
@@ -4480,7 +4497,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             if (battle.winnerIndex != 2) {
                 return 2;
             }
-            if (inlineRegen && actorAlive) {
+            if (inlineRegenFlags & INLINE_REGEN_REST != 0 && actorAlive) {
                 if (StaminaRegenLogic._isRestingMove(uint8(_currentTurnMoveWordForSlot(side, slot & 1)))) {
                     // Re-read the lane: an AfterMove effect may have swapped the rester out, and
                     // the regen follows the lane (matching the singles regen's fresh read).
@@ -4525,7 +4542,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
         }
-        if (inlineRegen) {
+        if (inlineRegenFlags & INLINE_REGEN_ROUND_END != 0) {
             for (uint256 s; s < 4;) {
                 uint256 mon = _slotActive(battle, s);
                 if (mon != EMPTY_ACTIVE_LANE && !_getMonState(config, s >> 1, mon).isKnockedOut) {

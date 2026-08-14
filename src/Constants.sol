@@ -49,7 +49,19 @@ address constant TOMBSTONE_ADDRESS = address(0xdead);
 
 // Sentinel ruleset address: when passed as battle.ruleset, the Engine adds
 // inline StaminaRegen as a global effect without calling an external contract.
+// Also valid as a marker ENTRY in a ruleset's effect array (see INLINE_REST_REGEN_MARKER),
+// which is how a ruleset carrying real global effects keeps the inline regen path.
 address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A); // "STA"mina
+
+// Marker entry for a ruleset that wants only the resting (NO_OP AfterMove) half of inline regen —
+// for global effects that own round-end stamina themselves. Marker entries are folded into
+// BattleConfig.inlineRegenFlags at startBattle and are never stored or called.
+address constant INLINE_REST_REGEN_MARKER = address(0x57B);
+
+// BattleConfig.inlineRegenFlags bits: which halves of the Engine's inline stamina regen run.
+uint8 constant INLINE_REGEN_REST = 0x1; // AfterMove, when the mon rested (NO_OP)
+uint8 constant INLINE_REGEN_ROUND_END = 0x2; // RoundEnd, on full two-player turns
+uint8 constant INLINE_REGEN_ALL = INLINE_REGEN_REST | INLINE_REGEN_ROUND_END;
 
 // Sentinel moveManager address: when a battle's moveManager is set to this, the battle uses the
 // Engine's built-in dual-signed buffer flow (submitTurnMoves / executeBuffered) instead of an
