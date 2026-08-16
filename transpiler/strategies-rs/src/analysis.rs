@@ -130,6 +130,7 @@ pub fn run_mon_analysis_rotated(
     threads: usize,
     pairs: Option<&[(BotName, BotName)]>,
     progress: Option<MonProgress>,
+    field: crate::sim::Field,
 ) -> MonAnalysis {
     let book = roster::address_book();
     let default_pairs: Vec<(BotName, BotName)> = STRAT_PAIRS
@@ -137,7 +138,7 @@ pub fn run_mon_analysis_rotated(
         .map(|&(p1, p0)| (p1, p0))
         .collect();
     let pairs = pairs.unwrap_or(&default_pairs);
-    let (specs, _) = build_specs_full(roster, games, wseed, seed_base, pairs, true);
+    let (specs, _) = build_specs_full(roster, games, wseed, seed_base, pairs, true, field);
     run_folded(&specs, progress, |c| run_games_instrumented(c, &book, threads), fold)
 }
 

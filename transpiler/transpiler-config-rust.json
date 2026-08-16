@@ -41,7 +41,8 @@
   },
   "externalInterfaces": [
     "ITeamRegistry",
-    "IMatchmaker"
+    "IMatchmaker",
+    "IRuleset"
   ],
   "stubCalls": [
     "_hashTypedData",

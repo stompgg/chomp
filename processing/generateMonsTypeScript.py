@@ -131,6 +131,7 @@ MOVE_OVERLAY_PLACEMENT: Dict[str, str] = {
     "Gachachacha": "canvas-center",
     # Self-buffs play on the caster, not the opposing mon.
     "Sanctify": "self",
+    "Holy Molt": "self",
     "Triple Think": "self",
     "Loop": "self",
     # Battlefield effect — the overlay spans the whole field, not one mon.

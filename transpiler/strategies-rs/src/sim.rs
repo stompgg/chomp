@@ -33,9 +33,53 @@ const fn addr(low: u16) -> Address {
     Address::new(b)
 }
 
+/// Which battlefield field the battle's ruleset installs. Mirrors the deployed
+/// DefaultRuleset pairs from EngineAndPeriphery.s.sol: [regen marker, field].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    None,
+    Flux,
+    Elemental,
+    Unstable,
+}
+
+impl Field {
+    pub fn parse(s: &str) -> Option<Field> {
+        match s {
+            "none" => Some(Field::None),
+            "flux" => Some(Field::Flux),
+            "elemental" => Some(Field::Elemental),
+            "unstable" => Some(Field::Unstable),
+            _ => None,
+        }
+    }
+
+    fn contract_name(self) -> Option<&'static str> {
+        match self {
+            Field::None => None,
+            Field::Flux => Some("FluxField"),
+            Field::Elemental => Some("ElementalField"),
+            Field::Unstable => Some("UnstableField"),
+        }
+    }
+
+    /// Flux owns round-end stamina itself, so its ruleset keeps only the resting regen.
+    fn regen_marker(self) -> Address {
+        match self {
+            Field::Flux => Constants::INLINE_REST_REGEN_MARKER,
+            _ => Constants::INLINE_STAMINA_REGEN_RULESET,
+        }
+    }
+}
+
+/// Any non-zero, non-sentinel address routes startBattle down the ruleset path.
+const FIELD_RULESET: Address = addr(0x05f0);
+
 struct HarnessExt {
     p0_team: Vec<Mon>,
     p1_team: Vec<Mon>,
+    /// [regen marker, field] — the DefaultRuleset the engine reads at startBattle.
+    ruleset_effects: Vec<Address>,
 }
 
 impl ExternalCalls for HarnessExt {
@@ -52,6 +96,11 @@ impl ExternalCalls for HarnessExt {
 
     fn ITeamRegistry_isWhitelistedOpponent(&mut self, _t: Address, _addr: Address) -> bool {
         false // the arena pits two real teams — no phantom/CPU whitelist path
+    }
+
+    fn IRuleset_getInitialGlobalEffects(&mut self, _t: Address) -> (Vec<Address>, Vec<B256>) {
+        let data = vec![B256::ZERO; self.ruleset_effects.len()];
+        (self.ruleset_effects.clone(), data)
     }
 
     fn ITeamRegistry_getExpAndLevelsForTeams(
@@ -130,7 +179,20 @@ impl Sim {
         p1_ids: Vec<u32>,
         book: &HashMap<String, Address>,
     ) -> Sim {
-        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_SINGLES)
+        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_SINGLES, Field::None)
+    }
+
+    /// Singles battle under a battlefield field's ruleset (the daily-challenge shape).
+    pub fn new_with_field(
+        mons_per_team: u64,
+        p0_team: Vec<Mon>,
+        p1_team: Vec<Mon>,
+        p0_ids: Vec<u32>,
+        p1_ids: Vec<u32>,
+        book: &HashMap<String, Address>,
+        field: Field,
+    ) -> Sim {
+        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_SINGLES, field)
     }
 
     /// Stand up a DOUBLES battle world — two active mons per side (absolute slots 0-3), executed via
@@ -143,7 +205,7 @@ impl Sim {
         p1_ids: Vec<u32>,
         book: &HashMap<String, Address>,
     ) -> Sim {
-        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_DOUBLES)
+        Self::new_with_mode(mons_per_team, p0_team, p1_team, p0_ids, p1_ids, book, Constants::BATTLE_MODE_DOUBLES, Field::None)
     }
 
     fn new_with_mode(
@@ -154,10 +216,21 @@ impl Sim {
         p1_ids: Vec<u32>,
         book: &HashMap<String, Address>,
         battle_mode: u8,
+        field: Field,
     ) -> Sim {
+        // The field's effect address comes from the same book the engine deploys against, so a
+        // field battle installs the very contract the arena dispatches.
+        let ruleset_effects = match field.contract_name() {
+            None => Vec::new(),
+            Some(name) => vec![
+                field.regen_marker(),
+                *book.get(name).unwrap_or_else(|| panic!("address book missing `{name}`")),
+            ],
+        };
         let mut world = World::new(Box::new(HarnessExt {
             p0_team,
             p1_team,
+            ruleset_effects,
         }));
         world.Engine = Engine::construct(
             U256::from(mons_per_team),
@@ -193,7 +266,11 @@ impl Sim {
             p3TeamIndex: 0,
             teamRegistry: TEAM_REGISTRY,
             rngOracle: Address::ZERO,
-            ruleset: Constants::INLINE_STAMINA_REGEN_RULESET,
+            ruleset: if field == Field::None {
+                Constants::INLINE_STAMINA_REGEN_RULESET
+            } else {
+                FIELD_RULESET
+            },
             moveManager: MOVE_MANAGER,
             matchmaker: MATCHMAKER,
             engineHooks: Vec::new(),

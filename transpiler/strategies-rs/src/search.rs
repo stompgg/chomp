@@ -47,6 +47,11 @@ pub struct SearchOpts {
     /// Cap for the DEEPEST interior ply (remaining depth 1). 0 = use `int_actions` —
     /// root-adjacent plies keep the wider list where pivot lines carry the value.
     pub int_actions_deep: usize,
+    /// Distinct salts the deepened phase averages each row over. 0/1 = today's single
+    /// fixed-salt fork. Only worth >1 under a battlefield field, whose round-end roll is
+    /// derived from the turn rng — with one salt the search plans on a stamina/status/drag
+    /// outcome it does not actually control.
+    pub salt_samples: u32,
 }
 
 /// Hard cap on search depth (ruled 2026-07-12).
@@ -80,14 +85,29 @@ fn candidates(sim: &mut Sim, seat: Seat, key: B256, cap: usize) -> Vec<Mv> {
     out
 }
 
+fn to_hypo_salt(m: Option<Mv>, salt: u128) -> Option<HypoMove> {
+    m.map(|m| HypoMove { move_index: m.move_index, salt, extra_data: m.extra_data })
+}
+
 fn to_hypo(m: Option<Mv>) -> Option<HypoMove> {
-    m.map(|m| HypoMove { move_index: m.move_index, salt: SALT, extra_data: m.extra_data })
+    to_hypo_salt(m, SALT)
+}
+
+/// Salt for sample `i` — spread apart so consecutive samples land on different
+/// field-roll branches rather than neighbouring keccak inputs.
+fn sample_salt(i: u32) -> u128 {
+    (i as u128).wrapping_mul(0x9e37_79b9_7f4a_7c15)
 }
 
 /// Fork one ply from `key`: `my` is the CPU (VCPU) submission, `opp` the
 /// opponent (VOPP); either is None on a forced-switch turn.
 fn step(sim: &mut Sim, seat: Seat, key: B256, my: Option<Mv>, opp: Option<Mv>) -> B256 {
     apply_hypothetical_from(sim, seat, key, to_hypo(opp), to_hypo(my))
+}
+
+/// `step` with an explicit salt, so a caller can sample the field's round-end roll.
+fn step_salt(sim: &mut Sim, seat: Seat, key: B256, my: Option<Mv>, opp: Option<Mv>, salt: u128) -> B256 {
+    apply_hypothetical_from(sim, seat, key, to_hypo_salt(opp, salt), to_hypo_salt(my, salt))
 }
 
 /// The two sides' action lists at `key` given the (virtual) switch flag:
@@ -321,12 +341,19 @@ fn decide_inner(
 
         let mut best = my[guided[0].0].unwrap_or(Mv { move_index: NO_OP_INDEX, extra_data: 0 });
         let mut best_val = f64::NEG_INFINITY;
+        let samples = opts.salt_samples.max(1);
         for &(i, _) in &guided {
             let mut worst = f64::INFINITY;
             for o in &opp {
-                let child = step(sim, seat, key, my[i], *o);
-                let v = value(sim, seat, child, w, depth - 1, opts.settle_rounds, opts.int_actions, opts.int_actions_deep);
-                sim.dispose_fork(child);
+                // Mean over sampled salts: under a field the row's value is a distribution,
+                // and picking one salt is picking the roll rather than pricing it.
+                let mut acc = 0.0f64;
+                for s in 0..samples {
+                    let child = step_salt(sim, seat, key, my[i], *o, sample_salt(s));
+                    acc += value(sim, seat, child, w, depth - 1, opts.settle_rounds, opts.int_actions, opts.int_actions_deep);
+                    sim.dispose_fork(child);
+                }
+                let v = acc / samples as f64;
                 if v < worst {
                     worst = v;
                 }

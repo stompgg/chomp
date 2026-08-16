@@ -7,6 +7,7 @@ use crate::doubles::{run_doubles_games, Difficulty, DoublesEvalW, DoublesSpec};
 use crate::bot::InfoMode;
 use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::game::{run_games, GameSpec, BotName};
+use crate::sim::Field;
 use crate::roster::{self, Roster, RosterMon};
 
 const TEAM_SIZE: usize = 4;
@@ -133,7 +134,7 @@ pub fn build_specs_with(
     seed_base: u32,
     pairs: &[(BotName, BotName)],
 ) -> (Vec<GameSpec>, Vec<usize>) {
-    build_specs_full(roster, games, wseed, seed_base, pairs, false)
+    build_specs_full(roster, games, wseed, seed_base, pairs, false, Field::None)
 }
 
 /// `build_specs_with` plus a `rotate` switch: when set, each drafted slot draws a uniform loadout
@@ -149,6 +150,7 @@ pub fn build_specs_full(
     seed_base: u32,
     pairs: &[(BotName, BotName)],
     rotate: bool,
+    field: Field,
 ) -> (Vec<GameSpec>, Vec<usize>) {
     // Build each mon's loadout set once (13 mons), then clone per draft — avoids an O(n) find
     // and a fresh build_team_mon on every drafted slot across tens of thousands of games.
@@ -182,6 +184,7 @@ pub fn build_specs_full(
             p1_team,
             p0_ids,
             p1_ids,
+            field,
             p0_strategy: p0s,
             p1_strategy: p1s,
             peek_seat: None,
@@ -209,9 +212,11 @@ pub fn run_arena(
     seed_base: u32,
     threads: usize,
     info: InfoMode,
+    field: Field,
 ) -> Vec<PairStats> {
     let book = roster::address_book();
-    let (mut specs, pair_of) = build_specs(roster, games, wseed, seed_base);
+    let pairs: Vec<(BotName, BotName)> = STRAT_PAIRS.iter().map(|&(p1, p0)| (p1, p0)).collect();
+    let (mut specs, pair_of) = build_specs_full(roster, games, wseed, seed_base, &pairs, false, field);
     apply_info_mode(&mut specs, &pair_of, info);
     let outcomes = run_games(&specs, &book, threads, false);
 
@@ -252,9 +257,10 @@ pub fn eval_weights_winrate(
     wseed: u32,
     seed_base: u32,
     threads: usize,
+    field: Field,
 ) -> f64 {
     let book = roster::address_book();
-    let (mut specs, _) = build_specs_with(roster, games, wseed, seed_base, &[(p1_strat, p0_strat)]);
+    let (mut specs, _) = build_specs_full(roster, games, wseed, seed_base, &[(p1_strat, p0_strat)], false, field);
     for s in &mut specs {
         s.p1_weights = *cand; // candidate under test
         s.p1_search_depth = p1_search_depth; // 0 = 1-ply greedy; ≥1 = maximin search
@@ -577,7 +583,7 @@ mod tests {
     fn rotation_preserves_drafts_and_varies_loadouts() {
         let roster = load_roster(&chomp_root());
         let pairs = [(crate::bots::GREEDY, crate::bots::GREEDY)];
-        let (plain, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, false);
+        let (plain, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, false, Field::None);
         let (rot, _) = build_specs_full(&roster, 300, 0xbeefcafe, 10_000, &pairs, true);
 
         for (a, b) in plain.iter().zip(rot.iter()) {

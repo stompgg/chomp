@@ -34,6 +34,9 @@ fn main() {
     let games = arg_u(&args, "--games", 10_000) as usize;
     let seed = arg_u(&args, "--seed", 0xbeefcafe) as u32;
     let seed_base = arg_u(&args, "--seed-base", 10_000) as u32;
+    let field = arg(&args, "--field")
+        .map(|v| chomp_strategies::sim::Field::parse(&v).expect("--field: none | flux | elemental | unstable"))
+        .unwrap_or(chomp_strategies::sim::Field::None);
     let default_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let threads = arg_u(&args, "--threads", default_threads as u64) as usize;
 
@@ -89,12 +92,12 @@ fn main() {
                 );
                 eprintln!("  pilots: p1={p1s} vs p0={p0s}");
                 if rotate {
-                    run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, Some(&[pair]), progress)
+                    run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, Some(&[pair]), progress, field)
                 } else {
                     run_mon_analysis_with(&roster, games, seed, seed_base, threads, &[pair], progress)
                 }
             }
-            _ if rotate => run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, None, progress),
+            _ if rotate => run_mon_analysis_rotated(&roster, games, seed, seed_base, threads, None, progress, field),
             _ => run_mon_analysis(&roster, games, seed, seed_base, threads, progress),
         }
     };

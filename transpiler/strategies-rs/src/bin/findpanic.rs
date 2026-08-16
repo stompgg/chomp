@@ -36,7 +36,7 @@ fn main() {
         .map(|&(p1, p0)| (p1, p0))
         .collect();
     let (specs, _) = if rotate {
-        build_specs_full(&roster, games, seed, seed_base, &pairs, true)
+        build_specs_full(&roster, games, seed, seed_base, &pairs, true, chomp_strategies::sim::Field::None)
     } else {
         build_specs(&roster, games, seed, seed_base)
     };

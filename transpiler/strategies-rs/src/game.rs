@@ -26,7 +26,7 @@ use crate::jsrng::{derive, random_salt, JsRng, STREAM_P0, STREAM_P1, STREAM_SALT
 use crate::nopeek;
 use crate::override_cpu::{self, OverrideState};
 use crate::search;
-use crate::sim::Sim;
+use crate::sim::{Field, Sim};
 use crate::view::{
     active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp,
     mon_state, mon_value, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
@@ -48,6 +48,9 @@ pub struct GameSpec {
     pub p1_ids: Vec<u32>,
     pub p0_strategy: BotName,
     pub p1_strategy: BotName,
+    /// Battlefield field installed by the battle's ruleset (daily-challenge shape);
+    /// `Field::None` is the plain inline-regen ruleset every other game uses.
+    pub field: Field,
     /// Which seat sees the opponent's move this game. `None` is blind mode —
     /// genuinely simultaneous, and what production play looks like. The seat
     /// without the reveal always decides first, so the peeker sees a real move
@@ -207,13 +210,14 @@ fn decide_turn(
 
 pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> GameOutcome {
     let mut rngs = GameRngs::new(spec.seed);
-    let mut sim = Sim::new(
+    let mut sim = Sim::new_with_field(
         spec.mons_per_team,
         spec.p0_team.clone(),
         spec.p1_team.clone(),
         spec.p0_ids.clone(),
         spec.p1_ids.clone(),
         book,
+        spec.field,
     );
 
     let mut seats = init_seats(spec);
@@ -269,13 +273,14 @@ pub fn narrate_game(
     name_move: impl Fn(u32, u8) -> String,
 ) -> GameOutcome {
     let mut rngs = GameRngs::new(spec.seed);
-    let mut sim = Sim::new(
+    let mut sim = Sim::new_with_field(
         spec.mons_per_team,
         spec.p0_team.clone(),
         spec.p1_team.clone(),
         spec.p0_ids.clone(),
         spec.p1_ids.clone(),
         book,
+        spec.field,
     );
     // Non-flipped observer seat: VOPP reads physical p0, VCPU reads physical p1.
     let obs = Seat { cpu: 1 };
@@ -466,13 +471,14 @@ pub struct TraceRecord {
 
 pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> TraceRecord {
     let mut rngs = GameRngs::new(spec.seed);
-    let mut sim = Sim::new(
+    let mut sim = Sim::new_with_field(
         spec.mons_per_team,
         spec.p0_team.clone(),
         spec.p1_team.clone(),
         spec.p0_ids.clone(),
         spec.p1_ids.clone(),
         book,
+        spec.field,
     );
     let mut seats = init_seats(spec);
     let obs = Seat { cpu: 1 };
@@ -564,13 +570,14 @@ pub struct YomiSample {
 
 pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<YomiSample> {
     let mut rngs = GameRngs::new(spec.seed);
-    let mut sim = Sim::new(
+    let mut sim = Sim::new_with_field(
         spec.mons_per_team,
         spec.p0_team.clone(),
         spec.p1_team.clone(),
         spec.p0_ids.clone(),
         spec.p1_ids.clone(),
         book,
+        spec.field,
     );
     let mut seats = init_seats(spec);
     let obs = Seat { cpu: 1 };
@@ -771,13 +778,14 @@ pub struct InstrRecord {
 
 pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) -> InstrRecord {
     let mut rngs = GameRngs::new(spec.seed);
-    let mut sim = Sim::new(
+    let mut sim = Sim::new_with_field(
         spec.mons_per_team,
         spec.p0_team.clone(),
         spec.p1_team.clone(),
         spec.p0_ids.clone(),
         spec.p1_ids.clone(),
         book,
+        spec.field,
     );
 
     let mut seats = init_seats(spec);

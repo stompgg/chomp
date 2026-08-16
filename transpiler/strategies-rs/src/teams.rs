@@ -10,6 +10,7 @@ use crate::arena::{build_team_mon, draw_team, Wrand};
 use crate::evaluator::DEFAULT_WEIGHTS;
 use crate::bots;
 use crate::game::{run_games, GameSpec, BotName};
+use crate::sim::Field;
 use crate::roster::{self, Roster};
 
 /// All k-subsets of 0..n (lexicographic).
@@ -98,6 +99,7 @@ pub fn run_team_search(
                 p0_team: opp.iter().map(|&id| build_team_mon(mon(id))).collect(),
                 p1_team: team_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
                 p0_ids: opp,
+                field: Field::None,
                 p1_ids: team_ids.clone(),
                 p0_strategy: bots::GREEDY,
                 p1_strategy: bots::GREEDY,

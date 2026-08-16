@@ -11,6 +11,7 @@ use chomp_strategies::arena::{
 use chomp_strategies::doubles::DoublesEvalW;
 use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
 use chomp_strategies::bot::InfoMode;
+use chomp_strategies::sim::Field;
 use chomp_strategies::bots;
 use chomp_strategies::game::BotName;
 use chomp_strategies::roster::load_roster;
@@ -48,6 +49,10 @@ fn main() {
     let threads = arg_u(&args, "--threads", default_threads as u64) as usize;
 
     let mode = arg(&args, "--mode").unwrap_or_else(|| "singles".to_string());
+    // Battlefield field for every game in the run — the daily-challenge rulesets.
+    let field = arg(&args, "--field")
+        .map(|v| Field::parse(&v).expect("--field: none | flux | elemental | unstable"))
+        .unwrap_or(Field::None);
     // Blind is the default: simultaneous moves, symmetric seats.
     let info = arg(&args, "--info")
         .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate"))
@@ -122,11 +127,12 @@ fn main() {
             beam_k: arg_u(&args, "--beam", 0) as usize,
             int_actions: arg_u(&args, "--int-actions", 0) as usize,
             int_actions_deep: arg_u(&args, "--int-deep", 0) as usize,
+            salt_samples: arg_u(&args, "--salts", 0) as u32,
         };
         let started = std::time::Instant::now();
         let wr = eval_weights_winrate(
             &roster, &cand, search_depth, peek, bots::GREEDY, bots::GREEDY, base_depth, cand_opts, games, seed,
-            seed_base, threads,
+            seed_base, threads, field,
         );
         let elapsed = started.elapsed().as_secs_f64();
         let m = if search_depth >= 1 { format!("d{search_depth}-search") } else { "1-ply".to_string() };
@@ -146,7 +152,7 @@ fn main() {
             );
         }
     } else {
-        for s in &run_arena(&roster, games, seed, seed_base, threads, info) {
+        for s in &run_arena(&roster, games, seed, seed_base, threads, info, field) {
             println!(
                 "{:>9}  {:>9}  {:>6}  {:>6.1}%  {:>4}-{:>3}-{:<4}",
                 s.p1_strat, s.p0_strat, s.games, s.p1_rate() * 100.0, s.p1_wins, s.p0_wins, s.draws

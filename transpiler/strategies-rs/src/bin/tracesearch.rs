@@ -88,6 +88,7 @@ fn main() {
             p1_team: p1_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
             p0_ids,
             p1_ids,
+            field: chomp_strategies::sim::Field::None,
             p0_strategy: p0_strat,
             p1_strategy: bots::GREEDY, // ignored — p1_search_depth overrides to the search
             peek_seat: None,

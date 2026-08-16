@@ -50,6 +50,7 @@ fn main() {
                     p1_team: vec![build_team_mon(&roster.mons[i])],
                     p0_ids: vec![m.ids[j]],
                     p1_ids: vec![m.ids[i]],
+                    field: chomp_strategies::sim::Field::None,
                     p0_strategy: bots::GREEDY,
                     p1_strategy: bots::GREEDY,
                     peek_seat: None,
